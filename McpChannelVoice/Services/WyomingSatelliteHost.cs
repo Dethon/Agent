@@ -228,17 +228,18 @@ public sealed class WyomingSatelliteHost(
             TranscribeAndDispatch = (audio, isFollowUp, token) =>
                 TranscribeAndDispatchAsync(session, audio, isFollowUp, token),
             EnqueueChime = token => EnqueueChimeAsync(session, token),
-            EndConversation = token =>
-            {
-                PublishVoiceMetric(VoiceMetric.FollowUpTimedOut, session);
-                return client.WriteAsync(
-                    WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), token);
-            },
+            EndConversation = token => client.WriteAsync(
+                WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), token),
             ResetTurn = session.ResetTurn,
             AwaitReply = session.WaitForTurnSpokenAsync,
             OnFollowUpWindow = token =>
             {
                 PublishVoiceMetric(VoiceMetric.FollowUpWindowOpened, session);
+                return Task.CompletedTask;
+            },
+            OnSilenceTimeout = token =>
+            {
+                PublishVoiceMetric(VoiceMetric.FollowUpTimedOut, session);
                 return Task.CompletedTask;
             }
         };

@@ -42,7 +42,8 @@ public class FollowUpConversationTests
             EndConversation = _ => { Events.Add("end"); return Task.CompletedTask; },
             ResetTurn = () => _reply = new(TaskCreationOptions.RunContinuationsAsynchronously),
             AwaitReply = () => _reply.Task,
-            OnFollowUpWindow = _ => Task.CompletedTask
+            OnFollowUpWindow = _ => Task.CompletedTask,
+            OnSilenceTimeout = _ => { Events.Add("timed-out"); return Task.CompletedTask; }
         };
 
         public void Reply(bool spoke) => _reply.TrySetResult(spoke);
@@ -60,6 +61,7 @@ public class FollowUpConversationTests
 
         await Task.Delay(50);
         h.Events.ShouldBe(["open-first", "dispatch-first", "end"]);
+        h.Events.ShouldNotContain("timed-out");
 
         await StopAsync(sut, run);
     }
@@ -110,6 +112,7 @@ public class FollowUpConversationTests
 
         await Task.Delay(50);
         h.Events.ShouldContain("end");
+        h.Events.ShouldContain("timed-out");
 
         await StopAsync(sut, run);
     }
@@ -129,6 +132,7 @@ public class FollowUpConversationTests
         await Task.Delay(50);
         h.Events.ShouldContain("end");
         h.Events.ShouldNotContain("chime");
+        h.Events.ShouldNotContain("timed-out");
 
         await StopAsync(sut, run);
     }
@@ -181,6 +185,7 @@ public class FollowUpConversationTests
         await Task.Delay(50);
 
         h.Events.ShouldContain("end");
+        h.Events.ShouldNotContain("timed-out");
         h.Events.Count(e => e == "open-followup").ShouldBe(1); // capped at one
         await StopAsync(sut, run);
     }

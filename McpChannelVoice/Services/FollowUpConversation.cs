@@ -36,6 +36,9 @@ public sealed class FollowUpConversation(
     // Side effect (metric) just before a follow-up window opens.
     public required Func<CancellationToken, Task> OnFollowUpWindow { get; init; }
 
+    // Side effect (metric) when a follow-up window expires with no speech.
+    public required Func<CancellationToken, Task> OnSilenceTimeout { get; init; }
+
     public void OnWake()
     {
         if (_active || _disposed.IsCancellationRequested)
@@ -79,6 +82,7 @@ public sealed class FollowUpConversation(
 
                 if (outcome == CaptureOutcome.NoSpeech)
                 {
+                    await OnSilenceTimeout(ct);
                     await EndConversation(ct);
                     return;
                 }
