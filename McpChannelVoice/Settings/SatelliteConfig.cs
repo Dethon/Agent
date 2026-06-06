@@ -11,6 +11,9 @@ public record SatelliteConfig
     public string? Address { get; init; }
 
     public string? WakeWord { get; init; }
+
+    // Per-satellite override of FollowUpSettings.Enabled. Null inherits the global value.
+    public bool? FollowUpEnabled { get; init; }
     public SttSettings? Stt { get; init; }
     public TtsSettings? Tts { get; init; }
 }

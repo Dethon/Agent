@@ -13,4 +13,5 @@ public record VoiceSettings
     public AnnounceSettings Announce { get; init; } = new();
     public Dictionary<string, SatelliteConfig> Satellites { get; init; } = new();
     public TimeSpan ConversationLifetime { get; init; } = TimeSpan.FromMinutes(5);
+    public FollowUpSettings FollowUp { get; init; } = new();
 }

@@ -13,5 +13,8 @@ public enum VoiceMetric
     AnnouncePlayed,
     AnnounceQueued,
     AnnounceError,
-    AnnouncePreemptedReply
+    AnnouncePreemptedReply,
+    FollowUpWindowOpened,
+    FollowUpEngaged,
+    FollowUpTimedOut
 }
