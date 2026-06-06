@@ -6,6 +6,7 @@
 @implements IDisposable
 @inject VoiceStore Store
 @inject MetricsApiService Api
+@inject LocalStorageService Storage
 
 <div class="voice-page">
     <header class="page-header">
@@ -31,6 +32,48 @@
         <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
                       MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
                       Unit="@GetMetricUnit()" />
+    </section>
+
+    <section class="section">
+        <h3>Recent voice events</h3>
+        <div class="events-table">
+            <div class="table-header">
+                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                <span class='sortable @SortClass("Satellite")' @onclick='() => SortBy("Satellite")'>Satellite @SortIndicator("Satellite")</span>
+                <span class='sortable @SortClass("Room")' @onclick='() => SortBy("Room")'>Room @SortIndicator("Room")</span>
+                <span class='sortable @SortClass("Identity")' @onclick='() => SortBy("Identity")'>Identity @SortIndicator("Identity")</span>
+                <span class='sortable @SortClass("Metric")' @onclick='() => SortBy("Metric")'>Metric @SortIndicator("Metric")</span>
+                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
+                <span class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome @SortIndicator("Outcome")</span>
+                <span class='sortable @SortClass("Error")' @onclick='() => SortBy("Error")'>Error @SortIndicator("Error")</span>
+            </div>
+            @foreach (var evt in GetSortedEvents())
+            {
+                <div class="table-row">
+                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                    <span>@evt.SatelliteId</span>
+                    <span>@evt.Room</span>
+                    <span>@evt.Identity</span>
+                    <span>@evt.Metric</span>
+                    <span>@(evt.DurationMs is { } d ? $"{d} ms" : "")</span>
+                    <span>@evt.Outcome</span>
+                    @if (!string.IsNullOrEmpty(evt.Error))
+                    {
+                        <span class="status-err tooltip-anchor" tabindex="0">ERR
+                            <span class="tooltip-popup">@evt.Error</span>
+                        </span>
+                    }
+                    else
+                    {
+                        <span></span>
+                    }
+                </div>
+            }
+            @if (!_state.Events.Any())
+            {
+                <p class="no-data">No voice events recorded</p>
+            }
+        </div>
     </section>
 </div>
 
@@ -71,6 +114,14 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var savedGroupBy = await Storage.GetAsync<VoiceDimension>("voice.groupBy");
+        var savedMetric = await Storage.GetAsync<VoiceMetric>("voice.metric");
+        var savedDays = await Storage.GetIntAsync("voice.days");
+
+        if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
+        if (savedMetric.HasValue) Store.SetMetric(savedMetric.Value);
+        if (savedDays.HasValue) _selectedDays = savedDays.Value;
+
         _sub = Store.StateObservable.Subscribe(s =>
         {
             _state = s;
@@ -105,12 +156,14 @@
     private async Task OnDimensionChanged(string v)
     {
         Store.SetGroupBy(Enum.Parse<VoiceDimension>(v));
+        await Storage.SetAsync("voice.groupBy", v);
         await ReloadBreakdown();
     }
 
     private async Task OnMetricChanged(string v)
     {
         Store.SetMetric(Enum.Parse<VoiceMetric>(v));
+        await Storage.SetAsync("voice.metric", v);
         await ReloadBreakdown();
     }
 
@@ -120,6 +173,7 @@
         _to = DateOnly.FromDateTime(DateTime.UtcNow);
         _from = _to.AddDays(-(_selectedDays - 1));
         Store.SetDateRange(_from, _to);
+        await Storage.SetAsync("voice.days", v);
         await ReloadAll();
     }
 
@@ -130,6 +184,35 @@
         VoiceMetric.TtsLatencyMs => "ms",
         _ => ""
     };
+
+    private string _sortColumn = "Time";
+    private bool _sortAsc;
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column) _sortAsc = !_sortAsc;
+        else { _sortColumn = column; _sortAsc = false; }
+    }
+
+    private IEnumerable<VoiceEvent> GetSortedEvents()
+    {
+        var events = _state.Events.TakeLast(50).AsEnumerable();
+        Func<VoiceEvent, object> keySelector = _sortColumn switch
+        {
+            "Satellite" => e => e.SatelliteId ?? "",
+            "Room" => e => e.Room ?? "",
+            "Identity" => e => e.Identity ?? "",
+            "Metric" => e => e.Metric,
+            "Duration" => e => e.DurationMs ?? 0,
+            "Outcome" => e => e.Outcome ?? "",
+            "Error" => e => e.Error ?? "",
+            _ => e => e.Timestamp
+        };
+        return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
+    }
+
+    private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
+    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "\u25b2" : "\u25bc";
 
     public void Dispose() => _sub?.Dispose();
 }
@@ -165,5 +248,127 @@
         display: flex;
         gap: 1rem;
         flex-wrap: wrap;
+    }
+
+    .section h3 {
+        font-size: 1rem;
+        margin-bottom: 0.8rem;
+        color: var(--text-secondary);
+    }
+
+    .events-table {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .table-header, .table-row {
+        display: grid;
+        grid-template-columns: 135px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 130px 90px 110px minmax(0, 1fr);
+        gap: 0.5rem;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.82rem;
+    }
+
+    .table-header {
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        font-weight: 600;
+        border-radius: 4px;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+    }
+
+    .sortable {
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .sortable:hover {
+        color: var(--text-primary);
+    }
+
+    .sortable.sorted {
+        color: var(--text-primary);
+    }
+
+    .table-row {
+        background: var(--bg-card);
+        border-radius: 4px;
+    }
+
+    .table-row:hover {
+        background: rgba(255,255,255,0.03);
+    }
+
+    .table-row span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .status-ok {
+        color: var(--accent-green);
+    }
+
+    .status-err {
+        color: var(--accent-red);
+    }
+
+    .tooltip-anchor {
+        cursor: default;
+    }
+
+    .tooltip-anchor:focus {
+        outline: none;
+    }
+
+    .tooltip-popup {
+        display: none;
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 6px;
+        padding: 0.5rem 0.7rem;
+        font-size: 0.78rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-width: 320px;
+        min-width: 150px;
+        z-index: 1000;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        pointer-events: none;
+    }
+
+    .no-data {
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        padding: 0.5rem 0.8rem;
+    }
+
+    @@media (max-width: 768px) {
+        .page-header {
+            flex-direction: column;
+        }
+
+        .page-header h2 {
+            font-size: 1.1rem;
+        }
+
+        .events-table {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .table-header, .table-row {
+            grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 110px 70px 90px minmax(0, 1fr);
+            font-size: 0.72rem;
+            padding: 0.4rem 0.5rem;
+            min-width: 760px;
+        }
+
+        .table-row span {
+            word-break: break-word;
+        }
     }
 </style>
