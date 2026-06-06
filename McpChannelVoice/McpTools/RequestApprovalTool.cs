@@ -6,6 +6,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 using ModelContextProtocol.Server;
 
@@ -14,15 +15,14 @@ namespace McpChannelVoice.McpTools;
 [McpServerToolType]
 public sealed class RequestApprovalTool
 {
-    private static readonly TimeSpan _captureWindow = TimeSpan.FromSeconds(10);
-
     [McpServerTool(Name = ChannelProtocol.RequestApprovalTool)]
     [Description("Request user approval via voice")]
     public static async Task<string> McpRun(
         [Description("Satellite ID owning the conversation")] string conversationId,
         [Description("Whether to ask the user or just notify them")] ApprovalMode mode,
         [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests,
-        IServiceProvider services)
+        IServiceProvider services,
+        CancellationToken cancellationToken = default)
     {
         var p = new RequestApprovalParams
         {
@@ -33,7 +33,6 @@ public sealed class RequestApprovalTool
 
         var sessions = services.GetRequiredService<SatelliteSessionRegistry>();
         var manager = services.GetRequiredService<VoiceConversationManager>();
-        var broker = services.GetRequiredService<ApprovalCaptureBroker>();
         var tts = services.GetRequiredService<ITextToSpeech>();
         var settings = services.GetRequiredService<VoiceSettings>();
         var metrics = services.GetRequiredService<IMetricsPublisher>();
@@ -60,14 +59,18 @@ public sealed class RequestApprovalTool
             return "notified";
         }
 
+        var stt = services.GetRequiredService<ISpeechToText>();
+        var wyoming = services.GetRequiredService<WyomingClientSettings>();
+        var followUp = settings.FollowUp;
+
         var toolList = string.Join(", ", p.Requests.Select(r => r.ToolName.Split("__").Last()));
         var prompt = $"¿Apruebas {toolList}? Di sí o no.";
 
         for (var attempt = 1; attempt <= 2; attempt++)
         {
-            await SpeakAsync(session, prompt, tts, settings);
+            await SpeakAndAwaitAsync(session, prompt, tts, settings, cancellationToken);
 
-            var answer = await broker.WaitForUtteranceAsync(session.SatelliteId, _captureWindow, default);
+            var answer = await CaptureAnswerAsync(session, stt, wyoming, followUp, cancellationToken);
             var parsed = ApprovalGrammarParser.Parse(answer);
 
             await metrics.PublishAsync(new VoiceEvent
@@ -107,5 +110,51 @@ public sealed class RequestApprovalTool
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: _ => Task.CompletedTask);
         await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
+    }
+
+    private static async Task SpeakAndAwaitAsync(
+        SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings,
+        CancellationToken ct)
+    {
+        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var voice = session.Config.Tts?.Wyoming?.Voice ?? settings.Tts.Wyoming?.Voice;
+        var job = new PlaybackJob(
+            Label: $"approval:{session.SatelliteId}",
+            Priority: AnnouncePriority.High,
+            Audio: tts.SynthesizeAsync(text, new SynthesisOptions { Voice = voice }, default),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => { drained.TrySetResult(); return Task.CompletedTask; },
+            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; });
+
+        await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
+        await drained.Task.WaitAsync(ct);
+    }
+
+    private static async Task<string> CaptureAnswerAsync(
+        SatelliteSession session, ISpeechToText stt, WyomingClientSettings wyoming,
+        FollowUpSettings followUp, CancellationToken ct)
+    {
+        if (followUp.PlaybackTailMs > 0)
+        {
+            await Task.Delay(followUp.PlaybackTailMs, ct); // echo guard after the prompt finishes
+        }
+
+        var capture = session.OpenCapture(new SilenceGate(
+            wyoming.SilenceRmsThreshold,
+            TimeSpan.FromMilliseconds(wyoming.TrailingSilenceMs),
+            TimeSpan.FromMilliseconds(wyoming.MaxUtteranceMs),
+            TimeSpan.FromMilliseconds(wyoming.MinSpeechMs),
+            noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
+
+        var outcome = await capture.Completed.WaitAsync(ct);
+        session.CloseCapture();
+
+        if (outcome == CaptureOutcome.NoSpeech)
+        {
+            return string.Empty;
+        }
+
+        var result = await stt.TranscribeAsync(capture.Audio, new TranscriptionOptions(), ct);
+        return result.Text ?? string.Empty;
     }
 }

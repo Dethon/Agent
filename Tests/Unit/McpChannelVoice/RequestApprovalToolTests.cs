@@ -16,13 +16,15 @@ using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
 
-public class RequestApprovalToolTests
+public class RequestApprovalToolTests : IDisposable
 {
     private readonly SatelliteSession _session;
     private readonly SatelliteSessionRegistry _sessions = new();
-    private readonly ApprovalCaptureBroker _broker = new();
     private readonly ReplyTextAccumulator _accumulator = new();
     private readonly Mock<ITextToSpeech> _tts = new();
+    private readonly Mock<ISpeechToText> _stt = new();
+    private readonly CancellationTokenSource _pump = new();
+    private readonly Task _pumpTask;
     private readonly VoiceConversationManager _manager;
     private readonly string _conversationId;
     private readonly IServiceProvider _services;
@@ -32,6 +34,8 @@ public class RequestApprovalToolTests
         _session = new SatelliteSession("kitchen-01",
             new SatelliteConfig { Identity = "household", Room = "Kitchen" });
         _sessions.Register(_session);
+
+        _pumpTask = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), _pump.Token);
 
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -54,14 +58,34 @@ public class RequestApprovalToolTests
 
         _services = new ServiceCollection()
             .AddSingleton(_sessions)
-            .AddSingleton(_broker)
             .AddSingleton(_accumulator)
             .AddSingleton(_manager)
             .AddSingleton(_tts.Object)
-            .AddSingleton(new VoiceSettings())
+            .AddSingleton(new VoiceSettings
+            {
+                FollowUp = new FollowUpSettings { PlaybackTailMs = 0, WindowMs = 2000 }
+            })
+            .AddSingleton<ISpeechToText>(_stt.Object)
+            .AddSingleton(new WyomingClientSettings
+            {
+                SilenceRmsThreshold = 500,
+                TrailingSilenceMs = 200,
+                MaxUtteranceMs = 3000,
+                MinSpeechMs = 100
+            })
             .AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>())
             .AddSingleton<ILogger<RequestApprovalTool>>(NullLogger<RequestApprovalTool>.Instance)
             .BuildServiceProvider();
+    }
+
+    public void Dispose()
+    {
+        _pump.Cancel();
+        _session.CompletePlayback();
+        try
+        { _pumpTask.GetAwaiter().GetResult(); }
+        catch { /* OCE on teardown */ }
+        _pump.Dispose();
     }
 
     private static async IAsyncEnumerable<AudioChunk> Audio()
@@ -69,6 +93,38 @@ public class RequestApprovalToolTests
         yield return new AudioChunk { Data = new byte[16], Format = AudioFormat.WyomingStandard };
         await Task.Yield();
     }
+
+    private static AudioChunk Loud()
+    {
+        var pcm = new byte[3200];
+        for (var i = 0; i < pcm.Length; i += 2)
+        { pcm[i] = 0x40; pcm[i + 1] = 0x1F; }
+        return new AudioChunk { Data = pcm, Format = AudioFormat.WyomingStandard };
+    }
+
+    private static AudioChunk Silent() =>
+        new() { Data = new byte[3200], Format = AudioFormat.WyomingStandard };
+
+    // Whenever the tool opens a capture, feed one speech-then-silence answer into it.
+    private Task FeedAnswersAsync(CancellationToken ct) => Task.Run(async () =>
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            if (_session.HasActiveCapture)
+            {
+                _session.RouteAudio(Loud());
+                _session.RouteAudio(Loud());
+                _session.RouteAudio(Silent());
+                _session.RouteAudio(Silent());
+                _session.RouteAudio(Silent());
+                await Task.Delay(60, ct);
+            }
+            else
+            {
+                await Task.Delay(10, ct);
+            }
+        }
+    }, ct);
 
     private static ToolApprovalRequest MakeRequest(string toolName = "mcp__lib__download") =>
         new(null, toolName, new Dictionary<string, object?>());
@@ -110,49 +166,50 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task RequestMode_PositiveAnswer_ReturnsApproved()
     {
-        var run = RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request,
-            [MakeRequest()],
-            _services);
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
 
-        await Task.Delay(50);
-        _broker.SubmitUtterance("kitchen-01", "sí, claro");
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
 
-        var result = await run;
+        var result = await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+
+        await feed.CancelAsync();
         result.ShouldBe("approved");
     }
 
     [Fact]
     public async Task RequestMode_AmbiguousThenNegative_ReturnsDeclined()
     {
-        var run = RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request,
-            [MakeRequest()],
-            _services);
+        _stt.SetupSequence(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "maybe", Confidence = 0.9 })
+            .ReturnsAsync(new TranscriptionResult { Text = "no thanks", Confidence = 0.9 });
 
-        await Task.Delay(50);
-        _broker.SubmitUtterance("kitchen-01", "maybe");
-        await Task.Delay(50);
-        _broker.SubmitUtterance("kitchen-01", "no thanks");
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
 
-        var result = await run;
+        var result = await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+
+        await feed.CancelAsync();
         result.ShouldBe("declined");
     }
 
     [Fact]
     public async Task RequestMode_TwoAmbiguous_DeclinesByDefault()
     {
-        var run = RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Request,
-            [MakeRequest()],
-            _services);
+        _stt.SetupSequence(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "maybe", Confidence = 0.9 })
+            .ReturnsAsync(new TranscriptionResult { Text = "hmm", Confidence = 0.9 });
 
-        await Task.Delay(50);
-        _broker.SubmitUtterance("kitchen-01", "maybe");
-        await Task.Delay(50);
-        _broker.SubmitUtterance("kitchen-01", "hmm");
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
 
-        var result = await run;
+        var result = await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+
+        await feed.CancelAsync();
         result.ShouldBe("declined");
     }
 
