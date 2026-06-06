@@ -12,7 +12,8 @@ public sealed class SilenceGate(
     double rmsThreshold,
     TimeSpan trailingSilence,
     TimeSpan maxUtterance,
-    TimeSpan minSpeech)
+    TimeSpan minSpeech,
+    TimeSpan noSpeechTimeout = default)
 {
     private TimeSpan _elapsed;
     private TimeSpan _speechElapsed;
@@ -22,7 +23,8 @@ public sealed class SilenceGate(
     public enum Decision
     {
         Continue,
-        EndUtterance
+        EndUtterance,
+        NoSpeech
     }
 
     public TimeSpan SpeechElapsed => _speechElapsed;
@@ -45,6 +47,10 @@ public sealed class SilenceGate(
             {
                 return Decision.EndUtterance;
             }
+        }
+        else if (noSpeechTimeout > TimeSpan.Zero && _elapsed >= noSpeechTimeout)
+        {
+            return Decision.NoSpeech;
         }
 
         return _elapsed >= maxUtterance ? Decision.EndUtterance : Decision.Continue;

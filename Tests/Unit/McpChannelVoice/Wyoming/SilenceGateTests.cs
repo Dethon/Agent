@@ -103,4 +103,49 @@ public class SilenceGateTests
 
         gate.SpeechElapsed.ShouldBe(TimeSpan.FromMilliseconds(200));
     }
+
+    private static SilenceGate FollowUpGate() => new(
+        rmsThreshold: 500,
+        trailingSilence: TimeSpan.FromMilliseconds(200),
+        maxUtterance: TimeSpan.FromMilliseconds(10_000),
+        minSpeech: TimeSpan.FromMilliseconds(100),
+        noSpeechTimeout: TimeSpan.FromMilliseconds(500));
+
+    [Fact]
+    public void Process_NoSpeechWithinWindow_ReturnsNoSpeech()
+    {
+        var gate = FollowUpGate();
+
+        // 500 ms window / 100 ms per chunk => the 5th silent chunk crosses it.
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.NoSpeech);
+    }
+
+    [Fact]
+    public void Process_SpeechBeforeWindowExpires_DoesNotReturnNoSpeech()
+    {
+        var gate = FollowUpGate();
+
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.Continue);   // speech starts
+        // Keep feeding past the no-speech window: speech started, so NoSpeech must never fire.
+        foreach (var _ in Enumerable.Range(0, 8))
+        {
+            Feed(gate, Loud()).ShouldNotBe(SilenceGate.Decision.NoSpeech);
+        }
+    }
+
+    [Fact]
+    public void Process_NoSpeechTimeoutDisabledByDefault_NeverReturnsNoSpeech()
+    {
+        var gate = NewGate(); // default gate has noSpeechTimeout = default (disabled)
+
+        foreach (var _ in Enumerable.Range(0, 30))
+        {
+            Feed(gate, Silent()).ShouldNotBe(SilenceGate.Decision.NoSpeech);
+        }
+    }
 }
