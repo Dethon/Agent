@@ -37,7 +37,7 @@ public class TranscriptDispatcherTests
 
         var emitter = new CapturingEmitter();
         var sut = new TranscriptDispatcher(
-            emitter, Mock.Of<IMetricsPublisher>(), new ApprovalCaptureBroker(), manager,
+            emitter, Mock.Of<IMetricsPublisher>(), manager,
             confidenceThreshold: 0.5, NullLogger<TranscriptDispatcher>.Instance);
         return (sut, manager, emitter);
     }
@@ -110,7 +110,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
-            emitter, publisher.Object, new ApprovalCaptureBroker(), manager,
+            emitter, publisher.Object, manager,
             confidenceThreshold: 0.5, NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(

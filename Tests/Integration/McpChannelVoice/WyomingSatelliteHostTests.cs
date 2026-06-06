@@ -130,7 +130,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, new ApprovalCaptureBroker(), manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -264,7 +264,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, new ApprovalCaptureBroker(), manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -383,7 +383,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, new ApprovalCaptureBroker(), manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {

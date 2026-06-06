@@ -52,11 +52,9 @@ public static class ConfigModule
 
         services
             .AddSingleton<SatelliteSessionRegistry>()
-            .AddSingleton<ApprovalCaptureBroker>()
             .AddSingleton<TranscriptDispatcher>(sp => new TranscriptDispatcher(
                 sp.GetRequiredService<ChannelNotificationEmitter>(),
                 sp.GetRequiredService<IMetricsPublisher>(),
-                sp.GetRequiredService<ApprovalCaptureBroker>(),
                 sp.GetRequiredService<VoiceConversationManager>(),
                 settings.ConfidenceThreshold,
                 sp.GetRequiredService<ILogger<TranscriptDispatcher>>()))

@@ -8,7 +8,6 @@ namespace McpChannelVoice.Services;
 public sealed class TranscriptDispatcher(
     ChannelNotificationEmitter emitter,
     IMetricsPublisher publisher,
-    ApprovalCaptureBroker broker,
     VoiceConversationManager manager,
     double confidenceThreshold,
     ILogger<TranscriptDispatcher> logger)
@@ -19,12 +18,6 @@ public sealed class TranscriptDispatcher(
         string? agentId,
         CancellationToken ct)
     {
-        if (broker.SubmitUtterance(session.SatelliteId, transcript.Text))
-        {
-            logger.LogInformation("Transcript routed to pending approval for {Id}", session.SatelliteId);
-            return true;
-        }
-
         var lowConfidence = transcript.Confidence is { } c && c < confidenceThreshold;
         if (string.IsNullOrWhiteSpace(transcript.Text) || lowConfidence)
         {
