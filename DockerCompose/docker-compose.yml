@@ -557,15 +557,47 @@ services:
     networks:
       - jackbot
 
+  piper-voice-fetch:
+    # es_ES-carlfm-high is an unofficial Piper voice (HF friyin/vits-piper-es_ES-carlfm-high)
+    # that is NOT in Piper's catalog, so wyoming-piper cannot auto-download it. Fetch the model
+    # + config into the shared piper-data volume before wyoming-piper starts. Idempotent: skips
+    # files already present, so it no-ops on every `up` after the first. Runs as root because the
+    # volume is root-owned (populated by the wyoming-piper container itself).
+    image: curlimages/curl:latest
+    container_name: piper-voice-fetch
+    user: root
+    entrypoint: [ "sh", "-c" ]
+    command:
+      - |
+        set -e
+        d=/data
+        base=https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main
+        for f in es_ES-carlfm-high.onnx es_ES-carlfm-high.onnx.json; do
+          if [ -s "$$d/$$f" ]; then
+            echo "piper-voice-fetch: $$f already present"
+          else
+            echo "piper-voice-fetch: downloading $$f"
+            curl -fsSL -o "$$d/$$f" "$$base/$$f"
+          fi
+        done
+    volumes:
+      - ./volumes/piper-data:/data
+    restart: "no"
+    networks:
+      - jackbot
+
   wyoming-piper:
     image: rhasspy/wyoming-piper:latest
     container_name: wyoming-piper
-    command: --voice es_ES-davefx-medium --uri tcp://0.0.0.0:10200
+    command: --voice es_ES-carlfm-high --length-scale 1.185 --noise-w-scale 0.4 --noise-scale 0.4 --uri tcp://0.0.0.0:10200
     volumes:
       - ./volumes/piper-data:/data
     restart: unless-stopped
     networks:
       - jackbot
+    depends_on:
+      piper-voice-fetch:
+        condition: service_completed_successfully
 
   agent:
     image: agent:latest
