@@ -242,11 +242,21 @@ public sealed class WyomingSatelliteHost(
             {
                 PublishVoiceMetric(VoiceMetric.FollowUpTimedOut, session);
                 return Task.CompletedTask;
+            },
+            OnReplyTimeout = token =>
+            {
+                logger.LogWarning(
+                    "Reply handshake timed out for {Id} after {TimeoutMs}ms; ending conversation and re-arming wake",
+                    session.SatelliteId, followUp.ReplyTimeoutMs);
+                return Task.CompletedTask;
             }
         };
     }
 
-    private async Task TranscribeAndDispatchAsync(
+    // Returns true only when the transcript actually reached the agent. Empty/low-confidence
+    // transcripts and STT errors return false so the conversation ends and wake re-arms, rather
+    // than the loop blocking forever on a reply handshake the agent will never complete.
+    private async Task<bool> TranscribeAndDispatchAsync(
         SatelliteSession session, IAsyncEnumerable<AudioChunk> audio, bool isFollowUp, CancellationToken ct)
     {
         try
@@ -270,11 +280,12 @@ public sealed class WyomingSatelliteHost(
                 PublishVoiceMetric(VoiceMetric.FollowUpEngaged, session);
             }
 
-            await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
+            return await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
         }
         catch (OperationCanceledException)
         {
             // Connection tearing down.
+            return false;
         }
         catch (Exception ex)
         {
@@ -288,6 +299,7 @@ public sealed class WyomingSatelliteHost(
                 Error = ex.Message,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
             }, ct);
+            return false;
         }
     }
 

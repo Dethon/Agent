@@ -48,7 +48,12 @@ public sealed class SilenceGate(
                 return Decision.EndUtterance;
             }
         }
-        else if (noSpeechTimeout > TimeSpan.Zero && _elapsed >= noSpeechTimeout)
+
+        // The no-speech window expires unless MEANINGFUL speech (> minSpeech) has begun. Gating on
+        // _speechElapsed rather than _speechStarted is deliberate: a sub-minSpeech blip (echo tail,
+        // a cough) is noise by this gate's own definition and must not latch the window shut — else
+        // the capture would hang open until the maxUtterance cap instead of timing out here.
+        if (_speechElapsed <= minSpeech && noSpeechTimeout > TimeSpan.Zero && _elapsed >= noSpeechTimeout)
         {
             return Decision.NoSpeech;
         }

@@ -19,6 +19,7 @@ public class FollowUpConversationTests
         public readonly List<string> Events = [];
         public readonly FakeTimeProvider Time = new(DateTimeOffset.UtcNow);
         public readonly List<UtteranceCapture> Opened = [];
+        public bool DispatchResult = true;
         private TaskCompletionSource<bool> _reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public FollowUpConversation Build(FollowUpSettings followUp) => new(
@@ -36,14 +37,15 @@ public class FollowUpConversationTests
             TranscribeAndDispatch = (_, isFollowUp, _) =>
             {
                 Events.Add(isFollowUp ? "dispatch-followup" : "dispatch-first");
-                return Task.CompletedTask;
+                return Task.FromResult(DispatchResult);
             },
             EnqueueChime = _ => { Events.Add("chime"); return Task.CompletedTask; },
             EndConversation = _ => { Events.Add("end"); return Task.CompletedTask; },
             ResetTurn = () => _reply = new(TaskCreationOptions.RunContinuationsAsynchronously),
             AwaitReply = () => _reply.Task,
             OnFollowUpWindow = _ => Task.CompletedTask,
-            OnSilenceTimeout = _ => { Events.Add("timed-out"); return Task.CompletedTask; }
+            OnSilenceTimeout = _ => { Events.Add("timed-out"); return Task.CompletedTask; },
+            OnReplyTimeout = _ => { Events.Add("reply-timeout"); return Task.CompletedTask; }
         };
 
         public void Reply(bool spoke) => _reply.TrySetResult(spoke);
@@ -133,6 +135,45 @@ public class FollowUpConversationTests
         h.Events.ShouldContain("end");
         h.Events.ShouldNotContain("chime");
         h.Events.ShouldNotContain("timed-out");
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task Enabled_DispatchDidNotReachAgent_EndsWithoutWaitingForReply()
+    {
+        var h = new Harness { DispatchResult = false }; // empty/low-confidence transcript, no agent message
+        var sut = h.Build(new FollowUpSettings { Enabled = true });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        h.Opened[0].ForceEnd(); // utterance ended (speech), but transcript drops -> nothing dispatched
+
+        await Task.Delay(50);
+        // No reply will ever come; the loop must end instead of blocking on the handshake.
+        h.Events.ShouldContain("end");
+        h.Events.ShouldNotContain("chime");
+        h.Events.ShouldNotContain("reply-timeout");
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task Enabled_ReplyNeverResolves_TimesOutAndEndsConversation()
+    {
+        var h = new Harness();
+        var sut = h.Build(new FollowUpSettings { Enabled = true, ReplyTimeoutMs = 1000 });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        h.Opened[0].ForceEnd();
+        await Task.Delay(50);
+        // The agent never resolves the turn (no SignalTurnSpoken/Silent). The backstop must fire.
+        h.Time.Advance(TimeSpan.FromMilliseconds(1000));
+        await Task.Delay(50);
+
+        h.Events.ShouldContain("reply-timeout");
+        h.Events.ShouldContain("end");
 
         await StopAsync(sut, run);
     }

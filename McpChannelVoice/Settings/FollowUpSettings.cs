@@ -19,4 +19,10 @@ public record FollowUpSettings
 
     // Runaway cap: fall back to wake after this many consecutive follow-up turns.
     public int MaxTurns { get; init; } = 8;
+
+    // Backstop for a reply that never resolves the turn handshake (agent down, no MCP session,
+    // playback preempted/failed before drain). After this long with no spoken reply the turn ends
+    // and wake re-arms, so a missing reply can never wedge the satellite open indefinitely.
+    // Generous on purpose: must outlast agent thinking + tool calls + full TTS playback.
+    public int ReplyTimeoutMs { get; init; } = 120_000;
 }

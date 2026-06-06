@@ -139,6 +139,21 @@ public class SilenceGateTests
     }
 
     [Fact]
+    public void Process_SubMinSpeechBlipThenSilence_StillTimesOutAsNoSpeech()
+    {
+        var gate = FollowUpGate();
+
+        // A single 100 ms loud chunk does NOT exceed the 100 ms minSpeech gate, so it is noise.
+        // A noise blip (echo tail, a cough) must NOT disable the no-speech window — otherwise the
+        // capture hangs open until the maxUtterance cap. The window must still expire as NoSpeech.
+        Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.NoSpeech);
+    }
+
+    [Fact]
     public void Process_NoSpeechTimeoutDisabledByDefault_NeverReturnsNoSpeech()
     {
         var gate = NewGate(); // default gate has noSpeechTimeout = default (disabled)
