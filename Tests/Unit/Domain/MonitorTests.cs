@@ -7,6 +7,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.Extensions;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -25,6 +26,7 @@ internal sealed class FakeAiAgent : DisposableAgent
     public TimeSpan WarmupDelay { get; init; }
     public ConcurrentQueue<string> Events { get; } = new();
     public ConcurrentQueue<string> RestoredSessionKeys { get; } = new();
+    public ConcurrentQueue<IReadOnlyList<ChatMessage>> ReceivedMessages { get; } = new();
 
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
@@ -80,6 +82,7 @@ internal sealed class FakeAiAgent : DisposableAgent
     {
         await Task.CompletedTask;
         Events.Enqueue("run");
+        ReceivedMessages.Enqueue(messages.ToList());
         if (ExceptionToThrow is not null)
         {
             throw ExceptionToThrow;
@@ -237,6 +240,41 @@ public class ChatMonitorTests
         // Assert - at minimum a StreamComplete reply should be sent
         channel.SentReplies.ShouldContain(r =>
             r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
+    }
+
+    [Fact]
+    public async Task Monitor_VoiceMessageWithSatelliteId_SetsSatelliteIdOnUserMessage()
+    {
+        // Arrange
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var message = new ChannelMessage
+        {
+            ConversationId = "conv-1",
+            Content = "lights on",
+            Sender = "household",
+            ChannelId = "voice",
+            SatelliteId = "kitchen-01"
+        };
+        var channel = MonitorTestMocks.CreateChannel(channelId: "voice", messages: message);
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+
+        var monitor = new ChatMonitor(
+            [channel],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        // Act
+        await monitor.Monitor(CancellationToken.None);
+
+        // Assert - the satellite id rides on the ChatMessage handed to the agent
+        fakeAgent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        var userMessage = messages!.ShouldHaveSingleItem();
+        userMessage.GetSatelliteId().ShouldBe("kitchen-01");
     }
 
     [Fact]

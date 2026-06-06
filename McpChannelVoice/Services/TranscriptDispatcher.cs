@@ -60,6 +60,7 @@ public sealed class TranscriptDispatcher(
             transcript.Text,
             agentId,
             session.Config.Room,
+            session.SatelliteId,
             ct);
 
         await publisher.PublishAsync(

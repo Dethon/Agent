@@ -14,4 +14,5 @@ public record ChannelMessage
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     public string? Location { get; init; }
+    public string? SatelliteId { get; init; }
 }

@@ -14,5 +14,8 @@ public record ChannelMessageNotification
     // Optional originating room for room-aware prompts. Part of the shared channel protocol but
     // currently only populated by the voice channel; other channels leave it null.
     public string? Location { get; init; }
+    // Optional originating voice satellite id. Like Location, part of the shared protocol but
+    // currently only populated by the voice channel; other channels leave it null.
+    public string? SatelliteId { get; init; }
     public DateTimeOffset Timestamp { get; init; }
 }

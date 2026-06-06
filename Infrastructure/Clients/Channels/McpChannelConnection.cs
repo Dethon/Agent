@@ -91,7 +91,8 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
             AgentId = notification.AgentId,
             ReplyTo = notification.ReplyTo,
             Origin = notification.Origin,
-            Location = notification.Location
+            Location = notification.Location,
+            SatelliteId = notification.SatelliteId
         };
 
         _messageChannel.Writer.TryWrite(message);

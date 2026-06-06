@@ -74,13 +74,20 @@ public sealed class OpenRouterChatClient : IChatClient
             var msgSender = newMessage.GetSenderId();
             var timestamp = newMessage.GetTimestamp();
             var location = newMessage.GetLocation();
+            var satelliteId = newMessage.GetSatelliteId();
             if (newMessage.Role == ChatRole.User && (msgSender is not null || timestamp is not null))
             {
+                var hasLocation = !string.IsNullOrWhiteSpace(location);
+                var hasSatellite = !string.IsNullOrWhiteSpace(satelliteId);
                 var senderSegment = msgSender is null
                     ? null
-                    : string.IsNullOrWhiteSpace(location)
-                        ? $"Message from {msgSender}"
-                        : $"Message from {msgSender} (in {location})";
+                    : (hasLocation, hasSatellite) switch
+                    {
+                        (true, true) => $"Message from {msgSender} (in {location} via {satelliteId})",
+                        (true, false) => $"Message from {msgSender} (in {location})",
+                        (false, true) => $"Message from {msgSender} (via {satelliteId})",
+                        (false, false) => $"Message from {msgSender}"
+                    };
 
                 var prefix = (senderSegment, timestamp) switch
                 {

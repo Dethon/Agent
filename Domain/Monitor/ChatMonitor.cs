@@ -177,6 +177,7 @@ public class ChatMonitor(
                         var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);
                         userMessage.SetSenderId(x.Message.Sender);
                         userMessage.SetLocation(x.Message.Location);
+                        userMessage.SetSatelliteId(x.Message.SatelliteId);
                         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
                         if (memoryRecallHook is not null)
                         {

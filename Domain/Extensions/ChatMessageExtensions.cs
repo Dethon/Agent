@@ -11,6 +11,7 @@ public static class ChatMessageExtensions
     private const string TimestampKey = "Timestamp";
     private const string MemoryContextKey = "MemoryContext";
     private const string LocationKey = "Location";
+    private const string SatelliteIdKey = "SatelliteId";
 
     extension(ChatMessage message)
     {
@@ -56,6 +57,28 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[LocationKey] = location;
+        }
+
+        public string? GetSatelliteId()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(SatelliteIdKey);
+            return value switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+        }
+
+        public void SetSatelliteId(string? satelliteId)
+        {
+            if (string.IsNullOrWhiteSpace(satelliteId))
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[SatelliteIdKey] = satelliteId;
         }
 
         public DateTimeOffset? GetTimestamp()

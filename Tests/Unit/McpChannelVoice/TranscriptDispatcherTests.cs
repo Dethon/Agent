@@ -72,6 +72,18 @@ public class TranscriptDispatcherTests
     }
 
     [Fact]
+    public async Task DispatchAsync_GoodTranscript_EmitsSatelliteId()
+    {
+        var (sut, _, emitter) = Build();
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", default);
+
+        emitter.Captured.Count.ShouldBe(1);
+        emitter.Captured[0].SatelliteId.ShouldBe("kitchen-01");
+    }
+
+    [Fact]
     public async Task DispatchAsync_LowConfidence_DoesNotOpenConversation()
     {
         var (sut, manager, emitter) = Build();

@@ -43,6 +43,45 @@ public class OpenRouterChatClientPrefixTests : IDisposable
         FirstText().ShouldStartWith("Message from household (in the office):");
     }
 
+    [Fact]
+    public async Task GetStreamingResponseAsync_WithSenderLocationAndSatellite_RendersViaSatellite()
+    {
+        var msg = new ChatMessage(ChatRole.User, "lights on");
+        msg.SetSenderId("household");
+        msg.SetLocation("the office");
+        msg.SetSatelliteId("kitchen-01");
+
+        await _sut.GetStreamingResponseAsync([msg]).ToListAsync();
+
+        FirstText().ShouldStartWith("Message from household (in the office via kitchen-01):");
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_WithSenderAndSatelliteNoLocation_RendersViaSatellite()
+    {
+        var msg = new ChatMessage(ChatRole.User, "lights on");
+        msg.SetSenderId("household");
+        msg.SetSatelliteId("kitchen-01");
+
+        await _sut.GetStreamingResponseAsync([msg]).ToListAsync();
+
+        FirstText().ShouldStartWith("Message from household (via kitchen-01):");
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_WithSatelliteButNoSender_IgnoresSatellite()
+    {
+        var msg = new ChatMessage(ChatRole.User, "lights on");
+        msg.SetSatelliteId("kitchen-01");
+        msg.SetTimestamp(new DateTimeOffset(2026, 6, 4, 18, 22, 1, TimeSpan.Zero));
+
+        await _sut.GetStreamingResponseAsync([msg]).ToListAsync();
+
+        FirstText().ShouldStartWith("[Current time: ");
+        FirstText().ShouldNotContain("Message from");
+        FirstText().ShouldNotContain("via");
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("   ")]
