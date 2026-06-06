@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
-using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
@@ -25,6 +24,7 @@ public sealed class WyomingSatelliteHost(
     ISpeechToText speechToText,
     TranscriptDispatcher dispatcher,
     IMetricsPublisher metrics,
+    TimeProvider time,
     ILogger<WyomingSatelliteHost> logger) : IHostedService
 {
     private CancellationTokenSource? _cts;
@@ -123,19 +123,8 @@ public sealed class WyomingSatelliteHost(
         sessionRegistry.Register(session);
         logger.LogInformation("Connected to satellite {Id} at {Host}:{Port}", id, host, port);
 
-        var playbackFrames = 0L;
         var playbackTask = Task.Run(() => session.RunPlaybackLoopAsync(
-            async (chunk, jct) =>
-            {
-                if (Interlocked.Increment(ref playbackFrames) == 1)
-                {
-                    logger.LogInformation(
-                        "Playback: first frame to {Id} ({Rate}Hz/{Width}B/{Ch}ch, {Bytes} bytes)",
-                        id, chunk.Format.SampleRateHz, chunk.Format.SampleWidthBytes, chunk.Format.Channels,
-                        chunk.Data.Length);
-                }
-                await WritePlaybackFrameAsync(client, chunk, jct);
-            },
+            (chunk, jct) => WritePlaybackFrameAsync(client, chunk, jct),
             ct, logger,
             onAudioStart: (format, sct) => client.WriteAsync(WyomingEvent.Header("audio-start", new JsonObject
             {
@@ -165,13 +154,14 @@ public sealed class WyomingSatelliteHost(
                     logger.LogWarning(mex, "Failed to publish TtsError metric for {Id} ({Label})", id, job.Label);
                 }
             }), ct);
-        _ = playbackTask.ContinueWith(
-            t => logger.LogError(t.Exception, "Playback loop faulted for {Id} after {Frames} frame(s)",
-                id, Interlocked.Read(ref playbackFrames)),
-            TaskContinuationOptions.OnlyOnFaulted);
 
-        Channel<AudioChunk>? utterance = null;
-        SilenceGate? gate = null;
+        var followUp = voiceSettings.FollowUp with
+        {
+            Enabled = config.FollowUpEnabled ?? voiceSettings.FollowUp.Enabled
+        };
+
+        var coordinator = BuildCoordinator(id, config, client, session, followUp);
+        var conversationTask = Task.Run(() => coordinator.RunAsync(ct), ct);
 
         try
         {
@@ -182,26 +172,17 @@ public sealed class WyomingSatelliteHost(
                 switch (evt.Type)
                 {
                     case "run-pipeline":
-                    case "audio-start" when utterance is null:
-                        (utterance, gate) = BeginUtterance(client, session, ct);
+                    case "audio-start":
+                        coordinator.OnWake();
                         break;
 
-                    case "audio-chunk" when utterance is not null:
+                    case "audio-chunk":
                         var (rate, width, channels) = FormatOf(evt.Data);
-                        var decision = gate!.Process(evt.Payload.Span, rate, width, channels);
-                        await utterance.Writer.WriteAsync(ToChunk(evt.Payload, rate, width, channels), ct);
-                        if (decision == SilenceGate.Decision.EndUtterance)
-                        {
-                            utterance.Writer.TryComplete();
-                            utterance = null;
-                            gate = null;
-                        }
+                        session.RouteAudio(ToChunk(evt.Payload, rate, width, channels));
                         break;
 
-                    case "audio-stop" when utterance is not null:
-                        utterance.Writer.TryComplete();
-                        utterance = null;
-                        gate = null;
+                    case "audio-stop":
+                        session.EndCapture();
                         break;
 
                     case "error":
@@ -213,60 +194,63 @@ public sealed class WyomingSatelliteHost(
         }
         finally
         {
-            utterance?.Writer.TryComplete();
+            coordinator.Dispose();
             session.CompletePlayback();
             try
-            {
-                await playbackTask;
-            }
-            catch
-            {
-                // Playback loop unwinds on cancellation / disconnect.
-            }
+            { await playbackTask; }
+            catch { /* unwinds on cancellation / disconnect */ }
+            try
+            { await conversationTask; }
+            catch { /* unwinds on cancellation / disconnect */ }
             sessionRegistry.Unregister(id);
         }
     }
 
-    private (Channel<AudioChunk> Utterance, SilenceGate Gate) BeginUtterance(
-        WyomingClient client, SatelliteSession session, CancellationToken ct)
+    private FollowUpConversation BuildCoordinator(
+        string id, SatelliteConfig config, WyomingClient client, SatelliteSession session, FollowUpSettings followUp)
     {
-        var channel = Channel.CreateUnbounded<AudioChunk>();
-        var gate = new SilenceGate(
-            settings.SilenceRmsThreshold,
-            TimeSpan.FromMilliseconds(settings.TrailingSilenceMs),
-            TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
-            TimeSpan.FromMilliseconds(settings.MinSpeechMs));
-
-        _ = Task.Run(async () =>
+        return new FollowUpConversation(followUp, time)
         {
-            try
+            OpenCapture = isFollowUp =>
             {
-                await metrics.PublishAsync(new VoiceEvent
+                if (!isFollowUp)
                 {
-                    Metric = VoiceMetric.WakeTriggered,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
-                    ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-                }, ct);
-            }
-            catch (Exception ex)
+                    PublishVoiceMetric(VoiceMetric.WakeTriggered, session); // on-device wake started this conversation
+                }
+                return session.OpenCapture(new SilenceGate(
+                    settings.SilenceRmsThreshold,
+                    TimeSpan.FromMilliseconds(settings.TrailingSilenceMs),
+                    TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
+                    TimeSpan.FromMilliseconds(settings.MinSpeechMs),
+                    noSpeechTimeout: isFollowUp ? TimeSpan.FromMilliseconds(followUp.WindowMs) : TimeSpan.Zero));
+            },
+            CloseCapture = session.CloseCapture,
+            TranscribeAndDispatch = (audio, isFollowUp, token) =>
+                TranscribeAndDispatchAsync(session, audio, isFollowUp, token),
+            EnqueueChime = token => EnqueueChimeAsync(session, token),
+            EndConversation = token =>
             {
-                logger.LogWarning(ex, "Failed to publish WakeTriggered metric for {Id}", session.SatelliteId);
+                PublishVoiceMetric(VoiceMetric.FollowUpTimedOut, session);
+                return client.WriteAsync(
+                    WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), token);
+            },
+            ResetTurn = session.ResetTurn,
+            AwaitReply = session.WaitForTurnSpokenAsync,
+            OnFollowUpWindow = token =>
+            {
+                PublishVoiceMetric(VoiceMetric.FollowUpWindowOpened, session);
+                return Task.CompletedTask;
             }
-        }, ct);
-
-        _ = Task.Run(() => TranscribeAndReplyAsync(client, session, channel.Reader, ct), ct);
-        return (channel, gate);
+        };
     }
 
-    private async Task TranscribeAndReplyAsync(
-        WyomingClient client, SatelliteSession session, ChannelReader<AudioChunk> reader, CancellationToken ct)
+    private async Task TranscribeAndDispatchAsync(
+        SatelliteSession session, IAsyncEnumerable<AudioChunk> audio, bool isFollowUp, CancellationToken ct)
     {
         try
         {
             var sw = Stopwatch.StartNew();
-            var result = await speechToText.TranscribeAsync(reader.ReadAllAsync(ct), new TranscriptionOptions(), ct);
+            var result = await speechToText.TranscribeAsync(audio, new TranscriptionOptions(), ct);
             sw.Stop();
 
             await metrics.PublishAsync(new VoiceEvent
@@ -279,15 +263,16 @@ public sealed class WyomingSatelliteHost(
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
             }, ct);
 
-            // Stop the satellite streaming and re-arm wake detection.
-            await client.WriteAsync(
-                WyomingEvent.Header("transcript", new JsonObject { ["text"] = result.Text ?? string.Empty }), ct);
+            if (isFollowUp)
+            {
+                PublishVoiceMetric(VoiceMetric.FollowUpEngaged, session);
+            }
 
             await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
         }
         catch (OperationCanceledException)
         {
-            // Connection tearing down; nothing to report.
+            // Connection tearing down.
         }
         catch (Exception ex)
         {
@@ -301,17 +286,43 @@ public sealed class WyomingSatelliteHost(
                 Error = ex.Message,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
             }, ct);
+        }
+    }
 
-            // Release the satellite even on failure so it re-arms instead of streaming forever.
-            try
-            {
-                await client.WriteAsync(
-                    WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), ct);
-            }
-            catch
-            {
-                // Best effort.
-            }
+    private async Task EnqueueChimeAsync(SatelliteSession session, CancellationToken ct)
+    {
+        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var job = new PlaybackJob(
+            Label: $"chime:{session.SatelliteId}",
+            Priority: AnnouncePriority.High,
+            Audio: ListeningChime.Stream(),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; });
+
+        await session.EnqueuePlaybackAsync(job, voiceSettings.Announce.QueueMaxDepth);
+        await drained.Task.WaitAsync(ct);
+    }
+
+    private void PublishVoiceMetric(VoiceMetric metric, SatelliteSession session) =>
+        _ = SafePublishAsync(new VoiceEvent
+        {
+            Metric = metric,
+            SatelliteId = session.SatelliteId,
+            Room = session.Config.Room,
+            Identity = session.Config.Identity,
+            ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
+        });
+
+    private async Task SafePublishAsync(VoiceEvent evt)
+    {
+        try
+        {
+            await metrics.PublishAsync(evt, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to publish voice metric {Metric}", evt.Metric);
         }
     }
 

@@ -81,7 +81,11 @@ public sealed class SendReplyTool
             // messageId). Text chunks are never flagged complete, so this is where we
             // speak the accumulated reply.
             case ReplyContentType.StreamComplete:
-                await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
+                var spoke = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
+                if (!spoke)
+                {
+                    session.SignalTurnSilent();
+                }
                 return "ok";
 
             default:
@@ -89,7 +93,7 @@ public sealed class SendReplyTool
                 // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
                 if (p.IsComplete)
                 {
-                    await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
                 }
                 return "ok";
         }
@@ -156,7 +160,7 @@ public sealed class SendReplyTool
         }
     }
 
-    private static async Task FlushAndSpeakAsync(
+    private static async Task<bool> FlushAndSpeakAsync(
         SatelliteSession session,
         ReplyTextAccumulator accumulator,
         string conversationId,
@@ -165,10 +169,12 @@ public sealed class SendReplyTool
         IMetricsPublisher metrics)
     {
         var text = accumulator.Flush(conversationId);
-        if (!string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(text))
         {
-            await SpeakAsync(session, text, conversationId, tts, settings, metrics, default);
+            return false;
         }
+        await SpeakAsync(session, text, conversationId, tts, settings, metrics, default);
+        return true;
     }
 
     private static async Task SpeakAsync(
@@ -210,7 +216,8 @@ public sealed class SendReplyTool
                     Identity = session.Config.Identity,
                     ConversationId = conversationId
                 }, ct);
-            });
+            },
+            OnDrained: () => { session.SignalTurnSpoken(); return Task.CompletedTask; });
 
         await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
 
