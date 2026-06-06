@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Domain.DTOs.Voice;
+using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
@@ -9,13 +10,17 @@ public sealed record PlaybackJob(
     AnnouncePriority Priority,
     IAsyncEnumerable<AudioChunk> Audio,
     Func<string, Task> OnStarted,
-    Func<string, Task> OnPreempted);
+    Func<string, Task> OnPreempted,
+    Func<Task>? OnDrained = null);
 
 public sealed class SatelliteSession
 {
     private readonly Channel<PlaybackJob> _playback = Channel.CreateUnbounded<PlaybackJob>();
     private CancellationTokenSource? _currentPlaybackCts;
     private readonly Lock _gate = new();
+    private UtteranceCapture? _capture;
+    private readonly Lock _turnGate = new();
+    private TaskCompletionSource<bool> _turn = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public SatelliteSession(string satelliteId, SatelliteConfig config)
     {
@@ -58,6 +63,55 @@ public sealed class SatelliteSession
         }
     }
 
+    public UtteranceCapture OpenCapture(SilenceGate gate)
+    {
+        var capture = new UtteranceCapture(gate);
+        Volatile.Write(ref _capture, capture);
+        return capture;
+    }
+
+    public void CloseCapture() => Volatile.Write(ref _capture, null);
+
+    public bool HasActiveCapture => Volatile.Read(ref _capture) is not null;
+
+    public void RouteAudio(AudioChunk chunk) => Volatile.Read(ref _capture)?.Feed(chunk);
+
+    public void EndCapture() => Volatile.Read(ref _capture)?.ForceEnd();
+
+    // Callers must ResetTurn before the reply path can SignalTurnSpoken/SignalTurnSilent for
+    // the new turn; otherwise a signal lands on the discarded TCS and the awaiter blocks forever.
+    public void ResetTurn()
+    {
+        lock (_turnGate)
+        {
+            _turn = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
+
+    public Task<bool> WaitForTurnSpokenAsync()
+    {
+        lock (_turnGate)
+        {
+            return _turn.Task;
+        }
+    }
+
+    public void SignalTurnSpoken()
+    {
+        lock (_turnGate)
+        {
+            _turn.TrySetResult(true);
+        }
+    }
+
+    public void SignalTurnSilent()
+    {
+        lock (_turnGate)
+        {
+            _turn.TrySetResult(false);
+        }
+    }
+
     public async Task RunPlaybackLoopAsync(
         Func<AudioChunk, CancellationToken, Task> writer,
         CancellationToken ct,
@@ -73,6 +127,7 @@ public sealed class SatelliteSession
             { _currentPlaybackCts = jobCts; }
 
             var chunks = 0;
+            var drained = false;
             try
             {
                 // OnStarted side effects (e.g. a metrics publish) must neither abort this job's
@@ -97,6 +152,7 @@ public sealed class SatelliteSession
                     await writer(chunk, jobCts.Token);
                 }
                 logger?.LogInformation("Playback job {Label} drained {Chunks} chunk(s)", job.Label, chunks);
+                drained = true;
             }
             catch (OperationCanceledException) when (jobCts.IsCancellationRequested && !ct.IsCancellationRequested)
             {
@@ -141,6 +197,17 @@ public sealed class SatelliteSession
                     catch (Exception ex)
                     {
                         logger?.LogWarning(ex, "Failed to send audio-stop for {Label}", job.Label);
+                    }
+                }
+                if (drained && job.OnDrained is not null)
+                {
+                    try
+                    {
+                        await job.OnDrained();
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning(ex, "Playback OnDrained callback failed for {Label}", job.Label);
                     }
                 }
                 lock (_gate)
