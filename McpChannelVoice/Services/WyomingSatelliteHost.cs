@@ -125,7 +125,7 @@ public sealed class WyomingSatelliteHost(
 
         var playbackTask = Task.Run(() => session.RunPlaybackLoopAsync(
             (chunk, jct) => WritePlaybackFrameAsync(client, chunk, jct),
-            ct, logger,
+            ct, time, logger,
             onAudioStart: (format, sct) => client.WriteAsync(WyomingEvent.Header("audio-start", new JsonObject
             {
                 ["rate"] = format.SampleRateHz,

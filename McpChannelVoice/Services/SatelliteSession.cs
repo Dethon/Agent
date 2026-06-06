@@ -115,11 +115,13 @@ public sealed class SatelliteSession
     public async Task RunPlaybackLoopAsync(
         Func<AudioChunk, CancellationToken, Task> writer,
         CancellationToken ct,
+        TimeProvider? time = null,
         ILogger? logger = null,
         Func<AudioFormat, CancellationToken, Task>? onAudioStart = null,
         Func<CancellationToken, Task>? onAudioStop = null,
         Func<PlaybackJob, Exception, Task>? onError = null)
     {
+        time ??= TimeProvider.System;
         await foreach (var job in _playback.Reader.ReadAllAsync(ct))
         {
             var jobCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -128,6 +130,8 @@ public sealed class SatelliteSession
 
             var chunks = 0;
             var drained = false;
+            long firstChunkTimestamp = 0;
+            var totalAudio = TimeSpan.Zero;
             try
             {
                 // OnStarted side effects (e.g. a metrics publish) must neither abort this job's
@@ -144,10 +148,15 @@ public sealed class SatelliteSession
 
                 await foreach (var chunk in job.Audio.WithCancellation(jobCts.Token))
                 {
-                    if (chunks == 0 && onAudioStart is not null)
+                    if (chunks == 0)
                     {
-                        await onAudioStart(chunk.Format, jobCts.Token);
+                        firstChunkTimestamp = time.GetTimestamp();
+                        if (onAudioStart is not null)
+                        {
+                            await onAudioStart(chunk.Format, jobCts.Token);
+                        }
                     }
+                    totalAudio += DurationOf(chunk);
                     chunks++;
                     await writer(chunk, jobCts.Token);
                 }
@@ -199,7 +208,25 @@ public sealed class SatelliteSession
                         logger?.LogWarning(ex, "Failed to send audio-stop for {Label}", job.Label);
                     }
                 }
-                if (drained && job.OnDrained is not null)
+                if (drained && totalAudio > TimeSpan.Zero && !ct.IsCancellationRequested)
+                {
+                    // OnDrained means "the satellite finished PLAYING", not "we finished writing".
+                    // The Pi buffers the audio and plays PCM at real time, so wait out the remaining
+                    // nominal duration. Self-corrects for back-pressuring satellites (remaining <= 0).
+                    var remaining = totalAudio - time.GetElapsedTime(firstChunkTimestamp);
+                    if (remaining > TimeSpan.Zero)
+                    {
+                        try
+                        {
+                            await Task.Delay(remaining, time, ct);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // Connection tearing down.
+                        }
+                    }
+                }
+                if (drained && job.OnDrained is not null && !ct.IsCancellationRequested)
                 {
                     try
                     {
@@ -215,5 +242,14 @@ public sealed class SatelliteSession
                 jobCts.Dispose();
             }
         }
+    }
+
+    private static TimeSpan DurationOf(AudioChunk chunk)
+    {
+        var format = chunk.Format;
+        var bytesPerSecond = format.SampleRateHz * format.SampleWidthBytes * format.Channels;
+        return bytesPerSecond <= 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromSeconds((double)chunk.Data.Length / bytesPerSecond);
     }
 }

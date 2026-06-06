@@ -232,6 +232,40 @@ public class SatelliteSessionPlaybackTests
         Should.NotThrow(() => session.RouteAudio(loudChunk()));
     }
 
+    [Fact]
+    public async Task RunPlaybackLoop_WaitsForAudioPlaybackDuration_BeforeOnDrained()
+    {
+        var session = MakeSession();
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 16000 bytes at 16 kHz/16-bit/mono = exactly 500 ms of audio.
+        async IAsyncEnumerable<AudioChunk> halfSecond()
+        {
+            yield return new AudioChunk { Data = new byte[16000], Format = AudioFormat.WyomingStandard };
+            await Task.CompletedTask;
+        }
+
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: halfSecond(),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; });
+
+        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        await Task.Delay(80); // let the loop write the audio and reach the playback wait
+        drained.Task.IsCompleted.ShouldBeFalse(); // must NOT fire on write-drain — playback (500 ms) hasn't elapsed
+
+        time.Advance(TimeSpan.FromMilliseconds(500)); // playback completes
+        await drained.Task.WaitAsync(TimeSpan.FromSeconds(2)); // now OnDrained fires
+        session.CompletePlayback();
+        await pump;
+    }
+
     private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)
     {
         for (var i = 0; i < count; i++)
