@@ -266,6 +266,97 @@ public class SatelliteSessionPlaybackTests
         await pump;
     }
 
+    [Fact]
+    public async Task RunPlaybackLoop_FirstChunk_PublishesSynthesisAndTurnTiming()
+    {
+        var session = MakeSession();
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        session.MarkTurnStart(time.GetTimestamp());
+        time.Advance(TimeSpan.FromSeconds(2)); // capture + STT + agent thinking before synthesis begins
+
+        // Synthesis takes 300 ms to produce its first chunk; 16000 bytes = 500 ms of audio.
+        async IAsyncEnumerable<AudioChunk> audio()
+        {
+            time.Advance(TimeSpan.FromMilliseconds(300));
+            yield return new AudioChunk { Data = new byte[16000], Format = AudioFormat.WyomingStandard };
+            await Task.CompletedTask;
+        }
+
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: audio(),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
+
+        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+
+        var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        // TTS latency = synthesis request -> first audio chunk (300 ms), independent of the
+        // pre-synthesis turn time. Wake/turn -> first audio = 2000 + 300 = 2300 ms.
+        timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
+        timing.SinceTurnStart.ShouldBe(TimeSpan.FromMilliseconds(2300));
+
+        session.CompletePlayback();
+        await Task.Delay(80);                            // let the loop reach the playback-drain wait
+        time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RunPlaybackLoop_FirstChunk_NoTurnStart_TurnTimingNull()
+    {
+        var session = MakeSession();
+        var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // No MarkTurnStart: a job with no preceding turn (e.g. not wired) must NOT report a turn time,
+        // so WakeToFirstAudioMs is simply not published rather than emitting a garbage value.
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("hi", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
+
+        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        session.CompletePlayback();
+
+        var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        timing.SinceTurnStart.ShouldBeNull();
+        timing.SinceSynthesisStart.ShouldBeGreaterThanOrEqualTo(TimeSpan.Zero);
+
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RunPlaybackLoop_MultiChunk_InvokesOnFirstAudioOnce()
+    {
+        var session = MakeSession();
+        var invocations = 0;
+
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("x", count: 3),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: _ => { Interlocked.Increment(ref invocations); return Task.CompletedTask; });
+
+        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        session.CompletePlayback();
+        await pump;
+
+        invocations.ShouldBe(1); // fires only on the first chunk, not per chunk
+    }
+
     private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)
     {
         for (var i = 0; i < count; i++)

@@ -11,7 +11,13 @@ public sealed record PlaybackJob(
     IAsyncEnumerable<AudioChunk> Audio,
     Func<string, Task> OnStarted,
     Func<string, Task> OnPreempted,
-    Func<Task>? OnDrained = null);
+    Func<Task>? OnDrained = null,
+    Func<FirstAudioTiming, Task>? OnFirstAudio = null);
+
+// Timing captured the moment a job's first audio chunk is produced. SinceSynthesisStart is the
+// TTS time-to-first-audio (synthesis request -> first chunk); SinceTurnStart is the wake/turn-open
+// -> first audio latency, null when the job had no preceding user turn.
+public sealed record FirstAudioTiming(TimeSpan SinceSynthesisStart, TimeSpan? SinceTurnStart);
 
 public sealed class SatelliteSession
 {
@@ -21,6 +27,8 @@ public sealed class SatelliteSession
     private UtteranceCapture? _capture;
     private readonly Lock _turnGate = new();
     private TaskCompletionSource<bool> _turn = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private const long TurnNotStarted = long.MinValue;
+    private long _turnStartedAt = TurnNotStarted;
 
     public SatelliteSession(string satelliteId, SatelliteConfig config)
     {
@@ -77,6 +85,10 @@ public sealed class SatelliteSession
     public void RouteAudio(AudioChunk chunk) => Volatile.Read(ref _capture)?.Feed(chunk);
 
     public void EndCapture() => Volatile.Read(ref _capture)?.ForceEnd();
+
+    // Records the timestamp (from the playback loop's TimeProvider) at which the current user turn
+    // began, so the loop can report wake/turn -> first-audio latency. Set at capture-open each turn.
+    public void MarkTurnStart(long timestamp) => Interlocked.Exchange(ref _turnStartedAt, timestamp);
 
     // Callers must ResetTurn before the reply path can SignalTurnSpoken/SignalTurnSilent for
     // the new turn; otherwise a signal lands on the discarded TCS and the awaiter blocks forever.
@@ -146,6 +158,9 @@ public sealed class SatelliteSession
                     logger?.LogWarning(ex, "Playback OnStarted callback failed for {Label}", job.Label);
                 }
 
+                // Synthesis is lazy (the TTS enumerable is pulled here), so time it from just before
+                // the first pull to the first chunk — not from enqueue, which is a near-zero channel write.
+                var synthesisStart = time.GetTimestamp();
                 await foreach (var chunk in job.Audio.WithCancellation(jobCts.Token))
                 {
                     if (chunks == 0)
@@ -154,6 +169,24 @@ public sealed class SatelliteSession
                         if (onAudioStart is not null)
                         {
                             await onAudioStart(chunk.Format, jobCts.Token);
+                        }
+                        if (job.OnFirstAudio is not null)
+                        {
+                            var turnStart = Interlocked.Read(ref _turnStartedAt);
+                            var timing = new FirstAudioTiming(
+                                time.GetElapsedTime(synthesisStart, firstChunkTimestamp),
+                                turnStart == TurnNotStarted
+                                    ? null
+                                    : time.GetElapsedTime(turnStart, firstChunkTimestamp));
+                            // A failing metrics publish must neither abort playback nor tear down the loop.
+                            try
+                            {
+                                await job.OnFirstAudio(timing);
+                            }
+                            catch (Exception ex)
+                            {
+                                logger?.LogWarning(ex, "Playback OnFirstAudio callback failed for {Label}", job.Label);
+                            }
                         }
                     }
                     totalAudio += DurationOf(chunk);

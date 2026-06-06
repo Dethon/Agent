@@ -213,6 +213,7 @@ public sealed class WyomingSatelliteHost(
         {
             OpenCapture = isFollowUp =>
             {
+                session.MarkTurnStart(time.GetTimestamp()); // turn opens here; loop reports turn -> first-audio
                 if (!isFollowUp)
                 {
                     PublishVoiceMetric(VoiceMetric.WakeTriggered, session); // on-device wake started this conversation

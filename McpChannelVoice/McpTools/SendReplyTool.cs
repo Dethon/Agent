@@ -189,23 +189,14 @@ public sealed class SendReplyTool
         var voice = session.Config.Tts?.Wyoming?.Voice ?? settings.Tts.Wyoming?.Voice;
         var options = new SynthesisOptions { Voice = voice };
 
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        // Synthesis is lazy and runs inside the playback loop, so latency must be measured there.
+        // The loop times synthesis -> first audio chunk (TtsLatencyMs) and turn-open -> first audio
+        // (WakeToFirstAudioMs); emitting from here would only ever record the ~0 ms enqueue.
         var job = new PlaybackJob(
             Label: $"reply:{session.SatelliteId}",
             Priority: AnnouncePriority.Normal,
             Audio: tts.SynthesizeAsync(text, options, ct),
-            OnStarted: async _ =>
-            {
-                await metrics.PublishAsync(new VoiceEvent
-                {
-                    Metric = VoiceMetric.WakeToFirstAudioMs,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
-                    DurationMs = sw.ElapsedMilliseconds,
-                    ConversationId = conversationId
-                }, ct);
-            },
+            OnStarted: _ => Task.CompletedTask,
             OnPreempted: async _ =>
             {
                 await metrics.PublishAsync(new VoiceEvent
@@ -217,18 +208,33 @@ public sealed class SendReplyTool
                     ConversationId = conversationId
                 }, ct);
             },
-            OnDrained: () => { session.SignalTurnSpoken(); return Task.CompletedTask; });
+            OnDrained: () => { session.SignalTurnSpoken(); return Task.CompletedTask; },
+            OnFirstAudio: async timing =>
+            {
+                await metrics.PublishAsync(new VoiceEvent
+                {
+                    Metric = VoiceMetric.TtsLatencyMs,
+                    SatelliteId = session.SatelliteId,
+                    Room = session.Config.Room,
+                    Identity = session.Config.Identity,
+                    DurationMs = (long)timing.SinceSynthesisStart.TotalMilliseconds,
+                    ConversationId = conversationId
+                }, ct);
+
+                if (timing.SinceTurnStart is { } turn)
+                {
+                    await metrics.PublishAsync(new VoiceEvent
+                    {
+                        Metric = VoiceMetric.WakeToFirstAudioMs,
+                        SatelliteId = session.SatelliteId,
+                        Room = session.Config.Room,
+                        Identity = session.Config.Identity,
+                        DurationMs = (long)turn.TotalMilliseconds,
+                        ConversationId = conversationId
+                    }, ct);
+                }
+            });
 
         await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
-
-        await metrics.PublishAsync(new VoiceEvent
-        {
-            Metric = VoiceMetric.TtsLatencyMs,
-            SatelliteId = session.SatelliteId,
-            Room = session.Config.Room,
-            Identity = session.Config.Identity,
-            DurationMs = sw.ElapsedMilliseconds,
-            ConversationId = conversationId
-        }, ct);
     }
 }

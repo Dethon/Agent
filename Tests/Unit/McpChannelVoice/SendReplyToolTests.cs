@@ -2,6 +2,8 @@ using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
 using McpChannelVoice.McpTools;
@@ -25,6 +27,7 @@ public class SendReplyToolTests
     private readonly VoiceConversationManager _manager;
     private readonly string _conversationId;
     private readonly IServiceProvider _services;
+    private readonly List<VoiceEvent> _published = [];
 
     public SendReplyToolTests()
     {
@@ -56,12 +59,24 @@ public class SendReplyToolTests
             new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5),
             NullLogger<VoiceDeliveryRegistry>.Instance);
 
+        var metrics = new Mock<IMetricsPublisher>();
+        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .Callback<MetricEvent, CancellationToken>((e, _) =>
+            {
+                if (e is VoiceEvent v)
+                {
+                    lock (_published)
+                    { _published.Add(v); }
+                }
+            });
+
         _services = new ServiceCollection()
             .AddSingleton(_sessions)
             .AddSingleton(_accumulator)
             .AddSingleton(_manager)
             .AddSingleton(_tts.Object)
-            .AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>())
+            .AddSingleton(metrics.Object)
             .AddSingleton(new VoiceSettings())
             .AddSingleton(delivery)
             .AddSingleton<ILogger<SendReplyTool>>(NullLogger<SendReplyTool>.Instance)
@@ -144,5 +159,33 @@ public class SendReplyToolTests
         result.ShouldBe("ok");
         _tts.Verify(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task McpRun_StreamComplete_PublishesTtsLatencyFromPlaybackNotEnqueue()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        _session.MarkTurnStart(time.GetTimestamp());
+        time.Advance(TimeSpan.FromMilliseconds(1000)); // STT + agent thinking before the reply arrives
+
+        await SendReplyTool.McpRun(_conversationId, "hola mundo", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        // The reply job is enqueued (a non-blocking channel write) but playback hasn't run yet, so no
+        // TTS-latency metric exists. The bug published TtsLatencyMs here, right after the enqueue (~0 ms).
+        _published.ShouldNotContain(e => e.Metric == VoiceMetric.TtsLatencyMs);
+
+        // Drain the playback loop: the first synthesized chunk triggers OnFirstAudio, which publishes
+        // the latency metrics from where synthesis actually happens.
+        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        _session.CompletePlayback();
+        await Task.Delay(80);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        _published.Count(e => e.Metric == VoiceMetric.TtsLatencyMs).ShouldBe(1);
+        var wake = _published.SingleOrDefault(e => e.Metric == VoiceMetric.WakeToFirstAudioMs);
+        wake.ShouldNotBeNull();
+        wake.DurationMs.ShouldBe(1000); // turn-start -> first audio (synthesis was instant in fake time)
     }
 }
