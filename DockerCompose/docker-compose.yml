@@ -601,7 +601,7 @@ services:
   wyoming-piper:
     image: rhasspy/wyoming-piper:latest
     container_name: wyoming-piper
-    command: --voice es_AR-daniela-high --length-scale 1.05 --noise-w-scale 0.8 --noise-scale 0.667 --uri tcp://0.0.0.0:10200
+    command: --voice es_AR-daniela-high --length-scale 1.1 --noise-w-scale 0.85 --noise-scale 0.667 --uri tcp://0.0.0.0:10200
     volumes:
       - ./volumes/piper-data:/data
     restart: unless-stopped
