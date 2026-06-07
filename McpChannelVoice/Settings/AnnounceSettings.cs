@@ -6,5 +6,5 @@ public record AnnounceSettings
     public string Token { get; init; } = "";
     public bool BindToLoopbackOnly { get; init; }
     public int QueueMaxDepth { get; init; } = 8;
-    public int MaxTextLength { get; init; } = 1000;
+    public int MaxTextLength { get; init; } = 50000;
 }

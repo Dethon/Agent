@@ -270,7 +270,11 @@ public sealed class WyomingSatelliteHost(
         try
         {
             var sw = Stopwatch.StartNew();
-            var result = await speechToText.TranscribeAsync(audio, new TranscriptionOptions(), ct);
+            // Honor a per-satellite STT language override (symmetric with the per-satellite
+            // Tts.Wyoming.Voice override resolved in SendReplyTool/AnnouncementService); null falls
+            // back to the global Stt.Wyoming.Language inside the backend.
+            var options = new TranscriptionOptions { Language = session.Config.Stt?.Wyoming?.Language };
+            var result = await speechToText.TranscribeAsync(audio, options, ct);
             sw.Stop();
 
             await metrics.PublishAsync(new VoiceEvent

@@ -20,5 +20,4 @@ public record SegmentedSttConfig
     public int SegmentSilenceMs { get; init; } = 350;
     public int MinSegmentMs { get; init; } = 800;
     public int MaxInFlightDecodes { get; init; } = 1;
-    public bool FinalReconcile { get; init; }
 }

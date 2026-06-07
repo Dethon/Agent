@@ -104,12 +104,14 @@ public class WyomingSatelliteHostTests
         }, ct);
 
         var stt = new Mock<ISpeechToText>();
+        string? capturedLanguage = null;
         stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
                                          It.IsAny<TranscriptionOptions>(),
                                          It.IsAny<CancellationToken>()))
             .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
                 async (audio, opts, token) =>
                 {
+                    capturedLanguage = opts.Language;
                     await foreach (var _ in audio.WithCancellation(token))
                     { }
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
@@ -139,7 +141,10 @@ public class WyomingSatelliteHostTests
                 Identity = "household",
                 Room = "Kitchen",
                 WakeWord = "hey_jarvis",
-                Address = $"tcp://127.0.0.1:{port}"
+                Address = $"tcp://127.0.0.1:{port}",
+                // Per-satellite STT language override must reach the backend (symmetric with the
+                // per-satellite Tts.Wyoming.Voice override), not be silently dropped.
+                Stt = new SttSettings { Wyoming = new WyomingSttConfig { Language = "en" } }
             }
         });
 
@@ -164,6 +169,8 @@ public class WyomingSatelliteHostTests
         msg.ConversationId.ShouldNotBeNullOrWhiteSpace();
         msg.Sender.ShouldBe("household");
         msg.AgentId.ShouldBe("mycroft");
+
+        capturedLanguage.ShouldBe("en"); // per-satellite Stt.Wyoming.Language threaded into TranscriptionOptions
 
         var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
         transcriptText.ShouldBe(""); // legacy path re-arms with an (ignored) empty transcript
