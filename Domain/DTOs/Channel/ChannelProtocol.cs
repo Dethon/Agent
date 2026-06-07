@@ -15,6 +15,12 @@ public static class ChannelProtocol
     public const string CreateConversationTool = "create_conversation";
     public const string RegisterAgentsTool = "register_agents";
 
+    // The voice channel attaches to a shared conversation rather than owning one: its
+    // create_conversation hands back the id it was given (it has no persisted TopicId of its
+    // own). Delivery fan-out orders these targets last so a topic-owning channel always anchors
+    // the shared id. Matches the "voice"/"voice:<satellite>" deliverTo convention (SchedulingPrompt).
+    public const string VoiceChannelId = "voice";
+
     // A TypeInfoResolver is mandatory: the MCP SDK's SendNotificationAsync calls
     // JsonSerializerOptions.MakeReadOnly() on these options, which throws if no resolver is set.
     // Without it, channel emitters silently failed to deliver channel/message notifications.

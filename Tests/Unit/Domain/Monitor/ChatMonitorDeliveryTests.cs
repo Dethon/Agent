@@ -184,4 +184,39 @@ public class ChatMonitorDeliveryTests
         targets[0].ConversationId.ShouldBe("minted-signalr");
         targets[1].ConversationId.ShouldBe("minted-signalr");
     }
+
+    [Fact]
+    public async Task ResolveDeliveryTargets_VoiceListedBeforeSignalr_StillAnchorsSharedIdOnSignalr()
+    {
+        // Voice can only ATTACH to an existing conversation (it has no persisted TopicId to hand
+        // back), so a topic-owning channel must anchor the shared id and become targets[0] (the
+        // chat-history persistence + approval anchor). Even when the schedule lists voice FIRST,
+        // resolution must order voice last so signalr mints the shared id and voice attaches to it.
+        // Otherwise voice anchors a id signalr ignores -> two divergent ids -> empty WebChat thread.
+        var origin = Channel("scheduling");
+        var signalr = Channel("signalr");
+        var voice = new Mock<IChannelConnection>();
+        voice.SetupGet(c => c.ChannelId).Returns("voice");
+        voice.Setup(c => c.CreateConversationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, CancellationToken _) => existing ?? "minted-voice");
+        var channels = new[] { origin, signalr, voice.Object };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1",
+            Content = "Avisa a Fran",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "mycroft",
+            ReplyTo = [new ReplyTarget("voice", null, "fran-office-01"), new ReplyTarget("signalr", null)]
+        };
+
+        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+
+        targets.Count.ShouldBe(2);
+        // signalr (owning) anchors and is targets[0]; voice attaches to the same id.
+        targets[0].Channel.ChannelId.ShouldBe("signalr");
+        targets[0].ConversationId.ShouldBe("minted-signalr");
+        targets.ShouldAllBe(t => t.ConversationId == "minted-signalr");
+    }
 }

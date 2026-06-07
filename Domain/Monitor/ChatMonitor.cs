@@ -42,8 +42,17 @@ public class ChatMonitor(
         // conversation — displayed by WebChat and spoken by voice — not a populated thread
         // plus an empty duplicate. Later targets that need minting attach to this id (the
         // voice channel binds its satellite to it instead of persisting its own topic).
+        //
+        // Voice can only ATTACH (it returns the id it is handed, having no TopicId of its own to
+        // persist), so a topic-owning channel must anchor: order attach-only voice targets last
+        // regardless of how the schedule listed them. This also makes targets[0] — the
+        // chat-history persistence + approval-routing anchor — a channel that actually displays
+        // the conversation. OrderBy is stable, so the author's ordering is otherwise preserved.
+        var replyTo = message.ReplyTo
+            .OrderBy(t => t.ChannelId == ChannelProtocol.VoiceChannelId ? 1 : 0)
+            .ToList();
         string? shared = null;
-        foreach (var target in message.ReplyTo)
+        foreach (var target in replyTo)
         {
             var channel = channels.FirstOrDefault(c => c.ChannelId == target.ChannelId);
             if (channel is null)
