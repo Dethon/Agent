@@ -536,7 +536,7 @@ services:
     # stay a single argument.
     command:
       - --model
-      - small
+      - base
       - --language
       - es
       - --device
@@ -548,7 +548,7 @@ services:
       - --beam-size
       - "5"
       - --initial-prompt
-      - "Conversación en español de España con el asistente de voz sobre domótica, la casa, recordatorios, listas de la compra y preguntas generales que pueden incluir nombres propios o de series/películas/videojuegos. Los nombres propios pueden estar en inglés u otro idioma"
+      - "Conversación en español de España, Castellano, con el asistente de voz sobre domótica, la casa, recordatorios, listas de la compra y preguntas generales que pueden incluir nombres propios o de series/películas/canciones/videojuegos. Los nombres propios pueden estar en inglés u otro idioma"
       - --uri
       - tcp://0.0.0.0:10300
     volumes:
@@ -558,11 +558,15 @@ services:
       - jackbot
 
   piper-voice-fetch:
-    # es_ES-carlfm-high is an unofficial Piper voice (HF friyin/vits-piper-es_ES-carlfm-high)
-    # that is NOT in Piper's catalog, so wyoming-piper cannot auto-download it. Fetch the model
-    # + config into the shared piper-data volume before wyoming-piper starts. Idempotent: skips
-    # files already present, so it no-ops on every `up` after the first. Runs as root because the
-    # volume is root-owned (populated by the wyoming-piper container itself).
+    # Fetch Piper voices that won't land in the shared piper-data volume on their own, before
+    # wyoming-piper starts:
+    #   - es_ES-carlfm-high — unofficial (HF friyin/vits-piper-es_ES-carlfm-high), not in the catalog.
+    #   - es_MX-claude-high — official Piper catalog voice (rhasspy/piper-voices).
+    #   - es_MX-laura-high  — unofficial community voice (HF HirCoir/Piper-TTS-Laura).
+    # wyoming-piper serves any voice present in /data; select one per request via the synthesize
+    # voice name (--voice below is only the default). Idempotent: skips files already present, so it
+    # no-ops on every `up` after the first. Runs as root because the volume is root-owned (populated
+    # by the wyoming-piper container itself).
     image: curlimages/curl:latest
     container_name: piper-voice-fetch
     user: root
@@ -571,15 +575,23 @@ services:
       - |
         set -e
         d=/data
-        base=https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main
-        for f in es_ES-carlfm-high.onnx es_ES-carlfm-high.onnx.json; do
-          if [ -s "$$d/$$f" ]; then
-            echo "piper-voice-fetch: $$f already present"
+        fetch() {
+          if [ -s "$$d/$$2" ]; then
+            echo "piper-voice-fetch: $$2 already present"
           else
-            echo "piper-voice-fetch: downloading $$f"
-            curl -fsSL -o "$$d/$$f" "$$base/$$f"
+            echo "piper-voice-fetch: downloading $$2"
+            curl -fsSL -o "$$d/$$2" "$$1/$$2"
           fi
-        done
+        }
+        carlfm=https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main
+        fetch "$$carlfm" es_ES-carlfm-high.onnx
+        fetch "$$carlfm" es_ES-carlfm-high.onnx.json
+        claude=https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/es/es_MX/claude/high
+        fetch "$$claude" es_MX-claude-high.onnx
+        fetch "$$claude" es_MX-claude-high.onnx.json
+        laura=https://huggingface.co/HirCoir/Piper-TTS-Laura/resolve/main
+        fetch "$$laura" es_MX-laura-high.onnx
+        fetch "$$laura" es_MX-laura-high.onnx.json
     volumes:
       - ./volumes/piper-data:/data
     restart: "no"
@@ -589,7 +601,7 @@ services:
   wyoming-piper:
     image: rhasspy/wyoming-piper:latest
     container_name: wyoming-piper
-    command: --voice es_ES-carlfm-high --length-scale 1.19 --noise-w-scale 0.4 --noise-scale 0.4 --uri tcp://0.0.0.0:10200
+    command: --voice es_AR-daniela-high --length-scale 1.05 --noise-w-scale 0.8 --noise-scale 0.667 --uri tcp://0.0.0.0:10200
     volumes:
       - ./volumes/piper-data:/data
     restart: unless-stopped
