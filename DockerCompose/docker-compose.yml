@@ -548,7 +548,7 @@ services:
       - --beam-size
       - "5"
       - --initial-prompt
-      - "Conversación en español de España, Castellano, con el asistente de voz sobre domótica, la casa, recordatorios, listas de la compra y preguntas generales que pueden incluir nombres propios o de series/películas/canciones/videojuegos. Los nombres propios pueden estar en inglés u otro idioma"
+      - "Conversación en español de España, Castellano, con el asistente de voz sobre domótica, la casa, recordatorios, listas de la compra y preguntas generales que pueden incluir nombres propios o de series/películas/canciones/videojuegos. Los nombres propios pueden estar en inglés u otro idioma. Se mencionarán nombres de ciudades de España en peticiones sobre el tiempo u actividades locales"
       - --uri
       - tcp://0.0.0.0:10300
     volumes:
