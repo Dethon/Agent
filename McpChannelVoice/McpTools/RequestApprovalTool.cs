@@ -42,7 +42,7 @@ public sealed class RequestApprovalTool
         var session = satelliteId is null ? null : sessions.Get(satelliteId);
         if (session is null)
         {
-            return p.Mode == ApprovalMode.Notify ? "notified" : "declined";
+            return p.Mode == ApprovalMode.Notify ? "notified" : "rejected";
         }
 
         if (p.Mode == ApprovalMode.Notify)
@@ -88,13 +88,13 @@ public sealed class RequestApprovalTool
                 case ApprovalResponse.Approved:
                     return "approved";
                 case ApprovalResponse.Declined:
-                    return "declined";
+                    return "rejected";
             }
 
             prompt = $"No entendí. ¿Apruebas {toolList}? Di sí o no.";
         }
 
-        return "declined";
+        return "rejected";
     }
 
     private static async Task SpeakAsync(

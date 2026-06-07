@@ -419,6 +419,26 @@ public class SatelliteSessionPlaybackTests
         failed.Task.IsCompletedSuccessfully.ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task EnqueuePlayback_AfterChannelCompleted_ReturnsFalse()
+    {
+        var session = MakeSession();
+        session.CompletePlayback(); // satellite disconnected -> playback channel completed
+
+        var job = new PlaybackJob(
+            Label: "x",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("x", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask);
+
+        // Must return false (dropped) rather than throwing ChannelClosedException, so callers
+        // like the announce endpoint don't surface a 500.
+        var accepted = await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+
+        accepted.ShouldBeFalse();
+    }
+
     private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)
     {
         for (var i = 0; i < count; i++)

@@ -586,7 +586,10 @@ services:
             echo "piper-voice-fetch: $$2 already present"
           else
             echo "piper-voice-fetch: downloading $$2"
-            curl -fsSL -o "$$d/$$2" "$$1/$$2"
+            # Download to a temp path and move on success so a truncated/failed transfer never
+            # leaves a partial file that the [ -s ] check treats as complete on the next run.
+            curl -fsSL --remove-on-error -o "$$d/$$2.tmp" "$$1/$$2"
+            mv "$$d/$$2.tmp" "$$d/$$2"
           fi
         }
         carlfm=https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main

@@ -180,7 +180,7 @@ public class RequestApprovalToolTests : IDisposable
     }
 
     [Fact]
-    public async Task RequestMode_AmbiguousThenNegative_ReturnsDeclined()
+    public async Task RequestMode_AmbiguousThenNegative_ReturnsRejected()
     {
         _stt.SetupSequence(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TranscriptionResult { Text = "maybe", Confidence = 0.9 })
@@ -193,7 +193,7 @@ public class RequestApprovalToolTests : IDisposable
             _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
 
         await feed.CancelAsync();
-        result.ShouldBe("declined");
+        result.ShouldBe("rejected");
     }
 
     [Fact]
@@ -210,16 +210,16 @@ public class RequestApprovalToolTests : IDisposable
             _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
 
         await feed.CancelAsync();
-        result.ShouldBe("declined");
+        result.ShouldBe("rejected");
     }
 
     [Fact]
-    public async Task McpRun_UnknownConversation_ReturnsDeclined()
+    public async Task McpRun_UnknownConversation_ReturnsRejected()
     {
         var result = await RequestApprovalTool.McpRun(
             "ghost-01:999", ApprovalMode.Request, [MakeRequest()], _services);
 
-        result.ShouldBe("declined");
+        result.ShouldBe("rejected");
     }
 
 }

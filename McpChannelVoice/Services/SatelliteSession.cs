@@ -47,7 +47,7 @@ public sealed class SatelliteSession
     public string SatelliteId { get; }
     public SatelliteConfig Config { get; }
 
-    public async ValueTask<bool> EnqueuePlaybackAsync(PlaybackJob job, int queueMaxDepth)
+    public ValueTask<bool> EnqueuePlaybackAsync(PlaybackJob job, int queueMaxDepth)
     {
         if (job.Priority == AnnouncePriority.High)
         {
@@ -67,18 +67,20 @@ public sealed class SatelliteSession
                 }
                 seq = ++_enqueueSeq;
             }
-            await _playback.Writer.WriteAsync((seq, job));
-            return true;
+            // TryWrite (unbounded channel) returns false only once the writer is completed — i.e. the
+            // satellite disconnected and the playback loop tore down. Returning false instead of
+            // throwing ChannelClosedException lets callers (e.g. announce) record a dropped target.
+            return ValueTask.FromResult(_playback.Writer.TryWrite((seq, job)));
         }
 
         if (job.Priority == AnnouncePriority.Low && _playback.Reader.Count > 0)
         {
-            return false;
+            return ValueTask.FromResult(false);
         }
 
         if (_playback.Reader.Count >= queueMaxDepth)
         {
-            return false;
+            return ValueTask.FromResult(false);
         }
 
         long normalSeq;
@@ -86,8 +88,7 @@ public sealed class SatelliteSession
         {
             normalSeq = ++_enqueueSeq;
         }
-        await _playback.Writer.WriteAsync((normalSeq, job));
-        return true;
+        return ValueTask.FromResult(_playback.Writer.TryWrite((normalSeq, job)));
     }
 
     public void CompletePlayback() => _playback.Writer.TryComplete();

@@ -125,7 +125,7 @@
         _sub = Store.StateObservable.Subscribe(s =>
         {
             _state = s;
-            _utterances = s.Events.Count(e => e.Metric == VoiceMetric.UtteranceTranscribed && e.Outcome == "dispatched");
+            _utterances = s.Events.Count(e => e.Metric == VoiceMetric.UtteranceTranscribed);
             var lat = s.Events.Where(e => e.Metric == VoiceMetric.WakeToFirstAudioMs && e.DurationMs is not null)
                               .Select(e => e.DurationMs!.Value).OrderBy(x => x).ToList();
             _medianLatency = lat.Count > 0 ? lat[lat.Count / 2] : 0;

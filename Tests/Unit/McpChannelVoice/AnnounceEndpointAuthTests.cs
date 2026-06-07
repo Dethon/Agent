@@ -96,6 +96,18 @@ public class AnnounceEndpointAuthTests
     }
 
     [Fact]
+    public async Task NullTarget_Returns400()
+    {
+        // `required` on AnnounceRequest.Target only enforces the JSON key is present, not non-null,
+        // so a {"target": null} body deserializes with Target == null. The handler must 400, not 500.
+        using var client = await BuildClientAsync(new AnnounceSettings { Enabled = true, Token = "expected" });
+        client.DefaultRequestHeaders.Add("X-Announce-Token", "expected");
+        var response = await client.PostAsJsonAsync("/api/voice/announce",
+            new AnnounceRequest { Target = null!, Text = "hi" });
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task MalformedVoice_Returns400()
     {
         using var client = await BuildClientAsync(new AnnounceSettings { Enabled = true, Token = "expected" });

@@ -46,7 +46,7 @@ public static partial class AnnounceEndpoint
                 return Results.BadRequest(new { error = "Voice must contain only letters, digits, '-' or '_'." });
             }
 
-            if (!HasTarget(body.Target))
+            if (body.Target is null || !HasTarget(body.Target))
             {
                 return Results.BadRequest(new { error = "Target must specify at least one of satelliteId, satelliteIds, room, or all." });
             }

@@ -105,7 +105,7 @@
 
         _subscriptions.Add(Voice.StateObservable.Subscribe(s =>
         {
-            _voiceUtterances = s.Events.Count(e => e.Metric == VoiceMetric.UtteranceTranscribed && e.Outcome == "dispatched");
+            _voiceUtterances = s.Events.Count(e => e.Metric == VoiceMetric.UtteranceTranscribed);
             var lat = s.Events.Where(e => e.Metric == VoiceMetric.WakeToFirstAudioMs && e.DurationMs is not null)
                               .Select(e => e.DurationMs!.Value).OrderBy(x => x).ToList();
             _voiceLatency = lat.Count > 0 ? lat[lat.Count / 2] : 0;
