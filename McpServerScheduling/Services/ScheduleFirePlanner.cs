@@ -40,8 +40,14 @@ public static class ScheduleFirePlanner
             return targets[0];
         }
 
-        // Join the distinct sub-addresses (satellite ids). Bare entries (null address) contribute
-        // nothing; if every entry was bare the merged address stays null (= "all" for voice).
+        // A bare entry (null/whitespace address) means "all" for that channel; if any entry in the
+        // group is bare it subsumes the specific sub-addresses, so the whole group is "all".
+        if (targets.Any(t => string.IsNullOrWhiteSpace(t.Address)))
+        {
+            return new ReplyTarget(group.Key, null, null);
+        }
+
+        // Otherwise join the distinct specific sub-addresses (e.g. satellite ids).
         var addresses = targets
             .Select(t => t.Address)
             .Where(a => !string.IsNullOrWhiteSpace(a))

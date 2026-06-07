@@ -68,20 +68,34 @@ public sealed class RequestApprovalTool
 
         for (var attempt = 1; attempt <= 2; attempt++)
         {
-            await SpeakAndAwaitAsync(session, prompt, tts, settings, cancellationToken);
+            if (!await SpeakAndAwaitAsync(session, prompt, tts, settings, cancellationToken))
+            {
+                // Satellite disconnected mid-approval; abandon rather than opening a capture on a
+                // dead session that would block until the request is cancelled.
+                return "rejected";
+            }
 
             var answer = await CaptureAnswerAsync(session, stt, wyoming, followUp, cancellationToken);
             var parsed = ApprovalGrammarParser.Parse(answer);
 
-            await metrics.PublishAsync(new VoiceEvent
+            try
             {
-                Metric = VoiceMetric.ApprovalResolved,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
-                Outcome = parsed.ToString(),
-                ConversationId = p.ConversationId
-            }, default);
+                await metrics.PublishAsync(new VoiceEvent
+                {
+                    Metric = VoiceMetric.ApprovalResolved,
+                    SatelliteId = session.SatelliteId,
+                    Room = session.Config.Room,
+                    Identity = session.Config.Identity,
+                    Outcome = parsed.ToString(),
+                    ConversationId = p.ConversationId
+                }, default);
+            }
+            catch (Exception ex)
+            {
+                // A metrics-publisher blip must not discard an already-decided approval.
+                services.GetService<ILogger<RequestApprovalTool>>()?
+                    .LogWarning(ex, "Failed to publish ApprovalResolved metric");
+            }
 
             switch (parsed)
             {
@@ -112,7 +126,7 @@ public sealed class RequestApprovalTool
         await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
     }
 
-    private static async Task SpeakAndAwaitAsync(
+    private static async Task<bool> SpeakAndAwaitAsync(
         SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings,
         CancellationToken ct)
     {
@@ -131,10 +145,12 @@ public sealed class RequestApprovalTool
         if (!accepted)
         {
             // Satellite disconnected between session resolution and enqueue (playback channel
-            // completed) — don't block on a drained handshake that will never be signalled.
-            return;
+            // completed) — signal the caller to abandon the approval instead of opening a capture
+            // on a dead session that would block until the request is cancelled.
+            return false;
         }
         await drained.Task.WaitAsync(ct);
+        return true;
     }
 
     private static async Task<string> CaptureAnswerAsync(

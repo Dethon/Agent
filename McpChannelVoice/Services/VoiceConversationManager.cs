@@ -14,11 +14,12 @@ public sealed class VoiceConversationManager(
     TimeSpan lifetime,
     ILogger<VoiceConversationManager> logger)
 {
-    private sealed record Entry(string ConversationId, ITimer Timer);
+    private sealed record Entry(string ConversationId, ITimer Timer, long Generation);
 
     private readonly Dictionary<string, Entry> _bySatellite = new();
     private readonly Dictionary<string, string> _conversationToSatellite = new();
     private readonly Lock _gate = new();
+    private long _generation;
 
     // firstUtterance only seeds the new conversation's WebChat topic (its InitialPrompt);
     // the caller still dispatches the utterance itself via the channel using the returned id.
@@ -34,7 +35,7 @@ public sealed class VoiceConversationManager(
         {
             if (_bySatellite.TryGetValue(session.SatelliteId, out var existing))
             {
-                existing.Timer.Change(lifetime, Timeout.InfiniteTimeSpan);
+                Renew(session.SatelliteId, existing);
                 return existing.ConversationId;
             }
         }
@@ -53,13 +54,14 @@ public sealed class VoiceConversationManager(
         {
             if (_bySatellite.TryGetValue(session.SatelliteId, out var existing))
             {
-                existing.Timer.Change(lifetime, Timeout.InfiniteTimeSpan);
+                Renew(session.SatelliteId, existing);
                 return existing.ConversationId;
             }
 
             var satelliteId = session.SatelliteId;
-            var timer = time.CreateTimer(_ => Expire(satelliteId), null, lifetime, Timeout.InfiniteTimeSpan);
-            _bySatellite[satelliteId] = new Entry(creation.Identity.ConversationId, timer);
+            var generation = ++_generation;
+            var timer = time.CreateTimer(_ => Expire(satelliteId, generation), null, lifetime, Timeout.InfiniteTimeSpan);
+            _bySatellite[satelliteId] = new Entry(creation.Identity.ConversationId, timer, generation);
             _conversationToSatellite[creation.Identity.ConversationId] = satelliteId;
             logger.LogInformation(
                 "Voice conversation {ConversationId} opened for satellite {Satellite}",
@@ -84,15 +86,26 @@ public sealed class VoiceConversationManager(
         }
     }
 
-    private void Expire(string satelliteId)
+    // Re-create the idle timer on each renewal so the firing callback carries the generation it was
+    // armed with; a stale fire that lost the race to a renewal sees a newer generation and no-ops.
+    private void Renew(string satelliteId, Entry existing)
+    {
+        existing.Timer.Dispose();
+        var generation = ++_generation;
+        var timer = time.CreateTimer(_ => Expire(satelliteId, generation), null, lifetime, Timeout.InfiniteTimeSpan);
+        _bySatellite[satelliteId] = existing with { Timer = timer, Generation = generation };
+    }
+
+    private void Expire(string satelliteId, long generation)
     {
         lock (_gate)
         {
-            if (!_bySatellite.Remove(satelliteId, out var entry))
+            if (!_bySatellite.TryGetValue(satelliteId, out var entry) || entry.Generation != generation)
             {
                 return;
             }
 
+            _bySatellite.Remove(satelliteId);
             _conversationToSatellite.Remove(entry.ConversationId);
             entry.Timer.Dispose();
             accumulator.Flush(entry.ConversationId);

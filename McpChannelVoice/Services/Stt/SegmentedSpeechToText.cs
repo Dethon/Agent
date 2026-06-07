@@ -41,18 +41,31 @@ public sealed class SegmentedSpeechToText(
         var all = new List<AudioChunk>();
         var current = new List<AudioChunk>();
 
-        await foreach (var chunk in audio.WithCancellation(ct))
+        try
         {
-            all.Add(chunk);
-            current.Add(chunk);
-            if (gate.Process(chunk.Data.Span, chunk.Format.SampleRateHz,
-                    chunk.Format.SampleWidthBytes, chunk.Format.Channels) == SilenceGate.Decision.EndUtterance)
+            await foreach (var chunk in audio.WithCancellation(ct))
             {
-                var closed = current;
-                current = new List<AudioChunk>();
-                gate.Reset();
-                segments.Add(new Segment(closed, StartDecode(closed, options, slot, ct)));
+                all.Add(chunk);
+                current.Add(chunk);
+                if (gate.Process(chunk.Data.Span, chunk.Format.SampleRateHz,
+                        chunk.Format.SampleWidthBytes, chunk.Format.Channels) == SilenceGate.Decision.EndUtterance)
+                {
+                    var closed = current;
+                    current = new List<AudioChunk>();
+                    gate.Reset();
+                    segments.Add(new Segment(closed, StartDecode(closed, options, slot, ct)));
+                }
             }
+        }
+        catch
+        {
+            // Audio enumeration aborted (e.g. cancellation): observe the decode tasks already
+            // started so a later non-OCE fault doesn't surface as an unobserved TaskException.
+            foreach (var seg in segments)
+            {
+                ObserveAndDiscard(seg.Task);
+            }
+            throw;
         }
 
         if (gate.SpeechElapsed > TimeSpan.Zero)
