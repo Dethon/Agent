@@ -483,9 +483,6 @@ services:
         - mcp-printer:latest
       args:
         - BUILDKIT_INLINE_CACHE=1
-    environment:
-      - PRINTERURI=${PRINTER_URI:-ipp://192.168.4.59:631/ipp/print}
-      - SPOOLPATH=/spool
     volumes:
       - printer-spool:/spool
     restart: unless-stopped
@@ -516,8 +513,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      - Announce__Token=${ANNOUNCE_TOKEN}
     networks:
       - jackbot
     depends_on:
