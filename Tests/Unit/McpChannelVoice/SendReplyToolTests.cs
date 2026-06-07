@@ -134,6 +134,23 @@ public class SendReplyToolTests
     }
 
     [Fact]
+    public async Task McpRun_PartialTextThenError_SpeaksPartialAndErrorOnceInOrder()
+    {
+        // Faulted agent run as ChatMonitor emits it: buffered Text (never isComplete) -> Error
+        // (isComplete=false) -> trailing StreamComplete. The partial answer and the error must be
+        // spoken together, in order, as a SINGLE utterance — never the error first with the leftover
+        // partial spoken after it (the divergence from the Telegram/ServiceBus flush-on-error contract).
+        await SendReplyTool.McpRun(_conversationId, "El tiempo es", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "boom", ReplyContentType.Error, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _tts.Verify(t => t.SynthesizeAsync(
+            It.Is<string>(s => s.Contains("El tiempo es") && s.Contains("boom")
+                && s.IndexOf("El tiempo es", StringComparison.Ordinal) < s.IndexOf("boom", StringComparison.Ordinal)),
+            It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task McpRun_Reasoning_DoesNothing()
     {
         var result = await SendReplyTool.McpRun(_conversationId, "thinking", ReplyContentType.Reasoning, false, null, _services);

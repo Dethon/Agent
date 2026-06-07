@@ -35,9 +35,9 @@ public sealed class WyomingTextToSpeech(
             {
                 format = new AudioFormat
                 {
-                    SampleRateHz = evt.Data["rate"]?.GetValue<int>() ?? 22050,
-                    SampleWidthBytes = evt.Data["width"]?.GetValue<int>() ?? 2,
-                    Channels = evt.Data["channels"]?.GetValue<int>() ?? 1
+                    SampleRateHz = WyomingNumber.ReadInt(evt.Data, "rate", 22050),
+                    SampleWidthBytes = WyomingNumber.ReadInt(evt.Data, "width", 2),
+                    Channels = WyomingNumber.ReadInt(evt.Data, "channels", 1)
                 };
                 continue;
             }
@@ -54,6 +54,15 @@ public sealed class WyomingTextToSpeech(
             {
                 logger.LogDebug("Piper synthesis complete");
                 yield break;
+            }
+            if (evt.Type == "error")
+            {
+                // A Wyoming 'error' event (e.g. Piper failed) otherwise falls through and the stream
+                // ends with no audio-stop, yielding a silent successful empty synthesis. Throw so the
+                // playback loop's onError/OnFailed path fires (TtsError metric) instead of masking it.
+                var message = evt.Data["text"]?.GetValue<string>() ?? "unknown error";
+                logger.LogWarning("Wyoming TTS reported error: {Message}", message);
+                throw new InvalidOperationException($"Wyoming TTS error: {message}");
             }
         }
     }

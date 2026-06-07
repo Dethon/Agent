@@ -74,7 +74,17 @@ public sealed class SendReplyTool
                 return "ok";
 
             case ReplyContentType.Error:
-                await SpeakAsync(session, $"Hubo un error: {p.Content}", p.ConversationId, tts, settings, metrics, default);
+                // Treat the error as terminal reply text: append it so any buffered partial answer
+                // and the error are spoken together, in order, by the trailing StreamComplete —
+                // not the error first with the leftover partial spoken after it. Mirrors the
+                // flush-on-error contract honored by the Telegram/ServiceBus channels and voice's
+                // own scheduled path. (ChatMonitor sends Error with isComplete=false then a
+                // StreamComplete; the isComplete guard only covers a transport that completes early.)
+                accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
+                if (p.IsComplete)
+                {
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
+                }
                 return "ok";
 
             // Completion arrives as a dedicated StreamComplete event (empty content, no

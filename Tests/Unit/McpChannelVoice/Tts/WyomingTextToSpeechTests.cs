@@ -64,4 +64,47 @@ public class WyomingTextToSpeechTests
 
         collected.ShouldBe([1, 2, 3, 4, 5, 6, 7, 8]);
     }
+
+    [Fact]
+    public async Task SynthesizeAsync_WyomingErrorEvent_Throws()
+    {
+        // A server-side TTS failure arrives as a Wyoming 'error' event with no audio. Previously it
+        // fell through to a silent successful empty synthesis; now it must surface as a throw so the
+        // playback loop's onError/OnFailed (TtsError metric) path fires instead of masking it.
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var serverTask = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync();
+            await using var stream = client.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+
+            await foreach (var evt in reader.ReadAllAsync(CancellationToken.None))
+            {
+                if (evt.Type != "synthesize")
+                {
+                    continue;
+                }
+                await writer.WriteAsync(WyomingEvent.Header("error",
+                    new JsonObject { ["text"] = "piper crashed" }), CancellationToken.None);
+                return;
+            }
+        });
+
+        var sut = new WyomingTextToSpeech(
+            new WyomingTtsConfig { Host = "127.0.0.1", Port = port },
+            NullLogger<WyomingTextToSpeech>.Instance);
+
+        await Should.ThrowAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (var _ in sut.SynthesizeAsync("hola", new SynthesisOptions(), CancellationToken.None))
+            {
+            }
+        });
+        await serverTask;
+        listener.Stop();
+    }
 }

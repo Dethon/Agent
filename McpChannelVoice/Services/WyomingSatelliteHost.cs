@@ -369,9 +369,9 @@ public sealed class WyomingSatelliteHost(
 
     private static (int Rate, int Width, int Channels) FormatOf(JsonObject data) =>
     (
-        data["rate"]?.GetValue<int>() ?? AudioFormat.WyomingStandard.SampleRateHz,
-        data["width"]?.GetValue<int>() ?? AudioFormat.WyomingStandard.SampleWidthBytes,
-        data["channels"]?.GetValue<int>() ?? AudioFormat.WyomingStandard.Channels
+        WyomingNumber.ReadInt(data, "rate", AudioFormat.WyomingStandard.SampleRateHz),
+        WyomingNumber.ReadInt(data, "width", AudioFormat.WyomingStandard.SampleWidthBytes),
+        WyomingNumber.ReadInt(data, "channels", AudioFormat.WyomingStandard.Channels)
     );
 
     private static bool TryParseAddress(string address, out string host, out int port)
