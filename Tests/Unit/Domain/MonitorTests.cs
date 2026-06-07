@@ -425,8 +425,12 @@ public class ChatMonitorTests
         webchat.Complete();
         await run;
 
-        webchat.SentReplies.ShouldContain(r =>
-            r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
+        // The second reply must be routed to WebChat ONLY — not also spoken on the voice satellite
+        // that opened the conversation. Counting terminal StreamCompletes per channel proves both
+        // the routing (each turn went to its own origin) and the exclusion (no duplicate fan-out):
+        // voice received turn 1's completion only, webchat received turn 2's completion only.
+        voice.SentReplies.Count(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete).ShouldBe(1);
+        webchat.SentReplies.Count(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete).ShouldBe(1);
     }
 
     [Fact]

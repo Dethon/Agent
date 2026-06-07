@@ -127,6 +127,25 @@ public class SegmentedSpeechToTextTests
     }
 
     [Fact]
+    public async Task TranscribeAsync_ManySegments_PermitsOverlapUpToMaxInFlightDecodes()
+    {
+        // Complement to the cap test above: with maxInFlight=2 the decoder MUST actually overlap two
+        // segment decodes — the latency optimization that justifies this class. A hardcoded-serial
+        // implementation (or one ignoring the config) would pass the cap test but fail this one.
+        var inner = new FakeStt(async count =>
+        {
+            await Task.Delay(50);
+            return new TranscriptionResult { Text = count.ToString() };
+        });
+
+        await New(inner, Config(maxInFlight: 2)).TranscribeAsync(
+            Stream(Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.MaxConcurrent.ShouldBe(2);
+    }
+
+    [Fact]
     public async Task TranscribeAsync_ShortFinalPhrase_MergesBackwardIntoPreviousSegment()
     {
         var inner = new FakeStt();

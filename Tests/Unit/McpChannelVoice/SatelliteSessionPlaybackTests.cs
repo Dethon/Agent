@@ -43,6 +43,44 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
+    public async Task EnqueuePlayback_LowPriorityWhileQueueNonEmpty_IsDropped()
+    {
+        // The returned bool is observable behavior: AnnouncementService maps it to
+        // Status queued/dropped + the AnnounceQueued/AnnounceError metric. A Low-priority job must
+        // be dropped (return false) when anything is already queued, so it never delays speech.
+        var session = MakeSession();
+        var normal = new PlaybackJob(
+            Label: "normal",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("normal", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask);
+        var low = normal with { Label = "low", Priority = AnnouncePriority.Low };
+
+        // No playback loop is running, so the first job stays queued (Reader.Count > 0).
+        (await session.EnqueuePlaybackAsync(normal, queueMaxDepth: 4)).ShouldBeTrue();
+        (await session.EnqueuePlaybackAsync(low, queueMaxDepth: 4)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task EnqueuePlayback_NormalWhenQueueAtMaxDepth_IsDropped()
+    {
+        // The depth cap is the backpressure guard: once the queue is full, further Normal jobs
+        // must be dropped (return false) rather than unbounded-buffered.
+        var session = MakeSession();
+        PlaybackJob Job(string label) => new(
+            Label: label,
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio(label, count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask);
+
+        // No loop running: fill to depth 1, then the next Normal overflows.
+        (await session.EnqueuePlaybackAsync(Job("a"), queueMaxDepth: 1)).ShouldBeTrue();
+        (await session.EnqueuePlaybackAsync(Job("b"), queueMaxDepth: 1)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task EnqueuePlayback_HighPriorityWhileIdle_PreemptsQueuedAheadButPlaysItself()
     {
         var session = MakeSession();
