@@ -22,6 +22,10 @@ public class PlaywrightWebBrowser(
     private readonly AccessibilitySnapshotService _snapshotService = new();
     private readonly Random _random = new();
     private bool _initialized;
+    // Bumped under _initLock each time a fresh browser connection is established. Lets the reconnect
+    // path replace only the connection that actually failed, so concurrent callers don't tear down a
+    // connection another caller already re-established.
+    private long _connectionGeneration;
     private const int MaxCaptchaRetries = 2;
     private const int DefaultOperationTimeoutMs = 15_000;
     private const int ConnectionRetryAttempts = 3;
@@ -620,19 +624,19 @@ public class PlaywrightWebBrowser(
     // closed" to the caller.
     private async Task<T> ExecuteWithReconnectAsync<T>(Func<Task<T>> operation)
     {
-        await EnsureInitializedAsync();
+        var generation = await EnsureInitializedAsync();
         try
         {
             return await operation();
         }
         catch (Exception ex) when (IsConnectionClosed(ex))
         {
-            // Reconnect via EnsureInitializedAsync, which tears down the stale connection and
-            // reconnects while holding _initLock: a dropped WebSocket makes IsConnectionHealthy()
-            // false, so it runs ResetStaleConnectionAsync() under the lock. Calling that reset
-            // directly here would mutate _browser/_context/_sessions outside the lock, racing
-            // concurrent (re)initialization.
-            await EnsureInitializedAsync();
+            // A "page/context/browser has been closed" error is definitive proof the connection is
+            // unusable — more reliable than IBrowser.IsConnected, which can still report true when
+            // only the page or context died. Force a reconnect of the generation we just used, under
+            // _initLock; if a concurrent caller already replaced it, this no-ops and we retry on the
+            // fresh connection instead of tearing it down.
+            await EnsureConnectionAsync(replaceGeneration: generation);
             return await operation();
         }
     }
@@ -646,25 +650,36 @@ public class PlaywrightWebBrowser(
          ex.Message.Contains("disconnected", StringComparison.OrdinalIgnoreCase) ||
          ex.Message.Contains("WebSocket", StringComparison.OrdinalIgnoreCase));
 
-    internal async Task EnsureInitializedAsync()
+    internal Task<long> EnsureInitializedAsync() => EnsureConnectionAsync(replaceGeneration: null);
+
+    // replaceGeneration: when set, the caller's connection (that generation) failed mid-operation, so
+    // replace it even though IsConnectionHealthy() may still report true — a closed page/context can
+    // leave IBrowser.IsConnected == true. If another caller already advanced the generation, the
+    // connection has already been replaced and this returns the current one without reconnecting.
+    private async Task<long> EnsureConnectionAsync(long? replaceGeneration)
     {
-        if (IsConnectionHealthy())
+        if (replaceGeneration is null && IsConnectionHealthy())
         {
-            return;
+            return Volatile.Read(ref _connectionGeneration);
         }
 
         await _initLock.WaitAsync();
         try
         {
-            if (IsConnectionHealthy())
+            if (replaceGeneration is { } stale && _connectionGeneration != stale)
             {
-                return;
+                return _connectionGeneration;
             }
 
-            // A previous connection died (Camoufox restart, idle drop, network blip).
-            // Tear down the stale browser/context/sessions before reconnecting, otherwise
-            // every call would keep failing with "Target page, context or browser has been
-            // closed" until the process restarts.
+            if (replaceGeneration is null && IsConnectionHealthy())
+            {
+                return _connectionGeneration;
+            }
+
+            // A previous connection died (Camoufox restart, idle drop, network blip) or a closed
+            // page/context was detected mid-operation. Tear down the stale browser/context/sessions
+            // before reconnecting, otherwise every call would keep failing with "Target page, context
+            // or browser has been closed" until the process restarts.
             if (_initialized)
             {
                 await ResetStaleConnectionAsync();
@@ -689,6 +704,7 @@ public class PlaywrightWebBrowser(
             _context.SetDefaultTimeout(DefaultOperationTimeoutMs);
 
             _initialized = true;
+            return ++_connectionGeneration;
         }
         finally
         {
