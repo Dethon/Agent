@@ -14,12 +14,14 @@ public class VoicePromptTests
             ("laura-office-01", "Laura's office")
         ]);
 
-        result.ShouldBe(
-            "## Voice satellites\n\n" +
-            "These are the voice satellites you can be heard on — the spoken devices placed around the home. Each entry is a stable satellite id and the room it's in:\n\n" +
-            "- fran-office-01 — Fran's office\n" +
-            "- laura-office-01 — Laura's office\n\n" +
-            "Each incoming message tells you which satellite and room it came from, so you can tailor answers to where the person is.");
+        // Pin the heading and the per-satellite "- {id} — {room}" line format, but not the
+        // surrounding descriptive prose (which is tunable copy) — and assert input order is preserved
+        // (a regression that sorted or reversed the satellites would otherwise slip through).
+        result.ShouldContain("## Voice satellites");
+        result.ShouldContain("- fran-office-01 — Fran's office");
+        result.ShouldContain("- laura-office-01 — Laura's office");
+        result.IndexOf("fran-office-01", StringComparison.Ordinal)
+            .ShouldBeLessThan(result.IndexOf("laura-office-01", StringComparison.Ordinal));
     }
 
     [Fact]

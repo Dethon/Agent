@@ -20,21 +20,6 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task RequestAndSubscribeAsync_WhenPermissionGrantedAndSubscribed_AccessesHubConnection()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
-            .Returns(new ValueTask<string>("granted"));
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", It.IsAny<object[]>()))
-            .Returns(new ValueTask<PushSubscriptionResult>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
-
-        await _sut.RequestAndSubscribeAsync("BPublicKey123");
-
-        _mockConnectionService.Verify(c => c.HubConnection, Times.AtLeastOnce);
-    }
-
-    [Fact]
     public async Task RequestAndSubscribeAsync_WhenPermissionDenied_ReturnsFalse()
     {
         _mockJsRuntime

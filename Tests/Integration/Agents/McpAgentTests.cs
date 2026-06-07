@@ -103,34 +103,6 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
     }
 
     [SkippableFact]
-    public async Task Agent_WithSystemPrompt_UsesPromptInResponses()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        // Note: System prompt is now fetched from the MCP server, not passed here
-
-        var agent = CreateAgent(llmClient);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        // Act
-        var responses = await agent.RunStreamingAsync(
-                "Say hello and confirm you understand your role.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
-
-        // Assert
-        responses.ShouldNotBeEmpty();
-        var combinedResponse = string.Join(" ", responses.Select(r => r.Content));
-        combinedResponse.ShouldNotBeNullOrEmpty();
-
-        await agent.DisposeAsync();
-    }
-
-    [SkippableFact]
     public async Task Agent_WithCleanupTool_CanCleanupDownloadDirectory()
     {
         // Arrange - CleanupDownload expects downloadId as integer

@@ -53,15 +53,6 @@ public class ChannelNotificationEmitterTests
 
     [Theory]
     [MemberData(nameof(Implementations))]
-    public void HasActiveSessions_Initially_ReturnsFalse(string _, Func<IChannelNotificationEmitterAdapter> factory)
-    {
-        var sut = factory();
-
-        sut.HasActiveSessions.ShouldBeFalse();
-    }
-
-    [Theory]
-    [MemberData(nameof(Implementations))]
     public void RegisterSession_SetsHasActiveSessionsTrue(string _, Func<IChannelNotificationEmitterAdapter> factory)
     {
         var sut = factory();

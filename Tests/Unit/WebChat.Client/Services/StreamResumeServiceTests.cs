@@ -5,6 +5,7 @@ using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
+using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
@@ -272,6 +273,7 @@ public sealed class StreamResumeServiceTests : IDisposable
     public async Task TryResumeStreamAsync_WithPendingApproval_SetsApprovalRequest()
     {
         var topic = CreateTopic(topicId: "topic-1");
+        using var approvalStore = new ApprovalStore(_dispatcher);
         var approval = new ToolApprovalRequestMessage("approval-1", []);
         _approvalService.SetPendingApproval("topic-1", approval);
         _messagingService.SetStreamState("topic-1", new StreamState(
@@ -286,10 +288,24 @@ public sealed class StreamResumeServiceTests : IDisposable
             new ChatStreamMessage { Content = "done", MessageId = "msg-1" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
 
+        // The pending approval may be cleared once the stream completes, so capture it as it is set:
+        // resume must surface the server-side pending approval (ShowApproval) for the reconnecting
+        // client, otherwise the user is left with an invisible, un-answerable tool prompt.
+        ToolApprovalRequestMessage? shown = null;
+        string? shownTopic = null;
+        using var subscription = approvalStore.StateObservable.Subscribe(s =>
+        {
+            if (s.CurrentRequest is not null)
+            {
+                shown = s.CurrentRequest;
+                shownTopic = s.TopicId;
+            }
+        });
+
         await _resumeService.TryResumeStreamAsync(topic);
 
-        // At some point during resume, approval was set
-        // It may be cleared after stream completes, so we just verify no exception
+        shown.ShouldBe(approval);
+        shownTopic.ShouldBe("topic-1");
     }
 
     #endregion

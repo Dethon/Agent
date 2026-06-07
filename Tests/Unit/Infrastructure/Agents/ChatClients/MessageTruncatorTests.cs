@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Shouldly;
@@ -33,10 +32,10 @@ public class MessageTruncatorTests
             new Dictionary<string, object?> { ["x"] = 1 });
         var msg = new ChatMessage(ChatRole.Assistant, [call]);
 
-        var expectedJson = JsonSerializer.Serialize(new { name = "doStuff", arguments = call.Arguments });
-        var expectedTokens = MessageTruncator.EstimateTokens(expectedJson) + 4;
-
-        MessageTruncator.EstimateMessageTokens(msg).ShouldBe(expectedTokens);
+        // Production serializes {"name":"doStuff","arguments":{"x":1}} = 38 chars => ceil(38/4)=10
+        // tokens, + 4 per-message overhead. Pinned (not re-serialized) so a change to the envelope
+        // shape — e.g. dropping the name/arguments wrapper — shifts the count and trips this test.
+        MessageTruncator.EstimateMessageTokens(msg).ShouldBe(14);
     }
 
     [Fact]
@@ -45,10 +44,10 @@ public class MessageTruncatorTests
         var result = new FunctionResultContent("call-1", "ok-result");
         var msg = new ChatMessage(ChatRole.Tool, [result]);
 
-        var expectedJson = JsonSerializer.Serialize(result.Result);
-        var expectedTokens = MessageTruncator.EstimateTokens(expectedJson) + 4;
-
-        MessageTruncator.EstimateMessageTokens(msg).ShouldBe(expectedTokens);
+        // Serialized result is the quoted string "ok-result" = 11 chars => ceil(11/4)=3 tokens,
+        // + 4 per-message overhead = 7. Pinned so a routing regression that lets the tool result
+        // fall through to the generic-content overhead (4+4=8) is caught.
+        MessageTruncator.EstimateMessageTokens(msg).ShouldBe(7);
     }
 
     [Fact]
@@ -317,13 +316,13 @@ public class MessageTruncatorTests
 
         var overhead = MessageTruncator.EstimateOptionsOverheadTokens(options);
 
-        var expectedTokens =
-            MessageTruncator.EstimateTokens(fn.Name)
-            + MessageTruncator.EstimateTokens(fn.Description)
-            + MessageTruncator.EstimateTokens(fn.JsonSchema.GetRawText())
-            + 4; // per-tool overhead
-
-        overhead.ShouldBe(expectedTokens);
+        // The JSON schema text is library-generated, so its token count stays dynamic — but it MUST
+        // contribute (a dropped schema term silently shrinks the budget and overflows the model).
+        // Name ("doStuff") => 2 tokens, description ("does the thing") => 4 tokens, + 4 per-tool
+        // overhead are pinned, so dropping any term or drifting the overhead constant trips the test.
+        var schemaTokens = MessageTruncator.EstimateTokens(fn.JsonSchema.GetRawText());
+        schemaTokens.ShouldBeGreaterThan(0);
+        overhead.ShouldBe(2 + 4 + schemaTokens + 4);
     }
 
     [Fact]
@@ -340,12 +339,11 @@ public class MessageTruncatorTests
 
         var overhead = MessageTruncator.EstimateOptionsOverheadTokens(options);
 
-        var expectedToolTokens =
-            MessageTruncator.EstimateTokens(fn.Name)
-            + MessageTruncator.EstimateTokens(fn.Description)
-            + MessageTruncator.EstimateTokens(fn.JsonSchema.GetRawText())
-            + 4;
-
-        overhead.ShouldBe(100 + expectedToolTokens);
+        // Tool overhead is taken from the SUT itself (not re-derived from the formula) so this test
+        // pins the SUM: instructions (400 chars => 100 tokens) + tool overhead. A regression that
+        // combined the two with Math.Max instead of '+' would still pass each single-operand sibling
+        // but fails here, since 100 + toolOverhead > max(100, toolOverhead) when both are non-zero.
+        var toolOverhead = MessageTruncator.EstimateOptionsOverheadTokens(new ChatOptions { Tools = [fn] });
+        overhead.ShouldBe(100 + toolOverhead);
     }
 }
