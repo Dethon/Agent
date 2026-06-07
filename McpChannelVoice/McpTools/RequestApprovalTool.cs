@@ -127,7 +127,13 @@ public sealed class RequestApprovalTool
             OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
             OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
 
-        await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
+        var accepted = await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
+        if (!accepted)
+        {
+            // Satellite disconnected between session resolution and enqueue (playback channel
+            // completed) — don't block on a drained handshake that will never be signalled.
+            return;
+        }
         await drained.Task.WaitAsync(ct);
     }
 
@@ -147,8 +153,17 @@ public sealed class RequestApprovalTool
             TimeSpan.FromMilliseconds(wyoming.MinSpeechMs),
             noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
 
-        var outcome = await capture.Completed.WaitAsync(ct);
-        session.CloseCapture();
+        CaptureOutcome outcome;
+        try
+        {
+            outcome = await capture.Completed.WaitAsync(ct);
+        }
+        finally
+        {
+            // Always close the capture, even if the wait is cancelled, so a cancelled approval
+            // doesn't leave a dangling mic capture routing audio into a dead turn.
+            session.CloseCapture();
+        }
 
         if (outcome == CaptureOutcome.NoSpeech)
         {

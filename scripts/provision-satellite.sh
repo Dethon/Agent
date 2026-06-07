@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 3 ]]; then
-  echo "Usage: $0 <satellite-id> <hub-host> <wake-word> [mic-device] [button-gpio]"
-  echo "  e.g.: $0 kitchen-01 hub.local hey_jarvis plughw:CARD=seeed2micvoicec,DEV=0 5"
+if [[ $# -lt 2 ]]; then
+  echo "Usage: $0 <satellite-id> <wake-word> [satellite-port] [mic-device] [button-gpio]"
+  echo "  e.g.: $0 fran-office-01 ok_nabu 10700 plughw:CARD=seeed2micvoicec,DEV=0 5"
+  echo "  The McpChannelVoice hub DIALS this satellite; set <satellite-port> to match the"
+  echo "  satellite's Address in appsettings (Satellites:<id>:Address)."
   exit 64
 fi
 
 satellite_id=$1
-hub_host=$2
-wake_word=$3
+wake_word=$2
+satellite_port=${3:-10700}
 mic_device=${4:-plughw:CARD=seeed2micvoicec,DEV=0}
 button_gpio=${5:-}
 
@@ -54,13 +56,12 @@ Requires=wyoming-openwakeword.service
 [Service]
 ExecStart=$(command -v wyoming-satellite) \\
   --name $satellite_id \\
-  --uri tcp://0.0.0.0:10700 \\
+  --uri tcp://0.0.0.0:$satellite_port \\
   --mic-command "arecord -D $mic_device -r 16000 -c 1 -f S16_LE -t raw" \\
   --snd-command "aplay -D $mic_device -r 22050 -c 1 -f S16_LE -t raw" \\
   --wake-uri tcp://127.0.0.1:10400 \\
   --wake-word-name $wake_word \\
   --vad webrtcvad \\
-  --event-uri tcp://$hub_host:10700 \\
   $button_args
 Restart=always
 User=$USER

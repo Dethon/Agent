@@ -420,6 +420,36 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
+    public async Task EnqueuePlayback_TwoHighWhileIdle_BothPlay()
+    {
+        var session = MakeSession();
+        var drained = new List<string>();
+        var preempted = new List<string>();
+
+        // Two High jobs enqueued while idle (no job marked current). The second must NOT preempt the
+        // first via the pending high-water mark; both play in FIFO order (regression guard for the
+        // preempt-sequence fix).
+        PlaybackJob High(string label) => new(
+            Label: label,
+            Priority: AnnouncePriority.High,
+            Audio: GenerateAudio(label, count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: l => { preempted.Add(l); return Task.CompletedTask; },
+            OnDrained: () => { drained.Add(label); return Task.CompletedTask; });
+
+        await session.EnqueuePlaybackAsync(High("h1"), queueMaxDepth: 4);
+        await session.EnqueuePlaybackAsync(High("h2"), queueMaxDepth: 4);
+        session.CompletePlayback();
+
+        await session.RunPlaybackLoopAsync(
+            (_, ct) => { ct.ThrowIfCancellationRequested(); return Task.CompletedTask; },
+            CancellationToken.None);
+
+        drained.ShouldBe(["h1", "h2"]);
+        preempted.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task EnqueuePlayback_AfterChannelCompleted_ReturnsFalse()
     {
         var session = MakeSession();

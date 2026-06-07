@@ -37,20 +37,30 @@ public sealed class WyomingWriter(Stream stream)
 
         var headerBytes = Encoding.UTF8.GetBytes(header.ToJsonString(_serializerOptions));
 
+        // Assemble the whole frame (header + newline + data + payload) into one contiguous buffer so
+        // it goes out in a single write. Cancellation is honored at the lock; once we start emitting a
+        // frame we finish it (CancellationToken.None) so a mid-frame cancel can't desync the stream.
+        var frame = new byte[headerBytes.Length + _newline.Length + (dataBytes?.Length ?? 0) + evt.Payload.Length];
+        var offset = 0;
+        headerBytes.CopyTo(frame, offset);
+        offset += headerBytes.Length;
+        _newline.CopyTo(frame, offset);
+        offset += _newline.Length;
+        if (dataBytes is not null)
+        {
+            dataBytes.CopyTo(frame, offset);
+            offset += dataBytes.Length;
+        }
+        if (evt.Payload.Length > 0)
+        {
+            evt.Payload.Span.CopyTo(frame.AsSpan(offset));
+        }
+
         await _lock.WaitAsync(ct);
         try
         {
-            await stream.WriteAsync(headerBytes, ct);
-            await stream.WriteAsync(_newline, ct);
-            if (dataBytes is not null)
-            {
-                await stream.WriteAsync(dataBytes, ct);
-            }
-            if (evt.Payload.Length > 0)
-            {
-                await stream.WriteAsync(evt.Payload, ct);
-            }
-            await stream.FlushAsync(ct);
+            await stream.WriteAsync(frame, CancellationToken.None);
+            await stream.FlushAsync(CancellationToken.None);
         }
         finally
         {

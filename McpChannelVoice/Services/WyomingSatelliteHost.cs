@@ -44,7 +44,7 @@ public sealed class WyomingSatelliteHost(
         {
             logger.LogWarning(
                 "No satellites with an Address configured ({Total} known) — the hub will not dial any satellite. " +
-                "Set Voice:Satellites:<id>:Address (e.g. tcp://host.docker.internal:10800).",
+                "Set Satellites:<id>:Address (env Satellites__<id>__Address, e.g. tcp://host.docker.internal:10800).",
                 satelliteRegistry.GetAllIds().Count);
         }
         else

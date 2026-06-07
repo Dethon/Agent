@@ -12,10 +12,11 @@ public sealed class VoiceDeliveryRegistry(
     ReplyTextAccumulator accumulator,
     ILogger<VoiceDeliveryRegistry> logger)
 {
-    private sealed record Entry(AnnounceTarget Target, ITimer Timer);
+    private sealed record Entry(AnnounceTarget Target, ITimer Timer, long Generation);
 
     private readonly Dictionary<string, Entry> _byConversation = new();
     private readonly Lock _gate = new();
+    private long _generation;
 
     public void Bind(string conversationId, AnnounceTarget target)
     {
@@ -26,8 +27,9 @@ public sealed class VoiceDeliveryRegistry(
                 existing.Timer.Dispose();
             }
 
-            var timer = time.CreateTimer(_ => Expire(conversationId), null, lifetime, Timeout.InfiniteTimeSpan);
-            _byConversation[conversationId] = new Entry(target, timer);
+            var generation = ++_generation;
+            var timer = time.CreateTimer(_ => Expire(conversationId, generation), null, lifetime, Timeout.InfiniteTimeSpan);
+            _byConversation[conversationId] = new Entry(target, timer, generation);
         }
     }
 
@@ -50,12 +52,15 @@ public sealed class VoiceDeliveryRegistry(
         }
     }
 
-    private void Expire(string conversationId)
+    private void Expire(string conversationId, long generation)
     {
         lock (_gate)
         {
-            if (_byConversation.Remove(conversationId, out var entry))
+            // Only expire if this is still the timer that armed it: a re-Bind during the callback
+            // installs a fresh entry/timer with a newer generation that must not be dropped here.
+            if (_byConversation.TryGetValue(conversationId, out var entry) && entry.Generation == generation)
             {
+                _byConversation.Remove(conversationId);
                 entry.Timer.Dispose();
                 // Drop any buffered reply text for an abandoned scheduled delivery so it doesn't
                 // leak in the singleton accumulator (mirrors VoiceConversationManager.Expire).

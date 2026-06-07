@@ -29,8 +29,8 @@ public sealed class SatelliteSession
     private long _enqueueSeq;
     // High-water sequence whose jobs must be preempted as they start. Set only when a high-priority
     // job arrives while no job is marked current (the gap between dequeue and assignment, or idle),
-    // so a preemption can't be lost to that race. The high job claims a later sequence, so it is
-    // never preempted by its own request.
+    // so a preemption can't be lost to that race. High-priority jobs are exempt from this mark (see
+    // the loop), so a second High job stacking in the same window never preempts the first.
     private long _preemptPendingSeq = -1;
     private UtteranceCapture? _capture;
     private readonly Lock _turnGate = new();
@@ -171,7 +171,10 @@ public sealed class SatelliteSession
             lock (_gate)
             {
                 _currentPlaybackCts = jobCts;
-                preemptOnStart = _preemptPendingSeq >= 0 && seq <= _preemptPendingSeq;
+                // Exempt High jobs: the mark exists to drop lower-priority jobs queued ahead of a
+                // High request; a second High stacking in the gap must still play, not be preempted.
+                preemptOnStart = _preemptPendingSeq >= 0 && seq <= _preemptPendingSeq
+                    && job.Priority != AnnouncePriority.High;
                 _preemptPendingSeq = -1;
             }
             if (preemptOnStart)

@@ -25,8 +25,7 @@ public class VoiceSettingsBindingTests
             "Token": "secret",
             "BindToLoopbackOnly": false,
             "QueueMaxDepth": 8,
-            "MaxTextLength": 500,
-            "DefaultPriority": "Normal"
+            "MaxTextLength": 500
           },
           "Satellites": {
             "kitchen-01": { "Identity": "household", "Room": "Kitchen", "WakeWord": "hey_jarvis", "Address": "tcp://host.docker.internal:10800" }
@@ -48,7 +47,6 @@ public class VoiceSettingsBindingTests
         settings.ConfidenceThreshold.ShouldBe(0.4);
         settings.Announce.Token.ShouldBe("secret");
         settings.Announce.MaxTextLength.ShouldBe(500);
-        settings.Announce.DefaultPriority.ShouldBe(AnnouncePriorityDefault.Normal);
         settings.Satellites.Count.ShouldBe(1);
         settings.Satellites["kitchen-01"].Identity.ShouldBe("household");
         settings.Satellites["kitchen-01"].Address.ShouldBe("tcp://host.docker.internal:10800");

@@ -6,6 +6,11 @@ namespace McpChannelVoice.Services.WyomingProtocol;
 
 public sealed class WyomingReader(Stream stream)
 {
+    // Upper bounds on header-supplied lengths so a malformed/corrupt frame can't drive an unbounded
+    // allocation. Headers are tiny (~100 bytes); the largest legitimate payload is one audio chunk.
+    private const int MaxHeaderBytes = 1 * 1024 * 1024;
+    private const int MaxFrameBytes = 64 * 1024 * 1024;
+
     public async IAsyncEnumerable<WyomingEvent> ReadAllAsync(
         [EnumeratorCancellation] CancellationToken ct)
     {
@@ -26,6 +31,10 @@ public sealed class WyomingReader(Stream stream)
                 {
                     break;
                 }
+                if (headerBuffer.Length >= MaxHeaderBytes)
+                {
+                    throw new InvalidDataException($"Wyoming header exceeds {MaxHeaderBytes} bytes without a newline");
+                }
                 headerBuffer.WriteByte(oneByte[0]);
             }
 
@@ -44,6 +53,10 @@ public sealed class WyomingReader(Stream stream)
             JsonObject data;
             if (header["data_length"]?.GetValue<int>() is int dataLength && dataLength > 0)
             {
+                if (dataLength > MaxFrameBytes)
+                {
+                    throw new InvalidDataException($"Wyoming data_length {dataLength} exceeds {MaxFrameBytes}");
+                }
                 var dataBuf = new byte[dataLength];
                 await ReadExactAsync(stream, dataBuf, ct);
                 var dataJson = Encoding.UTF8.GetString(dataBuf);
@@ -61,6 +74,10 @@ public sealed class WyomingReader(Stream stream)
             ReadOnlyMemory<byte> payload = ReadOnlyMemory<byte>.Empty;
             if (header["payload_length"]?.GetValue<int>() is int payloadLength && payloadLength > 0)
             {
+                if (payloadLength > MaxFrameBytes)
+                {
+                    throw new InvalidDataException($"Wyoming payload_length {payloadLength} exceeds {MaxFrameBytes}");
+                }
                 var payloadBuf = new byte[payloadLength];
                 await ReadExactAsync(stream, payloadBuf, ct);
                 payload = payloadBuf;
