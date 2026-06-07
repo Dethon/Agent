@@ -27,6 +27,7 @@ public class SendReplyToolScheduledDeliveryTests
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig> { ["office-01"] = _config });
         _delivery = new VoiceDeliveryRegistry(
             new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5),
+            _accumulator,
             NullLogger<VoiceDeliveryRegistry>.Instance);
 
         var factory = new Mock<IConversationFactory>();

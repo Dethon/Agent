@@ -123,6 +123,19 @@ public class MetricsCollectorServiceTests
             [
                 ("latency:LlmTotal:count", 1),
                 ("latency:LlmTotal:totalMs", 1500)
+            ]),
+        new HashIncrementCase(
+            "Voice",
+            new VoiceEvent
+            {
+                Metric = VoiceMetric.SttLatencyMs,
+                SatelliteId = "kitchen-01",
+                DurationMs = 250,
+                Timestamp = _fixedTimestamp
+            },
+            [
+                ("voice:SttLatencyMs:count", 1),
+                ("voice:SttLatencyMs:totalMs", 250)
             ])
     };
 
@@ -220,7 +233,17 @@ public class MetricsCollectorServiceTests
                 Timestamp = _fixedTimestamp
             },
             $"metrics:latency:{FixedDate}",
-            "\"type\":\"latency\"")
+            "\"type\":\"latency\""),
+        new SortedSetCase(
+            "Voice",
+            new VoiceEvent
+            {
+                Metric = VoiceMetric.UtteranceTranscribed,
+                SatelliteId = "kitchen-01",
+                Timestamp = _fixedTimestamp
+            },
+            $"metrics:voice:{FixedDate}",
+            "\"satelliteId\":\"kitchen-01\"")
     };
 
     [Theory]
@@ -288,7 +311,11 @@ public class MetricsCollectorServiceTests
         new SignalRForwardCase(
             "Latency",
             new LatencyEvent { Stage = LatencyStage.MemoryRecall, DurationMs = 42 },
-            "OnLatency")
+            "OnLatency"),
+        new SignalRForwardCase(
+            "Voice",
+            new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" },
+            "OnVoice")
     };
 
     [Theory]

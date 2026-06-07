@@ -9,6 +9,7 @@ namespace McpChannelVoice.Services;
 public sealed class VoiceDeliveryRegistry(
     TimeProvider time,
     TimeSpan lifetime,
+    ReplyTextAccumulator accumulator,
     ILogger<VoiceDeliveryRegistry> logger)
 {
     private sealed record Entry(AnnounceTarget Target, ITimer Timer);
@@ -56,6 +57,9 @@ public sealed class VoiceDeliveryRegistry(
             if (_byConversation.Remove(conversationId, out var entry))
             {
                 entry.Timer.Dispose();
+                // Drop any buffered reply text for an abandoned scheduled delivery so it doesn't
+                // leak in the singleton accumulator (mirrors VoiceConversationManager.Expire).
+                accumulator.Flush(conversationId);
                 logger.LogInformation("Voice delivery binding {ConversationId} expired", conversationId);
             }
         }

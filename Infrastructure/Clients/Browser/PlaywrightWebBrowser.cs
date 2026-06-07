@@ -627,7 +627,11 @@ public class PlaywrightWebBrowser(
         }
         catch (Exception ex) when (IsConnectionClosed(ex))
         {
-            await ResetStaleConnectionAsync();
+            // Reconnect via EnsureInitializedAsync, which tears down the stale connection and
+            // reconnects while holding _initLock: a dropped WebSocket makes IsConnectionHealthy()
+            // false, so it runs ResetStaleConnectionAsync() under the lock. Calling that reset
+            // directly here would mutate _browser/_context/_sessions outside the lock, racing
+            // concurrent (re)initialization.
             await EnsureInitializedAsync();
             return await operation();
         }

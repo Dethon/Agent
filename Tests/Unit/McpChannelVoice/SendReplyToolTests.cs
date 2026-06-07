@@ -57,6 +57,7 @@ public class SendReplyToolTests
 
         var delivery = new VoiceDeliveryRegistry(
             new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5),
+            _accumulator,
             NullLogger<VoiceDeliveryRegistry>.Instance);
 
         var metrics = new Mock<IMetricsPublisher>();

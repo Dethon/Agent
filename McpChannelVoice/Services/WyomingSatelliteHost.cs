@@ -68,10 +68,11 @@ public sealed class WyomingSatelliteHost(
 
     public async Task StopAsync(CancellationToken ct)
     {
-        if (_cts is not null)
+        if (_cts is null)
         {
-            await _cts.CancelAsync();
+            return;
         }
+        await _cts.CancelAsync();
         try
         {
             await Task.WhenAll(_connections);
@@ -79,6 +80,10 @@ public sealed class WyomingSatelliteHost(
         catch
         {
             // Connection loops unwind on cancellation; surfaced faults are expected here.
+        }
+        finally
+        {
+            _cts.Dispose();
         }
     }
 
@@ -314,8 +319,9 @@ public sealed class WyomingSatelliteHost(
             Priority: AnnouncePriority.High,
             Audio: ListeningChime.Stream(),
             OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
-            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; });
+            OnPreempted: _ => { drained.TrySetResult(); return Task.CompletedTask; },
+            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
+            OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
 
         await session.EnqueuePlaybackAsync(job, voiceSettings.Announce.QueueMaxDepth);
         await drained.Task.WaitAsync(ct);

@@ -67,6 +67,7 @@ public static class ConfigModule
             .AddSingleton(sp => new VoiceDeliveryRegistry(
                 sp.GetRequiredService<TimeProvider>(),
                 settings.ConversationLifetime,
+                sp.GetRequiredService<ReplyTextAccumulator>(),
                 sp.GetRequiredService<ILogger<VoiceDeliveryRegistry>>()));
 
         services.AddSingleton<ISpeechToText>(sp =>

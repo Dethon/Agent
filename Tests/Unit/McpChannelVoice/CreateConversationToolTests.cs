@@ -30,6 +30,7 @@ public class CreateConversationToolTests
         });
         _delivery = new VoiceDeliveryRegistry(
             new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5),
+            new ReplyTextAccumulator(),
             NullLogger<VoiceDeliveryRegistry>.Instance);
 
         _factory = new Mock<IConversationFactory>();

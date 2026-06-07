@@ -124,7 +124,8 @@ public sealed class RequestApprovalTool
             Audio: tts.SynthesizeAsync(text, new SynthesisOptions { Voice = voice }, default),
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: _ => { drained.TrySetResult(); return Task.CompletedTask; },
-            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; });
+            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
+            OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
 
         await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
         await drained.Task.WaitAsync(ct);

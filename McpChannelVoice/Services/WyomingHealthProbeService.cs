@@ -37,6 +37,10 @@ public sealed class WyomingHealthProbeService(
                     await tcp.ConnectAsync(host, port, cts.Token);
                     await publisher.PublishAsync(new HeartbeatEvent { Service = service }, stoppingToken);
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Wyoming probe failed: {Service}@{Host}:{Port}", service, host, port);

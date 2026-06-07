@@ -43,6 +43,44 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
+    public async Task EnqueuePlayback_HighPriorityWhileIdle_PreemptsQueuedAheadButPlaysItself()
+    {
+        var session = MakeSession();
+        var drained = new List<string>();
+        var preempted = new List<string>();
+
+        // Enqueue a normal job then a high job BEFORE the loop runs. When the high job is enqueued no
+        // job is marked current, exercising the dequeue->assign gap / idle preempt-sequence path: the
+        // already-queued normal must be preempted, while the high job must still play (a high job must
+        // never preempt itself).
+        var normal = new PlaybackJob(
+            Label: "normal",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("normal", count: 2),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: l => { preempted.Add(l); return Task.CompletedTask; },
+            OnDrained: () => { drained.Add("normal"); return Task.CompletedTask; });
+        var high = new PlaybackJob(
+            Label: "high",
+            Priority: AnnouncePriority.High,
+            Audio: GenerateAudio("high", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: l => { preempted.Add(l); return Task.CompletedTask; },
+            OnDrained: () => { drained.Add("high"); return Task.CompletedTask; });
+
+        await session.EnqueuePlaybackAsync(normal, queueMaxDepth: 4);
+        await session.EnqueuePlaybackAsync(high, queueMaxDepth: 4);
+        session.CompletePlayback();
+
+        await session.RunPlaybackLoopAsync(
+            (_, ct) => { ct.ThrowIfCancellationRequested(); return Task.CompletedTask; },
+            CancellationToken.None);
+
+        preempted.ShouldBe(["normal"]);
+        drained.ShouldBe(["high"]);
+    }
+
+    [Fact]
     public async Task RunPlaybackLoop_JobAudioThrows_SurvivesAndReportsThenPlaysNext()
     {
         var session = MakeSession();
@@ -355,6 +393,30 @@ public class SatelliteSessionPlaybackTests
         await pump;
 
         invocations.ShouldBe(1); // fires only on the first chunk, not per chunk
+    }
+
+    [Fact]
+    public async Task RunPlaybackLoop_JobAudioThrows_InvokesOnFailed()
+    {
+        var session = MakeSession();
+        var failed = new TaskCompletionSource();
+
+        // A synthesis failure must reach OnFailed so awaiters (approval prompt, chime) that block on a
+        // drained handshake are released instead of hanging forever.
+        var failing = new PlaybackJob(
+            Label: "failing",
+            Priority: AnnouncePriority.Normal,
+            Audio: ThrowingAudio(),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFailed: _ => { failed.TrySetResult(); return Task.CompletedTask; });
+
+        await session.EnqueuePlaybackAsync(failing, queueMaxDepth: 4);
+        session.CompletePlayback();
+
+        await session.RunPlaybackLoopAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+
+        failed.Task.IsCompletedSuccessfully.ShouldBeTrue();
     }
 
     private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)

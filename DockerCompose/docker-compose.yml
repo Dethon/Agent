@@ -516,6 +516,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - Announce__Token=${ANNOUNCE_TOKEN}
     networks:
       - jackbot
     depends_on:

@@ -22,7 +22,7 @@
     </header>
 
     <section class="kpi-row">
-        <KpiCard Label="Utterances (24h)" Value="@_utterances.ToString("N0")" Color="var(--accent-blue)" />
+        <KpiCard Label="Utterances" Value="@_utterances.ToString("N0")" Color="var(--accent-blue)" />
         <KpiCard Label="Median wake → audio" Value="@($"{_medianLatency:F0}ms")" Color="var(--accent-yellow)" />
         <KpiCard Label="STT errors" Value="@_sttErrors.ToString("N0")" Color="var(--accent-red)" />
         <KpiCard Label="TTS errors" Value="@_ttsErrors.ToString("N0")" Color="var(--accent-red)" />

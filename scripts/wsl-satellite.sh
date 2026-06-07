@@ -10,17 +10,17 @@ set -euo pipefail
 # wyoming-openwakeword; once the wake word fires the satellite streams mic audio to
 # the connected hub and plays back the TTS audio the hub streams in return.
 #
-# Defaults match `McpChannelVoice/appsettings.Development.json` — change SAT_ID
-# to one of {kitchen-01, living-room-01, bedroom-01} or edit appsettings to add
-# a new satellite (and give it an Address so the hub dials it).
+# Defaults match `McpChannelVoice/appsettings.Development.json` (fran-office-01) —
+# change SAT_ID to one of {fran-office-01, laura-office-01} or edit appsettings to
+# add a new satellite (and give it an Address so the hub dials it).
 #
 # Usage:
 #   ./scripts/wsl-satellite.sh
-#   SAT_ID=bedroom-01 WAKE_WORD=hey_jarvis ./scripts/wsl-satellite.sh
+#   SAT_ID=laura-office-01 SAT_PORT=10600 ./scripts/wsl-satellite.sh
 
 SAT_ID="${SAT_ID:-fran-office-01}"
-WAKE_WORD="${WAKE_WORD:-hey_jarvis}"
-SAT_PORT="${SAT_PORT:-10800}"
+WAKE_WORD="${WAKE_WORD:-ok_nabu}"
+SAT_PORT="${SAT_PORT:-10700}"
 WW_PORT="${WW_PORT:-10400}"
 WW_THRESHOLD="${WW_THRESHOLD:-0.5}"
 WW_DEBUG="${WW_DEBUG:-0}"

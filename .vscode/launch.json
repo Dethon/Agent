@@ -359,10 +359,8 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "ASPNETCORE_ENVIRONMENT": "Local",
-        "ASPNETCORE_URLS": "http://localhost:6014",
+        "ASPNETCORE_URLS": "http://localhost:6015",
         "RedisConnectionString": "localhost:6379",
-        "Stt__Provider": "OpenRouter",
-        "Tts__Provider": "OpenRouter",
         "Satellites__kitchen-01__Identity": "household",
         "Satellites__kitchen-01__Room": "Kitchen",
         "Satellites__kitchen-01__WakeWord": "hey_jarvis",

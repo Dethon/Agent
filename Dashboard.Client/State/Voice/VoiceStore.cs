@@ -4,6 +4,7 @@ using Domain.DTOs.Metrics.Enums;
 namespace Dashboard.Client.State.Voice;
 
 public record SetVoiceEvents(IReadOnlyList<VoiceEvent> Events) : IAction;
+public record AppendVoiceEvent(VoiceEvent Event) : IAction;
 public record SetVoiceBreakdown(Dictionary<string, decimal> Breakdown) : IAction;
 public record SetVoiceGroupBy(VoiceDimension GroupBy) : IAction;
 public record SetVoiceMetric(VoiceMetric Metric) : IAction;
@@ -15,6 +16,9 @@ public sealed class VoiceStore : Store<VoiceState>
 
     public void SetEvents(IReadOnlyList<VoiceEvent> events) =>
         Dispatch(new SetVoiceEvents(events), static (s, a) => s with { Events = a.Events });
+
+    public void AppendEvent(VoiceEvent evt) =>
+        Dispatch(new AppendVoiceEvent(evt), static (s, a) => s with { Events = [.. s.Events, a.Event] });
 
     public void SetBreakdown(Dictionary<string, decimal> breakdown) =>
         Dispatch(new SetVoiceBreakdown(breakdown), static (s, a) => s with { Breakdown = a.Breakdown });

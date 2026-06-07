@@ -39,7 +39,7 @@
         <KpiCard Label="Cost" Value="@($"${_metrics.Cost:F2}")" Color="var(--accent-green)" />
         <KpiCard Label="Tool Calls" Value="@_metrics.ToolCalls.ToString("N0")" Color="var(--accent-yellow)" />
         <KpiCard Label="Errors" Value="@_metrics.ToolErrors.ToString("N0")" Color="var(--accent-red)" />
-        <KpiCard Label="Utterances (24h)" Value="@_voiceUtterances.ToString("N0")" Color="var(--accent-blue)" />
+        <KpiCard Label="Utterances" Value="@_voiceUtterances.ToString("N0")" Color="var(--accent-blue)" />
         <KpiCard Label="Median voice latency" Value="@($"{_voiceLatency:F0}ms")" Color="var(--accent-yellow)" />
     </section>
 

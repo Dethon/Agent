@@ -12,7 +12,8 @@ public sealed record PlaybackJob(
     Func<string, Task> OnStarted,
     Func<string, Task> OnPreempted,
     Func<Task>? OnDrained = null,
-    Func<FirstAudioTiming, Task>? OnFirstAudio = null);
+    Func<FirstAudioTiming, Task>? OnFirstAudio = null,
+    Func<Exception, Task>? OnFailed = null);
 
 // Timing captured the moment a job's first audio chunk is produced. SinceSynthesisStart is the
 // TTS time-to-first-audio (synthesis request -> first chunk); SinceTurnStart is the wake/turn-open
@@ -21,9 +22,16 @@ public sealed record FirstAudioTiming(TimeSpan SinceSynthesisStart, TimeSpan? Si
 
 public sealed class SatelliteSession
 {
-    private readonly Channel<PlaybackJob> _playback = Channel.CreateUnbounded<PlaybackJob>();
+    private readonly Channel<(long Seq, PlaybackJob Job)> _playback =
+        Channel.CreateUnbounded<(long Seq, PlaybackJob Job)>();
     private CancellationTokenSource? _currentPlaybackCts;
     private readonly Lock _gate = new();
+    private long _enqueueSeq;
+    // High-water sequence whose jobs must be preempted as they start. Set only when a high-priority
+    // job arrives while no job is marked current (the gap between dequeue and assignment, or idle),
+    // so a preemption can't be lost to that race. The high job claims a later sequence, so it is
+    // never preempted by its own request.
+    private long _preemptPendingSeq = -1;
     private UtteranceCapture? _capture;
     private readonly Lock _turnGate = new();
     private TaskCompletionSource<bool> _turn = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -43,8 +51,23 @@ public sealed class SatelliteSession
     {
         if (job.Priority == AnnouncePriority.High)
         {
-            PreemptCurrent();
-            await _playback.Writer.WriteAsync(job);
+            long seq;
+            lock (_gate)
+            {
+                // Cancel the in-flight job if one is marked current; otherwise record a preempt
+                // high-water mark the loop honors when it next assigns a job, closing the race
+                // where _currentPlaybackCts is momentarily null during the dequeue->assign gap.
+                if (_currentPlaybackCts is not null)
+                {
+                    _currentPlaybackCts.Cancel();
+                }
+                else
+                {
+                    _preemptPendingSeq = _enqueueSeq;
+                }
+                seq = ++_enqueueSeq;
+            }
+            await _playback.Writer.WriteAsync((seq, job));
             return true;
         }
 
@@ -57,7 +80,13 @@ public sealed class SatelliteSession
         {
             return false;
         }
-        await _playback.Writer.WriteAsync(job);
+
+        long normalSeq;
+        lock (_gate)
+        {
+            normalSeq = ++_enqueueSeq;
+        }
+        await _playback.Writer.WriteAsync((normalSeq, job));
         return true;
     }
 
@@ -134,11 +163,20 @@ public sealed class SatelliteSession
         Func<PlaybackJob, Exception, Task>? onError = null)
     {
         time ??= TimeProvider.System;
-        await foreach (var job in _playback.Reader.ReadAllAsync(ct))
+        await foreach (var (seq, job) in _playback.Reader.ReadAllAsync(ct))
         {
             var jobCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            bool preemptOnStart;
             lock (_gate)
-            { _currentPlaybackCts = jobCts; }
+            {
+                _currentPlaybackCts = jobCts;
+                preemptOnStart = _preemptPendingSeq >= 0 && seq <= _preemptPendingSeq;
+                _preemptPendingSeq = -1;
+            }
+            if (preemptOnStart)
+            {
+                jobCts.Cancel();
+            }
 
             var chunks = 0;
             var drained = false;
@@ -221,6 +259,19 @@ public sealed class SatelliteSession
                     catch (Exception oex)
                     {
                         logger?.LogWarning(oex, "Playback onError handler threw for {Label}", job.Label);
+                    }
+                }
+                // Signal terminal completion to anyone awaiting this job (e.g. an approval prompt or
+                // chime blocked on its drained handshake), so a synthesis failure doesn't hang them.
+                if (job.OnFailed is not null)
+                {
+                    try
+                    {
+                        await job.OnFailed(ex);
+                    }
+                    catch (Exception fex)
+                    {
+                        logger?.LogWarning(fex, "Playback OnFailed callback failed for {Label}", job.Label);
                     }
                 }
             }

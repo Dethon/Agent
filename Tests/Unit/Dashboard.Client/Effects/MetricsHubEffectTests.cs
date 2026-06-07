@@ -9,6 +9,7 @@ using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
+using Dashboard.Client.State.Voice;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Shouldly;
@@ -28,6 +29,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     private readonly ConnectionStore _connectionStore = new();
     private readonly MemoryStore _memoryStore = new();
     private readonly LatencyStore _latencyStore = new();
+    private readonly VoiceStore _voiceStore = new();
     private readonly MetricsHubEffect _effect;
 
     public MetricsHubEffectTests()
@@ -37,7 +39,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _effect = new MetricsHubEffect(
             _hub, api, _metricsStore, _healthStore,
             _tokensStore, _toolsStore, _errorsStore,
-            _schedulesStore, _connectionStore, _memoryStore, _latencyStore);
+            _schedulesStore, _connectionStore, _memoryStore, _latencyStore, _voiceStore);
     }
 
     public async ValueTask DisposeAsync()
@@ -52,6 +54,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _connectionStore.Dispose();
         _memoryStore.Dispose();
         _latencyStore.Dispose();
+        _voiceStore.Dispose();
     }
 
     private static readonly
@@ -137,6 +140,17 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _latencyStore.State.Events.ShouldContain(e => e.Stage == LatencyStage.LlmTotal);
     }
 
+    [Fact]
+    public async Task OnVoice_AppendsEventToVoiceStore()
+    {
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+        await _effect.StartAsync();
+
+        await _hub.FireVoice(new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
+
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
+    }
+
     public static TheoryData<string, Func<IDisposable>, Action<object, DateOnly, DateOnly>, Func<object, DateOnly>, Func<object, DateOnly>> StoreFactories =>
         new()
         {
@@ -145,6 +159,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
             { "Tokens", () => new TokensStore(), (s, f, t) => ((TokensStore)s).SetDateRange(f, t), s => ((TokensStore)s).State.From, s => ((TokensStore)s).State.To },
             { "Tools", () => new ToolsStore(), (s, f, t) => ((ToolsStore)s).SetDateRange(f, t), s => ((ToolsStore)s).State.From, s => ((ToolsStore)s).State.To },
             { "Latency", () => new LatencyStore(), (s, f, t) => ((LatencyStore)s).SetDateRange(f, t), s => ((LatencyStore)s).State.From, s => ((LatencyStore)s).State.To },
+            { "Voice", () => new VoiceStore(), (s, f, t) => ((VoiceStore)s).SetDateRange(f, t), s => ((VoiceStore)s).State.From, s => ((VoiceStore)s).State.To },
         };
 
     [Theory]
@@ -180,6 +195,7 @@ public sealed class FakeMetricsHub : MetricsHubService
     private readonly List<Func<MemoryDreamingEvent, Task>> _dreamingHandlers = [];
     private readonly List<Func<ContextTruncationEvent, Task>> _truncationHandlers = [];
     private readonly List<Func<LatencyEvent, Task>> _latencyHandlers = [];
+    private readonly List<Func<VoiceEvent, Task>> _voiceHandlers = [];
 
     public override IDisposable OnTokenUsage(Func<TokenUsageEvent, Task> handler)
     {
@@ -241,6 +257,12 @@ public sealed class FakeMetricsHub : MetricsHubService
         return new ActionDisposable(() => _latencyHandlers.Remove(handler));
     }
 
+    public override IDisposable OnVoice(Func<VoiceEvent, Task> handler)
+    {
+        _voiceHandlers.Add(handler);
+        return new ActionDisposable(() => _voiceHandlers.Remove(handler));
+    }
+
     public override void OnReconnected(Func<string?, Task> handler) { }
     public override void OnClosed(Func<Exception?, Task> handler) { }
     public override void OnReconnecting(Func<Exception?, Task> handler) { }
@@ -274,6 +296,9 @@ public sealed class FakeMetricsHub : MetricsHubService
 
     public Task FireLatency(LatencyEvent evt) =>
         Task.WhenAll(_latencyHandlers.Select(h => h(evt)));
+
+    public Task FireVoice(VoiceEvent evt) =>
+        Task.WhenAll(_voiceHandlers.Select(h => h(evt)));
 
     private sealed class ActionDisposable(Action action) : IDisposable
     {
