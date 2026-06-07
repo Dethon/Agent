@@ -63,6 +63,75 @@ public class VoiceSettingsBindingTests
     }
 
     [Fact]
+    public void VoiceSettings_BindsGlobalAndPerSatelliteLocality()
+    {
+        var json = """
+        {
+          "Locality": "Madrid, Spain",
+          "Satellites": {
+            "kitchen-01": { "Identity": "household", "Room": "Kitchen" },
+            "office-01": { "Identity": "household", "Room": "Office", "Locality": "Barcelona, Spain" }
+          }
+        }
+        """;
+
+        var config = new ConfigurationBuilder()
+            .AddJsonStream(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)))
+            .Build();
+
+        var settings = config.Get<VoiceSettings>();
+
+        settings.ShouldNotBeNull();
+        settings!.Locality.ShouldBe("Madrid, Spain");
+        settings.Satellites["kitchen-01"].Locality.ShouldBeNull();
+        settings.Satellites["office-01"].Locality.ShouldBe("Barcelona, Spain");
+    }
+
+    [Fact]
+    public void WithResolvedLocalityDefaults_SatelliteWithoutLocality_InheritsGlobal()
+    {
+        var settings = new VoiceSettings
+        {
+            Locality = "Madrid, Spain",
+            Satellites = new() { ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen" } }
+        };
+
+        var resolved = settings.WithResolvedLocalityDefaults();
+
+        resolved.Satellites["kitchen-01"].Locality.ShouldBe("Madrid, Spain");
+    }
+
+    [Fact]
+    public void WithResolvedLocalityDefaults_SatelliteWithLocality_KeepsOwn()
+    {
+        var settings = new VoiceSettings
+        {
+            Locality = "Madrid, Spain",
+            Satellites = new()
+            {
+                ["office-01"] = new() { Identity = "household", Room = "Office", Locality = "Barcelona, Spain" }
+            }
+        };
+
+        var resolved = settings.WithResolvedLocalityDefaults();
+
+        resolved.Satellites["office-01"].Locality.ShouldBe("Barcelona, Spain");
+    }
+
+    [Fact]
+    public void WithResolvedLocalityDefaults_NoGlobalDefault_LeavesSatelliteNull()
+    {
+        var settings = new VoiceSettings
+        {
+            Satellites = new() { ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen" } }
+        };
+
+        var resolved = settings.WithResolvedLocalityDefaults();
+
+        resolved.Satellites["kitchen-01"].Locality.ShouldBeNull();
+    }
+
+    [Fact]
     public void VoiceSettings_BindsSatelliteFromEnvironmentVariables()
     {
         // Mirrors how docker-compose.override.debug.yml delivers the satellite topology:

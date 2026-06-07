@@ -1,4 +1,3 @@
-using Domain.Prompts;
 using McpChannelVoice.McpPrompts;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
@@ -22,6 +21,19 @@ public class VoiceSystemPromptTests
         result.ShouldContain("## Voice satellites");
         result.ShouldContain("- fran-office-01 — Fran's office");
         result.ShouldContain("- laura-office-01 — Laura's office");
+    }
+
+    [Fact]
+    public void GetVoicePrompt_SatelliteWithLocality_IncludesLocalityInList()
+    {
+        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
+        {
+            ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", Locality = "Madrid, Spain" }
+        });
+
+        var result = new VoiceSystemPrompt(registry).GetVoicePrompt();
+
+        result.ShouldContain("- kitchen-01 — Kitchen (Madrid, Spain)");
     }
 
     [Fact]

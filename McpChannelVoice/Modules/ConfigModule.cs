@@ -21,7 +21,7 @@ public static class ConfigModule
 
         var settings = config.Get<VoiceSettings>()
                        ?? throw new InvalidOperationException("Voice settings not found");
-        return settings;
+        return settings.WithResolvedLocalityDefaults();
     }
 
     public static IServiceCollection ConfigureVoiceChannel(

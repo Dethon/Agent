@@ -15,7 +15,7 @@ public class VoiceSystemPrompt(SatelliteRegistry registry)
         var satellites = registry.GetAllIds()
             .Select(id => (Id: id, Config: registry.GetById(id)))
             .Where(x => x.Config is not null)
-            .Select(x => (x.Id, x.Config!.Room))
+            .Select(x => (x.Id, x.Config!.DisplayLocation))
             .ToList();
 
         return VoicePrompt.Build(satellites);

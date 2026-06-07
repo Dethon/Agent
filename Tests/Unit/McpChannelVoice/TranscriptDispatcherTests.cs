@@ -72,6 +72,21 @@ public class TranscriptDispatcherTests
     }
 
     [Fact]
+    public async Task DispatchAsync_SatelliteWithLocality_EmitsRoomAndLocalityAsLocation()
+    {
+        var (sut, _, emitter) = Build();
+        var session = new SatelliteSession(
+            "kitchen-01",
+            new SatelliteConfig { Identity = "household", Room = "Kitchen", Locality = "Madrid, Spain" });
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "what's the weather", Confidence = 0.9 }, "agent-1", default);
+
+        emitter.Captured.Count.ShouldBe(1);
+        emitter.Captured[0].Location.ShouldBe("Kitchen (Madrid, Spain)");
+    }
+
+    [Fact]
     public async Task DispatchAsync_GoodTranscript_EmitsSatelliteId()
     {
         var (sut, _, emitter) = Build();

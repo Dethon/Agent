@@ -52,7 +52,7 @@ public sealed class TranscriptDispatcher(
             session.Config.Identity,
             transcript.Text,
             agentId,
-            session.Config.Room,
+            session.Config.DisplayLocation,
             session.SatelliteId,
             ct);
 
