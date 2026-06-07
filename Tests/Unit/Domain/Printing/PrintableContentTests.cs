@@ -7,58 +7,24 @@ namespace Tests.Unit.Domain.Printing;
 
 public class PrintableContentTests
 {
-    [Fact]
-    public void DetectFormat_Jpeg()
+    public static TheoryData<byte[], string> FormatCases() => new()
     {
-        PrintableContent.DetectFormat(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }).ShouldBe("jpeg");
-    }
+        { new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }, "jpeg" },
+        { new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }, "png" },
+        { Encoding.ASCII.GetBytes("%PDF-1.7\n"), "pdf" },
+        { Encoding.ASCII.GetBytes("GIF89a"), "gif" },
+        { Encoding.ASCII.GetBytes("RaS2\x00\x00"), "pwg-raster" },
+        { new byte[] { 0x1B, 0x45 }, "pcl" },
+        { Encoding.UTF8.GetBytes("hello\nworld"), "text" },
+        { new byte[] { 0x00, 0x01, 0x02, 0xAB }, "unknown" },
+        { Array.Empty<byte>(), "text" }
+    };
 
-    [Fact]
-    public void DetectFormat_Png()
+    [Theory]
+    [MemberData(nameof(FormatCases))]
+    public void DetectFormat_ClassifiesByMagicBytes(byte[] bytes, string expected)
     {
-        PrintableContent.DetectFormat(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }).ShouldBe("png");
-    }
-
-    [Fact]
-    public void DetectFormat_Pdf()
-    {
-        PrintableContent.DetectFormat(Encoding.ASCII.GetBytes("%PDF-1.7\n")).ShouldBe("pdf");
-    }
-
-    [Fact]
-    public void DetectFormat_Gif()
-    {
-        PrintableContent.DetectFormat(Encoding.ASCII.GetBytes("GIF89a")).ShouldBe("gif");
-    }
-
-    [Fact]
-    public void DetectFormat_PwgRaster()
-    {
-        PrintableContent.DetectFormat(Encoding.ASCII.GetBytes("RaS2\x00\x00")).ShouldBe("pwg-raster");
-    }
-
-    [Fact]
-    public void DetectFormat_Pcl()
-    {
-        PrintableContent.DetectFormat(new byte[] { 0x1B, 0x45 }).ShouldBe("pcl");
-    }
-
-    [Fact]
-    public void DetectFormat_Text()
-    {
-        PrintableContent.DetectFormat(Encoding.UTF8.GetBytes("hello\nworld")).ShouldBe("text");
-    }
-
-    [Fact]
-    public void DetectFormat_UnknownBinary()
-    {
-        PrintableContent.DetectFormat(new byte[] { 0x00, 0x01, 0x02, 0xAB }).ShouldBe("unknown");
-    }
-
-    [Fact]
-    public void DetectFormat_Empty_IsText()
-    {
-        PrintableContent.DetectFormat(ReadOnlySpan<byte>.Empty).ShouldBe("text");
+        PrintableContent.DetectFormat(bytes).ShouldBe(expected);
     }
 
     [Theory]

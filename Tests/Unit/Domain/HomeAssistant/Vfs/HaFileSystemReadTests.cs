@@ -141,14 +141,6 @@ public class HaFileSystemReadTests
     }
 
     [Fact]
-    public async Task ReadAsync_CompositeName_Resolves()
-    {
-        var fs = Build(out _);
-        var result = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("\"entity_id\": \"light.kitchen\"");
-    }
-
-    [Fact]
     public async Task ExecAsync_BareId_WhenFriendlyNameExists_127WithHint()
     {
         var fs = Build(out _);

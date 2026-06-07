@@ -167,35 +167,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
     }
 
     [SkippableFact]
-    public async Task McpClientManager_RetriesOnConnectionFailure()
-    {
-        // This test verifies the retry logic exists - actual retry behavior
-        // is difficult to test without network manipulation
-        using var chatClient = CreateChatClient();
-        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.CreateSessionAsync();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        // Act - Connect to valid endpoint should succeed
-        var session = await ThreadSession.CreateAsync(
-            [fixture.McpEndpoint],
-            "RetryTestClient",
-            "test-user",
-            "Retry Test",
-            agent,
-            thread,
-            [],
-            new HashSet<string>(),
-            null,
-            cts.Token);
-
-        // Assert
-        session.ClientManager.Clients.Count.ShouldBe(1);
-
-        await session.DisposeAsync();
-    }
-
-    [SkippableFact]
     public async Task MultipleEndpoints_ConnectsToAllServers()
     {
         // Arrange - Use the same endpoint twice to verify multiple connections

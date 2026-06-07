@@ -57,6 +57,9 @@ public class TranscriptDispatcherTests
 
         emitter.Captured.Count.ShouldBe(1);
         emitter.Captured[0].ConversationId.ShouldBe(convo);
+        emitter.Captured[0].Content.ShouldBe("what time is it");
+        emitter.Captured[0].Sender.ShouldBe("household");
+        emitter.Captured[0].AgentId.ShouldBe("agent-1");
     }
 
     [Fact]

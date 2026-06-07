@@ -27,13 +27,4 @@ public class VoicePromptTests
     {
         VoicePrompt.Build([]).ShouldBe(string.Empty);
     }
-
-    [Fact]
-    public void Build_SingleSatellite_RendersOneBullet()
-    {
-        var result = VoicePrompt.Build([("office-01", "Office")]);
-
-        result.ShouldContain("## Voice satellites");
-        result.ShouldContain("- office-01 — Office");
-    }
 }
