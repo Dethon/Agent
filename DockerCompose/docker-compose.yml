@@ -531,7 +531,7 @@ services:
   wyoming-whisper:
     image: rhasspy/wyoming-whisper:latest
     container_name: wyoming-whisper
-    # 'medium' for accurate Castilian Spanish on CPU; beam-size 5 and a Spanish
+    # 'medium' would be needed for accurate Castilian Spanish on CPU; beam-size 5 and a Spanish
     # initial-prompt bias spelling/vocabulary. List form so the prompt's spaces
     # stay a single argument.
     command:
