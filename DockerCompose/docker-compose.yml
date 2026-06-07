@@ -541,9 +541,6 @@ services:
       - es
       - --device
       - cpu
-      # Don't hit the HuggingFace hub on every start; the base model is cached in the
-      # whisper-data volume below.
-      - --local-files-only
       # int8_float32 keeps the base model fast and low-memory on CPU; without it the model
       # loads as float32 (the warning at startup), which is much slower.
       - --compute-type

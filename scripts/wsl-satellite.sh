@@ -24,6 +24,12 @@ SAT_PORT="${SAT_PORT:-10800}"
 WW_PORT="${WW_PORT:-10400}"
 WW_THRESHOLD="${WW_THRESHOLD:-0.5}"
 WW_DEBUG="${WW_DEBUG:-0}"
+# Linear gain applied to mic audio inside wyoming-satellite, BEFORE wake-word
+# detection and before streaming to the hub/Whisper. WSLg's RDPSource bridge caps
+# at 0 dB, so a quiet Windows mic arrives quiet; measured ~RMS 716 / -12.5 dBFS peak
+# here, leaving ~4x of headroom. 3.0 lifts speech to a healthy ~RMS 2150 without
+# clipping. Set MIC_GAIN=1.0 to disable. Re-measure with scripts/mic-level-check.sh.
+MIC_GAIN="${MIC_GAIN:-3.0}"
 
 WW_VENV="$HOME/.local/share/pipx/venvs/wyoming-openwakeword"
 SAT_VENV="$HOME/.local/share/pipx/venvs/wyoming-satellite"
@@ -125,6 +131,7 @@ echo "      Logs: /tmp/wyoming-openwakeword.log  (Ctrl+C to stop)"
   --mic-command-rate 16000 \
   --mic-command-width 2 \
   --mic-command-channels 1 \
+  --mic-volume-multiplier "$MIC_GAIN" \
   --snd-command "paplay --raw --rate=22050 --format=s16le --channels=1" \
   --snd-command-rate 22050 \
   --snd-command-width 2 \
