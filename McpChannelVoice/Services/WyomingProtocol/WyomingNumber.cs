@@ -25,4 +25,32 @@ internal static class WyomingNumber
         }
         return fallback;
     }
+
+    // Like ReadInt but for frame-length fields, where an oversized value must still reach the
+    // caller's frame-size guard rather than silently falling back: a present-but-out-of-range
+    // length is clamped into the long range (so the guard rejects it) instead of dropped.
+    public static long ReadLong(JsonObject data, string key, long fallback)
+    {
+        if (data[key] is not JsonValue value)
+        {
+            return fallback;
+        }
+        if (value.TryGetValue<long>(out var l))
+        {
+            return l;
+        }
+        if (value.TryGetValue<double>(out var d) && !double.IsNaN(d) && !double.IsInfinity(d))
+        {
+            if (d >= long.MaxValue)
+            {
+                return long.MaxValue;
+            }
+            if (d <= long.MinValue)
+            {
+                return long.MinValue;
+            }
+            return (long)Math.Round(d);
+        }
+        return fallback;
+    }
 }

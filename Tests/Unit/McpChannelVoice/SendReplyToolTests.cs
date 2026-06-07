@@ -94,6 +94,41 @@ public class SendReplyToolTests
         await Task.Yield();
     }
 
+    private static async IAsyncEnumerable<AudioChunk> ThrowingAudio()
+    {
+        await Task.Yield();
+        throw new InvalidOperationException("Wyoming TTS error: piper crashed");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
+    }
+
+    [Fact]
+    public async Task McpRun_ReplySynthesisThrows_ResolvesTurnSilentInsteadOfWedgingTheMic()
+    {
+        // Regression guard for the FIX #4 follow-up: a reply synthesis failure (e.g. a Wyoming TTS
+        // 'error' event, which now throws) must resolve the per-turn handshake via the reply job's
+        // OnFailed -> SignalTurnSilent, so FollowUpConversation ends + re-arms wake. Without it the
+        // mic stays wedged until the ~120s ReplyTimeoutMs. The chime and approval jobs already do this.
+        _tts.Setup(t => t.SynthesizeAsync(
+                It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
+            .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) => ThrowingAudio());
+
+        _session.ResetTurn();
+        var turn = _session.WaitForTurnSpokenAsync();
+
+        await SendReplyTool.McpRun(_conversationId, "hola", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        _session.CompletePlayback();
+
+        var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2)); // resolves promptly, not after a timeout
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        spoke.ShouldBeFalse(); // no audio actually played -> end conversation + re-arm, not "spoken"
+    }
+
     [Fact]
     public async Task McpRun_Text_NotComplete_AccumulatesNoSynthesis()
     {

@@ -219,6 +219,11 @@ public sealed class SendReplyTool
                 }, ct);
             },
             OnDrained: () => { session.SignalTurnSpoken(); return Task.CompletedTask; },
+            // If synthesis/playback fails (e.g. a Wyoming TTS error event throws), resolve the turn
+            // as silent so FollowUpConversation ends and re-arms wake instead of blocking on the
+            // handshake until the ~120s ReplyTimeoutMs. No audio actually played, hence Silent (not
+            // Spoken). Mirrors the chime and approval jobs, which also settle their handshake on failure.
+            OnFailed: _ => { session.SignalTurnSilent(); return Task.CompletedTask; },
             OnFirstAudio: async timing =>
             {
                 await metrics.PublishAsync(new VoiceEvent
