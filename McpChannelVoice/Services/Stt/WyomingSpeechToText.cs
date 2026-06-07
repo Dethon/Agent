@@ -25,11 +25,6 @@ public sealed class WyomingSpeechToText(
             transcribeData["language"] = language;
         }
 
-        if (config.Model is not null)
-        {
-            transcribeData["name"] = config.Model;
-        }
-
         await client.WriteAsync(WyomingEvent.Header("transcribe", transcribeData), ct);
 
         var fmt = AudioFormat.WyomingStandard;

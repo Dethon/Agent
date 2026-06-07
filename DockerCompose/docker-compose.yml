@@ -531,9 +531,9 @@ services:
   wyoming-whisper:
     image: rhasspy/wyoming-whisper:latest
     container_name: wyoming-whisper
-    # 'medium' would be needed for accurate Castilian Spanish on CPU; beam-size 5 and a Spanish
-    # initial-prompt bias spelling/vocabulary. List form so the prompt's spaces
-    # stay a single argument.
+    # base model on CPU. Silero VAD (--vad-filter) trims non-speech before decoding to cut
+    # silence/noise hallucinations; beam-size 5 and a short Spanish initial-prompt bias
+    # spelling/vocabulary. List form so the prompt's spaces stay a single argument.
     command:
       - --model
       - base
@@ -541,14 +541,21 @@ services:
       - es
       - --device
       - cpu
-      # int8 keeps 'medium' fast and low-memory on CPU; without it the model loads
-      # as float32 (the warning at startup), which is much slower.
+      # Don't hit the HuggingFace hub on every start; the base model is cached in the
+      # whisper-data volume below.
+      - --local-files-only
+      # int8_float32 keeps the base model fast and low-memory on CPU; without it the model
+      # loads as float32 (the warning at startup), which is much slower.
       - --compute-type
       - int8_float32
       - --beam-size
       - "5"
+      # Silero VAD trims non-speech before the decoder (fewer silence/noise hallucinations).
+      # Start at the default threshold; if quiet word onsets get clipped, add `--vad-threshold`
+      # below 0.5 (e.g. 0.4 then 0.3) and re-test.
+      - --vad-filter
       - --initial-prompt
-      - "Conversación en español de España, Castellano, con el asistente de voz sobre domótica, la casa, recordatorios, listas de la compra y preguntas generales que pueden incluir nombres propios o de series/películas/canciones/videojuegos. Los nombres propios pueden estar en inglés u otro idioma. Se mencionarán nombres de ciudades de España en peticiones sobre el tiempo u actividades locales"
+      - "Asistente de voz en español de España (castellano): domótica, recordatorios, listas de la compra, el tiempo y preguntas generales. Nombres propios y ciudades españolas, p. ej. Valladolid."
       - --uri
       - tcp://0.0.0.0:10300
     volumes:

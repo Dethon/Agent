@@ -14,7 +14,7 @@ public class VoiceSettingsBindingTests
         {
           "WyomingClient": { "TrailingSilenceMs": 800, "MaxUtteranceMs": 15000 },
           "Stt": {
-            "Wyoming": { "Host": "wyoming-whisper", "Port": 10300, "Model": "base", "Language": "es" }
+            "Wyoming": { "Host": "wyoming-whisper", "Port": 10300, "Language": "es" }
           },
           "Tts": {
             "Wyoming": { "Host": "wyoming-piper", "Port": 10200, "Voice": "es_ES-davefx-medium" }
@@ -43,7 +43,7 @@ public class VoiceSettingsBindingTests
         settings.ShouldNotBeNull();
         settings!.WyomingClient.TrailingSilenceMs.ShouldBe(800);
         settings.WyomingClient.MaxUtteranceMs.ShouldBe(15000);
-        settings.Stt.Wyoming.Model.ShouldBe("base");
+        settings.Stt.Wyoming.Host.ShouldBe("wyoming-whisper");
         settings.Tts.Wyoming.Voice.ShouldBe("es_ES-davefx-medium");
         settings.ConfidenceThreshold.ShouldBe(0.4);
         settings.Announce.Token.ShouldBe("secret");

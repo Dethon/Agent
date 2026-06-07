@@ -76,4 +76,66 @@ public class WyomingSpeechToTextTests
         result.Text.ShouldBe("hola mundo");
         result.Language.ShouldBe("es");
     }
+
+    [Fact]
+    public async Task TranscribeAsync_DoesNotSendModelNameOnTranscribeEvent()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        JsonObject? transcribeData = null;
+
+        var serverTask = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync();
+            await using var stream = client.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+
+            await foreach (var evt in reader.ReadAllAsync(CancellationToken.None))
+            {
+                if (evt.Type == "transcribe")
+                {
+                    transcribeData = evt.Data;
+                }
+
+                if (evt.Type == "audio-stop")
+                {
+                    await writer.WriteAsync(
+                        WyomingEvent.Header("transcript", new JsonObject
+                        {
+                            ["text"] = "hola",
+                            ["language"] = "es"
+                        }),
+                        CancellationToken.None);
+                    return;
+                }
+            }
+        });
+
+        var sut = new WyomingSpeechToText(
+            new WyomingSttConfig { Host = "127.0.0.1", Port = port, Language = "es" },
+            NullLogger<WyomingSpeechToText>.Instance);
+
+        static async IAsyncEnumerable<AudioChunk> audio()
+        {
+            yield return new AudioChunk
+            {
+                Data = new byte[16],
+                Format = AudioFormat.WyomingStandard,
+                Timestamp = TimeSpan.Zero
+            };
+            await Task.Yield();
+        }
+
+        await sut.TranscribeAsync(audio(), new TranscriptionOptions(), CancellationToken.None);
+
+        await serverTask;
+        listener.Stop();
+
+        transcribeData.ShouldNotBeNull();
+        transcribeData!.ContainsKey("name").ShouldBeFalse();
+        transcribeData!["language"]?.GetValue<string>().ShouldBe("es");
+    }
 }

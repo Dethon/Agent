@@ -10,7 +10,6 @@ public record WyomingSttConfig
 {
     public string Host { get; init; } = "wyoming-whisper";
     public int Port { get; init; } = 10300;
-    public string? Model { get; init; }
     public string? Language { get; init; }
 }
 
