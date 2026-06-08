@@ -51,6 +51,15 @@ public class PlaywrightWebBrowser(
             // "Target page, context or browser has been closed" to the caller.
             return await ExecuteWithReconnectAsync(() => NavigateOnceAsync(request, ct));
         }
+        catch (PlaywrightException ex) when (IsConnectionClosed(ex))
+        {
+            // The connection was still dead after a reconnect+retry (e.g. a page that crashes the
+            // browser process on every load). Surface a clean, actionable message rather than the
+            // raw "Target page, context or browser has been closed", which is meaningless to the agent.
+            return CreateErrorResult(request.SessionId, request.Url,
+                "The browser connection dropped while loading the page and could not recover. " +
+                "This usually means the page itself crashed the browser; try a different URL or try again later.");
+        }
         catch (PlaywrightException ex)
         {
             return CreateErrorResult(request.SessionId, request.Url, $"Browser error: {ex.Message}");

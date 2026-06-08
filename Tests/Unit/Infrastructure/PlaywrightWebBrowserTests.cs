@@ -211,6 +211,45 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task NavigateAsync_WhenConnectionStaysClosedAfterReconnect_ReturnsCleanMessageNotRawError()
+    {
+        // Some pages crash the Camoufox/Playwright server process on every load, so even the
+        // post-reconnect retry hits a dead connection and throws "Target page, context or browser
+        // has been closed" again. The caller must get a clean, actionable message — never the raw
+        // Playwright text, which is meaningless to the agent.
+        var closedEx = new PlaywrightException("Target page, context or browser has been closed");
+
+        var connections = new List<Mock<IBrowser>>();
+        Func<Task<IBrowser>> factory = () =>
+        {
+            var page = new Mock<IPage>();
+            page.SetupGet(p => p.IsClosed).Returns(false);
+            page.SetupGet(p => p.Url).Returns("about:blank");
+            page.Setup(p => p.GotoAsync(It.IsAny<string>(), It.IsAny<PageGotoOptions?>()))
+                .ThrowsAsync(closedEx);
+            var context = new Mock<IBrowserContext>();
+            context.Setup(c => c.NewPageAsync()).ReturnsAsync(page.Object);
+            var browser = new Mock<IBrowser>();
+            browser.SetupGet(b => b.IsConnected).Returns(true);
+            browser.Setup(b => b.NewContextAsync(It.IsAny<BrowserNewContextOptions?>()))
+                .ReturnsAsync(context.Object);
+            connections.Add(browser);
+            return Task.FromResult(browser.Object);
+        };
+
+        await using var browser = new PlaywrightWebBrowser(
+            wsEndpoint: "ws://dummy:9377/browser", browserFactory: factory);
+
+        var result = await browser.NavigateAsync(new BrowseRequest(SessionId: "s", Url: "https://a.test/"));
+
+        // It reconnected (so it genuinely retried) but the retry still failed closed.
+        connections.Count.ShouldBe(2);
+        result.Status.ShouldBe(BrowseStatus.Error);
+        result.ErrorMessage.ShouldNotBeNull();
+        result.ErrorMessage.ShouldNotContain("has been closed");
+    }
+
+    [Fact]
     public async Task SnapshotAsync_WhenConnectionClosed_ReturnsSessionNotFoundInsteadOfRawError()
     {
         // A dropped connection makes the cached page dead — its content is gone, so reconnecting
