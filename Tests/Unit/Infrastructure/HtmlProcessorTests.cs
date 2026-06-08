@@ -35,6 +35,39 @@ public class HtmlProcessorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_HtmlDeclaresLegacyCharset_PreservesUnicodeAccents()
+    {
+        // Playwright's page.ContentAsync() returns a correctly-decoded Unicode string even when the
+        // site declares and serves a legacy charset (aemet.es serves ISO-8859-15). The serialized
+        // HTML still carries the <meta charset> tag. If the markdown extractor re-decodes that
+        // already-decoded string through the meta charset, every accented char double-encodes
+        // (é -> Ã©, ° -> Â°). The accents must survive verbatim.
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head>
+                       <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-15" />
+                       <title>Predicción 7 días</title>
+                   </head>
+                   <body>
+                       <p>El miércoles habrá lluvia en Cáceres. Temperatura máxima 30°C.</p>
+                   </body>
+                   </html>
+                   """;
+        var request = new BrowseRequest(SessionId: "test", Url: "https://www.aemet.es/");
+
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        result.Content.ShouldNotBeNull();
+        result.Content.ShouldNotContain("Ã");
+        result.Content.ShouldNotContain("Â");
+        result.Content.ShouldContain("miércoles");
+        result.Content.ShouldContain("Cáceres");
+        result.Content.ShouldContain("30°C");
+        result.Title.ShouldBe("Predicción 7 días");
+    }
+
+    [Fact]
     public async Task ProcessAsync_WithCssSelector_ReturnsTargetedContent()
     {
         // Arrange
