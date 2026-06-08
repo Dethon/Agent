@@ -367,15 +367,15 @@ public class PlaywrightWebBrowserTests(
 
         try
         {
-            // Set up: navigate each session to its page
-            for (var i = 0; i < sessions.Count; i++)
-            {
-                var result = await fixture.Browser.NavigateAsync(new BrowseRequest(
-                    SessionId: sessions[i],
+            // Set up: navigate each session to its page in parallel. The browser handles concurrent
+            // sessions (see NavigateAsync_ParallelSessions); navigating sequentially here needlessly
+            // serialized three live-site loads and dominated this test's wall-clock.
+            var setupResults = await Task.WhenAll(sessions.Select((sid, i) =>
+                fixture.Browser.NavigateAsync(new BrowseRequest(
+                    SessionId: sid,
                     Url: urls[i],
-                    MaxLength: 1000));
-                result.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
-            }
+                    MaxLength: 1000))));
+            setupResults.ShouldAllBe(r => r.Status == BrowseStatus.Success || r.Status == BrowseStatus.Partial);
 
             // Take snapshots in parallel
             var snapshotTasks = sessions.Select(sid =>
@@ -422,13 +422,11 @@ public class PlaywrightWebBrowserTests(
 
         try
         {
-            // Set up: navigate each session
-            for (var i = 0; i < sessions.Count; i++)
-            {
-                var result = await fixture.Browser.NavigateAsync(new BrowseRequest(
-                    SessionId: sessions[i], Url: urls[i], MaxLength: 500));
-                result.Status.ShouldBe(BrowseStatus.Success);
-            }
+            // Set up: navigate each session in parallel (see NavigateAsync_ParallelSessions).
+            var setupResults = await Task.WhenAll(sessions.Select((sid, i) =>
+                fixture.Browser.NavigateAsync(new BrowseRequest(
+                    SessionId: sid, Url: urls[i], MaxLength: 500))));
+            setupResults.ShouldAllBe(r => r.Status == BrowseStatus.Success);
 
             // Snapshot to assign element refs
             var snapshotTasks = sessions.Select(sid =>

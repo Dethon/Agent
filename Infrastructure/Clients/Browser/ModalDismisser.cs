@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Domain.Contracts;
 using Microsoft.Playwright;
 
@@ -90,52 +91,71 @@ public class ModalDismisser
         )
     ];
 
+    // How long to keep watching for a modal before concluding there is none. This is the price a
+    // no-modal page pays, and the upper bound on how late an (async-injected) modal can appear and
+    // still be dismissed. Chosen empirically (see ModalDismisserTests): a wall already present is
+    // dismissed on the first poll regardless of this value — it only bounds the wait for one that
+    // hasn't rendered yet. Missing a late wall rarely costs content (readability/selector extraction
+    // strips overlays), so the window stays short to keep the common no-modal browse fast.
+    private const int ModalDetectionWindowMs = 300;
+
+    // How often to re-check for a modal within the detection window.
+    private const int ModalPollIntervalMs = 75;
+
     public async Task<IReadOnlyList<ModalDismissed>> DismissModalsAsync(
         IPage page,
         CancellationToken ct)
     {
         var patterns = _defaultPatterns;
-        const int timeout = 3000;
 
-        // Brief wait for modals to appear
-        await Task.Delay(200, ct);
-
-        // Try all patterns in parallel - first successful dismissal per pattern type wins
-        var dismissTasks = patterns
-            .Select(pattern => TryDismissPatternSafeAsync(page, pattern, timeout, ct))
-            .ToList();
-
-        var results = await Task.WhenAll(dismissTasks);
-        var dismissed = results.Where(r => r != null).Cast<ModalDismissed>().ToList();
-
-        // Brief wait after dismissing for animations (only if we dismissed something)
-        if (dismissed.Count > 0)
+        // Re-attempt dismissal until something is dismissed or the window elapses. Each pass is fast
+        // (immediate visibility/overlay checks, no blocking waits), and only acts on a real visible
+        // overlay — so a content page with incidental modal-ish class names does nothing and a
+        // no-modal page just polls cheaply until the window. This catches modals that render late
+        // (async consent walls) on ANY page, and replaces the old unconditional 200ms settle + the
+        // per-selector 3000/500ms WaitForAsync timeouts that every navigation paid with no modal.
+        var sw = Stopwatch.StartNew();
+        while (true)
         {
-            await Task.Delay(150, ct);
-        }
+            var results = await Task.WhenAll(patterns
+                .Select(pattern => TryDismissPatternSafeAsync(page, pattern, ct)));
+            var dismissed = results.Where(r => r != null).Cast<ModalDismissed>().ToList();
 
-        // Try Escape key as fallback for generic modals
-        try
-        {
-            await TryEscapeKeyAsync(page, ct);
-        }
-        catch
-        {
-            // Ignore escape key failures
-        }
+            if (dismissed.Count > 0)
+            {
+                // Brief wait for the close animation, then an Escape fallback for a sibling modal.
+                await Task.Delay(150, ct);
+                try
+                {
+                    await TryEscapeKeyAsync(page, ct);
+                }
+                catch
+                {
+                    // Ignore escape key failures
+                }
 
-        return dismissed;
+                return dismissed;
+            }
+
+            if (sw.ElapsedMilliseconds >= ModalDetectionWindowMs)
+            {
+                // Nothing dismissable appeared within the window. Skip the Escape fallback: there is
+                // no visible overlay, so it would only cost latency on the common no-modal page.
+                return [];
+            }
+
+            await Task.Delay(ModalPollIntervalMs, ct);
+        }
     }
 
     private async Task<ModalDismissed?> TryDismissPatternSafeAsync(
         IPage page,
         ModalPattern pattern,
-        int timeout,
         CancellationToken ct)
     {
         try
         {
-            return await TryDismissPatternAsync(page, pattern, timeout, ct);
+            return await TryDismissPatternAsync(page, pattern, ct);
         }
         catch
         {
@@ -147,40 +167,34 @@ public class ModalDismisser
     private async Task<ModalDismissed?> TryDismissPatternAsync(
         IPage page,
         ModalPattern pattern,
-        int timeout,
         CancellationToken ct)
     {
-        // Check if any matching container is visible (not just the first DOM match)
+        // Require a matching container that is an actual visible OVERLAY, not just any visible
+        // element. The container selectors use generic substrings ([class*='age'], [class*='modal'],
+        // …) that match ordinary article elements on content-rich pages; gating on overlay
+        // positioning (fixed/absolute/sticky, on-screen, non-transparent) is what distinguishes a
+        // real modal from page content. Immediate checks only — no blocking waits.
         if (!string.IsNullOrEmpty(pattern.ContainerSelector))
         {
             var containerLocator = page.Locator(pattern.ContainerSelector);
-
-            try
+            var count = await containerLocator.CountAsync();
+            if (count == 0)
             {
-                await containerLocator.First.WaitForAsync(new LocatorWaitForOptions
-                {
-                    Timeout = timeout
-                });
-            }
-            catch
-            {
-                // No containers found at all
                 return null;
             }
 
-            var count = await containerLocator.CountAsync();
-            var anyVisible = false;
+            var anyOverlay = false;
 
             for (var i = 0; i < Math.Min(count, 10); i++)
             {
-                if (await containerLocator.Nth(i).IsVisibleAsync())
+                if (await IsVisibleOverlayAsync(containerLocator.Nth(i)))
                 {
-                    anyVisible = true;
+                    anyOverlay = true;
                     break;
                 }
             }
 
-            if (!anyVisible)
+            if (!anyOverlay)
             {
                 return null;
             }
@@ -196,11 +210,14 @@ public class ModalDismisser
             try
             {
                 var button = page.Locator(buttonSelector).First;
-                await button.WaitForAsync(new LocatorWaitForOptions
+
+                // Immediate visibility check instead of a blocking WaitForAsync(500): absent buttons
+                // are skipped in ~ms. The old per-selector waits summed to ~14s across the ~29
+                // button/text probes whenever a generic container selector false-matched.
+                if (!await IsCurrentlyVisibleAsync(button))
                 {
-                    State = WaitForSelectorState.Visible,
-                    Timeout = 500
-                });
+                    continue;
+                }
 
                 // Skip elements that would cause navigation (links with href to different pages)
                 if (await WouldCauseNavigationAsync(button, urlBefore))
@@ -239,11 +256,10 @@ public class ModalDismisser
                 {
                     // Try button with text
                     var button = page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = textPattern }).First;
-                    await button.WaitForAsync(new LocatorWaitForOptions
+                    if (!await IsCurrentlyVisibleAsync(button))
                     {
-                        State = WaitForSelectorState.Visible,
-                        Timeout = 500
-                    });
+                        continue;
+                    }
 
                     if (await WouldCauseNavigationAsync(button, urlBefore))
                     {
@@ -270,11 +286,10 @@ public class ModalDismisser
                 {
                     // Try link with text - but only if it doesn't navigate
                     var link = page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = textPattern }).First;
-                    await link.WaitForAsync(new LocatorWaitForOptions
+                    if (!await IsCurrentlyVisibleAsync(link))
                     {
-                        State = WaitForSelectorState.Visible,
-                        Timeout = 500
-                    });
+                        continue;
+                    }
 
                     if (await WouldCauseNavigationAsync(link, urlBefore))
                     {
@@ -300,6 +315,46 @@ public class ModalDismisser
         }
 
         return null;
+    }
+
+    // Returns whether the locator resolves to a visible, on-screen overlay (fixed/absolute/sticky,
+    // non-zero size, not transparent/hidden) — i.e. something that looks like a real modal rather
+    // than ordinary page content that merely matched a generic container selector.
+    private static async Task<bool> IsVisibleOverlayAsync(ILocator locator)
+    {
+        try
+        {
+            return await locator.EvaluateAsync<bool>(
+                """
+                el => {
+                    const r = el.getBoundingClientRect();
+                    if (r.width <= 0 || r.height <= 0) return false;
+                    const s = getComputedStyle(el);
+                    if (s.visibility === 'hidden' || s.display === 'none' || parseFloat(s.opacity) === 0)
+                        return false;
+                    return s.position === 'fixed' || s.position === 'absolute' || s.position === 'sticky';
+                }
+                """);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Returns whether the locator currently resolves to a visible element, without blocking.
+    // CountAsync()/IsVisibleAsync() report the present DOM state immediately, unlike WaitForAsync
+    // which polls up to its timeout when the element is absent.
+    private static async Task<bool> IsCurrentlyVisibleAsync(ILocator locator)
+    {
+        try
+        {
+            return await locator.CountAsync() > 0 && await locator.IsVisibleAsync();
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static async Task<bool> WouldCauseNavigationAsync(ILocator element, string currentUrl)

@@ -808,9 +808,13 @@ public class PlaywrightWebBrowser(
         }
     }
 
+    // Polls page HTML until it stops changing (catches client-side rendering after DOMContentLoaded).
+    // ContentAsync is cheap (a few ms even on large pages), so the poll interval is the only real
+    // cost: at 200ms a settled page clears in ~3 checks (~0.6s) instead of the old ~1.5s, while still
+    // requiring two consecutive identical reads before declaring stability.
     private static async Task WaitForDomStabilityAsync(
         IPage page,
-        int checkIntervalMs = 500,
+        int checkIntervalMs = 200,
         CancellationToken ct = default,
         int stableCountRequired = 2,
         int maxChecks = 6)
