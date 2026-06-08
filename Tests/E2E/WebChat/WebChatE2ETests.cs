@@ -250,15 +250,52 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // The welcome/empty-state screen is the idle foreground state (no conversation selected).
         // Any CSS animation that loops forever here keeps the browser compositor awake every frame,
-        // pinning GPU usage even while the user is idle. The idle screen must declare no such animation.
-        var perpetualAnimations = await page.EvaluateAsync<int>(
-            @"() => document.getAnimations()
-                .filter(a => a.playState === 'running'
-                    && a.effect
-                    && a.effect.getComputedTiming().iterations === Infinity)
-                .length");
+        // pinning GPU usage even while the user is idle. The empty-state must declare no such animation.
+        //
+        // Scope strictly to the .empty-state subtree. Other infinite animations elsewhere on the page
+        // are transient work-indicators, not idle decorations — e.g. the sidebar topic-streaming
+        // indicator (.topic-streaming-indicator, 3 pulsing dots) which a stream resumed on load
+        // (StreamResumeService) can render against the shared E2E server state polluted by sibling
+        // tests. Those loop only while a stream is active and are not part of the idle foreground this
+        // guard covers; a document-wide query made this assertion flake (intermittently saw 3).
+        var emptyState = page.Locator(".empty-state");
+        await emptyState.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
 
-        perpetualAnimations.ShouldBe(0);
+        const string countPerpetualInEmptyState = @"() => {
+            const root = document.querySelector('.empty-state');
+            return root
+                ? document.getAnimations().filter(a => a.playState === 'running'
+                    && a.effect
+                    && a.effect.getComputedTiming().iterations === Infinity
+                    && a.effect.target
+                    && root.contains(a.effect.target)).length
+                : 0;
+        }";
+
+        var perpetualAnimations = await page.EvaluateAsync<int>(countPerpetualInEmptyState);
+
+        // Self-diagnosing failure: report which animations loop and on which element. Only queried on
+        // failure so a green run stays cheap.
+        var offenders = perpetualAnimations == 0
+            ? "[]"
+            : await page.EvaluateAsync<string>(@"() => {
+                const root = document.querySelector('.empty-state');
+                const hits = root ? document.getAnimations().filter(a => a.playState === 'running'
+                    && a.effect
+                    && a.effect.getComputedTiming().iterations === Infinity
+                    && a.effect.target
+                    && root.contains(a.effect.target)) : [];
+                return JSON.stringify(hits.map(a => ({
+                    animationName: a.animationName,
+                    tag: a.effect.target.tagName ? a.effect.target.tagName.toLowerCase() : '(pseudo)',
+                    cls: (a.effect.target.getAttribute && a.effect.target.getAttribute('class')) || '(none)',
+                    pseudo: a.effect.pseudoElement || null
+                })));
+            }");
+
+        perpetualAnimations.ShouldBe(
+            0,
+            $"Idle .empty-state must declare no perpetually-looping animations, but found: {offenders}");
     }
 
     [SkippableFact]
