@@ -9,6 +9,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
+[Trait("Category", "Llm")]
 public class ThreadSessionTests(ThreadSessionServerFixture fixture)
     : IClassFixture<ThreadSessionServerFixture>
 {

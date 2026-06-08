@@ -10,6 +10,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
+[Trait("Category", "Llm")]
 public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redisFixture)
     : IClassFixture<McpLibraryServerFixture>, IClassFixture<RedisFixture>
 {

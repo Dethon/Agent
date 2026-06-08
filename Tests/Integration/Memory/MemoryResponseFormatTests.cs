@@ -12,6 +12,7 @@ using Shouldly;
 namespace Tests.Integration.Memory;
 
 [Trait("Category", "Integration")]
+[Trait("Category", "Llm")]
 public class MemoryExtractionResponseFormatTests : IAsyncLifetime
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
@@ -92,6 +93,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
 }
 
 [Trait("Category", "Integration")]
+[Trait("Category", "Llm")]
 public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
@@ -197,6 +199,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
 }
 
 [Trait("Category", "Integration")]
+[Trait("Category", "Llm")]
 public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()

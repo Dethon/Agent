@@ -9,6 +9,7 @@ using Shouldly;
 
 namespace Tests.Integration.Agents;
 
+[Trait("Category", "Llm")]
 public class OpenRouterReasoningTests
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()

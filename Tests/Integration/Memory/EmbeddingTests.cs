@@ -7,6 +7,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Memory;
 
+[Trait("Category", "Llm")]
 public class OpenRouterEmbeddingServiceTests : IAsyncLifetime
 {
     private readonly string? _apiKey;
@@ -150,6 +151,7 @@ public class OpenRouterEmbeddingServiceTests : IAsyncLifetime
     }
 }
 
+[Trait("Category", "Llm")]
 public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyncLifetime
 {
     private readonly RedisFixture _redisFixture;
