@@ -68,16 +68,19 @@ public class SatelliteSessionPlaybackTests
         // The depth cap is the backpressure guard: once the queue is full, further Normal jobs
         // must be dropped (return false) rather than unbounded-buffered.
         var session = MakeSession();
-        PlaybackJob Job(string label) => new(
+        static PlaybackJob job(string label)
+        {
+            return new(
             Label: label,
             Priority: AnnouncePriority.Normal,
             Audio: GenerateAudio(label, count: 1),
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: _ => Task.CompletedTask);
+        }
 
         // No loop running: fill to depth 1, then the next Normal overflows.
-        (await session.EnqueuePlaybackAsync(Job("a"), queueMaxDepth: 1)).ShouldBeTrue();
-        (await session.EnqueuePlaybackAsync(Job("b"), queueMaxDepth: 1)).ShouldBeFalse();
+        (await session.EnqueuePlaybackAsync(job("a"), queueMaxDepth: 1)).ShouldBeTrue();
+        (await session.EnqueuePlaybackAsync(job("b"), queueMaxDepth: 1)).ShouldBeFalse();
     }
 
     [Fact]
@@ -283,7 +286,11 @@ public class SatelliteSessionPlaybackTests
         var loud = new byte[3200];
         for (var i = 0; i < loud.Length; i += 2)
         { loud[i] = 0x40; loud[i + 1] = 0x1F; }
-        AudioChunk loudChunk() => new() { Data = loud, Format = AudioFormat.WyomingStandard };
+        AudioChunk loudChunk()
+        {
+            return new() { Data = loud, Format = AudioFormat.WyomingStandard };
+        }
+
         var silent = new AudioChunk { Data = new byte[3200], Format = AudioFormat.WyomingStandard };
 
         // No active capture: routing is a safe no-op.
@@ -316,7 +323,7 @@ public class SatelliteSessionPlaybackTests
         var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // 16000 bytes at 16 kHz/16-bit/mono = exactly 500 ms of audio.
-        async IAsyncEnumerable<AudioChunk> halfSecond()
+        static async IAsyncEnumerable<AudioChunk> halfSecond()
         {
             yield return new AudioChunk { Data = new byte[16000], Format = AudioFormat.WyomingStandard };
             await Task.CompletedTask;
@@ -467,16 +474,19 @@ public class SatelliteSessionPlaybackTests
         // Two High jobs enqueued while idle (no job marked current). The second must NOT preempt the
         // first via the pending high-water mark; both play in FIFO order (regression guard for the
         // preempt-sequence fix).
-        PlaybackJob High(string label) => new(
+        PlaybackJob high(string label)
+        {
+            return new(
             Label: label,
             Priority: AnnouncePriority.High,
             Audio: GenerateAudio(label, count: 1),
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: l => { preempted.Add(l); return Task.CompletedTask; },
             OnDrained: () => { drained.Add(label); return Task.CompletedTask; });
+        }
 
-        await session.EnqueuePlaybackAsync(High("h1"), queueMaxDepth: 4);
-        await session.EnqueuePlaybackAsync(High("h2"), queueMaxDepth: 4);
+        await session.EnqueuePlaybackAsync(high("h1"), queueMaxDepth: 4);
+        await session.EnqueuePlaybackAsync(high("h2"), queueMaxDepth: 4);
         session.CompletePlayback();
 
         await session.RunPlaybackLoopAsync(
