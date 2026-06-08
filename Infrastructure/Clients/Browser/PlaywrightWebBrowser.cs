@@ -352,37 +352,10 @@ public class PlaywrightWebBrowser(
         {
             case WebActionType.Click:
                 await locator.ClickAsync(new() { Force = request.Force });
-                if (await HasJQueryAsync(page))
-                {
-                    await locator.EvaluateAsync("el => jQuery(el).triggerHandler('focus')");
-                }
-
                 break;
             case WebActionType.Type:
                 await locator.ClearAsync();
                 await locator.PressSequentiallyAsync(request.Value ?? "", new() { Delay = 50 });
-                // Force-trigger input events using the native value setter to ensure
-                // framework-managed inputs (React, Vue) and autocomplete widgets respond,
-                // even in browsers where Playwright's synthetic keyboard events don't trigger them.
-                // Also trigger jQuery events — jQuery handlers receive jQuery event objects
-                // (not native events) so they bypass isTrusted checks that block synthetic
-                // keyboard events in anti-detect browsers like Camoufox.
-                await locator.EvaluateAsync("""
-                    el => {
-                        const nativeSetter = Object.getOwnPropertyDescriptor(
-                            HTMLInputElement.prototype, 'value')?.set;
-                        if (nativeSetter) {
-                            nativeSetter.call(el, el.value);
-                        }
-                        el.dispatchEvent(new Event('input', { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
-                        if (typeof jQuery !== 'undefined') {
-                            const $el = jQuery(el);
-                            $el.trigger(jQuery.Event('keyup', { keyCode: 65, which: 65 }));
-                            $el.trigger(jQuery.Event('input'));
-                        }
-                    }
-                """);
                 break;
             case WebActionType.Fill:
                 await locator.FillAsync(request.Value ?? "");
@@ -401,12 +374,6 @@ public class PlaywrightWebBrowser(
                 break;
             case WebActionType.Focus:
                 await locator.FocusAsync();
-                if (await HasJQueryAsync(page))
-                {
-                    await locator.EvaluateAsync(
-                        "el => jQuery(el).trigger(jQuery.Event('focus', { keyCode: 9, which: 9 }))");
-                }
-
                 break;
             case WebActionType.Drag:
                 if (string.IsNullOrEmpty(request.EndRef))
@@ -562,9 +529,6 @@ public class PlaywrightWebBrowser(
             previousHtml = currentHtml;
         }
     }
-
-    private static async Task<bool> HasJQueryAsync(IPage page)
-        => await page.EvaluateAsync<bool>("() => typeof jQuery !== 'undefined'");
 
     private static async Task<string> GetNearbyHtmlAsync(IPage page, string targetSelector)
     {
