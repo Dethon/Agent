@@ -21,6 +21,7 @@ pub struct Config {
     pub wake_enabled: bool,     // --no-wake disables on-device wake (button-only operation)
     pub button: ButtonConfig,
     pub preroll_ms: u32,        // zero-lag: how much recent audio to flush to the hub on trigger
+    pub wake_preroll_ms: u32,   // wake-path flush: detection-latency gap only, NOT the wake word
     pub awake_cue: bool,
     pub done_cue: bool,
 }
@@ -37,6 +38,7 @@ impl Default for Config {
             wake_enabled: true,
             button: ButtonConfig::Gpio(17), // reSpeaker HAT onboard button; override with --button-* or --no-button
             preroll_ms: 1000,
+            wake_preroll_ms: 240, // covers the ~181 ms measured detection latency with margin
             awake_cue: true,
             done_cue: true,
         }
@@ -46,7 +48,7 @@ impl Default for Config {
 impl Config {
     /// Flags: --listen --mic-command --snd-command --threshold --no-wake
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
-    ///        --preroll-ms <ms> --no-awake-cue --no-done-cue
+    ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
     pub fn from_args() -> anyhow::Result<Self> {
         let mut pa = pico_args::Arguments::from_env();
         let mut c = Config::default();
@@ -55,6 +57,7 @@ impl Config {
         if let Some(v) = pa.opt_value_from_str::<_, String>("--snd-command")? { c.snd_command = v; }
         if let Some(v) = pa.opt_value_from_str::<_, f32>("--threshold")? { c.detector.threshold = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--preroll-ms")? { c.preroll_ms = v; }
+        if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-preroll-ms")? { c.wake_preroll_ms = v; }
         if pa.contains("--no-wake") { c.wake_enabled = false; }
         if pa.contains("--no-awake-cue") { c.awake_cue = false; }
         if pa.contains("--no-done-cue") { c.done_cue = false; }
@@ -76,6 +79,13 @@ impl Config {
     pub fn preroll_chunks(&self) -> usize {
         (self.preroll_ms as usize).div_ceil(80)
     }
+
+    /// Chunks to keep when a WAKE trigger flushes the pre-roll: just the detection-latency
+    /// gap after the wake word ends (~181 ms measured) — NOT the wake word itself, which
+    /// would otherwise be transcribed and dispatched as the request.
+    pub fn wake_preroll_chunks(&self) -> usize {
+        (self.wake_preroll_ms as usize).div_ceil(80)
+    }
 }
 
 #[cfg(test)]
@@ -92,5 +102,7 @@ mod tests {
         assert_eq!(c.button, ButtonConfig::Gpio(17));
         assert_eq!(c.preroll_ms, 1000);
         assert_eq!(c.preroll_chunks(), 13); // ceil(1000 / 80)
+        assert_eq!(c.wake_preroll_ms, 240);
+        assert_eq!(c.wake_preroll_chunks(), 3);
     }
 }

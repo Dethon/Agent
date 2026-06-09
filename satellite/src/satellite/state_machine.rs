@@ -53,6 +53,7 @@ pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: 
                         if let Some(d) = detector.as_mut() {
                             if d.push_chunk(&samples) {
                                 info!("wake word detected");
+                                trim_preroll(&mut preroll, cfg.wake_preroll_chunks());
                                 start_turn(&mut wr, &mut mode, &cues, &mut preroll).await?;
                             }
                         }
@@ -77,6 +78,13 @@ pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: 
 fn push_preroll(buf: &mut VecDeque<Vec<i16>>, chunk: Vec<i16>, cap: usize) {
     buf.push_back(chunk);
     while buf.len() > cap { buf.pop_front(); }
+}
+
+/// Wake-path trim: keep only the newest `keep` chunks (the detection-latency gap),
+/// dropping the wake-word audio that precedes them. Button turns skip this — speech
+/// may legitimately precede a button press, so they flush the full ring.
+fn trim_preroll(buf: &mut VecDeque<Vec<i16>>, keep: usize) {
+    while buf.len() > keep { buf.pop_front(); }
 }
 
 fn to_pcm(samples: &[i16]) -> Vec<u8> {
@@ -161,6 +169,22 @@ mod tests {
         for _ in 0..5 {
             assert_eq!(read_event_buffered(&mut buf).await.unwrap().unwrap().event_type, "audio-chunk");
         }
+    }
+
+    // Wake-path regression: the flushed pre-roll must NOT include the wake word itself —
+    // only the detection-latency gap (wake fires ~181 ms after the word ends). Saying
+    // "ok nabu" then nothing must not transcribe-and-dispatch "ok nabu".
+    #[tokio::test]
+    async fn wake_trim_keeps_only_the_detection_gap() {
+        let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
+        for i in 0..13 {
+            preroll.push_back(vec![i as i16; 1280]); // 13 chunks ≈ the 1000 ms ring, oldest first
+        }
+        trim_preroll(&mut preroll, 3);
+        assert_eq!(preroll.len(), 3);
+        // the NEWEST chunks survive (10, 11, 12), the wake-word audio (older) is dropped
+        assert_eq!(preroll[0][0], 10);
+        assert_eq!(preroll[2][0], 12);
     }
 
     #[tokio::test]
