@@ -67,7 +67,7 @@ impl WakeDetector {
     /// against the Python package): mel over lookback+chunk, ones-seeded mel buffer, one
     /// embedding per chunk from the last 76 frames, classify the last 16 embeddings.
     pub fn push_chunk(&mut self, chunk: &[i16]) -> bool {
-        debug_assert_eq!(chunk.len(), CHUNK);
+        assert_eq!(chunk.len(), CHUNK, "push_chunk requires exactly {CHUNK} samples");
         // Stage 1: mel over lookback + chunk -> 8 new frames (x/10 + 2)
         let mut input = vec![0f32; LOOKBACK + CHUNK];
         input[..LOOKBACK].copy_from_slice(&self.tail);
