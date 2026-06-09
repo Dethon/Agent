@@ -16,12 +16,57 @@ use tracing::{info, warn};
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum Mode { Idle, Streaming }
 
+/// Aborts the wrapped task on drop, so the pump tasks can never outlive run_connection —
+/// neither on loop exit / `?` error paths, nor when the whole connection task is aborted
+/// (main.rs single-hub supersede policy; the mic pump owns MicCapture, whose kill_on_drop
+/// must reap arecord before the next connection can claim the exclusive device).
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) { self.0.abort(); }
+}
+
 pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: Config) -> anyhow::Result<()> {
-    let mut buf = BufReader::new(reader);
     let mut wr = writer;
-    let mut mic = MicCapture::spawn(&cfg.mic_command)?;
+    let mic = MicCapture::spawn(&cfg.mic_command)?;
     let mut detector = if cfg.wake_enabled { Some(WakeDetector::new(cfg.detector.clone())?) } else { None };
     let cues = Cues::new(&cfg)?;
+
+    // CANCELLATION SAFETY: tokio::select! DROPS the futures of losing arms. Both
+    // read_event_buffered and MicCapture::next_chunk are multi-await compound reads, so
+    // dropping them mid-read loses partial progress: a hub event spanning TCP segments is
+    // half-consumed and the next read parses PCM payload as a header line ("stream did not
+    // contain valid UTF-8"); a half-read mic chunk drops bytes and misaligns the i16 stream.
+    // The compound reads therefore live in dedicated pump tasks, and the select! below races
+    // only mpsc::Receiver::recv() futures, which ARE cancellation-safe. Bounded channels
+    // preserve flow control: when the main loop blocks (e.g. in PlaybackSink::finish), the
+    // pumps block on send() and the socket / arecord pipe back up exactly as before.
+    let (hub_tx, mut hub_rx) = mpsc::channel::<anyhow::Result<WyomingEvent>>(16);
+    let _hub_pump = AbortOnDrop(tokio::spawn(async move {
+        let mut buf = BufReader::new(reader);
+        loop {
+            match read_event_buffered(&mut buf).await {
+                Ok(Some(e)) => {
+                    if hub_tx.send(Ok(e)).await.is_err() { break; } // main loop gone
+                }
+                Ok(None) => break, // clean EOF -> drop tx -> recv() yields None
+                Err(e) => { let _ = hub_tx.send(Err(e)).await; break; }
+            }
+        }
+    }));
+    let (mic_tx, mut mic_rx) = mpsc::channel::<anyhow::Result<Vec<i16>>>(8);
+    let _mic_pump = AbortOnDrop(tokio::spawn(async move {
+        let mut mic = mic;
+        loop {
+            match mic.next_chunk().await {
+                Ok(Some(samples)) => {
+                    if mic_tx.send(Ok(samples)).await.is_err() { break; } // main loop gone
+                }
+                Ok(None) => break, // EOF -> drop tx -> recv() yields None
+                Err(e) => { let _ = mic_tx.send(Err(e)).await; break; }
+            }
+        }
+        // MicCapture drops here -> kill_on_drop reaps the arecord child
+    }));
 
     // Button is claimed per-connection, released on disconnect (ButtonGuard drop). An "empty"
     // receiver (sender already dropped) leaves the select! branch permanently disabled.
@@ -41,13 +86,15 @@ pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: 
 
     loop {
         tokio::select! {
-            ev = read_event_buffered(&mut buf) => match ev? {
+            ev = hub_rx.recv() => match ev {
                 None => { info!("hub disconnected"); break; }
-                Some(e) => handle_hub_event(e, &mut mode, detector.as_mut(), &mut wr, &mut playback, &cues, &cfg).await?,
+                Some(Err(e)) => return Err(e),
+                Some(Ok(e)) => handle_hub_event(e, &mut mode, detector.as_mut(), &mut wr, &mut playback, &cues, &cfg).await?,
             },
-            chunk = mic.next_chunk() => match chunk? {
+            chunk = mic_rx.recv() => match chunk {
                 None => { warn!("mic stream ended"); break; }
-                Some(samples) => match mode {
+                Some(Err(e)) => return Err(e),
+                Some(Ok(samples)) => match mode {
                     Mode::Idle => {
                         push_preroll(&mut preroll, samples.clone(), preroll_cap);
                         if let Some(d) = detector.as_mut() {
@@ -72,6 +119,7 @@ pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: 
             }
         }
     }
+    // _hub_pump/_mic_pump drop here (as on every early-return path) and abort their tasks.
     Ok(())
 }
 
@@ -197,6 +245,74 @@ mod tests {
         handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &c, &Config::default()).await.unwrap();
         assert_eq!(mode, Mode::Idle);
         assert_eq!(read_event(&mut b).await.unwrap().unwrap().event_type, "audio-stop");
+    }
+
+    // Regression for a select! cancellation-safety bug: hub events arriving in fragments
+    // while the mic floods chunks caused the in-flight read_event_buffered future to be
+    // dropped mid-event, desyncing the stream ("stream did not contain valid UTF-8").
+    // The hub side below writes each audio-chunk frame in two halves with a yield between
+    // them, so pre-fix the partial-progress drop happens almost surely within ~300 events.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn survives_fragmented_hub_frames_under_mic_flood() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // satellite side: mic floods (always-ready /dev/zero), playback to /dev/null
+        let cfg = Config {
+            mic_command: "head -c 99999999 /dev/zero".into(),
+            snd_command: "cat >/dev/null".into(),
+            wake_enabled: false, // detector off: keeps the loop hot on raw I/O
+            button: crate::config::ButtonConfig::None,
+            ..Config::default()
+        };
+        let sat = tokio::spawn(async move {
+            let (sock, _) = listener.accept().await.unwrap();
+            let (r, w) = sock.into_split();
+            run_connection(r, w, cfg).await
+        });
+
+        // hub side: dial in, then stream fragmented audio-chunk frames
+        let mut hub = tokio::net::TcpStream::connect(addr).await.unwrap();
+        use tokio::io::AsyncWriteExt;
+        // 0xAA is never a valid UTF-8 leading byte: a desynced reader that parses payload
+        // bytes as a header line reproduces the exact live error ("stream did not contain
+        // valid UTF-8") instead of a JSON parse error.
+        let payload = vec![0xAAu8; 1280];
+        let data = json!({"rate":22050,"width":2,"channels":1});
+        let body = serde_json::to_vec(&data).unwrap();
+        let header = format!(
+            "{{\"type\":\"audio-chunk\",\"data_length\":{},\"payload_length\":{}}}\n",
+            body.len(),
+            payload.len()
+        );
+        // Ignore hub-side write errors: pre-fix the satellite tears the connection down
+        // mid-stream, and the interesting failure is the satellite's own error below.
+        let hub_io = async {
+            hub.write_all(b"{\"type\":\"run-satellite\"}\n").await?;
+            hub.write_all(b"{\"type\":\"audio-start\",\"data\":{\"rate\":22050,\"width\":2,\"channels\":1}}\n").await?;
+            for _ in 0..300 {
+                // first half of the frame...
+                hub.write_all(header.as_bytes()).await?;
+                hub.write_all(&body).await?;
+                hub.write_all(&payload[..600]).await?;
+                hub.flush().await?;
+                // ...window where the read future has partial progress (a real sleep, not
+                // yield_now: with 2 workers a yield resumes before the satellite polls mid-frame)
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                hub.write_all(&payload[600..]).await?;
+            }
+            hub.write_all(b"{\"type\":\"audio-stop\",\"data\":{\"timestamp\":0}}\n").await?;
+            hub.flush().await?;
+            Ok::<(), std::io::Error>(())
+        };
+        let _ = hub_io.await;
+        drop(hub); // clean EOF -> satellite loop should exit Ok
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(30), sat)
+            .await
+            .expect("satellite loop hung")
+            .unwrap();
+        result.expect("connection must survive fragmented frames (no desync error)");
     }
 
     #[tokio::test]
