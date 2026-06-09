@@ -5,6 +5,8 @@ mod config;
 #[allow(dead_code)]
 mod gpio;
 #[allow(dead_code)]
+mod satellite;
+#[allow(dead_code)]
 mod wake;
 #[allow(dead_code)]
 mod wyoming;
