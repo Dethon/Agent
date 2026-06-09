@@ -286,7 +286,9 @@ git commit -m "feat(satellite): cargo skeleton for rust wyoming satellite"
 use std::collections::VecDeque;
 use tract_onnx::prelude::*;
 
-type Model = SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>;
+// tract 0.23: into_runnable() yields Arc<RunnableModel<F, O>>; TypedRunnableModel is the
+// prelude alias for RunnableModel<TypedFact, Box<dyn TypedOp>> — run() takes &Arc<Self>.
+type Model = Arc<TypedRunnableModel>;
 
 const CHUNK: usize = 1280;    // 80 ms @ 16 kHz
 const LOOKBACK: usize = 480;  // 160*3 samples of mel context carried across chunks
@@ -325,7 +327,7 @@ fn max_score(samples: &[i16]) -> f32 {
         let t: Tensor =
             tract_ndarray::Array2::from_shape_vec((1, LOOKBACK + CHUNK), input).unwrap().into();
         let out = mel.run(tvec!(t.into())).unwrap();
-        let view = out[0].to_array_view::<f32>().unwrap();
+        let view = out[0].to_plain_array_view::<f32>().unwrap();
         let flat: Vec<f32> = view.iter().map(|v| v / 10.0 + 2.0).collect();
         for frame in flat.chunks_exact(32) {
             let mut f = [0f32; 32];
@@ -340,7 +342,7 @@ fn max_score(samples: &[i16]) -> f32 {
         }
         let t: Tensor = tract_ndarray::Array4::from_shape_vec((1, 76, 32, 1), w).unwrap().into();
         let eo = emb.run(tvec!(t.into())).unwrap();
-        let ev = eo[0].to_array_view::<f32>().unwrap();
+        let ev = eo[0].to_plain_array_view::<f32>().unwrap();
         let mut e = [0f32; 96];
         for (i, v) in ev.iter().take(96).enumerate() { e[i] = *v; }
         emb_buf.push_back(e);
@@ -354,7 +356,7 @@ fn max_score(samples: &[i16]) -> f32 {
             let ct: Tensor =
                 tract_ndarray::Array3::from_shape_vec((1, 16, 96), c).unwrap().into();
             let co = clf.run(tvec!(ct.into())).unwrap();
-            let score = co[0].to_array_view::<f32>().unwrap()[[0, 0]];
+            let score = co[0].to_plain_array_view::<f32>().unwrap()[[0, 0]];
             best = best.max(score);
         }
     }
@@ -1030,7 +1032,9 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use tract_onnx::prelude::*;
 
-type Model = SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>;
+// tract 0.23: into_runnable() yields Arc<RunnableModel<F, O>>; TypedRunnableModel is the
+// prelude alias for RunnableModel<TypedFact, Box<dyn TypedOp>> — run() takes &Arc<Self>.
+type Model = Arc<TypedRunnableModel>;
 
 const MEL_MODEL: &[u8] = include_bytes!("../../models/melspectrogram.onnx");
 const EMB_MODEL: &[u8] = include_bytes!("../../models/embedding_model.onnx");
@@ -1102,7 +1106,7 @@ impl WakeDetector {
         let t: Tensor =
             tract_ndarray::Array2::from_shape_vec((1, LOOKBACK + CHUNK), input).unwrap().into();
         let out = self.mel.run(tvec!(t.into())).expect("mel run");
-        let flat: Vec<f32> = out[0].to_array_view::<f32>().unwrap().iter().map(|v| v / 10.0 + 2.0).collect();
+        let flat: Vec<f32> = out[0].to_plain_array_view::<f32>().unwrap().iter().map(|v| v / 10.0 + 2.0).collect();
         for frame in flat.chunks_exact(32) {
             let mut f = [0f32; 32];
             f.copy_from_slice(frame);
@@ -1117,7 +1121,7 @@ impl WakeDetector {
         let t: Tensor =
             tract_ndarray::Array4::from_shape_vec((1, MEL_FRAMES, 32, 1), w).unwrap().into();
         let eo = self.emb.run(tvec!(t.into())).expect("emb run");
-        let ev = eo[0].to_array_view::<f32>().unwrap();
+        let ev = eo[0].to_plain_array_view::<f32>().unwrap();
         let mut e = [0f32; EMB_DIM];
         for (i, v) in ev.iter().take(EMB_DIM).enumerate() { e[i] = *v; }
         self.emb_buf.push_back(e);
@@ -1131,7 +1135,7 @@ impl WakeDetector {
             let ct: Tensor =
                 tract_ndarray::Array3::from_shape_vec((1, CLF_FRAMES, EMB_DIM), c).unwrap().into();
             let co = self.clf.run(tvec!(ct.into())).expect("clf run");
-            let score = co[0].to_array_view::<f32>().unwrap()[[0, 0]];
+            let score = co[0].to_plain_array_view::<f32>().unwrap()[[0, 0]];
             if self.evaluate(score) { return true; }
         }
         false
