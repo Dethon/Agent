@@ -43,11 +43,11 @@ pub struct WakeDetector {
 impl WakeDetector {
     pub fn new(cfg: DetectorConfig) -> anyhow::Result<Self> {
         let load = |b: &[u8], shape: &[usize]| -> anyhow::Result<Model> {
-            Ok(tract_onnx::onnx()
+            tract_onnx::onnx()
                 .model_for_read(&mut std::io::Cursor::new(b))?
                 .with_input_fact(0, f32::fact(shape).into())?
                 .into_optimized()?
-                .into_runnable()?)
+                .into_runnable()
         };
         Ok(Self {
             mel: load(MEL_MODEL, &[1, LOOKBACK + CHUNK])?,

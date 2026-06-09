@@ -74,7 +74,7 @@ impl Config {
 
     /// Number of 1280-sample (80 ms) chunks to retain in the pre-roll ring buffer.
     pub fn preroll_chunks(&self) -> usize {
-        ((self.preroll_ms as usize) + 79) / 80
+        (self.preroll_ms as usize).div_ceil(80)
     }
 }
 

@@ -3,6 +3,7 @@ use serde_json::{Map, Value};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
 /// Read one Wyoming event. Returns Ok(None) on clean EOF.
+#[allow(dead_code)] // test-only convenience; production reads via read_event_buffered
 pub async fn read_event<R>(reader: &mut R) -> anyhow::Result<Option<WyomingEvent>>
 where
     R: AsyncRead + Unpin,

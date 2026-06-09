@@ -117,6 +117,8 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
                 cues.play_done();
             }
         }
+        // Playback failures below are connection-fatal BY CHOICE: the hub redials and a fresh
+        // connection re-arms everything; best-effort-continue would hide a dead audio device.
         "audio-start" => {
             if let Some(p) = playback.take() { p.kill().await; }
             *playback = Some(PlaybackSink::start(&cfg.snd_command)?);
@@ -171,5 +173,20 @@ mod tests {
         handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &c, &Config::default()).await.unwrap();
         assert_eq!(mode, Mode::Idle);
         assert_eq!(read_event(&mut b).await.unwrap().unwrap().event_type, "audio-stop");
+    }
+
+    #[tokio::test]
+    async fn transcript_while_idle_is_a_noop() {
+        let (mut a, b) = tokio::io::duplex(4096);
+        let c = cues();
+        let mut mode = Mode::Idle;
+        let mut playback: Option<PlaybackSink> = None;
+        let e = WyomingEvent::with_data("transcript", json!({"text":"stale"}));
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &c, &Config::default()).await.unwrap();
+        assert_eq!(mode, Mode::Idle);
+        // nothing must have been written to the hub
+        drop(a);
+        let mut buf = tokio::io::BufReader::new(b);
+        assert!(crate::wyoming::codec::read_event_buffered(&mut buf).await.unwrap().is_none());
     }
 }

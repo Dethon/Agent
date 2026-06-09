@@ -6,7 +6,8 @@ use tracing::{info, warn};
 
 /// Keeps the button source alive for the life of the connection (drop = release pin / stop task).
 pub enum ButtonGuard {
-    Gpio(rppal::gpio::InputPin),
+    // The pin is RAII-only: held so the line + async interrupt stay claimed, never read.
+    Gpio(#[allow(dead_code)] rppal::gpio::InputPin),
     Evdev(tokio::task::JoinHandle<()>),
 }
 

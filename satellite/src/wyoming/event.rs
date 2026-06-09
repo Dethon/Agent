@@ -25,6 +25,7 @@ impl WyomingEvent {
     }
     /// The event's `data` as a JSON object map (cloned).
     /// Returns an empty map when `data` is `None` or not a JSON object.
+    #[allow(dead_code)] // no production callers yet; kept for hub-event field access
     pub fn data_obj(&self) -> Map<String, Value> {
         match &self.data {
             Some(Value::Object(m)) => m.clone(),
