@@ -64,6 +64,34 @@ docker run --rm --platform linux/arm64 \
 # -> nabu-satellite listening on 0.0.0.0:10700 (hub dials in)
 ```
 
+
+## Testing on the WSL dev host
+
+Run the native release binary against the real hub (hub config dials `tcp://<host>:10800`):
+
+```bash
+cd satellite && RUST_LOG=info ./target/release/nabu-satellite \
+  --listen 0.0.0.0:10800 \
+  --no-button \
+  --mic-command 'parecord --raw --rate=16000 --format=s16le --channels=1 | python3 -u -c "
+import sys, audioop
+r, w = sys.stdin.buffer, sys.stdout.buffer
+while b := r.read1(4096):
+    w.write(audioop.mul(b, 2, 3.0))
+"' \
+  --snd-command 'paplay --raw --rate=22050 --format=s16le --channels=1 --latency-msec=50'
+```
+
+- **`--latency-msec=50` on paplay is mandatory on WSLg**: the RDP sink's default stream buffer
+  adds ~1.6 s of playback latency per stream (measured: a 0.5 s clip takes ~2.1 s to drain by
+  default, 0.51 s with the flag). Without it every TTS reply/chime/cue plays ~1.6 s late and the
+  hub's follow-up window (whose timing model assumes near-zero sink latency, compensated only by
+  `FollowUp:PlaybackTailMs` = 400 ms) is perceptually swallowed by the lag.
+- The python pipe applies 3x mic gain (`audioop.mul`, saturating): WSLg's mic bridge arrives
+  quiet and the binary has no gain flag. Tune the `3.0` or drop the pipe on a proper mic.
+- On a Pi with direct ALSA (`aplay -D plughw:...`) the sink buffer is far smaller; the flag is a
+  PulseAudio-ism and does not apply.
+
 ## Model licenses
 
 The ONNX models under `models/` (melspectrogram, speech embedding, `ok_nabu` wake classifier)
