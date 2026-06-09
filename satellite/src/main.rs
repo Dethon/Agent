@@ -1,4 +1,6 @@
 #[allow(dead_code)]
+mod audio;
+#[allow(dead_code)]
 mod wyoming;
 
 fn main() -> anyhow::Result<()> {
