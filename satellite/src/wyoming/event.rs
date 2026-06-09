@@ -23,6 +23,8 @@ impl WyomingEvent {
             payload,
         }
     }
+    /// The event's `data` as a JSON object map (cloned).
+    /// Returns an empty map when `data` is `None` or not a JSON object.
     pub fn data_obj(&self) -> Map<String, Value> {
         match &self.data {
             Some(Value::Object(m)) => m.clone(),
