@@ -163,7 +163,7 @@ sox -n -r 22050 -c 1 -b 16 satellite/sounds/awake.wav synth 0.14 sine 880 gain -
 sox -n -r 22050 -c 1 -b 16 satellite/sounds/done.wav  synth 0.12 sine 587 gain -3
 ```
 
-> **Wake fixtures:** record `tests/fixtures/ok_nabu.wav` (say "ok, nabu" once, 16 kHz mono 16-bit) and a `silence.wav`. These are the arbiters of pipeline correctness in Milestone 0/3. The cue WAVs must exist before any build (they are `include_bytes!`-baked into the binary).
+> **Wake fixtures (DONE 2026-06-09 — committed):** `tests/fixtures/ok_nabu.wav` is Piper `en_US-lessac-medium` saying "Okay, nabu." resampled to 16 kHz with 1.5 s lead / 2 s tail silence — it scores **0.8599** under the real `openwakeword` package (onnxruntime), so it is a validated arbiter (openWakeWord models are themselves trained on synthetic TTS speech). `silence.wav` is 4 s of ~-60 dBFS noise (scores 0.0009). The cue WAVs were generated with a Python equivalent of the sox commands above (22050 Hz mono 16-bit + 3 ms fades). A natural-voice recording can replace the fixture later; the >0.5 assertion must keep passing. (Piper `en_US-ryan-medium` scores only 0.197 — don't swap to it.)
 
 ---
 
@@ -270,16 +270,26 @@ git commit -m "feat(satellite): cargo skeleton for rust wyoming satellite"
 ```rust
 // satellite/tests/spike_wake.rs
 // Proves the openWakeWord 3-model ONNX pipeline runs on tract and fires on "ok nabu".
-// Pipeline constants (verified against dscripka/openWakeWord source):
+// Pipeline constants (validated 2026-06-09 against openwakeword 0.6.0's own AudioFeatures
+// (utils.py) — the algorithm below reproduces its scores to 4 decimals under onnxruntime):
 //   - 16 kHz mono int16 PCM, processed in 1280-sample (80 ms) chunks.
-//   - melspectrogram.onnx: input [1,1280] f32 (raw int16 values as f32, NOT /32768),
-//     output 5 mel frames x 32 bins per chunk; apply transform x/10 + 2. (No external log/floor;
-//     no zeroing of early frames.)
-//   - embedding_model.onnx: input [1,76,32,1] (a 76-mel-frame window), slide step 8, output 96-d.
-//   - ok_nabu.onnx: input [1,16,96] (last 16 embeddings), output [1,1] probability (sigmoid baked in).
+//   - melspectrogram.onnx is run over the LAST 1760 samples — the new chunk plus 480 samples
+//     (160*3) of lookback carried across chunks (zero-seeded at start). It yields 8 mel
+//     frames x 32 bins per chunk; apply transform x/10 + 2. Feed raw int16 values as f32
+//     (NOT /32768). (Running mel on isolated 1280-sample chunks loses the analysis-window
+//     overlap at chunk boundaries and drops the wake score from ~0.86 to ~0.17 — verified.)
+//   - The mel frame buffer is seeded with 76 frames of ONES (mirrors openwakeword); each chunk
+//     appends its 8 new frames, then ONE embedding is computed from the LAST 76 mel frames via
+//     embedding_model.onnx [1,76,32,1] -> 96-d (an implicit 8-frame / 80 ms hop).
+//   - ok_nabu.onnx: input [1,16,96] (the last 16 embeddings), output [1,1] probability
+//     (sigmoid baked in); first classification once 16 embeddings exist (~1.3 s in).
+use std::collections::VecDeque;
 use tract_onnx::prelude::*;
 
 type Model = SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>;
+
+const CHUNK: usize = 1280;    // 80 ms @ 16 kHz
+const LOOKBACK: usize = 480;  // 160*3 samples of mel context carried across chunks
 
 fn load(bytes: &[u8], shape: &[usize]) -> Model {
     tract_onnx::onnx()
@@ -297,53 +307,55 @@ fn read_wav_i16(path: &str) -> Vec<i16> {
 }
 
 fn max_score(samples: &[i16]) -> f32 {
-    let mel = load(include_bytes!("../models/melspectrogram.onnx"), &[1, 1280]);
+    let mel = load(include_bytes!("../models/melspectrogram.onnx"), &[1, LOOKBACK + CHUNK]);
     let emb = load(include_bytes!("../models/embedding_model.onnx"), &[1, 76, 32, 1]);
     let clf = load(include_bytes!("../models/ok_nabu.onnx"), &[1, 16, 96]);
 
-    let mut mel_buf: Vec<[f32; 32]> = Vec::new();
-    let mut emb_buf: std::collections::VecDeque<[f32; 96]> = std::collections::VecDeque::new();
-    let mut next_window = 0usize; // index of next 76-frame embedding window start
+    let mut tail = vec![0f32; LOOKBACK];  // lookback carried across chunks, zero-seeded
+    let mut mel_buf: VecDeque<[f32; 32]> = (0..76).map(|_| [1f32; 32]).collect(); // ones-init
+    let mut emb_buf: VecDeque<[f32; 96]> = VecDeque::new();
     let mut best = 0f32;
 
-    for chunk in samples.chunks_exact(1280) {
-        // Stage 1: mel
-        let input: Tensor =
-            tract_ndarray::Array2::from_shape_fn((1, 1280), |(_, i)| chunk[i] as f32).into();
-        let out = mel.run(tvec!(input.into())).unwrap();
+    for chunk in samples.chunks_exact(CHUNK) {
+        // Stage 1: mel over lookback + chunk -> 8 new frames
+        let mut input = vec![0f32; LOOKBACK + CHUNK];
+        input[..LOOKBACK].copy_from_slice(&tail);
+        for (i, s) in chunk.iter().enumerate() { input[LOOKBACK + i] = *s as f32; }
+        tail.copy_from_slice(&input[CHUNK..]); // keep the last 480 samples for the next chunk
+        let t: Tensor =
+            tract_ndarray::Array2::from_shape_vec((1, LOOKBACK + CHUNK), input).unwrap().into();
+        let out = mel.run(tvec!(t.into())).unwrap();
         let view = out[0].to_array_view::<f32>().unwrap();
         let flat: Vec<f32> = view.iter().map(|v| v / 10.0 + 2.0).collect();
         for frame in flat.chunks_exact(32) {
             let mut f = [0f32; 32];
             f.copy_from_slice(frame);
-            mel_buf.push(f);
+            mel_buf.push_back(f);
+            while mel_buf.len() > 76 { mel_buf.pop_front(); } // only the last 76 are ever read
         }
-        // Stage 2: embeddings for every full 76-frame window, step 8
-        while next_window + 76 <= mel_buf.len() {
-            let mut w = vec![0f32; 76 * 32];
-            for r in 0..76 {
-                w[r * 32..(r + 1) * 32].copy_from_slice(&mel_buf[next_window + r]);
+        // Stage 2: ONE embedding from the last 76 mel frames
+        let mut w = vec![0f32; 76 * 32];
+        for (r, frame) in mel_buf.iter().enumerate() {
+            w[r * 32..(r + 1) * 32].copy_from_slice(frame);
+        }
+        let t: Tensor = tract_ndarray::Array4::from_shape_vec((1, 76, 32, 1), w).unwrap().into();
+        let eo = emb.run(tvec!(t.into())).unwrap();
+        let ev = eo[0].to_array_view::<f32>().unwrap();
+        let mut e = [0f32; 96];
+        for (i, v) in ev.iter().take(96).enumerate() { e[i] = *v; }
+        emb_buf.push_back(e);
+        if emb_buf.len() > 16 { emb_buf.pop_front(); }
+        // Stage 3: classify the last 16 embeddings
+        if emb_buf.len() == 16 {
+            let mut c = vec![0f32; 16 * 96];
+            for (i, e) in emb_buf.iter().enumerate() {
+                c[i * 96..(i + 1) * 96].copy_from_slice(e);
             }
-            let t: Tensor = tract_ndarray::Array4::from_shape_vec((1, 76, 32, 1), w).unwrap().into();
-            let eo = emb.run(tvec!(t.into())).unwrap();
-            let ev = eo[0].to_array_view::<f32>().unwrap();
-            let mut e = [0f32; 96];
-            for (i, v) in ev.iter().take(96).enumerate() { e[i] = *v; }
-            emb_buf.push_back(e);
-            if emb_buf.len() > 16 { emb_buf.pop_front(); }
-            next_window += 8;
-            // Stage 3: classify once we have 16 embeddings
-            if emb_buf.len() == 16 {
-                let mut c = vec![0f32; 16 * 96];
-                for (i, e) in emb_buf.iter().enumerate() {
-                    c[i * 96..(i + 1) * 96].copy_from_slice(e);
-                }
-                let ct: Tensor =
-                    tract_ndarray::Array3::from_shape_vec((1, 16, 96), c).unwrap().into();
-                let co = clf.run(tvec!(ct.into())).unwrap();
-                let score = co[0].to_array_view::<f32>().unwrap()[[0, 0]];
-                best = best.max(score);
-            }
+            let ct: Tensor =
+                tract_ndarray::Array3::from_shape_vec((1, 16, 96), c).unwrap().into();
+            let co = clf.run(tvec!(ct.into())).unwrap();
+            let score = co[0].to_array_view::<f32>().unwrap()[[0, 0]];
+            best = best.max(score);
         }
     }
     best
@@ -367,8 +379,8 @@ fn quiet_on_silence() {
 - [ ] **Step 2: Run the spike**
 
 Run: `cd satellite && cargo test --test spike_wake -- --nocapture`
-Expected: `fires_on_ok_nabu` PASSES (`max score` well above 0.5, typically >0.9); `quiet_on_silence` PASSES.
-**If `fires_on_ok_nabu` fails near-zero:** the most likely cause is input scaling — confirm samples are fed as raw int16-valued `f32` (NOT normalized to [-1,1]); cross-check window/step bookkeeping against `skoky/oww_rs` `src/oww/audio.rs`. This test is the arbiter; adjust until it passes.
+Expected: `fires_on_ok_nabu` PASSES — the bundled Piper-synthesized fixture scores **0.8599** under onnxruntime ground truth; tract should land within a few percent. `quiet_on_silence` PASSES (ground truth 0.0009).
+**If `fires_on_ok_nabu` fails near-zero:** (1) confirm samples are fed as raw int16-valued `f32` (NOT normalized to [-1,1]); (2) confirm the 480-sample mel lookback and the ones-seeded 76-frame mel buffer are in place — running mel on isolated 1280-sample chunks drops the score to ~0.17 (measured). The streaming algorithm was cross-validated against `openwakeword` 0.6.0's own `AudioFeatures` (`utils.py`) and reproduces its scores to 4 decimals in Python/onnxruntime; this test is the arbiter for the tract port.
 
 - [ ] **Step 3: Commit**
 
@@ -1024,6 +1036,12 @@ const MEL_MODEL: &[u8] = include_bytes!("../../models/melspectrogram.onnx");
 const EMB_MODEL: &[u8] = include_bytes!("../../models/embedding_model.onnx");
 const CLF_MODEL: &[u8] = include_bytes!("../../models/ok_nabu.onnx");
 
+const CHUNK: usize = 1280;    // 80 ms @ 16 kHz
+const LOOKBACK: usize = 480;  // 160*3 samples of mel context carried across chunks (openwakeword)
+const MEL_FRAMES: usize = 76; // embedding window: the last 76 mel frames
+const EMB_DIM: usize = 96;
+const CLF_FRAMES: usize = 16; // classifier window: the last 16 embeddings
+
 #[derive(Clone)]
 pub struct DetectorConfig {
     pub threshold: f32,
@@ -1041,9 +1059,9 @@ pub struct WakeDetector {
     emb: Model,
     clf: Model,
     cfg: DetectorConfig,
-    mel_buf: Vec<[f32; 32]>,
-    emb_buf: VecDeque<[f32; 96]>,
-    next_window: usize,
+    tail: Vec<f32>,                    // last LOOKBACK samples, zero-seeded
+    mel_buf: VecDeque<[f32; 32]>,      // last 76 mel frames, ones-seeded (mirrors openwakeword)
+    emb_buf: VecDeque<[f32; EMB_DIM]>, // last 16 embeddings
     activations: u32,
     refractory_until: Option<Instant>,
 }
@@ -1058,65 +1076,65 @@ impl WakeDetector {
                 .into_runnable()?)
         };
         Ok(Self {
-            mel: load(MEL_MODEL, &[1, 1280])?,
-            emb: load(EMB_MODEL, &[1, 76, 32, 1])?,
-            clf: load(CLF_MODEL, &[1, 16, 96])?,
+            mel: load(MEL_MODEL, &[1, LOOKBACK + CHUNK])?,
+            emb: load(EMB_MODEL, &[1, MEL_FRAMES, 32, 1])?,
+            clf: load(CLF_MODEL, &[1, CLF_FRAMES, EMB_DIM])?,
             cfg,
-            mel_buf: Vec::new(),
+            tail: vec![0f32; LOOKBACK],
+            mel_buf: (0..MEL_FRAMES).map(|_| [1f32; 32]).collect(),
             emb_buf: VecDeque::new(),
-            next_window: 0,
             activations: 0,
             refractory_until: None,
         })
     }
 
     /// Feed exactly 1280 samples (80 ms). Returns true on a wake event.
+    /// The streaming algorithm mirrors openwakeword's AudioFeatures (validated to 4 decimals
+    /// against the Python package): mel over lookback+chunk, ones-seeded mel buffer, one
+    /// embedding per chunk from the last 76 frames, classify the last 16 embeddings.
     pub fn push_chunk(&mut self, chunk: &[i16]) -> bool {
-        debug_assert_eq!(chunk.len(), 1280);
-        // Stage 1: mel
-        let input: Tensor =
-            tract_ndarray::Array2::from_shape_fn((1, 1280), |(_, i)| chunk[i] as f32).into();
-        let out = self.mel.run(tvec!(input.into())).expect("mel run");
+        debug_assert_eq!(chunk.len(), CHUNK);
+        // Stage 1: mel over lookback + chunk -> 8 new frames (x/10 + 2)
+        let mut input = vec![0f32; LOOKBACK + CHUNK];
+        input[..LOOKBACK].copy_from_slice(&self.tail);
+        for (i, s) in chunk.iter().enumerate() { input[LOOKBACK + i] = *s as f32; }
+        self.tail.copy_from_slice(&input[CHUNK..]); // keep the last 480 samples for the next chunk
+        let t: Tensor =
+            tract_ndarray::Array2::from_shape_vec((1, LOOKBACK + CHUNK), input).unwrap().into();
+        let out = self.mel.run(tvec!(t.into())).expect("mel run");
         let flat: Vec<f32> = out[0].to_array_view::<f32>().unwrap().iter().map(|v| v / 10.0 + 2.0).collect();
         for frame in flat.chunks_exact(32) {
             let mut f = [0f32; 32];
             f.copy_from_slice(frame);
-            self.mel_buf.push(f);
+            self.mel_buf.push_back(f);
+            while self.mel_buf.len() > MEL_FRAMES { self.mel_buf.pop_front(); }
         }
-        // Bound memory: keep only what future windows need.
-        if self.next_window > 256 {
-            let drop = self.next_window;
-            self.mel_buf.drain(0..drop);
-            self.next_window = 0;
+        // Stage 2: ONE embedding from the last 76 mel frames (implicit 8-frame / 80 ms hop)
+        let mut w = vec![0f32; MEL_FRAMES * 32];
+        for (r, frame) in self.mel_buf.iter().enumerate() {
+            w[r * 32..(r + 1) * 32].copy_from_slice(frame);
         }
-        // Stage 2 + 3
-        let mut fired = false;
-        while self.next_window + 76 <= self.mel_buf.len() {
-            let mut w = vec![0f32; 76 * 32];
-            for r in 0..76 {
-                w[r * 32..(r + 1) * 32].copy_from_slice(&self.mel_buf[self.next_window + r]);
+        let t: Tensor =
+            tract_ndarray::Array4::from_shape_vec((1, MEL_FRAMES, 32, 1), w).unwrap().into();
+        let eo = self.emb.run(tvec!(t.into())).expect("emb run");
+        let ev = eo[0].to_array_view::<f32>().unwrap();
+        let mut e = [0f32; EMB_DIM];
+        for (i, v) in ev.iter().take(EMB_DIM).enumerate() { e[i] = *v; }
+        self.emb_buf.push_back(e);
+        if self.emb_buf.len() > CLF_FRAMES { self.emb_buf.pop_front(); }
+        // Stage 3: classify the last 16 embeddings
+        if self.emb_buf.len() == CLF_FRAMES {
+            let mut c = vec![0f32; CLF_FRAMES * EMB_DIM];
+            for (i, em) in self.emb_buf.iter().enumerate() {
+                c[i * EMB_DIM..(i + 1) * EMB_DIM].copy_from_slice(em);
             }
-            let t: Tensor = tract_ndarray::Array4::from_shape_vec((1, 76, 32, 1), w).unwrap().into();
-            let eo = self.emb.run(tvec!(t.into())).expect("emb run");
-            let ev = eo[0].to_array_view::<f32>().unwrap();
-            let mut e = [0f32; 96];
-            for (i, v) in ev.iter().take(96).enumerate() { e[i] = *v; }
-            self.emb_buf.push_back(e);
-            if self.emb_buf.len() > 16 { self.emb_buf.pop_front(); }
-            self.next_window += 8;
-
-            if self.emb_buf.len() == 16 {
-                let mut c = vec![0f32; 16 * 96];
-                for (i, em) in self.emb_buf.iter().enumerate() {
-                    c[i * 96..(i + 1) * 96].copy_from_slice(em);
-                }
-                let ct: Tensor = tract_ndarray::Array3::from_shape_vec((1, 16, 96), c).unwrap().into();
-                let co = self.clf.run(tvec!(ct.into())).expect("clf run");
-                let score = co[0].to_array_view::<f32>().unwrap()[[0, 0]];
-                if self.evaluate(score) { fired = true; }
-            }
+            let ct: Tensor =
+                tract_ndarray::Array3::from_shape_vec((1, CLF_FRAMES, EMB_DIM), c).unwrap().into();
+            let co = self.clf.run(tvec!(ct.into())).expect("clf run");
+            let score = co[0].to_array_view::<f32>().unwrap()[[0, 0]];
+            if self.evaluate(score) { return true; }
         }
-        fired
+        false
     }
 
     fn evaluate(&mut self, score: f32) -> bool {
@@ -1139,9 +1157,9 @@ impl WakeDetector {
 
     /// Clear streaming state when re-arming after a turn.
     pub fn reset(&mut self) {
-        self.mel_buf.clear();
+        self.tail.fill(0.0);
+        self.mel_buf = (0..MEL_FRAMES).map(|_| [1f32; 32]).collect();
         self.emb_buf.clear();
-        self.next_window = 0;
         self.activations = 0;
         self.refractory_until = None;
     }
