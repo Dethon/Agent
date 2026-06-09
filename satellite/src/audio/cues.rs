@@ -32,8 +32,11 @@ impl Cues {
         tokio::spawn(async move {
             match PlaybackSink::start(&cmd) {
                 Ok(mut sink) => {
-                    let _ = sink.write_pcm(&pcm).await;
-                    let _ = sink.finish().await;
+                    if let Err(e) = sink.write_pcm(&pcm).await {
+                        tracing::warn!("cue playback write failed: {e}");
+                    } else if let Err(e) = sink.finish().await {
+                        tracing::warn!("cue playback finish failed: {e}");
+                    }
                 }
                 Err(e) => tracing::warn!("cue playback failed: {e}"),
             }
