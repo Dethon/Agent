@@ -24,6 +24,8 @@ impl PlaybackSink {
     pub async fn write_pcm(&mut self, pcm: &[u8]) -> anyhow::Result<()> {
         if let Some(s) = self.stdin.as_mut() {
             s.write_all(pcm).await?;
+        } else {
+            tracing::warn!("write_pcm called after stdin closed; dropping {} bytes", pcm.len());
         }
         Ok(())
     }
@@ -31,7 +33,10 @@ impl PlaybackSink {
     /// Close stdin and wait for the player to drain and exit.
     pub async fn finish(mut self) -> anyhow::Result<()> {
         drop(self.stdin.take()); // EOF on stdin -> aplay finishes
-        let _ = self.child.wait().await?;
+        let status = self.child.wait().await?;
+        if !status.success() {
+            tracing::warn!("playback command exited with {status}");
+        }
         Ok(())
     }
 
