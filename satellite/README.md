@@ -8,6 +8,15 @@ dependencies on the target device.
 
 ## Build
 
+### Prerequisites
+
+- **Rust** via [rustup](https://rustup.rs) — no manual toolchain setup needed:
+  `rust-toolchain.toml` auto-installs the pinned 1.91 toolchain and the
+  `aarch64-unknown-linux-musl` target on the first cargo invocation.
+- **Python 3** (for the zig toolchain used by cross-builds):
+  `python3 -m pip install --user cargo-zigbuild` — the `ziglang` package (which bundles
+  the zig compiler) comes in as its dependency. Make sure `~/.local/bin` is on `PATH`.
+
 ### Host (dev)
 
 ```sh
@@ -22,7 +31,7 @@ Verified working toolchain:
 | Component | Version |
 |---|---|
 | rustc | 1.91.1 (`rust-toolchain.toml` pins 1.91 + the `aarch64-unknown-linux-musl` target) |
-| cargo-zigbuild | 0.22.3 (`pip install cargo-zigbuild ziglang`) |
+| cargo-zigbuild | 0.22.3 (`python3 -m pip install --user cargo-zigbuild`) |
 | zig | 0.16.0, provided by the `ziglang` pip package (`python3 -m ziglang version`) |
 
 **Caveat — tract-linalg vs zig cc:** `tract-linalg` 0.23 compiles its SVE f16 C kernels with
@@ -38,7 +47,8 @@ cat > /tmp/zigcc-fp16-shim.sh <<'EOF'
 # zig cc rejects GCC's `+fp16` -march extension name; LLVM/zig spell it `fullfp16`.
 # tract-linalg hardcodes `-march=armv8.2-a+sve+fp16` for its SVE f16 kernels, so
 # rewrite the feature name and delegate to `zig cc` exactly like cargo-zigbuild's
-# generated wrapper does.
+# generated wrapper does (`cargo-zigbuild zig cc --` invokes the zig C compiler
+# bundled in the `ziglang` pip package).
 export CARGO_ZIGBUILD_ZIG_VERSION=0.16.0
 n=$#
 i=0
@@ -55,6 +65,9 @@ exec cargo-zigbuild zig cc -- -g -fno-sanitize=all -target aarch64-linux-musl "$
 EOF
 chmod +x /tmp/zigcc-fp16-shim.sh
 ```
+
+The `/tmp` shim is transient — persist it (e.g. to `~/.cargo/bin/`) if you rebuild often;
+a checked-in build script will land in a later task.
 
 Then build (the env var makes cc-rs use the shim for C code; Rust code and linking still go
 through cargo-zigbuild's own wrappers):
