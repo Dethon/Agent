@@ -1,0 +1,24 @@
+# reSpeaker 2-Mic HAT variant (onboard GPIO 17 button). For a Jabra Speak, swap the device to
+# plughw:CARD=<jabra>,DEV=0 on BOTH commands and replace --button-gpio with either a wired
+# --button-gpio <pin> or a USB foot-switch: --button-evdev /dev/input/eventX:<keycode>.
+[Unit]
+Description=Nabu Rust Wyoming Satellite (%i)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/nabu-satellite \
+  --listen 0.0.0.0:10700 \
+  --mic-command "arecord -D plughw:CARD=seeed2micvoicec,DEV=0 -r 16000 -c 1 -f S16_LE -t raw" \
+  --snd-command "aplay -D plughw:CARD=seeed2micvoicec,DEV=0 -r 22050 -c 1 -f S16_LE -t raw" \
+  --button-gpio 17 \
+  --preroll-ms 1000
+Environment=RUST_LOG=info
+Restart=always
+RestartSec=2
+User=%i
+# GPIO button needs the `gpio` group; a USB/evdev foot-switch needs the `input` group.
+SupplementaryGroups=gpio input
+
+[Install]
+WantedBy=multi-user.target
