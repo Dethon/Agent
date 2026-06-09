@@ -26,6 +26,12 @@ cargo test --release   # the wake-pipeline spike runs real tract inference; rele
 
 ### Cross build (Raspberry Pi, fully static aarch64-musl)
 
+One command (make sure `~/.local/bin` is on `PATH` per the prerequisites above):
+
+```sh
+satellite/scripts/build-release.sh
+```
+
 Verified working toolchain:
 
 | Component | Version |
@@ -38,54 +44,24 @@ Verified working toolchain:
 `-march=armv8.2-a+sve+fp16`. zig cc rejects GCC's `fp16` extension name
 (`error: unknown CPU feature: 'fp16'`) because LLVM/zig spell it `fullfp16`. A plain
 `cargo zigbuild --target aarch64-unknown-linux-musl --release` therefore fails in
-`tract-linalg`'s build script. Work around it with a tiny CC shim that rewrites the feature
-name and delegates to the same `zig cc` (this is what cargo-zigbuild's generated wrapper runs):
-
-```sh
-cat > /tmp/zigcc-fp16-shim.sh <<'EOF'
-#!/bin/sh
-# zig cc rejects GCC's `+fp16` -march extension name; LLVM/zig spell it `fullfp16`.
-# tract-linalg hardcodes `-march=armv8.2-a+sve+fp16` for its SVE f16 kernels, so
-# rewrite the feature name and delegate to `zig cc` exactly like cargo-zigbuild's
-# generated wrapper does (`cargo-zigbuild zig cc --` invokes the zig C compiler
-# bundled in the `ziglang` pip package).
-export CARGO_ZIGBUILD_ZIG_VERSION=0.16.0
-n=$#
-i=0
-while [ "$i" -lt "$n" ]; do
-    arg=$1
-    shift
-    case "$arg" in
-        -march=*) arg=$(printf '%s' "$arg" | sed -e 's/+fp16$/+fullfp16/' -e 's/+fp16+/+fullfp16+/g') ;;
-    esac
-    set -- "$@" "$arg"
-    i=$((i + 1))
-done
-exec cargo-zigbuild zig cc -- -g -fno-sanitize=all -target aarch64-linux-musl "$@"
-EOF
-chmod +x /tmp/zigcc-fp16-shim.sh
-```
-
-The `/tmp` shim is transient — persist it (e.g. to `~/.cargo/bin/`) if you rebuild often;
-a checked-in build script will land in a later task.
-
-Then build (the env var makes cc-rs use the shim for C code; Rust code and linking still go
-through cargo-zigbuild's own wrappers):
-
-```sh
-CC_aarch64_unknown_linux_musl=/tmp/zigcc-fp16-shim.sh \
-    cargo zigbuild --target aarch64-unknown-linux-musl --release
-```
+`tract-linalg`'s build script. The fix is a tiny CC shim that rewrites the feature name and
+delegates to the same `zig cc` (what cargo-zigbuild's generated wrapper runs) — checked in at
+[`scripts/zigcc-fp16-shim.sh`](scripts/zigcc-fp16-shim.sh). `build-release.sh` wires it up via
+`CC_aarch64_unknown_linux_musl` (cc-rs uses the shim for C code; Rust code and linking still
+go through cargo-zigbuild's own wrappers).
 
 Output: `target/aarch64-unknown-linux-musl/release/nabu-satellite` —
-`ELF 64-bit LSB executable, ARM aarch64 ... statically linked, stripped`,
-**1,248,184 bytes (1.2 MiB)** for the current skeleton (fat LTO, `strip = true`).
+`ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped`,
+**18,541,904 bytes (17.7 MiB)** (fat LTO, `strip = true`; the full tract-onnx inference stack
+plus the three `include_bytes!`-embedded wake models — ~2.6 MB of ONNX — account for the
+growth over the 1.2 MiB pre-tract skeleton).
 Execution verified on arm64 via Docker binfmt emulation (no Pi needed):
 
 ```sh
 docker run --rm --platform linux/arm64 \
-    -v "$PWD/target/aarch64-unknown-linux-musl/release:/b" alpine /b/nabu-satellite
-# -> nabu-satellite skeleton
+    -v "$PWD/target/aarch64-unknown-linux-musl/release:/b" \
+    alpine /b/nabu-satellite --listen 0.0.0.0:10700 --no-button
+# -> nabu-satellite listening on 0.0.0.0:10700 (hub dials in)
 ```
 
 ## Model licenses
