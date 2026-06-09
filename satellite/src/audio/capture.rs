@@ -22,7 +22,10 @@ impl MicCapture {
         Ok(Self { _child: child, out })
     }
 
-    /// Returns Ok(None) at end of stream.
+    /// Returns Ok(None) when the mic stream ends (EOF). This does NOT
+    /// distinguish a finished stream from a silently failed/absent device —
+    /// callers treat it as fatal for the connection (the state machine logs
+    /// and tears down). No handshake/timeout logic by design (v1).
     pub async fn next_chunk(&mut self) -> anyhow::Result<Option<Vec<i16>>> {
         let mut bytes = [0u8; CHUNK_SAMPLES * 2];
         let mut filled = 0;
@@ -56,5 +59,20 @@ mod tests {
             chunks += 1;
         }
         assert_eq!(chunks, 3);
+    }
+
+    #[tokio::test]
+    async fn discards_partial_trailing_data() {
+        // 2.5 chunks worth of int16 LE: 2 full chunks then a half chunk
+        // that must be discarded at EOF.
+        let bytes = 2 * 1280 * 2 + 1280;
+        let cmd = format!("head -c {bytes} /dev/zero");
+        let mut cap = MicCapture::spawn(&cmd).unwrap();
+        let mut chunks = 0;
+        while let Some(chunk) = cap.next_chunk().await.unwrap() {
+            assert_eq!(chunk.len(), 1280);
+            chunks += 1;
+        }
+        assert_eq!(chunks, 2);
     }
 }
