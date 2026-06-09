@@ -67,6 +67,8 @@ impl Config {
                 .ok_or_else(|| anyhow::anyhow!("--button-evdev needs <device>:<keycode>, e.g. /dev/input/event3:28"))?;
             c.button = ButtonConfig::Evdev { device: dev.into(), key: key.parse()? };
         }
+        let rest = pa.finish();
+        anyhow::ensure!(rest.is_empty(), "unknown arguments: {rest:?}");
         Ok(c)
     }
 

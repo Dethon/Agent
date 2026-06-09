@@ -187,4 +187,14 @@ mod tests {
         let mut buf = tokio::io::BufReader::new(b);
         assert!(read_event_buffered(&mut buf).await.is_err());
     }
+
+    #[tokio::test]
+    async fn blank_lines_are_skipped() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        use tokio::io::AsyncWriteExt;
+        a.write_all(b"\n\n{\"type\":\"run-satellite\"}\n").await.unwrap();
+        let mut buf = tokio::io::BufReader::new(b);
+        let e = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        assert_eq!(e.event_type, "run-satellite");
+    }
 }
