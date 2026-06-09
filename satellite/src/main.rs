@@ -5,6 +5,7 @@ mod satellite;
 mod wake;
 mod wyoming;
 
+use anyhow::Context;
 use config::Config;
 use tokio::net::TcpListener;
 use tracing::{error, info};
@@ -17,7 +18,8 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cfg = Config::from_args()?;
-    let listener = TcpListener::bind(&cfg.listen).await?;
+    let listener = TcpListener::bind(&cfg.listen).await
+        .with_context(|| format!("failed to bind listen address {}", cfg.listen))?;
     info!("nabu-satellite listening on {} (hub dials in)", cfg.listen);
 
     // Single-hub policy: a new accept supersedes any previous connection. This guards the
@@ -29,12 +31,12 @@ async fn main() -> anyhow::Result<()> {
     loop {
         let (sock, peer) = listener.accept().await?;
         sock.set_nodelay(true).ok();
+        info!("hub connected from {peer}");
         if let Some(prev) = active.take() {
-            info!("new hub connection supersedes the previous one");
+            info!("superseding previous hub connection");
             prev.abort();
             let _ = prev.await; // ensure devices are released before the new connection claims them
         }
-        info!("hub connected from {peer}");
         let (r, w) = sock.into_split();
         let cfg = cfg.clone();
         active = Some(tokio::spawn(async move {
