@@ -1,3 +1,4 @@
+pub mod codec;
 pub mod event;
-#[allow(unused_imports)] // consumed from Task 1.2 onward
+#[allow(unused_imports)] // consumed by codec tests
 pub use event::WyomingEvent;
