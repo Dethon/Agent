@@ -42,6 +42,49 @@ where
     Ok(Some(WyomingEvent { event_type, data, payload }))
 }
 
+/// Cap on header-announced lengths, mirroring the hub reader's MaxFrameBytes (64 MiB):
+/// a corrupt header must not drive an unbounded allocation.
+const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
+
+/// Same framing as read_event, but over a persistent BufReader so buffered bytes survive
+/// across calls — REQUIRED on a real socket (read_event re-wraps and would drop them).
+/// Also skips blank header lines (the hub reader tolerates them; be symmetric).
+pub async fn read_event_buffered<R>(buf: &mut BufReader<R>) -> anyhow::Result<Option<WyomingEvent>>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if buf.read_line(&mut line).await? == 0 {
+            return Ok(None);
+        }
+        if !line.trim_end().is_empty() {
+            break;
+        }
+    }
+    let header: Value = serde_json::from_str(line.trim_end())?;
+    let event_type = header.get("type").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let data_length = header.get("data_length").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let payload_length = header.get("payload_length").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    anyhow::ensure!(
+        data_length <= MAX_FRAME_BYTES && payload_length <= MAX_FRAME_BYTES,
+        "frame too large: data_length={data_length} payload_length={payload_length}"
+    );
+    let inline = matches!(header.get("data"), Some(Value::Object(_)));
+    let mut data = if inline { header.get("data").cloned() } else { None };
+    if data_length > 0 {
+        let mut db = vec![0u8; data_length];
+        buf.read_exact(&mut db).await?;
+        if !inline { data = Some(serde_json::from_slice(&db)?); }
+    }
+    let mut payload = vec![0u8; payload_length];
+    if payload_length > 0 {
+        buf.read_exact(&mut payload).await?;
+    }
+    Ok(Some(WyomingEvent { event_type, data, payload }))
+}
+
 /// Write one Wyoming event: header line + (optional) data bytes + (optional) payload.
 pub async fn write_event<W>(writer: &mut W, event: &WyomingEvent) -> anyhow::Result<()>
 where
@@ -107,5 +150,41 @@ mod tests {
         let (a, mut b) = tokio::io::duplex(16);
         drop(a);
         assert!(read_event(&mut b).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn buffered_reads_survive_across_calls() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        // two events written back-to-back must both be readable through ONE BufReader
+        write_event(&mut a, &WyomingEvent::new("run-satellite")).await.unwrap();
+        write_event(&mut a, &WyomingEvent::audio_chunk(16000, 2, 1, vec![1, 2, 3])).await.unwrap();
+        let mut buf = tokio::io::BufReader::new(b);
+        let e1 = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        let e2 = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        assert_eq!(e1.event_type, "run-satellite");
+        assert_eq!(e2.event_type, "audio-chunk");
+        assert_eq!(e2.payload, vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn truncated_payload_is_an_error_not_eof() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        use tokio::io::AsyncWriteExt;
+        // header announces 100 payload bytes but the peer dies after 3
+        a.write_all(b"{\"type\":\"audio-chunk\",\"payload_length\":100}\n").await.unwrap();
+        a.write_all(&[1, 2, 3]).await.unwrap();
+        drop(a);
+        let mut buf = tokio::io::BufReader::new(b);
+        assert!(read_event_buffered(&mut buf).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn oversized_frame_is_rejected() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        use tokio::io::AsyncWriteExt;
+        a.write_all(b"{\"type\":\"audio-chunk\",\"payload_length\":999999999}\n").await.unwrap();
+        drop(a);
+        let mut buf = tokio::io::BufReader::new(b);
+        assert!(read_event_buffered(&mut buf).await.is_err());
     }
 }
