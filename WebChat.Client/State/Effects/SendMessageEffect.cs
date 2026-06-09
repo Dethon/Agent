@@ -1,6 +1,6 @@
+using Domain.Conversations;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
-using WebChat.Client.Services.Utilities;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
@@ -79,12 +79,12 @@ public sealed class SendMessageEffect : IDisposable
         {
             // Create new topic
             var topicName = action.Message.Length > 50 ? action.Message[..50] + "..." : action.Message;
-            var topicId = TopicIdGenerator.GenerateTopicId();
+            var identity = ConversationIdGenerator.Create();
             topic = new StoredTopic
             {
-                TopicId = topicId,
-                ChatId = TopicIdGenerator.GetChatIdForTopic(topicId),
-                ThreadId = TopicIdGenerator.GetThreadIdForTopic(topicId),
+                TopicId = identity.TopicId,
+                ChatId = identity.ChatId,
+                ThreadId = identity.ThreadId,
                 AgentId = state.SelectedAgentId!,
                 Name = topicName,
                 CreatedAt = DateTime.UtcNow,

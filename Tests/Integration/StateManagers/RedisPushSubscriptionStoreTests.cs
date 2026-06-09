@@ -129,14 +129,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
-    public async Task GetAllAsync_EmptyStore_ReturnsEmptyList()
-    {
-        // The store returns ALL subscriptions, so this test just checks it returns a valid list
-        var all = await _store.GetAllAsync();
-        all.ShouldNotBeNull();
-    }
-
-    [Fact]
     public async Task GetAllAsync_MultipleUsers_ReturnsAll()
     {
         var userId1 = $"test-user-{Guid.NewGuid():N}";

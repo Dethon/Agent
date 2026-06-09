@@ -7,6 +7,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.Extensions;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -25,6 +26,7 @@ internal sealed class FakeAiAgent : DisposableAgent
     public TimeSpan WarmupDelay { get; init; }
     public ConcurrentQueue<string> Events { get; } = new();
     public ConcurrentQueue<string> RestoredSessionKeys { get; } = new();
+    public ConcurrentQueue<IReadOnlyList<ChatMessage>> ReceivedMessages { get; } = new();
 
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
@@ -80,6 +82,7 @@ internal sealed class FakeAiAgent : DisposableAgent
     {
         await Task.CompletedTask;
         Events.Enqueue("run");
+        ReceivedMessages.Enqueue(messages.ToList());
         if (ExceptionToThrow is not null)
         {
             throw ExceptionToThrow;
@@ -120,6 +123,8 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public string? ConversationIdToReturn { get; init; }
 
+    public Action<(string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete)>? OnReply { get; init; }
+
     public IAsyncEnumerable<ChannelMessage> Messages => _channel.Reader.ReadAllAsync();
 
     public List<(string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete)> SentReplies { get; } = [];
@@ -130,7 +135,9 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public Task SendReplyAsync(string conversationId, string content, ReplyContentType contentType, bool isComplete, string? messageId, CancellationToken ct)
     {
-        SentReplies.Add((conversationId, content, contentType, isComplete));
+        var reply = (conversationId, content, contentType, isComplete);
+        SentReplies.Add(reply);
+        OnReply?.Invoke(reply);
         return Task.CompletedTask;
     }
 
@@ -143,7 +150,7 @@ internal sealed class FakeChannelConnection : IChannelConnection
         return Task.CompletedTask;
     }
 
-    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, CancellationToken ct)
+    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, string? address, string? existingConversationId, CancellationToken ct)
     {
         CreatedConversations.Add((agentId, topicName, sender, initialPrompt));
         return Task.FromResult(ConversationIdToReturn);
@@ -236,6 +243,41 @@ public class ChatMonitorTests
     }
 
     [Fact]
+    public async Task Monitor_VoiceMessageWithSatelliteId_SetsSatelliteIdOnUserMessage()
+    {
+        // Arrange
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var message = new ChannelMessage
+        {
+            ConversationId = "conv-1",
+            Content = "lights on",
+            Sender = "household",
+            ChannelId = "voice",
+            SatelliteId = "kitchen-01"
+        };
+        var channel = MonitorTestMocks.CreateChannel(channelId: "voice", messages: message);
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+
+        var monitor = new ChatMonitor(
+            [channel],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        // Act
+        await monitor.Monitor(CancellationToken.None);
+
+        // Assert - the satellite id rides on the ChatMessage handed to the agent
+        fakeAgent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
+        var userMessage = messages!.ShouldHaveSingleItem();
+        userMessage.GetSatelliteId().ShouldBe("kitchen-01");
+    }
+
+    [Fact]
     public async Task Monitor_SingleMessage_WarmsUpSessionOncePerConversation()
     {
         // Arrange
@@ -317,6 +359,78 @@ public class ChatMonitorTests
         // Assert - each channel should receive replies for its own conversation
         channel1.SentReplies.ShouldAllBe(r => r.ConversationId == "conv-1");
         channel2.SentReplies.ShouldAllBe(r => r.ConversationId == "conv-2");
+    }
+
+    [Fact]
+    public async Task Monitor_SecondMessageFromDifferentChannelInSameConversation_RepliesToThatChannel()
+    {
+        // A voice-started conversation is mirrored into WebChat under the SAME
+        // ConversationId, so both channels share AgentKey(ConversationId, AgentId) and
+        // the WebChat message joins the existing voice group. The reply to a message
+        // must follow the channel that actually sent it: when the user types into the
+        // WebChat conversation, the answer belongs in WebChat, not spoken on the voice
+        // satellite that originally opened it (which would also leave WebChat stuck
+        // "streaming" because it never receives the terminal StreamComplete).
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+
+        var completes = 0;
+        var firstSpoken = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondDelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void track((string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete) r)
+        {
+            if (r.ContentType != ReplyContentType.StreamComplete)
+            {
+                return;
+            }
+
+            var n = Interlocked.Increment(ref completes);
+            if (n == 1)
+            {
+                firstSpoken.TrySetResult();
+            }
+            else if (n == 2)
+            {
+                secondDelivered.TrySetResult();
+            }
+        }
+
+        var voice = new FakeChannelConnection { ChannelId = "voice", OnReply = track };
+        var webchat = new FakeChannelConnection { ChannelId = "webchat", OnReply = track };
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+
+        var monitor = new ChatMonitor(
+            [voice, webchat],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = monitor.Monitor(cts.Token);
+
+        // User speaks: voice opens conversation "7:42".
+        voice.WriteMessage(MonitorTestMocks.CreateChannelMessage(
+            conversationId: "7:42", channelId: "voice", agentId: "jonas"));
+        await firstSpoken.Task.WaitAsync(cts.Token);
+
+        // User then types in the SAME conversation from WebChat.
+        webchat.WriteMessage(MonitorTestMocks.CreateChannelMessage(
+            conversationId: "7:42", channelId: "webchat", agentId: "jonas"));
+        await secondDelivered.Task.WaitAsync(cts.Token);
+
+        voice.Complete();
+        webchat.Complete();
+        await run;
+
+        // The second reply must be routed to WebChat ONLY — not also spoken on the voice satellite
+        // that opened the conversation. Counting terminal StreamCompletes per channel proves both
+        // the routing (each turn went to its own origin) and the exclusion (no duplicate fan-out):
+        // voice received turn 1's completion only, webchat received turn 2's completion only.
+        voice.SentReplies.Count(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete).ShouldBe(1);
+        webchat.SentReplies.Count(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete).ShouldBe(1);
     }
 
     [Fact]

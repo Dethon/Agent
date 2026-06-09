@@ -10,6 +10,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
+[Trait("Category", "Llm")]
 public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, RedisFixture redisFixture)
     : IClassFixture<McpVaultServerFixture>, IClassFixture<RedisFixture>
 {

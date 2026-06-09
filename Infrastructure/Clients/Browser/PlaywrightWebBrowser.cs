@@ -22,6 +22,10 @@ public class PlaywrightWebBrowser(
     private readonly AccessibilitySnapshotService _snapshotService = new();
     private readonly Random _random = new();
     private bool _initialized;
+    // Bumped under _initLock each time a fresh browser connection is established. Lets the reconnect
+    // path replace only the connection that actually failed, so concurrent callers don't tear down a
+    // connection another caller already re-established.
+    private long _connectionGeneration;
     private const int MaxCaptchaRetries = 2;
     private const int DefaultOperationTimeoutMs = 15_000;
     private const int ConnectionRetryAttempts = 3;
@@ -42,129 +46,19 @@ public class PlaywrightWebBrowser(
             // to Y"). Serialize per-session work so parallel tool calls queue instead of clobber.
             using var sessionLock = await _sessions.AcquireSessionLockAsync(request.SessionId, ct);
 
-            await EnsureInitializedAsync();
-            var session = await _sessions.GetOrCreateAsync(request.SessionId, _context!, ct);
-            var page = session.Page;
-
-            // Brief random delay before navigation
-            await Task.Delay(_random.Next(50, 150), ct);
-
-            var navigationTimedOut = false;
-
-            try
-            {
-                await page.GotoAsync(request.Url, new PageGotoOptions
-                {
-                    WaitUntil = WaitUntilState.DOMContentLoaded,
-                    Timeout = 30000
-                });
-            }
-            catch (PlaywrightException ex) when (ex.Message.Contains("Timeout", StringComparison.OrdinalIgnoreCase))
-            {
-                // Navigation timed out — check if we have content loaded and proceed with it
-                var currentUrl = page.Url;
-                if (!string.IsNullOrEmpty(currentUrl) && currentUrl != "about:blank")
-                {
-                    navigationTimedOut = true;
-                }
-                else
-                {
-                    throw;
-                }
-            }
-            catch (TimeoutException)
-            {
-                var currentUrl = page.Url;
-                if (!string.IsNullOrEmpty(currentUrl) && currentUrl != "about:blank")
-                {
-                    navigationTimedOut = true;
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
-
-            // Check for CAPTCHA and attempt to solve
-            var html = await page.ContentAsync();
-            var captchaRetries = 0;
-            while (ContainsCaptcha(html) && captchaRetries < MaxCaptchaRetries)
-            {
-                var captchaResult = await TrySolveCaptchaAsync(page, request.Url, html, ct);
-                if (!captchaResult.Solved)
-                {
-                    return new BrowseResult(
-                        SessionId: request.SessionId,
-                        Url: page.Url,
-                        Status: BrowseStatus.CaptchaRequired,
-                        Title: null,
-                        Content: captchaResult.Message,
-                        ContentLength: 0,
-                        Truncated: false,
-                        Metadata: null,
-                        StructuredData: null,
-                        DismissedModals: null,
-                        ErrorMessage: captchaResult.Message
-                    );
-                }
-
-                // Refresh page after setting cookie
-                await page.ReloadAsync(new PageReloadOptions
-                { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30000 });
-                html = await page.ContentAsync();
-                captchaRetries++;
-            }
-
-            // Always dismiss modals
-            var dismissedModals = await _modalDismisser.DismissModalsAsync(page, ct);
-
-            // Extract structured data before stripping DOM noise,
-            // because StripDomNoiseAsync removes <script> tags including ld+json
-            var structuredData = ExtractStructuredData(html);
-
-            // Strip hidden overlays, dismissed modals, and non-content noise from DOM
-            // to prevent them from consuming the content budget during HTML processing
-            await StripDomNoiseAsync(page);
-
-            // Scroll-to-load for lazy-loaded content
-            if (request.ScrollToLoad)
-            {
-                await ScrollToLoadAsync(page, request.ScrollSteps, ct);
-            }
-
-            // Always wait for DOM stability
-            await WaitForDomStabilityAsync(page, ct: ct);
-
-            // Re-fetch HTML after all waiting
-            html = await page.ContentAsync();
-            var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
-
-            var status = navigationTimedOut || processed.IsPartial
-                ? BrowseStatus.Partial
-                : BrowseStatus.Success;
-
-            var errorMessage = processed.ErrorMessage;
-            if (navigationTimedOut)
-            {
-                var timeoutMsg = "Page did not fully load (DOMContentLoaded timeout). Content may be incomplete.";
-                errorMessage = string.IsNullOrEmpty(errorMessage) ? timeoutMsg : $"{timeoutMsg} {errorMessage}";
-            }
-
-            return new BrowseResult(
-                SessionId: request.SessionId,
-                Url: page.Url,
-                Status: status,
-                Title: processed.Title,
-                Content: processed.Content,
-                ContentLength: processed.ContentLength,
-                Truncated: processed.Truncated,
-                Metadata: processed.Metadata,
-                StructuredData: structuredData.Count > 0 ? structuredData : null,
-                DismissedModals: dismissedModals,
-                ErrorMessage: errorMessage
-            );
+            // Why: the Camoufox WebSocket can drop mid-navigation. ExecuteWithReconnectAsync
+            // reconnects and re-runs the navigation on a fresh page instead of leaking
+            // "Target page, context or browser has been closed" to the caller.
+            return await ExecuteWithReconnectAsync(() => NavigateOnceAsync(request, ct));
+        }
+        catch (PlaywrightException ex) when (IsConnectionClosed(ex))
+        {
+            // The connection was still dead after a reconnect+retry (e.g. a page that crashes the
+            // browser process on every load). Surface a clean, actionable message rather than the
+            // raw "Target page, context or browser has been closed", which is meaningless to the agent.
+            return CreateErrorResult(request.SessionId, request.Url,
+                "The browser connection dropped while loading the page and could not recover. " +
+                "This usually means the page itself crashed the browser; try a different URL or try again later.");
         }
         catch (PlaywrightException ex)
         {
@@ -182,6 +76,132 @@ public class PlaywrightWebBrowser(
         {
             return CreateErrorResult(request.SessionId, request.Url, $"Error: {ex.Message}");
         }
+    }
+
+    private async Task<BrowseResult> NavigateOnceAsync(BrowseRequest request, CancellationToken ct)
+    {
+        var session = await _sessions.GetOrCreateAsync(request.SessionId, _context!, ct);
+        var page = session.Page;
+
+        // Brief random delay before navigation
+        await Task.Delay(_random.Next(50, 150), ct);
+
+        var navigationTimedOut = false;
+
+        try
+        {
+            await page.GotoAsync(request.Url, new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.DOMContentLoaded,
+                Timeout = 30000
+            });
+        }
+        catch (PlaywrightException ex) when (ex.Message.Contains("Timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            // Navigation timed out — check if we have content loaded and proceed with it
+            var currentUrl = page.Url;
+            if (!string.IsNullOrEmpty(currentUrl) && currentUrl != "about:blank")
+            {
+                navigationTimedOut = true;
+            }
+            else
+            {
+                throw;
+            }
+        }
+        catch (TimeoutException)
+        {
+            var currentUrl = page.Url;
+            if (!string.IsNullOrEmpty(currentUrl) && currentUrl != "about:blank")
+            {
+                navigationTimedOut = true;
+            }
+            else
+            {
+                throw;
+            }
+        }
+
+        _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
+
+        // Check for CAPTCHA and attempt to solve
+        var html = await page.ContentAsync();
+        var captchaRetries = 0;
+        while (ContainsCaptcha(html) && captchaRetries < MaxCaptchaRetries)
+        {
+            var captchaResult = await TrySolveCaptchaAsync(page, request.Url, html, ct);
+            if (!captchaResult.Solved)
+            {
+                return new BrowseResult(
+                    SessionId: request.SessionId,
+                    Url: page.Url,
+                    Status: BrowseStatus.CaptchaRequired,
+                    Title: null,
+                    Content: captchaResult.Message,
+                    ContentLength: 0,
+                    Truncated: false,
+                    Metadata: null,
+                    StructuredData: null,
+                    DismissedModals: null,
+                    ErrorMessage: captchaResult.Message
+                );
+            }
+
+            // Refresh page after setting cookie
+            await page.ReloadAsync(new PageReloadOptions
+            { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30000 });
+            html = await page.ContentAsync();
+            captchaRetries++;
+        }
+
+        // Always dismiss modals
+        var dismissedModals = await _modalDismisser.DismissModalsAsync(page, ct);
+
+        // Extract structured data before stripping DOM noise,
+        // because StripDomNoiseAsync removes <script> tags including ld+json
+        var structuredData = ExtractStructuredData(html);
+
+        // Strip hidden overlays, dismissed modals, and non-content noise from DOM
+        // to prevent them from consuming the content budget during HTML processing
+        await StripDomNoiseAsync(page);
+
+        // Scroll-to-load for lazy-loaded content
+        if (request.ScrollToLoad)
+        {
+            await ScrollToLoadAsync(page, request.ScrollSteps, ct);
+        }
+
+        // Always wait for DOM stability
+        await WaitForDomStabilityAsync(page, ct: ct);
+
+        // Re-fetch HTML after all waiting
+        html = await page.ContentAsync();
+        var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
+
+        var status = navigationTimedOut || processed.IsPartial
+            ? BrowseStatus.Partial
+            : BrowseStatus.Success;
+
+        var errorMessage = processed.ErrorMessage;
+        if (navigationTimedOut)
+        {
+            var timeoutMsg = "Page did not fully load (DOMContentLoaded timeout). Content may be incomplete.";
+            errorMessage = string.IsNullOrEmpty(errorMessage) ? timeoutMsg : $"{timeoutMsg} {errorMessage}";
+        }
+
+        return new BrowseResult(
+            SessionId: request.SessionId,
+            Url: page.Url,
+            Status: status,
+            Title: processed.Title,
+            Content: processed.Content,
+            ContentLength: processed.ContentLength,
+            Truncated: processed.Truncated,
+            Metadata: processed.Metadata,
+            StructuredData: structuredData.Count > 0 ? structuredData : null,
+            DismissedModals: dismissedModals,
+            ErrorMessage: errorMessage
+        );
     }
 
     public async Task<BrowseResult> GetCurrentPageAsync(string sessionId, CancellationToken ct = default)
@@ -233,15 +253,24 @@ public class PlaywrightWebBrowser(
     public async Task<SnapshotResult> SnapshotAsync(SnapshotRequest request, CancellationToken ct = default)
     {
         var session = _sessions.Get(request.SessionId);
-        if (session == null)
+        if (session == null || session.Page.IsClosed)
         {
-            return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use WebBrowse first.");
+            _sessions.Remove(request.SessionId);
+            return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use web_browse first.");
         }
 
         try
         {
             var result = await _snapshotService.CaptureAsync(session.Page, request.Selector, request.SessionId);
             return new SnapshotResult(request.SessionId, session.Page.Url, result.Snapshot, result.RefCount, null);
+        }
+        catch (Exception ex) when (IsConnectionClosed(ex))
+        {
+            // The connection dropped — the page's content is gone, so reconnecting would only
+            // give a blank page. Drop the dead session and tell the caller to web_browse again
+            // instead of leaking the raw "has been closed" Playwright message.
+            _sessions.Remove(request.SessionId);
+            return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use web_browse first.");
         }
         catch (Exception ex)
         {
@@ -252,10 +281,11 @@ public class PlaywrightWebBrowser(
     public async Task<WebActionResult> ActionAsync(WebActionRequest request, CancellationToken ct = default)
     {
         var session = _sessions.Get(request.SessionId);
-        if (session == null)
+        if (session == null || session.Page.IsClosed)
         {
+            _sessions.Remove(request.SessionId);
             return new WebActionResult(request.SessionId, WebActionStatus.SessionNotFound,
-                null, false, null, null, "Session not found. Use WebBrowse first.");
+                null, false, null, null, "Session not found. Use web_browse first.");
         }
 
         var page = session.Page;
@@ -272,6 +302,14 @@ public class PlaywrightWebBrowser(
                 WebActionType.Back => await ExecuteBackAsync(request, page, urlBefore, ct),
                 _ => await ExecuteElementActionAsync(request, page, urlBefore, ct)
             };
+        }
+        catch (PlaywrightException ex) when (IsConnectionClosed(ex))
+        {
+            // The connection dropped — the page's state is gone. Drop the dead session and
+            // tell the caller to web_browse again rather than leaking the raw Playwright error.
+            _sessions.Remove(request.SessionId);
+            return new WebActionResult(request.SessionId, WebActionStatus.SessionNotFound,
+                null, false, null, null, "Session lost (browser disconnected). Call web_browse to start again.");
         }
         catch (TimeoutException)
         {
@@ -314,37 +352,10 @@ public class PlaywrightWebBrowser(
         {
             case WebActionType.Click:
                 await locator.ClickAsync(new() { Force = request.Force });
-                if (await HasJQueryAsync(page))
-                {
-                    await locator.EvaluateAsync("el => jQuery(el).triggerHandler('focus')");
-                }
-
                 break;
             case WebActionType.Type:
                 await locator.ClearAsync();
                 await locator.PressSequentiallyAsync(request.Value ?? "", new() { Delay = 50 });
-                // Force-trigger input events using the native value setter to ensure
-                // framework-managed inputs (React, Vue) and autocomplete widgets respond,
-                // even in browsers where Playwright's synthetic keyboard events don't trigger them.
-                // Also trigger jQuery events — jQuery handlers receive jQuery event objects
-                // (not native events) so they bypass isTrusted checks that block synthetic
-                // keyboard events in anti-detect browsers like Camoufox.
-                await locator.EvaluateAsync("""
-                    el => {
-                        const nativeSetter = Object.getOwnPropertyDescriptor(
-                            HTMLInputElement.prototype, 'value')?.set;
-                        if (nativeSetter) {
-                            nativeSetter.call(el, el.value);
-                        }
-                        el.dispatchEvent(new Event('input', { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
-                        if (typeof jQuery !== 'undefined') {
-                            const $el = jQuery(el);
-                            $el.trigger(jQuery.Event('keyup', { keyCode: 65, which: 65 }));
-                            $el.trigger(jQuery.Event('input'));
-                        }
-                    }
-                """);
                 break;
             case WebActionType.Fill:
                 await locator.FillAsync(request.Value ?? "");
@@ -363,12 +374,6 @@ public class PlaywrightWebBrowser(
                 break;
             case WebActionType.Focus:
                 await locator.FocusAsync();
-                if (await HasJQueryAsync(page))
-                {
-                    await locator.EvaluateAsync(
-                        "el => jQuery(el).trigger(jQuery.Event('focus', { keyCode: 9, which: 9 }))");
-                }
-
                 break;
             case WebActionType.Drag:
                 if (string.IsNullOrEmpty(request.EndRef))
@@ -525,9 +530,6 @@ public class PlaywrightWebBrowser(
         }
     }
 
-    private static async Task<bool> HasJQueryAsync(IPage page)
-        => await page.EvaluateAsync<bool>("() => typeof jQuery !== 'undefined'");
-
     private static async Task<string> GetNearbyHtmlAsync(IPage page, string targetSelector)
     {
         return await page.EvaluateAsync<string>("""
@@ -588,25 +590,69 @@ public class PlaywrightWebBrowser(
         }
     }
 
-    internal async Task EnsureInitializedAsync()
+    // Runs a browser operation, and if the connection turns out to be dead (the Camoufox
+    // WebSocket dropped between calls or mid-flight), force-reconnects and runs it once more
+    // on a fresh context/page. Without this the first call after any drop is sacrificed and
+    // only the *next* call self-heals, surfacing "Target page, context or browser has been
+    // closed" to the caller.
+    private async Task<T> ExecuteWithReconnectAsync<T>(Func<Task<T>> operation)
     {
-        if (IsConnectionHealthy())
+        var generation = await EnsureInitializedAsync();
+        try
         {
-            return;
+            return await operation();
+        }
+        catch (Exception ex) when (IsConnectionClosed(ex))
+        {
+            // A "page/context/browser has been closed" error is definitive proof the connection is
+            // unusable — more reliable than IBrowser.IsConnected, which can still report true when
+            // only the page or context died. Force a reconnect of the generation we just used, under
+            // _initLock; if a concurrent caller already replaced it, this no-ops and we retry on the
+            // fresh connection instead of tearing it down.
+            await EnsureConnectionAsync(replaceGeneration: generation);
+            return await operation();
+        }
+    }
+
+    private static bool IsConnectionClosed(Exception ex) =>
+        ex is PlaywrightException &&
+        (ex.Message.Contains("has been closed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("Connection closed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("Browser closed", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("disconnected", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("WebSocket", StringComparison.OrdinalIgnoreCase));
+
+    internal Task<long> EnsureInitializedAsync() => EnsureConnectionAsync(replaceGeneration: null);
+
+    // replaceGeneration: when set, the caller's connection (that generation) failed mid-operation, so
+    // replace it even though IsConnectionHealthy() may still report true — a closed page/context can
+    // leave IBrowser.IsConnected == true. If another caller already advanced the generation, the
+    // connection has already been replaced and this returns the current one without reconnecting.
+    private async Task<long> EnsureConnectionAsync(long? replaceGeneration)
+    {
+        if (replaceGeneration is null && IsConnectionHealthy())
+        {
+            return Volatile.Read(ref _connectionGeneration);
         }
 
         await _initLock.WaitAsync();
         try
         {
-            if (IsConnectionHealthy())
+            if (replaceGeneration is { } stale && _connectionGeneration != stale)
             {
-                return;
+                return _connectionGeneration;
             }
 
-            // A previous connection died (Camoufox restart, idle drop, network blip).
-            // Tear down the stale browser/context/sessions before reconnecting, otherwise
-            // every call would keep failing with "Target page, context or browser has been
-            // closed" until the process restarts.
+            if (replaceGeneration is null && IsConnectionHealthy())
+            {
+                return _connectionGeneration;
+            }
+
+            // A previous connection died (Camoufox restart, idle drop, network blip) or a closed
+            // page/context was detected mid-operation. Tear down the stale browser/context/sessions
+            // before reconnecting, otherwise every call would keep failing with "Target page, context
+            // or browser has been closed" until the process restarts.
             if (_initialized)
             {
                 await ResetStaleConnectionAsync();
@@ -631,6 +677,7 @@ public class PlaywrightWebBrowser(
             _context.SetDefaultTimeout(DefaultOperationTimeoutMs);
 
             _initialized = true;
+            return ++_connectionGeneration;
         }
         finally
         {
@@ -761,9 +808,13 @@ public class PlaywrightWebBrowser(
         }
     }
 
+    // Polls page HTML until it stops changing (catches client-side rendering after DOMContentLoaded).
+    // ContentAsync is cheap (a few ms even on large pages), so the poll interval is the only real
+    // cost: at 200ms a settled page clears in ~3 checks (~0.6s) instead of the old ~1.5s, while still
+    // requiring two consecutive identical reads before declaring stability.
     private static async Task WaitForDomStabilityAsync(
         IPage page,
-        int checkIntervalMs = 500,
+        int checkIntervalMs = 200,
         CancellationToken ct = default,
         int stableCountRequired = 2,
         int maxChecks = 6)

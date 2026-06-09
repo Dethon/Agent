@@ -14,17 +14,18 @@ public sealed class MessagePipelineTests
 {
     private readonly Dispatcher _dispatcher;
     private readonly MessagesStore _messagesStore;
+    private readonly StreamingStore _streamingStore;
     private readonly MessagePipeline _pipeline;
 
     public MessagePipelineTests()
     {
         _dispatcher = new Dispatcher();
         _messagesStore = new MessagesStore(_dispatcher);
-        var streamingStore = new StreamingStore(_dispatcher);
+        _streamingStore = new StreamingStore(_dispatcher);
         _pipeline = new MessagePipeline(
             _dispatcher,
             _messagesStore,
-            streamingStore,
+            _streamingStore,
             NullLogger<MessagePipeline>.Instance);
     }
 
@@ -202,7 +203,12 @@ public sealed class MessagePipelineTests
 
         _pipeline.ResumeFromBuffer(result, "topic-1", "msg-1");
 
-        // StreamChunk dispatched — no exception means it worked
+        // The buffered streaming content must be dispatched as a StreamChunk carrying the right
+        // message id — guarding the interleaved-messageId bubble-loss class of regression.
+        var streaming = _streamingStore.State.StreamingByTopic.GetValueOrDefault("topic-1");
+        streaming.ShouldNotBeNull();
+        streaming.Content.ShouldBe("Streaming...");
+        streaming.CurrentMessageId.ShouldBe("msg-1");
     }
 
     [Fact]

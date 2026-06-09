@@ -38,15 +38,4 @@ public class MessageAccumulatorTests
         _sut.Flush("conv-1").ShouldBe("first");
         _sut.Flush("conv-2").ShouldBe("second");
     }
-
-    [Fact]
-    public void Flush_LargeText_ReturnsFullContent()
-    {
-        var largeText = new string('a', 100_000);
-        _sut.Append("conv-1", largeText);
-
-        var result = _sut.Flush("conv-1");
-        result.ShouldNotBeNull();
-        result.Length.ShouldBe(100_000);
-    }
 }

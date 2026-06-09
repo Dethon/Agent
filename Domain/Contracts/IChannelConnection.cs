@@ -33,5 +33,7 @@ public interface IChannelConnection
         string topicName,
         string sender,
         string? initialPrompt,
+        string? address,
+        string? existingConversationId,
         CancellationToken ct);
 }

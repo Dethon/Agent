@@ -33,25 +33,16 @@ public class HaArgParserTests
         data["name"]!.GetValue<string>().ShouldBe("Lamp");
     }
 
-    [Fact]
-    public void Parse_UnknownFlag_Throws()
+    [Theory]
+    [InlineData(new[] { "--nope", "1" }, "nope")]                          // unknown flag
+    [InlineData(new[] { "--on", "yes" }, "on")]                            // bad boolean
+    [InlineData(new[] { "--brightness_pct", "NaN" }, "brightness_pct")]   // bad number
+    [InlineData(new[] { "--flash", "bogus" }, "flash")]                    // invalid select option
+    [InlineData(new[] { "--name", "--on" }, "name")]                       // space-form value looks like flag
+    public void Parse_InvalidInput_Throws(string[] args, string messageContains)
     {
-        Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--nope", "1"], Svc()))
-            .Message.ShouldContain("nope");
-    }
-
-    [Fact]
-    public void Parse_BadBoolean_Throws()
-    {
-        Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--on", "yes"], Svc()))
-            .Message.ShouldContain("on");
-    }
-
-    [Fact]
-    public void Parse_BadNumber_Throws()
-    {
-        Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--brightness_pct", "NaN"], Svc()))
-            .Message.ShouldContain("brightness_pct");
+        Should.Throw<ArgumentException>(() => HaArgParser.Parse(args, Svc()))
+            .Message.ShouldContain(messageContains);
     }
 
     [Fact]
@@ -64,13 +55,6 @@ public class HaArgParserTests
     public void Parse_SingleSelectValidOption_Passes()
     {
         HaArgParser.Parse(["--flash", "short"], Svc())["flash"]!.GetValue<string>().ShouldBe("short");
-    }
-
-    [Fact]
-    public void Parse_SingleSelectInvalidOption_Throws()
-    {
-        Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--flash", "bogus"], Svc()))
-            .Message.ShouldContain("flash");
     }
 
     [Fact]
@@ -98,15 +82,6 @@ public class HaArgParserTests
 
         data["brightness_pct"]!.GetValue<int>().ShouldBe(60);
         data["on"]!.GetValue<bool>().ShouldBeTrue();
-    }
-
-    [Fact]
-    public void Parse_SpaceFormValueLooksLikeFlag_Throws()
-    {
-        // A bare `--flag` whose space-form value is itself a `--flag` must not be silently swallowed;
-        // the value is missing. Use --name=<value> when the value legitimately begins with '--'.
-        Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--name", "--on"], Svc()))
-            .Message.ShouldContain("name");
     }
 
     [Fact]

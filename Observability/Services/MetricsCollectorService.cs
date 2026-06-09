@@ -121,6 +121,9 @@ public sealed class MetricsCollectorService(
             case LatencyEvent latency:
                 await ProcessLatencyAsync(latency, db);
                 break;
+            case VoiceEvent voice:
+                await ProcessVoiceAsync(voice, db);
+                break;
         }
     }
 
@@ -330,5 +333,33 @@ public sealed class MetricsCollectorService(
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await hubContext.Clients.All.SendAsync("OnContextTruncation", evt);
+    }
+
+    private async Task ProcessVoiceAsync(VoiceEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:voice:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var score = evt.Timestamp.ToUnixTimeMilliseconds();
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        var tasks = new List<Task>
+        {
+            db.SortedSetAddAsync(sortedSetKey, json, score),
+            db.HashIncrementAsync(totalsKey, $"voice:{evt.Metric}:count"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
+        };
+
+        // Accumulate duration for latency-type metrics so summaries can report average latency,
+        // matching how LatencyEvent stores both count and totalMs.
+        if (evt.DurationMs is { } durationMs)
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, $"voice:{evt.Metric}:totalMs", durationMs));
+        }
+
+        await Task.WhenAll(tasks);
+
+        await hubContext.Clients.All.SendAsync("OnVoice", evt);
     }
 }

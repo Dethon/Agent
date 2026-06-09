@@ -77,4 +77,66 @@ public class ChatMessageSerializationTests
 
         msg.AdditionalProperties.ShouldBeNull();
     }
+
+    [Fact]
+    public void SetAndGetLocation_StoresAndRetrievesValue()
+    {
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+
+        msg.SetLocation("the office");
+
+        msg.AdditionalProperties.ShouldNotBeNull();
+        msg.AdditionalProperties["Location"].ShouldBe("the office");
+        msg.GetLocation().ShouldBe("the office");
+    }
+
+    [Fact]
+    public void GetLocation_ReturnsValueAfterJsonRoundtrip()
+    {
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+        msg.SetLocation("the office");
+
+        var json = JsonSerializer.Serialize(msg);
+        var deserialized = JsonSerializer.Deserialize<ChatMessage>(json);
+
+        deserialized.ShouldNotBeNull();
+        deserialized.GetLocation().ShouldBe("the office");
+    }
+
+    [Fact]
+    public void SetAndGetSatelliteId_StoresAndRetrievesValue()
+    {
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+
+        msg.SetSatelliteId("kitchen-01");
+
+        msg.AdditionalProperties.ShouldNotBeNull();
+        msg.AdditionalProperties["SatelliteId"].ShouldBe("kitchen-01");
+        msg.GetSatelliteId().ShouldBe("kitchen-01");
+    }
+
+    [Fact]
+    public void GetSatelliteId_ReturnsValueAfterJsonRoundtrip()
+    {
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+        msg.SetSatelliteId("kitchen-01");
+
+        var json = JsonSerializer.Serialize(msg);
+        var deserialized = JsonSerializer.Deserialize<ChatMessage>(json);
+
+        deserialized.ShouldNotBeNull();
+        deserialized.GetSatelliteId().ShouldBe("kitchen-01");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    public void SetSatelliteId_DoesNothingWhenNullOrWhitespace(string? satelliteId)
+    {
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+
+        msg.SetSatelliteId(satelliteId);
+
+        msg.AdditionalProperties.ShouldBeNull();
+    }
 }

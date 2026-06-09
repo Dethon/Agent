@@ -48,6 +48,9 @@ public class MetricsHubService : IAsyncDisposable
     public virtual IDisposable OnLatency(Func<LatencyEvent, Task> handler) =>
         _connection!.On("OnLatency", handler);
 
+    public virtual IDisposable OnVoice(Func<VoiceEvent, Task> handler) =>
+        _connection!.On("OnVoice", handler);
+
     public virtual IDisposable OnHealthUpdate(Func<ServiceHealthUpdate, Task> handler) =>
         _connection!.On("OnHealthUpdate", handler);
 

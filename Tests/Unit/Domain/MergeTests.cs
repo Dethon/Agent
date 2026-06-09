@@ -205,7 +205,7 @@ public class MergeTests
         return;
 
         // Arrange
-        async IAsyncEnumerable<IAsyncEnumerable<int>> sourceOfSources()
+        static async IAsyncEnumerable<IAsyncEnumerable<int>> sourceOfSources()
         {
             yield return _sourceArray0.ToAsyncEnumerable();
             await Task.Yield();
@@ -236,7 +236,7 @@ public class MergeTests
         (await readTask).ShouldBe(1);
         return;
 
-        async IAsyncEnumerable<IAsyncEnumerable<int>> outer([EnumeratorCancellation] CancellationToken ct)
+        static async IAsyncEnumerable<IAsyncEnumerable<int>> outer([EnumeratorCancellation] CancellationToken ct)
         {
             yield return first(ct);
             await Task.Delay(Timeout.InfiniteTimeSpan, ct);

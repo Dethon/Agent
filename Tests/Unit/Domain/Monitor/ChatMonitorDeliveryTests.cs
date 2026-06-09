@@ -14,8 +14,8 @@ public class ChatMonitorDeliveryTests
     {
         var m = new Mock<IChannelConnection>();
         m.SetupGet(c => c.ChannelId).Returns(id);
-        m.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string _, string _, string _, string? _, CancellationToken _) => $"minted-{id}");
+        m.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? _, CancellationToken _) => $"minted-{id}");
         return m.Object;
     }
 
@@ -83,8 +83,8 @@ public class ChatMonitorDeliveryTests
         captor.SetupGet(c => c.ChannelId).Returns("signalr");
         string? capturedPrompt = null;
         captor.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Callback((string _, string _, string _, string? p, CancellationToken _) => capturedPrompt = p)
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string _, string _, string? p, string? _, string? _, CancellationToken _) => capturedPrompt = p)
             .ReturnsAsync("minted-signalr");
         var channels = new[] { origin, captor.Object };
         var msg = new ChannelMessage
@@ -109,7 +109,7 @@ public class ChatMonitorDeliveryTests
         var failing = new Mock<IChannelConnection>();
         failing.SetupGet(c => c.ChannelId).Returns("signalr");
         failing.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("connection reset"));
         var channels = new[] { origin, failing.Object };
         var msg = new ChannelMessage
@@ -121,5 +121,102 @@ public class ChatMonitorDeliveryTests
         var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
 
         targets.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ResolveDeliveryTargets_ThreadsReplyTargetAddressIntoCreateConversation()
+    {
+        var origin = Channel("scheduling");
+        var captor = new Mock<IChannelConnection>();
+        captor.SetupGet(c => c.ChannelId).Returns("voice");
+        string? capturedAddress = null;
+        captor.Setup(c => c.CreateConversationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string _, string _, string? _, string? a, string? _, CancellationToken _) => capturedAddress = a)
+            .ReturnsAsync("minted-voice");
+        var channels = new[] { origin, captor.Object };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1",
+            Content = "The AC is on",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "mycroft",
+            ReplyTo = [new ReplyTarget("voice", null, "fran-office-01")]
+        };
+
+        await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+
+        capturedAddress.ShouldBe("fran-office-01");
+    }
+
+    [Fact]
+    public async Task ResolveDeliveryTargets_SignalrThenVoice_AttachesVoiceToSignalrConversation()
+    {
+        // A schedule delivering to both signalr and voice must produce ONE shared
+        // conversation: signalr mints it; voice attaches to that same id (so WebChat shows
+        // a single populated thread and the satellite speaks it). The first minted target's
+        // id is threaded into later targets as `existingConversationId`.
+        var origin = Channel("scheduling");
+        var signalr = Channel("signalr");
+        var voice = new Mock<IChannelConnection>();
+        voice.SetupGet(c => c.ChannelId).Returns("voice");
+        string? voiceExistingId = null;
+        voice.Setup(c => c.CreateConversationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string _, string _, string? _, string? _, string? existing, CancellationToken _) => voiceExistingId = existing)
+            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, CancellationToken _) => existing ?? "minted-voice");
+        var channels = new[] { origin, signalr, voice.Object };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1",
+            Content = "Avisa a Fran",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "mycroft",
+            ReplyTo = [new ReplyTarget("signalr", null), new ReplyTarget("voice", null, "fran-office-01")]
+        };
+
+        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+
+        voiceExistingId.ShouldBe("minted-signalr");
+        targets.Count.ShouldBe(2);
+        targets[0].ConversationId.ShouldBe("minted-signalr");
+        targets[1].ConversationId.ShouldBe("minted-signalr");
+    }
+
+    [Fact]
+    public async Task ResolveDeliveryTargets_VoiceListedBeforeSignalr_StillAnchorsSharedIdOnSignalr()
+    {
+        // Voice can only ATTACH to an existing conversation (it has no persisted TopicId to hand
+        // back), so a topic-owning channel must anchor the shared id and become targets[0] (the
+        // chat-history persistence + approval anchor). Even when the schedule lists voice FIRST,
+        // resolution must order voice last so signalr mints the shared id and voice attaches to it.
+        // Otherwise voice anchors a id signalr ignores -> two divergent ids -> empty WebChat thread.
+        var origin = Channel("scheduling");
+        var signalr = Channel("signalr");
+        var voice = new Mock<IChannelConnection>();
+        voice.SetupGet(c => c.ChannelId).Returns("voice");
+        voice.Setup(c => c.CreateConversationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, CancellationToken _) => existing ?? "minted-voice");
+        var channels = new[] { origin, signalr, voice.Object };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1",
+            Content = "Avisa a Fran",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "mycroft",
+            ReplyTo = [new ReplyTarget("voice", null, "fran-office-01"), new ReplyTarget("signalr", null)]
+        };
+
+        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+
+        targets.Count.ShouldBe(2);
+        // signalr (owning) anchors and is targets[0]; voice attaches to the same id.
+        targets[0].Channel.ChannelId.ShouldBe("signalr");
+        targets[0].ConversationId.ShouldBe("minted-signalr");
+        targets.ShouldAllBe(t => t.ConversationId == "minted-signalr");
     }
 }

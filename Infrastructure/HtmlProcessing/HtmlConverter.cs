@@ -1,9 +1,9 @@
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
-using AngleSharp;
 using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
+using AngleSharp.Html.Parser;
 using Domain.DTOs;
 
 namespace Infrastructure.HtmlProcessing;
@@ -36,11 +36,9 @@ public static partial class HtmlConverter
             return html;
         }
 
-        // Parse HTML and convert using DOM
-        var document = BrowsingContext.New(Configuration.Default)
-            .OpenAsync(req => req.Content(html))
-            .GetAwaiter()
-            .GetResult();
+        // Parse the string directly rather than round-tripping through a byte stream, which would
+        // make AngleSharp re-decode already-decoded text per any <meta charset> and mangle accents.
+        var document = new HtmlParser().ParseDocument(html);
 
         var body = document.Body ?? document.DocumentElement;
 

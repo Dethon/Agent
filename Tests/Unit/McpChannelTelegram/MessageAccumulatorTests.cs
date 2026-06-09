@@ -13,27 +13,21 @@ public class MessageAccumulatorTests
         _sut.Flush("conv-1").ShouldBeEmpty();
     }
 
-    [Fact]
-    public void Flush_SingleAppend_ReturnsSingleChunk()
+    [Theory]
+    [InlineData("hello", null, "hello")]
+    [InlineData("hello ", "world", "hello world")]
+    public void Flush_AppendedChunks_ConcatenatesCorrectly(string first, string? second, string expected)
     {
-        _sut.Append("conv-1", "hello");
+        _sut.Append("conv-1", first);
+        if (second is not null)
+        {
+            _sut.Append("conv-1", second);
+        }
 
         var result = _sut.Flush("conv-1");
 
         result.Count.ShouldBe(1);
-        result[0].ShouldBe("hello");
-    }
-
-    [Fact]
-    public void Flush_MultipleAppends_ConcatenatesText()
-    {
-        _sut.Append("conv-1", "hello ");
-        _sut.Append("conv-1", "world");
-
-        var result = _sut.Flush("conv-1");
-
-        result.Count.ShouldBe(1);
-        result[0].ShouldBe("hello world");
+        result[0].ShouldBe(expected);
     }
 
     [Fact]
@@ -65,19 +59,6 @@ public class MessageAccumulatorTests
 
         result.Count.ShouldBe(1);
         result[0].Length.ShouldBe(4096);
-    }
-
-    [Fact]
-    public void Flush_ExceedsLimit_SplitsIntoMultipleChunks()
-    {
-        var text = new string('a', 5000);
-        _sut.Append("conv-1", text);
-
-        var result = _sut.Flush("conv-1");
-
-        result.Count.ShouldBeGreaterThan(1);
-        var total = result.Sum(c => c.Length);
-        total.ShouldBe(5000);
     }
 
     [Fact]

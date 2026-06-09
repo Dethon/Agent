@@ -5,29 +5,14 @@ namespace Tests.Unit.Domain.Printing;
 
 public class PrintingPromptTests
 {
-    [Fact]
-    public void DescribeFormats_MapsKnownTokens_ToFriendlyNames()
+    [Theory]
+    [InlineData("text,jpeg,pwg-raster,urf,pcl", "plain text, JPEG images, PWG Raster, Apple URF, PCL")]
+    [InlineData(" TEXT , JPEG ", "plain text, JPEG images")]
+    [InlineData("text,webp", "plain text, webp")]
+    [InlineData("", "nothing")]
+    public void DescribeFormats_MapsTokens(string csv, string expected)
     {
-        PrintingPrompt.DescribeFormats("text,jpeg,pwg-raster,urf,pcl")
-            .ShouldBe("plain text, JPEG images, PWG Raster, Apple URF, PCL");
-    }
-
-    [Fact]
-    public void DescribeFormats_TrimsAndIsCaseInsensitive()
-    {
-        PrintingPrompt.DescribeFormats(" TEXT , JPEG ").ShouldBe("plain text, JPEG images");
-    }
-
-    [Fact]
-    public void DescribeFormats_UnknownToken_FallsBackToRawToken()
-    {
-        PrintingPrompt.DescribeFormats("text,webp").ShouldBe("plain text, webp");
-    }
-
-    [Fact]
-    public void DescribeFormats_Empty_SaysNothing()
-    {
-        PrintingPrompt.DescribeFormats("").ShouldBe("nothing");
+        PrintingPrompt.DescribeFormats(csv).ShouldBe(expected);
     }
 
     [Fact]

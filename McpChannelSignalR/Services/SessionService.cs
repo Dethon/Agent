@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.Conversations;
 using Domain.DTOs.Channel;
 using McpChannelSignalR.Internal;
 
@@ -12,17 +13,9 @@ public sealed class SessionService : ISessionService
 
     public Task<string> CreateConversationAsync(CreateConversationParams p)
     {
-        var agentId = p.AgentId;
-        var topicId = Guid.NewGuid().ToString("N");
-        var chatId = GetDeterministicHash(topicId, seed: 0x1234);
-        var threadId = GetDeterministicHash(topicId, seed: 0x5678) & 0x7FFFFFFF;
-
-        StartSession(topicId, agentId, chatId, threadId, spaceSlug: "default", topicName: p.TopicName);
-
-        // Return conversationId in "{chatId}:{threadId}" format — this is what the agent
-        // uses as AgentKey and passes back to send_reply/request_approval
-        var conversationId = $"{chatId}:{threadId}";
-        return Task.FromResult(conversationId);
+        var id = ConversationIdGenerator.Create();
+        StartSession(id.TopicId, p.AgentId, id.ChatId, id.ThreadId, spaceSlug: "default", topicName: p.TopicName);
+        return Task.FromResult(id.ConversationId);
     }
 
     public bool StartSession(string topicId, string agentId, long chatId, long threadId, string? spaceSlug = null, string? topicName = null)
@@ -66,17 +59,4 @@ public sealed class SessionService : ISessionService
         return topicId is not null && _sessions.TryGetValue(topicId, out var session) ? session : null;
     }
 
-    private static long GetDeterministicHash(string input, long seed)
-    {
-        const long fnvPrime = 0x100000001b3;
-        var hash = unchecked((long)0xcbf29ce484222325) ^ seed;
-
-        foreach (var c in input)
-        {
-            hash ^= c;
-            hash = unchecked(hash * fnvPrime);
-        }
-
-        return hash & 0x7FFFFFFFFFFFFFFF;
-    }
 }

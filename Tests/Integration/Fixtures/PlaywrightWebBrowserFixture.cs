@@ -20,6 +20,11 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
     public bool IsAvailable => true;
     public string? InitializationError => null;
 
+    // The Camoufox WebSocket the Browser is connected to. Exposed so tests that need a raw
+    // Playwright connection (e.g. verifying the server survives a hostile page) can reach the
+    // same backend without standing up their own container.
+    public string? WsEndpoint { get; private set; }
+
     public async Task InitializeAsync()
     {
         // Try local wsEndpoint first (faster if Camoufox is already running)
@@ -49,6 +54,7 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
         try
         {
             Browser = new PlaywrightWebBrowser(wsEndpoint: localWsEndpoint);
+            WsEndpoint = localWsEndpoint;
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var request = new BrowseRequest(
@@ -143,7 +149,8 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
             var host = _container.Hostname;
             var port = _container.GetMappedPublicPort(9377);
 
-            Browser = new PlaywrightWebBrowser(wsEndpoint: $"ws://{host}:{port}/browser");
+            WsEndpoint = $"ws://{host}:{port}/browser";
+            Browser = new PlaywrightWebBrowser(wsEndpoint: WsEndpoint);
 
             using var warmupCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             var request = new BrowseRequest(

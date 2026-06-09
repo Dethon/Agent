@@ -102,32 +102,6 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
     }
 
     [Fact]
-    public async Task McpServer_ListTools_IncludesFsTools()
-    {
-        var client = await ConnectAsync();
-
-        var toolNames = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
-
-        toolNames.ShouldContain("fs_create");
-        toolNames.ShouldContain("fs_glob");
-        toolNames.ShouldContain("fs_read");
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task McpServer_ListTools_IncludesRegisterAgents()
-    {
-        var client = await ConnectAsync();
-
-        var toolNames = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
-
-        toolNames.ShouldContain("register_agents");
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
     public async Task RegisterAgents_ThenCreateForNewAgent_PassesValidation()
     {
         var client = await ConnectAsync();

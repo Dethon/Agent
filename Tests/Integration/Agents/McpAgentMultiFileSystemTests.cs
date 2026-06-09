@@ -9,6 +9,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
+[Trait("Category", "Llm")]
 public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, RedisFixture redisFixture)
     : IClassFixture<MultiFileSystemFixture>, IClassFixture<RedisFixture>
 {

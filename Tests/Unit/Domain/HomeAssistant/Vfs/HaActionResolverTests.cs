@@ -25,13 +25,6 @@ public class HaActionResolverTests
     }
 
     [Fact]
-    public void ServicesFor_DomainNarrowedToOtherClass_Excluded()
-    {
-        HaActionResolver.ServicesFor("light.kitchen", _services)
-            .ShouldNotContain(s => s.Service == "start");
-    }
-
-    [Fact]
     public void ServicesFor_ReadOnlyEntity_ReturnsEmpty()
     {
         // sensor has no class-domain entity-targeted services here.

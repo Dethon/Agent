@@ -142,6 +142,23 @@ services:
     volumes:
       - vsdbg:/remote_debugger:ro
 
+  mcp-channel-voice:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    # The hub dials each satellite's Wyoming server as a client; satellites running on
+    # the Docker host (e.g. a WSL wyoming-satellite) are reached via host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
   mcp-scheduling:
     build:
       args:

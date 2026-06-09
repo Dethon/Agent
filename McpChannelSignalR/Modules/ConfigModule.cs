@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Clients.Push;
+using Infrastructure.Conversations;
 using Infrastructure.StateManagers;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
@@ -38,6 +39,10 @@ public static class ConfigModule
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton(notificationEmitter)
             .AddSingleton<RedisStateService>()
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<IThreadStateStore>(sp =>
+                new RedisThreadStateStore(sp.GetRequiredService<IConnectionMultiplexer>(), TimeSpan.FromDays(30)))
+            .AddSingleton<IConversationFactory, ConversationFactory>()
             .AddSingleton<StreamService>()
             .AddSingleton<IStreamService>(sp => sp.GetRequiredService<StreamService>())
             .AddSingleton<SessionService>()

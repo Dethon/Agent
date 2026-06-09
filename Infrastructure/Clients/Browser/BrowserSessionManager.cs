@@ -135,6 +135,14 @@ public class BrowserSessionManager : IAsyncDisposable
         }
     }
 
+    public void Remove(string sessionId)
+    {
+        // Why: the session's page is dead (the connection dropped). Closing it is pointless
+        // and would throw, so just drop the references — a fresh web_browse recreates it.
+        _navigationLocks.TryRemove(sessionId, out _);
+        _sessions.TryRemove(sessionId, out _);
+    }
+
     public void Clear()
     {
         // Why: when the underlying browser connection dies, every cached page points at a

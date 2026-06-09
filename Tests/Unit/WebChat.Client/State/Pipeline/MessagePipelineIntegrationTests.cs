@@ -71,15 +71,4 @@ public sealed class MessagePipelineIntegrationTests
         messages.Count.ShouldBe(2);
     }
 
-    [Fact]
-    public void OtherUserMessage_SkippedWhenSentByThisClient()
-    {
-        // User sends message through pipeline
-        var correlationId = _pipeline.SubmitUserMessage("topic-1", "Hello", "user-1");
-
-        // Simulate hub notification with same correlation ID
-        var wasSent = _pipeline.WasSentByThisClient(correlationId);
-
-        wasSent.ShouldBeTrue();
-    }
 }

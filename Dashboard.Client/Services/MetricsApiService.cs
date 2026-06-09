@@ -93,4 +93,13 @@ public sealed class MetricsApiService(HttpClient http)
         CancellationToken ct = default) =>
         http.GetFromJsonAsync<List<LatencyTrendSeries>>(
             $"api/metrics/latency/trend?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+
+    public Task<List<VoiceEvent>?> GetVoiceEventsAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<VoiceEvent>>($"api/metrics/voice?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<Dictionary<string, decimal>?> GetVoiceGroupedAsync(
+        VoiceDimension dimension, VoiceMetric metric, DateOnly from, DateOnly to,
+        CancellationToken ct = default) =>
+        http.GetFromJsonAsync<Dictionary<string, decimal>>(
+            $"api/metrics/voice/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 }

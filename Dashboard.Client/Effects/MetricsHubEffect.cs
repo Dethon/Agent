@@ -8,6 +8,7 @@ using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
+using Dashboard.Client.State.Voice;
 
 namespace Dashboard.Client.Effects;
 
@@ -22,7 +23,8 @@ public sealed class MetricsHubEffect(
     SchedulesStore schedulesStore,
     ConnectionStore connectionStore,
     MemoryStore memoryStore,
-    LatencyStore latencyStore) : IAsyncDisposable
+    LatencyStore latencyStore,
+    VoiceStore voiceStore) : IAsyncDisposable
 {
     private readonly List<IDisposable> _subscriptions = [];
 
@@ -32,6 +34,7 @@ public sealed class MetricsHubEffect(
     private CancellationTokenSource _scheduleBreakdownCts = new();
     private CancellationTokenSource _memoryBreakdownCts = new();
     private CancellationTokenSource _latencyBreakdownCts = new();
+    private CancellationTokenSource _voiceBreakdownCts = new();
 
     private CancellationToken ResetCts(ref CancellationTokenSource cts)
     {
@@ -122,6 +125,19 @@ public sealed class MetricsHubEffect(
         catch { /* Breakdown stays at last known value */ }
     }
 
+    private async Task RefreshVoiceBreakdownAsync(CancellationToken ct)
+    {
+        try
+        {
+            var s = voiceStore.State;
+            var result = await api.GetVoiceGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
+            ct.ThrowIfCancellationRequested();
+            voiceStore.SetBreakdown(result ?? []);
+        }
+        catch (OperationCanceledException) { }
+        catch { /* Breakdown stays at last known value */ }
+    }
+
     private bool _started;
 
     public async Task StartAsync()
@@ -201,6 +217,13 @@ public sealed class MetricsHubEffect(
             await RefreshLatencyBreakdownAsync(ct);
         }));
 
+        _subscriptions.Add(hub.OnVoice(async evt =>
+        {
+            voiceStore.AppendEvent(evt);
+            var ct = ResetCts(ref _voiceBreakdownCts);
+            await RefreshVoiceBreakdownAsync(ct);
+        }));
+
         _subscriptions.Add(hub.OnHealthUpdate(evt =>
         {
             var current = healthStore.State.Services.ToList();
@@ -252,6 +275,7 @@ public sealed class MetricsHubEffect(
         _scheduleBreakdownCts.Dispose();
         _memoryBreakdownCts.Dispose();
         _latencyBreakdownCts.Dispose();
+        _voiceBreakdownCts.Dispose();
         await hub.DisposeAsync();
     }
 }

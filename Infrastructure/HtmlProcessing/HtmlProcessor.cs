@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
-using AngleSharp;
 using AngleSharp.Dom;
+using AngleSharp.Html.Parser;
 using Domain.Contracts;
 using Domain.DTOs;
 using SmartReader;
@@ -21,7 +21,11 @@ public static partial class HtmlProcessor
     public static async Task<HtmlProcessingResult> ProcessAsync(BrowseRequest request, string html,
         CancellationToken ct)
     {
-        var document = await BrowsingContext.New(Configuration.Default).OpenAsync(req => req.Content(html), ct);
+        // Parse the string directly. The html came from page.ContentAsync() and is already a
+        // correctly-decoded Unicode string; round-tripping it through a byte stream (req.Content)
+        // makes AngleSharp re-decode it per the document's <meta charset>, double-encoding accents
+        // on pages that declare a legacy charset (e.g. aemet.es / ISO-8859-15).
+        var document = new HtmlParser().ParseDocument(html);
 
         if (!string.IsNullOrEmpty(request.Selector))
         {

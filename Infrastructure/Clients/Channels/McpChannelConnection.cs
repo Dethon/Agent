@@ -90,7 +90,9 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
             ChannelId = ChannelId,
             AgentId = notification.AgentId,
             ReplyTo = notification.ReplyTo,
-            Origin = notification.Origin
+            Origin = notification.Origin,
+            Location = notification.Location,
+            SatelliteId = notification.SatelliteId
         };
 
         _messageChannel.Writer.TryWrite(message);
@@ -197,6 +199,8 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
         string topicName,
         string sender,
         string? initialPrompt,
+        string? address,
+        string? existingConversationId,
         CancellationToken ct)
     {
         if (_client is null)
@@ -214,14 +218,23 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
 
             var result = await _client.CallToolAsync(
                 ChannelProtocol.CreateConversationTool,
-                ChannelProtocol.ToArguments(new CreateConversationParams
+                new Dictionary<string, object?>
                 {
-                    AgentId = agentId,
-                    TopicName = topicName,
-                    Sender = sender,
-                    InitialPrompt = initialPrompt
-                }),
+                    ["agentId"] = agentId,
+                    ["topicName"] = topicName,
+                    ["sender"] = sender,
+                    ["initialPrompt"] = initialPrompt,
+                    ["address"] = address,
+                    ["existingConversationId"] = existingConversationId
+                },
                 cancellationToken: ct);
+
+            // A rejected create (e.g. unknown voice satellite) comes back as IsError with the
+            // error text as content; treat it as "no conversation" rather than a conversation id.
+            if (result.IsError == true)
+            {
+                return null;
+            }
 
             return result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
         }

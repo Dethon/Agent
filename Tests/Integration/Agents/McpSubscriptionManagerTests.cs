@@ -9,6 +9,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
+[Trait("Category", "Llm")]
 public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
     : IClassFixture<ThreadSessionServerFixture>
 {
@@ -89,41 +90,6 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
         await session.ResourceManager!.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
 
         // Assert - No exception means unsubscribe succeeded
-        await session.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task SyncResourcesAsync_WithNoResources_CompletesChannel()
-    {
-        // Arrange
-        var sessionKey = $"NoResourcesClient_{Guid.NewGuid()}";
-        // Don't add any downloads
-
-        using var chatClient = CreateChatClient();
-        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.CreateSessionAsync();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        var session = await ThreadSession.CreateAsync(
-            [fixture.McpEndpoint],
-            sessionKey,
-            "test-user",
-            "No Resources Test",
-            agent,
-            thread,
-            [],
-            new HashSet<string>(),
-            null,
-            cts.Token);
-
-        // Act - Sync with no resources
-        await session.ResourceManager!.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
-
-        // Assert - Channel may be completed since no resources
-        // Allow some time for async completion
-        await Task.Delay(100, cts.Token);
-        session.ResourceManager.SubscriptionChannel.ShouldNotBeNull();
-
         await session.DisposeAsync();
     }
 

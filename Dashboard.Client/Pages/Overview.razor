@@ -6,6 +6,8 @@
 @using Dashboard.Client.State.Schedules
 @using Dashboard.Client.State.Tokens
 @using Dashboard.Client.State.Tools
+@using Dashboard.Client.State.Voice
+@using Domain.DTOs.Metrics.Enums
 @using static Dashboard.Client.Components.PillSelector
 @implements IDisposable
 @inject MetricsStore Metrics
@@ -15,6 +17,7 @@
 @inject ErrorsStore Errors
 @inject SchedulesStore Schedules
 @inject ConnectionStore Connection
+@inject VoiceStore Voice
 @inject DataLoadEffect DataLoad
 @inject LocalStorageService Storage
 
@@ -36,6 +39,8 @@
         <KpiCard Label="Cost" Value="@($"${_metrics.Cost:F2}")" Color="var(--accent-green)" />
         <KpiCard Label="Tool Calls" Value="@_metrics.ToolCalls.ToString("N0")" Color="var(--accent-yellow)" />
         <KpiCard Label="Errors" Value="@_metrics.ToolErrors.ToString("N0")" Color="var(--accent-red)" />
+        <KpiCard Label="Utterances" Value="@_voiceUtterances.ToString("N0")" Color="var(--accent-blue)" />
+        <KpiCard Label="Median voice latency" Value="@($"{_voiceLatency:F0}ms")" Color="var(--accent-yellow)" />
     </section>
 
     <section class="section">
@@ -73,6 +78,8 @@
     private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
     private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
     private List<ActivityItem> _recentActivity = [];
+    private long _voiceUtterances;
+    private double _voiceLatency;
     private readonly List<IDisposable> _subscriptions = [];
 
     private static readonly IReadOnlyList<PillOption> TimeOptions =
@@ -95,6 +102,15 @@
         _subscriptions.Add(Tools.StateObservable.Subscribe(_ => { RebuildActivity(); InvokeAsync(StateHasChanged); }));
         _subscriptions.Add(Errors.StateObservable.Subscribe(_ => { RebuildActivity(); InvokeAsync(StateHasChanged); }));
         _subscriptions.Add(Schedules.StateObservable.Subscribe(_ => { RebuildActivity(); InvokeAsync(StateHasChanged); }));
+
+        _subscriptions.Add(Voice.StateObservable.Subscribe(s =>
+        {
+            _voiceUtterances = s.Events.Count(e => e.Metric == VoiceMetric.UtteranceTranscribed);
+            var lat = s.Events.Where(e => e.Metric == VoiceMetric.WakeToFirstAudioMs && e.DurationMs is not null)
+                              .Select(e => e.DurationMs!.Value).OrderBy(x => x).ToList();
+            _voiceLatency = lat.Count > 0 ? lat[lat.Count / 2] : 0;
+            InvokeAsync(StateHasChanged);
+        }));
 
         _to = DateOnly.FromDateTime(DateTime.UtcNow);
         _from = _to.AddDays(-(_selectedDays - 1));

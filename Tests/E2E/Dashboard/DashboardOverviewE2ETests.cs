@@ -17,7 +17,7 @@ public class DashboardOverviewE2ETests(DashboardE2EFixture fixture)
         // KPI cards
         var kpiCards = page.Locator(".kpi-card");
         var count = await kpiCards.CountAsync();
-        count.ShouldBe(5);
+        count.ShouldBe(7);
 
         var labels = await kpiCards.Locator(".kpi-label").AllTextContentsAsync();
         labels.ShouldContain("Input Tokens");

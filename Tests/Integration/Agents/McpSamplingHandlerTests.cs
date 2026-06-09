@@ -10,6 +10,7 @@ using Shouldly;
 
 namespace Tests.Integration.Agents;
 
+[Trait("Category", "Llm")]
 public class McpSamplingHandlerTests
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()

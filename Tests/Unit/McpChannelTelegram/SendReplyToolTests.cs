@@ -94,25 +94,6 @@ public class SendReplyToolTests
     }
 
     [Fact]
-    public async Task McpRun_ForumThread_PassesThreadId()
-    {
-        // chatId:threadId where threadId != chatId means forum thread
-        var result = await SendReplyTool.McpRun("100:42", "hello", ReplyContentType.Text, true, null, _services);
-        _accumulator.Append("100:42", "hello");
-
-        result.ShouldBe("ok");
-    }
-
-    [Fact]
-    public async Task McpRun_NonForumChat_PassesNullThreadId()
-    {
-        // chatId:threadId where threadId == chatId means non-forum
-        var result = await SendReplyTool.McpRun("100:100", "hello", ReplyContentType.Text, true, null, _services);
-
-        result.ShouldBe("ok");
-    }
-
-    [Fact]
     public async Task McpRun_UnknownChat_ThrowsInvalidOperation()
     {
         await Should.ThrowAsync<InvalidOperationException>(

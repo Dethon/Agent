@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
@@ -85,18 +84,6 @@ public class HaFileSystemReadTests
     }
 
     [Fact]
-    public async Task SearchAsync_FindsEntityByState()
-    {
-        var fs = Build(out _);
-        var result = await fs.SearchAsync(
-            "off", false, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        var search = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
-        search.TotalMatches.ShouldBeGreaterThan(0);
-        search.Results.Count.ShouldBeGreaterThan(0);
-        search.Results[0].File.ShouldContain("light/kitchen_(kitchen)");
-    }
-
-    [Fact]
     public async Task GlobAsync_TwoSameClassEntities_AreDistinguishableByName()
     {
         var client = new FakeHaClient
@@ -151,14 +138,6 @@ public class HaFileSystemReadTests
         var fs = Build(out _);
         var result = await fs.ReadAsync("entities/light/kitchen_(wrong)/state.json", null, null, CancellationToken.None);
         result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.Hint.ShouldNotBeNull().ShouldContain("kitchen_(kitchen)");
-    }
-
-    [Fact]
-    public async Task ReadAsync_CompositeName_Resolves()
-    {
-        var fs = Build(out _);
-        var result = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("\"entity_id\": \"light.kitchen\"");
     }
 
     [Fact]

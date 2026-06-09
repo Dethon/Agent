@@ -261,6 +261,65 @@ public class MetricsQueryServiceGroupingTests
     }
 
     // =====================================================================
+    // Voice Grouped Aggregation
+    // =====================================================================
+
+    [Theory]
+    [InlineData(VoiceDimension.SatelliteId, VoiceMetric.UtteranceTranscribed)]
+    [InlineData(VoiceDimension.Room, VoiceMetric.UtteranceTranscribed)]
+    [InlineData(VoiceDimension.Identity, VoiceMetric.SttLatencyMs)]
+    [InlineData(VoiceDimension.SatelliteId, VoiceMetric.WakeToFirstAudioMs)]
+    public async Task GetVoiceGroupedAsync_GroupsByDimensionAndMetric(
+        VoiceDimension dimension, VoiceMetric metric)
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:voice:2026-03-15",
+        [
+            new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household" },
+            new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household" },
+            new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "office-01", Room = "Office", Identity = "household" },
+            new VoiceEvent { Metric = VoiceMetric.SttLatencyMs, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household", DurationMs = 100 },
+            new VoiceEvent { Metric = VoiceMetric.SttLatencyMs, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household", DurationMs = 300 },
+            new VoiceEvent { Metric = VoiceMetric.WakeToFirstAudioMs, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household", DurationMs = 200 },
+            new VoiceEvent { Metric = VoiceMetric.WakeToFirstAudioMs, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household", DurationMs = 400 },
+        ]);
+
+        var result = await _sut.GetVoiceGroupedAsync(dimension, metric, date, date);
+
+        switch (dimension, metric)
+        {
+            case (VoiceDimension.SatelliteId, VoiceMetric.UtteranceTranscribed):
+                result["kitchen-01"].ShouldBe(2m);   // count branch
+                result["office-01"].ShouldBe(1m);
+                break;
+            case (VoiceDimension.Room, VoiceMetric.UtteranceTranscribed):
+                result["Kitchen"].ShouldBe(2m);
+                result["Office"].ShouldBe(1m);
+                break;
+            case (VoiceDimension.Identity, VoiceMetric.SttLatencyMs):
+                result["household"].ShouldBe(200m);   // avg branch: avg(100,300)
+                break;
+            case (VoiceDimension.SatelliteId, VoiceMetric.WakeToFirstAudioMs):
+                result["kitchen-01"].ShouldBe(300m);  // avg branch: avg(200,400)
+                break;
+        }
+    }
+
+    [Fact]
+    public async Task GetVoiceGroupedAsync_NullDimensionValue_BucketsAsUnknown()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:voice:2026-03-15",
+        [
+            new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = null, Room = null, Identity = null },
+        ]);
+
+        var result = await _sut.GetVoiceGroupedAsync(VoiceDimension.Room, VoiceMetric.UtteranceTranscribed, date, date);
+
+        result["(unknown)"].ShouldBe(1m);
+    }
+
+    // =====================================================================
     // Empty-data behavior (every grouped query returns an empty dictionary
     // when no events exist for the date range)
     // =====================================================================
@@ -269,6 +328,7 @@ public class MetricsQueryServiceGroupingTests
     [InlineData("tokens")]
     [InlineData("memory")]
     [InlineData("latency")]
+    [InlineData("voice")]
     public async Task GetGroupedAsync_EmptyData_ReturnsEmptyDictionary(string query)
     {
         var date = new DateOnly(2026, 3, 15);
@@ -277,12 +337,14 @@ public class MetricsQueryServiceGroupingTests
         SetupSortedSet("metrics:memory-extraction:2026-03-15", []);
         SetupSortedSet("metrics:memory-dreaming:2026-03-15", []);
         SetupSortedSet("metrics:latency:2026-03-15", []);
+        SetupSortedSet("metrics:voice:2026-03-15", []);
 
         var result = query switch
         {
             "tokens" => await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, date, date),
             "memory" => await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, date, date),
             "latency" => await _sut.GetLatencyGroupedAsync(LatencyDimension.Stage, LatencyMetric.P95, date, date),
+            "voice" => await _sut.GetVoiceGroupedAsync(VoiceDimension.SatelliteId, VoiceMetric.UtteranceTranscribed, date, date),
             _ => throw new ArgumentOutOfRangeException(nameof(query))
         };
 

@@ -8,6 +8,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
+[Trait("Category", "Llm")]
 public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()

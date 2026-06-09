@@ -73,17 +73,11 @@ public class VirtualFileSystemRegistryTests
     [Fact]
     public void Resolve_NoMatchingMount_ThrowsWithAvailableMounts()
     {
-        var ex = Should.Throw<InvalidOperationException>(() => _registry.Resolve("/unknown/file.md"));
-        ex.Message.ShouldContain("No filesystem mounted");
-    }
-
-    [Fact]
-    public void Resolve_NoMatchingMount_ErrorListsAvailable()
-    {
         var backend = CreateMockBackend("library");
         _registry.Mount(new FileSystemMount("library", "/library", "Library"), backend);
 
         var ex = Should.Throw<InvalidOperationException>(() => _registry.Resolve("/unknown/file.md"));
+        ex.Message.ShouldContain("No filesystem mounted");
         ex.Message.ShouldContain("/library");
     }
 

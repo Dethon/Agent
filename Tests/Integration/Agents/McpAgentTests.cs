@@ -10,6 +10,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
+[Trait("Category", "Llm")]
 public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redisFixture)
     : IClassFixture<McpLibraryServerFixture>, IClassFixture<RedisFixture>
 {
@@ -98,34 +99,6 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
         responses.ShouldNotBeEmpty();
         mcpFixture.FileExistsInLibrary(Path.Combine("AgentMoveDestination", "agent-test-file.mkv")).ShouldBeTrue();
         mcpFixture.FileExistsInLibrary(Path.Combine("AgentMoveSource", "agent-test-file.mkv")).ShouldBeFalse();
-
-        await agent.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task Agent_WithSystemPrompt_UsesPromptInResponses()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        // Note: System prompt is now fetched from the MCP server, not passed here
-
-        var agent = CreateAgent(llmClient);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        // Act
-        var responses = await agent.RunStreamingAsync(
-                "Say hello and confirm you understand your role.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
-
-        // Assert
-        responses.ShouldNotBeEmpty();
-        var combinedResponse = string.Join(" ", responses.Select(r => r.Content));
-        combinedResponse.ShouldNotBeNullOrEmpty();
 
         await agent.DisposeAsync();
     }

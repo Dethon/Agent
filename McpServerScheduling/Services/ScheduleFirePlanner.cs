@@ -10,7 +10,14 @@ public static class ScheduleFirePlanner
     public static FirePlan Plan(Schedule schedule, IReadOnlyList<string> defaultDeliverTo, DateTime? nextRun)
     {
         var channels = schedule.DeliverTo is { Count: > 0 } ? schedule.DeliverTo : defaultDeliverTo;
-        var replyTo = channels.Select(c => new ReplyTarget(c, null)).ToList();
+        // Multiple entries for the same channel (e.g. several `voice:<id>` satellites) are one
+        // logical delivery: merge their sub-addresses into a single ReplyTarget so the fan-out
+        // produces one conversation spoken on every satellite, not a duplicate per satellite.
+        var replyTo = channels
+            .Select(ParseTarget)
+            .GroupBy(t => t.ChannelId)
+            .Select(Coalesce)
+            .ToList();
         var origin = new MessageOrigin(MessageOriginKind.Schedule, schedule.Id);
 
         var payload = ScheduleNotificationEmitter.BuildPayload(
@@ -23,5 +30,43 @@ public static class ScheduleFirePlanner
 
         var deleteAfterFire = schedule.CronExpression is null;
         return new FirePlan(payload, nextRun, deleteAfterFire);
+    }
+
+    private static ReplyTarget Coalesce(IGrouping<string, ReplyTarget> group)
+    {
+        var targets = group.ToList();
+        if (targets.Count == 1)
+        {
+            return targets[0];
+        }
+
+        // A bare entry (null/whitespace address) means "all" for that channel; if any entry in the
+        // group is bare it subsumes the specific sub-addresses, so the whole group is "all".
+        if (targets.Any(t => string.IsNullOrWhiteSpace(t.Address)))
+        {
+            return new ReplyTarget(group.Key, null, null);
+        }
+
+        // Otherwise join the distinct specific sub-addresses (e.g. satellite ids).
+        var addresses = targets
+            .Select(t => t.Address)
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .Distinct()
+            .ToList();
+        var merged = addresses.Count == 0 ? null : string.Join(",", addresses);
+        return new ReplyTarget(group.Key, null, merged);
+    }
+
+    private static ReplyTarget ParseTarget(string entry)
+    {
+        var separator = entry.IndexOf(':');
+        if (separator < 0)
+        {
+            return new ReplyTarget(entry, null);
+        }
+
+        var channelId = entry[..separator];
+        var address = entry[(separator + 1)..];
+        return new ReplyTarget(channelId, null, string.IsNullOrWhiteSpace(address) ? null : address);
     }
 }

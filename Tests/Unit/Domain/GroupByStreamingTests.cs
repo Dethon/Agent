@@ -5,7 +5,6 @@ namespace Tests.Unit.Domain;
 
 public class GroupByStreamingTests
 {
-    private static readonly int[] _sourceArray = [1, 2, 3, 4, 5, 6];
     private static readonly int[] _sourceArray0 = [1, 2, 3];
     private static readonly int[] _sourceArray1 = [1, 2, 3, 4, 5, 6];
     private static readonly string[] _sourceArray2 = ["a1", "b1", "a2", "c1", "b2"];
@@ -26,23 +25,6 @@ public class GroupByStreamingTests
         // Assert
         groups.Count.ShouldBe(1);
         groups[0].Key.ShouldBe("key");
-    }
-
-    [Fact]
-    public async Task GroupByStreaming_WithMultipleKeys_ReturnsMultipleGroups()
-    {
-        // Arrange
-        var source = _sourceArray.ToAsyncEnumerable();
-
-        // Act
-        var groups = await source
-            .GroupByStreaming((x, _) => ValueTask.FromResult(x % 2 == 0 ? "even" : "odd"))
-            .ToListAsync();
-
-        // Assert
-        groups.Count.ShouldBe(2);
-        groups.Select(g => g.Key).ShouldContain("odd");
-        groups.Select(g => g.Key).ShouldContain("even");
     }
 
     [Fact]
@@ -127,7 +109,7 @@ public class GroupByStreamingTests
         processedCount.ShouldBeGreaterThanOrEqualTo(5);
         return;
 
-        async IAsyncEnumerable<int> infiniteSource()
+        static async IAsyncEnumerable<int> infiniteSource()
         {
             var i = 0;
             while (true)

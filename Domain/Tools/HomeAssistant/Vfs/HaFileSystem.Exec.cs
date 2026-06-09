@@ -11,8 +11,10 @@ public sealed partial class HaFileSystem
     public async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        FsResult<FsExecResult> done(int exitCode, string stdout, string stderr, bool timedOut = false) =>
-            ExecResult(exitCode, stdout, stderr, timedOut, sw.ElapsedMilliseconds, path);
+        FsResult<FsExecResult> done(int exitCode, string stdout, string stderr, bool timedOut = false)
+        {
+            return ExecResult(exitCode, stdout, stderr, timedOut, sw.ElapsedMilliseconds, path);
+        }
 
         var catalog = await catalogProvider.GetAsync(ct);
         var node = HaVfsPath.Parse(path);
