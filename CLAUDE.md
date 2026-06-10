@@ -18,11 +18,13 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | `McpChannelSignalR` | WebChat/SignalR channel — hosts SignalR hub, streams, approvals, push notifications |
 | `McpChannelTelegram` | Telegram channel — multi-bot polling (one bot per agent), inline keyboard approvals |
 | `McpChannelServiceBus` | Azure Service Bus channel — queue processor, auto-approval |
+| `McpChannelVoice` | Voice channel — Wyoming hub that dials hardware satellites, whisper STT, piper TTS, follow-up windows, announcements |
 | `McpServerScheduling` | Scheduling server — dual-role: `filesystem://schedules` VFS + channel that fires due schedules as `channel/message` |
 | `McpServerPrinter` | Printer server — `filesystem://print-queue` VFS that submits copied/created files to a configured IPP/CUPS printer |
 | `WebChat`/`.Client` | Blazor WebAssembly chat interface, Redux-like state (Stores + Effects + HubEventDispatcher) |
 | `Observability` | Metrics collector, REST API, SignalR hub — serves the Dashboard PWA |
 | `Dashboard.Client` | Blazor WebAssembly observability dashboard (token costs, tool analytics, errors, schedules, memory, health) |
+| `satellite` | `nabu-satellite` — standalone Rust crate (NOT in the .NET solution): fully static Wyoming satellite binary for Raspberry Pi with embedded wake-word detection |
 | `Tests` | Unit and integration tests |
 
 ## Key File Locations
@@ -82,6 +84,13 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | Web browsing prompt | `Domain/Prompts/WebBrowsingPrompt.cs` |
 | Web browser contracts | `Domain/Contracts/IWebBrowser.cs` |
 | Playwright browser client | `Infrastructure/Clients/Browser/*.cs` |
+| Satellite CLI flags & defaults | `satellite/src/config.rs` |
+| Satellite state machine | `satellite/src/satellite/state_machine.rs` |
+| Satellite wake detector | `satellite/src/wake/detector.rs` |
+| Satellite Wyoming codec | `satellite/src/wyoming/{codec,event}.rs` |
+| Satellite audio (mic/playback/cues) | `satellite/src/audio/*.rs` |
+| Satellite LED & button | `satellite/src/led.rs`, `satellite/src/gpio.rs` |
+| Satellite build & deploy | `satellite/scripts/*.sh`, `satellite/deploy/nabu-satellite.service`, `scripts/provision-satellite-rs.sh`, `scripts/wsl-satellite.sh` |
 | Unit & integration tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
 | E2E tests | `Tests/E2E/{Dashboard,WebChat}/*E2ETests.cs` |
 | E2E fixtures | `Tests/E2E/Fixtures/*.cs` |
@@ -178,7 +187,7 @@ Memory is a built-in agent feature (not a separate MCP server). It runs as servi
 
 ### Channel Architecture
 
-Transports (WebChat, Telegram, ServiceBus, Scheduling) run as independent MCP channel servers. The agent connects to them as an MCP client via `ChannelEndpoints` config. Each channel exposes a standard protocol; wire serialization is centralized in `ChannelProtocol` (shared `JsonSerializerOptions` plus typed notification/param records — `ChannelMessageNotification`, `ChannelCancelNotification`, `RegisterAgentsParams`, `RequestApprovalParams`):
+Transports (WebChat, Telegram, ServiceBus, Voice, Scheduling) run as independent MCP channel servers. The agent connects to them as an MCP client via `ChannelEndpoints` config. Each channel exposes a standard protocol; wire serialization is centralized in `ChannelProtocol` (shared `JsonSerializerOptions` plus typed notification/param records — `ChannelMessageNotification`, `ChannelCancelNotification`, `RegisterAgentsParams`, `RequestApprovalParams`):
 - **Inbound**: `channel/message` notification (user message → agent), `channel/cancel` notification
 - **Outbound**: `send_reply` tool (agent response → user), `request_approval` tool (tool approval flow), `create_conversation` tool (agent-initiated conversations), `register_agents` tool (agent publishes its catalog to the channel)
 
@@ -187,6 +196,25 @@ On connect and after every reconnect, the agent registers its agent catalog (an 
 A server can be **dual-role** — both a channel (in `ChannelEndpoints`) and a tool/filesystem server (in an agent's `mcpServerEndpoints`); `mcp-scheduling` is both. For dual-role servers the channel-protocol tools (`send_reply`, `request_approval`, `register_agents`) are hidden from the LLM.
 
 New transports can be added by deploying a new channel MCP server — zero agent changes needed.
+
+### Voice Satellite Architecture
+
+Voice is an MCP channel server (`McpChannelVoice`, channelId `voice`, container `mcp-channel-voice`, port 6015) plus hardware satellites. The hub is the Wyoming-protocol **client**: `WyomingSatelliteHost` dials out to every satellite that has an `Address` in `VoiceSettings.Satellites` (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) and reconnects forever; address-less satellites stay in the catalog as announce targets but are never dialed (announcements to them report offline). Pipeline: satellite wakes locally → streams mic `audio-chunk`s → `SatelliteSession`/`SilenceGate` segment the utterance → wyoming-whisper STT → transcript dispatched as `channel/message` → agent reply synthesized by wyoming-piper → streamed back as `audio-start`/`audio-chunk`/`audio-stop`. Sending a `transcript` event to the satellite ends its turn and re-arms wake; `FollowUpConversation` can reopen the mic wake-free, announced by the `ListeningChime` earcon.
+
+The satellite is `nabu-satellite` (`satellite/` — a standalone Rust crate, not part of the .NET solution): a fully static aarch64-musl binary (~17.7 MiB) embedding the openWakeWord "ok nabu" pipeline (melspectrogram → embedding → classifier ONNX, run in-process via tract) and the cue WAVs. Key invariants:
+
+- **The satellite is the Wyoming SERVER; the hub dials in** (default `--listen 0.0.0.0:10700`). A new hub connection supersedes the previous one (abort + await) so a dead-peer TCP wedge can't hold the exclusive `plughw` mic for the ~15-min retransmission timeout.
+- **Cancellation safety**: hub/mic reads are multi-await compound reads, NOT `select!`-safe; they run in dedicated pump tasks feeding bounded mpsc channels, and the main `select!` only races `recv()` futures.
+- **Audio contract**: mic = 16 kHz mono S16LE in 1280-sample/80 ms chunks (arecord subprocess); playback sink = FIXED 22 050 Hz mono S16LE (aplay) that ignores announced rates — everything it plays must be 22 050 Hz: hub-side TTS and chime (this is why `ListeningChime` generates 22 050 Hz PCM) plus the satellite's own embedded cue WAVs.
+- **Zero-lag pre-roll**: while idle, mic chunks fill a pre-roll ring (`--preroll-ms`, default 1000); a wake trigger flushes only the detection gap (3 chunks ≈ 240 ms), never the wake word itself; a button press flushes the full ring.
+- **LED**: the state machine publishes `LedState` (Idle/Listening/Thinking/Speaking) on a tokio watch channel; a per-connection render task owns the backend (`--led-gpio` pin or `--led-spi` for the ReSpeaker HAT APA102s on `/dev/spidev0.1`); Idle→off, everything else→steady on, 120 s Thinking fallback mirroring the hub reply timeout; missing/failing LED hardware is never fatal.
+- **Defaults target a Jabra Speak2** on `plughw:0,0` (index-pinned via `snd_usb_audio index=0` because the ALSA card name varies by variant: 75→J75, 55 MS→MS, 55 UC→UC), no button/LED — the Jabra's buttons/LEDs are HID-telephony, unusable on Linux. The ReSpeaker 2-Mic HAT is the override path: `plughw:CARD=seeed2micvoicec,DEV=0` on both audio commands plus `--button-gpio 17 --led-spi` (needs `dtparam=spi=on` and the `spi` group).
+
+Build & deploy: `satellite/scripts/build-release.sh` cross-compiles via cargo-zigbuild + zig (the `zigcc-fp16-shim.sh` CC shim rewrites tract-linalg's `+fp16` -march feature to zig's `+fullfp16`) — never run bare `cargo zigbuild` for releases. `scripts/provision-satellite-rs.sh <user@host> [mic-device]` installs the binary plus the templated `satellite/deploy/nabu-satellite.service` unit on a Pi (only dependency: `alsa-utils`) and, when the mic device is left at the default `plughw:0,0`, applies the Jabra ALSA/udev pinning. On-device E2E validation (plan task 5.3) is still open, blocked on hardware.
+
+### Running a Satellite on WSL
+
+`scripts/wsl-satellite.sh` builds (`cargo build --release`, native target) and runs a satellite on the WSL host through WSLg PulseAudio; the dockerized hub dials `tcp://host.docker.internal:$SAT_PORT` (defaults match `McpChannelVoice/appsettings.Development.json`: 10700 = fran-office-01, 10600 = laura-office-01). Env knobs: `SAT_PORT`, `THRESHOLD` (wake threshold, default 0.5), `MIC_GAIN` (default 3.0 via a python `audioop` pipe — WSLg's mic bridge is quiet and the binary has no gain flag; needs python ≤ 3.12), `RUST_LOG`. `paplay --latency-msec=50` is mandatory on WSLg (the RDP sink's default buffer adds ~1.6 s playback latency, so the hub opens the wake-free follow-up window — 400 ms playback-tail echo guard, then 7 s window — while the reply is still audibly playing). Stale instances are detected via an `ss` LISTEN-state check because WSL2 mirrored networking makes loopback connects to dead ports hang instead of refusing.
 
 ### Scheduling Architecture
 

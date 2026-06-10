@@ -1,15 +1,16 @@
 # Agent - AI Media Library Agent
 
-An AI-powered agent that manages a personal media library through Telegram chat, web interface, or Azure Service Bus,
-using OpenRouter LLMs and the Model Context Protocol (MCP).
+An AI-powered agent that manages a personal media library through Telegram chat, web interface, voice satellites, or
+Azure Service Bus, using OpenRouter LLMs and the Model Context Protocol (MCP).
 
 ## Features
 
 - **Multi-Agent Support** - Run multiple agents from a single container, each with unique configurations
-- **Channel Architecture** - Transports (WebChat, Telegram, ServiceBus, Scheduling) run as independent MCP channel servers; agents publish a single-source catalog to each channel via `register_agents`
+- **Channel Architecture** - Transports (WebChat, Telegram, ServiceBus, Voice, Scheduling) run as independent MCP channel servers; agents publish a single-source catalog to each channel via `register_agents`
 - **WebChat** - Browser-based chat with real-time streaming, topic management, and multi-agent selection
 - **Telegram Multi-Bot** - Each agent gets its own Telegram bot with inline keyboard tool approvals
 - **Azure Service Bus** - Queue-based integration for external systems
+- **Voice Satellites** - Hands-free voice assistant on real hardware: `nabu-satellite` is a single static Rust binary for Raspberry Pi with on-device "ok nabu" wake-word detection (openWakeWord via tract, no Python), zero-lag pre-roll, audio cues, button support, and an optional activity LED; the voice channel dials each satellite over the Wyoming protocol, transcribes with Whisper, runs the agent, and streams Piper TTS back
 - **Conversation Persistence** - Redis-backed chat history survives application restarts
 - **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
 - **MCP Resource Subscriptions** - Real-time updates from MCP servers via resource subscriptions
@@ -31,21 +32,21 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│    WebChat      │     │    Telegram     │     │  Azure Service  │     │ Schedule timer  │
-│ (Blazor WASM)   │     │    (Bots)       │     │       Bus       │     │   (internal)    │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │                       │
-         ▼                       ▼                       ▼                       ▼
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ McpChannel      │     │ McpChannel      │     │ McpChannel      │     │ MCP Scheduling  │
-│ SignalR         │     │ Telegram        │     │ ServiceBus      │     │ (channel role — │
-│ (MCP Server)    │     │ (MCP Server)    │     │ (MCP Server)    │     │  also in below) │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │    channel/message    │                       │                       │
-         │    send_reply         │                       │                       │
-         │    request_approval   │                       │                       │
-         └────────────┬──────────┘───────────────────────┘───────────────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    WebChat      │     │    Telegram     │     │  Azure Service  │     │ Schedule timer  │     │ Voice satellite │
+│ (Blazor WASM)   │     │    (Bots)       │     │       Bus       │     │   (internal)    │     │ (nabu, Rust/Pi) │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │                       │                       │ Wyoming/TCP
+         ▼                       ▼                       ▼                       ▼                       ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ McpChannel      │     │ McpChannel      │     │ McpChannel      │     │ MCP Scheduling  │     │ McpChannel      │
+│ SignalR         │     │ Telegram        │     │ ServiceBus      │     │ (channel role — │     │ Voice (Wyoming  │
+│ (MCP Server)    │     │ (MCP Server)    │     │ (MCP Server)    │     │  also in below) │     │ hub + STT/TTS)  │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │    channel/message    │                       │                       │                       │
+         │    send_reply         │                       │                       │                       │
+         │    request_approval   │                       │                       │                       │
+         └────────────┬──────────┘───────────────────────┘───────────────────────┘───────────────────────┘
                       │
                       ▼
               ┌───────────────┐
@@ -149,6 +150,36 @@ Printing is another non-disk MCP filesystem server (`mcp-printer`) exposing `fil
 
 The IPP transport is `IppPrinterClient` (`Infrastructure/Clients/Printer/`), a `SharpIppNext` + `HttpClient` adapter against the configured `PRINTERURI` (a CUPS server or a direct-IPP printer — same protocol), mapping the `Print-Job`, `Get-Jobs`, and `Cancel-Job` IPP operations.
 
+### Voice Satellites
+
+Voice runs as another MCP channel server (`mcp-channel-voice`) plus dedicated hardware satellites. The hub is the Wyoming-protocol **client**: for every satellite configured with an address (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) it dials out and keeps a persistent reconnecting connection. The satellite detects the wake word locally and streams mic audio to the hub; the hub segments the utterance (silence gating), transcribes it with `wyoming-whisper`, dispatches the transcript to the agent as a `channel/message`, and streams the reply back as `wyoming-piper` TTS audio. After each reply an optional wake-free follow-up window opens (announced by a listening chime) so the conversation continues without repeating the wake word.
+
+```
+┌─ Raspberry Pi / WSL dev host ──┐                     ┌─ mcp-channel-voice (hub) ──┐
+│ nabu-satellite (static Rust)   │   Wyoming over TCP  │ silence gate → Whisper STT ┼──▶ channel/message ──▶ Agent
+│ wake "ok nabu" → mic stream    ┼◀───(hub dials in)──▶│ Piper TTS ◀── send_reply   ┼◀── agent reply
+│ arecord/aplay · cues · LED     │                     │ follow-up window + chime   │
+└────────────────────────────────┘                     └────────────────────────────┘
+```
+
+#### nabu-satellite (`satellite/`)
+
+The satellite is `nabu-satellite`, a from-scratch Rust replacement for the archived `wyoming-satellite` Python project: one fully static ~18 MB `aarch64-musl` binary with everything embedded (ONNX wake models, cue WAVs). Deployment needs no Python and no system packages beyond `alsa-utils`.
+
+- **Wyoming server** — the satellite listens (default `0.0.0.0:10700`; the hub's configured `Address` must match the satellite's `--listen` port) and the hub dials in. A new hub connection supersedes any previous one, so a dead-peer TCP connection can't hold the exclusive mic device hostage.
+- **On-device wake word** — the openWakeWord pipeline (melspectrogram → embedding → `ok_nabu` classifier) runs in-process via `tract`, validated against the Python implementation. A pre-roll ring buffer gives zero-lag turns: on wake only the detection gap is flushed (the wake word itself is never transcribed); a button press flushes the full ring instead, since speech may precede the press.
+- **Audio** — mic capture via an `arecord` subprocess (16 kHz mono S16LE in 80 ms chunks); playback via `aplay` at a fixed 22 050 Hz (all hub-side audio — TTS, chime — is generated at that rate). Local cues bracket listening: the awake cue plays on turn start, the done cue when the transcript arrives and the mic re-arms.
+- **Buttons & LED** — optional: `--button-gpio`/`--button-evdev` starts a turn without the wake word (`--no-wake` for button-only operation); `--led-gpio` (single wired LED) or `--led-spi` (ReSpeaker 2-Mic HAT APA102s) lights a steady activity LED across listening → thinking → speaking. Missing hardware is never fatal.
+- **Defaults** target a Jabra Speak2 on USB (`plughw:0,0`, no button/LED); the ReSpeaker 2-Mic HAT path overrides the audio device and adds `--button-gpio 17 --led-spi`.
+
+Build and deployment:
+
+- `satellite/scripts/build-release.sh` — cross-compiles the fully static `aarch64-unknown-linux-musl` release via `cargo-zigbuild` (a CC shim translates the fp16 target feature for zig cc).
+- `scripts/provision-satellite-rs.sh <user@host> [mic-device]` — builds, installs the binary and the `nabu-satellite.service` systemd unit on a Raspberry Pi, and — when the mic device is left at the default — applies the Jabra-specific ALSA index pinning and USB autosuspend udev rule.
+- `scripts/wsl-satellite.sh` — runs a satellite on a WSL dev host through WSLg PulseAudio so the dockerized hub can dial `tcp://host.docker.internal:<port>`.
+
+See `satellite/README.md` for build prerequisites, CLI flags, and dev-test commands.
+
 ### MCP Tool Servers
 
 | Server            | Tools                                                                                                                   | Resources             | Purpose                                                                                 |
@@ -169,6 +200,7 @@ The IPP transport is `IppPrinterClient` (`Infrastructure/Clients/Printer/`), a `
 | **mcp-channel-signalr**   | WebChat transport — hosts SignalR hub, manages streams/sessions/approvals, push notifications |
 | **mcp-channel-telegram**  | Telegram transport — multi-bot polling (one per agent), inline keyboard approvals            |
 | **mcp-channel-servicebus**| Azure Service Bus transport — queue processor, auto-approval, response sender                |
+| **mcp-channel-voice**     | Voice transport — Wyoming hub that dials hardware satellites, segments utterances, transcribes via wyoming-whisper, synthesizes replies via wyoming-piper, manages follow-up windows and announcements (see [Voice Satellites](#voice-satellites)) |
 | **mcp-scheduling**        | Scheduling transport — fires due cron/one-shot schedules as channel messages; also exposes `filesystem://schedules` for managing them |
 
 ### Agents
@@ -177,6 +209,7 @@ The IPP transport is `IppPrinterClient` (`Infrastructure/Clients/Printer/`), a `
 |-----------|-----------------------------------------------------|---------------------------------------------|---------------------------------------------------------------------------|
 | **Jack**  | mcp-library, mcp-websearch                          | filesystem (glob, move)                     | Media acquisition and library management ("Captain Jack" pirate persona)  |
 | **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant, mcp-scheduling, mcp-printer | filesystem, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, scheduled tasks, Home Assistant control, and printing |
+| **Nabu**  | same as Jonas + mcp-channel-voice                   | filesystem, subagents, memory               | Voice-optimized assistant — brief, formatting-free spoken replies delivered through the voice satellites |
 
 ### Multi-Agent Configuration
 
@@ -214,6 +247,8 @@ Agent routing:
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
 | `McpChannelServiceBus`   | MCP channel server for Azure Service Bus (queues)               |
+| `McpChannelVoice`        | MCP channel server for voice satellites (Wyoming hub, Whisper STT, Piper TTS) |
+| `satellite`              | `nabu-satellite` — standalone Rust crate: static Wyoming satellite binary for Raspberry Pi (wake word, audio I/O, button, LED) |
 | `WebChat`                | Blazor WebAssembly host server for browser-based chat           |
 | `WebChat.Client`         | Blazor WebAssembly client with chat UI and SignalR integration  |
 | `Observability`          | Metrics collector, REST API, SignalR hub — serves the Dashboard |
@@ -343,6 +378,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | MCP Channel ServiceBus   | 6012 | ServiceBus channel server      |
 | MCP Scheduling           | 6013 | Scheduling channel + filesystem server |
 | MCP Printer              | 6014 | Print queue MCP server         |
+| MCP Channel Voice        | 6015 | Voice channel server (Wyoming satellite hub) |
 | Camoufox                 | 9377 | Anti-detect browser (WebSocket)|
 
 ## Usage
