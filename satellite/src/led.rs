@@ -30,7 +30,7 @@ fn apa102_frame((r, g, b): (u8, u8, u8), brightness: u8, n: usize) -> Vec<u8> {
 }
 
 /// The hardware behind the light. Owned by the render task; dropped on connection end.
-pub enum LedBackend {
+enum LedBackend {
     /// Single LED on a GPIO pin, active-high. rppal's reset-on-drop releases the pin (off).
     Gpio(rppal::gpio::OutputPin),
     /// The HAT's APA102 chain on /dev/spidev0.1. Drop writes the off frame explicitly.
@@ -77,6 +77,10 @@ fn build_backend(cfg: &LedConfig) -> anyhow::Result<Option<LedBackend>> {
         LedConfig::None => Ok(None),
         LedConfig::Gpio(pin) => {
             // into_output_low claims the pin already-off (the init-clear for this backend).
+            // Unlike the button (whose pin lives in the guard and releases synchronously on
+            // supersede), this pin lives in the render task and releases when the aborted
+            // task is dropped — a rapid hub reconnect can lose the race and run one
+            // connection LED-less (warn below); it self-heals on the next reconnect.
             let pin = rppal::gpio::Gpio::new()?.get(*pin)?.into_output_low();
             Ok(Some(LedBackend::Gpio(pin)))
         }

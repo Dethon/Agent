@@ -52,7 +52,7 @@ go through cargo-zigbuild's own wrappers).
 
 Output: `target/aarch64-unknown-linux-musl/release/nabu-satellite` —
 `ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped`,
-**18,541,904 bytes (17.7 MiB)** (fat LTO, `strip = true`; the full tract-onnx inference stack
+**18,608,160 bytes (17.7 MiB)** (fat LTO, `strip = true`; the full tract-onnx inference stack
 plus the three `include_bytes!`-embedded wake models — ~2.6 MB of ONNX — account for the
 growth over the 1.2 MiB pre-tract skeleton).
 Execution verified on arm64 via Docker binfmt emulation (no Pi needed):
@@ -63,7 +63,6 @@ docker run --rm --platform linux/arm64 \
     alpine /b/nabu-satellite --listen 0.0.0.0:10700 --no-button --no-led
 # -> nabu-satellite listening on 0.0.0.0:10700 (hub dials in)
 ```
-
 
 ## Status LED
 

@@ -839,4 +839,5 @@ git commit -m "docs(plan): mark satellite LED support tasks complete"
 ## On-device validation (deferred to parent-plan Milestone 5 / Task 5.3 — blocked on hardware)
 
 - HAT: LEDs light blue on wake/button, stay lit through the reply, go dark after playback; `--led-gpio` variant on a breadboard LED; crash-restart leaves no stuck light (init-clear); supersede (hub reconnect) turns the light off.
+- `--led-gpio` + rapid hub reconnect: the LED relights on the new connection (the pin releases asynchronously when the aborted render task drops; a lost race warns and runs one connection LED-less, self-healing on the next reconnect).
 - Verify `dtparam=spi=on` + `spi` group provisioning steps as written in the README.
