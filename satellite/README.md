@@ -60,17 +60,28 @@ Execution verified on arm64 via Docker binfmt emulation (no Pi needed):
 ```sh
 docker run --rm --platform linux/arm64 \
     -v "$PWD/target/aarch64-unknown-linux-musl/release:/b" \
-    alpine /b/nabu-satellite --listen 0.0.0.0:10700 --no-button --no-led
+    alpine /b/nabu-satellite --listen 0.0.0.0:10700
 # -> nabu-satellite listening on 0.0.0.0:10700 (hub dials in)
 ```
+
+## Hardware defaults
+
+Compiled-in defaults target a **Jabra Speak2 (55/75)** on USB: audio via `plughw:0,0`
+(provisioning pins `snd_usb_audio` to ALSA index 0 — the card *name* is model/variant-dependent:
+75 → `J75`, 55 MS → `MS`, 55 UC → `UC`, so the index-pinned device is baked in; confirm yours
+with `arecord -L`), no button (the Jabra's onboard buttons are HID-telephony, unusable on
+Linux), no LED. The Speak2's 48 kHz native rate is resampled by `plughw` in both directions.
+For a reSpeaker 2-Mic HAT pass `--mic-command`/`--snd-command` with
+`plughw:CARD=seeed2micvoicec,DEV=0`, plus `--button-gpio 17` and `--led-spi`.
 
 ## Status LED
 
 The satellite lights an LED while a voice interaction is active (turn start → end of TTS
-playback; announcements too). Default: the reSpeaker 2-Mic HAT's 3 onboard APA102 LEDs via
-`/dev/spidev0.1` — requires `dtparam=spi=on` in `/boot/firmware/config.txt` and the `spi`
-group (the [systemd unit](deploy/nabu-satellite.service) already adds it). Alternatives: `--led-gpio <pin>` for a single wired
-LED (BCM numbering, pin → ~330 Ω → LED → GND), or `--no-led`. Missing LED hardware is not an
+playback; announcements too). Default: none (a Jabra has no controllable LED). `--led-spi`
+drives the reSpeaker 2-Mic HAT's 3 onboard APA102 LEDs via `/dev/spidev0.1` — requires
+`dtparam=spi=on` in `/boot/firmware/config.txt` and the `spi` group (the
+[systemd unit](deploy/nabu-satellite.service) already adds it). `--led-gpio <pin>` drives a single wired
+LED (BCM numbering, pin → ~330 Ω → LED → GND). Missing LED hardware is not an
 error — the satellite logs one warning and runs without it.
 
 ## Testing on the WSL dev host
@@ -80,8 +91,6 @@ Run the native release binary against the real hub (hub config dials `tcp://<hos
 ```bash
 cd satellite && RUST_LOG=info ./target/release/nabu-satellite \
   --listen 0.0.0.0:10800 \
-  --no-button \
-  --no-led \
   --mic-command 'parecord --raw --rate=16000 --format=s16le --channels=1 | python3 -u -c "
 import sys, audioop
 r, w = sys.stdin.buffer, sys.stdout.buffer

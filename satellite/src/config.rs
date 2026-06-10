@@ -30,7 +30,7 @@ pub struct Config {
     pub detector: DetectorConfig,
     pub wake_enabled: bool,     // --no-wake disables on-device wake (button-only operation)
     pub button: ButtonConfig,
-    pub led: LedConfig,         // activity LED; default = the HAT's APA102s, --no-led / --led-gpio override
+    pub led: LedConfig,         // activity LED; default = none, --led-spi / --led-gpio opt in
     pub preroll_ms: u32,        // zero-lag: how much recent audio to flush to the hub on trigger
     pub wake_preroll_ms: u32,   // wake-path flush: detection-latency gap only, NOT the wake word
     pub awake_cue: bool,
@@ -41,14 +41,18 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             listen: "0.0.0.0:10700".into(),
-            // Defaults target the reSpeaker 2-Mic HAT. For a Jabra Speak, pass --mic-command/--snd-command
-            // with plughw:CARD=<jabra-name>,DEV=0 for BOTH (48 kHz native -> ALSA resamples); see provisioning.
-            mic_command: "arecord -D plughw:CARD=seeed2micvoicec,DEV=0 -r 16000 -c 1 -f S16_LE -t raw".into(),
-            snd_command: "aplay -D plughw:CARD=seeed2micvoicec,DEV=0 -r 22050 -c 1 -f S16_LE -t raw".into(),
+            // Defaults target a Jabra Speak2 (55/75) on USB, index-pinned to ALSA card 0 by
+            // provisioning (options snd_usb_audio index=0) — the card NAME is model/variant-
+            // dependent (75->J75, 55 MS->MS, 55 UC->UC), so plughw:0,0 is baked in instead.
+            // 48 kHz native -> plughw resamples for BOTH. For a reSpeaker 2-Mic HAT pass
+            // --mic-command/--snd-command with plughw:CARD=seeed2micvoicec,DEV=0 plus
+            // --button-gpio 17 and --led-spi; see provisioning.
+            mic_command: "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw".into(),
+            snd_command: "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw".into(),
             detector: DetectorConfig::default(),
             wake_enabled: true,
-            button: ButtonConfig::Gpio(17), // reSpeaker HAT onboard button; override with --button-* or --no-button
-            led: LedConfig::Spi, // reSpeaker HAT onboard APA102s; override with --led-gpio or --no-led
+            button: ButtonConfig::None, // the Jabra's own buttons are Linux-unusable (HID telephony); --button-* opts in
+            led: LedConfig::None, // no LED on a Jabra build; --led-spi (HAT APA102s) or --led-gpio opt in
             preroll_ms: 1000,
             wake_preroll_ms: 240, // covers the ~181 ms measured detection latency with margin
             awake_cue: true,
@@ -60,7 +64,7 @@ impl Default for Config {
 impl Config {
     /// Flags: --listen --mic-command --snd-command --threshold --no-wake
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
-    ///        --no-led | --led-gpio <pin>
+    ///        --led-spi | --led-gpio <pin> | --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
     pub fn from_args() -> anyhow::Result<Self> {
         Self::parse(pico_args::Arguments::from_env())
@@ -88,10 +92,11 @@ impl Config {
         }
         if pa.contains("--no-led") {
             c.led = LedConfig::None;
+        } else if pa.contains("--led-spi") {
+            c.led = LedConfig::Spi;
         } else if let Some(pin) = pa.opt_value_from_str::<_, u8>("--led-gpio")? {
             c.led = LedConfig::Gpio(pin);
         }
-        // (no --led-spi flag: Spi is the default; --led-gpio's absence restores it)
         let rest = pa.finish();
         anyhow::ensure!(rest.is_empty(), "unknown arguments: {rest:?}");
         Ok(c)
@@ -119,8 +124,14 @@ mod tests {
     }
 
     #[test]
-    fn led_defaults_to_spi() {
-        assert_eq!(Config::default().led, LedConfig::Spi);
+    fn led_defaults_to_none() {
+        assert_eq!(Config::default().led, LedConfig::None);
+    }
+
+    #[test]
+    fn led_spi_flag_parses() {
+        let c = Config::parse(args(&["--led-spi"])).unwrap();
+        assert_eq!(c.led, LedConfig::Spi);
     }
 
     #[test]
@@ -140,10 +151,12 @@ mod tests {
         let c = Config::default();
         assert_eq!(c.listen, "0.0.0.0:10700");
         assert!(c.mic_command.contains("arecord"));
+        assert!(c.mic_command.contains("plughw:0,0"));
         assert!(c.snd_command.contains("aplay"));
+        assert!(c.snd_command.contains("plughw:0,0"));
         assert_eq!(c.detector.threshold, 0.5);
         assert!(c.wake_enabled);
-        assert_eq!(c.button, ButtonConfig::Gpio(17));
+        assert_eq!(c.button, ButtonConfig::None);
         assert_eq!(c.preroll_ms, 1000);
         assert_eq!(c.preroll_chunks(), 13); // ceil(1000 / 80)
         assert_eq!(c.wake_preroll_ms, 240);
