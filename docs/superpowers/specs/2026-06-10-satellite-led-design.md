@@ -38,8 +38,9 @@ A new `src/led.rs` module owns everything LED:
 
 ```rust
 pub enum LedState { Idle, Listening, Thinking, Speaking }
-pub enum LedConfig { None, Spi, Gpio(u8) }   // default: Spi
 ```
+
+(`LedConfig { None, Spi, Gpio(u8) }` — default `Spi` — lives in `config.rs` beside `ButtonConfig`; see Config & CLI below.)
 
 - `spawn_led(cfg, watch::Receiver<LedState>) -> Option<LedGuard>` mirrors `gpio.rs::spawn_button`: `None` config → no task; init failure → `warn!` → no task; otherwise a tokio task owns the backend and is aborted via guard drop when the connection ends (same `AbortOnDrop` idiom as the pumps).
 - The **state machine never knows what hardware exists** — it publishes semantics; a connection without an LED still publishes (sends to a dropped receiver are ignored).
