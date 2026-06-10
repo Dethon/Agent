@@ -70,7 +70,7 @@ docker run --rm --platform linux/arm64 \
 The satellite lights an LED while a voice interaction is active (turn start → end of TTS
 playback; announcements too). Default: the reSpeaker 2-Mic HAT's 3 onboard APA102 LEDs via
 `/dev/spidev0.1` — requires `dtparam=spi=on` in `/boot/firmware/config.txt` and the `spi`
-group (the systemd unit already adds it). Alternatives: `--led-gpio <pin>` for a single wired
+group (the [systemd unit](deploy/nabu-satellite.service) already adds it). Alternatives: `--led-gpio <pin>` for a single wired
 LED (BCM numbering, pin → ~330 Ω → LED → GND), or `--no-led`. Missing LED hardware is not an
 error — the satellite logs one warning and runs without it.
 
