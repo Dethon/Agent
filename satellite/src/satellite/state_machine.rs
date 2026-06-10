@@ -3,6 +3,7 @@ use crate::audio::cues::Cues;
 use crate::audio::playback::PlaybackSink;
 use crate::config::Config;
 use crate::gpio;
+use crate::led::{self, LedState};
 use crate::wake::WakeDetector;
 use crate::wyoming::codec::{read_event_buffered, write_event};
 use crate::wyoming::WyomingEvent;
@@ -10,7 +11,7 @@ use serde_json::json;
 use std::collections::VecDeque;
 use tokio::io::{AsyncWrite, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -23,6 +24,14 @@ enum Mode { Idle, Streaming }
 struct AbortOnDrop(tokio::task::JoinHandle<()>);
 impl Drop for AbortOnDrop {
     fn drop(&mut self) { self.0.abort(); }
+}
+
+/// Immutable per-connection context threaded through the event handlers (bundled to keep
+/// the signatures within clippy's argument limit).
+struct Ctx<'a> {
+    cues: &'a Cues,
+    cfg: &'a Config,
+    led: &'a watch::Sender<LedState>,
 }
 
 pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: Config) -> anyhow::Result<()> {
@@ -76,6 +85,12 @@ pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: 
         Err(e) => { warn!("button unavailable: {e:#}"); (None, mpsc::channel(1).1) }
     };
 
+    // LED is claimed per-connection like the button; guard drop (connection end/supersede)
+    // aborts the render task, whose backend turns the light off on drop.
+    let (led_tx, led_rx) = watch::channel(LedState::Idle);
+    let _led_guard = led::spawn_led(&cfg.led, led_rx);
+    let ctx = Ctx { cues: &cues, cfg: &cfg, led: &led_tx };
+
     // Pre-roll ring: keep the last `preroll_chunks()` mic chunks while Idle, so a request spoken
     // immediately after the wake word/button is never clipped (the zero-lag requirement).
     let preroll_cap = cfg.preroll_chunks();
@@ -89,7 +104,7 @@ pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: 
             ev = hub_rx.recv() => match ev {
                 None => { info!("hub disconnected"); break; }
                 Some(Err(e)) => return Err(e),
-                Some(Ok(e)) => handle_hub_event(e, &mut mode, detector.as_mut(), &mut wr, &mut playback, &cues, &cfg).await?,
+                Some(Ok(e)) => handle_hub_event(e, &mut mode, detector.as_mut(), &mut wr, &mut playback, &ctx).await?,
             },
             chunk = mic_rx.recv() => match chunk {
                 None => { warn!("mic stream ended"); break; }
@@ -101,7 +116,7 @@ pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: 
                             if d.push_chunk(&samples) {
                                 info!("wake word detected");
                                 trim_preroll(&mut preroll, cfg.wake_preroll_chunks());
-                                start_turn(&mut wr, &mut mode, &cues, &mut preroll).await?;
+                                start_turn(&mut wr, &mut mode, &ctx, &mut preroll).await?;
                             }
                         }
                     }
@@ -114,7 +129,7 @@ pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: 
                 if mode == Mode::Idle {
                     info!("button pressed -> start turn");
                     if let Some(d) = detector.as_mut() { d.reset(); }
-                    start_turn(&mut wr, &mut mode, &cues, &mut preroll).await?;
+                    start_turn(&mut wr, &mut mode, &ctx, &mut preroll).await?;
                 }
             }
         }
@@ -143,10 +158,11 @@ fn to_pcm(samples: &[i16]) -> Vec<u8> {
 /// before going live. This is the zero-lag guarantee — buffered audio reaches the hub regardless
 /// of how fast the user starts speaking or how long the hub takes to open its capture.
 async fn start_turn<W: AsyncWrite + Unpin>(
-    wr: &mut W, mode: &mut Mode, cues: &Cues, preroll: &mut VecDeque<Vec<i16>>,
+    wr: &mut W, mode: &mut Mode, ctx: &Ctx<'_>, preroll: &mut VecDeque<Vec<i16>>,
 ) -> anyhow::Result<()> {
     write_event(wr, &WyomingEvent::new("run-pipeline")).await?;
-    cues.play_awake();
+    ctx.cues.play_awake();
+    let _ = ctx.led.send(LedState::Listening);
     for chunk in preroll.drain(..) {
         write_event(wr, &WyomingEvent::audio_chunk(16000, 2, 1, to_pcm(&chunk))).await?;
     }
@@ -160,8 +176,7 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
     detector: Option<&mut WakeDetector>,
     wr: &mut W,
     playback: &mut Option<PlaybackSink>,
-    cues: &Cues,
-    cfg: &Config,
+    ctx: &Ctx<'_>,
 ) -> anyhow::Result<()> {
     match e.event_type.as_str() {
         "run-satellite" => info!("run-satellite: armed"),
@@ -170,17 +185,22 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
                 write_event(wr, &WyomingEvent::with_data("audio-stop", json!({"timestamp":0}))).await?;
                 *mode = Mode::Idle;
                 if let Some(d) = detector { d.reset(); }
-                cues.play_done();
+                ctx.cues.play_done();
+                let _ = ctx.led.send(LedState::Thinking);
             }
         }
         // Playback failures below are connection-fatal BY CHOICE: the hub redials and a fresh
         // connection re-arms everything; best-effort-continue would hide a dead audio device.
         "audio-start" => {
             if let Some(p) = playback.take() { p.kill().await; }
-            *playback = Some(PlaybackSink::start(&cfg.snd_command)?);
+            *playback = Some(PlaybackSink::start(&ctx.cfg.snd_command)?);
+            let _ = ctx.led.send(LedState::Speaking); // replies AND standalone announcements
         }
         "audio-chunk" => { if let Some(p) = playback.as_mut() { p.write_pcm(&e.payload).await?; } }
-        "audio-stop" => { if let Some(p) = playback.take() { p.finish().await?; } }
+        "audio-stop" => {
+            if let Some(p) = playback.take() { p.finish().await?; }
+            let _ = ctx.led.send(LedState::Idle);
+        }
         other => warn!("ignoring event {other}"),
     }
     Ok(())
@@ -189,11 +209,17 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::*; // brings Mode, start_turn, handle_hub_event, and the types they use
+    use crate::led::LedState;
     use crate::wyoming::codec::read_event;
     use serde_json::json;
+    use tokio::sync::watch;
 
     fn cues() -> Cues {
         Cues::new(&Config { snd_command: "cat >/dev/null".into(), ..Config::default() }).unwrap()
+    }
+
+    fn test_cfg() -> Config {
+        Config { snd_command: "cat >/dev/null".into(), ..Config::default() }
     }
 
     // THE zero-lag guarantee: a turn flushes the entire pre-roll buffer to the hub (after
@@ -202,11 +228,14 @@ mod tests {
     async fn start_turn_flushes_preroll_before_streaming() {
         let (mut a, b) = tokio::io::duplex(1 << 16);
         let c = cues();
+        let cfg = Config::default();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
         let mut mode = Mode::Idle;
         let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
         for _ in 0..5 { preroll.push_back(vec![0i16; 1280]); }
 
-        start_turn(&mut a, &mut mode, &c, &mut preroll).await.unwrap();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll).await.unwrap();
 
         assert_eq!(mode, Mode::Streaming);
         assert!(preroll.is_empty(), "pre-roll must be drained on trigger");
@@ -239,10 +268,13 @@ mod tests {
     async fn transcript_ends_turn_with_audio_stop_and_rearms() {
         let (mut a, mut b) = tokio::io::duplex(4096);
         let c = cues();
+        let cfg = Config::default();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
         let mut mode = Mode::Streaming;
         let mut playback: Option<PlaybackSink> = None;
         let e = WyomingEvent::with_data("transcript", json!({"text":"hi"}));
-        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &c, &Config::default()).await.unwrap();
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         assert_eq!(mode, Mode::Idle);
         assert_eq!(read_event(&mut b).await.unwrap().unwrap().event_type, "audio-stop");
     }
@@ -263,6 +295,7 @@ mod tests {
             snd_command: "cat >/dev/null".into(),
             wake_enabled: false, // detector off: keeps the loop hot on raw I/O
             button: crate::config::ButtonConfig::None,
+            led: crate::config::LedConfig::None, // no /dev/spidev in CI; keep the log clean
             ..Config::default()
         };
         let sat = tokio::spawn(async move {
@@ -319,14 +352,79 @@ mod tests {
     async fn transcript_while_idle_is_a_noop() {
         let (mut a, b) = tokio::io::duplex(4096);
         let c = cues();
+        let cfg = Config::default();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
         let mut mode = Mode::Idle;
         let mut playback: Option<PlaybackSink> = None;
         let e = WyomingEvent::with_data("transcript", json!({"text":"stale"}));
-        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &c, &Config::default()).await.unwrap();
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         assert_eq!(mode, Mode::Idle);
         // nothing must have been written to the hub
         drop(a);
         let mut buf = tokio::io::BufReader::new(b);
         assert!(crate::wyoming::codec::read_event_buffered(&mut buf).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn turn_lifecycle_publishes_led_states() {
+        let (mut a, _b) = tokio::io::duplex(1 << 16);
+        let c = cues();
+        let cfg = test_cfg();
+        let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
+        let mut playback: Option<PlaybackSink> = None;
+
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
+
+        let transcript = WyomingEvent::with_data("transcript", json!({"text":"hi"}));
+        handle_hub_event(transcript, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Thinking);
+
+        let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
+        handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Speaking);
+
+        let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
+        handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Idle);
+    }
+
+    // Announcements: audio-start arrives with no preceding turn and must still light the LED.
+    #[tokio::test]
+    async fn announcement_playback_publishes_speaking_then_idle() {
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+        let cfg = test_cfg();
+        let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let mut playback: Option<PlaybackSink> = None;
+
+        let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
+        handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Speaking);
+
+        let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
+        handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Idle);
+    }
+
+    #[tokio::test]
+    async fn stale_transcript_publishes_no_led_state() {
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+        let cfg = test_cfg();
+        let (led_tx, led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let mut mode = Mode::Idle; // not Streaming -> transcript is stale
+        let mut playback: Option<PlaybackSink> = None;
+
+        let stale = WyomingEvent::with_data("transcript", json!({"text":"stale"}));
+        handle_hub_event(stale, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert!(!led_rx.has_changed().unwrap(), "stale transcript must not touch the LED");
     }
 }

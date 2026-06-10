@@ -93,6 +93,8 @@ fn build_backend(cfg: &LedConfig) -> anyhow::Result<Option<LedBackend>> {
 
 /// Display fallback: if a reply never arrives after a transcript (hub error/timeout — a
 /// known deferred race), stop glowing after the hub's own 120 s reply timeout.
+/// The window restarts on any send (watch notifies per send); the state machine publishes
+/// only on real transitions.
 const THINKING_FALLBACK: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// Aborts the render task on drop (connection end/supersede), same idiom as the pumps;
@@ -213,9 +215,15 @@ mod tests {
         let _task = tokio::spawn(render_loop(rx, backend));
         tx.send(LedState::Listening).unwrap();
         wait_probe(&log, &[true]).await;
-        // Thinking and Speaking keep the light on -> no extra writes; Idle turns it off.
+        // Thinking and Speaking keep the light on -> the render task must observe each
+        // state without writing again (yield generously so it actually gets to run).
         tx.send(LedState::Thinking).unwrap();
+        for _ in 0..10 { tokio::task::yield_now().await; }
+        assert_eq!(*log.lock().unwrap(), vec![true], "Thinking must not rewrite a lit LED");
         tx.send(LedState::Speaking).unwrap();
+        for _ in 0..10 { tokio::task::yield_now().await; }
+        assert_eq!(*log.lock().unwrap(), vec![true], "Speaking must not rewrite a lit LED");
+        // Idle turns it off.
         tx.send(LedState::Idle).unwrap();
         wait_probe(&log, &[true, false]).await;
     }
