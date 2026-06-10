@@ -199,7 +199,9 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
         "audio-chunk" => { if let Some(p) = playback.as_mut() { p.write_pcm(&e.payload).await?; } }
         "audio-stop" => {
             if let Some(p) = playback.take() { p.finish().await?; }
-            let _ = ctx.led.send(LedState::Idle);
+            // A turn may have started while this playback was draining (button/wake during an
+            // announcement): stay lit as Listening instead of going dark mid-turn.
+            let _ = ctx.led.send(if *mode == Mode::Streaming { LedState::Listening } else { LedState::Idle });
         }
         other => warn!("ignoring event {other}"),
     }
@@ -411,6 +413,31 @@ mod tests {
         let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
         handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Idle);
+    }
+
+    // A turn that interrupts an announcement must not go dark when the announcement's
+    // audio-stop drains: the LED stays on (Listening) for the rest of the turn.
+    #[tokio::test]
+    async fn audio_stop_during_streaming_turn_keeps_led_listening() {
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+        let cfg = test_cfg();
+        let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let mut playback: Option<PlaybackSink> = None;
+
+        // announcement starts, then a button turn begins while it plays
+        let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
+        handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
+
+        // the announcement's audio-stop drains while we are mid-turn
+        let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
+        handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Listening, "LED must stay lit mid-turn");
     }
 
     #[tokio::test]
