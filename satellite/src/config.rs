@@ -12,6 +12,16 @@ pub enum ButtonConfig {
     Evdev { device: PathBuf, key: u16 },
 }
 
+/// Where the activity LED lives. Optional hardware: init failure degrades to LED-less.
+#[derive(Clone, Debug, PartialEq)]
+pub enum LedConfig {
+    None,
+    /// The reSpeaker 2-Mic HAT's 3 onboard APA102 LEDs on SPI0 (/dev/spidev0.1).
+    Spi,
+    /// Single indicator LED on a free GPIO pin (BCM numbering), active-high.
+    Gpio(u8),
+}
+
 #[derive(Clone)]
 pub struct Config {
     pub listen: String,         // matches Satellites:<id>:Address port (default 10700)
@@ -20,6 +30,7 @@ pub struct Config {
     pub detector: DetectorConfig,
     pub wake_enabled: bool,     // --no-wake disables on-device wake (button-only operation)
     pub button: ButtonConfig,
+    pub led: LedConfig,         // activity LED; default = the HAT's APA102s, --no-led / --led-gpio override
     pub preroll_ms: u32,        // zero-lag: how much recent audio to flush to the hub on trigger
     pub wake_preroll_ms: u32,   // wake-path flush: detection-latency gap only, NOT the wake word
     pub awake_cue: bool,
@@ -37,6 +48,7 @@ impl Default for Config {
             detector: DetectorConfig::default(),
             wake_enabled: true,
             button: ButtonConfig::Gpio(17), // reSpeaker HAT onboard button; override with --button-* or --no-button
+            led: LedConfig::Spi, // reSpeaker HAT onboard APA102s; override with --led-gpio or --no-led
             preroll_ms: 1000,
             wake_preroll_ms: 240, // covers the ~181 ms measured detection latency with margin
             awake_cue: true,
@@ -48,9 +60,13 @@ impl Default for Config {
 impl Config {
     /// Flags: --listen --mic-command --snd-command --threshold --no-wake
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
+    ///        --no-led | --led-gpio <pin>
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
     pub fn from_args() -> anyhow::Result<Self> {
-        let mut pa = pico_args::Arguments::from_env();
+        Self::parse(pico_args::Arguments::from_env())
+    }
+
+    fn parse(mut pa: pico_args::Arguments) -> anyhow::Result<Self> {
         let mut c = Config::default();
         if let Some(v) = pa.opt_value_from_str::<_, String>("--listen")? { c.listen = v; }
         if let Some(v) = pa.opt_value_from_str::<_, String>("--mic-command")? { c.mic_command = v; }
@@ -70,6 +86,12 @@ impl Config {
                 .ok_or_else(|| anyhow::anyhow!("--button-evdev needs <device>:<keycode>, e.g. /dev/input/event3:28"))?;
             c.button = ButtonConfig::Evdev { device: dev.into(), key: key.parse()? };
         }
+        if pa.contains("--no-led") {
+            c.led = LedConfig::None;
+        } else if let Some(pin) = pa.opt_value_from_str::<_, u8>("--led-gpio")? {
+            c.led = LedConfig::Gpio(pin);
+        }
+        // (no --led-spi flag: Spi is the default; --led-gpio's absence restores it)
         let rest = pa.finish();
         anyhow::ensure!(rest.is_empty(), "unknown arguments: {rest:?}");
         Ok(c)
@@ -91,6 +113,28 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn args(v: &[&str]) -> pico_args::Arguments {
+        pico_args::Arguments::from_vec(v.iter().map(std::ffi::OsString::from).collect())
+    }
+
+    #[test]
+    fn led_defaults_to_spi() {
+        assert_eq!(Config::default().led, LedConfig::Spi);
+    }
+
+    #[test]
+    fn led_gpio_flag_parses() {
+        let c = Config::parse(args(&["--led-gpio", "22"])).unwrap();
+        assert_eq!(c.led, LedConfig::Gpio(22));
+    }
+
+    #[test]
+    fn no_led_flag_parses() {
+        let c = Config::parse(args(&["--no-led"])).unwrap();
+        assert_eq!(c.led, LedConfig::None);
+    }
+
     #[test]
     fn defaults_are_sane() {
         let c = Config::default();
