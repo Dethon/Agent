@@ -36,7 +36,7 @@
 **Files:**
 - Modify: `satellite/src/config.rs`
 
-- [ ] **Step 1.1: Write the failing tests**
+- [x] **Step 1.1: Write the failing tests**
 
 In `config.rs`, make `from_args` testable by splitting out `parse` (pico-args supports `Arguments::from_vec`, which takes args *without* the binary name). Add to the existing `tests` module:
 
@@ -63,12 +63,12 @@ fn no_led_flag_parses() {
 }
 ```
 
-- [ ] **Step 1.2: Run tests to verify they fail**
+- [x] **Step 1.2: Run tests to verify they fail**
 
 Run: `cargo test config::tests`
 Expected: COMPILE ERROR — `LedConfig` and `Config::parse` do not exist.
 
-- [ ] **Step 1.3: Implement**
+- [x] **Step 1.3: Implement**
 
 In `config.rs`, below `ButtonConfig`:
 
@@ -128,12 +128,12 @@ Split `from_args` so flag parsing is testable, and add the LED flags (after the 
     }
 ```
 
-- [ ] **Step 1.4: Run tests to verify they pass**
+- [x] **Step 1.4: Run tests to verify they pass**
 
 Run: `cargo test config::tests`
 Expected: PASS (existing `defaults_are_sane` plus the 3 new tests).
 
-- [ ] **Step 1.5: Commit**
+- [x] **Step 1.5: Commit**
 
 ```bash
 git add satellite/src/config.rs
@@ -148,7 +148,7 @@ git commit -m "feat(satellite): LedConfig with --no-led/--led-gpio flags, defaul
 - Create: `satellite/src/led.rs`
 - Modify: `satellite/src/main.rs` (add `mod led;` after `mod gpio;`)
 
-- [ ] **Step 2.1: Write the failing test**
+- [x] **Step 2.1: Write the failing test**
 
 Create `satellite/src/led.rs`:
 
@@ -191,12 +191,12 @@ mod tests {
 
 Add `mod led;` to `main.rs` (after `mod gpio;`).
 
-- [ ] **Step 2.2: Run test to verify it fails**
+- [x] **Step 2.2: Run test to verify it fails**
 
 Run: `cargo test led::tests`
 Expected: COMPILE ERROR — `apa102_frame` not found.
 
-- [ ] **Step 2.3: Implement the encoder**
+- [x] **Step 2.3: Implement the encoder**
 
 Add to `led.rs` above the tests:
 
@@ -221,12 +221,12 @@ fn apa102_frame((r, g, b): (u8, u8, u8), brightness: u8, n: usize) -> Vec<u8> {
 
 (`LED_COUNT`/`LED_COLOR`/`LED_BRIGHTNESS` are consumed in Task 3 — if the compiler warns about dead code at this intermediate step, that's expected and resolves in Task 3.)
 
-- [ ] **Step 2.4: Run test to verify it passes**
+- [x] **Step 2.4: Run test to verify it passes**
 
 Run: `cargo test led::tests`
 Expected: PASS (2 tests).
 
-- [ ] **Step 2.5: Commit**
+- [x] **Step 2.5: Commit**
 
 ```bash
 git add satellite/src/led.rs satellite/src/main.rs
@@ -240,7 +240,7 @@ git commit -m "feat(satellite): LedState and APA102 frame encoder"
 **Files:**
 - Modify: `satellite/src/led.rs`
 
-- [ ] **Step 3.1: Write the failing tests**
+- [x] **Step 3.1: Write the failing tests**
 
 Add to the `tests` module in `led.rs`:
 
@@ -267,12 +267,12 @@ Add to the `tests` module in `led.rs`:
     }
 ```
 
-- [ ] **Step 3.2: Run tests to verify they fail**
+- [x] **Step 3.2: Run tests to verify they fail**
 
 Run: `cargo test led::tests`
 Expected: COMPILE ERROR — `LedBackend` / `build_backend` not found.
 
-- [ ] **Step 3.3: Implement the backends**
+- [x] **Step 3.3: Implement the backends**
 
 Add to `led.rs` (below the encoder). Imports at the top of the file: `use crate::config::LedConfig;`.
 
@@ -340,12 +340,12 @@ fn build_backend(cfg: &LedConfig) -> anyhow::Result<Option<LedBackend>> {
 }
 ```
 
-- [ ] **Step 3.4: Run tests to verify they pass**
+- [x] **Step 3.4: Run tests to verify they pass**
 
 Run: `cargo test led::tests`
 Expected: PASS (4 tests). Note: the Gpio/Spi arms cannot run in CI (no `/dev/gpiomem`//dev/spidev`) — they validate on-device in parent-plan Milestone 5, like the button.
 
-- [ ] **Step 3.5: Update the Cargo.toml comment and commit**
+- [x] **Step 3.5: Update the Cargo.toml comment and commit**
 
 In `satellite/Cargo.toml`, update the rppal comment line to:
 
@@ -365,7 +365,7 @@ git commit -m "feat(satellite): LED backends — GPIO pin and HAT APA102 over SP
 **Files:**
 - Modify: `satellite/src/led.rs`
 
-- [ ] **Step 4.1: Write the failing tests**
+- [x] **Step 4.1: Write the failing tests**
 
 First add the paused-clock test feature to `satellite/Cargo.toml` — `start_paused` and `tokio::time::advance` are gated behind tokio's `test-util` feature. As a dev-dependency it feature-unifies into **test builds only**; the release/cross-build binary (Step 7.3) keeps the lean feature set:
 
@@ -437,12 +437,12 @@ Then add to the `tests` module in `led.rs`:
     }
 ```
 
-- [ ] **Step 4.2: Run tests to verify they fail**
+- [x] **Step 4.2: Run tests to verify they fail**
 
 Run: `cargo test led::tests`
 Expected: COMPILE ERROR — `render_loop`, `THINKING_FALLBACK`, `spawn_led` not found.
 
-- [ ] **Step 4.3: Implement the render task**
+- [x] **Step 4.3: Implement the render task**
 
 Add to `led.rs`. Extend imports: `use tokio::sync::watch;` and `use tracing::warn;`.
 
@@ -507,12 +507,12 @@ async fn render_loop(mut rx: watch::Receiver<LedState>, mut backend: LedBackend)
 }
 ```
 
-- [ ] **Step 4.4: Run tests to verify they pass**
+- [x] **Step 4.4: Run tests to verify they pass**
 
 Run: `cargo test led::tests`
 Expected: PASS (8 tests).
 
-- [ ] **Step 4.5: Commit**
+- [x] **Step 4.5: Commit**
 
 ```bash
 git add satellite/src/led.rs satellite/Cargo.toml
@@ -526,7 +526,7 @@ git commit -m "feat(satellite): LED render task — watch-driven steady light wi
 **Files:**
 - Modify: `satellite/src/satellite/state_machine.rs`
 
-- [ ] **Step 5.1: Write the failing tests**
+- [x] **Step 5.1: Write the failing tests**
 
 This task also refactors the handler signatures: adding a `led` parameter to `handle_hub_event` would make 8 parameters and trip `clippy::too_many_arguments` (the repo gates on `-D warnings`), so the immutable per-connection refs move into a `Ctx` struct. New tests in the `tests` module of `state_machine.rs`:
 
@@ -601,7 +601,7 @@ This task also refactors the handler signatures: adding a `led` parameter to `ha
     }
 ```
 
-- [ ] **Step 5.2: Update the existing call sites to the new signatures (the file stays uncompilable until 5.4 implements `Ctx` — that compile error is the RED)**
+- [x] **Step 5.2: Update the existing call sites to the new signatures (the file stays uncompilable until 5.4 implements `Ctx` — that compile error is the RED)**
 
 `start_turn` and `handle_hub_event` change signature; update **all** existing tests in this file to build a `Ctx`. The pattern, applied to each:
 
@@ -633,12 +633,12 @@ In `survives_fragmented_hub_frames_under_mic_flood`, add to the `Config` literal
 
 (Note: a watch sender with zero receivers makes `send` return `Err` — the implementation uses `let _ = led.send(...)`, so tests that drop `_led_rx` still pass.)
 
-- [ ] **Step 5.3: Run tests to verify they fail**
+- [x] **Step 5.3: Run tests to verify they fail**
 
 Run: `cargo test state_machine`
 Expected: COMPILE ERROR — `Ctx` not found, `start_turn`/`handle_hub_event` signatures don't match.
 
-- [ ] **Step 5.4: Implement `Ctx` + publish points + wiring**
+- [x] **Step 5.4: Implement `Ctx` + publish points + wiring**
 
 In `state_machine.rs`, extend imports:
 
@@ -738,12 +738,12 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
 }
 ```
 
-- [ ] **Step 5.5: Run the satellite test suite**
+- [x] **Step 5.5: Run the satellite test suite**
 
 Run: `cargo test`
 Expected: PASS — all pre-existing tests (with updated call sites) plus the 3 new LED-publication tests. (`spike_wake` is slow in debug; if it drags, `cargo test --release` matches the parent plan's convention.)
 
-- [ ] **Step 5.6: Commit**
+- [x] **Step 5.6: Commit**
 
 ```bash
 git add satellite/src/satellite/state_machine.rs
@@ -759,7 +759,7 @@ git commit -m "feat(satellite): state machine publishes LedState; per-connection
 - Modify: `satellite/README.md`
 - Modify: `docs/superpowers/plans/2026-06-09-rust-wyoming-satellite.md`
 
-- [ ] **Step 6.1: Service unit**
+- [x] **Step 6.1: Service unit**
 
 In `nabu-satellite.service`, replace the `SupplementaryGroups` line and its comment:
 
@@ -776,7 +776,7 @@ Extend the header comment (top of file) with one line:
 # --no-led, or --led-gpio <pin> for a wired indicator (BCM pin -> ~330 ohm -> LED -> GND).
 ```
 
-- [ ] **Step 6.2: README**
+- [x] **Step 6.2: README**
 
 Add a section to `satellite/README.md` after the **Build** section:
 
@@ -793,7 +793,7 @@ error — the satellite logs one warning and runs without it.
 
 Add `--no-led \` to the WSL dev-test command (after `--no-button \`) and `--no-led` to the docker binfmt verification command (after `--no-button`) — neither environment has `/dev/spidev` and the flag keeps logs clean.
 
-- [ ] **Step 6.3: Cross-reference in the parent plan**
+- [x] **Step 6.3: Cross-reference in the parent plan**
 
 In `docs/superpowers/plans/2026-06-09-rust-wyoming-satellite.md`, append one line to the status paragraph (the one starting `**Milestones 0–5.2 are COMPLETE**`):
 
@@ -801,7 +801,7 @@ In `docs/superpowers/plans/2026-06-09-rust-wyoming-satellite.md`, append one lin
 **Addendum 2026-06-10:** LED support (activity light: HAT APA102s / GPIO) was added post-hoc — spec `docs/superpowers/specs/2026-06-10-satellite-led-design.md`, plan `docs/superpowers/plans/2026-06-10-satellite-led-support.md`. Its on-device validation joins Task 5.3.
 ```
 
-- [ ] **Step 6.4: Commit**
+- [x] **Step 6.4: Commit**
 
 ```bash
 git add satellite/deploy/nabu-satellite.service satellite/README.md docs/superpowers/plans/2026-06-09-rust-wyoming-satellite.md
@@ -812,22 +812,22 @@ git commit -m "docs(satellite): LED provisioning — spi group, dtparam=spi=on, 
 
 ### Task 7: Full verification
 
-- [ ] **Step 7.1: Full test suite (release, matches parent-plan convention)**
+- [x] **Step 7.1: Full test suite (release, matches parent-plan convention)**
 
 Run: `cargo test --release`
 Expected: ALL PASS — the 24 pre-existing tests (3 of them with updated call sites) + 14 new (3 config, 8 led, 3 state-machine publication). The gate is zero failures, not the exact count.
 
-- [ ] **Step 7.2: Clippy**
+- [x] **Step 7.2: Clippy**
 
 Run: `cargo clippy --all-targets -- -D warnings`
 Expected: clean. (The `Ctx` refactor exists precisely to stay under `too_many_arguments`.)
 
-- [ ] **Step 7.3: Cross-build smoke**
+- [x] **Step 7.3: Cross-build smoke**
 
 Run: `scripts/build-release.sh`
 Expected: static `aarch64-unknown-linux-musl` binary builds (rppal `spi` adds no native deps; this is a regression gate, not a new capability).
 
-- [ ] **Step 7.4: Mark plan checkboxes and commit**
+- [x] **Step 7.4: Mark plan checkboxes and commit**
 
 ```bash
 git add docs/superpowers/plans/2026-06-10-satellite-led-support.md
