@@ -1,6 +1,7 @@
 mod audio;
 mod config;
 mod gpio;
+mod led;
 mod satellite;
 mod wake;
 mod wyoming;
