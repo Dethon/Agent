@@ -3,6 +3,8 @@
 //! V1 policy: Idle -> off, everything else -> steady on.
 
 use crate::config::LedConfig;
+use tokio::sync::watch;
+use tracing::warn;
 
 /// Semantic satellite phase, published by the state machine. The render task — never the
 /// state machine — decides what each phase looks like, so future blink patterns touch
@@ -89,6 +91,65 @@ fn build_backend(cfg: &LedConfig) -> anyhow::Result<Option<LedBackend>> {
     }
 }
 
+/// Display fallback: if a reply never arrives after a transcript (hub error/timeout — a
+/// known deferred race), stop glowing after the hub's own 120 s reply timeout.
+const THINKING_FALLBACK: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Aborts the render task on drop (connection end/supersede), same idiom as the pumps;
+/// the abort drops the backend, whose Drop turns the light off.
+pub struct LedGuard(tokio::task::JoinHandle<()>);
+impl Drop for LedGuard {
+    fn drop(&mut self) { self.0.abort(); }
+}
+
+/// Build the configured backend and start the render task. None when no LED is configured
+/// or the hardware is absent (one warning) — the satellite runs identically without it.
+pub fn spawn_led(cfg: &LedConfig, rx: watch::Receiver<LedState>) -> Option<LedGuard> {
+    let backend = match build_backend(cfg) {
+        Ok(Some(b)) => b,
+        Ok(None) => return None,
+        Err(e) => { warn!("led unavailable: {e:#}"); return None; }
+    };
+    Some(LedGuard(tokio::spawn(render_loop(rx, backend))))
+}
+
+/// V1 policy: Idle -> off, everything else -> steady on. Writes only on transitions.
+/// A write failure disables the LED for the rest of the connection (one warning, no spam);
+/// the next connection re-initializes. LED problems never tear down a connection.
+async fn render_loop(mut rx: watch::Receiver<LedState>, mut backend: LedBackend) {
+    let mut lit = false;
+    loop {
+        let state = *rx.borrow_and_update();
+        let want = state != LedState::Idle;
+        if want != lit {
+            if let Err(e) = backend.set(want) {
+                warn!("led write failed, led disabled for this connection: {e:#}");
+                return;
+            }
+            lit = want;
+        }
+        let changed = if state == LedState::Thinking {
+            match tokio::time::timeout(THINKING_FALLBACK, rx.changed()).await {
+                Err(_elapsed) => {
+                    if lit {
+                        if let Err(e) = backend.set(false) {
+                            warn!("led write failed, led disabled for this connection: {e:#}");
+                            return;
+                        }
+                        lit = false;
+                    }
+                    rx.changed().await // stay dark until the next state change
+                }
+                Ok(r) => r,
+            }
+        } else {
+            rx.changed().await
+        };
+        if changed.is_err() { break; } // sender dropped -> connection ending
+    }
+    if lit { let _ = backend.set(false); }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,5 +192,64 @@ mod tests {
         let f = apa102_frame((1, 2, 3), 0xFF, 1);
         assert_eq!(f[4], 0xFF); // 0xE0 | (0xFF & 0x1F) = 0xFF
         assert_eq!(&f[5..8], &[3, 2, 1]); // B, G, R order
+    }
+
+    use tokio::sync::watch;
+
+    // Poll-with-yield instead of sleeping: these tests run under start_paused, where
+    // yield_now keeps the runtime busy (no auto-advance) while the render task catches up.
+    async fn wait_probe(log: &Arc<Mutex<Vec<bool>>>, expect: &[bool]) {
+        for _ in 0..100 {
+            if log.lock().unwrap().as_slice() == expect { return; }
+            tokio::task::yield_now().await;
+        }
+        panic!("probe never reached {expect:?}, got {:?}", log.lock().unwrap());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn render_lights_non_idle_and_writes_only_on_change() {
+        let (log, backend) = probe();
+        let (tx, rx) = watch::channel(LedState::Idle);
+        let _task = tokio::spawn(render_loop(rx, backend));
+        tx.send(LedState::Listening).unwrap();
+        wait_probe(&log, &[true]).await;
+        // Thinking and Speaking keep the light on -> no extra writes; Idle turns it off.
+        tx.send(LedState::Thinking).unwrap();
+        tx.send(LedState::Speaking).unwrap();
+        tx.send(LedState::Idle).unwrap();
+        wait_probe(&log, &[true, false]).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn thinking_goes_dark_after_fallback_and_relights_on_late_reply() {
+        let (log, backend) = probe();
+        let (tx, rx) = watch::channel(LedState::Idle);
+        let _task = tokio::spawn(render_loop(rx, backend));
+        tx.send(LedState::Thinking).unwrap();
+        // When wait_probe sees the write, the render task has already polled (and thus
+        // registered) the timeout future — set() and the await are one synchronous stretch.
+        wait_probe(&log, &[true]).await;
+        tokio::time::advance(THINKING_FALLBACK + std::time::Duration::from_secs(1)).await;
+        wait_probe(&log, &[true, false]).await;
+        tx.send(LedState::Speaking).unwrap(); // late reply still lights up
+        wait_probe(&log, &[true, false, true]).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sender_drop_turns_led_off_and_ends_task() {
+        let (log, backend) = probe();
+        let (tx, rx) = watch::channel(LedState::Idle);
+        let task = tokio::spawn(render_loop(rx, backend));
+        tx.send(LedState::Speaking).unwrap();
+        wait_probe(&log, &[true]).await;
+        drop(tx); // connection ending
+        task.await.unwrap();
+        assert_eq!(*log.lock().unwrap(), vec![true, false]);
+    }
+
+    #[tokio::test]
+    async fn none_config_spawns_no_task() {
+        let (_tx, rx) = watch::channel(LedState::Idle);
+        assert!(spawn_led(&LedConfig::None, rx).is_none());
     }
 }

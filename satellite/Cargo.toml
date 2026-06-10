@@ -22,6 +22,9 @@ hound = "3"            # decode bundled cue WAVs at runtime (also used by tests)
 rppal = "0.22"         # GpioButton + activity LED (GPIO out / APA102 over SPI); pure-Rust, static-musl-clean, Linux-only
 evdev = { version = "0.13", features = ["tokio"] }  # EvdevButton: USB foot-switch/button -> KEY_* (pure-Rust)
 
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }  # start_paused/time::advance for LED render tests
+
 # Both button impls sit behind src/gpio.rs::ButtonSource; pick at runtime via --button-gpio / --button-evdev.
 # Migration note: rppal was archived 2025-07. To move to the maintained character-device crate later, swap
 # GpioButton's impl for:  gpiocdev = { version = "0.8", features = ["tokio"] }  # gpiochip uAPI v2, no libgpiod
