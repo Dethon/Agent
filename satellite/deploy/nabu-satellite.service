@@ -1,6 +1,8 @@
 # reSpeaker 2-Mic HAT variant (onboard GPIO 17 button). For a Jabra Speak, swap the device to
 # plughw:CARD=<jabra>,DEV=0 on BOTH commands and replace --button-gpio with either a wired
 # --button-gpio <pin> or a USB foot-switch: --button-evdev /dev/input/eventX:<keycode>.
+# LED: defaults to the HAT's APA102s (needs dtparam=spi=on). On a Jabra/headless build pass
+# --no-led, or --led-gpio <pin> for a wired indicator (BCM pin -> ~330 ohm -> LED -> GND).
 [Unit]
 Description=Nabu Rust Wyoming Satellite (%i)
 After=network-online.target sound.target
@@ -17,8 +19,9 @@ Environment=RUST_LOG=info
 Restart=always
 RestartSec=2
 User=%i
-# GPIO button needs the `gpio` group; a USB/evdev foot-switch needs the `input` group.
-SupplementaryGroups=gpio input
+# GPIO button/LED need the `gpio` group; a USB/evdev foot-switch needs `input`;
+# the HAT's APA102 LEDs need `spi` (spidev nodes are root:spi on Raspberry Pi OS).
+SupplementaryGroups=gpio input spi
 
 [Install]
 WantedBy=multi-user.target

@@ -60,10 +60,19 @@ Execution verified on arm64 via Docker binfmt emulation (no Pi needed):
 ```sh
 docker run --rm --platform linux/arm64 \
     -v "$PWD/target/aarch64-unknown-linux-musl/release:/b" \
-    alpine /b/nabu-satellite --listen 0.0.0.0:10700 --no-button
+    alpine /b/nabu-satellite --listen 0.0.0.0:10700 --no-button --no-led
 # -> nabu-satellite listening on 0.0.0.0:10700 (hub dials in)
 ```
 
+
+## Status LED
+
+The satellite lights an LED while a voice interaction is active (turn start → end of TTS
+playback; announcements too). Default: the reSpeaker 2-Mic HAT's 3 onboard APA102 LEDs via
+`/dev/spidev0.1` — requires `dtparam=spi=on` in `/boot/firmware/config.txt` and the `spi`
+group (the systemd unit already adds it). Alternatives: `--led-gpio <pin>` for a single wired
+LED (BCM numbering, pin → ~330 Ω → LED → GND), or `--no-led`. Missing LED hardware is not an
+error — the satellite logs one warning and runs without it.
 
 ## Testing on the WSL dev host
 
@@ -73,6 +82,7 @@ Run the native release binary against the real hub (hub config dials `tcp://<hos
 cd satellite && RUST_LOG=info ./target/release/nabu-satellite \
   --listen 0.0.0.0:10800 \
   --no-button \
+  --no-led \
   --mic-command 'parecord --raw --rate=16000 --format=s16le --channels=1 | python3 -u -c "
 import sys, audioop
 r, w = sys.stdin.buffer, sys.stdout.buffer
