@@ -13,8 +13,8 @@ Wants=network-online.target
 [Service]
 ExecStart=/usr/local/bin/nabu-satellite \
   --listen 0.0.0.0:10700 \
-  --mic-command "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw" \
-  --snd-command "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw" \
+  --mic-command "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw -F 20000" \
+  --snd-command "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \
   --preroll-ms 1000
 Environment=RUST_LOG=info
 Restart=always

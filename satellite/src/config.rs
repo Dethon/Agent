@@ -47,8 +47,16 @@ impl Default for Config {
             // 48 kHz native -> plughw resamples for BOTH. For a reSpeaker 2-Mic HAT pass
             // --mic-command/--snd-command with plughw:CARD=seeed2micvoicec,DEV=0 plus
             // --button-gpio 17 and --led-spi; see provisioning.
-            mic_command: "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw".into(),
-            snd_command: "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw".into(),
+            // -F 20000 (20 ms period): without it arecord defaults to buffer/4 = 125 ms periods
+            // and every mic sample reaches stdout up to 125 ms late — paid on the wake AND the
+            // speech->STT path. The 500 ms capture buffer default is independent of -F.
+            mic_command: "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw -F 20000".into(),
+            // --start-delay=100000 (µs): aplay's default start threshold is the FULL 500 ms
+            // buffer, so a streamed reply isn't audible until 500 ms of audio has been
+            // synthesized+delivered; start at 100 ms queued instead (buffer stays 500 ms for
+            // underrun headroom). -F 50000 reads stdin in 50 ms periods so the first write
+            // into the ALSA buffer happens sooner.
+            snd_command: "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000".into(),
             detector: DetectorConfig::default(),
             wake_enabled: true,
             button: ButtonConfig::None, // the Jabra's own buttons are Linux-unusable (HID telephony); --button-* opts in
@@ -152,8 +160,11 @@ mod tests {
         assert_eq!(c.listen, "0.0.0.0:10700");
         assert!(c.mic_command.contains("arecord"));
         assert!(c.mic_command.contains("plughw:0,0"));
+        assert!(c.mic_command.contains("-F 20000"), "mic must pin a 20 ms period (default 125 ms delays every sample)");
         assert!(c.snd_command.contains("aplay"));
         assert!(c.snd_command.contains("plughw:0,0"));
+        assert!(c.snd_command.contains("--start-delay=100000"), "playback must start at ~100 ms queued, not a full buffer");
+        assert!(c.snd_command.contains("-F 50000"), "playback period 50 ms so the first writei lands sooner");
         assert_eq!(c.detector.threshold, 0.5);
         assert!(c.wake_enabled);
         assert_eq!(c.button, ButtonConfig::None);
