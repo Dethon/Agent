@@ -33,10 +33,11 @@ internal sealed class McpClientManager : IAsyncDisposable
         CancellationToken ct)
     {
         var clientsWithEndpoints = await CreateClientsWithRetry(name, description, endpoints, handlers, ct);
-        var tools = await LoadTools(clientsWithEndpoints, ct);
-        var prompts = await LoadPrompts(clientsWithEndpoints.Select(c => c.Client), userId, ct);
+        var toolsTask = LoadTools(clientsWithEndpoints, ct);
+        var promptsTask = LoadPrompts(clientsWithEndpoints, userId, ct);
+        await Task.WhenAll(toolsTask, promptsTask);
         var clients = clientsWithEndpoints.Select(c => c.Client).ToArray();
-        return new McpClientManager(clients, tools, prompts);
+        return new McpClientManager(clients, await toolsTask, await promptsTask);
     }
 
     public async ValueTask DisposeAsync()
@@ -106,29 +107,33 @@ internal sealed class McpClientManager : IAsyncDisposable
     }
 
     private static async Task<string[]> LoadPrompts(
-        IEnumerable<McpClient> clients, string userId, CancellationToken ct)
+        IEnumerable<(McpClient Client, string ServerName)> clients, string userId, CancellationToken ct)
     {
         var userContextPrompt = $"## User Context\n" +
                                 $"Conversation created by user: '{userId}'\n" +
                                 $"Use this userId/username for all user-scoped operations. unless you get more " +
                                 $"updated information in the user's message";
-        return await clients
-            .Where(c => c.ServerCapabilities.Prompts is not null)
-            .ToAsyncEnumerable()
-            .SelectMany<McpClient, string>(async (client, _, c) =>
-            {
-                var list = await client.ListPromptsAsync(cancellationToken: c);
-                return await Task.WhenAll(list.Select(async p =>
-                {
-                    var result = await client.GetPromptAsync(p.Name, cancellationToken: c);
-                    return string.Join("\n", result.Messages
-                        .Select(m => m.Content)
-                        .OfType<TextContentBlock>()
-                        .Select(t => t.Text));
-                }));
-            })
+        var perClient = await Task.WhenAll(clients
+            .Where(c => c.Client.ServerCapabilities.Prompts is not null)
+            .Select(c => FetchPromptsAsync(c.Client, ct)));
+
+        return perClient
+            .SelectMany(p => p)
             .Where(r => !string.IsNullOrWhiteSpace(r))
             .Prepend(userContextPrompt)
-            .ToArrayAsync(ct);
+            .ToArray();
+    }
+
+    private static async Task<string[]> FetchPromptsAsync(McpClient client, CancellationToken ct)
+    {
+        var list = await client.ListPromptsAsync(cancellationToken: ct);
+        return await Task.WhenAll(list.Select(async p =>
+        {
+            var result = await client.GetPromptAsync(p.Name, cancellationToken: ct);
+            return string.Join("\n", result.Messages
+                .Select(m => m.Content)
+                .OfType<TextContentBlock>()
+                .Select(t => t.Text));
+        }));
     }
 }

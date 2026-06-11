@@ -65,39 +65,33 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
 
-        var hasAnyResources = false;
-
-        foreach (var client in clients)
-        {
-            if (client.ServerCapabilities.Resources is not { Subscribe: true })
-            {
-                continue;
-            }
-
-            var current = (await client.ListResourcesAsync(cancellationToken: ct))
-                .Where(r => !r.Uri.StartsWith("filesystem://", StringComparison.OrdinalIgnoreCase))
-                .Select(r => r.Uri)
-                .ToHashSet();
-            var previous = _subscribedResources.GetValueOrDefault(client) ?? [];
-
-            foreach (var uri in current.Except(previous))
-            {
-                await client.SubscribeToResourceAsync(uri, cancellationToken: ct);
-            }
-
-            foreach (var uri in previous.Except(current))
-            {
-                await client.UnsubscribeFromResourceAsync(uri, cancellationToken: ct);
-            }
-
-            _subscribedResources[client] = current;
-            hasAnyResources |= current.Count > 0;
-        }
+        var clientHasResources = await Task.WhenAll(clients
+            .Where(c => c.ServerCapabilities.Resources is { Subscribe: true })
+            .Select(c => SyncClientAsync(c, ct)));
 
         if (ResourcesSynced != null)
         {
-            await ResourcesSynced(hasAnyResources, ct);
+            await ResourcesSynced(clientHasResources.Any(r => r), ct);
         }
+    }
+
+    private async Task<bool> SyncClientAsync(McpClient client, CancellationToken ct)
+    {
+        var current = (await client.ListResourcesAsync(cancellationToken: ct))
+            .Where(r => !r.Uri.StartsWith("filesystem://", StringComparison.OrdinalIgnoreCase))
+            .Select(r => r.Uri)
+            .ToHashSet();
+        var previous = _subscribedResources.GetValueOrDefault(client) ?? [];
+
+        // Concurrent requests on one client are safe: the MCP session multiplexes
+        // JSON-RPC calls, same as the parallel per-client prompt fetches.
+        await Task.WhenAll(current.Except(previous)
+            .Select(uri => client.SubscribeToResourceAsync(uri, cancellationToken: ct)));
+        await Task.WhenAll(previous.Except(current)
+            .Select(uri => client.UnsubscribeFromResourceAsync(uri, cancellationToken: ct)));
+
+        _subscribedResources[client] = current;
+        return current.Count > 0;
     }
 
     private async Task UnsubscribeFromAllResources(CancellationToken ct)
