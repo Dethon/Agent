@@ -47,7 +47,9 @@ public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClas
 
         var agentDefinitionProvider = new Mock<IAgentDefinitionProvider>();
         var threadStateStore = new Mock<IThreadStateStore>();
-        threadStateStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>()))
+        threadStateStore.Setup(s => s.GetMessageCountAsync(It.IsAny<string>()))
+            .ReturnsAsync(0L);
+        threadStateStore.Setup(s => s.GetTailMessagesAsync(It.IsAny<string>(), It.IsAny<int>()))
             .ReturnsAsync((ChatMessage[]?)null);
 
         var hook = new MemoryRecallHook(

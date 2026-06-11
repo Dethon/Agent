@@ -26,6 +26,19 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
             : values.Select(v => JsonSerializer.Deserialize<ChatMessage>(v.ToString())!).ToArray();
     }
 
+    public async Task<long> GetMessageCountAsync(string key)
+    {
+        return await _db.ListLengthAsync(key);
+    }
+
+    public async Task<ChatMessage[]?> GetTailMessagesAsync(string key, int maxCount)
+    {
+        var values = await _db.ListRangeAsync(key, -maxCount, -1);
+        return values.Length == 0
+            ? null
+            : values.Select(v => JsonSerializer.Deserialize<ChatMessage>(v.ToString())!).ToArray();
+    }
+
     public async Task SetMessagesAsync(string key, ChatMessage[] messages)
     {
         await _db.KeyDeleteAsync(key);

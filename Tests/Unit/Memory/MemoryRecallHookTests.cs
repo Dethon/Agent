@@ -78,7 +78,8 @@ public class MemoryRecallHookTests
         };
 
         var session = CreateSessionWithStateKey("state-test");
-        _threadStateStore.Setup(s => s.GetMessagesAsync("state-test"))
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
             .ReturnsAsync((ChatMessage[]?)null);
 
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -102,7 +103,8 @@ public class MemoryRecallHookTests
         var message = new ChatMessage(ChatRole.User, "I work at Contoso");
 
         var session = CreateSessionWithStateKey("state-test");
-        _threadStateStore.Setup(s => s.GetMessagesAsync("state-test"))
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
             .ReturnsAsync((ChatMessage[]?)null);
 
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -127,7 +129,8 @@ public class MemoryRecallHookTests
         var message = new ChatMessage(ChatRole.User, "Hello");
 
         var session = CreateSessionWithStateKey("state-test");
-        _threadStateStore.Setup(s => s.GetMessagesAsync("state-test"))
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
             .ReturnsAsync((ChatMessage[]?)null);
 
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -147,7 +150,8 @@ public class MemoryRecallHookTests
         var message = new ChatMessage(ChatRole.User, "Hello");
 
         var session = CreateSessionWithStateKey("state-test");
-        _threadStateStore.Setup(s => s.GetMessagesAsync("state-test"))
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
             .ReturnsAsync((ChatMessage[]?)null);
 
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -220,7 +224,8 @@ public class MemoryRecallHookTests
         };
 
         var session = CreateSessionWithStateKey("state-test");
-        _threadStateStore.Setup(s => s.GetMessagesAsync("state-test"))
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
             .ReturnsAsync((ChatMessage[]?)null);
 
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -250,7 +255,8 @@ public class MemoryRecallHookTests
             new(ChatRole.Assistant, "Guincho is famous..."),
             new(ChatRole.User, "and for beginners?")
         };
-        _threadStateStore.Setup(s => s.GetMessagesAsync("state-window"))
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-window")).ReturnsAsync((long)persisted.Length);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-window", It.IsAny<int>()))
             .ReturnsAsync(persisted);
 
         string? capturedEmbeddingInput = null;
@@ -288,7 +294,8 @@ public class MemoryRecallHookTests
             new(ChatRole.User, "m2"),
             new(ChatRole.Assistant, "m3")
         };
-        _threadStateStore.Setup(s => s.GetMessagesAsync("state-anchor"))
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-anchor")).ReturnsAsync((long)persisted.Length);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-anchor", It.IsAny<int>()))
             .ReturnsAsync(persisted);
 
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -324,7 +331,9 @@ public class MemoryRecallHookTests
             case ExtractionFallbackCause.ThreadStoreThrows:
                 session = CreateSessionWithStateKey("state-broken");
                 expectedStateKey = "state-broken";
-                _threadStateStore.Setup(s => s.GetMessagesAsync("state-broken"))
+                _threadStateStore.Setup(s => s.GetMessageCountAsync("state-broken"))
+                    .ThrowsAsync(new InvalidOperationException("redis down"));
+                _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-broken", It.IsAny<int>()))
                     .ThrowsAsync(new InvalidOperationException("redis down"));
                 break;
             case ExtractionFallbackCause.NoStateKey:
@@ -353,7 +362,8 @@ public class MemoryRecallHookTests
         }
         else
         {
-            _threadStateStore.Verify(s => s.GetMessagesAsync(It.IsAny<string>()), Times.Never);
+            _threadStateStore.Verify(s => s.GetMessageCountAsync(It.IsAny<string>()), Times.Never);
+            _threadStateStore.Verify(s => s.GetTailMessagesAsync(It.IsAny<string>(), It.IsAny<int>()), Times.Never);
         }
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
@@ -368,5 +378,34 @@ public class MemoryRecallHookTests
             }
             break;
         }
+    }
+
+    [Fact]
+    public async Task EnrichAsync_LongThread_AnchorsExtractionAtFullThreadLengthUsingTailRead()
+    {
+        // 500 messages persisted but only a bounded tail fetched: the extraction anchor
+        // must still point at the real end of the thread, and the full-list read must not run.
+        var session = CreateSessionWithStateKey("state-tail");
+        var tail = Enumerable.Range(0, 200)
+            .Select(i => new ChatMessage(i % 2 == 0 ? ChatRole.User : ChatRole.Assistant, $"m{i}"))
+            .ToArray();
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-tail")).ReturnsAsync(500L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-tail", It.IsAny<int>())).ReturnsAsync(tail);
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_testEmbedding);
+        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(),
+                It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(),
+                It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        _store.Setup(s => s.GetProfileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PersonalityProfile?)null);
+
+        var message = new ChatMessage(ChatRole.User, "current question");
+        await _hook.EnrichAsync(message, "user-1", "conv-1", null, session, CancellationToken.None);
+
+        _queue.Complete();
+        var request = await _queue.ReadAllAsync(CancellationToken.None).FirstAsync();
+        request.AnchorIndex.ShouldBe(500);
+        _threadStateStore.Verify(s => s.GetMessagesAsync(It.IsAny<string>()), Times.Never);
     }
 }
