@@ -9,6 +9,11 @@ public sealed class NullThreadStateStore : IThreadStateStore
 {
     public Task<ChatMessage[]?> GetMessagesAsync(string key) => Task.FromResult<ChatMessage[]?>(null);
 
+    public Task<long> GetMessageCountAsync(string key) => Task.FromResult(0L);
+
+    public Task<ChatMessage[]?> GetTailMessagesAsync(string key, int maxCount) =>
+        Task.FromResult<ChatMessage[]?>(null);
+
     public Task SetMessagesAsync(string key, ChatMessage[] messages) => Task.CompletedTask;
 
     public Task AppendMessagesAsync(string key, IReadOnlyList<ChatMessage> messages) => Task.CompletedTask;

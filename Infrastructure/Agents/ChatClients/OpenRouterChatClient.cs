@@ -247,18 +247,22 @@ public sealed class OpenRouterChatClient : IChatClient
         return string.Join(Environment.NewLine, lines) + Environment.NewLine;
     }
 
+    // One handler (= one connection pool) for the whole process: a per-conversation
+    // handler would pay a fresh TCP+TLS handshake to OpenRouter on every new
+    // conversation's first LLM call.
+    private static readonly SocketsHttpHandler _sharedHandler = new()
+    {
+        AutomaticDecompression = DecompressionMethods.All,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    };
+
+    internal static SocketsHttpHandler SharedHandler => _sharedHandler;
+
     private static HttpClient CreateHttpClient(
         ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue)
     {
-        var handler = new ReasoningHandler(reasoningQueue, costQueue)
-        {
-            InnerHandler = new SocketsHttpHandler
-            {
-                AutomaticDecompression = DecompressionMethods.All,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(2)
-            }
-        };
-        return new HttpClient(handler);
+        var handler = new ReasoningHandler(reasoningQueue, costQueue) { InnerHandler = _sharedHandler };
+        return new HttpClient(handler, disposeHandler: false);
     }
 
     private sealed class ReasoningHandler(

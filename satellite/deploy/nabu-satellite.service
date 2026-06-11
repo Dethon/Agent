@@ -1,0 +1,37 @@
+# Jabra Speak2 (55/75) variant — audio on plughw:0,0 (provisioning pins the USB card to ALSA
+# index 0; the card NAME is variant-dependent: 75->J75, 55 MS->MS, 55 UC->UC), no button (the
+# Jabra's onboard buttons are HID-telephony, unusable on Linux), no LED.
+# reSpeaker 2-Mic HAT variant: swap the device to plughw:CARD=seeed2micvoicec,DEV=0 on BOTH
+# commands and add --button-gpio 17 --led-spi (APA102s need dtparam=spi=on). Other hardware:
+# a USB foot-switch is --button-evdev /dev/input/eventX:<keycode>; a wired indicator is
+# --led-gpio <pin> (BCM pin -> ~330 ohm -> LED -> GND).
+[Unit]
+Description=Nabu Rust Wyoming Satellite (%i)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+# Pin the performance governor: the steady sub-threshold wake-detection load sits exactly
+# where ondemand idles at 600 MHz, roughly doubling per-chunk inference time and adding
+# governor-ramp jitter to wake latency. A dedicated satellite Pi trades the extra idle power
+# for consistent latency. The `+` prefix runs this as root despite User=%i; `|| true` keeps
+# a governor-less kernel from failing the unit.
+ExecStartPre=+/bin/sh -c 'for g in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do echo performance > "$g" || true; done'
+# Tail-latency insurance: background jobs (apt, unattended-upgrades) must not delay the
+# 80 ms audio pumps.
+Nice=-10
+ExecStart=/usr/local/bin/nabu-satellite \
+  --listen 0.0.0.0:10700 \
+  --mic-command "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw -F 20000" \
+  --snd-command "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \
+  --preroll-ms 1000
+Environment=RUST_LOG=info
+Restart=always
+RestartSec=2
+User=%i
+# GPIO button/LED need the `gpio` group; a USB/evdev foot-switch needs `input`;
+# the HAT's APA102 LEDs need `spi` (spidev nodes are root:spi on Raspberry Pi OS).
+SupplementaryGroups=gpio input spi
+
+[Install]
+WantedBy=multi-user.target

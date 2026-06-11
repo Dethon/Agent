@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
@@ -139,4 +140,55 @@ public class ToolApprovalChatClientTests
         nonWhitelistedInvoked.ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task InvokeFunctionAsync_AutoApproved_InvokesToolWithoutWaitingForNotify()
+    {
+        // Arrange
+        var notifyGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new GatedNotifyApprovalHandler(notifyGate.Task);
+        var invoked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var function = AIFunctionFactory.Create(() =>
+        {
+            invoked.TrySetResult();
+            return "result";
+        }, "mcp__server__TestTool");
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
+        var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: ["mcp__server__TestTool"]);
+        var options = new ChatOptions { Tools = [function] };
+
+        // Act
+        var responseTask = client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
+
+        // Assert: the tool runs while the auto-approval notification is still in flight
+        try
+        {
+            var completed = await Task.WhenAny(invoked.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+            completed.ShouldBe(invoked.Task, "tool invocation must not wait for the notify round trip");
+        }
+        finally
+        {
+            notifyGate.TrySetResult();
+        }
+
+        await responseTask;
+        handler.NotifyCalls.ShouldBe(1);
+    }
+
+    private sealed class GatedNotifyApprovalHandler(Task gate) : IToolApprovalHandler
+    {
+        public int NotifyCalls;
+
+        public Task<ToolApprovalResult> RequestApprovalAsync(
+            IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+            => Task.FromResult(ToolApprovalResult.Rejected);
+
+        public async Task NotifyAutoApprovedAsync(
+            IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref NotifyCalls);
+            await gate;
+        }
+    }
 }

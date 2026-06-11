@@ -31,7 +31,9 @@ public static class InjectorModule
 
             return services
                 .AddRedis(settings.Redis)
-                .AddSingleton<IMetricsPublisher, RedisMetricsPublisher>()
+                .AddSingleton<IMetricsPublisher>(sp => new BufferedMetricsPublisher(
+                    new RedisMetricsPublisher(sp.GetRequiredService<IConnectionMultiplexer>()),
+                    sp.GetService<ILogger<BufferedMetricsPublisher>>()))
                 .AddHostedService(sp =>
                     new HeartbeatService(sp.GetRequiredService<IMetricsPublisher>(), "agent"))
                 .AddSingleton<ChatThreadResolver>()

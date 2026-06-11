@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
@@ -20,6 +21,8 @@ public sealed class MultiAgentFactory(
     ILoggerFactory? loggerFactory = null,
     Func<string, int?, IMetricsPublisher?, IChatClient>? chatClientFactory = null) : IAgentFactory
 {
+
+    private readonly McpPromptCache _promptCache = new(TimeProvider.System, TimeSpan.FromSeconds(60));
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
@@ -83,7 +86,8 @@ public sealed class MultiAgentFactory(
             enableResourceSubscriptions: false,
             filesystemEnabledTools: filesystemEnabledTools,
             loggerFactory: loggerFactory,
-            reasoningEffort: definition.ReasoningEffort);
+            reasoningEffort: definition.ReasoningEffort,
+            promptCache: _promptCache);
     }
 
     private DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
@@ -124,7 +128,8 @@ public sealed class MultiAgentFactory(
             reasoningEffort: definition.ReasoningEffort,
             metricsPublisher: agentPublisher,
             model: definition.Model,
-            conversationId: agentKey.ConversationId);
+            conversationId: agentKey.ConversationId,
+            promptCache: _promptCache);
     }
 
     private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)

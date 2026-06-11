@@ -10,6 +10,7 @@ using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Prompts;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Mcp;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -35,6 +36,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IMetricsPublisher? _metricsPublisher;
     private readonly string? _model;
     private readonly string? _conversationId;
+    private readonly McpPromptCache? _promptCache;
 
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
     private int _isDisposed;
@@ -59,7 +61,8 @@ public sealed class McpAgent : DisposableAgent
         TimeProvider? timeProvider = null,
         IMetricsPublisher? metricsPublisher = null,
         string? model = null,
-        string? conversationId = null)
+        string? conversationId = null,
+        McpPromptCache? promptCache = null)
     {
         _endpoints = endpoints;
         _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
@@ -76,6 +79,7 @@ public sealed class McpAgent : DisposableAgent
         _metricsPublisher = metricsPublisher;
         _model = model;
         _conversationId = conversationId;
+        _promptCache = promptCache;
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = name,
@@ -384,7 +388,7 @@ public sealed class McpAgent : DisposableAgent
             var newSession = await ThreadSession
                 .CreateAsync(_endpoints, _name, _userId, _description, _innerAgent,
                              thread, _domainTools, _filesystemEnabledTools, _loggerFactory,
-                             ct, _enableResourceSubscriptions);
+                             ct, _enableResourceSubscriptions, _promptCache);
             _threadSessions[thread] = newSession;
             return newSession;
         }, ct);

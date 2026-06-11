@@ -77,4 +77,44 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         ttl.ShouldNotBeNull();
         ttl.Value.ShouldBeGreaterThan(TimeSpan.Zero);
     }
+
+    [Fact]
+    public async Task GetTailMessagesAsync_ListLongerThanMax_ReturnsOnlyTailInOrder()
+    {
+        var key = $"thread-{Guid.NewGuid():N}";
+        var store = NewStore();
+        await store.AppendMessagesAsync(key,
+            [.. Enumerable.Range(0, 10).Select(i => new ChatMessage(ChatRole.User, $"m{i}"))]);
+
+        var tail = await store.GetTailMessagesAsync(key, 3);
+
+        tail.ShouldNotBeNull();
+        tail.Select(m => m.Text).ShouldBe(["m7", "m8", "m9"]);
+    }
+
+    [Fact]
+    public async Task GetTailMessagesAsync_MaxLargerThanList_ReturnsAllMessages()
+    {
+        var key = $"thread-{Guid.NewGuid():N}";
+        var store = NewStore();
+        await store.AppendMessagesAsync(key, [new ChatMessage(ChatRole.User, "only")]);
+
+        var tail = await store.GetTailMessagesAsync(key, 50);
+
+        tail.ShouldNotBeNull();
+        tail.ShouldHaveSingleItem().Text.ShouldBe("only");
+    }
+
+    [Fact]
+    public async Task GetMessageCountAsync_ReturnsListLength_AndZeroForMissingKey()
+    {
+        var key = $"thread-{Guid.NewGuid():N}";
+        var store = NewStore();
+        (await store.GetMessageCountAsync(key)).ShouldBe(0);
+
+        await store.AppendMessagesAsync(key,
+            [new ChatMessage(ChatRole.User, "a"), new ChatMessage(ChatRole.Assistant, "b")]);
+
+        (await store.GetMessageCountAsync(key)).ShouldBe(2);
+    }
 }

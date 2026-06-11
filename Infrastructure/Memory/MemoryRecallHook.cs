@@ -17,6 +17,7 @@ public record MemoryRecallOptions
     public int DefaultLimit { get; init; } = 10;
     public bool IncludePersonalityProfile { get; init; } = true;
     public int WindowUserTurns { get; init; } = 3;
+    public int RecallTailMessages { get; init; } = 200;
 }
 
 public class MemoryRecallHook(
@@ -55,8 +56,8 @@ public class MemoryRecallHook(
                 return;
             }
 
-            var (persisted, stateKey) = await TryFetchThreadAsync(thread);
-            var anchorIndex = persisted?.Length ?? 0;
+            var (persisted, persistedCount, stateKey) = await TryFetchThreadAsync(thread);
+            var anchorIndex = (int)persistedCount;
 
             var embeddingInput = BuildRecallWindowText(messageText, persisted, options.WindowUserTurns);
 
@@ -137,22 +138,24 @@ public class MemoryRecallHook(
         }
     }
 
-    private async Task<(ChatMessage[]? Messages, string? StateKey)> TryFetchThreadAsync(AgentSession thread)
+    private async Task<(ChatMessage[]? Messages, long Count, string? StateKey)> TryFetchThreadAsync(AgentSession thread)
     {
         if (!RedisChatMessageStore.TryGetStateKey(thread, out var stateKey) || stateKey is null)
         {
-            return (null, null);
+            return (null, 0, null);
         }
 
         try
         {
-            var messages = await threadStateStore.GetMessagesAsync(stateKey);
-            return (messages, stateKey);
+            var countTask = threadStateStore.GetMessageCountAsync(stateKey);
+            var tailTask = threadStateStore.GetTailMessagesAsync(stateKey, options.RecallTailMessages);
+            await Task.WhenAll(countTask, tailTask);
+            return (await tailTask, await countTask, stateKey);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to fetch thread history for recall window (key {Key})", stateKey);
-            return (null, stateKey);
+            return (null, 0, stateKey);
         }
     }
 

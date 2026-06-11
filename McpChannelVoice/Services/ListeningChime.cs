@@ -3,12 +3,22 @@ using Domain.DTOs.Voice;
 namespace McpChannelVoice.Services;
 
 // A short rising two-tone earcon played before a wake-free follow-up window so the
-// user knows the mic is open. Generated PCM (16 kHz/16-bit mono) — no asset file.
+// user knows the mic is open. Generated PCM (22.05 kHz/16-bit mono) — no asset file.
 public static class ListeningChime
 {
     private const double DurationSeconds = 0.18;
 
-    public static byte[] Pcm(int sampleRateHz = 16_000)
+    // Satellites play hub audio through fixed 22050 Hz sinks (aplay/paplay -r 22050) and
+    // ignore the announced rate, so the earcon must be generated at the sink rate or it
+    // plays ~1.4x fast.
+    private static readonly AudioFormat _playbackFormat = new()
+    {
+        SampleRateHz = 22_050,
+        SampleWidthBytes = 2,
+        Channels = 1
+    };
+
+    public static byte[] Pcm(int sampleRateHz = 22_050)
     {
         var samples = (int)(sampleRateHz * DurationSeconds);
         var pcm = new byte[samples * 2];
@@ -30,7 +40,7 @@ public static class ListeningChime
 
     public static async IAsyncEnumerable<AudioChunk> Stream()
     {
-        yield return new AudioChunk { Data = Pcm(), Format = AudioFormat.WyomingStandard };
+        yield return new AudioChunk { Data = Pcm(), Format = _playbackFormat };
         await Task.CompletedTask;
     }
 }

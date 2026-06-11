@@ -8,6 +8,8 @@ public interface IThreadStateStore
 {
     Task DeleteAsync(AgentKey key);
     Task<ChatMessage[]?> GetMessagesAsync(string key);
+    Task<long> GetMessageCountAsync(string key);
+    Task<ChatMessage[]?> GetTailMessagesAsync(string key, int maxCount);
     Task SetMessagesAsync(string key, ChatMessage[] messages);
     Task AppendMessagesAsync(string key, IReadOnlyList<ChatMessage> messages);
     Task<bool> ExistsAsync(string key, CancellationToken ct = default);
