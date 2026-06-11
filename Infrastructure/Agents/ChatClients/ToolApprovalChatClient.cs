@@ -50,8 +50,13 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 
         if (_patternMatcher.IsMatch(toolName) || _dynamicallyApproved.Contains(toolName))
         {
-            await _approvalHandler.NotifyAutoApprovedAsync([request], cancellationToken);
-            return await InvokeWithMetricsAsync(context, toolName, cancellationToken);
+            // The notification is display-only; overlapping it with the invocation keeps a
+            // channel round trip off the tool's critical path. A notify failure still
+            // surfaces, but no longer prevents the tool from executing.
+            var notifyTask = _approvalHandler.NotifyAutoApprovedAsync([request], cancellationToken);
+            var invokeTask = InvokeWithMetricsAsync(context, toolName, cancellationToken).AsTask();
+            await Task.WhenAll(notifyTask, invokeTask);
+            return await invokeTask;
         }
 
         var result = await _approvalHandler.RequestApprovalAsync([request], cancellationToken);
