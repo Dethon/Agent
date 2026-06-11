@@ -52,17 +52,24 @@ go through cargo-zigbuild's own wrappers).
 
 Output: `target/aarch64-unknown-linux-musl/release/nabu-satellite` —
 `ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped`,
-**18,608,160 bytes (17.7 MiB)** (fat LTO, `strip = true`; the full tract-onnx inference stack
-plus the three `include_bytes!`-embedded wake models — ~2.6 MB of ONNX — account for the
-growth over the 1.2 MiB pre-tract skeleton).
+**19,674,944 bytes (18.8 MiB)** (fat LTO, `strip = true`, `-C target-cpu=cortex-a53` with
+`-aes,-sha2` subtracted — the Pi's BCM2837/RP3A0 lacks the crypto extensions; the binary is
+objdump-verified to contain no AES/SHA instructions. The full tract-onnx inference stack plus
+the three `include_bytes!`-embedded wake models — ~2.6 MB of ONNX — account for the growth
+over the 1.2 MiB pre-tract skeleton).
 Execution verified on arm64 via Docker binfmt emulation (no Pi needed):
 
 ```sh
 docker run --rm --platform linux/arm64 \
     -v "$PWD/target/aarch64-unknown-linux-musl/release:/b" \
-    alpine /b/nabu-satellite --listen 0.0.0.0:10700
+    alpine /b/nabu-satellite --listen 0.0.0.0:10700 --no-wake
 # -> nabu-satellite listening on 0.0.0.0:10700 (hub dials in)
 ```
+
+`--no-wake` is required **under qemu only**: qemu-user advertises ARMv8.2 fp16 hwcaps, so
+tract-linalg activates f16 assembly kernels that crash under emulation during the boot-time
+model load. A real Pi A53 has no fp16 hwcap and auto-selects the Cortex-A53 f32 kernels
+(`RUST_LOG=tract_linalg=info` shows `CPU optimisation: CortexA53` at startup).
 
 ## Hardware defaults
 
@@ -73,6 +80,15 @@ with `arecord -L`), no button (the Jabra's onboard buttons are HID-telephony, un
 Linux), no LED. The Speak2's 48 kHz native rate is resampled by `plughw` in both directions.
 For a reSpeaker 2-Mic HAT pass `--mic-command`/`--snd-command` with
 `plughw:CARD=seeed2micvoicec,DEV=0`, plus `--button-gpio 17` and `--led-spi`.
+
+The default audio commands carry latency-tuned ALSA flags — keep them when overriding devices:
+
+- `arecord … -F 20000` (20 ms capture period): the alsa-utils default is buffer/4 = 125 ms
+  periods, which delays every mic sample by up to 125 ms on both the wake and speech→STT path.
+- `aplay … --start-delay=100000 -F 50000`: aplay's default start threshold is the full 500 ms
+  buffer, so a streamed TTS reply wasn't audible until 500 ms of audio had been
+  synthesized+delivered; playback now starts at ~100 ms queued (the 500 ms buffer stays for
+  underrun headroom).
 
 ## Status LED
 
