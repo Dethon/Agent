@@ -47,3 +47,6 @@ nuget.config
 
 # Unused projects (not in docker-compose)
 BlazorUI
+
+# Rust satellite crate (deployed to hardware, not containerized; target/ is volatile cargo output)
+satellite
