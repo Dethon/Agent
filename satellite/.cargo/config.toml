@@ -1,3 +1,11 @@
 # Host dev builds run natively; cross builds use `cargo zigbuild --target aarch64-unknown-linux-musl`.
 [build]
 # (intentionally empty — target chosen per-invocation)
+
+# Tune codegen for the deploy target (Pi 3 / Zero 2W class Cortex-A53): in-order dual-issue
+# scheduling helps the non-GEMM share of wake inference and all glue code (tract-linalg's GEMM
+# hot loops are runtime-selected A53 assembly already). LLVM's cortex-a53 def enables +aes/+sha2,
+# which Broadcom's BCM2837/RP3A0 silicon does NOT implement — subtract them so no crypto
+# instruction can ever be emitted (crc stays: the Pi's A53 does support CRC32).
+[target.aarch64-unknown-linux-musl]
+rustflags = ["-C", "target-cpu=cortex-a53", "-C", "target-feature=-aes,-sha2"]

@@ -11,6 +11,15 @@ After=network-online.target sound.target
 Wants=network-online.target
 
 [Service]
+# Pin the performance governor: the steady sub-threshold wake-detection load sits exactly
+# where ondemand idles at 600 MHz, roughly doubling per-chunk inference time and adding
+# governor-ramp jitter to wake latency. A dedicated satellite Pi trades the extra idle power
+# for consistent latency. The `+` prefix runs this as root despite User=%i; `|| true` keeps
+# a governor-less kernel from failing the unit.
+ExecStartPre=+/bin/sh -c 'for g in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do echo performance > "$g" || true; done'
+# Tail-latency insurance: background jobs (apt, unattended-upgrades) must not delay the
+# 80 ms audio pumps.
+Nice=-10
 ExecStart=/usr/local/bin/nabu-satellite \
   --listen 0.0.0.0:10700 \
   --mic-command "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw -F 20000" \
