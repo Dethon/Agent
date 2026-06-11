@@ -19,6 +19,13 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cfg = Config::from_args()?;
+    // Parse + graph-optimize the wake models ONCE: per-connection loading would re-pay seconds
+    // of optimization (= wake deafness) on every hub reconnect, and a bad model now fails fast
+    // at boot instead of on the first connection.
+    let models = cfg.wake_enabled
+        .then(wake::WakeModels::load)
+        .transpose()
+        .context("loading wake models")?;
     let listener = TcpListener::bind(&cfg.listen).await
         .with_context(|| format!("failed to bind listen address {}", cfg.listen))?;
     info!("nabu-satellite listening on {} (hub dials in)", cfg.listen);
@@ -40,8 +47,9 @@ async fn main() -> anyhow::Result<()> {
         }
         let (r, w) = sock.into_split();
         let cfg = cfg.clone();
+        let models = models.clone();
         active = Some(tokio::spawn(async move {
-            if let Err(e) = satellite::state_machine::run_connection(r, w, cfg).await {
+            if let Err(e) = satellite::state_machine::run_connection(r, w, cfg, models).await {
                 error!("connection ended with error: {e:#}");
             }
         }));

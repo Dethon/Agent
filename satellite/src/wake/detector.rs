@@ -28,7 +28,38 @@ impl Default for DetectorConfig {
     }
 }
 
+/// The three openwakeword ONNX models, parsed + graph-optimized ONCE per process: optimization
+/// costs real time on an A53, and the hub reconnects forever — per-connection detectors built
+/// from a loaded bundle only clone Arcs and seed buffers, so re-arm after a reconnect is instant.
+#[derive(Clone)]
+pub struct WakeModels {
+    mel: Model,
+    emb: Model,
+    clf: Model,
+}
+
+impl WakeModels {
+    pub fn load() -> anyhow::Result<Self> {
+        let load = |b: &[u8], shape: &[usize]| -> anyhow::Result<Model> {
+            tract_onnx::onnx()
+                .model_for_read(&mut std::io::Cursor::new(b))?
+                .with_input_fact(0, f32::fact(shape).into())?
+                .into_optimized()?
+                .into_runnable()
+        };
+        Ok(Self {
+            mel: load(MEL_MODEL, &[1, LOOKBACK + CHUNK])?,
+            emb: load(EMB_MODEL, &[1, MEL_FRAMES, 32, 1])?,
+            clf: load(CLF_MODEL, &[1, CLF_FRAMES, EMB_DIM])?,
+        })
+    }
+}
+
 pub struct WakeDetector {
+    // NOTE: these stay Arc<TypedRunnableModel> and pay Model::run()'s per-call SimpleState
+    // spawn. Holding persistent SimpleStates would save that allocation but SimpleState is
+    // !Send (Box<dyn OpState> has no Send bound), and the detector lives across awaits in a
+    // tokio::spawn'd connection task.
     mel: Model,
     emb: Model,
     clf: Model,
@@ -41,18 +72,11 @@ pub struct WakeDetector {
 }
 
 impl WakeDetector {
-    pub fn new(cfg: DetectorConfig) -> anyhow::Result<Self> {
-        let load = |b: &[u8], shape: &[usize]| -> anyhow::Result<Model> {
-            tract_onnx::onnx()
-                .model_for_read(&mut std::io::Cursor::new(b))?
-                .with_input_fact(0, f32::fact(shape).into())?
-                .into_optimized()?
-                .into_runnable()
-        };
+    pub fn new(models: &WakeModels, cfg: DetectorConfig) -> anyhow::Result<Self> {
         Ok(Self {
-            mel: load(MEL_MODEL, &[1, LOOKBACK + CHUNK])?,
-            emb: load(EMB_MODEL, &[1, MEL_FRAMES, 32, 1])?,
-            clf: load(CLF_MODEL, &[1, CLF_FRAMES, EMB_DIM])?,
+            mel: models.mel.clone(),
+            emb: models.emb.clone(),
+            clf: models.clf.clone(),
             cfg,
             tail: vec![0f32; LOOKBACK],
             mel_buf: (0..MEL_FRAMES).map(|_| [1f32; 32]).collect(),
@@ -148,7 +172,8 @@ mod tests {
     }
     #[test]
     fn fires_once_on_ok_nabu_then_respects_refractory() {
-        let mut d = WakeDetector::new(DetectorConfig::default()).unwrap();
+        let models = WakeModels::load().unwrap();
+        let mut d = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
         let mut fires = 0;
         for chunk in wav("tests/fixtures/ok_nabu.wav").chunks_exact(1280) {
             if d.push_chunk(chunk) { fires += 1; }
@@ -157,11 +182,24 @@ mod tests {
     }
     #[test]
     fn silent_on_silence() {
-        let mut d = WakeDetector::new(DetectorConfig::default()).unwrap();
+        let models = WakeModels::load().unwrap();
+        let mut d = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
         let mut fires = 0;
         for chunk in wav("tests/fixtures/silence.wav").chunks_exact(1280) {
             if d.push_chunk(chunk) { fires += 1; }
         }
         assert_eq!(fires, 0);
+    }
+    // Reconnect path: detectors built from ONE loaded bundle must detect independently —
+    // shared optimized models, per-detector streaming state.
+    #[test]
+    fn detectors_share_one_model_bundle() {
+        let models = WakeModels::load().unwrap();
+        let samples = wav("tests/fixtures/ok_nabu.wav");
+        let fires = |d: &mut WakeDetector| samples.chunks_exact(1280).filter(|c| d.push_chunk(c)).count();
+        let mut first = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
+        let mut second = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
+        assert_eq!(fires(&mut first), 1);
+        assert_eq!(fires(&mut second), 1, "a fresh detector from the shared bundle must behave identically");
     }
 }

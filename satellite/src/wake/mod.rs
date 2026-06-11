@@ -1,2 +1,2 @@
 pub mod detector;
-pub use detector::{DetectorConfig, WakeDetector};
+pub use detector::{DetectorConfig, WakeDetector, WakeModels};

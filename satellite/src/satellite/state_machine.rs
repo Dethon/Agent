@@ -4,7 +4,7 @@ use crate::audio::playback::PlaybackSink;
 use crate::config::Config;
 use crate::gpio;
 use crate::led::{self, LedState};
-use crate::wake::WakeDetector;
+use crate::wake::{WakeDetector, WakeModels};
 use crate::wyoming::codec::{read_event_buffered, write_event};
 use crate::wyoming::WyomingEvent;
 use serde_json::json;
@@ -34,10 +34,13 @@ struct Ctx<'a> {
     led: &'a watch::Sender<LedState>,
 }
 
-pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: Config) -> anyhow::Result<()> {
+pub async fn run_connection(
+    reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: Config, models: Option<WakeModels>,
+) -> anyhow::Result<()> {
     let mut wr = writer;
     let mic = MicCapture::spawn(&cfg.mic_command)?;
-    let mut detector = if cfg.wake_enabled { Some(WakeDetector::new(cfg.detector.clone())?) } else { None };
+    let mut detector =
+        models.as_ref().map(|m| WakeDetector::new(m, cfg.detector.clone())).transpose()?;
     let cues = Cues::new(&cfg)?;
 
     // CANCELLATION SAFETY: tokio::select! DROPS the futures of losing arms. Both
@@ -113,7 +116,11 @@ pub async fn run_connection(reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: 
                     Mode::Idle => {
                         push_preroll(&mut preroll, samples.clone(), preroll_cap);
                         if let Some(d) = detector.as_mut() {
-                            if d.push_chunk(&samples) {
+                            let t0 = std::time::Instant::now();
+                            let fired = d.push_chunk(&samples);
+                            // on-device budget check: must stay well under the 80 ms chunk cadence
+                            tracing::debug!(us = t0.elapsed().as_micros() as u64, "wake inference");
+                            if fired {
                                 info!("wake word detected");
                                 trim_preroll(&mut preroll, cfg.wake_preroll_chunks());
                                 start_turn(&mut wr, &mut mode, &ctx, &mut preroll).await?;
@@ -303,7 +310,7 @@ mod tests {
         let sat = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
             let (r, w) = sock.into_split();
-            run_connection(r, w, cfg).await
+            run_connection(r, w, cfg, None).await
         });
 
         // hub side: dial in, then stream fragmented audio-chunk frames
