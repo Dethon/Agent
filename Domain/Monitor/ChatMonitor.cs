@@ -231,28 +231,8 @@ public class ChatMonitor(
     {
         foreach (var mapped in MapResponseUpdate(update))
         {
-            foreach (var target in targets)
-            {
-                try
-                {
-                    await target.Channel.SendReplyAsync(
-                        target.ConversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // Isolate per-target delivery failures: one channel being down must not
-                    // abort delivery to the other targets or tear down the agent run (which
-                    // would also suppress its schedule-execution metric).
-                    logger.LogWarning(ex, "Failed to deliver reply to {ChannelId}; skipping target",
-                        target.Channel.ChannelId);
-                    await metricsPublisher.PublishAsync(new ErrorEvent
-                    {
-                        Service = "agent",
-                        ErrorType = ex.GetType().Name,
-                        Message = ex.Message
-                    }, ct);
-                }
-            }
+            await Task.WhenAll(targets.Select(target =>
+                DeliverToTargetAsync(target, mapped, update.MessageId, ct)));
         }
 
         foreach (var error in update.Contents.OfType<ErrorContent>())
@@ -262,6 +242,33 @@ public class ChatMonitor(
                 Service = "agent",
                 ErrorType = error.ErrorCode ?? "Unknown",
                 Message = error.Message
+            }, ct);
+        }
+    }
+
+    private async Task DeliverToTargetAsync(
+        DeliveryTarget target,
+        (string Content, ReplyContentType ContentType, bool IsComplete) mapped,
+        string? messageId,
+        CancellationToken ct)
+    {
+        try
+        {
+            await target.Channel.SendReplyAsync(
+                target.ConversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, messageId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Isolate per-target delivery failures: one channel being down must not
+            // abort delivery to the other targets or tear down the agent run (which
+            // would also suppress its schedule-execution metric).
+            logger.LogWarning(ex, "Failed to deliver reply to {ChannelId}; skipping target",
+                target.Channel.ChannelId);
+            await metricsPublisher.PublishAsync(new ErrorEvent
+            {
+                Service = "agent",
+                ErrorType = ex.GetType().Name,
+                Message = ex.Message
             }, ct);
         }
     }
