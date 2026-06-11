@@ -54,7 +54,9 @@ pub async fn run_connection(
     // I/O too — they live in the playback pump (spawned below), not in this loop.
     let (hub_tx, mut hub_rx) = mpsc::channel::<anyhow::Result<WyomingEvent>>(16);
     let _hub_pump = AbortOnDrop(tokio::spawn(async move {
-        let mut buf = BufReader::new(reader);
+        // 32 KiB (vs the 8 KiB default): TTS receive bursts at 100+ frames/s; a bigger read
+        // buffer quarters the read syscalls while the loop competes with playback for CPU.
+        let mut buf = BufReader::with_capacity(32 * 1024, reader);
         loop {
             match read_event_buffered(&mut buf).await {
                 Ok(Some(e)) => {

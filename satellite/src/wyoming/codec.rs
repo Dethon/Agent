@@ -86,11 +86,23 @@ where
     Ok(Some(WyomingEvent { event_type, data, payload }))
 }
 
-/// Write one Wyoming event: header line + (optional) data bytes + (optional) payload.
+/// Write one Wyoming event: header line + (optional) data bytes + (optional) payload, as ONE
+/// contiguous buffer — one write syscall and (with NODELAY set) one TCP segment per frame
+/// instead of three of each on the 12.5 frames/s mic hot path.
 pub async fn write_event<W>(writer: &mut W, event: &WyomingEvent) -> anyhow::Result<()>
 where
     W: AsyncWrite + Unpin,
 {
+    let frame = encode_frame(event)?;
+    writer.write_all(&frame).await?;
+    writer.flush().await?;
+    Ok(())
+}
+
+/// `data` goes once, as the data_length body: the hub's reader parses the body whenever
+/// data_length > 0 and ignores an inline header copy, and the hub's own writer emits exactly
+/// this shape — the previous inline duplicate cost a Value deep-clone plus wire bytes per frame.
+fn encode_frame(event: &WyomingEvent) -> anyhow::Result<Vec<u8>> {
     let data_bytes: Vec<u8> = match &event.data {
         Some(v) => serde_json::to_vec(v)?,
         None => Vec::new(),
@@ -98,26 +110,18 @@ where
     let mut header = Map::new();
     header.insert("type".into(), Value::String(event.event_type.clone()));
     header.insert("version".into(), Value::String(PROTOCOL_VERSION.into()));
-    if let Some(v) = &event.data {
-        header.insert("data".into(), v.clone());
-    }
     if !data_bytes.is_empty() {
         header.insert("data_length".into(), Value::from(data_bytes.len()));
     }
     if !event.payload.is_empty() {
         header.insert("payload_length".into(), Value::from(event.payload.len()));
     }
-    let mut line = serde_json::to_vec(&Value::Object(header))?;
-    line.push(b'\n');
-    writer.write_all(&line).await?;
-    if !data_bytes.is_empty() {
-        writer.write_all(&data_bytes).await?;
-    }
-    if !event.payload.is_empty() {
-        writer.write_all(&event.payload).await?;
-    }
-    writer.flush().await?;
-    Ok(())
+    let mut frame = serde_json::to_vec(&Value::Object(header))?;
+    frame.reserve(1 + data_bytes.len() + event.payload.len());
+    frame.push(b'\n');
+    frame.extend_from_slice(&data_bytes);
+    frame.extend_from_slice(&event.payload);
+    Ok(frame)
 }
 
 #[cfg(test)]
@@ -144,6 +148,28 @@ mod tests {
         assert_eq!(got.event_type, "audio-chunk");
         assert_eq!(got.data.unwrap(), json!({"rate":16000,"width":2,"channels":1}));
         assert_eq!(got.payload, vec![9, 8, 7, 6, 5]);
+    }
+
+    // Wire-format pin: one frame = header line + data body + payload, with `data` sent ONCE
+    // as the data_length body. That matches the hub's own WyomingWriter; its reader parses the
+    // body whenever data_length > 0 and ignores any inline copy (WyomingReader.cs), so the old
+    // duplicated inline `data` was pure wire+CPU overhead.
+    #[tokio::test]
+    async fn frames_carry_data_as_body_not_inline() {
+        let (mut a, mut b) = tokio::io::duplex(1 << 16);
+        let e = WyomingEvent::audio_chunk(16000, 2, 1, vec![1, 2, 3]);
+        write_event(&mut a, &e).await.unwrap();
+        drop(a);
+        let mut raw = Vec::new();
+        use tokio::io::AsyncReadExt;
+        b.read_to_end(&mut raw).await.unwrap();
+        let nl = raw.iter().position(|&c| c == b'\n').unwrap();
+        let header: Value = serde_json::from_slice(&raw[..nl]).unwrap();
+        assert!(header.get("data").is_none(), "data must go once, as the body");
+        let dl = header["data_length"].as_u64().unwrap() as usize;
+        let body: Value = serde_json::from_slice(&raw[nl + 1..nl + 1 + dl]).unwrap();
+        assert_eq!(body, json!({"rate":16000,"width":2,"channels":1}));
+        assert_eq!(&raw[nl + 1 + dl..], &[1, 2, 3]);
     }
 
     #[tokio::test]
