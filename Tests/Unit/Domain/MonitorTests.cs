@@ -7,6 +7,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
@@ -20,6 +21,7 @@ namespace Tests.Unit.Domain;
 internal sealed class FakeAiAgent : DisposableAgent
 {
     public Exception? ExceptionToThrow { get; init; }
+    public AgentResponseUpdate[] UpdatesToYield { get; init; } = [];
 
     public int WarmupCalls;
     public TaskCompletionSource WarmupSignaled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -88,7 +90,10 @@ internal sealed class FakeAiAgent : DisposableAgent
             throw ExceptionToThrow;
         }
 
-        yield break;
+        foreach (var update in UpdatesToYield)
+        {
+            yield return update;
+        }
     }
 
     public override ValueTask DisposeAsync()
@@ -626,5 +631,70 @@ public class ChatMonitorTests
 
         targetA.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete);
         targetB.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete);
+    }
+
+    [Fact]
+    public async Task Monitor_AgentStreamsContent_PublishesFirstReplyLatencyOnce()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage();
+        var channel = MonitorTestMocks.CreateChannel(messages: message);
+        var fakeAgent = new FakeAiAgent
+        {
+            UpdatesToYield =
+            [
+                new AgentResponseUpdate { Contents = [new TextContent("hello")] },
+                new AgentResponseUpdate { Contents = [new TextContent("world")] }
+            ]
+        };
+        var published = new List<MetricEvent>();
+        var metrics = new Mock<IMetricsPublisher>();
+        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback((MetricEvent e, CancellationToken _) => { lock (published) { published.Add(e); } })
+            .Returns(Task.CompletedTask);
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            MonitorTestMocks.CreateThreadResolver(),
+            metrics.Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        var firstReply = published.OfType<LatencyEvent>()
+            .Where(e => e.Stage == LatencyStage.FirstReply)
+            .ShouldHaveSingleItem();
+        firstReply.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
+        firstReply.ConversationId.ShouldBe("conv-1");
+    }
+
+    [Fact]
+    public async Task Monitor_AgentYieldsNoContent_DoesNotPublishFirstReply()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage();
+        var channel = MonitorTestMocks.CreateChannel(messages: message);
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+        var published = new List<MetricEvent>();
+        var metrics = new Mock<IMetricsPublisher>();
+        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback((MetricEvent e, CancellationToken _) => { lock (published) { published.Add(e); } })
+            .Returns(Task.CompletedTask);
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            MonitorTestMocks.CreateThreadResolver(),
+            metrics.Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        // Guard against a vacuous pass: the run must have actually completed a turn.
+        channel.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete);
+        published.OfType<LatencyEvent>().ShouldNotContain(e => e.Stage == LatencyStage.FirstReply);
     }
 }
