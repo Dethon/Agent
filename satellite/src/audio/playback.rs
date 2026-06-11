@@ -1,5 +1,5 @@
 use tokio::io::AsyncWriteExt;
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::{Child, ChildStdin};
 use tokio::sync::mpsc;
 
 /// Wraps a playback command (e.g. `aplay -D <dev> -r 22050 -c 1 -f S16_LE -t raw`).
@@ -12,9 +12,7 @@ pub struct PlaybackSink {
 
 impl PlaybackSink {
     pub fn start(snd_command: &str) -> anyhow::Result<Self> {
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(snd_command)
+        let mut child = crate::audio::build_command(snd_command)
             .stdin(std::process::Stdio::piped())
             .kill_on_drop(true)
             .spawn()?;

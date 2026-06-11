@@ -1,5 +1,5 @@
 use tokio::io::{AsyncReadExt, BufReader};
-use tokio::process::{Child, ChildStdout, Command};
+use tokio::process::{Child, ChildStdout};
 
 pub const CHUNK_SAMPLES: usize = 1280; // 80 ms @ 16 kHz
 
@@ -19,9 +19,7 @@ pub fn bytes_to_samples(bytes: &[u8]) -> Vec<i16> {
 
 impl MicCapture {
     pub fn spawn(mic_command: &str) -> anyhow::Result<Self> {
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(mic_command)
+        let mut child = crate::audio::build_command(mic_command)
             .stdout(std::process::Stdio::piped())
             .kill_on_drop(true)
             .spawn()?;
