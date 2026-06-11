@@ -43,10 +43,11 @@ internal sealed class ThreadSession : IAsyncDisposable
         IReadOnlySet<string> filesystemEnabledTools,
         ILoggerFactory? loggerFactory,
         CancellationToken ct,
-        bool enableResourceSubscriptions = true)
+        bool enableResourceSubscriptions = true,
+        McpPromptCache? promptCache = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
-            agent, thread, userId, domainTools, filesystemEnabledTools, loggerFactory);
+            agent, thread, userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache);
         var data = await builder.BuildAsync(ct, enableResourceSubscriptions);
         return new ThreadSession(data);
     }
@@ -76,7 +77,8 @@ internal sealed class ThreadSessionBuilder(
     string userId,
     IReadOnlyList<AIFunction> domainTools,
     IReadOnlySet<string> filesystemEnabledTools,
-    ILoggerFactory? loggerFactory)
+    ILoggerFactory? loggerFactory,
+    McpPromptCache? promptCache = null)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames =
     [
@@ -104,7 +106,7 @@ internal sealed class ThreadSessionBuilder(
         var handlers = new McpClientHandlers { SamplingHandler = samplingHandler.HandleAsync };
 
         // Step 2: Create MCP clients and load tools/prompts
-        var clientManager = await McpClientManager.CreateAsync(name, userId, description, endpoints, handlers, ct);
+        var clientManager = await McpClientManager.CreateAsync(name, userId, description, endpoints, handlers, promptCache, ct);
 
         // Step 3: Discover filesystem backends from connected MCP clients
         IVirtualFileSystemRegistry? registry = null;

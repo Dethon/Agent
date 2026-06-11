@@ -30,11 +30,12 @@ internal sealed class McpClientManager : IAsyncDisposable
         string description,
         string[] endpoints,
         McpClientHandlers handlers,
-        CancellationToken ct)
+        McpPromptCache? promptCache = null,
+        CancellationToken ct = default)
     {
         var clientsWithEndpoints = await CreateClientsWithRetry(name, description, endpoints, handlers, ct);
         var toolsTask = LoadTools(clientsWithEndpoints, ct);
-        var promptsTask = LoadPrompts(clientsWithEndpoints, userId, ct);
+        var promptsTask = LoadPrompts(clientsWithEndpoints, userId, promptCache, ct);
         await Task.WhenAll(toolsTask, promptsTask);
         var clients = clientsWithEndpoints.Select(c => c.Client).ToArray();
         return new McpClientManager(clients, await toolsTask, await promptsTask);
@@ -107,7 +108,10 @@ internal sealed class McpClientManager : IAsyncDisposable
     }
 
     private static async Task<string[]> LoadPrompts(
-        IEnumerable<(McpClient Client, string ServerName)> clients, string userId, CancellationToken ct)
+        IEnumerable<(McpClient Client, string ServerName)> clients,
+        string userId,
+        McpPromptCache? promptCache,
+        CancellationToken ct)
     {
         var userContextPrompt = $"## User Context\n" +
                                 $"Conversation created by user: '{userId}'\n" +
@@ -115,7 +119,9 @@ internal sealed class McpClientManager : IAsyncDisposable
                                 $"updated information in the user's message";
         var perClient = await Task.WhenAll(clients
             .Where(c => c.Client.ServerCapabilities.Prompts is not null)
-            .Select(c => FetchPromptsAsync(c.Client, ct)));
+            .Select(c => promptCache is null
+                ? FetchPromptsAsync(c.Client, ct)
+                : promptCache.GetOrFetchAsync(c.ServerName, ctk => FetchPromptsAsync(c.Client, ctk), ct)));
 
         return perClient
             .SelectMany(p => p)
