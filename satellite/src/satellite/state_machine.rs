@@ -1,6 +1,6 @@
 use crate::audio::capture::MicCapture;
 use crate::audio::cues::Cues;
-use crate::audio::playback::PlaybackSink;
+use crate::audio::playback::{spawn_pump, DrainDone, PlaybackHandle};
 use crate::config::Config;
 use crate::gpio;
 use crate::led::{self, LedState};
@@ -30,7 +30,6 @@ impl Drop for AbortOnDrop {
 /// the signatures within clippy's argument limit).
 struct Ctx<'a> {
     cues: &'a Cues,
-    cfg: &'a Config,
     led: &'a watch::Sender<LedState>,
 }
 
@@ -50,8 +49,9 @@ pub async fn run_connection(
     // contain valid UTF-8"); a half-read mic chunk drops bytes and misaligns the i16 stream.
     // The compound reads therefore live in dedicated pump tasks, and the select! below races
     // only mpsc::Receiver::recv() futures, which ARE cancellation-safe. Bounded channels
-    // preserve flow control: when the main loop blocks (e.g. in PlaybackSink::finish), the
-    // pumps block on send() and the socket / arecord pipe back up exactly as before.
+    // preserve flow control: when the main loop blocks, the pumps block on send() and the
+    // socket / arecord pipe back up exactly as before. Playback writes/drains are compound
+    // I/O too — they live in the playback pump (spawned below), not in this loop.
     let (hub_tx, mut hub_rx) = mpsc::channel::<anyhow::Result<WyomingEvent>>(16);
     let _hub_pump = AbortOnDrop(tokio::spawn(async move {
         let mut buf = BufReader::new(reader);
@@ -92,7 +92,15 @@ pub async fn run_connection(
     // aborts the render task, whose backend turns the light off on drop.
     let (led_tx, led_rx) = watch::channel(LedState::Idle);
     let _led_guard = led::spawn_led(&cfg.led, led_rx);
-    let ctx = Ctx { cues: &cues, cfg: &cfg, led: &led_tx };
+    let ctx = Ctx { cues: &cues, led: &led_tx };
+
+    // Playback is a pump task too: PlaybackSink::finish() waits for the player to drain
+    // (≈0.5-2 s of buffered TTS after every reply) and must not park this loop — wake/button
+    // re-arm and mic forwarding stay live during the drain. Completions come back on an
+    // unbounded channel (a bounded send from the pump could AB-deadlock against a main loop
+    // blocked sending a command) and are raced below like the other pumps.
+    let (mut playback, mut playback_done, pump_task) = spawn_pump(&cfg.snd_command);
+    let _playback_pump = AbortOnDrop(pump_task);
 
     // Pre-roll ring: keep the last `preroll_chunks()` mic chunks while Idle, so a request spoken
     // immediately after the wake word/button is never clipped (the zero-lag requirement).
@@ -100,7 +108,6 @@ pub async fn run_connection(
     let mut preroll: VecDeque<Vec<i16>> = VecDeque::with_capacity(preroll_cap + 1);
 
     let mut mode = Mode::Idle;
-    let mut playback: Option<PlaybackSink> = None;
 
     loop {
         tokio::select! {
@@ -108,6 +115,10 @@ pub async fn run_connection(
                 None => { info!("hub disconnected"); break; }
                 Some(Err(e)) => return Err(e),
                 Some(Ok(e)) => handle_hub_event(e, &mut mode, detector.as_mut(), &mut wr, &mut playback, &ctx).await?,
+            },
+            done = playback_done.recv() => match done {
+                None => anyhow::bail!("playback pump terminated"),
+                Some(d) => apply_drain_done(d, playback.latest_generation(), mode, ctx.led)?,
             },
             chunk = mic_rx.recv() => match chunk {
                 None => { warn!("mic stream ended"); break; }
@@ -123,7 +134,7 @@ pub async fn run_connection(
                             if fired {
                                 info!("wake word detected");
                                 trim_preroll(&mut preroll, cfg.wake_preroll_chunks());
-                                start_turn(&mut wr, &mut mode, &ctx, &mut preroll).await?;
+                                start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback).await?;
                             }
                         }
                     }
@@ -136,12 +147,27 @@ pub async fn run_connection(
                 if mode == Mode::Idle {
                     info!("button pressed -> start turn");
                     if let Some(d) = detector.as_mut() { d.reset(); }
-                    start_turn(&mut wr, &mut mode, &ctx, &mut preroll).await?;
+                    start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback).await?;
                 }
             }
         }
     }
-    // _hub_pump/_mic_pump drop here (as on every early-return path) and abort their tasks.
+    // _hub_pump/_mic_pump/_playback_pump drop here (as on every early-return path) and abort
+    // their tasks.
+    Ok(())
+}
+
+/// A reply/announcement finished draining out of the player. The Idle/Listening transition is
+/// generation-gated: a stale completion arriving after a newer audio-start must not blank the
+/// LED mid-Speaking. Playback failures stay connection-fatal (the hub redials and a fresh
+/// connection re-arms everything; best-effort-continue would hide a dead audio device).
+fn apply_drain_done(
+    d: DrainDone, latest_generation: u64, mode: Mode, led: &watch::Sender<LedState>,
+) -> anyhow::Result<()> {
+    d.result?;
+    if d.generation == latest_generation {
+        let _ = led.send(if mode == Mode::Streaming { LedState::Listening } else { LedState::Idle });
+    }
     Ok(())
 }
 
@@ -166,9 +192,10 @@ fn to_pcm(samples: &[i16]) -> Vec<u8> {
 /// of how fast the user starts speaking or how long the hub takes to open its capture.
 async fn start_turn<W: AsyncWrite + Unpin>(
     wr: &mut W, mode: &mut Mode, ctx: &Ctx<'_>, preroll: &mut VecDeque<Vec<i16>>,
+    playback: &PlaybackHandle,
 ) -> anyhow::Result<()> {
     write_event(wr, &WyomingEvent::new("run-pipeline")).await?;
-    ctx.cues.play_awake();
+    if let Some(pcm) = ctx.cues.awake() { playback.cue(pcm); }
     let _ = ctx.led.send(LedState::Listening);
     for chunk in preroll.drain(..) {
         write_event(wr, &WyomingEvent::audio_chunk(16000, 2, 1, to_pcm(&chunk))).await?;
@@ -182,7 +209,7 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
     mode: &mut Mode,
     detector: Option<&mut WakeDetector>,
     wr: &mut W,
-    playback: &mut Option<PlaybackSink>,
+    playback: &mut PlaybackHandle,
     ctx: &Ctx<'_>,
 ) -> anyhow::Result<()> {
     match e.event_type.as_str() {
@@ -192,23 +219,22 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
                 write_event(wr, &WyomingEvent::with_data("audio-stop", json!({"timestamp":0}))).await?;
                 *mode = Mode::Idle;
                 if let Some(d) = detector { d.reset(); }
-                ctx.cues.play_done();
+                if let Some(pcm) = ctx.cues.done() { playback.cue(pcm); }
                 let _ = ctx.led.send(LedState::Thinking);
             }
         }
-        // Playback failures below are connection-fatal BY CHOICE: the hub redials and a fresh
-        // connection re-arms everything; best-effort-continue would hide a dead audio device.
+        // Playback errors surface as fatal through the pump's DrainDone/closed-channel paths
+        // (see apply_drain_done). The pump owns the player; commands here never block on the
+        // device, only on the bounded command channel (flow control).
         "audio-start" => {
-            if let Some(p) = playback.take() { p.kill().await; }
-            *playback = Some(PlaybackSink::start(&ctx.cfg.snd_command)?);
+            playback.start().await?;
             let _ = ctx.led.send(LedState::Speaking); // replies AND standalone announcements
         }
-        "audio-chunk" => { if let Some(p) = playback.as_mut() { p.write_pcm(&e.payload).await?; } }
+        "audio-chunk" => playback.pcm(e.payload).await?,
         "audio-stop" => {
-            if let Some(p) = playback.take() { p.finish().await?; }
-            // A turn may have started while this playback was draining (button/wake during an
-            // announcement): stay lit as Listening instead of going dark mid-turn.
-            let _ = ctx.led.send(if *mode == Mode::Streaming { LedState::Listening } else { LedState::Idle });
+            // The drain happens in the pump; the Idle/Listening LED transition fires when the
+            // pump reports DrainDone (apply_drain_done), i.e. at actual playback end.
+            playback.stop().await?;
         }
         other => warn!("ignoring event {other}"),
     }
@@ -224,11 +250,12 @@ mod tests {
     use tokio::sync::watch;
 
     fn cues() -> Cues {
-        Cues::new(&Config { snd_command: "cat >/dev/null".into(), ..Config::default() }).unwrap()
+        Cues::new(&Config::default()).unwrap()
     }
 
-    fn test_cfg() -> Config {
-        Config { snd_command: "cat >/dev/null".into(), ..Config::default() }
+    fn pump() -> (PlaybackHandle, tokio::sync::mpsc::UnboundedReceiver<DrainDone>, AbortOnDrop) {
+        let (handle, done_rx, task) = spawn_pump("cat >/dev/null");
+        (handle, done_rx, AbortOnDrop(task))
     }
 
     // THE zero-lag guarantee: a turn flushes the entire pre-roll buffer to the hub (after
@@ -237,14 +264,15 @@ mod tests {
     async fn start_turn_flushes_preroll_before_streaming() {
         let (mut a, b) = tokio::io::duplex(1 << 16);
         let c = cues();
-        let cfg = Config::default();
+
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle;
         let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
         for _ in 0..5 { preroll.push_back(vec![0i16; 1280]); }
+        let (playback, _done_rx, _pump) = pump();
 
-        start_turn(&mut a, &mut mode, &ctx, &mut preroll).await.unwrap();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
 
         assert_eq!(mode, Mode::Streaming);
         assert!(preroll.is_empty(), "pre-roll must be drained on trigger");
@@ -277,11 +305,11 @@ mod tests {
     async fn transcript_ends_turn_with_audio_stop_and_rearms() {
         let (mut a, mut b) = tokio::io::duplex(4096);
         let c = cues();
-        let cfg = Config::default();
+
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Streaming;
-        let mut playback: Option<PlaybackSink> = None;
+        let (mut playback, _done_rx, _pump) = pump();
         let e = WyomingEvent::with_data("transcript", json!({"text":"hi"}));
         handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         assert_eq!(mode, Mode::Idle);
@@ -357,15 +385,50 @@ mod tests {
         result.expect("connection must survive fragmented frames (no desync error)");
     }
 
+    // THE post-reply re-arm guarantee: audio-stop hands the drain to the playback pump and
+    // returns immediately. Blocking here parks the whole select! loop (wake detection, button,
+    // mic forwarding) for however long the player takes to drain — ~0.5-2 s after every reply.
+    #[tokio::test]
+    async fn audio_stop_returns_before_player_drain_completes() {
+        let (mut a, _b) = tokio::io::duplex(1 << 16);
+        let c = cues();
+
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let (handle, mut done_rx, task) = spawn_pump("cat >/dev/null; sleep 1");
+        let mut playback = handle;
+        let _pump = AbortOnDrop(task);
+
+        let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
+        handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let chunk = WyomingEvent::audio_chunk(22050, 2, 1, vec![0u8; 4410]);
+        handle_hub_event(chunk, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+
+        let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
+        let t0 = std::time::Instant::now();
+        handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert!(
+            t0.elapsed() < std::time::Duration::from_millis(500),
+            "audio-stop must not block on the player drain (took {:?})",
+            t0.elapsed()
+        );
+        // ...but the drain still completes and is reported, carrying the stream's generation.
+        let d = done_rx.recv().await.unwrap();
+        assert_eq!(d.generation, playback.latest_generation());
+        assert!(d.result.is_ok());
+        assert!(t0.elapsed() >= std::time::Duration::from_millis(900), "drain really took the player's time");
+    }
+
     #[tokio::test]
     async fn transcript_while_idle_is_a_noop() {
         let (mut a, b) = tokio::io::duplex(4096);
         let c = cues();
-        let cfg = Config::default();
+
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle;
-        let mut playback: Option<PlaybackSink> = None;
+        let (mut playback, _done_rx, _pump) = pump();
         let e = WyomingEvent::with_data("transcript", json!({"text":"stale"}));
         handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         assert_eq!(mode, Mode::Idle);
@@ -379,14 +442,14 @@ mod tests {
     async fn turn_lifecycle_publishes_led_states() {
         let (mut a, _b) = tokio::io::duplex(1 << 16);
         let c = cues();
-        let cfg = test_cfg();
+
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle;
         let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
-        let mut playback: Option<PlaybackSink> = None;
+        let (mut playback, mut done_rx, _pump) = pump();
 
-        start_turn(&mut a, &mut mode, &ctx, &mut preroll).await.unwrap();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
 
         let transcript = WyomingEvent::with_data("transcript", json!({"text":"hi"}));
@@ -399,6 +462,9 @@ mod tests {
 
         let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
         handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        // the LED goes Idle when the pump reports the drain complete, not at audio-stop
+        let d = done_rx.recv().await.unwrap();
+        apply_drain_done(d, playback.latest_generation(), mode, &led_tx).unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Idle);
     }
 
@@ -407,11 +473,11 @@ mod tests {
     async fn announcement_playback_publishes_speaking_then_idle() {
         let (mut a, _b) = tokio::io::duplex(4096);
         let c = cues();
-        let cfg = test_cfg();
+
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle;
-        let mut playback: Option<PlaybackSink> = None;
+        let (mut playback, mut done_rx, _pump) = pump();
 
         let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
         handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
@@ -419,6 +485,8 @@ mod tests {
 
         let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
         handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let d = done_rx.recv().await.unwrap();
+        apply_drain_done(d, playback.latest_generation(), mode, &led_tx).unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Idle);
     }
 
@@ -428,34 +496,62 @@ mod tests {
     async fn audio_stop_during_streaming_turn_keeps_led_listening() {
         let (mut a, _b) = tokio::io::duplex(4096);
         let c = cues();
-        let cfg = test_cfg();
+
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle;
-        let mut playback: Option<PlaybackSink> = None;
+        let (mut playback, mut done_rx, _pump) = pump();
 
         // announcement starts, then a button turn begins while it plays
         let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
         handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
-        start_turn(&mut a, &mut mode, &ctx, &mut preroll).await.unwrap();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
 
         // the announcement's audio-stop drains while we are mid-turn
         let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
         handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let d = done_rx.recv().await.unwrap();
+        apply_drain_done(d, playback.latest_generation(), mode, &led_tx).unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening, "LED must stay lit mid-turn");
+    }
+
+    // A stale drain completion (an older stream finishing after a newer audio-start) must not
+    // blank the LED mid-Speaking — the generation gate in apply_drain_done.
+    #[tokio::test]
+    async fn stale_drain_completion_does_not_blank_led() {
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+
+        let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let (mut playback, mut done_rx, _pump) = pump();
+
+        let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
+        handle_hub_event(start.clone(), &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
+        handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        // a second stream starts before the first stream's completion is processed
+        handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Speaking);
+
+        let d = done_rx.recv().await.unwrap();
+        assert_eq!(d.generation, 1, "completion belongs to the superseded stream");
+        apply_drain_done(d, playback.latest_generation(), mode, &led_tx).unwrap();
+        assert!(!led_rx.has_changed().unwrap(), "stale drain must not blank the LED mid-Speaking");
     }
 
     #[tokio::test]
     async fn stale_transcript_publishes_no_led_state() {
         let (mut a, _b) = tokio::io::duplex(4096);
         let c = cues();
-        let cfg = test_cfg();
+
         let (led_tx, led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, cfg: &cfg, led: &led_tx };
+        let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle; // not Streaming -> transcript is stale
-        let mut playback: Option<PlaybackSink> = None;
+        let (mut playback, _done_rx, _pump) = pump();
 
         let stale = WyomingEvent::with_data("transcript", json!({"text":"stale"}));
         handle_hub_event(stale, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
