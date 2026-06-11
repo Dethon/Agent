@@ -35,14 +35,14 @@ public class McpPromptCacheTests
     {
         var cache = new McpPromptCache(new FakeTimeProvider(), _ttl);
         var fetches = 0;
-        Task<string[]> Fetch(CancellationToken ct)
+        Task<string[]> fetch(CancellationToken ct)
         {
             Interlocked.Increment(ref fetches);
             return Task.FromResult(new[] { "p1" });
         }
 
-        await cache.GetOrFetchAsync("server-a", Fetch, CancellationToken.None);
-        var second = await cache.GetOrFetchAsync("server-a", Fetch, CancellationToken.None);
+        await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None);
+        var second = await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None);
 
         second.ShouldBe(["p1"]);
         fetches.ShouldBe(1);
@@ -54,21 +54,21 @@ public class McpPromptCacheTests
         var time = new FakeTimeProvider();
         var cache = new McpPromptCache(time, _ttl);
         var fetches = 0;
-        Task<string[]> Fetch(CancellationToken ct)
+        Task<string[]> fetch(CancellationToken ct)
         {
             var n = Interlocked.Increment(ref fetches);
             return Task.FromResult(new[] { $"v{n}" });
         }
 
-        (await cache.GetOrFetchAsync("server-a", Fetch, CancellationToken.None)).ShouldBe(["v1"]);
+        (await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None)).ShouldBe(["v1"]);
         time.Advance(_ttl + TimeSpan.FromSeconds(1));
 
-        var staleServed = await cache.GetOrFetchAsync("server-a", Fetch, CancellationToken.None);
+        var staleServed = await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None);
 
         staleServed.ShouldBe(["v1"], "a stale hit must serve the cached value without blocking");
         await WaitUntilAsync(() => Volatile.Read(ref fetches) == 2);
         await WaitUntilAsync(() =>
-            cache.GetOrFetchAsync("server-a", Fetch, CancellationToken.None)
+            cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None)
                 .GetAwaiter().GetResult().SequenceEqual(["v2"]));
     }
 
@@ -78,7 +78,7 @@ public class McpPromptCacheTests
         var time = new FakeTimeProvider();
         var cache = new McpPromptCache(time, _ttl);
         var fetches = 0;
-        Task<string[]> Fetch(CancellationToken ct)
+        Task<string[]> fetch(CancellationToken ct)
         {
             var n = Interlocked.Increment(ref fetches);
             return n == 1
@@ -86,12 +86,12 @@ public class McpPromptCacheTests
                 : Task.FromException<string[]>(new HttpRequestException("server down"));
         }
 
-        await cache.GetOrFetchAsync("server-a", Fetch, CancellationToken.None);
+        await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None);
         time.Advance(_ttl + TimeSpan.FromSeconds(1));
 
-        (await cache.GetOrFetchAsync("server-a", Fetch, CancellationToken.None)).ShouldBe(["v1"]);
+        (await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None)).ShouldBe(["v1"]);
         await WaitUntilAsync(() => Volatile.Read(ref fetches) >= 2);
-        (await cache.GetOrFetchAsync("server-a", Fetch, CancellationToken.None)).ShouldBe(["v1"]);
+        (await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None)).ShouldBe(["v1"]);
     }
 
     [Fact]
@@ -100,22 +100,22 @@ public class McpPromptCacheTests
         var time = new FakeTimeProvider();
         var cache = new McpPromptCache(time, _ttl);
         var fetches = 0;
-        Task<string[]> Fetch(CancellationToken ct)
+        Task<string[]> fetch(CancellationToken ct)
         {
             var n = Interlocked.Increment(ref fetches);
             ct.ThrowIfCancellationRequested();
             return Task.FromResult(new[] { $"v{n}" });
         }
 
-        await cache.GetOrFetchAsync("server-a", Fetch, CancellationToken.None);
+        await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None);
         time.Advance(_ttl + TimeSpan.FromSeconds(1));
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
 
         // Stale hit with an already-cancelled caller: serve stale now, refresh must still run.
-        (await cache.GetOrFetchAsync("server-a", Fetch, cancelled.Token)).ShouldBe(["v1"]);
+        (await cache.GetOrFetchAsync("server-a", fetch, cancelled.Token)).ShouldBe(["v1"]);
 
         await WaitUntilAsync(() => Volatile.Read(ref fetches) == 2);
-        (await cache.GetOrFetchAsync("server-a", Fetch, CancellationToken.None)).ShouldBe(["v2"]);
+        (await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None)).ShouldBe(["v2"]);
     }
 }

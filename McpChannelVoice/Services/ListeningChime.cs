@@ -11,7 +11,7 @@ public static class ListeningChime
     // Satellites play hub audio through fixed 22050 Hz sinks (aplay/paplay -r 22050) and
     // ignore the announced rate, so the earcon must be generated at the sink rate or it
     // plays ~1.4x fast.
-    private static readonly AudioFormat PlaybackFormat = new()
+    private static readonly AudioFormat _playbackFormat = new()
     {
         SampleRateHz = 22_050,
         SampleWidthBytes = 2,
@@ -40,7 +40,7 @@ public static class ListeningChime
 
     public static async IAsyncEnumerable<AudioChunk> Stream()
     {
-        yield return new AudioChunk { Data = Pcm(), Format = PlaybackFormat };
+        yield return new AudioChunk { Data = Pcm(), Format = _playbackFormat };
         await Task.CompletedTask;
     }
 }
