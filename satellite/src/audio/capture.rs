@@ -3,11 +3,18 @@ use tokio::process::{Child, ChildStdout, Command};
 
 pub const CHUNK_SAMPLES: usize = 1280; // 80 ms @ 16 kHz
 
-/// Spawns a mic command (e.g. `arecord -D <dev> -r 16000 -c 1 -f S16_LE -t raw`)
-/// and yields fixed 1280-sample i16 chunks from its stdout.
+/// Spawns a mic command (e.g. `arecord -D <dev> -r 16000 -c 1 -f S16_LE -t raw`) and yields
+/// fixed 80 ms chunks of raw S16LE bytes from its stdout. Bytes stay bytes end-to-end: the
+/// streaming path forwards them to the hub verbatim, and only the wake detector decodes i16
+/// (bytes_to_samples) — the old bytes->i16->bytes round-trip per chunk is gone.
 pub struct MicCapture {
     _child: Child,
     out: BufReader<ChildStdout>,
+}
+
+/// Decode raw little-endian S16 PCM into samples (the wake detector's input format).
+pub fn bytes_to_samples(bytes: &[u8]) -> Vec<i16> {
+    bytes.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect()
 }
 
 impl MicCapture {
@@ -26,8 +33,8 @@ impl MicCapture {
     /// distinguish a finished stream from a silently failed/absent device —
     /// callers treat it as fatal for the connection (the state machine logs
     /// and tears down). No handshake/timeout logic by design (v1).
-    pub async fn next_chunk(&mut self) -> anyhow::Result<Option<Vec<i16>>> {
-        let mut bytes = [0u8; CHUNK_SAMPLES * 2];
+    pub async fn next_chunk(&mut self) -> anyhow::Result<Option<Vec<u8>>> {
+        let mut bytes = vec![0u8; CHUNK_SAMPLES * 2];
         let mut filled = 0;
         while filled < bytes.len() {
             let n = self.out.read(&mut bytes[filled..]).await?;
@@ -36,11 +43,7 @@ impl MicCapture {
             }
             filled += n;
         }
-        let samples = bytes
-            .chunks_exact(2)
-            .map(|b| i16::from_le_bytes([b[0], b[1]]))
-            .collect();
-        Ok(Some(samples))
+        Ok(Some(bytes))
     }
 }
 
@@ -48,14 +51,14 @@ impl MicCapture {
 mod tests {
     use super::*;
     #[tokio::test]
-    async fn yields_1280_sample_chunks_from_a_raw_stream() {
+    async fn yields_80ms_byte_chunks_from_a_raw_stream() {
         // 3 chunks worth of int16 LE = 3*1280*2 bytes of zeros via `head -c`.
         let bytes = 3 * 1280 * 2;
         let cmd = format!("head -c {bytes} /dev/zero");
         let mut cap = MicCapture::spawn(&cmd).unwrap();
         let mut chunks = 0;
         while let Some(chunk) = cap.next_chunk().await.unwrap() {
-            assert_eq!(chunk.len(), 1280);
+            assert_eq!(chunk.len(), CHUNK_SAMPLES * 2, "raw LE bytes, no i16 round-trip");
             chunks += 1;
         }
         assert_eq!(chunks, 3);
@@ -70,9 +73,14 @@ mod tests {
         let mut cap = MicCapture::spawn(&cmd).unwrap();
         let mut chunks = 0;
         while let Some(chunk) = cap.next_chunk().await.unwrap() {
-            assert_eq!(chunk.len(), 1280);
+            assert_eq!(chunk.len(), CHUNK_SAMPLES * 2);
             chunks += 1;
         }
         assert_eq!(chunks, 2);
+    }
+
+    #[test]
+    fn bytes_to_samples_decodes_le_i16() {
+        assert_eq!(bytes_to_samples(&[0x01, 0x00, 0xFF, 0xFF, 0x00, 0x80]), vec![1, -1, i16::MIN]);
     }
 }

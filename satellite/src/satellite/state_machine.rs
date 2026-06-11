@@ -1,4 +1,4 @@
-use crate::audio::capture::MicCapture;
+use crate::audio::capture::{bytes_to_samples, MicCapture};
 use crate::audio::cues::Cues;
 use crate::audio::playback::{spawn_pump, DrainDone, PlaybackHandle};
 use crate::config::Config;
@@ -67,7 +67,7 @@ pub async fn run_connection(
             }
         }
     }));
-    let (mic_tx, mut mic_rx) = mpsc::channel::<anyhow::Result<Vec<i16>>>(8);
+    let (mic_tx, mut mic_rx) = mpsc::channel::<anyhow::Result<Vec<u8>>>(8);
     let _mic_pump = AbortOnDrop(tokio::spawn(async move {
         let mut mic = mic;
         loop {
@@ -107,7 +107,7 @@ pub async fn run_connection(
     // Pre-roll ring: keep the last `preroll_chunks()` mic chunks while Idle, so a request spoken
     // immediately after the wake word/button is never clipped (the zero-lag requirement).
     let preroll_cap = cfg.preroll_chunks();
-    let mut preroll: VecDeque<Vec<i16>> = VecDeque::with_capacity(preroll_cap + 1);
+    let mut preroll: VecDeque<Vec<u8>> = VecDeque::with_capacity(preroll_cap + 1);
 
     let mut mode = Mode::Idle;
 
@@ -125,10 +125,12 @@ pub async fn run_connection(
             chunk = mic_rx.recv() => match chunk {
                 None => { warn!("mic stream ended"); break; }
                 Some(Err(e)) => return Err(e),
-                Some(Ok(samples)) => match mode {
+                Some(Ok(bytes)) => match mode {
                     Mode::Idle => {
-                        push_preroll(&mut preroll, samples.clone(), preroll_cap);
-                        if let Some(d) = detector.as_mut() {
+                        // decode for the detector BEFORE the ring takes ownership — no clone
+                        let samples = detector.is_some().then(|| bytes_to_samples(&bytes));
+                        push_preroll(&mut preroll, bytes, preroll_cap);
+                        if let (Some(d), Some(samples)) = (detector.as_mut(), samples) {
                             let t0 = std::time::Instant::now();
                             let fired = d.push_chunk(&samples);
                             // on-device budget check: must stay well under the 80 ms chunk cadence
@@ -141,7 +143,7 @@ pub async fn run_connection(
                         }
                     }
                     Mode::Streaming => {
-                        write_event(&mut wr, &WyomingEvent::audio_chunk(16000, 2, 1, to_pcm(&samples))).await?;
+                        write_event(&mut wr, &WyomingEvent::audio_chunk(16000, 2, 1, bytes)).await?;
                     }
                 },
             },
@@ -173,7 +175,7 @@ fn apply_drain_done(
     Ok(())
 }
 
-fn push_preroll(buf: &mut VecDeque<Vec<i16>>, chunk: Vec<i16>, cap: usize) {
+fn push_preroll(buf: &mut VecDeque<Vec<u8>>, chunk: Vec<u8>, cap: usize) {
     buf.push_back(chunk);
     while buf.len() > cap { buf.pop_front(); }
 }
@@ -181,26 +183,22 @@ fn push_preroll(buf: &mut VecDeque<Vec<i16>>, chunk: Vec<i16>, cap: usize) {
 /// Wake-path trim: keep only the newest `keep` chunks (the detection-latency gap),
 /// dropping the wake-word audio that precedes them. Button turns skip this — speech
 /// may legitimately precede a button press, so they flush the full ring.
-fn trim_preroll(buf: &mut VecDeque<Vec<i16>>, keep: usize) {
+fn trim_preroll(buf: &mut VecDeque<Vec<u8>>, keep: usize) {
     while buf.len() > keep { buf.pop_front(); }
-}
-
-fn to_pcm(samples: &[i16]) -> Vec<u8> {
-    samples.iter().flat_map(|s| s.to_le_bytes()).collect()
 }
 
 /// On trigger: announce the pipeline, play the awake cue, then FLUSH the pre-roll to the hub
 /// before going live. This is the zero-lag guarantee — buffered audio reaches the hub regardless
 /// of how fast the user starts speaking or how long the hub takes to open its capture.
 async fn start_turn<W: AsyncWrite + Unpin>(
-    wr: &mut W, mode: &mut Mode, ctx: &Ctx<'_>, preroll: &mut VecDeque<Vec<i16>>,
+    wr: &mut W, mode: &mut Mode, ctx: &Ctx<'_>, preroll: &mut VecDeque<Vec<u8>>,
     playback: &PlaybackHandle,
 ) -> anyhow::Result<()> {
     write_event(wr, &WyomingEvent::new("run-pipeline")).await?;
     if let Some(pcm) = ctx.cues.awake() { playback.cue(pcm); }
     let _ = ctx.led.send(LedState::Listening);
     for chunk in preroll.drain(..) {
-        write_event(wr, &WyomingEvent::audio_chunk(16000, 2, 1, to_pcm(&chunk))).await?;
+        write_event(wr, &WyomingEvent::audio_chunk(16000, 2, 1, chunk)).await?;
     }
     *mode = Mode::Streaming;
     Ok(())
@@ -270,8 +268,8 @@ mod tests {
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
         let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle;
-        let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
-        for _ in 0..5 { preroll.push_back(vec![0i16; 1280]); }
+        let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
+        for _ in 0..5 { preroll.push_back(vec![0u8; 2560]); }
         let (playback, _done_rx, _pump) = pump();
 
         start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
@@ -292,9 +290,9 @@ mod tests {
     // "ok nabu" then nothing must not transcribe-and-dispatch "ok nabu".
     #[tokio::test]
     async fn wake_trim_keeps_only_the_detection_gap() {
-        let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
+        let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
         for i in 0..13 {
-            preroll.push_back(vec![i as i16; 1280]); // 13 chunks ≈ the 1000 ms ring, oldest first
+            preroll.push_back(vec![i as u8; 2560]); // 13 chunks ≈ the 1000 ms ring, oldest first
         }
         trim_preroll(&mut preroll, 3);
         assert_eq!(preroll.len(), 3);
@@ -448,7 +446,7 @@ mod tests {
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
         let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle;
-        let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
+        let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
         let (mut playback, mut done_rx, _pump) = pump();
 
         start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
@@ -507,7 +505,7 @@ mod tests {
         // announcement starts, then a button turn begins while it plays
         let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
         handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
-        let mut preroll: VecDeque<Vec<i16>> = VecDeque::new();
+        let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
         start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
 
