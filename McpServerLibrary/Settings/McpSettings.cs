@@ -16,6 +16,7 @@ public record JackettConfiguration
 {
     public required string ApiKey { get; [UsedImplicitly] init; }
     public required string ApiUrl { get; [UsedImplicitly] init; }
+    public int SearchDeadlineSeconds { get; [UsedImplicitly] init; } = 10;
 }
 
 public record QBittorrentConfiguration
