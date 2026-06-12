@@ -1,5 +1,6 @@
 using System.Net;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
 using Infrastructure.StateManagers;
@@ -50,6 +51,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .AddSingleton<LibraryPathConfig>(_ => new LibraryPathConfig(LibraryPath))
             .AddSingleton(_cache)
             .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
+            .AddSingleton<IDownloadRoutingStore, InMemoryDownloadRoutingStore>()
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
             .AddSingleton<ISearchClient>(_ => Jackett.CreateClient())
             .AddSingleton<IDownloadClient>(_ => QBittorrent.CreateClient())

@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads;
@@ -15,9 +17,9 @@ namespace McpServerLibrary.McpTools;
 public class McpFileDownloadTool(
     IDownloadClient client,
     ISearchResultsManager searchResultsManager,
-    ITrackedDownloadsManager trackedDownloadsManager,
+    IDownloadRoutingStore routingStore,
     DownloadPathConfig pathConfig)
-    : FileDownloadTool(client, searchResultsManager, trackedDownloadsManager, pathConfig)
+    : FileDownloadTool(client, searchResultsManager, routingStore, pathConfig)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
@@ -39,14 +41,29 @@ public class McpFileDownloadTool(
             return ToolResponse.Create(validation);
         }
 
-        var result = searchResultId.HasValue
-            ? await Run(sessionId, searchResultId.Value, cancellationToken)
-            : await Run(sessionId, link!, title!, cancellationToken);
+        var conversationContext = ParseConversationContext(context.Params?.Meta);
 
-        await context.Server.SendNotificationAsync(
-            "notifications/resources/list_changed",
-            cancellationToken: cancellationToken);
+        var result = searchResultId.HasValue
+            ? await Run(sessionId, searchResultId.Value, conversationContext, cancellationToken)
+            : await Run(sessionId, link!, title!, conversationContext, cancellationToken);
+
         return ToolResponse.Create(result);
+    }
+
+    public static ConversationContext? ParseConversationContext(JsonObject? meta)
+    {
+        if (meta is null)
+        {
+            return null;
+        }
+
+        var node = meta["conversationContext"];
+        if (node is null)
+        {
+            return null;
+        }
+
+        return node.Deserialize<ConversationContext>(ChannelProtocol.SerializerOptions);
     }
 
     public static JsonNode? ValidateInputs(int? searchResultId, string? link, string? title)
