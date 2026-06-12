@@ -197,7 +197,9 @@ public class QBittorrentDownloadClient(
             "error" => DownloadState.Failed,
             "missingFiles" => DownloadState.Failed,
             "uploading" => DownloadState.Completed,
+            // qBittorrent 5.x renamed paused* to stopped*; keep both for older servers
             "pausedUP" => DownloadState.Completed,
+            "stoppedUP" => DownloadState.Completed,
             "queuedUP" => DownloadState.Completed,
             "stalledUP" => DownloadState.Completed,
             "checkingUP" => DownloadState.InProgress,
@@ -206,6 +208,7 @@ public class QBittorrentDownloadClient(
             "downloading" => DownloadState.InProgress,
             "metaDL" => DownloadState.InProgress,
             "pausedDL" => DownloadState.Paused,
+            "stoppedDL" => DownloadState.Paused,
             "queuedDL" => DownloadState.Paused,
             "stalledDL" => DownloadState.Paused,
             "checkingDL" => DownloadState.InProgress,
