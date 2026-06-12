@@ -12,7 +12,6 @@ namespace Infrastructure.Agents;
 
 internal sealed record ThreadSessionData(
     McpClientManager ClientManager,
-    McpResourceManager? ResourceManager,
     IReadOnlyList<AITool> Tools,
     IVirtualFileSystemRegistry? FileSystemRegistry,
     IReadOnlyList<string> FileSystemPrompts);
@@ -24,7 +23,6 @@ internal sealed class ThreadSession : IAsyncDisposable
 
     public IReadOnlyList<AITool> Tools => _data.Tools;
     public McpClientManager ClientManager => _data.ClientManager;
-    public McpResourceManager? ResourceManager => _data.ResourceManager;
     public IReadOnlyList<string> FileSystemPrompts => _data.FileSystemPrompts;
 
     private ThreadSession(ThreadSessionData data)
@@ -43,12 +41,11 @@ internal sealed class ThreadSession : IAsyncDisposable
         IReadOnlySet<string> filesystemEnabledTools,
         ILoggerFactory? loggerFactory,
         CancellationToken ct,
-        bool enableResourceSubscriptions = true,
         McpPromptCache? promptCache = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
-            agent, thread, userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache);
-        var data = await builder.BuildAsync(ct, enableResourceSubscriptions);
+            agent, userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache);
+        var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
 
@@ -57,11 +54,6 @@ internal sealed class ThreadSession : IAsyncDisposable
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
         {
             return;
-        }
-
-        if (_data.ResourceManager is not null)
-        {
-            await _data.ResourceManager.DisposeAsync();
         }
 
         await _data.ClientManager.DisposeAsync();
@@ -73,7 +65,6 @@ internal sealed class ThreadSessionBuilder(
     string name,
     string description,
     ChatClientAgent agent,
-    AgentSession thread,
     string userId,
     IReadOnlyList<AIFunction> domainTools,
     IReadOnlySet<string> filesystemEnabledTools,
@@ -99,7 +90,7 @@ internal sealed class ThreadSessionBuilder(
 
     private IReadOnlyList<AITool> _tools = [];
 
-    public async Task<ThreadSessionData> BuildAsync(CancellationToken ct, bool enableResourceSubscriptions = true)
+    public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
     {
         // Step 1: Create sampling handler with deferred tool access
         var samplingHandler = new McpSamplingHandler(agent, () => _tools);
@@ -143,12 +134,7 @@ internal sealed class ThreadSessionBuilder(
         var mcpTools = FilterMcpTools(clientManager.Tools, fileSystemTools.Count > 0);
         _tools = mcpTools.Concat(domainTools).Concat(fileSystemTools).ToList();
 
-        // Step 5: Setup resource management with user context prepended (skipped for subagents)
-        McpResourceManager? resourceManager = enableResourceSubscriptions
-            ? await CreateResourceManagerAsync(clientManager, ct)
-            : null;
-
-        return new ThreadSessionData(clientManager, resourceManager, _tools, registry, fileSystemPrompts);
+        return new ThreadSessionData(clientManager, _tools, registry, fileSystemPrompts);
     }
 
     internal static IReadOnlyList<AITool> FilterMcpTools(IReadOnlyList<AITool> mcpTools, bool filesystemToolsActive)
@@ -162,18 +148,5 @@ internal sealed class ThreadSessionBuilder(
     private static bool HasReservedSuffix(string toolName, HashSet<string> reserved)
     {
         return reserved.Any(n => toolName.EndsWith($"__{n}", StringComparison.Ordinal));
-    }
-
-    private async Task<McpResourceManager> CreateResourceManagerAsync(
-        McpClientManager clientManager,
-        CancellationToken ct)
-    {
-        var instructions = string.Join("\n\n", clientManager.Prompts);
-        var resourceManager = new McpResourceManager(agent, thread, instructions, _tools);
-
-        await resourceManager.SyncResourcesAsync(clientManager.Clients, ct);
-        resourceManager.SubscribeToNotifications(clientManager.Clients);
-
-        return resourceManager;
     }
 }

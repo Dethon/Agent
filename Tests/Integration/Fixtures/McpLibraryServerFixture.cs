@@ -51,7 +51,6 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .AddSingleton<DownloadPathConfig>(_ => new DownloadPathConfig(DownloadPath))
             .AddSingleton<LibraryPathConfig>(_ => new LibraryPathConfig(LibraryPath))
             .AddSingleton(_cache)
-            .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
             .AddSingleton<IDownloadRoutingStore, InMemoryDownloadRoutingStore>()
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
             .AddSingleton<ISearchClient>(_ => Jackett.CreateClient())
@@ -73,8 +72,6 @@ public class McpLibraryServerFixture : IAsyncLifetime
             }))
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
-            .WithTools<McpGetDownloadStatusTool>()
-            .WithTools<McpCleanupDownloadTool>()
             .WithTools<FsGlobTool>()
             .WithTools<FsMoveTool>();
 

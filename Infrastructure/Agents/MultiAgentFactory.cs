@@ -83,7 +83,6 @@ public sealed class MultiAgentFactory(
             definition.CustomInstructions,
             domainTools,
             domainPrompts,
-            enableResourceSubscriptions: false,
             filesystemEnabledTools: filesystemEnabledTools,
             loggerFactory: loggerFactory,
             reasoningEffort: definition.ReasoningEffort,

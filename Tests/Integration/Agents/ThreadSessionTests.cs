@@ -1,4 +1,3 @@
-using Domain.DTOs;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Agents.AI;
@@ -51,7 +50,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         session.ShouldNotBeNull();
         session.ClientManager.ShouldNotBeNull();
         session.ClientManager.Clients.ShouldNotBeEmpty();
-        session.ResourceManager.ShouldNotBeNull();
 
         // Assert - tools loaded from server
         session.ClientManager.Tools.ShouldNotBeEmpty();
@@ -62,79 +60,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         session.ClientManager.Prompts.ShouldNotBeEmpty();
         session.ClientManager.Prompts.Any(p => p.Contains("test assistant", StringComparison.OrdinalIgnoreCase))
             .ShouldBeTrue("Should contain the test system prompt");
-
-        await session.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task SubscriptionManager_SubscribesToResources()
-    {
-        // Arrange - Add a tracked download so resources exist
-        const string sessionKey = "SubscriptionTestClient";
-        fixture.TrackedDownloadsManager.Add(sessionKey, 101);
-        fixture.DownloadClient.SetDownload(101, DownloadState.InProgress, 0.5);
-
-        using var chatClient = CreateChatClient();
-        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.CreateSessionAsync();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        // Act
-        var session = await ThreadSession.CreateAsync(
-            [fixture.McpEndpoint],
-            sessionKey,
-            "test-user",
-            "Subscription Test",
-            agent,
-            thread,
-            [],
-            new HashSet<string>(),
-            null,
-            cts.Token);
-
-        // Assert - The session should have synced resources
-        session.ResourceManager.ShouldNotBeNull();
-
-        await session.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task ResourceManager_ChannelReceivesUpdatesWhenResourceChanges()
-    {
-        // Arrange
-        var sessionKey = $"NotificationTestClient_{Guid.NewGuid()}";
-        fixture.TrackedDownloadsManager.Add(sessionKey, 201);
-        fixture.DownloadClient.SetDownload(201, DownloadState.InProgress, 0.1);
-
-        using var chatClient = CreateChatClient();
-        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.CreateSessionAsync();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-
-        var session = await ThreadSession.CreateAsync(
-            [fixture.McpEndpoint],
-            sessionKey,
-            "test-user",
-            "Notification Test",
-            agent,
-            thread,
-            [],
-            new HashSet<string>(),
-            null,
-            cts.Token);
-
-        // Subscribe to resources
-        await session.ResourceManager!.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
-
-        // Act - Complete the download (triggers notification via SubscriptionMonitor)
-        fixture.DownloadClient.SetDownload(201, DownloadState.Completed, 1.0);
-
-        // Wait for the subscription monitor to detect the change
-        await Task.Delay(7000, cts.Token);
-
-        // The channel should have been signaled but may or may not have updates
-        // depending on timing - verify the channel is operational
-        session.ResourceManager.SubscriptionChannel.ShouldNotBeNull();
 
         await session.DisposeAsync();
     }
