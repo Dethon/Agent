@@ -63,8 +63,9 @@ Decisions made during brainstorming:
 - The current turn's context flows from `ChatMonitor` into the agent run; the agent-side MCP
   tool wrapper attaches it as `RequestParams.Meta` on **every** `tools/call`. Uniform
   injection means future dual-role servers get routing context for free; servers that don't
-  read Meta ignore it. The LLM never sees it; it does not appear in tool schemas or persisted
-  chat history.
+  read Meta ignore it. It does not appear in tool schemas and is invisible to the LLM; it does
+  ride the user message's `AdditionalProperties` into persisted chat history (same precedent as
+  `SenderId` — harmless, both history readers ignore unknown keys).
 - Exact plumbing (run-options `AdditionalProperties` read via
   `FunctionInvokingChatClient.CurrentContext`, vs. a per-turn slot on `ThreadSession`) gets a
   verification spike at the start of the implementation plan — it depends on the pinned MCP

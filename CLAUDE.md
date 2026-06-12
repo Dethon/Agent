@@ -193,7 +193,7 @@ Transports (WebChat, Telegram, ServiceBus, Voice, Scheduling) run as independent
 
 On connect and after every reconnect, the agent registers its agent catalog (an `AgentCatalogEntry` list) with each channel via `register_agents` (`ChannelConnectionHost`). Channels consume this single-source catalog instead of duplicated `Agents` config — SignalR broadcasts `OnAgentsUpdated`, so WebChat refreshes its agent list live.
 
-A server can be **dual-role** — both a channel (in `ChannelEndpoints`) and a tool/filesystem server (in an agent's `mcpServerEndpoints`); `mcp-scheduling` is both. For dual-role servers the channel-protocol tools (`send_reply`, `request_approval`, `register_agents`) are hidden from the LLM.
+A server can be **dual-role** — both a channel (in `ChannelEndpoints`) and a tool/filesystem server (in an agent's `mcpServerEndpoints`); `mcp-scheduling` and `mcp-library` (download-completion alerts) are both. For dual-role servers the channel-protocol tools (`send_reply`, `request_approval`, `register_agents`) are hidden from the LLM.
 
 New transports can be added by deploying a new channel MCP server — zero agent changes needed.
 

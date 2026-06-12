@@ -57,7 +57,7 @@ public class McpFileDownloadTool(
             return null;
         }
 
-        var node = meta["conversationContext"];
+        var node = meta[ChannelProtocol.ConversationContextMetaKey];
         if (node is null)
         {
             return null;

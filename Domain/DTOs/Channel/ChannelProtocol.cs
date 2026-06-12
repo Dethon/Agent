@@ -15,6 +15,10 @@ public static class ChannelProtocol
     public const string CreateConversationTool = "create_conversation";
     public const string RegisterAgentsTool = "register_agents";
 
+    // _meta key under which the agent's MCP tool wrapper attaches the current turn's
+    // ConversationContext to every tools/call; dual-role servers read it for routing.
+    public const string ConversationContextMetaKey = "conversationContext";
+
     // The agent's channel connections identify themselves as "channel-<channelId>"; tool sessions
     // use the agent name. Dual-role servers must only count channel clients as delivery targets —
     // tool sessions silently drop channel/message notifications.

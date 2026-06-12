@@ -8,7 +8,7 @@ namespace Infrastructure.Agents.Mcp;
 internal static class ConversationContextMeta
 {
     public const string OptionsKey = "ConversationContext";
-    public const string MetaKey = "conversationContext";
+    public const string MetaKey = ChannelProtocol.ConversationContextMetaKey;
 
     public static JsonObject? TryBuild(ChatOptions? options)
     {

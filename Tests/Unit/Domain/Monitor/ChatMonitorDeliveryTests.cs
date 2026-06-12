@@ -4,7 +4,6 @@ using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Moq;
 using Shouldly;
-using Xunit;
 
 namespace Tests.Unit.Domain.Monitor;
 

@@ -1,6 +1,5 @@
 using System.Net;
 using Domain.Contracts;
-using Domain.DTOs;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Infrastructure.Clients;
