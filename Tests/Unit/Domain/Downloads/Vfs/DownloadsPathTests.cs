@@ -6,15 +6,17 @@ namespace Tests.Unit.Domain.Downloads.Vfs;
 public class DownloadsPathTests
 {
     [Theory]
-    [InlineData("", DownloadNodeKind.Root, null)]
-    [InlineData("/", DownloadNodeKind.Root, null)]
-    [InlineData("42", DownloadNodeKind.DownloadDir, 42)]
-    [InlineData("/42", DownloadNodeKind.DownloadDir, 42)]
-    [InlineData("42/status.json", DownloadNodeKind.StatusFile, 42)]
-    [InlineData("/42/status.json", DownloadNodeKind.StatusFile, 42)]
-    [InlineData("foo", DownloadNodeKind.Unknown, null)]
-    [InlineData("../42", DownloadNodeKind.Unknown, null)]
-    [InlineData("42/other.txt", DownloadNodeKind.Unknown, null)]
+    [InlineData("downloads/42", DownloadNodeKind.DownloadDir, 42)]
+    [InlineData("/downloads/42", DownloadNodeKind.DownloadDir, 42)]
+    [InlineData("downloads/42/status.json", DownloadNodeKind.StatusFile, 42)]
+    [InlineData("/downloads/42/status.json", DownloadNodeKind.StatusFile, 42)]
+    [InlineData("", DownloadNodeKind.Other, null)]
+    [InlineData("/", DownloadNodeKind.Other, null)]
+    [InlineData("downloads", DownloadNodeKind.Other, null)]
+    [InlineData("downloads/foo", DownloadNodeKind.Other, null)]
+    [InlineData("downloads/42/payload.mkv", DownloadNodeKind.Other, null)]
+    [InlineData("Movies/42", DownloadNodeKind.Other, null)]
+    [InlineData("../downloads/42", DownloadNodeKind.Other, null)]
     public void Parse_ClassifiesPath_ReturnsKindAndId(string path, DownloadNodeKind kind, int? id)
     {
         var node = DownloadsPath.Parse(path);

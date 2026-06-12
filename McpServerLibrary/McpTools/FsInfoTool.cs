@@ -9,7 +9,7 @@ using ModelContextProtocol.Server;
 namespace McpServerLibrary.McpTools;
 
 [McpServerToolType]
-public class FsInfoTool(LibraryPathConfig libraryPath, DownloadsFileSystem downloads)
+public class FsInfoTool(LibraryPathConfig libraryPath, DownloadsOverlay downloads)
     : FileInfoTool(libraryPath.BaseLibraryPath)
 {
     [McpServerTool(Name = "fs_info")]
@@ -18,7 +18,15 @@ public class FsInfoTool(LibraryPathConfig libraryPath, DownloadsFileSystem downl
         string path,
         string? filesystem = null,
         CancellationToken ct = default)
-        => filesystem == downloads.FilesystemName
-            ? ToolResponse.Create(await downloads.InfoAsync(path, ct))
+    {
+        if (LibraryFilesystem.Reject(filesystem) is { } error)
+        {
+            return ToolResponse.Create(error);
+        }
+
+        var overlay = await downloads.TryInfoAsync(path, ct);
+        return overlay is not null
+            ? ToolResponse.Create(overlay)
             : ToolResponse.Create(Run(path));
+    }
 }

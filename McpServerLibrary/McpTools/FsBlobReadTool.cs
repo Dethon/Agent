@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Domain.Tools.Files;
@@ -10,7 +9,7 @@ using ModelContextProtocol.Server;
 namespace McpServerLibrary.McpTools;
 
 [McpServerToolType]
-public class FsBlobReadTool(LibraryPathConfig libraryPath, DownloadsFileSystem downloads)
+public class FsBlobReadTool(LibraryPathConfig libraryPath, DownloadsOverlay downloads)
     : BlobReadTool(libraryPath.BaseLibraryPath)
 {
     [McpServerTool(Name = "fs_blob_read")]
@@ -21,12 +20,14 @@ public class FsBlobReadTool(LibraryPathConfig libraryPath, DownloadsFileSystem d
         int length = MaxChunkSizeBytes,
         string? filesystem = null)
     {
-        if (filesystem == downloads.FilesystemName)
+        if (LibraryFilesystem.Reject(filesystem) is { } error)
         {
-            return ToolResponse.Create(ToolError.Create(
-                ToolError.Codes.UnsupportedOperation,
-                "The downloads filesystem does not support this operation.",
-                retryable: false));
+            return ToolResponse.Create(error);
+        }
+
+        if (downloads.IsVirtualPath(path))
+        {
+            return ToolResponse.Create(LibraryFilesystem.VirtualPathError());
         }
 
         return ToolResponse.Create(Run(path, offset, length));

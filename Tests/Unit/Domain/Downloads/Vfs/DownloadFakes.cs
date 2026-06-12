@@ -5,9 +5,10 @@ using Domain.Tools.Downloads.Vfs;
 
 namespace Tests.Unit.Domain.Downloads.Vfs;
 
-// Shared test doubles for the downloads VFS, its routing tools, and Task 10's watcher tests.
-// Keep the public surface stable: FakeDownloadClient.Items/CleanedUp, FakeRoutingStore.Entries,
-// and RecordingFileSystemClient.RemovedDirectories are read by all three test areas.
+// Shared test doubles for the downloads overlay, the library fs-tool routing, and the
+// completion watcher tests. Keep the public surface stable: FakeDownloadClient.Items/CleanedUp,
+// FakeRoutingStore.Entries, and RecordingFileSystemClient.RemovedDirectories/GlobResults
+// are read by all three test areas.
 public static class DownloadFakes
 {
     public static DownloadItem Item(int id, DownloadState state = DownloadState.InProgress) => new()
@@ -24,7 +25,8 @@ public static class DownloadFakes
         Size = 1024
     };
 
-    public static DownloadsFileSystem BuildFileSystem(
+    public static DownloadsOverlay BuildOverlay(
+        string libraryRoot,
         out FakeDownloadClient client,
         out FakeRoutingStore routing,
         out RecordingFileSystemClient disk)
@@ -32,7 +34,7 @@ public static class DownloadFakes
         client = new FakeDownloadClient();
         routing = new FakeRoutingStore();
         disk = new RecordingFileSystemClient();
-        return new DownloadsFileSystem(client, routing, disk, new DownloadPathConfig("/downloads"));
+        return new DownloadsOverlay(client, routing, disk, new LibraryPathConfig(libraryRoot));
     }
 
     public sealed class FakeDownloadClient : IDownloadClient
@@ -87,6 +89,7 @@ public static class DownloadFakes
     public sealed class RecordingFileSystemClient : IFileSystemClient
     {
         public List<string> RemovedDirectories { get; } = new();
+        public List<string> GlobResults { get; } = new();
 
         public Task RemoveDirectory(string path, CancellationToken cancellationToken = default)
         {
@@ -98,7 +101,7 @@ public static class DownloadFakes
             Task.FromResult(new Dictionary<string, string[]>());
 
         public Task<string[]> Glob(string basePath, string pattern, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Array.Empty<string>());
+            Task.FromResult(GlobResults.ToArray());
 
         public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;

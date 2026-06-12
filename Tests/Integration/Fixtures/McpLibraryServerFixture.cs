@@ -36,7 +36,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
         await Task.WhenAll(Jackett.InitializeAsync(), QBittorrent.InitializeAsync());
 
         LibraryPath = Path.Combine(Path.GetTempPath(), $"mcp-library-{Guid.NewGuid()}");
-        DownloadPath = Path.Combine(Path.GetTempPath(), $"mcp-downloads-{Guid.NewGuid()}");
+        DownloadPath = Path.Combine(LibraryPath, "downloads");
         Directory.CreateDirectory(LibraryPath);
         Directory.CreateDirectory(DownloadPath);
 
@@ -71,7 +71,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .AddSingleton<ISearchClient>(_ => Jackett.CreateClient())
             .AddSingleton<IDownloadClient>(_ => QBittorrent.CreateClient())
             .AddSingleton<IFileSystemClient, LocalFileSystemClient>()
-            .AddSingleton<DownloadsFileSystem>()
+            .AddSingleton<DownloadsOverlay>()
             .AddMcpServer()
             .WithHttpTransport()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>

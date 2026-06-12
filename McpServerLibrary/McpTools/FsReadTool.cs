@@ -8,18 +8,26 @@ using ModelContextProtocol.Server;
 namespace McpServerLibrary.McpTools;
 
 [McpServerToolType]
-public class FsReadTool(DownloadsFileSystem downloads)
+public class FsReadTool(DownloadsOverlay downloads)
 {
     [McpServerTool(Name = "fs_read")]
-    [Description("Read a downloads filesystem file (the read-only <id>/status.json for an active download). " +
-                "Requires filesystem=\"downloads\"; the media filesystem does not support fs_read.")]
+    [Description("Read a download's virtual status file (downloads/<id>/status.json — live state, progress, eta). " +
+                 "Other media files are not text-readable; use fs_blob_read for raw bytes.")]
     public async Task<CallToolResult> McpRun(
         string path, int? offset = null, int? limit = null, string? filesystem = null,
         CancellationToken ct = default)
-        => filesystem == downloads.FilesystemName
-            ? ToolResponse.Create(await downloads.ReadAsync(path, offset, limit, ct))
+    {
+        if (LibraryFilesystem.Reject(filesystem) is { } error)
+        {
+            return ToolResponse.Create(error);
+        }
+
+        var overlay = await downloads.TryReadAsync(path, ct);
+        return overlay is not null
+            ? ToolResponse.Create(overlay)
             : ToolResponse.Create(ToolError.Create(
                 ToolError.Codes.UnsupportedOperation,
-                "fs_read on the library server is only available for the downloads filesystem.",
+                "fs_read on the media filesystem only reads downloads/<id>/status.json.",
                 retryable: false));
+    }
 }

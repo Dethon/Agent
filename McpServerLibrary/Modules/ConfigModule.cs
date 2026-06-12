@@ -46,7 +46,7 @@ public static class ConfigModule
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
             .AddFileSystemClient()
-            .AddSingleton<DownloadsFileSystem>()
+            .AddSingleton<DownloadsOverlay>()
             .AddHostedService<DownloadCompletionWatcher>()
             .AddMcpServer()
             .WithHttpTransport(options =>

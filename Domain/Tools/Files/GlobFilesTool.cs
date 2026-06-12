@@ -17,9 +17,12 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
                                          An empty result means nothing matched—refine the pattern.
                                          """;
 
-    private const int FileResultCap = 200;
+    protected const int FileResultCap = 200;
 
-    protected async Task<JsonNode> Run(string pattern, CancellationToken cancellationToken, string? basePath = null)
+    protected async Task<JsonNode> Run(string pattern, CancellationToken cancellationToken, string? basePath = null) =>
+        FsResultContract.ToNode(await RunCore(pattern, cancellationToken, basePath));
+
+    protected async Task<FsGlobResult> RunCore(string pattern, CancellationToken cancellationToken, string? basePath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
 
@@ -52,12 +55,12 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
         var relative = result.Select(p => ToMountRelative(baseRoot, p)).ToArray();
         var capped = relative.Length > FileResultCap;
 
-        return FsResultContract.ToNode(new FsGlobResult
+        return new FsGlobResult
         {
             Entries = capped ? relative.Take(FileResultCap).ToArray() : relative,
             Truncated = capped,
             Total = relative.Length
-        });
+        };
     }
 
     private static string ToMountRelative(string baseRoot, string absolute)

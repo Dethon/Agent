@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Domain.Tools;
 using Domain.Tools.Downloads.Vfs;
 using Infrastructure.Utils;
 using ModelContextProtocol.Protocol;
@@ -8,16 +7,20 @@ using ModelContextProtocol.Server;
 namespace McpServerLibrary.McpTools;
 
 [McpServerToolType]
-public class FsDeleteTool(DownloadsFileSystem downloads)
+public class FsDeleteTool(DownloadsOverlay downloads)
 {
     [McpServerTool(Name = "fs_delete")]
-    [Description("Delete a download directory: cancels/removes the torrent task and cleans up its files")]
+    [Description("Delete a download directory (downloads/<id>): cancels the torrent task and cleans up its files. " +
+                 "Also removes leftover download directories whose torrent is already gone. " +
+                 "Other media paths cannot be deleted.")]
     public async Task<CallToolResult> McpRun(
         string path, string? filesystem = null, CancellationToken ct = default)
-        => filesystem == downloads.FilesystemName
-            ? ToolResponse.Create(await downloads.DeleteAsync(path, ct))
-            : ToolResponse.Create(ToolError.Create(
-                ToolError.Codes.UnsupportedOperation,
-                "fs_delete on the library server is only available for the downloads filesystem.",
-                retryable: false));
+    {
+        if (LibraryFilesystem.Reject(filesystem) is { } error)
+        {
+            return ToolResponse.Create(error);
+        }
+
+        return ToolResponse.Create(await downloads.DeleteAsync(path, ct));
+    }
 }

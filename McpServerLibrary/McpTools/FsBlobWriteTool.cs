@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Domain.Tools.Files;
@@ -10,7 +9,7 @@ using ModelContextProtocol.Server;
 namespace McpServerLibrary.McpTools;
 
 [McpServerToolType]
-public class FsBlobWriteTool(LibraryPathConfig libraryPath, DownloadsFileSystem downloads)
+public class FsBlobWriteTool(LibraryPathConfig libraryPath, DownloadsOverlay downloads)
     : BlobWriteTool(libraryPath.BaseLibraryPath)
 {
     [McpServerTool(Name = "fs_blob_write")]
@@ -23,12 +22,14 @@ public class FsBlobWriteTool(LibraryPathConfig libraryPath, DownloadsFileSystem 
         bool createDirectories = true,
         string? filesystem = null)
     {
-        if (filesystem == downloads.FilesystemName)
+        if (LibraryFilesystem.Reject(filesystem) is { } error)
         {
-            return ToolResponse.Create(ToolError.Create(
-                ToolError.Codes.UnsupportedOperation,
-                "The downloads filesystem does not support this operation.",
-                retryable: false));
+            return ToolResponse.Create(error);
+        }
+
+        if (downloads.IsVirtualPath(path))
+        {
+            return ToolResponse.Create(LibraryFilesystem.VirtualPathError());
         }
 
         return ToolResponse.Create(Run(path, contentBase64, offset, overwrite, createDirectories));
