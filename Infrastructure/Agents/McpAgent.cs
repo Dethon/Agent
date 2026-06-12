@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
@@ -249,23 +250,28 @@ public sealed class McpAgent : DisposableAgent
         thread ??= await CreateSessionAsync(cancellationToken);
         var session = await GetOrCreateSessionAsync(thread, cancellationToken);
 
+        var messageList = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
+        var conversationContext = messageList
+            .Select(m => m.GetConversationContext())
+            .FirstOrDefault(c => c is not null);
+
         if (session.ResourceManager is not null)
         {
             await session.ResourceManager.EnsureChannelActive(cancellationToken);
         }
 
-        options ??= CreateRunOptions(session);
+        options ??= CreateRunOptions(session, conversationContext);
 
         if (session.ResourceManager is null)
         {
-            await foreach (var update in _innerAgent.RunStreamingAsync(messages, thread, options, cancellationToken))
+            await foreach (var update in _innerAgent.RunStreamingAsync(messageList, thread, options, cancellationToken))
             {
                 yield return update;
             }
             yield break;
         }
 
-        var mainResponses = RunStreamingCoreAsync(messages, thread, session, options, cancellationToken);
+        var mainResponses = RunStreamingCoreAsync(messageList, thread, session, options, cancellationToken);
         var notificationResponses = session.ResourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken);
 
         await foreach (var update in mainResponses.Merge(notificationResponses, cancellationToken))
@@ -300,7 +306,7 @@ public sealed class McpAgent : DisposableAgent
         }
     }
 
-    private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
+    private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session, ConversationContext? conversationContext = null)
     {
         return new ChatClientAgentRunOptions(new ChatOptions
         {
@@ -315,7 +321,10 @@ public sealed class McpAgent : DisposableAgent
                 _timeProvider.GetLocalNow()),
             Reasoning = _reasoningEffort is null
                 ? null
-                : new ReasoningOptions { Effort = _reasoningEffort.Value }
+                : new ReasoningOptions { Effort = _reasoningEffort.Value },
+            AdditionalProperties = conversationContext is null
+                ? null
+                : new AdditionalPropertiesDictionary { [ConversationContextMeta.OptionsKey] = conversationContext }
         });
     }
 
