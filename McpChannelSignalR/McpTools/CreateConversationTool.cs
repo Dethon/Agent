@@ -19,8 +19,13 @@ public sealed class CreateConversationTool
         IServiceProvider services,
         [Description("Text of the originating prompt; rendered as the user-role bubble")] string? initialPrompt = null,
         [Description("Unused on this channel; voice uses it for satellite targeting")] string? address = null,
-        [Description("Unused on this channel: attach-only channels (voice) are ordered last in fan-out, so WebChat always owns/mints the shared conversation")] string? existingConversationId = null)
+        [Description("Existing conversation id: attaches this turn to it (turn-start announce) instead of creating a topic")] string? existingConversationId = null)
     {
+        if (existingConversationId is not null)
+        {
+            return await AttachTurnAsync(existingConversationId, sender, initialPrompt, services);
+        }
+
         var p = new CreateConversationParams
         {
             AgentId = agentId,
@@ -53,5 +58,48 @@ public sealed class CreateConversationTool
         streamService.GetOrCreateStream(creation.Identity.TopicId, initialPrompt ?? topicName, sender, CancellationToken.None);
 
         return creation.Identity.ConversationId;
+    }
+
+    private static async Task<string> AttachTurnAsync(
+        string conversationId,
+        string sender,
+        string? initialPrompt,
+        IServiceProvider services)
+    {
+        // Turn-start announce for an agent-initiated reply (download alert, schedule
+        // result) into an existing conversation. No session means nobody has the topic
+        // open on this server — degrade to persisted-only delivery (visible on refresh).
+        var sessionService = services.GetRequiredService<SessionService>();
+        var topicId = sessionService.GetTopicIdByConversationId(conversationId);
+        if (topicId is null || !sessionService.TryGetSession(topicId, out var session) || session is null)
+        {
+            return conversationId;
+        }
+
+        // Mirror the interactive SendMessage idiom: seed the stream with the originating
+        // prompt (rendered as the user bubble on resume), buffer the user-role message
+        // for already-open browsers, and count this turn toward stream teardown.
+        var streamService = services.GetRequiredService<StreamService>();
+        streamService.GetOrCreateStream(topicId, initialPrompt ?? string.Empty, sender, CancellationToken.None);
+        streamService.TryIncrementPending(topicId);
+        if (!string.IsNullOrWhiteSpace(initialPrompt))
+        {
+            await streamService.WriteMessageAsync(topicId, new ChatStreamMessage
+            {
+                Content = initialPrompt,
+                UserMessage = new UserMessageInfo(sender, DateTimeOffset.UtcNow)
+            });
+        }
+
+        // Wake viewing clients: their OnStreamChanged(Started) handler resumes the
+        // stream (buffered replay + live subscription) without any client changes.
+        var spaceSlug = session.SpaceSlug ?? "default";
+        var hubSender = services.GetRequiredService<IHubNotificationSender>();
+        await hubSender.SendToGroupAsync(
+            $"space:{spaceSlug}",
+            "OnStreamChanged",
+            new StreamChangedNotification(StreamChangeType.Started, topicId, spaceSlug));
+
+        return conversationId;
     }
 }
