@@ -194,9 +194,14 @@ services:
     networks:
       - jackbot
     depends_on:
-      - qbittorrent
-      - jackett
-      - base-sdk
+      qbittorrent:
+        condition: service_started
+      jackett:
+        condition: service_started
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   mcp-vault:
     image: mcp-vault:latest
