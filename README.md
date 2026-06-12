@@ -14,7 +14,7 @@ Azure Service Bus, using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **Conversation Persistence** - Redis-backed chat history survives application restarts
 - **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
 - **Download Completion Alerts** - The library server is dual-role (tool/filesystem server and channel): a background watcher polls qBittorrent and pushes a `channel/message` to the originating conversation when a download finishes — no client-side tracking or resubscription needed, and alerts survive restarts because routing snapshots live in Redis
-- **Downloads Virtual Filesystem** - In-flight downloads are exposed as `filesystem://downloads` (mounted at `/downloads`): `/downloads/<id>/status.json` reports live progress, and deleting a download's directory cancels it and cleans up its files
+- **Downloads Overlay** - In-flight downloads surface inside the media filesystem: a virtual `/media/downloads/<id>/status.json` reports live progress, and deleting `/media/downloads/<id>` cancels the download and cleans up its files
 - **Web Search & Browsing** - Search the web via Brave Search API; browse pages with persistent sessions using accessibility tree snapshots and element-ref interactions via Camoufox (anti-detect browser)
 - **Home Assistant Control** - Drive a Home Assistant instance as a virtual filesystem (`filesystem://ha`, mounted at `/ha`) — entities and areas are directories, `state.json` is the live state, and each available service is a `<service>.sh` action file invoked via `fs_exec`. A directory-listing setup index is injected into the system prompt so the LLM can pick devices without exploring
 - **Sandbox Execution** - Isolated Linux container with bash + Python execution via `fs_exec` (60s default / 30min max timeout, 64 KB output cap), persistent `/home/sandbox_user` for installed packages, ephemeral system dirs, outbound network only
@@ -184,7 +184,7 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 
 | Server            | Tools                                                                                                                   | Resources             | Purpose                                                                                 |
 |-------------------|-------------------------------------------------------------------------------------------------------------------------|-----------------------|-----------------------------------------------------------------------------------------|
-| **mcp-library**   | file_search, download_file, content_recommend, fs_glob, fs_read, fs_info, fs_move, fs_copy, fs_delete, fs_blob_read, fs_blob_write | `filesystem://media`, `filesystem://downloads` | Search and download content via Jackett/qBittorrent, organize media files; dual-role — also a channel that pushes download-completion alerts to the originating conversation |
+| **mcp-library**   | file_search, download_file, content_recommend, fs_glob, fs_read, fs_info, fs_move, fs_copy, fs_delete, fs_blob_read, fs_blob_write | `filesystem://media` | Search and download content via Jackett/qBittorrent, organize media files; dual-role — also a channel that pushes download-completion alerts to the originating conversation |
 | **mcp-vault**     | FsGlob, FsRead, FsSearch, FsCreate, FsEdit, FsMove, FsDelete                                                          | `filesystem://vault`  | Manage a knowledge vault of markdown notes and text files                                |
 | **mcp-sandbox**   | fs_glob, fs_read, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_copy, fs_info, fs_blob_read, fs_blob_write, fs_exec | `filesystem://sandbox` | Linux container for arbitrary bash/Python execution with a scratch + persistent home filesystem |
 | **mcp-websearch** | web_search, web_browse, web_snapshot, web_action                                                                        |                       | Search the web and browse pages via Camoufox with accessibility tree snapshots            |
@@ -502,7 +502,7 @@ The agent uses Redis to persist conversation history and memory across restarts:
 
 - **Chat History** - All messages are stored with a 30-day expiry
 - **Thread State** - Each chat thread is identified by `agent-key:{agentId}:{conversationId}`
-- **Download Tracking** - Completion alerts arrive automatically in the originating conversation (routing snapshots stored in Redis survive restarts); live status is readable anytime via `/downloads/<id>/status.json`
+- **Download Tracking** - Completion alerts arrive automatically in the originating conversation (routing snapshots stored in Redis survive restarts); live status is readable anytime via `/media/downloads/<id>/status.json`
 - **Memory Storage** - Proactively extracted memories from windowed conversation context, stored in Redis with vector search for semantic recall; periodic dreaming consolidates and prunes
 - **Schedules** - Cron and one-shot schedule definitions stored in Redis, polled by the scheduling server's dispatcher; one-shot schedules are auto-deleted after firing
 - **Push Subscriptions** - Browser push notification subscriptions stored in Redis per space

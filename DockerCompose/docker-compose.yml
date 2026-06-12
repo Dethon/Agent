@@ -186,7 +186,6 @@ services:
         - BUILDKIT_INLINE_CACHE=1
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
-      - ${DATA_PATH:-./volumes/data}/downloads:/downloads
       - ${DATA_PATH:-./volumes/data}:/media
     restart: unless-stopped
     env_file:
