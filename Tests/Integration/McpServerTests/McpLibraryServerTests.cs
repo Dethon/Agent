@@ -46,6 +46,24 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         await client.DisposeAsync();
     }
 
+    [Fact]
+    public async Task McpServer_ExposesSingleMediaFilesystemResource()
+    {
+        var client = await McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(fixture.McpEndpoint)
+            }),
+            cancellationToken: CancellationToken.None);
+
+        var resources = await client.ListResourcesAsync(cancellationToken: CancellationToken.None);
+        var fsResources = resources.Where(r => r.Uri.StartsWith("filesystem://")).ToList();
+
+        fsResources.ShouldHaveSingleItem().Uri.ShouldBe("filesystem://media");
+
+        await client.DisposeAsync();
+    }
+
     #region FileSearch Tests
 
     [Fact]
@@ -113,7 +131,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     }
 
     [Fact]
-    public async Task DownloadFile_WithConversationContextMeta_RecordsRoutingAndServesDownloadsVfs()
+    public async Task DownloadFile_WithConversationContextMeta_RecordsRoutingAndServesMediaOverlay()
     {
         // Arrange
         var client = await McpClient.CreateAsync(
@@ -150,35 +168,46 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         routing.Context.Origin.ChannelId.ShouldBe("signalr");
         var id = routing.DownloadId;
 
-        // Assert - the download is visible through the downloads VFS
+        // Assert - the download is visible through the media filesystem's downloads overlay
         var globResult = await client.CallToolAsync(
             "fs_glob",
             new Dictionary<string, object?>
             {
                 ["pattern"] = "**",
-                ["basePath"] = "/",
-                ["filesystem"] = "downloads"
+                ["basePath"] = "downloads",
+                ["filesystem"] = "media"
             },
             cancellationToken: CancellationToken.None);
-        GetTextContent(globResult).ShouldContain($"/{id}/status.json");
+        GetTextContent(globResult).ShouldContain($"downloads/{id}/status.json");
 
         var readResult = await client.CallToolAsync(
             "fs_read",
             new Dictionary<string, object?>
             {
-                ["path"] = $"{id}/status.json",
-                ["filesystem"] = "downloads"
+                ["path"] = $"downloads/{id}/status.json",
+                ["filesystem"] = "media"
             },
             cancellationToken: CancellationToken.None);
         GetTextContent(readResult).ShouldContain(id.ToString());
+
+        // Assert - the removed 'downloads' filesystem name is rejected
+        var staleResult = await client.CallToolAsync(
+            "fs_read",
+            new Dictionary<string, object?>
+            {
+                ["path"] = $"downloads/{id}/status.json",
+                ["filesystem"] = "downloads"
+            },
+            cancellationToken: CancellationToken.None);
+        GetTextContent(staleResult).ShouldContain("unsupported_operation");
 
         // Act - deleting the download dir cancels the torrent and drops the routing entry
         var deleteResult = await client.CallToolAsync(
             "fs_delete",
             new Dictionary<string, object?>
             {
-                ["path"] = $"/{id}",
-                ["filesystem"] = "downloads"
+                ["path"] = $"downloads/{id}",
+                ["filesystem"] = "media"
             },
             cancellationToken: CancellationToken.None);
 

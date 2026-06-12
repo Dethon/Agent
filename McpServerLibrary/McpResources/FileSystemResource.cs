@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using Domain.Tools.Downloads.Vfs;
 using McpServerLibrary.Settings;
 using ModelContextProtocol.Server;
 
@@ -17,27 +18,13 @@ public class FileSystemResource(McpSettings settings)
     {
         return JsonSerializer.Serialize(new
         {
-            name = "media",
-            mountPoint = "/media",
-            description = $"Media library ({settings.BaseLibraryPath}) — books, audiobooks, and other downloaded media. Read/list focused; treat writes as organisational only. Does NOT support fs_exec."
-        });
-    }
-
-    [McpServerResource(
-        UriTemplate = "filesystem://downloads",
-        Name = "Downloads Filesystem",
-        MimeType = "application/json")]
-    [Description("Active downloads exposed as a filesystem")]
-    public string GetDownloadsInfo()
-    {
-        return JsonSerializer.Serialize(new
-        {
-            name = "downloads",
-            mountPoint = "/downloads",
-            description = "Active torrent downloads. Each download is a directory /downloads/<id>/ with a " +
-                          "read-only status.json (state, progress, eta, savePath). Deleting /downloads/<id> " +
-                          "cancels the download, removes the torrent task, and cleans up its files. " +
-                          "Read-only otherwise; downloads are started with the download_file tool."
+            name = MediaFilesystem.Name,
+            mountPoint = MediaFilesystem.MountPoint,
+            description = $"Media library ({settings.BaseLibraryPath}) — books, audiobooks, and other downloaded media. " +
+                          "Read/list focused; treat writes as organisational only. Does NOT support fs_exec. " +
+                          $"Active downloads live under {MediaFilesystem.MountPoint}/{MediaFilesystem.DownloadsSubdir}/<id>/: " +
+                          "a virtual read-only status.json reports live state/progress/eta, and deleting the <id> " +
+                          "directory cancels the download and cleans up its files."
         });
     }
 }
