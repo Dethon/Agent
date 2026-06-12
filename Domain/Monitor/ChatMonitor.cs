@@ -90,6 +90,42 @@ public class ChatMonitor(
         return targets;
     }
 
+    public static async Task AnnounceTurnStartAsync(
+        IReadOnlyList<DeliveryTarget> targets,
+        ChannelMessage message,
+        bool skipMinted,
+        CancellationToken ct,
+        ILogger? logger = null)
+    {
+        // Voice is attach-only: announcing would re-Bind its delivery registry, and a
+        // stale binding expiring mid-turn flushes the shared reply accumulator. Its
+        // send_reply path needs no turn-start. Channels without a create_conversation
+        // tool no-op inside CreateConversationAsync.
+        var announceable = targets.Where(t =>
+            t.Channel.ChannelId != ChannelProtocol.VoiceChannelId && !(skipMinted && t.Minted));
+        foreach (var target in announceable)
+        {
+            try
+            {
+                await target.Channel.CreateConversationAsync(
+                    message.AgentId ?? "default",
+                    topicName: string.Empty,
+                    message.Sender,
+                    initialPrompt: message.Content,
+                    address: null,
+                    existingConversationId: target.ConversationId,
+                    ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The reply itself is persisted regardless; a failed announce only costs
+                // live streaming, so it must never abort the turn.
+                logger?.LogWarning(ex, "Turn-start announce to {ChannelId} failed; reply will not stream live",
+                    target.Channel.ChannelId);
+            }
+        }
+    }
+
     public async Task Monitor(CancellationToken cancellationToken)
     {
         try
