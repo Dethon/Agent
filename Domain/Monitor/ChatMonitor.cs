@@ -23,7 +23,7 @@ public class ChatMonitor(
     IMemoryRecallHook? memoryRecallHook,
     ILogger<ChatMonitor> logger)
 {
-    public readonly record struct DeliveryTarget(IChannelConnection Channel, string ConversationId);
+    public readonly record struct DeliveryTarget(IChannelConnection Channel, string ConversationId, bool Minted = false);
 
     public static async Task<IReadOnlyList<DeliveryTarget>> ResolveDeliveryTargetsAsync(
         ChannelMessage message,
@@ -62,12 +62,14 @@ public class ChatMonitor(
             }
 
             var conversationId = target.ConversationId;
+            var wasMinted = false;
             if (conversationId is null)
             {
                 try
                 {
                     conversationId = await channel.CreateConversationAsync(
                         message.AgentId ?? "default", "Scheduled task", message.Sender, message.Content, target.Address, shared, ct);
+                    wasMinted = true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -81,7 +83,7 @@ public class ChatMonitor(
             if (conversationId is not null)
             {
                 shared ??= conversationId;
-                targets.Add(new DeliveryTarget(channel, conversationId));
+                targets.Add(new DeliveryTarget(channel, conversationId, Minted: wasMinted));
             }
         }
 

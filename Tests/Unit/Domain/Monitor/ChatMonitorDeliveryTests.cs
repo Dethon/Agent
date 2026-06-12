@@ -257,4 +257,37 @@ public class ChatMonitorDeliveryTests
         targets[0].ConversationId.ShouldBe("minted-signalr");
         targets.ShouldAllBe(t => t.ConversationId == "minted-signalr");
     }
+
+    [Fact]
+    public async Task ResolveDeliveryTargets_MarksMintedTargetsAndPreservesPreExistingOnes()
+    {
+        var origin = Channel("scheduling");
+        var channels = new[] { origin, Channel("signalr"), Channel("telegram") };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1",
+            Content = "x",
+            Sender = "s",
+            ChannelId = "scheduling",
+            AgentId = "jonas",
+            ReplyTo = [new ReplyTarget("signalr", null), new ReplyTarget("telegram", "t-9")]
+        };
+
+        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+
+        targets.Count.ShouldBe(2);
+        targets.Single(t => t.Channel.ChannelId == "signalr").Minted.ShouldBeTrue();
+        targets.Single(t => t.Channel.ChannelId == "telegram").Minted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ResolveDeliveryTargets_WithoutReplyTo_OriginTargetIsNotMinted()
+    {
+        var origin = Channel("signalr");
+        var msg = new ChannelMessage { ConversationId = "c1", Content = "x", Sender = "u", ChannelId = "signalr" };
+
+        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, [origin], CancellationToken.None);
+
+        targets.ShouldHaveSingleItem().Minted.ShouldBeFalse();
+    }
 }
