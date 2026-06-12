@@ -751,6 +751,7 @@ public class ChatMonitorTests
         announce.ExistingConversationId.ShouldBe("7:42");
         announce.InitialPrompt.ShouldBe("[download-complete] film.mkv");
         announce.Sender.ShouldBe("fran");
+        announcedAtFirstReply.ShouldNotBeNull();
         announcedAtFirstReply.ShouldBe(true);
         signalr.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
     }
@@ -776,5 +777,42 @@ public class ChatMonitorTests
 
         channel.CreatedConversations.ShouldBeEmpty();
         channel.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete);
+    }
+
+    [Fact]
+    public async Task Monitor_ScheduleOriginMintingConversation_DoesNotAnnounceMintedTarget()
+    {
+        // The group-opening message's create_conversation already set up the stream;
+        // a second (announce) call would double-increment the pending count and wedge
+        // the stream open. Exactly ONE CreatedConversations entry must exist: the mint.
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var signalr = new FakeChannelConnection { ChannelId = "signalr", ConversationIdToReturn = "minted-signalr" };
+        signalr.Complete();
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", new ChannelMessage
+        {
+            ConversationId = "fire-1",
+            Content = "Check stalled torrents",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "jonas",
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "sched-1"),
+            ReplyTo = [new ReplyTarget("signalr", null)]
+        });
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+
+        var monitor = new ChatMonitor(
+            [scheduling, signalr],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        var mint = signalr.CreatedConversations.ShouldHaveSingleItem();
+        mint.ExistingConversationId.ShouldBeNull();
+        signalr.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
     }
 }

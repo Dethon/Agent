@@ -212,8 +212,9 @@ public class ChatMonitor(
                         return AsyncEnumerable.Empty<(AgentResponseUpdate Update, IReadOnlyList<DeliveryTarget> Targets, FirstReplyTracker? Tracker)>();
                     default:
                         // FirstReply times "message arrival → first delivered reply chunk":
-                        // started before target resolution, memory recall, and session warmup
-                        // so the measurement includes every stage the user actually waits on.
+                        // started before target resolution, memory recall, session warmup, and
+                        // the turn-start announce for agent-initiated messages, so the
+                        // measurement includes every stage the user actually waits on.
                         var tracker = new FirstReplyTracker();
                         // Deliver each message's reply to the channel that actually sent
                         // it. The group is keyed only by (ConversationId, AgentId), so a
