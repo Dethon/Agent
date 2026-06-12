@@ -19,14 +19,15 @@ public class FileDownloadTool(
     protected const string Description = """
                                          Download a file from the internet.
 
-                                         Provide ONE of:
-                                           - searchResultId: an id from a prior file_search call.
-                                           - link + title: a magnet URI or .torrent URL obtained from any other tool, plus a
-                                             descriptive title (e.g. the release name with quality and group, taken from
-                                             wherever the link was found).
+                                         Provide EXACTLY ONE of:
+                                           - searchResultId: an id from a prior file_search call. Omit link and title entirely —
+                                             do not fill them with "", "null", or any other placeholder.
+                                           - link + title: a magnet URI or http(s) .torrent URL obtained from any other tool, plus
+                                             a descriptive title (e.g. the release name with quality and group, taken from wherever
+                                             the link was found). Both must be real values, never "null" or empty strings.
 
-                                         Do not provide both. The link path is intended as a fallback when file_search returns
-                                         no usable results.
+                                         Never provide both a searchResultId and a link. The link path is intended as a fallback
+                                         when file_search returns no usable results.
                                          """;
 
     protected async Task<JsonNode> Run(string sessionId, int searchResultId, ConversationContext? context, CancellationToken ct)

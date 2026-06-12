@@ -98,4 +98,77 @@ public class McpFileDownloadToolTests
 
         result.ShouldBeNull();
     }
+
+    [Theory]
+    [InlineData("null", "null")]
+    [InlineData("NULL", "Null")]
+    [InlineData("undefined", "undefined")]
+    [InlineData("", "Some Movie 2024 1080p")]
+    [InlineData("   ", "Some Movie 2024 1080p")]
+    public void ValidateInputs_IdWithPlaceholderLink_ReturnsNull(string link, string title)
+    {
+        var result = McpFileDownloadTool.ValidateInputs(
+            searchResultId: 42,
+            link: link,
+            title: title);
+
+        result.ShouldBeNull();
+    }
+
+    [Fact]
+    public void ValidateInputs_PlaceholderLinkAndTitleWithoutId_ReturnsEitherError()
+    {
+        var result = McpFileDownloadTool.ValidateInputs(
+            searchResultId: null,
+            link: "null",
+            title: "null");
+
+        result.ShouldNotBeNull();
+        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        result["message"]!.GetValue<string>().ShouldContain("either");
+    }
+
+    [Fact]
+    public void ValidateInputs_RealLinkWithLiteralNullTitle_ReturnsInvalidArgument()
+    {
+        var result = McpFileDownloadTool.ValidateInputs(
+            searchResultId: null,
+            link: "magnet:?xt=urn:btih:x",
+            title: "null");
+
+        result.ShouldNotBeNull();
+        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        result["message"]!.GetValue<string>().ShouldContain("title");
+    }
+
+    [Fact]
+    public void ValidateInputs_LinkWithSurroundingWhitespace_ReturnsNull()
+    {
+        var result = McpFileDownloadTool.ValidateInputs(
+            searchResultId: null,
+            link: "  magnet:?xt=urn:btih:abc  ",
+            title: "Title");
+
+        result.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("null")]
+    [InlineData("NULL")]
+    [InlineData("Null")]
+    [InlineData("undefined")]
+    public void NormalizeOptionalText_PlaceholderValues_ReturnsNull(string? value)
+    {
+        McpFileDownloadTool.NormalizeOptionalText(value).ShouldBeNull();
+    }
+
+    [Fact]
+    public void NormalizeOptionalText_RealValue_ReturnsTrimmed()
+    {
+        McpFileDownloadTool.NormalizeOptionalText("  magnet:?xt=urn:btih:abc  ")
+            .ShouldBe("magnet:?xt=urn:btih:abc");
+    }
 }
