@@ -101,6 +101,10 @@ follow-up, not in scope; the routing-store TTL bounds leakage from never-complet
 
 ## 4. `filesystem://downloads` VFS
 
+> **Revised:** superseded by `2026-06-12-media-downloads-overlay-design.md` — the separate
+> downloads filesystem is removed in favour of a virtual overlay on the media filesystem's
+> `downloads/` subtree.
+
 - `DownloadsFileSystem` in `Domain/Tools/Downloads/Vfs` implementing `IFileSystemBackend` with
   typed `FsResult<T>`, mounted at `/downloads`. Second filesystem resource from the library
   server, next to `filesystem://media` — `McpFileSystemDiscovery` mounts every `filesystem://`
