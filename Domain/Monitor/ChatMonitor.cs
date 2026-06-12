@@ -193,6 +193,7 @@ public class ChatMonitor(
                         userMessage.SetLocation(x.Message.Location);
                         userMessage.SetSatelliteId(x.Message.SatelliteId);
                         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
+                        userMessage.SetConversationContext(BuildConversationContext(x.Message, messageTargets));
                         if (memoryRecallHook is not null)
                         {
                             await memoryRecallHook.EnrichAsync(userMessage, x.Message.Sender, x.Message.ConversationId, x.Message.AgentId, thread, linkedCt);
@@ -295,6 +296,20 @@ public class ChatMonitor(
             }, ct);
             return false;
         }
+    }
+
+    public static ConversationContext BuildConversationContext(
+        ChannelMessage message, IReadOnlyList<DeliveryTarget> targets)
+    {
+        var (channelId, conversationId) = targets.Count > 0
+            ? (targets[0].Channel.ChannelId, targets[0].ConversationId)
+            : (message.ChannelId, message.ConversationId);
+        var address = channelId == message.ChannelId ? message.SatelliteId : null;
+        return new ConversationContext(
+            message.AgentId ?? "default",
+            conversationId,
+            message.Sender,
+            new ReplyTarget(channelId, conversationId, address));
     }
 
     public static ScheduleExecutionEvent? BuildScheduleEvent(
