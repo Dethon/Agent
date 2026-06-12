@@ -2,6 +2,7 @@ using System.Net;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.Config;
+using Domain.Tools.Downloads.Vfs;
 using Infrastructure.Clients;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
@@ -56,6 +57,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .AddSingleton<ISearchClient>(_ => Jackett.CreateClient())
             .AddSingleton<IDownloadClient>(_ => QBittorrent.CreateClient())
             .AddSingleton<IFileSystemClient, LocalFileSystemClient>()
+            .AddSingleton<DownloadsFileSystem>()
             .AddMcpServer()
             .WithHttpTransport()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools.Config;
+using Domain.Tools.Downloads.Vfs;
 using Domain.Tools.Files;
 using Infrastructure.Utils;
 using ModelContextProtocol.Protocol;
@@ -11,15 +12,17 @@ namespace McpServerLibrary.McpTools;
 [McpServerToolType]
 public class FsGlobTool(
     IFileSystemClient client,
-    LibraryPathConfig libraryPath) : GlobFilesTool(client, libraryPath)
+    LibraryPathConfig libraryPath,
+    DownloadsFileSystem downloads) : GlobFilesTool(client, libraryPath)
 {
     [McpServerTool(Name = "fs_glob")]
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
         string pattern,
         string basePath = "",
+        string? filesystem = null,
         CancellationToken cancellationToken = default)
-    {
-        return ToolResponse.Create(await Run(pattern, cancellationToken, basePath));
-    }
+        => filesystem == downloads.FilesystemName
+            ? ToolResponse.Create(await downloads.GlobAsync(basePath, pattern, cancellationToken))
+            : ToolResponse.Create(await Run(pattern, cancellationToken, basePath));
 }
