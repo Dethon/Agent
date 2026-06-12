@@ -6,7 +6,9 @@ using Domain.Tools.Downloads.Vfs;
 using Infrastructure.Clients;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
+using McpServerLibrary.McpResources;
 using McpServerLibrary.McpTools;
+using McpServerLibrary.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Caching.Memory;
@@ -27,6 +29,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
     public string McpEndpoint { get; private set; } = null!;
     public string LibraryPath { get; private set; } = null!;
     public string DownloadPath { get; private set; } = null!;
+    public InMemoryDownloadRoutingStore RoutingStore { get; } = new();
 
     public async Task InitializeAsync()
     {
@@ -50,8 +53,21 @@ public class McpLibraryServerFixture : IAsyncLifetime
         builder.Services
             .AddSingleton<DownloadPathConfig>(_ => new DownloadPathConfig(DownloadPath))
             .AddSingleton<LibraryPathConfig>(_ => new LibraryPathConfig(LibraryPath))
+            .AddSingleton(new McpSettings
+            {
+                Jackett = new JackettConfiguration { ApiKey = "unused", ApiUrl = "http://localhost" },
+                QBittorrent = new QBittorrentConfiguration
+                {
+                    ApiUrl = "http://localhost",
+                    UserName = "unused",
+                    Password = "unused"
+                },
+                DownloadLocation = DownloadPath,
+                BaseLibraryPath = LibraryPath,
+                RedisConnectionString = "unused"
+            })
             .AddSingleton(_cache)
-            .AddSingleton<IDownloadRoutingStore, InMemoryDownloadRoutingStore>()
+            .AddSingleton<IDownloadRoutingStore>(RoutingStore)
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
             .AddSingleton<ISearchClient>(_ => Jackett.CreateClient())
             .AddSingleton<IDownloadClient>(_ => QBittorrent.CreateClient())
@@ -73,7 +89,11 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
             .WithTools<FsGlobTool>()
-            .WithTools<FsMoveTool>();
+            .WithTools<FsReadTool>()
+            .WithTools<FsDeleteTool>()
+            .WithTools<FsMoveTool>()
+            .WithTools<FsInfoTool>()
+            .WithResources<FileSystemResource>();
 
         var app = builder.Build();
         app.MapMcp("/mcp");

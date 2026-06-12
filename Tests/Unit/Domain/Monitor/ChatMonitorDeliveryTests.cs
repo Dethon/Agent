@@ -72,6 +72,45 @@ public class ChatMonitorDeliveryTests
     }
 
     [Fact]
+    public async Task ResolveDeliveryTargets_DownloadCompletion_UsesConcreteConversationWithoutMinting()
+    {
+        var origin = Channel("library");
+        var signalr = new FakeChannelConnection { ChannelId = "signalr" };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "conv-7", Content = "[download-complete] ...", Sender = "fran",
+            ChannelId = "library", AgentId = "jack",
+            Origin = new MessageOrigin(MessageOriginKind.Download, null),
+            ReplyTo = [new ReplyTarget("signalr", "conv-7")]
+        };
+
+        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, [origin, signalr], CancellationToken.None);
+
+        var target = targets.ShouldHaveSingleItem();
+        target.ConversationId.ShouldBe("conv-7");
+        target.Channel.ChannelId.ShouldBe("signalr");
+        signalr.CreatedConversations.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ResolveDeliveryTargets_VoiceOriginDownload_KeepsConcreteConversationAndAddress()
+    {
+        var origin = Channel("library");
+        var voice = new FakeChannelConnection { ChannelId = "voice" };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "conv-9", Content = "[download-complete] ...", Sender = "fran",
+            ChannelId = "library", AgentId = "jack",
+            ReplyTo = [new ReplyTarget("voice", "conv-9", "fran-office-01")]
+        };
+
+        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, [origin, voice], CancellationToken.None);
+
+        targets.ShouldHaveSingleItem().ConversationId.ShouldBe("conv-9");
+        voice.CreatedConversations.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task ResolveDeliveryTargets_WhenMintingConversation_PassesMessageContentAsInitialPrompt()
     {
         // A scheduled fire delivers to WebChat with a null ReplyTo conversationId,

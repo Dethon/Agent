@@ -77,6 +77,28 @@ public class ChannelProtocolTests
     }
 
     [Fact]
+    public void Serialize_DownloadCompletionNotification_RoundTripsWithStringEnumOrigin()
+    {
+        var payload = new ChannelMessageNotification
+        {
+            ConversationId = "conv-7",
+            Sender = "fran",
+            Content = "[download-complete] ...",
+            AgentId = "jack",
+            ReplyTo = [new ReplyTarget("signalr", "conv-7")],
+            Origin = new MessageOrigin(MessageOriginKind.Download, null),
+            Timestamp = DateTimeOffset.UtcNow
+        };
+
+        var element = JsonSerializer.SerializeToElement(payload, ChannelProtocol.SerializerOptions);
+        var restored = ChannelProtocol.Deserialize<ChannelMessageNotification>(element).ShouldNotBeNull();
+
+        restored.Origin.ShouldBe(new MessageOrigin(MessageOriginKind.Download, null));
+        restored.ReplyTo.ShouldBe([new ReplyTarget("signalr", "conv-7")]);
+        element.GetProperty("origin").GetProperty("kind").GetString().ShouldBe("Download");
+    }
+
+    [Fact]
     public void SerializerOptions_CanBeMarkedReadOnly_AsTheMcpSdkNotificationPathRequires()
     {
         // Regression: the MCP SDK's SendNotificationAsync calls JsonSerializerOptions.MakeReadOnly()

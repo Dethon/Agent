@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Domain.DTOs.Channel;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -105,6 +108,83 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         var content = GetTextContent(result);
         content.ShouldContain(
             "No search result found for id 12345. Make sure to run the file_search tool first and use the correct");
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DownloadFile_WithConversationContextMeta_RecordsRoutingAndServesDownloadsVfs()
+    {
+        // Arrange
+        var client = await McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(fixture.McpEndpoint)
+            }),
+            cancellationToken: CancellationToken.None);
+
+        var downloadTool = (await client.ListToolsAsync()).Single(t => t.Name == "download_file");
+        var context = new ConversationContext("jack", "conv-journey", "fran", new ReplyTarget("signalr", "conv-journey"));
+        var meta = new JsonObject
+        {
+            ["conversationContext"] = JsonSerializer.SerializeToNode(context, ChannelProtocol.SerializerOptions)
+        };
+        const string magnetLink =
+            "magnet:?xt=urn:btih:KRWPCX3SJUM4IMM4YF3MVSJIBFTHVFCS&dn=ubuntu-24.04-desktop-amd64.iso";
+
+        // Act - download_file with _meta carrying the conversation context
+        var downloadResult = await downloadTool.WithMeta(meta).CallAsync(
+            new Dictionary<string, object?>
+            {
+                ["searchResultId"] = null,
+                ["link"] = magnetLink,
+                ["title"] = "Journey Test"
+            },
+            cancellationToken: CancellationToken.None);
+
+        // Assert - the routing snapshot points back at the origin conversation
+        GetTextContent(downloadResult).ShouldContain("success");
+        var routing = (await fixture.RoutingStore.ListAsync()).ShouldHaveSingleItem();
+        routing.Title.ShouldBe("Journey Test");
+        routing.Context.ConversationId.ShouldBe("conv-journey");
+        routing.Context.Origin.ChannelId.ShouldBe("signalr");
+        var id = routing.DownloadId;
+
+        // Assert - the download is visible through the downloads VFS
+        var globResult = await client.CallToolAsync(
+            "fs_glob",
+            new Dictionary<string, object?>
+            {
+                ["pattern"] = "**",
+                ["basePath"] = "/",
+                ["filesystem"] = "downloads"
+            },
+            cancellationToken: CancellationToken.None);
+        GetTextContent(globResult).ShouldContain($"/{id}/status.json");
+
+        var readResult = await client.CallToolAsync(
+            "fs_read",
+            new Dictionary<string, object?>
+            {
+                ["path"] = $"{id}/status.json",
+                ["filesystem"] = "downloads"
+            },
+            cancellationToken: CancellationToken.None);
+        GetTextContent(readResult).ShouldContain(id.ToString());
+
+        // Act - deleting the download dir cancels the torrent and drops the routing entry
+        var deleteResult = await client.CallToolAsync(
+            "fs_delete",
+            new Dictionary<string, object?>
+            {
+                ["path"] = $"/{id}",
+                ["filesystem"] = "downloads"
+            },
+            cancellationToken: CancellationToken.None);
+
+        // Assert
+        GetTextContent(deleteResult).ShouldContain("removed");
+        (await fixture.RoutingStore.ListAsync()).ShouldBeEmpty();
 
         await client.DisposeAsync();
     }
