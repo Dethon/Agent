@@ -226,6 +226,16 @@ public class ChatMonitor(
                         var messageTargets = index == 0 || x.Message.ReplyTo is { Count: > 0 }
                             ? targets
                             : await ResolveDeliveryTargetsAsync(x.Message, x.Channel, channels, linkedCt, logger);
+                        // Agent-initiated turns (downloads, schedules) land in conversations
+                        // with no live stream on the receiving channel; announce the turn so
+                        // the channel can set one up before reply chunks arrive. Targets the
+                        // group-opening message minted were announced by their own
+                        // create_conversation; later messages reusing the group targets see
+                        // those conversations as pre-existing.
+                        if (x.Message.Origin is not null)
+                        {
+                            await AnnounceTurnStartAsync(messageTargets, x.Message, skipMinted: index == 0, linkedCt, logger);
+                        }
                         var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);
                         userMessage.SetSenderId(x.Message.Sender);
                         userMessage.SetLocation(x.Message.Location);
