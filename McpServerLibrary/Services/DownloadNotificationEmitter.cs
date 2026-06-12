@@ -22,11 +22,23 @@ public sealed class DownloadNotificationEmitter(ILogger<DownloadNotificationEmit
         logger.LogInformation("MCP session unregistered: {SessionId}", sessionId);
     }
 
-    public bool HasActiveSessions => !_activeSessions.IsEmpty;
+    // Tool sessions (the agent's per-conversation MCP clients) also land here; they silently drop
+    // channel/message notifications, so only channel-client sessions count as delivery targets —
+    // otherwise EmitAsync reports success, the routing entry is deleted, and the alert is lost.
+    public bool HasActiveSessions =>
+        _activeSessions.Values.Any(s => ChannelProtocol.IsChannelClientName(s.ClientInfo?.Name));
 
     public async Task<bool> EmitAsync(ChannelMessageNotification payload, CancellationToken ct = default)
     {
-        var tasks = _activeSessions.Values.Select(async server =>
+        var channelSessions = _activeSessions.Values
+            .Where(s => ChannelProtocol.IsChannelClientName(s.ClientInfo?.Name))
+            .ToList();
+        if (channelSessions.Count == 0)
+        {
+            return false;
+        }
+
+        var tasks = channelSessions.Select(async server =>
         {
             try
             {

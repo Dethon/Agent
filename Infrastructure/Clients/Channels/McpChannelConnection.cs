@@ -31,7 +31,7 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
             {
                 ClientInfo = new Implementation
                 {
-                    Name = $"channel-{ChannelId}",
+                    Name = $"{ChannelProtocol.ChannelClientNamePrefix}{ChannelId}",
                     Version = "1.0.0"
                 }
             },

@@ -15,6 +15,14 @@ public static class ChannelProtocol
     public const string CreateConversationTool = "create_conversation";
     public const string RegisterAgentsTool = "register_agents";
 
+    // The agent's channel connections identify themselves as "channel-<channelId>"; tool sessions
+    // use the agent name. Dual-role servers must only count channel clients as delivery targets —
+    // tool sessions silently drop channel/message notifications.
+    public const string ChannelClientNamePrefix = "channel-";
+
+    public static bool IsChannelClientName(string? clientName)
+        => clientName?.StartsWith(ChannelClientNamePrefix, StringComparison.Ordinal) == true;
+
     // The voice channel attaches to a shared conversation rather than owning one: its
     // create_conversation hands back the id it was given (it has no persisted TopicId of its
     // own). Delivery fan-out orders these targets last so a topic-owning channel always anchors

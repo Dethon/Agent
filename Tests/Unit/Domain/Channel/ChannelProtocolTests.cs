@@ -98,6 +98,16 @@ public class ChannelProtocolTests
         element.GetProperty("origin").GetProperty("kind").GetString().ShouldBe("Download");
     }
 
+    [Theory]
+    [InlineData("channel-library", true)]
+    [InlineData("channel-signalr", true)]
+    [InlineData("Jack", false)]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("CHANNEL-library", false)]
+    public void IsChannelClientName_VariousNames_DetectsChannelClients(string? clientName, bool expected) =>
+        ChannelProtocol.IsChannelClientName(clientName).ShouldBe(expected);
+
     [Fact]
     public void SerializerOptions_CanBeMarkedReadOnly_AsTheMcpSdkNotificationPathRequires()
     {
