@@ -11,7 +11,8 @@ namespace McpServerLibrary.McpTools;
 public class FsReadTool(DownloadsFileSystem downloads)
 {
     [McpServerTool(Name = "fs_read")]
-    [Description("Read a downloads filesystem file (<id>/status.json)")]
+    [Description("Read a downloads filesystem file (the read-only <id>/status.json for an active download). " +
+                "Requires filesystem=\"downloads\"; the media filesystem does not support fs_read.")]
     public async Task<CallToolResult> McpRun(
         string path, int? offset = null, int? limit = null, string? filesystem = null,
         CancellationToken ct = default)
