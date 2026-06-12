@@ -36,7 +36,6 @@ internal sealed class ThreadSession : IAsyncDisposable
         string userId,
         string description,
         ChatClientAgent agent,
-        AgentSession thread,
         IReadOnlyList<AIFunction> domainTools,
         IReadOnlySet<string> filesystemEnabledTools,
         ILoggerFactory? loggerFactory,

@@ -30,7 +30,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Arrange
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -40,7 +39,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             "test-user",
             "Test Description",
             agent,
-            thread,
             [],
             new HashSet<string>(),
             null,
@@ -70,7 +68,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Arrange
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var session = await ThreadSession.CreateAsync(
@@ -79,7 +76,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             "test-user",
             "Dispose Test",
             agent,
-            thread,
             [],
             new HashSet<string>(),
             null,
@@ -98,7 +94,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Arrange - Use the same endpoint twice to verify multiple connections
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -108,7 +103,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             "test-user",
             "Multi Endpoint Test",
             agent,
-            thread,
             [],
             new HashSet<string>(),
             null,
