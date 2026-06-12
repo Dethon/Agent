@@ -48,6 +48,8 @@ public class DownloadCompletionWatcherTests
 
         await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
 
+        emitter.Emitted.Count.ShouldBe(1);
+        emitter.Emitted[0].ConversationId.ShouldBe("conv-42");
         routing.Entries.Count.ShouldBe(1);
     }
 
