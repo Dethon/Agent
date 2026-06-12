@@ -23,32 +23,44 @@ public sealed class RedisDownloadRoutingStoreTests(RedisFixture fixture)
     }
 
     [Fact]
-    public async Task SetListRemove_RoundTrips()
+    public async Task SetAsync_ThenListAndRemove_ReflectsMutations()
     {
         _createdIds.AddRange([101, 102]);
-        var store = new RedisDownloadRoutingStore(fixture.Connection);
 
-        await store.SetAsync(Routing(101));
-        await store.SetAsync(Routing(102));
+        await _store.SetAsync(Routing(101));
+        await _store.SetAsync(Routing(102));
 
-        var listed = await store.ListAsync();
+        var listed = await _store.ListAsync();
         listed.Select(r => r.DownloadId).ShouldBe([101, 102], ignoreOrder: true);
         listed.Single(r => r.DownloadId == 101).Context.Origin.ChannelId.ShouldBe("signalr");
 
-        await store.RemoveAsync(101);
-        (await store.ListAsync()).Select(r => r.DownloadId).ShouldBe([102]);
+        await _store.RemoveAsync(101);
+        (await _store.ListAsync()).Select(r => r.DownloadId).ShouldBe([102]);
     }
 
     [Fact]
-    public async Task Set_SameId_Overwrites()
+    public async Task SetAsync_SameId_OverwritesExistingEntry()
     {
         _createdIds.Add(201);
-        var store = new RedisDownloadRoutingStore(fixture.Connection);
 
-        await store.SetAsync(Routing(201));
-        await store.SetAsync(Routing(201) with { Title = "updated" });
+        await _store.SetAsync(Routing(201));
+        await _store.SetAsync(Routing(201) with { Title = "updated" });
 
-        (await store.ListAsync()).Single(r => r.DownloadId == 201).Title.ShouldBe("updated");
+        (await _store.ListAsync()).Single(r => r.DownloadId == 201).Title.ShouldBe("updated");
+    }
+
+    [Fact]
+    public async Task ListAsync_EntryExpired_SelfHealsIndex()
+    {
+        _createdIds.Add(301);
+        await _store.SetAsync(Routing(301));
+
+        var db = fixture.Connection.GetDatabase();
+        await db.KeyDeleteAsync("download-routing:301");
+
+        (await _store.ListAsync()).ShouldNotContain(r => r.DownloadId == 301);
+        (await db.SetContainsAsync("download-routing", 301)).ShouldBeFalse(
+            "Stale index member should be removed when its entry has expired");
     }
 
     private static DownloadRouting Routing(int id) => new()

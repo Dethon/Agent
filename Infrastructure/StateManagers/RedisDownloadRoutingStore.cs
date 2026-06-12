@@ -26,7 +26,14 @@ public sealed class RedisDownloadRoutingStore(IConnectionMultiplexer redis) : ID
         var entries = await Task.WhenAll(ids.Select(async id =>
         {
             var json = await _db.StringGetAsync(EntryKey((int)id));
-            return json.IsNullOrEmpty ? null : JsonSerializer.Deserialize<DownloadRouting>(json.ToString());
+            if (!json.IsNullOrEmpty)
+            {
+                return JsonSerializer.Deserialize<DownloadRouting>(json.ToString());
+            }
+
+            // Self-healing: stale index member — its entry has expired
+            await _db.SetRemoveAsync(IndexKey, id);
+            return null;
         }));
         return entries.Where(e => e is not null).Select(e => e!).ToList();
     }
