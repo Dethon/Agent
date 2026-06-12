@@ -83,4 +83,31 @@ public class QBittorrentDownloadClientTests(QBittorrentFixture fixture) : IClass
         var afterCleanup = await client.GetDownloadItem(id, CancellationToken.None);
         afterCleanup.ShouldBeNull();
     }
+
+    [Fact]
+    public async Task GetDownloadItems_ReturnsOwnedTorrents()
+    {
+        // Arrange
+        var client = fixture.CreateClient();
+        const string magnetLink =
+            "magnet:?xt=urn:btih:KRWPCX3SJUM4IMM4YF3MVSJIBFTHVFCS&dn=ubuntu-24.04-desktop-amd64.iso";
+        const string savePath = "/downloads";
+        var id = new Random().Next(100000, 999999);
+
+        try
+        {
+            // Act - Add torrent
+            await client.Download(magnetLink, savePath, id, CancellationToken.None);
+
+            // Assert - It appears in the bulk listing with the correct Id
+            var items = await client.GetDownloadItems(CancellationToken.None);
+            var match = items.FirstOrDefault(x => x.Id == id);
+            match.ShouldNotBeNull();
+            match.Id.ShouldBe(id);
+        }
+        finally
+        {
+            await client.Cleanup(id, CancellationToken.None);
+        }
+    }
 }

@@ -154,6 +154,11 @@ public class TestDownloadClient : IDownloadClient
     {
         return Task.FromResult(_downloads.GetValueOrDefault(id));
     }
+
+    public Task<IReadOnlyList<DownloadItem>> GetDownloadItems(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyList<DownloadItem>>(_downloads.Values.ToList());
+    }
 }
 
 [McpServerToolType]
