@@ -49,10 +49,11 @@ Flow for a download alert (steps 1 and 4–5 unchanged today):
    (`message.Origin is not null`), before streaming the reply, it announces turn start by
    calling `CreateConversationAsync(agentId, topicName, sender,
    initialPrompt: message.Content, address, existingConversationId: target.ConversationId)`
-   on each delivery target, except:
-   - targets minted by this same resolution (their `create_conversation` already ran —
-     announcing again would double-increment the pending count and wedge the stream open);
-   - attach-only voice targets (see Edge Cases).
+   on each delivery target, except targets minted by this same resolution (their
+   `create_conversation` already ran — announcing again would double-increment the
+   pending count and wedge the stream open). The announce is channel-agnostic: ChatMonitor
+   has no per-channel policy; each channel applies its own turn-start semantics, and the
+   target's `Address` (e.g. the originating voice satellite) is threaded through.
 3. **New:** the SignalR channel's `CreateConversationTool` attach branch (when
    `existingConversationId` is provided):
    - Resolve topicId via `SessionService.GetTopicIdByConversationId`. No session →
@@ -75,23 +76,25 @@ Flow for a download alert (steps 1 and 4–5 unchanged today):
 | Component | Change |
 |-----------|--------|
 | `Domain/Monitor/ChatMonitor.cs` | Per-message turn-start announce in the default processing branch (after `messageTargets` resolution, before the agent run). |
-| `Domain/Monitor/ChatMonitor.cs` (`DeliveryTarget`) | Add a `Minted` flag so just-created conversations are not announced twice. Targets reused from the group-level resolution by later messages count as pre-existing for those messages. |
+| `Domain/Monitor/ChatMonitor.cs` (`DeliveryTarget`) | Add a `Minted` flag so just-created conversations are not announced twice (targets reused from the group-level resolution by later messages count as pre-existing for those messages) and an `Address` so addressable channels know where the turn belongs. |
 | `McpChannelSignalR/McpTools/CreateConversationTool.cs` | Attach branch as described above. |
 | `McpChannelSignalR/Services/StreamService.cs` | Small seam if needed to expose "ensure stream + seed + pending" as one operation for the attach branch. |
 | WebChat.Client | **No changes.** |
-| Other channel servers | **No changes.** Telegram/ServiceBus lack `create_conversation`; `McpChannelConnection.CreateConversationAsync` already checks tool presence and returns null gracefully. Voice is explicitly skipped. |
+| `McpChannelVoice/McpTools/CreateConversationTool.cs` | Session-aware attach: no-op when the satellite session is live (the session reply path speaks the turn), announcement binding otherwise. |
+| Other channel servers | **No changes.** Telegram/ServiceBus lack `create_conversation`; `McpChannelConnection.CreateConversationAsync` already checks tool presence and returns null gracefully. |
 
 ## Edge Cases & Error Handling
 
 - **Nobody looking / channel server restarted**: no in-memory session → attach no-ops;
   behavior degrades to today's (persisted, visible on refresh). When someone is viewing,
   the session always exists (`TopicSelectionEffect` calls `StartSession` on topic open).
-- **Voice targets skipped**: voice's attach branch (`VoiceDeliveryRegistry.Bind`) is
-  built for schedule fan-out; a stray binding can expire mid-turn and flush the shared
-  `ReplyTextAccumulator`, dropping spoken reply text. ChatMonitor already discriminates
-  voice targets by `ChannelProtocol.VoiceChannelId` for ordering; the announce reuses
-  that discriminator to skip them. Voice delivery of download alerts keeps today's
-  behavior (spoken when the satellite session is alive, dropped otherwise).
+- **Voice handles its own announce semantics** (channel-side, not in ChatMonitor): when
+  the conversation has a live satellite session, the announce is a no-op — `send_reply`
+  routes the turn through the session, and a stray `VoiceDeliveryRegistry.Bind` would
+  risk its expiry flushing the shared `ReplyTextAccumulator` mid-turn. Without a live
+  session, voice binds the turn as an announcement on the addressed satellite(s), so an
+  agent-initiated turn into an idle-expired voice conversation is spoken rather than
+  silently dropped.
 - **Announce failure**: `CreateConversationAsync` returns null on tool absence or
   `McpException`; the delivery target is kept regardless (its conversation id is already
   known). Worst case is today's refresh-only behavior — never a lost reply.
@@ -106,8 +109,6 @@ Flow for a download alert (steps 1 and 4–5 unchanged today):
 
 ## Out of Scope
 
-- Live voice announcement of download alerts (separate feature; night-time UX
-  implications).
 - Sidebar topic reordering / `LastMessageAt` metadata for agent-initiated turns
   (stale today after refresh too; cosmetic).
 - Redis-backed session recovery after a channel-server restart (only matters when nobody
@@ -118,9 +119,11 @@ Flow for a download alert (steps 1 and 4–5 unchanged today):
 TDD (red-green) per project rules.
 
 - **ChatMonitor units**: announce fires for `Origin`-set messages with pre-existing
-  conversation targets; not for user-interactive messages (`Origin` null); not for
-  just-minted targets; not for voice targets; announce failure does not drop reply
-  delivery.
+  conversation targets — voice included (channel-agnostic) with the target address
+  threaded through; not for user-interactive messages (`Origin` null); not for
+  just-minted targets; announce failure does not drop reply delivery.
+- **Voice channel units**: attach with a live satellite session → no announcement
+  binding; attach without one → binding on the addressed satellite.
 - **SignalR channel units**: attach with a session → stream seeded with prompt/sender,
   pending incremented, user bubble buffered, `OnStreamChanged(Started)` broadcast to the
   space group, same conversation id returned; without a session → pure no-op returning

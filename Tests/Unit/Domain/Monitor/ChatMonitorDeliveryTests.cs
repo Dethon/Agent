@@ -281,6 +281,24 @@ public class ChatMonitorDeliveryTests
     }
 
     [Fact]
+    public async Task ResolveDeliveryTargets_CarriesReplyTargetAddressOnDeliveryTargets()
+    {
+        // The address must survive resolution so the per-message turn-start announce can
+        // tell an addressable channel (voice) which satellite the turn belongs to.
+        var origin = Channel("library");
+        var voice = Channel("voice");
+        var msg = new ChannelMessage
+        {
+            ConversationId = "conv-9", Content = "x", Sender = "fran", ChannelId = "library",
+            ReplyTo = [new ReplyTarget("voice", "conv-9", "fran-office-01")]
+        };
+
+        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, [origin, voice], CancellationToken.None);
+
+        targets.ShouldHaveSingleItem().Address.ShouldBe("fran-office-01");
+    }
+
+    [Fact]
     public async Task ResolveDeliveryTargets_WithoutReplyTo_OriginTargetIsNotMinted()
     {
         var origin = Channel("signalr");

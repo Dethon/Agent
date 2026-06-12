@@ -43,6 +43,18 @@ public sealed class CreateConversationTool
         if (existingConversationId is not null)
         {
             conversationId = existingConversationId;
+
+            // A live satellite session already owns this conversation: send_reply routes the
+            // turn through it, so no binding is needed — and a stray binding's expiry would
+            // flush the shared accumulator mid-turn. Without a live session the binding below
+            // delivers the turn as an announcement on the addressed satellite(s).
+            var manager = services.GetRequiredService<VoiceConversationManager>();
+            var sessions = services.GetRequiredService<SatelliteSessionRegistry>();
+            var liveSatelliteId = manager.ResolveSatelliteId(conversationId);
+            if (liveSatelliteId is not null && sessions.Get(liveSatelliteId) is not null)
+            {
+                return conversationId;
+            }
         }
         else
         {

@@ -23,7 +23,7 @@ public class ChatMonitor(
     IMemoryRecallHook? memoryRecallHook,
     ILogger<ChatMonitor> logger)
 {
-    public readonly record struct DeliveryTarget(IChannelConnection Channel, string ConversationId, bool Minted = false);
+    public readonly record struct DeliveryTarget(IChannelConnection Channel, string ConversationId, bool Minted = false, string? Address = null);
 
     public static async Task<IReadOnlyList<DeliveryTarget>> ResolveDeliveryTargetsAsync(
         ChannelMessage message,
@@ -83,7 +83,7 @@ public class ChatMonitor(
             if (conversationId is not null)
             {
                 shared ??= conversationId;
-                targets.Add(new DeliveryTarget(channel, conversationId, Minted: wasMinted));
+                targets.Add(new DeliveryTarget(channel, conversationId, Minted: wasMinted, Address: target.Address));
             }
         }
 
@@ -97,12 +97,11 @@ public class ChatMonitor(
         CancellationToken ct,
         ILogger? logger = null)
     {
-        // Voice is attach-only: announcing would re-Bind its delivery registry, and a
-        // stale binding expiring mid-turn flushes the shared reply accumulator. Its
-        // send_reply path needs no turn-start. Channels without a create_conversation
-        // tool no-op inside CreateConversationAsync.
-        var announceable = targets.Where(t =>
-            t.Channel.ChannelId != ChannelProtocol.VoiceChannelId && !(skipMinted && t.Minted));
+        // The announce is channel-agnostic: every target gets the same create_conversation
+        // call and applies its own turn-start semantics (SignalR sets up a live stream,
+        // voice binds an announcement unless the satellite session is live). Channels
+        // without a create_conversation tool no-op inside CreateConversationAsync.
+        var announceable = targets.Where(t => !(skipMinted && t.Minted));
         foreach (var target in announceable)
         {
             try
@@ -112,7 +111,7 @@ public class ChatMonitor(
                     topicName: string.Empty,
                     message.Sender,
                     initialPrompt: message.Content,
-                    address: null,
+                    address: target.Address,
                     existingConversationId: target.ConversationId,
                     ct);
             }

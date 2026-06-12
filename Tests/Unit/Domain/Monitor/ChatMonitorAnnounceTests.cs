@@ -9,13 +9,13 @@ namespace Tests.Unit.Domain.Monitor;
 
 public class ChatMonitorAnnounceTests
 {
-    private static (Mock<IChannelConnection> Mock, List<(string? InitialPrompt, string? ExistingConversationId)> Calls) Channel(string id)
+    private static (Mock<IChannelConnection> Mock, List<(string? InitialPrompt, string? Address, string? ExistingConversationId)> Calls) Channel(string id)
     {
-        var calls = new List<(string?, string?)>();
+        var calls = new List<(string?, string?, string?)>();
         var m = new Mock<IChannelConnection>();
         m.SetupGet(c => c.ChannelId).Returns(id);
         m.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Callback((string _, string _, string _, string? prompt, string? _, string? existing, CancellationToken _) => calls.Add((prompt, existing)))
+            .Callback((string _, string _, string _, string? prompt, string? address, string? existing, CancellationToken _) => calls.Add((prompt, address, existing)))
             .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, CancellationToken _) => existing);
         return (m, calls);
     }
@@ -71,14 +71,30 @@ public class ChatMonitorAnnounceTests
     }
 
     [Fact]
-    public async Task AnnounceTurnStart_VoiceTarget_AlwaysSkipped()
+    public async Task AnnounceTurnStart_IsChannelAgnostic_VoiceAnnouncedLikeAnyTarget()
     {
+        // The agent has no per-channel policy: voice receives the same announce as every
+        // other channel and applies its own semantics in its create_conversation tool
+        // (no-op when the satellite session is live, announcement binding otherwise).
         var (voice, calls) = Channel("voice");
         var targets = new[] { new ChatMonitor.DeliveryTarget(voice.Object, "7:42") };
 
         await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
 
-        calls.ShouldBeEmpty();
+        calls.ShouldHaveSingleItem().ExistingConversationId.ShouldBe("7:42");
+    }
+
+    [Fact]
+    public async Task AnnounceTurnStart_TargetWithAddress_ThreadsAddressIntoCreateConversation()
+    {
+        // The address (e.g. the originating voice satellite) tells the channel WHERE the
+        // turn belongs; without it an addressable channel would fall back to broadcast.
+        var (voice, calls) = Channel("voice");
+        var targets = new[] { new ChatMonitor.DeliveryTarget(voice.Object, "7:42", Address: "fran-office-01") };
+
+        await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
+
+        calls.ShouldHaveSingleItem().Address.ShouldBe("fran-office-01");
     }
 
     [Fact]

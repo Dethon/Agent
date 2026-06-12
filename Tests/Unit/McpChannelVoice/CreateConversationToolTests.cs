@@ -19,6 +19,8 @@ public class CreateConversationToolTests
 {
     private readonly VoiceDeliveryRegistry _delivery;
     private readonly Mock<IConversationFactory> _factory;
+    private readonly VoiceConversationManager _manager;
+    private readonly SatelliteSessionRegistry _sessions = new();
     private readonly IServiceProvider _services;
 
     public CreateConversationToolTests()
@@ -43,9 +45,15 @@ public class CreateConversationToolTests
                 return new ConversationCreation(identity, topic);
             });
 
+        _manager = new VoiceConversationManager(
+            _factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+
         _services = new ServiceCollection()
             .AddSingleton(registry)
             .AddSingleton(_delivery)
+            .AddSingleton(_manager)
+            .AddSingleton(_sessions)
             .AddSingleton<IConversationFactory>(_factory.Object)
             .BuildServiceProvider();
     }
@@ -143,5 +151,37 @@ public class CreateConversationToolTests
         _factory.Verify(
             f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task McpRun_AttachWithLiveSatelliteSession_DoesNotBind()
+    {
+        // A turn-start announce for a conversation a satellite is actively holding needs
+        // no binding: send_reply routes through the live session, and a stray binding's
+        // expiry would flush the shared accumulator mid-turn.
+        var session = new SatelliteSession("office-01", new SatelliteConfig { Identity = "household", Room = "Office" });
+        var convId = await _manager.GetOrCreateAsync(session, "mycroft", "descarga la peli", CancellationToken.None);
+        _sessions.Register(session);
+
+        var result = await CreateConversationTool.McpRun(
+            "mycroft", string.Empty, "fran", _services, "[download-complete] film.mkv", "office-01", convId);
+
+        result.ShouldBe(convId);
+        _delivery.Resolve(convId).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task McpRun_AttachWithDisconnectedSatellite_BindsForAnnouncement()
+    {
+        // The conversation is still mapped to its satellite but the session is gone
+        // (disconnected): the turn is delivered as an announcement on that satellite.
+        var session = new SatelliteSession("office-01", new SatelliteConfig { Identity = "household", Room = "Office" });
+        var convId = await _manager.GetOrCreateAsync(session, "mycroft", "descarga la peli", CancellationToken.None);
+
+        var result = await CreateConversationTool.McpRun(
+            "mycroft", string.Empty, "fran", _services, "[download-complete] film.mkv", "office-01", convId);
+
+        result.ShouldBe(convId);
+        _delivery.Resolve(convId)!.SatelliteId.ShouldBe("office-01");
     }
 }
