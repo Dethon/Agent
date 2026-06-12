@@ -14,13 +14,24 @@ public class McpFileSystemBackendFilesystemArgTests
             string toolName, Dictionary<string, object?> args, CancellationToken ct)
         {
             Calls.Add((toolName, args));
-            return Task.FromResult<JsonNode>(new JsonObject
+            JsonNode payload = toolName switch
             {
-                ["entries"] = new JsonArray(),
-                ["truncated"] = false,
-                ["total"] = 0
-            });
+                "fs_blob_read" => new JsonObject { ["contentBase64"] = "", ["eof"] = true },
+                _ => new JsonObject
+                {
+                    ["entries"] = new JsonArray(),
+                    ["truncated"] = false,
+                    ["total"] = 0
+                }
+            };
+            return Task.FromResult(payload);
         }
+    }
+
+    private static async IAsyncEnumerable<ReadOnlyMemory<byte>> EmptyChunks()
+    {
+        await Task.CompletedTask;
+        yield break;
     }
 
     [Fact]
@@ -32,5 +43,33 @@ public class McpFileSystemBackendFilesystemArgTests
         await backend.GlobAsync("/sub", "*.json", CancellationToken.None);
 
         backend.Calls.ShouldAllBe(c => Equals(c.Args["filesystem"], "downloads"));
+    }
+
+    [Fact]
+    public async Task ReadChunks_CarriesTheFilesystemName()
+    {
+        var backend = new CapturingBackend();
+
+        await foreach (var _ in backend.ReadChunksAsync("42/x", CancellationToken.None))
+        {
+        }
+
+        backend.Calls.ShouldContain(c => c.Tool == "fs_blob_read");
+        backend.Calls
+            .Where(c => c.Tool == "fs_blob_read")
+            .ShouldAllBe(c => Equals(c.Args["filesystem"], "downloads"));
+    }
+
+    [Fact]
+    public async Task WriteChunks_EmptySource_CarriesTheFilesystemName()
+    {
+        var backend = new CapturingBackend();
+
+        await backend.WriteChunksAsync("42/x", EmptyChunks(), true, true, CancellationToken.None);
+
+        backend.Calls.ShouldContain(c => c.Tool == "fs_blob_write");
+        backend.Calls
+            .Where(c => c.Tool == "fs_blob_write")
+            .ShouldAllBe(c => Equals(c.Args["filesystem"], "downloads"));
     }
 }
