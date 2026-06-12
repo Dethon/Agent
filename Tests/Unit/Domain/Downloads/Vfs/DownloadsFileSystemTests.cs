@@ -5,7 +5,6 @@ using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Shouldly;
-using Xunit;
 
 namespace Tests.Unit.Domain.Downloads.Vfs;
 

@@ -119,6 +119,10 @@ public sealed class DownloadsFileSystem(
             return NotFound<FsRemoveResult>(path);
         }
 
+        // Deliberately best-effort / non-transactional, mirroring PrinterQueueFileSystem: a Cleanup failure
+        // throws and aborts before the housekeeping steps (so we never orphan routing/files for a download
+        // that is still running), while the on-disk dir removal is swallowed because leftover/missing files
+        // must not undo a successful manager-side cleanup.
         await downloadClient.Cleanup(id, ct);
         await routingStore.RemoveAsync(id, ct);
         await RemoveDownloadDirectoryAsync(id, ct);
