@@ -10,7 +10,7 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Clients.Channels;
 
-public sealed class McpChannelConnection(string channelId, ILogger<McpChannelConnection>? logger = null)
+public sealed class McpChannelConnection(string channelId, bool attachOnly = false, ILogger<McpChannelConnection>? logger = null)
     : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
     private const string CancelCommandContent = "/cancel";
@@ -20,6 +20,8 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
     private McpClient? _client;
 
     public string ChannelId { get; } = channelId;
+
+    public bool AttachOnly { get; } = attachOnly;
 
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
 

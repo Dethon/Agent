@@ -55,8 +55,9 @@ public static class InjectorModule
             foreach (var endpoint in settings.ChannelEndpoints)
             {
                 var channelId = endpoint.ChannelId;
+                var attachOnly = endpoint.AttachOnly;
                 services = services.AddSingleton<IChannelConnection>(sp =>
-                    new McpChannelConnection(channelId, sp.GetService<ILogger<McpChannelConnection>>()));
+                    new McpChannelConnection(channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>()));
             }
 
             return services
