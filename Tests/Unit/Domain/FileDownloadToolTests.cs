@@ -249,7 +249,7 @@ public class FileDownloadToolTests
         result["status"]!.GetValue<string>().ShouldBe("success");
         _routingStore.Items.ShouldBeEmpty();
         result["message"]!.GetValue<string>().ShouldContain("alert");
-        result["message"]!.GetValue<string>().ShouldContain("/downloads");
+        result["message"]!.GetValue<string>().ShouldContain("/media/downloads");
     }
 
     private class FakeDownloadRoutingStore : IDownloadRoutingStore

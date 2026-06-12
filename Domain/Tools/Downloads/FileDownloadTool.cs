@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Tools.Config;
+using Domain.Tools.Downloads.Vfs;
 
 namespace Domain.Tools.Downloads;
 
@@ -101,7 +102,8 @@ public class FileDownloadTool(
         return new JsonObject
         {
             ["status"] = "success",
-            ["message"] = $"Download with id {id} started successfully. No conversation context was provided, so no completion alert will fire; check /downloads for status."
+            ["message"] = $"Download with id {id} started successfully. No conversation context was provided, " +
+                          $"so no completion alert will fire; check {MediaFilesystem.MountPoint}/{MediaFilesystem.DownloadsSubdir} for status."
         };
     }
 }

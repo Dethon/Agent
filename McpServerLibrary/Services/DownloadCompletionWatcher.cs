@@ -60,7 +60,7 @@ public sealed class DownloadCompletionWatcher(
                 continue;
             }
 
-            if (!await emitter.EmitAsync(DownloadCompletionPlanner.BuildPayload(entry, item), ct))
+            if (!await emitter.EmitAsync(DownloadCompletionPlanner.BuildPayload(entry), ct))
             {
                 logger.LogWarning(
                     "No active session received completion for download {DownloadId}; will retry", entry.DownloadId);
