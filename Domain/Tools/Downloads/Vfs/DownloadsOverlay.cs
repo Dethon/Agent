@@ -84,14 +84,14 @@ public sealed class DownloadsOverlay(
 
         // Candidates are library-root-relative (same convention as the disk glob results);
         // the pattern applies relative to basePath, mirroring the disk matcher root.
-        string? Relative(string candidate) =>
+        string? relative(string candidate) =>
             prefix.Length == 0 ? candidate
             : candidate.StartsWith(prefix + "/", StringComparison.Ordinal) ? candidate[(prefix.Length + 1)..]
             : null;
 
         var dirs = items
             .Select(i => $"{MediaFilesystem.DownloadsSubdir}/{i.Id}")
-            .Where(c => Relative(c) is { } rel && matches(rel))
+            .Where(c => relative(c) is { } rel && matches(rel))
             .Select(c => c + "/");
 
         if (dirsOnly)
@@ -101,7 +101,7 @@ public sealed class DownloadsOverlay(
 
         var files = items
             .Select(i => $"{MediaFilesystem.DownloadsSubdir}/{i.Id}/{DownloadsPath.StatusFileName}")
-            .Where(c => Relative(c) is { } rel && matches(rel));
+            .Where(c => relative(c) is { } rel && matches(rel));
 
         return dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList();
     }

@@ -69,7 +69,7 @@ public class McpFileDownloadTool(
         return node.Deserialize<ConversationContext>(ChannelProtocol.SerializerOptions);
     }
 
-    private static readonly string[] PlaceholderValues = ["null", "undefined"];
+    private static readonly string[] _placeholderValues = ["null", "undefined"];
 
     public static string? NormalizeOptionalText(string? value)
     {
@@ -79,7 +79,7 @@ public class McpFileDownloadTool(
         }
 
         var trimmed = value.Trim();
-        return PlaceholderValues.Contains(trimmed, StringComparer.OrdinalIgnoreCase) ? null : trimmed;
+        return _placeholderValues.Contains(trimmed, StringComparer.OrdinalIgnoreCase) ? null : trimmed;
     }
 
     public static JsonNode? ValidateInputs(int? searchResultId, string? link, string? title)

@@ -22,8 +22,8 @@ public class ChatMonitor(
     IMemoryRecallHook? memoryRecallHook,
     ILogger<ChatMonitor> logger)
 {
-    private readonly DeliveryTargetResolver targetResolver = new(channels, logger);
-    private readonly ReplyDispatcher replyDispatcher = new(metricsPublisher, logger);
+    private readonly DeliveryTargetResolver _targetResolver = new(channels, logger);
+    private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
 
     private sealed record TurnUpdate(
         AgentResponseUpdate Update, IReadOnlyList<DeliveryTarget> Targets, FirstReplyTracker? Tracker);
@@ -89,7 +89,7 @@ public class ChatMonitor(
 
         await foreach (var turn in aiResponses.WithCancellation(ct))
         {
-            var deliveredContent = await replyDispatcher.DeliverUpdateAsync(turn.Update, turn.Targets, ct);
+            var deliveredContent = await _replyDispatcher.DeliverUpdateAsync(turn.Update, turn.Targets, ct);
             if (deliveredContent && turn.Tracker?.TryComplete() is { } firstReplyMs)
             {
                 await PublishFirstReplyLatencyAsync(firstReplyMs, turn.Targets, agentKey, ct);
@@ -115,7 +115,7 @@ public class ChatMonitor(
     private async Task<GroupAnchors> ResolveGroupAnchorsAsync(
         (IChannelConnection Channel, ChannelMessage Message) first, AgentKey agentKey, CancellationToken ct)
     {
-        var targets = await targetResolver.ResolveAsync(first.Message, first.Channel, ct);
+        var targets = await _targetResolver.ResolveAsync(first.Message, first.Channel, ct);
         var (approvalChannel, approvalConversationId) = targets.Count > 0
             ? (targets[0].Channel, targets[0].ConversationId)
             : (first.Channel, first.Message.ConversationId);
@@ -160,7 +160,7 @@ public class ChatMonitor(
         // those conversations as pre-existing.
         if (x.Message.Origin is not null)
         {
-            await targetResolver.AnnounceTurnStartAsync(targets, x.Message, skipMinted: index == 0, ct);
+            await _targetResolver.AnnounceTurnStartAsync(targets, x.Message, skipMinted: index == 0, ct);
         }
         var userMessage = await BuildUserMessageAsync(x.Message, targets, thread, ct);
 
@@ -184,7 +184,7 @@ public class ChatMonitor(
     {
         return index == 0 || x.Message.ReplyTo is { Count: > 0 }
             ? groupTargets
-            : await targetResolver.ResolveAsync(x.Message, x.Channel, ct);
+            : await _targetResolver.ResolveAsync(x.Message, x.Channel, ct);
     }
 
     private async Task<ChatMessage> BuildUserMessageAsync(

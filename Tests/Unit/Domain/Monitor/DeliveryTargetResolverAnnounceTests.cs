@@ -10,7 +10,7 @@ namespace Tests.Unit.Domain.Monitor;
 
 public class DeliveryTargetResolverAnnounceTests
 {
-    private static readonly DeliveryTargetResolver Resolver = new([], NullLogger.Instance);
+    private static readonly DeliveryTargetResolver _resolver = new([], NullLogger.Instance);
 
     private static (Mock<IChannelConnection> Mock, List<(string? InitialPrompt, string? Address, string? ExistingConversationId)> Calls) Channel(string id)
     {
@@ -42,7 +42,7 @@ public class DeliveryTargetResolverAnnounceTests
         var (signalr, calls) = Channel("signalr");
         var targets = new[] { new DeliveryTarget(signalr.Object, "7:42") };
 
-        await Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
+        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
 
         var call = calls.ShouldHaveSingleItem();
         call.ExistingConversationId.ShouldBe("7:42");
@@ -55,7 +55,7 @@ public class DeliveryTargetResolverAnnounceTests
         var (signalr, calls) = Channel("signalr");
         var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
 
-        await Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
+        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
 
         calls.ShouldBeEmpty();
     }
@@ -68,7 +68,7 @@ public class DeliveryTargetResolverAnnounceTests
         var (signalr, calls) = Channel("signalr");
         var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
 
-        await Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
+        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
 
         calls.ShouldHaveSingleItem().ExistingConversationId.ShouldBe("minted-1");
     }
@@ -82,7 +82,7 @@ public class DeliveryTargetResolverAnnounceTests
         var (voice, calls) = Channel("voice");
         var targets = new[] { new DeliveryTarget(voice.Object, "7:42") };
 
-        await Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
+        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
 
         calls.ShouldHaveSingleItem().ExistingConversationId.ShouldBe("7:42");
     }
@@ -95,7 +95,7 @@ public class DeliveryTargetResolverAnnounceTests
         var (voice, calls) = Channel("voice");
         var targets = new[] { new DeliveryTarget(voice.Object, "7:42", Address: "fran-office-01") };
 
-        await Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
+        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
 
         calls.ShouldHaveSingleItem().Address.ShouldBe("fran-office-01");
     }
@@ -115,7 +115,7 @@ public class DeliveryTargetResolverAnnounceTests
         };
 
         await Should.NotThrowAsync(
-            Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None));
+            _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None));
 
         telegramCalls.ShouldHaveSingleItem();
     }
