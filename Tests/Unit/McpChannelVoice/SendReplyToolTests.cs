@@ -150,7 +150,7 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_StreamComplete_SynthesisesAccumulatedText()
     {
-        // Real agent streaming (see ChatMonitor.MapResponseUpdate): Text chunks are
+        // Real agent streaming (see ReplyDispatcher.MapResponseUpdate): Text chunks are
         // emitted with isComplete=false; completion arrives only as a StreamComplete
         // event with empty content and no messageId. The reply must still be spoken.
         await SendReplyTool.McpRun(_conversationId, "hola ", ReplyContentType.Text, false, "m-1", _services);
