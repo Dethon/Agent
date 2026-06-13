@@ -1,5 +1,4 @@
 using Shouldly;
-using WebChat.Client.State;
 using WebChat.Client.State.AgentActivity;
 
 namespace Tests.Unit.WebChat.Client.State;
