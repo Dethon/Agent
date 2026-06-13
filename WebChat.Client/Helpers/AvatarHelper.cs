@@ -4,14 +4,14 @@ public static class AvatarHelper
 {
     private static readonly string[] _colors =
     [
-        "#FF6B6B",
-        "#4ECDC4",
-        "#45B7D1",
-        "#FFA07A",
-        "#98D8C8",
-        "#F7DC6F",
-        "#BB8FCE",
-        "#85C1E2"
+        "#E9601F",
+        "#C2693B",
+        "#B5611F",
+        "#A8743A",
+        "#9A5B4A",
+        "#7C6A3F",
+        "#3F7D6E",
+        "#8A5A3C"
     ];
 
     public static string GetColorForUser(string? userId)
