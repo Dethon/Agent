@@ -50,7 +50,7 @@
 
     private async Task HandleSubmit()
     {
-        if (string.IsNullOrWhiteSpace(_inputText) || _disabled)
+        if (!ChatInputLogic.CanSend(_disabled, _inputText, _isStreaming))
         {
             return;
         }
@@ -101,7 +101,7 @@
     }
     <button class="btn btn-primary"
             @onclick="HandleSubmit"
-            disabled="@(_disabled || string.IsNullOrWhiteSpace(_inputText))">
+            disabled="@(!ChatInputLogic.CanSend(_disabled, _inputText, _isStreaming))">
         Send
     </button>
 </div>
