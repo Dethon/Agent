@@ -21,7 +21,7 @@ public static class SchedulingPrompt
 
         ### Creating a schedule
 
-        `fs_create` a `schedule.json` whose content is a JSON object:
+        `text_create` a `schedule.json` whose content is a JSON object:
 
         - `prompt` (required) — the instruction delivered to the agent when the schedule fires.
         - `cron` **or** `runAt` — exactly one is required, and they are mutually exclusive.
@@ -61,10 +61,10 @@ public static class SchedulingPrompt
 
         ### Managing schedules
 
-        - **Discover** — `fs_glob` `/schedules` to list agents, then glob `/schedules/<agentId>` to list their schedules.
-        - **Change** — `fs_edit` the `schedule.json` to adjust the prompt, timing, or delivery.
-        - **Reassign / rename** — `fs_move` a schedule directory to a different `<agentId>` or `<scheduleId>`.
-        - **Remove** — `fs_delete` the schedule directory.
-        - **Run now** — `fs_exec` `run_now.sh` on a schedule directory to fire it immediately without waiting for its next scheduled time.
+        - **Discover** — `glob` `/schedules` to list agents, then glob `/schedules/<agentId>` to list their schedules.
+        - **Change** — `text_edit` the `schedule.json` to adjust the prompt, timing, or delivery.
+        - **Reassign / rename** — `move` a schedule directory to a different `<agentId>` or `<scheduleId>`.
+        - **Remove** — `remove` the schedule directory.
+        - **Run now** — `exec` `run_now.sh` on a schedule directory to fire it immediately without waiting for its next scheduled time.
         """;
 }

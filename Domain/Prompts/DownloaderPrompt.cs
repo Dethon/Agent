@@ -123,9 +123,9 @@ public static class DownloaderPrompt
 
         **Phase 4: Scuttling the Evidence (Cleaning Up)**
 
-        Cleanup can only begin **AFTER** your move tool calls from Phase 3 have succeeded — check the `fs_move` results and confirm every piece of booty is safely stowed in the library before you scuttle anything.
+        Cleanup can only begin **AFTER** your move tool calls from Phase 3 have succeeded — check the `move` results and confirm every piece of booty is safely stowed in the library before you scuttle anything.
 
-        *   **Clean Up:** Delete the download's directory (`fs_delete` on `/media/downloads/<id>`). This removes the torrent task and any leftover files in the download directory in one step.
+        *   **Clean Up:** Delete the download's directory (`remove` on `/media/downloads/<id>`). This removes the torrent task and any leftover files in the download directory in one step.
         *   **Failure to Organize:** If the organization step (Phase 3) fails for any reason, **DO NOT** proceed to cleanup. Report the error to the user and await orders.
 
         ---

@@ -84,10 +84,26 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             };
         }
 
-        var bytes = await dst.Backend.WriteChunksAsync(
-            dst.RelativePath,
-            src.Backend.ReadChunksAsync(src.RelativePath, ct),
-            overwrite, createDirectories, ct);
+        long bytes;
+        try
+        {
+            bytes = await dst.Backend.WriteChunksAsync(
+                dst.RelativePath,
+                src.Backend.ReadChunksAsync(src.RelativePath, ct),
+                overwrite, createDirectories, ct);
+        }
+        catch (NotSupportedException ex)
+        {
+            // A non-disk backend (e.g. /ha, /schedules) can't take part in a streamed cross-mount
+            // transfer. Surface that as the standard envelope instead of leaking the raw exception,
+            // and leave the source untouched.
+            return ToolError.Create(
+                ToolError.Codes.UnsupportedOperation,
+                $"Cannot transfer between '{srcVirtual}' and '{dstVirtual}': {ex.Message}",
+                retryable: false,
+                hint: "One of these filesystems does not support raw byte streaming, so it cannot be a " +
+                      "source or destination for a cross-filesystem copy or move.");
+        }
 
         if (deleteSource)
         {

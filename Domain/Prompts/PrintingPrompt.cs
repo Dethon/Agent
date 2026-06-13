@@ -46,16 +46,16 @@ public static class PrintingPrompt
 
         - **Convert before printing.** If what you want to print is not an accepted format, first
           transform it into one — typically plain text or a JPEG. For example: render a PDF, web page,
-          chart, or PNG to a JPEG; or extract a document's text and `fs_create` it as a `.txt`. Use your
+          chart, or PNG to a JPEG; or extract a document's text and `text_create` it as a `.txt`. Use your
           available tools (e.g. the sandbox) to do the conversion.
-        - Examples: `fs_create /print-queue/note.txt` with text content, or copy `/vault/photo.jpg`
+        - Examples: `text_create /print-queue/note.txt` with text content, or copy `/vault/photo.jpg`
           to `/print-queue/photo.jpg`.
-        - To **cancel** a job that has not finished printing yet, remove it with `fs_delete`. If it has
+        - To **cancel** a job that has not finished printing yet, use the `remove` tool. If it has
           already finished, it is gone from the queue and removal is a no-op.
         - Read `/print-queue/status.json` to see every queued job and its state
           (queued / pending / processing).
         - Finished jobs disappear from the listing automatically.
         - `move` and `exec` are not supported on this filesystem. To reprint an edited text document
-          use `fs_edit` (text only); it cancels the old job and queues the new version.
+          use `text_edit` (text only); it cancels the old job and queues the new version.
         """;
 }
