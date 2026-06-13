@@ -16,7 +16,7 @@ public class PrintQueueCoordinatorTests : IDisposable
     private (PrintSpool Spool, PrintQueueCoordinator Coordinator) Build()
     {
         var spool = new PrintSpool(_root, _clock);
-        return (spool, new PrintQueueCoordinator(spool, _printer, _clock,
+        return (spool, new PrintQueueCoordinator(spool, _printer, new PrintQueueGate(), _clock,
             TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500)));
     }
 

@@ -12,7 +12,7 @@ namespace Domain.Tools.Printing.Vfs;
 public sealed class PrinterQueueFileSystem(
     IPrintSpool spool,
     IPrinterClient printer,
-    PrintQueueCoordinator coordinator,
+    PrintQueueGate gate,
     string supportedFormats) : IFileSystemBackend
 {
     public string FilesystemName => "print-queue";
@@ -25,7 +25,6 @@ public sealed class PrinterQueueFileSystem(
 
     public async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
-        await coordinator.ReconcileAsync(ct);
         var node = PrinterQueuePath.Parse(path);
 
         if (node.Kind == PrinterNodeKind.StatusFile)
@@ -61,7 +60,6 @@ public sealed class PrinterQueueFileSystem(
 
     public async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
-        await coordinator.ReconcileAsync(ct);
         var node = PrinterQueuePath.Parse(path);
 
         if (node.Kind == PrinterNodeKind.Root)
@@ -97,6 +95,7 @@ public sealed class PrinterQueueFileSystem(
 
     public async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
+        using var _ = await gate.AcquireAsync(ct);
         var node = PrinterQueuePath.Parse(path);
         if (node.Kind == PrinterNodeKind.StatusFile)
         {
@@ -133,6 +132,7 @@ public sealed class PrinterQueueFileSystem(
 
     public async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
     {
+        using var _ = await gate.AcquireAsync(ct);
         var node = PrinterQueuePath.Parse(path);
         if (node.Kind == PrinterNodeKind.StatusFile)
         {
@@ -187,7 +187,6 @@ public sealed class PrinterQueueFileSystem(
 
     public async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
-        await coordinator.ReconcileAsync(ct);
         var entries = await spool.ListAsync(ct);
         var names = entries.Select(e => e.FileName).Append(PrinterQueuePath.StatusFileName);
 
@@ -206,8 +205,6 @@ public sealed class PrinterQueueFileSystem(
     public async Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path, string? directoryPath,
         string? filePattern, int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
-        await coordinator.ReconcileAsync(ct);
-
         Regex matcher;
         try
         {
@@ -277,6 +274,7 @@ public sealed class PrinterQueueFileSystem(
 
     public async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {
+        using var _ = await gate.AcquireAsync(ct);
         var node = PrinterQueuePath.Parse(path);
         if (node.Kind == PrinterNodeKind.StatusFile)
         {
@@ -313,6 +311,7 @@ public sealed class PrinterQueueFileSystem(
     public async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct)
     {
+        using var _ = await gate.AcquireAsync(ct);
         var src = PrinterQueuePath.Parse(sourcePath);
         var dst = PrinterQueuePath.Parse(destinationPath);
         if (src.Kind != PrinterNodeKind.DocumentFile || dst.Kind != PrinterNodeKind.DocumentFile)
@@ -375,6 +374,7 @@ public sealed class PrinterQueueFileSystem(
     public async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
         bool overwrite, bool createDirectories, CancellationToken ct)
     {
+        using var _ = await gate.AcquireAsync(ct);
         var node = PrinterQueuePath.Parse(path);
         if (node.Kind != PrinterNodeKind.DocumentFile)
         {

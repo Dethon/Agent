@@ -7,12 +7,17 @@ namespace Domain.Tools.Printing;
 public sealed class PrintQueueCoordinator(
     IPrintSpool spool,
     IPrinterClient printer,
+    PrintQueueGate gate,
     TimeProvider clock,
     TimeSpan submitDebounce,
     TimeSpan reconcileGrace)
 {
+    // The whole tick runs under the shared gate so a submit/reconcile never interleaves with a
+    // foreground create/edit/delete/copy. SubmitDueAsync/ReconcileAsync remain individually
+    // callable (e.g. from tests) and are the un-gated building blocks invoked here under the gate.
     public async Task TickAsync(CancellationToken ct)
     {
+        using var _ = await gate.AcquireAsync(ct);
         await SubmitDueAsync(ct);
         await ReconcileAsync(ct);
     }

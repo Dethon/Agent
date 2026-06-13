@@ -18,13 +18,14 @@ public class PrinterQueueFileSystemTests : IDisposable
     private readonly FakePrinterClient _printer = new();
     private PrintSpool _spool = null!;
     private PrintQueueCoordinator _coordinator = null!;
+    private readonly PrintQueueGate _gate = new();
 
     private PrinterQueueFileSystem Build()
     {
         _spool = new PrintSpool(_root, _clock);
-        _coordinator = new PrintQueueCoordinator(_spool, _printer, _clock,
+        _coordinator = new PrintQueueCoordinator(_spool, _printer, _gate, _clock,
             TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
-        return new PrinterQueueFileSystem(_spool, _printer, _coordinator, "text,jpeg,pwg-raster,urf,pcl");
+        return new PrinterQueueFileSystem(_spool, _printer, _gate, "text,jpeg,pwg-raster,urf,pcl");
     }
 
     [Fact]
@@ -205,7 +206,7 @@ public class PrinterQueueFileSystemTests : IDisposable
     }
 
     [Fact]
-    public async Task FinishedJob_DisappearsFromQueue_OnNextListing()
+    public async Task Reads_DoNotPruneFinishedJobs_OnlyTheCoordinatorDoes()
     {
         var fs = Build();
         await fs.CreateAsync("note.txt", "print me", false, true, CancellationToken.None);
@@ -215,13 +216,58 @@ public class PrinterQueueFileSystemTests : IDisposable
 
         _printer.CompleteJob(jobId);
 
-        // First listing records the absence but keeps the job (debounced); it disappears after the grace.
+        // Record the absence and let the grace window elapse so the job is now prune-eligible.
+        await _coordinator.ReconcileAsync(CancellationToken.None);
+        _clock.Advance(TimeSpan.FromMilliseconds(600));
+
+        // Reads are side-effect free: globbing/reading/info must NOT prune the finished job.
         (await fs.GlobAsync("/", "*", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>()
             .Value.Entries.ShouldContain("/note.txt");
+        await fs.ReadAsync("status.json", null, null, CancellationToken.None);
+        await fs.InfoAsync("note.txt", CancellationToken.None);
+        (await _spool.GetAsync("note.txt", CancellationToken.None)).ShouldNotBeNull();
 
+        // The background coordinator reconcile is what actually prunes it.
+        await _coordinator.ReconcileAsync(CancellationToken.None);
+        (await _spool.GetAsync("note.txt", CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Tick_WaitsForSharedGate_BeforeSubmitting()
+    {
+        var fs = Build();
+        await fs.CreateAsync("note.txt", "print me", false, true, CancellationToken.None);
+        _clock.Advance(TimeSpan.FromMilliseconds(600)); // now past the submit debounce
+
+        var holder = await _gate.AcquireAsync(CancellationToken.None);
+        var tick = _coordinator.TickAsync(CancellationToken.None);
+        await Task.Delay(100);
+        tick.IsCompleted.ShouldBeFalse();      // blocked on the shared gate
+        _printer.Submissions.ShouldBeEmpty();   // nothing submitted while a foreground op holds the gate
+
+        holder.Dispose();
+        await tick;
+        _printer.Submissions.ShouldContain(s => s.JobName == "note.txt"); // proceeds once released
+    }
+
+    [Fact]
+    public async Task Delete_WaitsForSharedGate()
+    {
+        var fs = Build();
+        await fs.CreateAsync("note.txt", "print me", false, true, CancellationToken.None);
         _clock.Advance(TimeSpan.FromMilliseconds(600));
-        var glob = (await fs.GlobAsync("/", "*", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
-        glob.Entries.ShouldNotContain("/note.txt");
+        await _coordinator.SubmitDueAsync(CancellationToken.None);
+        var jobId = (await _spool.GetAsync("note.txt", CancellationToken.None))!.JobId!.Value;
+
+        var holder = await _gate.AcquireAsync(CancellationToken.None);
+        var delete = fs.DeleteAsync("note.txt", CancellationToken.None);
+        await Task.Delay(100);
+        delete.IsCompleted.ShouldBeFalse();    // blocked on the shared gate
+        _printer.Canceled.ShouldBeEmpty();      // no cancellation while the gate is held
+
+        holder.Dispose();
+        (await delete).ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
+        _printer.Canceled.ShouldContain(jobId); // cancels once it can take the gate
     }
 
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> Single(byte[] bytes)

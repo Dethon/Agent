@@ -38,16 +38,18 @@ public static class ConfigModule
             .AddSingleton<IPrinterClient>(sp => new IppPrinterClient(
                 sp.GetRequiredService<ISharpIppClient>(), new Uri(settings.PrinterUri), settings.DocumentFormat, settings.PrintScaling))
             .AddSingleton<IPrintSpool>(sp => new PrintSpool(settings.SpoolPath, sp.GetRequiredService<TimeProvider>()))
+            .AddSingleton<PrintQueueGate>()
             .AddSingleton(sp => new PrintQueueCoordinator(
                 sp.GetRequiredService<IPrintSpool>(),
                 sp.GetRequiredService<IPrinterClient>(),
+                sp.GetRequiredService<PrintQueueGate>(),
                 sp.GetRequiredService<TimeProvider>(),
                 TimeSpan.FromMilliseconds(settings.SubmitDebounceMilliseconds),
                 TimeSpan.FromMilliseconds(settings.ReconcileGraceMilliseconds)))
             .AddSingleton(sp => new PrinterQueueFileSystem(
                 sp.GetRequiredService<IPrintSpool>(),
                 sp.GetRequiredService<IPrinterClient>(),
-                sp.GetRequiredService<PrintQueueCoordinator>(),
+                sp.GetRequiredService<PrintQueueGate>(),
                 settings.SupportedFormats))
             .AddHostedService<PrintSubmissionWorker>();
 
