@@ -19,6 +19,11 @@ public static class ChannelProtocol
     // ConversationContext to every tools/call; dual-role servers read it for routing.
     public const string ConversationContextMetaKey = "conversationContext";
 
+    // Sender attributed to channel/message notifications the system originates on a user's
+    // behalf rather than the user themselves — e.g. the /cancel command and download-completion
+    // alerts. Keeps these off the initiating user's identity (memory scoping, attribution).
+    public const string SystemSender = "system";
+
     // The agent's channel connections identify themselves as "channel-<channelId>"; tool sessions
     // use the agent name. Dual-role servers must only count channel clients as delivery targets —
     // tool sessions silently drop channel/message notifications.

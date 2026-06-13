@@ -14,7 +14,6 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
     : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
     private const string CancelCommandContent = "/cancel";
-    private const string SystemSender = "system";
 
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
     private McpClient? _client;
@@ -122,7 +121,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
         {
             ConversationId = notification.ConversationId,
             Content = CancelCommandContent,
-            Sender = SystemSender,
+            Sender = ChannelProtocol.SystemSender,
             ChannelId = ChannelId,
             AgentId = notification.AgentId
         };

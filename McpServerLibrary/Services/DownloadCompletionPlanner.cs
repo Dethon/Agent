@@ -9,7 +9,10 @@ public static class DownloadCompletionPlanner
     public static ChannelMessageNotification BuildPayload(DownloadRouting routing) => new()
     {
         ConversationId = routing.Context.ConversationId,
-        Sender = routing.Context.UserId,
+        // A completion alert is a system-originated event, not the user speaking. Attribute it
+        // to the system sender so it never lands on the initiating user's identity (memory
+        // scoping, message attribution); delivery still routes via ConversationId + ReplyTo.
+        Sender = ChannelProtocol.SystemSender,
         Content = BuildPrompt(routing),
         AgentId = routing.Context.AgentId,
         ReplyTo = [routing.Context.Origin],
