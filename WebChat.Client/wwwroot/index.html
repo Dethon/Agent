@@ -8,13 +8,9 @@
     <title>Herfluffness' Assistants</title>
     <base href="/"/>
 
-    <!-- Preconnect for performance -->
-    <link href="https://fonts.googleapis.com" rel="preconnect"/>
-    <link crossorigin href="https://fonts.gstatic.com" rel="preconnect"/>
-
-    <!-- Inter font for modern typography -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-          rel="stylesheet"/>
+    <!-- Self-hosted fonts: preload critical faces for first paint -->
+    <link rel="preload" href="/fonts/hanken-grotesk-400.woff2" as="font" type="font/woff2" crossorigin/>
+    <link rel="preload" href="/fonts/fraunces.woff2" as="font" type="font/woff2" crossorigin/>
 
     <link href="css/app.css" rel="stylesheet"/>
     <link rel="manifest"/>
