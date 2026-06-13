@@ -126,6 +126,8 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public string ChannelId { get; init; } = "test-channel";
 
+    public bool AttachOnly { get; init; }
+
     public string? ConversationIdToReturn { get; init; }
 
     public Func<Task>? ReplyGate { get; init; }
@@ -136,7 +138,7 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public List<(string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete)> SentReplies { get; } = [];
 
-    public List<(string AgentId, string TopicName, string Sender, string? InitialPrompt)> CreatedConversations { get; } = [];
+    public List<(string AgentId, string TopicName, string Sender, string? InitialPrompt, string? ExistingConversationId)> CreatedConversations { get; } = [];
 
     public List<(string ConversationId, IReadOnlyList<ToolApprovalRequest> Requests)> NotifyAutoApprovedCalls { get; } = [];
 
@@ -163,7 +165,7 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, string? address, string? existingConversationId, CancellationToken ct)
     {
-        CreatedConversations.Add((agentId, topicName, sender, initialPrompt));
+        CreatedConversations.Add((agentId, topicName, sender, initialPrompt, existingConversationId));
         return Task.FromResult(ConversationIdToReturn);
     }
 
@@ -553,6 +555,15 @@ public class ChatMonitorTests
     }
 
     [Fact]
+    public void FromMessage_DownloadOrigin_ReturnsNull()
+    {
+        var msg = MonitorTestMocks.CreateChannelMessage(conversationId: "c", channelId: "library", agentId: "jack")
+            with
+        { Origin = new MessageOrigin(MessageOriginKind.Download, null) };
+        ScheduleExecutionEvent.FromMessage(msg, 100, true, null).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task Monitor_WithClearCommand_CleansUpAndWipesThread()
     {
         // Arrange
@@ -696,5 +707,114 @@ public class ChatMonitorTests
         // Guard against a vacuous pass: the run must have actually completed a turn.
         channel.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete);
         published.OfType<LatencyEvent>().ShouldNotContain(e => e.Stage == LatencyStage.FirstReply);
+    }
+
+    [Fact]
+    public async Task Monitor_DownloadOriginIntoExistingConversation_AnnouncesTurnStartBeforeFirstReply()
+    {
+        // A download alert delivers into an EXISTING WebChat conversation. The channel
+        // must receive the turn-start announce (create_conversation with the existing id
+        // and the alert text as initialPrompt) BEFORE the first reply chunk, so its
+        // stream exists when chunks arrive.
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        FakeChannelConnection? signalrRef = null;
+        bool? announcedAtFirstReply = null;
+        var signalr = new FakeChannelConnection
+        {
+            ChannelId = "signalr",
+            OnReply = _ => announcedAtFirstReply ??= signalrRef!.CreatedConversations.Count == 1
+        };
+        signalrRef = signalr;
+        signalr.Complete();
+        var library = MonitorTestMocks.CreateChannel("library", new ChannelMessage
+        {
+            ConversationId = "7:42",
+            Content = "[download-complete] film.mkv",
+            Sender = "fran",
+            ChannelId = "library",
+            AgentId = "jack",
+            Origin = new MessageOrigin(MessageOriginKind.Download, null),
+            ReplyTo = [new ReplyTarget("signalr", "7:42")]
+        });
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+
+        var monitor = new ChatMonitor(
+            [library, signalr],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        var announce = signalr.CreatedConversations.ShouldHaveSingleItem();
+        announce.ExistingConversationId.ShouldBe("7:42");
+        announce.InitialPrompt.ShouldBe("[download-complete] film.mkv");
+        announce.Sender.ShouldBe("fran");
+        announcedAtFirstReply.ShouldNotBeNull();
+        announcedAtFirstReply.ShouldBe(true);
+        signalr.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
+    }
+
+    [Fact]
+    public async Task Monitor_UserMessageWithoutOrigin_DoesNotAnnounce()
+    {
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var message = MonitorTestMocks.CreateChannelMessage();
+        var channel = MonitorTestMocks.CreateChannel(messages: message);
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        channel.CreatedConversations.ShouldBeEmpty();
+        channel.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete);
+    }
+
+    [Fact]
+    public async Task Monitor_ScheduleOriginMintingConversation_DoesNotAnnounceMintedTarget()
+    {
+        // The group-opening message's create_conversation already set up the stream;
+        // a second (announce) call would double-increment the pending count and wedge
+        // the stream open. Exactly ONE CreatedConversations entry must exist: the mint.
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var signalr = new FakeChannelConnection { ChannelId = "signalr", ConversationIdToReturn = "minted-signalr" };
+        signalr.Complete();
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", new ChannelMessage
+        {
+            ConversationId = "fire-1",
+            Content = "Check stalled torrents",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "jonas",
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "sched-1"),
+            ReplyTo = [new ReplyTarget("signalr", null)]
+        });
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+
+        var monitor = new ChatMonitor(
+            [scheduling, signalr],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        var mint = signalr.CreatedConversations.ShouldHaveSingleItem();
+        mint.ExistingConversationId.ShouldBeNull();
+        signalr.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
     }
 }

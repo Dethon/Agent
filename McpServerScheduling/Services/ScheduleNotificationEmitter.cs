@@ -22,7 +22,12 @@ public sealed class ScheduleNotificationEmitter(ILogger<ScheduleNotificationEmit
         logger.LogInformation("MCP session unregistered: {SessionId}", sessionId);
     }
 
-    public bool HasActiveSessions => !_activeSessions.IsEmpty;
+    // Tool sessions (the agent's per-conversation MCP clients) also land here on dual-role servers;
+    // they silently drop channel/message notifications, so only channel-client sessions count as
+    // delivery targets — otherwise EmitAsync reports success, the one-shot schedule is deleted,
+    // and the fire is lost.
+    public bool HasActiveSessions =>
+        _activeSessions.Values.Any(s => ChannelProtocol.IsChannelClientName(s.ClientInfo?.Name));
 
     public static ChannelMessageNotification BuildPayload(
         string conversationId, string sender, string content, string agentId,
@@ -40,7 +45,15 @@ public sealed class ScheduleNotificationEmitter(ILogger<ScheduleNotificationEmit
 
     public async Task<bool> EmitAsync(ChannelMessageNotification payload, CancellationToken ct = default)
     {
-        var tasks = _activeSessions.Values.Select(async server =>
+        var channelSessions = _activeSessions.Values
+            .Where(s => ChannelProtocol.IsChannelClientName(s.ClientInfo?.Name))
+            .ToList();
+        if (channelSessions.Count == 0)
+        {
+            return false;
+        }
+
+        var tasks = channelSessions.Select(async server =>
         {
             try
             {

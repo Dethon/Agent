@@ -1,16 +1,17 @@
 using Domain.Contracts;
 using Domain.Tools.Config;
-using Infrastructure.Extensions;
+using Domain.Tools.Downloads.Vfs;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using McpServerLibrary.McpPrompts;
 using McpServerLibrary.McpResources;
 using McpServerLibrary.McpTools;
-using McpServerLibrary.ResourceSubscriptions;
+using McpServerLibrary.Services;
 using McpServerLibrary.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 
 namespace McpServerLibrary.Modules;
 
@@ -29,37 +30,39 @@ public static class ConfigModule
 
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
-        var subscriptionTracker = new SubscriptionTracker();
+        var emitter = new DownloadNotificationEmitter(
+            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<DownloadNotificationEmitter>());
 
         services
             .AddMemoryCache()
             .AddSingleton(settings)
+            .AddSingleton(emitter)
+            .AddSingleton<IDownloadNotificationEmitter>(emitter)
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.BaseLibraryPath))
-            .AddSingleton(subscriptionTracker)
+            .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
+            .AddSingleton<IDownloadRoutingStore, RedisDownloadRoutingStore>()
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
-            .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
             .AddFileSystemClient()
-            .AddHostedService<SubscriptionMonitor>()
+            .AddSingleton<DownloadsOverlay>()
+            .AddHostedService<DownloadCompletionWatcher>()
             .AddMcpServer()
             .WithHttpTransport(options =>
             {
 #pragma warning disable MCPEXP002 // RunSessionHandler is experimental
                 options.RunSessionHandler = async (_, server, ct) =>
                 {
+                    var sessionId = server.SessionId ?? Guid.NewGuid().ToString();
+                    emitter.RegisterSession(sessionId, server);
                     try
                     {
                         await server.RunAsync(ct);
                     }
                     finally
                     {
-                        var sessionId = server.StateKey;
-                        if (!string.IsNullOrEmpty(sessionId))
-                        {
-                            subscriptionTracker.RemoveSession(sessionId);
-                        }
+                        emitter.UnregisterSession(sessionId);
                     }
                 };
 #pragma warning restore MCPEXP002
@@ -80,12 +83,15 @@ public static class ConfigModule
             // Download tools
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
-            .WithTools<McpGetDownloadStatusTool>()
-            .WithTools<McpCleanupDownloadTool>()
             .WithTools<McpContentRecommendationTool>()
-            .WithTools<McpResubscribeDownloadsTool>()
+            // Channel-protocol tools (invoked by the agent's channel connection, hidden from the LLM)
+            .WithTools<SendReplyTool>()
+            .WithTools<RequestApprovalTool>()
+            .WithTools<RegisterAgentsTool>()
             // Filesystem backend tools
             .WithTools<FsGlobTool>()
+            .WithTools<FsReadTool>()
+            .WithTools<FsDeleteTool>()
             .WithTools<FsMoveTool>()
             .WithTools<FsInfoTool>()
             .WithTools<FsCopyTool>()
@@ -94,11 +100,7 @@ public static class ConfigModule
             // Prompts
             .WithPrompts<McpSystemPrompt>()
             // Resources
-            .WithResources<McpDownloadResource>()
-            .WithResources<FileSystemResource>()
-            .WithSubscribeToResourcesHandler(SubscriptionHandlers.SubscribeToResource)
-            .WithUnsubscribeFromResourcesHandler(SubscriptionHandlers.UnsubscribeToResource)
-            .WithListResourcesHandler(SubscriptionHandlers.ListResources);
+            .WithResources<FileSystemResource>();
 
         return services;
     }

@@ -15,11 +15,22 @@ public static class ChannelProtocol
     public const string CreateConversationTool = "create_conversation";
     public const string RegisterAgentsTool = "register_agents";
 
-    // The voice channel attaches to a shared conversation rather than owning one: its
-    // create_conversation hands back the id it was given (it has no persisted TopicId of its
-    // own). Delivery fan-out orders these targets last so a topic-owning channel always anchors
-    // the shared id. Matches the "voice"/"voice:<satellite>" deliverTo convention (SchedulingPrompt).
-    public const string VoiceChannelId = "voice";
+    // _meta key under which the agent's MCP tool wrapper attaches the current turn's
+    // ConversationContext to every tools/call; dual-role servers read it for routing.
+    public const string ConversationContextMetaKey = "conversationContext";
+
+    // Sender attributed to channel/message notifications the system originates on a user's
+    // behalf rather than the user themselves — e.g. the /cancel command and download-completion
+    // alerts. Keeps these off the initiating user's identity (memory scoping, attribution).
+    public const string SystemSender = "system";
+
+    // The agent's channel connections identify themselves as "channel-<channelId>"; tool sessions
+    // use the agent name. Dual-role servers must only count channel clients as delivery targets —
+    // tool sessions silently drop channel/message notifications.
+    public const string ChannelClientNamePrefix = "channel-";
+
+    public static bool IsChannelClientName(string? clientName)
+        => clientName?.StartsWith(ChannelClientNamePrefix, StringComparison.Ordinal) == true;
 
     // A TypeInfoResolver is mandatory: the MCP SDK's SendNotificationAsync calls
     // JsonSerializerOptions.MakeReadOnly() on these options, which throws if no resolver is set.

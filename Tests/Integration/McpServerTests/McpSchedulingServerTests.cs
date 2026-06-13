@@ -138,6 +138,23 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
     }
 
     [Fact]
+    public async Task FsGlob_WithUnknownFilesystemArgument_IsIgnoredByServer()
+    {
+        var client = await ConnectAsync();
+
+        var result = await client.CallToolAsync("fs_glob", new Dictionary<string, object?>
+        {
+            ["pattern"] = "*",
+            ["basePath"] = "/",
+            ["filesystem"] = "schedules"
+        });
+
+        result.IsError.ShouldNotBe(true);
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
     public async Task CreateGlobRead_RoundTrip_PersistsAndReadsSchedule()
     {
         var client = await ConnectAsync();

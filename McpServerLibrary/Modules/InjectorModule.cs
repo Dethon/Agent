@@ -13,15 +13,14 @@ public static class InjectorModule
     public static IServiceCollection AddJacketClient(this IServiceCollection services, McpSettings settings)
     {
         services.AddHttpClient<ISearchClient, JackettSearchClient>((httpClient, _) =>
-            {
-                httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
-                httpClient.Timeout = TimeSpan.FromSeconds(60);
-                return new JackettSearchClient(httpClient, settings.Jackett.ApiKey);
-            })
-            .AddRetryWithExponentialWaitPolicy(
-                attempts: 3,
-                waitTime: TimeSpan.FromSeconds(1),
-                attemptTimeout: TimeSpan.FromSeconds(20));
+        {
+            httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
+            httpClient.Timeout = TimeSpan.FromSeconds(60);
+            return new JackettSearchClient(
+                httpClient,
+                settings.Jackett.ApiKey,
+                TimeSpan.FromSeconds(settings.Jackett.SearchDeadlineSeconds));
+        });
 
         return services;
     }

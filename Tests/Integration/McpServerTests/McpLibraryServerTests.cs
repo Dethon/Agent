@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Domain.DTOs.Channel;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -35,12 +38,28 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         // Download tools
         toolNames.ShouldContain("file_search");
         toolNames.ShouldContain("download_file");
-        toolNames.ShouldContain("download_status");
-        toolNames.ShouldContain("download_cleanup");
 
         // Filesystem backend tools
         toolNames.ShouldContain("fs_glob");
         toolNames.ShouldContain("fs_move");
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task McpServer_ExposesSingleMediaFilesystemResource()
+    {
+        var client = await McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(fixture.McpEndpoint)
+            }),
+            cancellationToken: CancellationToken.None);
+
+        var resources = await client.ListResourcesAsync(cancellationToken: CancellationToken.None);
+        var fsResources = resources.Where(r => r.Uri.StartsWith("filesystem://")).ToList();
+
+        fsResources.ShouldHaveSingleItem().Uri.ShouldBe("filesystem://media");
 
         await client.DisposeAsync();
     }
@@ -112,25 +131,9 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     }
 
     [Fact]
-    public async Task FileDownloadTool_WithLinkAndTitle_StartsDownloadAndStatusReportsTitle()
+    public async Task DownloadFile_WithConversationContextMeta_RecordsRoutingAndServesMediaOverlay()
     {
-        // Arrange — use a small, well-seeded public-domain magnet for stability.
-        // Sintel (Blender Foundation, Creative Commons) is a long-standing test torrent.
-        const string link =
-            "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10" +
-            "&dn=Sintel" +
-            "&tr=udp%3A%2F%2Fexplodie.org%3A6969" +
-            "&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969" +
-            "&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337" +
-            "&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969" +
-            "&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337" +
-            "&tr=wss%3A%2F%2Ftracker.btorrent.xyz" +
-            "&tr=wss%3A%2F%2Ftracker.fastcast.nz" +
-            "&tr=wss%3A%2F%2Ftracker.openwebtorrent.com" +
-            "&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F";
-        const string title = "Sintel Test Title";
-        var expectedId = link.GetHashCode();
-
+        // Arrange
         var client = await McpClient.CreateAsync(
             new HttpClientTransport(new HttpClientTransportOptions
             {
@@ -138,53 +141,81 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             }),
             cancellationToken: CancellationToken.None);
 
-        try
+        var downloadTool = (await client.ListToolsAsync()).Single(t => t.Name == "download_file");
+        var context = new ConversationContext("jack", "conv-journey", "fran", new ReplyTarget("signalr", "conv-journey"));
+        var meta = new JsonObject
         {
-            // Act — start download via the link path
-            var downloadResult = await client.CallToolAsync(
-                "download_file",
-                new Dictionary<string, object?>
-                {
-                    ["searchResultId"] = null,
-                    ["link"] = link,
-                    ["title"] = title
-                },
-                cancellationToken: CancellationToken.None);
+            ["conversationContext"] = JsonSerializer.SerializeToNode(context, ChannelProtocol.SerializerOptions)
+        };
+        const string magnetLink =
+            "magnet:?xt=urn:btih:KRWPCX3SJUM4IMM4YF3MVSJIBFTHVFCS&dn=ubuntu-24.04-desktop-amd64.iso";
 
-            // Assert — download_file accepted the link and returned success
-            downloadResult.ShouldNotBeNull();
-            var downloadContent = GetTextContent(downloadResult);
-            downloadContent.ShouldContain("success");
+        // Act - download_file with _meta carrying the conversation context
+        var downloadResult = await downloadTool.WithMeta(meta).CallAsync(
+            new Dictionary<string, object?>
+            {
+                ["searchResultId"] = null,
+                ["link"] = magnetLink,
+                ["title"] = "Journey Test"
+            },
+            cancellationToken: CancellationToken.None);
 
-            // Act — query status using the same id
-            var statusResult = await client.CallToolAsync(
-                "download_status",
-                new Dictionary<string, object?>
-                {
-                    ["downloadId"] = expectedId
-                },
-                cancellationToken: CancellationToken.None);
+        // Assert - the routing snapshot points back at the origin conversation
+        GetTextContent(downloadResult).ShouldContain("success");
+        var routing = (await fixture.RoutingStore.ListAsync()).ShouldHaveSingleItem();
+        routing.Title.ShouldBe("Journey Test");
+        routing.Context.ConversationId.ShouldBe("conv-journey");
+        routing.Context.Origin.ChannelId.ShouldBe("signalr");
+        var id = routing.DownloadId;
 
-            // Assert — status carries our supplied title (came from synthetic SearchResult cache)
-            var statusContent = GetTextContent(statusResult);
-            statusContent.ShouldContain(title);
+        // Assert - the download is visible through the media filesystem's downloads overlay
+        var globResult = await client.CallToolAsync(
+            "fs_glob",
+            new Dictionary<string, object?>
+            {
+                ["pattern"] = "**",
+                ["basePath"] = "downloads",
+                ["filesystem"] = "media"
+            },
+            cancellationToken: CancellationToken.None);
+        GetTextContent(globResult).ShouldContain($"downloads/{id}/status.json");
 
-            // Cleanup — verify the same id flows through cleanup
-            var cleanupResult = await client.CallToolAsync(
-                "download_cleanup",
-                new Dictionary<string, object?>
-                {
-                    ["downloadId"] = expectedId
-                },
-                cancellationToken: CancellationToken.None);
+        var readResult = await client.CallToolAsync(
+            "fs_read",
+            new Dictionary<string, object?>
+            {
+                ["path"] = $"downloads/{id}/status.json",
+                ["filesystem"] = "media"
+            },
+            cancellationToken: CancellationToken.None);
+        GetTextContent(readResult).ShouldContain(id.ToString());
 
-            var cleanupContent = GetTextContent(cleanupResult);
-            cleanupContent.ShouldContain("success");
-        }
-        finally
-        {
-            await client.DisposeAsync();
-        }
+        // Assert - the removed 'downloads' filesystem name is rejected
+        var staleResult = await client.CallToolAsync(
+            "fs_read",
+            new Dictionary<string, object?>
+            {
+                ["path"] = $"downloads/{id}/status.json",
+                ["filesystem"] = "downloads"
+            },
+            cancellationToken: CancellationToken.None);
+        GetTextContent(staleResult).ShouldContain("unsupported_operation");
+
+        // Act - deleting the download dir cancels the torrent and drops the routing entry
+        var deleteResult = await client.CallToolAsync(
+            "fs_delete",
+            new Dictionary<string, object?>
+            {
+                ["path"] = $"downloads/{id}",
+                ["filesystem"] = "media"
+            },
+            cancellationToken: CancellationToken.None);
+
+        // Assert
+        GetTextContent(deleteResult).ShouldContain("removed");
+        (await fixture.RoutingStore.ListAsync()).ShouldBeEmpty();
+
+        await client.DisposeAsync();
     }
 
     [Fact]
@@ -213,105 +244,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         result.ShouldNotBeNull();
         var content = GetTextContent(result);
         content.ShouldContain("invalid_argument");
-
-        await client.DisposeAsync();
-    }
-
-    #endregion
-
-    #region GetDownloadStatus Tests
-
-    [Fact]
-    public async Task GetDownloadStatusTool_WithMissingDownload_ReturnsMissing()
-    {
-        // Arrange
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        // Act
-        var result = await client.CallToolAsync(
-            "download_status",
-            new Dictionary<string, object?>
-            {
-                ["downloadId"] = 99999
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("missing");
-
-        await client.DisposeAsync();
-    }
-
-    #endregion
-
-    #region CleanupDownload Tests
-
-    [Fact]
-    public async Task CleanupDownloadTool_WithNonExistentDownload_Succeeds()
-    {
-        // Arrange
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        // Act - cleanup a non-existent download should still succeed
-        var result = await client.CallToolAsync(
-            "download_cleanup",
-            new Dictionary<string, object?>
-            {
-                ["downloadId"] = 99999
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("success");
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task CleanupDownloadTool_WithDownloadId_RemovesDirectory()
-    {
-        // Arrange - CleanupDownload expects a downloadId integer
-        const int downloadId = 12345;
-        var cleanupDir = downloadId.ToString();
-        fixture.CreateDownloadFile(Path.Combine(cleanupDir, "file.txt"), "content");
-
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        // Act
-        var result = await client.CallToolAsync(
-            "download_cleanup",
-            new Dictionary<string, object?>
-            {
-                ["downloadId"] = downloadId
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("success");
-
-        var dirPath = Path.Combine(fixture.DownloadPath, cleanupDir);
-        Directory.Exists(dirPath).ShouldBeFalse();
 
         await client.DisposeAsync();
     }

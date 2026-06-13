@@ -24,7 +24,9 @@ internal sealed class QualifiedMcpTool(string serverName, McpClientTool innerToo
         AIFunctionArguments arguments,
         CancellationToken cancellationToken)
     {
-        var result = await innerTool.InvokeAsync(arguments, cancellationToken);
+        var meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options);
+        var tool = meta is null ? innerTool : innerTool.WithMeta(meta);
+        var result = await tool.InvokeAsync(arguments, cancellationToken);
         return Flatten(result);
     }
 

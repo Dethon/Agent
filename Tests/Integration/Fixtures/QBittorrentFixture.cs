@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json.Nodes;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Infrastructure.Clients.Torrent;
@@ -125,6 +127,47 @@ public class QBittorrentFixture : IAsyncLifetime
 
     public QBittorrentDownloadClient CreateClient()
     {
+        var (httpClient, cookieContainer) = BuildHttpClient();
+        return new QBittorrentDownloadClient(httpClient, cookieContainer, Username, Password);
+    }
+
+    public async Task StopAllTorrentsAsync()
+    {
+        var (httpClient, _) = BuildHttpClient();
+        using (httpClient)
+        {
+            var loginContent = new FormUrlEncodedContent([
+                new KeyValuePair<string, string>("username", Username),
+                new KeyValuePair<string, string>("password", Password)
+            ]);
+            var loginResponse = await httpClient.PostAsync("auth/login", loginContent);
+            loginResponse.EnsureSuccessStatusCode();
+
+            var stopContent = new FormUrlEncodedContent([
+                new KeyValuePair<string, string>("hashes", "all")
+            ]);
+            var stopResponse = await httpClient.PostAsync("torrents/stop", stopContent);
+            stopResponse.EnsureSuccessStatusCode();
+
+            // The stop is applied asynchronously; wait until qBittorrent actually reports
+            // every torrent as stopped so callers observe the stopped state, not a stale one.
+            for (var attempt = 0; attempt < 20; attempt++)
+            {
+                var torrents = await httpClient.GetFromJsonAsync<JsonNode[]>("torrents/info") ?? [];
+                if (torrents.All(t => t?["state"]?.GetValue<string>()?.StartsWith("stopped") == true))
+                {
+                    return;
+                }
+
+                await Task.Delay(500);
+            }
+
+            throw new TimeoutException("Torrents did not reach a stopped state");
+        }
+    }
+
+    private (HttpClient Client, CookieContainer Cookies) BuildHttpClient()
+    {
         var cookieContainer = new CookieContainer();
         var handler = new HttpClientHandler
         {
@@ -140,7 +183,7 @@ public class QBittorrentFixture : IAsyncLifetime
         httpClient.DefaultRequestHeaders.Add("Origin", $"http://localhost:{WebUiPort}");
         httpClient.DefaultRequestHeaders.Add("Referer", $"http://localhost:{WebUiPort}/");
 
-        return new QBittorrentDownloadClient(httpClient, cookieContainer, Username, Password);
+        return (httpClient, cookieContainer);
     }
 
     public async Task DisposeAsync()

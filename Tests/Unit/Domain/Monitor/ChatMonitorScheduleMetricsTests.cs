@@ -14,7 +14,7 @@ namespace Tests.Unit.Domain.Monitor;
 public class ChatMonitorScheduleMetricsTests
 {
     [Fact]
-    public void BuildScheduleEvent_WithScheduleOrigin_ReturnsEvent()
+    public void FromMessage_WithScheduleOrigin_ReturnsEvent()
     {
         var msg = new ChannelMessage
         {
@@ -22,7 +22,7 @@ public class ChatMonitorScheduleMetricsTests
             AgentId = "jonas", Origin = new MessageOrigin(MessageOriginKind.Schedule, "morning-news")
         };
 
-        var evt = ChatMonitor.BuildScheduleEvent(msg, durationMs: 1234, success: true, error: null);
+        var evt = ScheduleExecutionEvent.FromMessage(msg, durationMs: 1234, success: true, error: null);
 
         evt.ShouldNotBeNull();
         evt.ScheduleId.ShouldBe("morning-news");
@@ -33,10 +33,10 @@ public class ChatMonitorScheduleMetricsTests
     }
 
     [Fact]
-    public void BuildScheduleEvent_WithNonScheduleMessage_ReturnsNull()
+    public void FromMessage_WithNonScheduleMessage_ReturnsNull()
     {
         var msg = new ChannelMessage { ConversationId = "c", Content = "hi", Sender = "u", ChannelId = "signalr" };
-        ChatMonitor.BuildScheduleEvent(msg, 1, true, null).ShouldBeNull();
+        ScheduleExecutionEvent.FromMessage(msg, 1, true, null).ShouldBeNull();
     }
 
     [Fact]

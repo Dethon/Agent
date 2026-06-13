@@ -186,7 +186,6 @@ services:
         - BUILDKIT_INLINE_CACHE=1
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
-      - ${DATA_PATH:-./volumes/data}/downloads:/downloads
       - ${DATA_PATH:-./volumes/data}:/media
     restart: unless-stopped
     env_file:
@@ -194,9 +193,14 @@ services:
     networks:
       - jackbot
     depends_on:
-      - qbittorrent
-      - jackett
-      - base-sdk
+      qbittorrent:
+        condition: service_started
+      jackett:
+        condition: service_started
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   mcp-vault:
     image: mcp-vault:latest

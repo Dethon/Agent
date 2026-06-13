@@ -5,14 +5,17 @@ using Domain.DTOs;
 
 namespace Infrastructure.Clients.Torrent;
 
-public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClient
+public class JackettSearchClient(HttpClient client, string apiKey, TimeSpan? searchDeadline = null) : ISearchClient
 {
     private readonly XNamespace _torznabNs = "http://torznab.com/schemas/2015/feed";
+    private readonly TimeSpan _searchDeadline = searchDeadline ?? TimeSpan.FromSeconds(10);
 
     public async Task<SearchResult[]> Search(string query, CancellationToken cancellationToken = default)
     {
-        var indexers = await GetIndexers(cancellationToken);
-        var tasks = indexers.Select(x => QueryIndexer(x, query, cancellationToken));
+        using var deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadlineCts.CancelAfter(_searchDeadline);
+        var indexers = await GetIndexers(deadlineCts.Token);
+        var tasks = indexers.Select(x => QueryIndexer(x, query, deadlineCts.Token));
         return (await Task.WhenAll(tasks)).SelectMany(x => x).ToArray();
     }
 

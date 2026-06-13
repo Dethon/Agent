@@ -16,24 +16,24 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
     public string FilesystemName => filesystemName;
 
     public Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
-        CallTypedAsync<FsReadResult>("fs_read", new Dictionary<string, object?>
+        CallTypedAsync<FsReadResult>("fs_read", WithFilesystem(new Dictionary<string, object?>
         {
             ["path"] = path,
             ["offset"] = offset,
             ["limit"] = limit
-        }, ct);
+        }), ct);
 
     public Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct) =>
-        CallTypedAsync<FsCreateResult>("fs_create", new Dictionary<string, object?>
+        CallTypedAsync<FsCreateResult>("fs_create", WithFilesystem(new Dictionary<string, object?>
         {
             ["path"] = path,
             ["content"] = content,
             ["overwrite"] = overwrite,
             ["createDirectories"] = createDirectories
-        }, ct);
+        }), ct);
 
     public Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct) =>
-        CallTypedAsync<FsEditResult>("fs_edit", new Dictionary<string, object?>
+        CallTypedAsync<FsEditResult>("fs_edit", WithFilesystem(new Dictionary<string, object?>
         {
             ["path"] = path,
             ["edits"] = edits.Select(e => new Dictionary<string, object?>
@@ -42,18 +42,18 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
                 ["newString"] = e.NewString,
                 ["replaceAll"] = e.ReplaceAll
             }).ToList()
-        }, ct);
+        }), ct);
 
     public Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
-        CallTypedAsync<FsGlobResult>("fs_glob", new Dictionary<string, object?>
+        CallTypedAsync<FsGlobResult>("fs_glob", WithFilesystem(new Dictionary<string, object?>
         {
             ["basePath"] = basePath,
             ["pattern"] = pattern
-        }, ct);
+        }), ct);
 
     public Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path, string? directoryPath,
         string? filePattern, int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct) =>
-        CallTypedAsync<FsSearchResult>("fs_search", new Dictionary<string, object?>
+        CallTypedAsync<FsSearchResult>("fs_search", WithFilesystem(new Dictionary<string, object?>
         {
             ["query"] = query,
             ["regex"] = regex,
@@ -63,44 +63,44 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
             ["maxResults"] = maxResults,
             ["contextLines"] = contextLines,
             ["outputMode"] = outputMode.ToString()
-        }, ct);
+        }), ct);
 
     public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
-        CallTypedAsync<FsMoveResult>("fs_move", new Dictionary<string, object?>
+        CallTypedAsync<FsMoveResult>("fs_move", WithFilesystem(new Dictionary<string, object?>
         {
             ["sourcePath"] = sourcePath,
             ["destinationPath"] = destinationPath
-        }, ct);
+        }), ct);
 
     public Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
-        CallTypedAsync<FsRemoveResult>("fs_delete", new Dictionary<string, object?>
+        CallTypedAsync<FsRemoveResult>("fs_delete", WithFilesystem(new Dictionary<string, object?>
         {
             ["path"] = path
-        }, ct);
+        }), ct);
 
     public Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
-        CallTypedAsync<FsInfoResult>("fs_info", new Dictionary<string, object?>
+        CallTypedAsync<FsInfoResult>("fs_info", WithFilesystem(new Dictionary<string, object?>
         {
             ["path"] = path
-        }, ct);
+        }), ct);
 
     public Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct) =>
-        CallTypedAsync<FsExecResult>("fs_exec", new Dictionary<string, object?>
+        CallTypedAsync<FsExecResult>("fs_exec", WithFilesystem(new Dictionary<string, object?>
         {
             ["path"] = path,
             ["command"] = command,
             ["timeoutSeconds"] = timeoutSeconds
-        }, ct);
+        }), ct);
 
     public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
-        CallTypedAsync<FsCopyResult>("fs_copy", new Dictionary<string, object?>
+        CallTypedAsync<FsCopyResult>("fs_copy", WithFilesystem(new Dictionary<string, object?>
         {
             ["sourcePath"] = sourcePath,
             ["destinationPath"] = destinationPath,
             ["overwrite"] = overwrite,
             ["createDirectories"] = createDirectories
-        }, ct);
+        }), ct);
 
     public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
         string path, [EnumeratorCancellation] CancellationToken ct)
@@ -111,12 +111,12 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var node = await CallToolAsync("fs_blob_read", new Dictionary<string, object?>
+            var node = await CallToolAsync("fs_blob_read", WithFilesystem(new Dictionary<string, object?>
             {
                 ["path"] = path,
                 ["offset"] = offset,
                 ["length"] = chunkSize
-            }, ct);
+            }), ct);
 
             var blobError = ToolErrorResult.FromEnvelope(node);
             if (blobError is not null)
@@ -151,14 +151,14 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
 
         await foreach (var chunk in chunks.WithCancellation(ct))
         {
-            var node = await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
+            var node = await CallToolAsync("fs_blob_write", WithFilesystem(new Dictionary<string, object?>
             {
                 ["path"] = path,
                 ["contentBase64"] = Convert.ToBase64String(chunk.Span),
                 ["offset"] = offset,
                 ["overwrite"] = overwrite,
                 ["createDirectories"] = createDirectories
-            }, ct);
+            }), ct);
 
             var blobError = ToolErrorResult.FromEnvelope(node);
             if (blobError is not null)
@@ -172,14 +172,14 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
         if (offset == 0)
         {
             // Empty source: still create the file with zero bytes.
-            var node = await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
+            var node = await CallToolAsync("fs_blob_write", WithFilesystem(new Dictionary<string, object?>
             {
                 ["path"] = path,
                 ["contentBase64"] = "",
                 ["offset"] = 0L,
                 ["overwrite"] = overwrite,
                 ["createDirectories"] = createDirectories
-            }, ct);
+            }), ct);
 
             var blobError = ToolErrorResult.FromEnvelope(node);
             if (blobError is not null)
@@ -189,6 +189,12 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
         }
 
         return offset;
+    }
+
+    private Dictionary<string, object?> WithFilesystem(Dictionary<string, object?> args)
+    {
+        args["filesystem"] = filesystemName;
+        return args;
     }
 
     private async Task<FsResult<T>> CallTypedAsync<T>(

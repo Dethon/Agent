@@ -59,6 +59,16 @@ public class QBittorrentDownloadClient(
             await GetDownloadItemWithoutRetries(id, cancellationToken));
     }
 
+    public async Task<IReadOnlyList<DownloadItem>> GetDownloadItems(CancellationToken cancellationToken = default)
+    {
+        var torrents = await CallApi(GetAllTorrents, cancellationToken);
+        return torrents
+            .Select(t => (Torrent: t, Name: t?["name"]?.GetValue<string>()))
+            .Where(x => int.TryParse(x.Name, out _))
+            .Select(x => MapDownloadItem(int.Parse(x.Name!), x.Torrent!))
+            .ToList();
+    }
+
     private async Task<DownloadItem?> GetDownloadItemWithoutRetries(int id, CancellationToken cancellationToken)
     {
         var torrent = await GetSingleTorrent($"{id}", cancellationToken);
@@ -67,22 +77,24 @@ public class QBittorrentDownloadClient(
             return null;
         }
 
-        return new DownloadItem
-        {
-            Id = id,
-            Title = torrent["name"]?.GetValue<string>() ?? string.Empty,
-            Size = (torrent["total_size"]?.GetValue<long>() ?? 0) / 1024 / 1024,
-            State = GetDownloadStatus(torrent),
-            Seeders = torrent["num_seeds"]?.GetValue<int>() ?? 0,
-            Peers = torrent["num_leechs"]?.GetValue<int>() ?? 0,
-            SavePath = torrent["save_path"]?.GetValue<string>() ?? string.Empty,
-            Link = torrent["magnet_uri"]?.GetValue<string>() ?? string.Empty,
-            Progress = torrent["progress"]?.GetValue<double>() ?? 0.0,
-            DownSpeed = (torrent["dlspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
-            UpSpeed = (torrent["upspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
-            Eta = (torrent["eta"]?.GetValue<double>() ?? 0.0) / 60
-        };
+        return MapDownloadItem(id, torrent);
     }
+
+    private static DownloadItem MapDownloadItem(int id, JsonNode torrent) => new()
+    {
+        Id = id,
+        Title = torrent["name"]?.GetValue<string>() ?? string.Empty,
+        Size = (torrent["total_size"]?.GetValue<long>() ?? 0) / 1024 / 1024,
+        State = GetDownloadStatus(torrent),
+        Seeders = torrent["num_seeds"]?.GetValue<int>() ?? 0,
+        Peers = torrent["num_leechs"]?.GetValue<int>() ?? 0,
+        SavePath = torrent["save_path"]?.GetValue<string>() ?? string.Empty,
+        Link = torrent["magnet_uri"]?.GetValue<string>() ?? string.Empty,
+        Progress = torrent["progress"]?.GetValue<double>() ?? 0.0,
+        DownSpeed = (torrent["dlspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
+        UpSpeed = (torrent["upspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
+        Eta = (torrent["eta"]?.GetValue<double>() ?? 0.0) / 60
+    };
 
     private async Task<JsonNode?> GetSingleTorrent(string id, CancellationToken cancellationToken)
     {
@@ -185,7 +197,9 @@ public class QBittorrentDownloadClient(
             "error" => DownloadState.Failed,
             "missingFiles" => DownloadState.Failed,
             "uploading" => DownloadState.Completed,
+            // qBittorrent 5.x renamed paused* to stopped*; keep both for older servers
             "pausedUP" => DownloadState.Completed,
+            "stoppedUP" => DownloadState.Completed,
             "queuedUP" => DownloadState.Completed,
             "stalledUP" => DownloadState.Completed,
             "checkingUP" => DownloadState.InProgress,
@@ -194,6 +208,7 @@ public class QBittorrentDownloadClient(
             "downloading" => DownloadState.InProgress,
             "metaDL" => DownloadState.InProgress,
             "pausedDL" => DownloadState.Paused,
+            "stoppedDL" => DownloadState.Paused,
             "queuedDL" => DownloadState.Paused,
             "stalledDL" => DownloadState.Paused,
             "checkingDL" => DownloadState.InProgress,

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -12,6 +13,7 @@ public static class ChatMessageExtensions
     private const string MemoryContextKey = "MemoryContext";
     private const string LocationKey = "Location";
     private const string SatelliteIdKey = "SatelliteId";
+    private const string ConversationContextKey = "ConversationContext";
 
     extension(ChatMessage message)
     {
@@ -111,6 +113,28 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[MemoryContextKey] = context;
+        }
+
+        public ConversationContext? GetConversationContext()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(ConversationContextKey);
+            return value switch
+            {
+                ConversationContext context => context,
+                JsonElement je => je.Deserialize<ConversationContext>(ChannelProtocol.SerializerOptions),
+                _ => null
+            };
+        }
+
+        public void SetConversationContext(ConversationContext? context)
+        {
+            if (context is null)
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[ConversationContextKey] = context;
         }
     }
 

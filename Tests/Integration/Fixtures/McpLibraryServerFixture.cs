@@ -1,10 +1,13 @@
 using System.Net;
 using Domain.Contracts;
 using Domain.Tools.Config;
+using Domain.Tools.Downloads.Vfs;
 using Infrastructure.Clients;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
+using McpServerLibrary.McpResources;
 using McpServerLibrary.McpTools;
+using McpServerLibrary.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Caching.Memory;
@@ -25,6 +28,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
     public string McpEndpoint { get; private set; } = null!;
     public string LibraryPath { get; private set; } = null!;
     public string DownloadPath { get; private set; } = null!;
+    public InMemoryDownloadRoutingStore RoutingStore { get; } = new();
 
     public async Task InitializeAsync()
     {
@@ -32,7 +36,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
         await Task.WhenAll(Jackett.InitializeAsync(), QBittorrent.InitializeAsync());
 
         LibraryPath = Path.Combine(Path.GetTempPath(), $"mcp-library-{Guid.NewGuid()}");
-        DownloadPath = Path.Combine(Path.GetTempPath(), $"mcp-downloads-{Guid.NewGuid()}");
+        DownloadPath = Path.Combine(LibraryPath, "downloads");
         Directory.CreateDirectory(LibraryPath);
         Directory.CreateDirectory(DownloadPath);
 
@@ -48,12 +52,26 @@ public class McpLibraryServerFixture : IAsyncLifetime
         builder.Services
             .AddSingleton<DownloadPathConfig>(_ => new DownloadPathConfig(DownloadPath))
             .AddSingleton<LibraryPathConfig>(_ => new LibraryPathConfig(LibraryPath))
+            .AddSingleton(new McpSettings
+            {
+                Jackett = new JackettConfiguration { ApiKey = "unused", ApiUrl = "http://localhost" },
+                QBittorrent = new QBittorrentConfiguration
+                {
+                    ApiUrl = "http://localhost",
+                    UserName = "unused",
+                    Password = "unused"
+                },
+                DownloadLocation = DownloadPath,
+                BaseLibraryPath = LibraryPath,
+                RedisConnectionString = "unused"
+            })
             .AddSingleton(_cache)
-            .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
+            .AddSingleton<IDownloadRoutingStore>(RoutingStore)
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
             .AddSingleton<ISearchClient>(_ => Jackett.CreateClient())
             .AddSingleton<IDownloadClient>(_ => QBittorrent.CreateClient())
             .AddSingleton<IFileSystemClient, LocalFileSystemClient>()
+            .AddSingleton<DownloadsOverlay>()
             .AddMcpServer()
             .WithHttpTransport()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
@@ -69,10 +87,12 @@ public class McpLibraryServerFixture : IAsyncLifetime
             }))
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
-            .WithTools<McpGetDownloadStatusTool>()
-            .WithTools<McpCleanupDownloadTool>()
             .WithTools<FsGlobTool>()
-            .WithTools<FsMoveTool>();
+            .WithTools<FsReadTool>()
+            .WithTools<FsDeleteTool>()
+            .WithTools<FsMoveTool>()
+            .WithTools<FsInfoTool>()
+            .WithResources<FileSystemResource>();
 
         var app = builder.Build();
         app.MapMcp("/mcp");

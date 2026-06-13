@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
@@ -29,7 +30,6 @@ public sealed class McpAgent : DisposableAgent
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
     private readonly string _userId;
-    private readonly bool _enableResourceSubscriptions;
     private readonly ReasoningEffort? _reasoningEffort;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private readonly TimeProvider _timeProvider;
@@ -54,7 +54,6 @@ public sealed class McpAgent : DisposableAgent
         string? customInstructions = null,
         IReadOnlyList<AIFunction>? domainTools = null,
         IReadOnlyList<string>? domainPrompts = null,
-        bool enableResourceSubscriptions = true,
         IReadOnlySet<string>? filesystemEnabledTools = null, // null treated as empty (disabled)
         ILoggerFactory? loggerFactory = null,
         string? reasoningEffort = null,
@@ -73,7 +72,6 @@ public sealed class McpAgent : DisposableAgent
         _customInstructions = customInstructions;
         _domainTools = domainTools ?? [];
         _domainPrompts = domainPrompts ?? [];
-        _enableResourceSubscriptions = enableResourceSubscriptions;
         _reasoningEffort = ParseEffort(reasoningEffort);
         _timeProvider = timeProvider ?? TimeProvider.System;
         _metricsPublisher = metricsPublisher;
@@ -249,58 +247,20 @@ public sealed class McpAgent : DisposableAgent
         thread ??= await CreateSessionAsync(cancellationToken);
         var session = await GetOrCreateSessionAsync(thread, cancellationToken);
 
-        if (session.ResourceManager is not null)
-        {
-            await session.ResourceManager.EnsureChannelActive(cancellationToken);
-        }
+        var messageList = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
+        var conversationContext = messageList
+            .Select(m => m.GetConversationContext())
+            .FirstOrDefault(c => c is not null);
 
-        options ??= CreateRunOptions(session);
+        options ??= CreateRunOptions(session, conversationContext);
 
-        if (session.ResourceManager is null)
-        {
-            await foreach (var update in _innerAgent.RunStreamingAsync(messages, thread, options, cancellationToken))
-            {
-                yield return update;
-            }
-            yield break;
-        }
-
-        var mainResponses = RunStreamingCoreAsync(messages, thread, session, options, cancellationToken);
-        var notificationResponses = session.ResourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken);
-
-        await foreach (var update in mainResponses.Merge(notificationResponses, cancellationToken))
-        {
-            yield return update;
-        }
-
-        // If channel was replaced during execution, drain the new one.
-        // If it is the old one it will be completed already
-        await foreach (var update in session.ResourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken))
+        await foreach (var update in _innerAgent.RunStreamingAsync(messageList, thread, options, cancellationToken))
         {
             yield return update;
         }
     }
 
-    private async IAsyncEnumerable<AgentResponseUpdate> RunStreamingCoreAsync(
-        IEnumerable<ChatMessage> messages,
-        AgentSession thread,
-        ThreadSession session,
-        AgentRunOptions options,
-        [EnumeratorCancellation] CancellationToken ct = default)
-    {
-        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        await foreach (var update in _innerAgent.RunStreamingAsync(messages, thread, options, ct))
-        {
-            yield return update;
-        }
-
-        if (session.ResourceManager is not null)
-        {
-            await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, ct);
-        }
-    }
-
-    private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
+    private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session, ConversationContext? conversationContext = null)
     {
         return new ChatClientAgentRunOptions(new ChatOptions
         {
@@ -315,7 +275,10 @@ public sealed class McpAgent : DisposableAgent
                 _timeProvider.GetLocalNow()),
             Reasoning = _reasoningEffort is null
                 ? null
-                : new ReasoningOptions { Effort = _reasoningEffort.Value }
+                : new ReasoningOptions { Effort = _reasoningEffort.Value },
+            AdditionalProperties = conversationContext is null
+                ? null
+                : new AdditionalPropertiesDictionary { [ConversationContextMeta.OptionsKey] = conversationContext }
         });
     }
 
@@ -387,8 +350,8 @@ public sealed class McpAgent : DisposableAgent
 
             var newSession = await ThreadSession
                 .CreateAsync(_endpoints, _name, _userId, _description, _innerAgent,
-                             thread, _domainTools, _filesystemEnabledTools, _loggerFactory,
-                             ct, _enableResourceSubscriptions, _promptCache);
+                             _domainTools, _filesystemEnabledTools, _loggerFactory,
+                             ct, _promptCache);
             _threadSessions[thread] = newSession;
             return newSession;
         }, ct);

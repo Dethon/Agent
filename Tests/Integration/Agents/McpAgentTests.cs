@@ -104,9 +104,9 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
     }
 
     [SkippableFact]
-    public async Task Agent_WithCleanupTool_CanCleanupDownloadDirectory()
+    public async Task Agent_WithFsDeleteTool_CanRemoveLeftoverDownloadDirectory()
     {
-        // Arrange - CleanupDownload expects downloadId as integer
+        // Arrange - a leftover download directory whose torrent no longer exists
         var llmClient = CreateLlmClient();
         const int downloadId = 99999;
         var downloadSubDir = Path.Combine(mcpFixture.DownloadPath, downloadId.ToString());
@@ -119,7 +119,9 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                $"Clean up the download with ID {downloadId} using the CleanupDownload tool.",
+                "Use the fs_delete tool with:\n" +
+                $"- path: downloads/{downloadId}\n" +
+                "IMPORTANT: Pass the path exactly as written.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)

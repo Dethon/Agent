@@ -29,4 +29,8 @@ public record ChannelEndpoint
 {
     public required string ChannelId { get; init; }
     public required string Endpoint { get; init; }
+
+    // Attach-only channels (e.g. voice) cannot own a conversation; delivery fan-out
+    // orders them last so a topic-owning channel anchors the shared conversation id.
+    public bool AttachOnly { get; init; }
 }
