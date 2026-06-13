@@ -46,7 +46,7 @@ public class ChatMonitorConversationContextTests
         var channel = new FakeChannelConnection { ChannelId = "telegram" };
         var message = MonitorTestMocks.CreateChannelMessage(
             conversationId: "fire-1", channelId: "scheduling", agentId: "jonas");
-        var targets = new[] { new ChatMonitor.DeliveryTarget(channel, "t-9") };
+        var targets = new[] { new DeliveryTarget(channel, "t-9") };
 
         var context = ChatMonitor.BuildConversationContext(message, targets);
 

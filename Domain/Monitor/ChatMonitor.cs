@@ -23,8 +23,6 @@ public class ChatMonitor(
     IMemoryRecallHook? memoryRecallHook,
     ILogger<ChatMonitor> logger)
 {
-    public readonly record struct DeliveryTarget(IChannelConnection Channel, string ConversationId, bool Minted = false, string? Address = null);
-
     public static async Task<IReadOnlyList<DeliveryTarget>> ResolveDeliveryTargetsAsync(
         ChannelMessage message,
         IChannelConnection originChannel,

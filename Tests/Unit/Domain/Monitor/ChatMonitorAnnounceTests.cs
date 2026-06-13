@@ -37,7 +37,7 @@ public class ChatMonitorAnnounceTests
     public async Task AnnounceTurnStart_PreExistingTarget_CallsCreateConversationWithExistingIdAndPrompt()
     {
         var (signalr, calls) = Channel("signalr");
-        var targets = new[] { new ChatMonitor.DeliveryTarget(signalr.Object, "7:42") };
+        var targets = new[] { new DeliveryTarget(signalr.Object, "7:42") };
 
         await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
 
@@ -50,7 +50,7 @@ public class ChatMonitorAnnounceTests
     public async Task AnnounceTurnStart_MintedTarget_SkippedWhenSkipMintedIsTrue()
     {
         var (signalr, calls) = Channel("signalr");
-        var targets = new[] { new ChatMonitor.DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
+        var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
 
         await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
 
@@ -63,7 +63,7 @@ public class ChatMonitorAnnounceTests
         // A later message reusing the group-level targets sees conversations that were
         // minted by the FIRST message's resolution — for this turn they pre-exist.
         var (signalr, calls) = Channel("signalr");
-        var targets = new[] { new ChatMonitor.DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
+        var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
 
         await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
 
@@ -77,7 +77,7 @@ public class ChatMonitorAnnounceTests
         // other channel and applies its own semantics in its create_conversation tool
         // (no-op when the satellite session is live, announcement binding otherwise).
         var (voice, calls) = Channel("voice");
-        var targets = new[] { new ChatMonitor.DeliveryTarget(voice.Object, "7:42") };
+        var targets = new[] { new DeliveryTarget(voice.Object, "7:42") };
 
         await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
 
@@ -90,7 +90,7 @@ public class ChatMonitorAnnounceTests
         // The address (e.g. the originating voice satellite) tells the channel WHERE the
         // turn belongs; without it an addressable channel would fall back to broadcast.
         var (voice, calls) = Channel("voice");
-        var targets = new[] { new ChatMonitor.DeliveryTarget(voice.Object, "7:42", Address: "fran-office-01") };
+        var targets = new[] { new DeliveryTarget(voice.Object, "7:42", Address: "fran-office-01") };
 
         await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
 
@@ -107,8 +107,8 @@ public class ChatMonitorAnnounceTests
         var (telegram, telegramCalls) = Channel("telegram");
         var targets = new[]
         {
-            new ChatMonitor.DeliveryTarget(failing.Object, "7:42"),
-            new ChatMonitor.DeliveryTarget(telegram.Object, "t-9")
+            new DeliveryTarget(failing.Object, "7:42"),
+            new DeliveryTarget(telegram.Object, "t-9")
         };
 
         await Should.NotThrowAsync(
