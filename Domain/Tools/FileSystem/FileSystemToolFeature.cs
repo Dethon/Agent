@@ -48,7 +48,7 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
             return null;
         }
 
-        var mountList = string.Join("\n", mounts.Select(m => $"- `{m.MountPoint}` — {m.Description}"));
+        var mountList = string.Join("\n", mounts.Select(FormatMount));
         return $$"""
             ## Available Filesystems
 
@@ -57,7 +57,7 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
 
             ### How capabilities work
 
-            Each mount is backed by a different MCP server, and **each backend implements only the operations that make sense for it** — read-only mounts won't accept writes, non-shell mounts won't accept `exec`, and so on. The mount's description above is your primary signal for what it supports.
+            Each mount is backed by a different MCP server, and **each backend implements only the operations that make sense for it** — read-only mounts won't accept writes, non-shell mounts won't accept `exec`, and so on. Each mount lists the operations it supports above — call only an operation a mount advertises, so you don't waste a turn discovering an unsupported one by trial and error.
 
             If you call a tool the backend doesn't implement, the response is a structured error envelope (`{"ok": false, "errorCode": "unsupported_operation", "message": "...", "retryable": false, "hint": "..."}`) — treat it as data, not as an exception. Use it as a hint to pick a different mount or a different operation, not as a reason to retry.
 
@@ -67,5 +67,13 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
             - `move` and `copy` accept source and destination on different mounts and handle the transfer natively (streaming for cross-FS, recursing into directories) — prefer a single `copy`/`move` call over reading on one mount and creating on another.
             - Paths are virtual: always include the mount prefix. Don't pass bare `/home/...` or `/notes/...` — start with one of the mount points listed above.
             """;
+    }
+
+    private static string FormatMount(FileSystemMount mount)
+    {
+        var line = $"- `{mount.MountPoint}` — {mount.Description}";
+        return mount.Capabilities.Count > 0
+            ? $"{line}\n  - operations: {string.Join(", ", mount.Capabilities)}"
+            : line;
     }
 }

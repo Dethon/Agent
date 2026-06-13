@@ -83,4 +83,45 @@ public class FileSystemToolFeatureTests
 
         feature.Prompt.ShouldBeNull();
     }
+
+    [Fact]
+    public void Prompt_ListsPerMountSupportedOperations()
+    {
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.GetMounts()).Returns([
+            new FileSystemMount("ha", "/ha", "Home Assistant")
+            {
+                Capabilities = ["text_read", "glob", "text_search", "file_info", "exec"]
+            }
+        ]);
+        var feature = new FileSystemToolFeature(registry.Object);
+
+        feature.Prompt.ShouldNotBeNull();
+        feature.Prompt.ShouldContain("operations: text_read, glob, text_search, file_info, exec");
+    }
+
+    [Fact]
+    public void Prompt_ReadOnlyStyleMount_DoesNotAdvertiseWriteOrExec()
+    {
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.GetMounts()).Returns([
+            new FileSystemMount("media", "/media", "Library")
+            {
+                Capabilities = ["text_read", "glob", "text_search", "move", "copy", "remove", "file_info"]
+            }
+        ]);
+        var feature = new FileSystemToolFeature(registry.Object);
+
+        var operationsLine = feature.Prompt!.Split('\n').Single(l => l.Contains("operations:"));
+        operationsLine.ShouldNotContain("text_create");
+        operationsLine.ShouldNotContain("exec");
+        operationsLine.ShouldContain("text_read");
+    }
+
+    [Fact]
+    public void Prompt_MountWithoutCapabilities_OmitsOperationsLine()
+    {
+        // The default _registry mount carries no capabilities.
+        _feature.Prompt!.ShouldNotContain("operations:");
+    }
 }
