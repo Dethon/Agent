@@ -13,7 +13,7 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | `Agent` | Composition root, DI, connects to channel and tool MCP servers |
 | `Domain` | Contracts, DTOs, business logic |
 | `Infrastructure` | External clients, agent implementations, push notifications |
-| `McpServer*` | MCP tool servers (Library, Vault, WebSearch, Idealista, Printer) |
+| `McpServer*` | MCP tool servers (Library, Vault, Sandbox, WebSearch, Idealista, HomeAssistant, Printer, Scheduling) |
 | `McpChannel*` | MCP channel servers — each bridges a transport to the agent |
 | `McpChannelSignalR` | WebChat/SignalR channel — hosts SignalR hub, streams, approvals, push notifications |
 | `McpChannelTelegram` | Telegram channel — multi-bot polling (one bot per agent), inline keyboard approvals |
@@ -24,8 +24,8 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | `WebChat`/`.Client` | Blazor WebAssembly chat interface, Redux-like state (Stores + Effects + HubEventDispatcher) |
 | `Observability` | Metrics collector, REST API, SignalR hub — serves the Dashboard PWA |
 | `Dashboard.Client` | Blazor WebAssembly observability dashboard (token costs, tool analytics, errors, schedules, memory, health) |
-| `satellite` | `nabu-satellite` — standalone Rust crate (NOT in the .NET solution): fully static Wyoming satellite binary for Raspberry Pi with embedded wake-word detection |
-| `Tests` | Unit and integration tests |
+| `satellite` | `nabu-satellite` — standalone Rust crate (NOT in the .NET solution); see `satellite/CLAUDE.md` |
+| `Tests` | Unit, integration, and E2E tests |
 
 ## Key File Locations
 
@@ -35,65 +35,44 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | DTOs | `Domain/DTOs/*.cs` |
 | Agent implementations | `Infrastructure/Agents/*.cs` |
 | External clients | `Infrastructure/Clients/**/*.cs` |
+| ChatMonitor & reply fan-out | `Domain/Monitor/*.cs` — `ChatMonitor`, `DeliveryTargetResolver`, `ReplyDispatcher`, `FirstReplyTracker`, `DeliveryTarget` |
 | MCP tool server tools | `McpServer*/McpTools/*.cs` |
-| Channel MCP tools | `McpChannel*/McpTools/*.cs` |
-| Channel services | `McpChannel*/Services/*.cs` |
-| Channel protocol DTOs | `Domain/DTOs/Channel/*.cs` |
-| WebChat state | `WebChat.Client/State/**/*.cs` |
-| Dashboard state | `Dashboard.Client/State/**/*.cs` |
-| Dashboard pages | `Dashboard.Client/Pages/*.razor` |
-| Metric event DTOs | `Domain/DTOs/Metrics/*.cs` |
-| Metrics publisher | `Infrastructure/Metrics/*.cs` |
-| Observability services | `Observability/Services/*.cs` |
-| Observability API endpoints | `Observability/MetricsApiEndpoints.cs` |
-| Metric dimension/metric enums | `Domain/DTOs/Metrics/Enums/*.cs` |
-| Metrics query service | `Observability/Services/MetricsQueryService.cs` |
-| Dashboard components | `Dashboard.Client/Components/*.razor` |
-| Dashboard services | `Dashboard.Client/Services/*.cs` |
-| Subagent tools & feature | `Domain/Tools/SubAgents/*.cs` |
-| Subagent prompt | `Domain/Prompts/SubAgentPrompt.cs` |
-| Subagent DTOs | `Domain/DTOs/SubAgent*.cs` |
-| Memory services | `Infrastructure/Memory/*.cs` |
-| Memory contracts | `Domain/Contracts/IMemory*.cs` |
-| Memory tools & feature | `Domain/Tools/Memory/*.cs` |
-| Memory prompts | `Domain/Prompts/MemoryPrompts.cs` |
-| Memory DI module | `Agent/Modules/MemoryModule.cs` |
-| Memory extraction queue | `Domain/Memory/*.cs` |
-| Subagent DI module | `Agent/Modules/SubAgentModule.cs` |
-| Filesystem tools & feature | `Domain/Tools/FileSystem/*.cs` |
-| Filesystem contracts | `Domain/Contracts/IFileSystem*.cs`, `Domain/Contracts/IVirtualFileSystemRegistry.cs` |
-| Filesystem DTOs | `Domain/DTOs/FileSystemMount.cs`, `Domain/DTOs/FileSystem/*.cs` |
-| Virtual filesystem registry | `Infrastructure/Agents/VirtualFileSystemRegistry.cs` |
-| MCP filesystem backend | `Infrastructure/Agents/Mcp/McpFileSystemBackend.cs`, `McpFileSystemDiscovery.cs` |
-| Local filesystem client | `Infrastructure/Clients/LocalFileSystemClient.cs` |
-| Filesystem MCP resources | `McpServer{Vault,Library,Sandbox,HomeAssistant,Printer}/McpResources/FileSystemResource.cs` |
-| Glob brace expansion / regex | `Domain/Tools/FileSystem/GlobBraceExpander.cs`, `Domain/Tools/FileSystem/GlobRegex.cs` |
-| Home Assistant VFS engine | `Domain/Tools/HomeAssistant/Vfs/*.cs` |
-| Scheduling server (channel + filesystem) | `McpServerScheduling/**/*.cs` |
-| Schedule VFS engine | `Domain/Tools/Scheduling/Vfs/*.cs` |
-| Scheduling prompt | `Domain/Prompts/SchedulingPrompt.cs` |
-| Schedule DTO | `Domain/DTOs/Schedule.cs` |
-| Printer server (filesystem) | `McpServerPrinter/**/*.cs` |
-| Print queue VFS engine | `Domain/Tools/Printing/Vfs/*.cs`, `Domain/Tools/Printing/*.cs` |
-| Printing prompt | `Domain/Prompts/PrintingPrompt.cs` |
-| Printing contracts & DTOs | `Domain/Contracts/IPrinterClient.cs`, `Domain/Contracts/IPrintSpool.cs`, `Domain/DTOs/Printing/*.cs` |
-| IPP printer client & spool | `Infrastructure/Clients/Printer/*.cs`, `Infrastructure/Printing/PrintSpool.cs` |
+| Channel MCP tools & services | `McpChannel*/McpTools/*.cs`, `McpChannel*/Services/*.cs` |
+| Channel protocol DTOs | `Domain/DTOs/Channel/*.cs` (`ChannelProtocol.cs` centralizes wire serialization) |
 | Agent catalog | `Domain/Agents/MutableAgentCatalog.cs`, `Domain/Contracts/IAgentCatalog.cs`, `Domain/DTOs/Channel/AgentCatalogEntry.cs` |
-| Channel protocol serialization | `Domain/DTOs/Channel/ChannelProtocol.cs` |
-| Web browsing tools | `Domain/Tools/Web/*.cs` |
-| Web browsing prompt | `Domain/Prompts/WebBrowsingPrompt.cs` |
-| Web browser contracts | `Domain/Contracts/IWebBrowser.cs` |
-| Playwright browser client | `Infrastructure/Clients/Browser/*.cs` |
-| Satellite CLI flags & defaults | `satellite/src/config.rs` |
-| Satellite state machine | `satellite/src/satellite/state_machine.rs` |
-| Satellite wake detector | `satellite/src/wake/detector.rs` |
-| Satellite Wyoming codec | `satellite/src/wyoming/{codec,event}.rs` |
-| Satellite audio (mic/playback/cues) | `satellite/src/audio/*.rs` |
-| Satellite LED & button | `satellite/src/led.rs`, `satellite/src/gpio.rs` |
-| Satellite build & deploy | `satellite/scripts/*.sh`, `satellite/deploy/nabu-satellite.service`, `scripts/provision-satellite-rs.sh`, `scripts/wsl-satellite.sh` |
-| Unit & integration tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
-| E2E tests | `Tests/E2E/{Dashboard,WebChat}/*E2ETests.cs` |
-| E2E fixtures | `Tests/E2E/Fixtures/*.cs` |
+| WebChat state | `WebChat.Client/State/**/*.cs` |
+| Dashboard | `Dashboard.Client/{Pages,Components,Services}/`, state in `Dashboard.Client/State/**/*.cs` |
+| Metrics | DTOs `Domain/DTOs/Metrics/*.cs` (dimension/metric enums in `Enums/`), publisher `Infrastructure/Metrics/*.cs` |
+| Observability | `Observability/Services/*.cs` (incl. `MetricsQueryService.cs`), API endpoints `Observability/MetricsApiEndpoints.cs` |
+| Subagents | `Domain/Tools/SubAgents/*.cs`, `Domain/Prompts/SubAgentPrompt.cs`, `Domain/DTOs/SubAgent*.cs`, DI `Agent/Modules/SubAgentModule.cs` |
+| Memory | `Infrastructure/Memory/*.cs`, `Domain/Tools/Memory/*.cs`, extraction queue `Domain/Memory/*.cs`, `Domain/Contracts/IMemory*.cs`, `Domain/Prompts/MemoryPrompts.cs`, DI `Agent/Modules/MemoryModule.cs` |
+| Filesystem (VFS) tools | `Domain/Tools/FileSystem/*.cs` (incl. `GlobBraceExpander.cs`, `GlobRegex.cs`) |
+| Filesystem contracts & DTOs | `Domain/Contracts/IFileSystem*.cs`, `Domain/Contracts/IVirtualFileSystemRegistry.cs`, `Domain/DTOs/FileSystemMount.cs`, `Domain/DTOs/FileSystem/*.cs` |
+| VFS registry & backends | `Infrastructure/Agents/VirtualFileSystemRegistry.cs`, `Infrastructure/Agents/Mcp/McpFileSystemBackend.cs` + `McpFileSystemDiscovery.cs`, `Infrastructure/Clients/LocalFileSystemClient.cs` |
+| Filesystem MCP resources | `McpServer{Vault,Library,Sandbox,HomeAssistant,Printer,Scheduling}/McpResources/FileSystemResource.cs` |
+| Home Assistant VFS engine | `Domain/Tools/HomeAssistant/Vfs/*.cs` |
+| Scheduling | `McpServerScheduling/**/*.cs`, VFS engine `Domain/Tools/Scheduling/Vfs/*.cs`, `Domain/Prompts/SchedulingPrompt.cs`, `Domain/DTOs/Schedule.cs` |
+| Printing | `McpServerPrinter/**/*.cs`, engine `Domain/Tools/Printing/{,Vfs/}*.cs`, `Domain/Prompts/PrintingPrompt.cs`, contracts `Domain/Contracts/IPrinterClient.cs` + `IPrintSpool.cs`, DTOs `Domain/DTOs/Printing/*.cs`, IPP client `Infrastructure/Clients/Printer/*.cs`, spool `Infrastructure/Printing/PrintSpool.cs` |
+| Web browsing | `Domain/Tools/Web/*.cs`, `Domain/Prompts/WebBrowsingPrompt.cs`, `Domain/Contracts/IWebBrowser.cs`, `Infrastructure/Clients/Browser/*.cs` |
+| Satellite (Rust) | `satellite/src/**/*.rs` — key files, invariants, build & WSL scripts in `satellite/CLAUDE.md` |
+| Tests | `Tests/{Unit,Integration}/**/*Tests.cs`, E2E `Tests/E2E/{Dashboard,WebChat}/*E2ETests.cs`, fixtures `Tests/E2E/Fixtures/*.cs` |
+
+## Build, Test & Format
+
+```bash
+dotnet build agent.sln
+dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ChatMonitorTests"
+```
+
+- `Tests/Unit` runs standalone. `Tests/Integration` needs the Docker services it touches (most need `redis`). E2E tests (`[Trait("Category", "E2E")]`) need the full compose stack up; set `PLAYWRIGHT_HEADLESS=false` to watch the browser.
+- The pre-commit hook (`.githooks/pre-commit`, wired via `core.hooksPath`) runs `dotnet format` over staged `.cs` files and re-stages them **whole** — partial/hunk staging does not survive a commit; make the working tree match the commit you want.
+- `.editorconfig` sets `insert_final_newline = false`: `.cs` files have **no trailing newline**.
+
+## Rules & TDD
+
+`.claude/rules/*.md` are path-scoped (frontmatter `paths:`) and apply when touching matching files: `dotnet-style.md` (all C#), `domain-layer.md`, `infrastructure-layer.md`, `mcp-tools.md`, `testing.md`, `nuget.md`. Don't duplicate their content here.
+
+Follow Red-Green-Refactor for all features and bug fixes: write a failing test first, watch it fail, then implement.
 
 ## Environment Variables
 
@@ -120,10 +99,6 @@ Before marking a layer of work as done, **verify every agent in that layer has c
 ### Auto-Commit After Triplets
 
 When executing TDD plans with triplet tasks (RED → GREEN → REVIEW), **commit after each triplet completes successfully**. This keeps the history granular and makes rollbacks cheap. The commit message should reference the triplet's feature or task name.
-
-## TDD
-
-Follow Red-Green-Refactor for all features and bug fixes. Write a failing test first, then implement. See `.claude/rules/tdd.md` for full workflow.
 
 ## Local Development
 
@@ -193,6 +168,8 @@ Transports (WebChat, Telegram, ServiceBus, Voice, Scheduling) run as independent
 
 On connect and after every reconnect, the agent registers its agent catalog (an `AgentCatalogEntry` list) with each channel via `register_agents` (`ChannelConnectionHost`). Channels consume this single-source catalog instead of duplicated `Agents` config — SignalR broadcasts `OnAgentsUpdated`, so WebChat refreshes its agent list live.
 
+A channel endpoint can declare `attachOnly: true` in `ChannelEndpoints` (voice does): `DeliveryTargetResolver` orders attach-only channels last when resolving fan-out delivery targets, so they attach to conversations minted elsewhere but are never the primary minted target.
+
 A server can be **dual-role** — both a channel (in `ChannelEndpoints`) and a tool/filesystem server (in an agent's `mcpServerEndpoints`); `mcp-scheduling` and `mcp-library` (download-completion alerts) are both. For dual-role servers the channel-protocol tools (`send_reply`, `request_approval`, `register_agents`) are hidden from the LLM.
 
 New transports can be added by deploying a new channel MCP server — zero agent changes needed.
@@ -201,25 +178,7 @@ New transports can be added by deploying a new channel MCP server — zero agent
 
 Voice is an MCP channel server (`McpChannelVoice`, channelId `voice`, container `mcp-channel-voice`, port 6015) plus hardware satellites. The hub is the Wyoming-protocol **client**: `WyomingSatelliteHost` dials out to every satellite that has an `Address` in `VoiceSettings.Satellites` (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) and reconnects forever; address-less satellites stay in the catalog as announce targets but are never dialed (announcements to them report offline). Pipeline: satellite wakes locally → streams mic `audio-chunk`s → `SatelliteSession`/`SilenceGate` segment the utterance → wyoming-whisper STT → transcript dispatched as `channel/message` → agent reply synthesized by wyoming-piper → streamed back as `audio-start`/`audio-chunk`/`audio-stop`. Sending a `transcript` event to the satellite ends its turn and re-arms wake; `FollowUpConversation` can reopen the mic wake-free, announced by the `ListeningChime` earcon.
 
-The satellite is `nabu-satellite` (`satellite/` — a standalone Rust crate, not part of the .NET solution): a fully static aarch64-musl binary (~18.8 MiB) embedding the openWakeWord "ok nabu" pipeline (melspectrogram → embedding → classifier ONNX, run in-process via tract) and the cue WAVs. Key invariants:
-
-- **The satellite is the Wyoming SERVER; the hub dials in** (default `--listen 0.0.0.0:10700`). A new hub connection supersedes the previous one (abort + await) so a dead-peer TCP wedge can't hold the exclusive `plughw` mic for the ~15-min retransmission timeout. The three ONNX models are parsed + optimized ONCE at boot (`WakeModels::load`, fail-fast) and shared across connections — re-arm after a reconnect is instant.
-- **Cancellation safety**: hub/mic reads AND playback writes/drains are multi-await compound I/O, NOT `select!`-safe; they run in dedicated pump tasks (hub, mic, playback) feeding bounded mpsc channels, and the main `select!` only races `recv()` futures.
-- **Playback pump**: the pump task is the single owner of the playback device. `audio-stop`'s drain (~0.5-2 s of buffered TTS) happens inside the pump, so wake/button/mic stay live during the reply tail; drain completions return on an unbounded channel (bounded would AB-deadlock) carrying a generation that gates the LED Idle/Listening transition (a stale completion can't blank a newer stream); playback errors stay connection-fatal; cues route through the pump too, so a cue player can never EBUSY-race a reply for the exclusive device (cues are dropped while a stream is active).
-- **Audio contract**: mic = 16 kHz mono S16LE in 1280-sample/80 ms chunks (arecord subprocess; bytes end-to-end internally, decoded to i16 only at the detector); playback sink = FIXED 22 050 Hz mono S16LE (aplay) that ignores announced rates — everything it plays must be 22 050 Hz: hub-side TTS and chime (this is why `ListeningChime` generates 22 050 Hz PCM) plus the satellite's own embedded cue WAVs.
-- **ALSA latency flags**: the default commands carry `arecord … -F 20000` (20 ms periods; the alsa-utils default of buffer/4 = 125 ms delayed every mic sample on the wake and STT paths) and `aplay … --start-delay=100000 -F 50000` (start at ~100 ms queued instead of the full-500 ms-buffer default; buffer stays 500 ms for underrun headroom). Keep them when overriding devices. Plain-argv audio commands exec directly (no `sh -c`), so kill/supersede SIGKILLs aplay/arecord themselves; shell-shaped commands (WSL gain pipe) still go through sh.
-- **Zero-lag pre-roll**: while idle, mic chunks fill a pre-roll ring (`--preroll-ms`, default 1000); a wake trigger flushes only the detection gap (3 chunks ≈ 240 ms), never the wake word itself; a button press flushes the full ring.
-- **LED**: the state machine publishes `LedState` (Idle/Listening/Thinking/Speaking) on a tokio watch channel; a per-connection render task owns the backend (`--led-gpio` pin or `--led-spi` for the ReSpeaker HAT APA102s on `/dev/spidev0.1`); Idle→off, everything else→steady on, 120 s Thinking fallback mirroring the hub reply timeout; missing/failing LED hardware is never fatal. Idle after a reply still means actual-playback-complete (drain-completion-driven).
-- **Defaults target a Jabra Speak2** on `plughw:0,0` (index-pinned via `snd_usb_audio index=0` because the ALSA card name varies by variant: 75→J75, 55 MS→MS, 55 UC→UC), no button/LED — the Jabra's buttons/LEDs are HID-telephony, unusable on Linux. The ReSpeaker 2-Mic HAT is the override path: `plughw:CARD=seeed2micvoicec,DEV=0` on both audio commands plus `--button-gpio 17 --led-spi` (needs `dtparam=spi=on` and the `spi` group).
-- **Wire format**: frames are encoded as one contiguous buffer with event `data` sent once as the `data_length` body (the hub's reader prefers the body; its writer emits the same shape) — pinned by a codec test.
-
-Build & deploy: `satellite/scripts/build-release.sh` cross-compiles via cargo-zigbuild + zig (the `zigcc-fp16-shim.sh` CC shim rewrites tract-linalg's `+fp16` -march feature to zig's `+fullfp16`) — never run bare `cargo zigbuild` for releases. `satellite/.cargo/config.toml` pins `-C target-cpu=cortex-a53 -C target-feature=-aes,-sha2` for the musl target (the Pi's silicon lacks the crypto extensions LLVM's cortex-a53 def would enable). `scripts/provision-satellite-rs.sh <user@host> [mic-device]` installs the binary plus the templated `satellite/deploy/nabu-satellite.service` unit on a Pi (only dependency: `alsa-utils`; the unit pins the `performance` governor and `Nice=-10`) and, when the mic device is left at the default `plughw:0,0`, applies the Jabra ALSA/udev pinning. qemu-emulation smoke tests need `--no-wake` (qemu's fp16 hwcaps activate tract f16 kernels that crash under emulation; a real A53 selects the f32 kernels). On-device E2E validation (plan task 5.3) is still open, blocked on hardware — it should also read the `RUST_LOG=debug` per-chunk "wake inference" timing line.
-
-### Running a Satellite on WSL
-
-`scripts/wsl-satellite.sh` builds (`cargo build --release`, native target) and runs a satellite on the WSL host through WSLg PulseAudio; the dockerized hub dials `tcp://host.docker.internal:$SAT_PORT` (defaults match `McpChannelVoice/appsettings.Development.json`: 10700 = fran-office-01, 10600 = laura-office-01). Env knobs: `SAT_PORT`, `THRESHOLD` (wake threshold, default 0.5), `MIC_GAIN` (default 3.0 via a python `audioop` pipe — WSLg's mic bridge is quiet and the binary has no gain flag; needs python ≤ 3.12), `RUST_LOG`. `paplay --latency-msec=50` is mandatory on WSLg (the RDP sink's default buffer adds ~1.6 s playback latency, so the hub opens the wake-free follow-up window — 400 ms playback-tail echo guard, then 7 s window — while the reply is still audibly playing). Stale instances are detected via an `ss` LISTEN-state check because WSL2 mirrored networking makes loopback connects to dead ports hang instead of refusing.
-
-**WSLg's RDP audio bridge audibly degrades playback** (harsh/crackly; the Linux-side chain measures bit-clean at the Pulse monitor tap — the corruption is in the RDPSink→Windows leg). `scripts/wsl-satellite-winaudio.sh` is the clean-audio variant: same satellite in WSL, but the audio commands are Windows binaries run through WSL interop — `ffmpeg.exe` dshow mic capture (`-audio_buffer_size 50`, the dshow analogue of arecord's `-F 20000`) and `ffplay.exe` WASAPI playback (`-af adelay=150:all=1` because every fresh playback session can randomly glitch its first instants; a 120-180 ms earcon lives entirely inside that window, so the pad moves the artifact into silence). Needs the gyan.dev ffmpeg-release-essentials zip extracted to `%LOCALAPPDATA%\nabu-satellite\`. The dockerized hub only dials the dev satellite addresses when running with `ASPNETCORE_ENVIRONMENT=Development` (its `appsettings.Development.json` overrides exactly the `Satellites` addresses; production config points at the Pi IPs).
+The satellite is `nabu-satellite` (`satellite/` — a standalone Rust crate, not in the .NET solution). **Its invariants, build/deploy, and the WSL dev-satellite scripts (`scripts/wsl-satellite.sh`, `scripts/wsl-satellite-winaudio.sh`) are documented in `satellite/CLAUDE.md`** — read it before touching either side of the wire. What the hub side must respect: the satellite is the Wyoming **server** (the hub dials in); its playback sink is FIXED 22 050 Hz mono S16LE and ignores announced rates, so all hub-emitted audio (TTS, `ListeningChime`) must be 22 050 Hz; the dockerized hub dials the dev satellite addresses only under `ASPNETCORE_ENVIRONMENT=Development` (`McpChannelVoice/appsettings.Development.json` overrides exactly the `Satellites` addresses; production config points at the Pi IPs).
 
 ### Scheduling Architecture
 
@@ -239,7 +198,7 @@ Printing is a non-disk MCP filesystem server (`McpServerPrinter`), not an in-pro
 
 ### Virtual Filesystem Architecture
 
-The agent exposes a unified virtual filesystem across MCP servers. Each MCP server can expose a `filesystem://` resource (e.g., `filesystem://vault`, `filesystem://media`, `filesystem://ha`, `filesystem://schedules`, `filesystem://print-queue`). At session start, `McpFileSystemDiscovery` detects these resources and mounts them into a `VirtualFileSystemRegistry` with longest-prefix path resolution. `FileSystemToolFeature` provides 8 domain tools (`VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsRemove`, `VfsExec`) that dispatch through the registry. `VfsExec` is filesystem-conditional — backends that don't implement `fs_exec` return a "tool missing" envelope when invoked. Raw MCP `fs_*` tools are filtered out when domain tools are active. Backends implement `IFileSystemBackend` and return typed `FsResult<T>` (`Ok`/`Err`); besides plain disk-backed servers, `HaFileSystem` (Home Assistant entities/areas/actions), `ScheduleFileSystem` (scheduled tasks), and `PrinterQueueFileSystem` (print queue) are non-disk backends that follow the same contract. New filesystems are added by exposing a `filesystem://` resource from any MCP server — no agent changes needed.
+The agent exposes a unified virtual filesystem across MCP servers. Each MCP server can expose a `filesystem://` resource (e.g., `filesystem://vault`, `filesystem://media`, `filesystem://ha`, `filesystem://schedules`, `filesystem://print-queue`). At session start, `McpFileSystemDiscovery` detects these resources and mounts them into a `VirtualFileSystemRegistry` with longest-prefix path resolution. `FileSystemToolFeature` provides 10 domain tools (`VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsCopy`, `VfsRemove`, `VfsExec`, `VfsFileInfo`) that dispatch through the registry. `VfsExec` is filesystem-conditional — backends that don't implement `fs_exec` return a "tool missing" envelope when invoked. Raw MCP `fs_*` tools are filtered out when domain tools are active. Each mount is its own backend — tools cannot reach across mounts; data needed on another mount must be copied there first. Backends implement `IFileSystemBackend` and return typed `FsResult<T>` (`Ok`/`Err`); besides plain disk-backed servers, `HaFileSystem` (Home Assistant entities/areas/actions), `ScheduleFileSystem` (scheduled tasks), and `PrinterQueueFileSystem` (print queue) are non-disk backends that follow the same contract. New filesystems are added by exposing a `filesystem://` resource from any MCP server — no agent changes needed.
 
 Glob patterns support brace expansion (`GlobBraceExpander`): `**/*.{jpg,png}` expands to the union of `**/*.jpg` and `**/*.png` (lone/unbalanced `{...}` stay literal). All backends normalize glob entries to full virtual paths so results are consistent across mounts.
 
