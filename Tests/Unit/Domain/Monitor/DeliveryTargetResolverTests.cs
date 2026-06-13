@@ -2,12 +2,13 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Domain.Monitor;
 
-public class ChatMonitorDeliveryTests
+public class DeliveryTargetResolverTests
 {
     private static IChannelConnection Channel(string id)
     {
@@ -18,6 +19,11 @@ public class ChatMonitorDeliveryTests
         return m.Object;
     }
 
+    private static DeliveryTargetResolver Resolver(params IChannelConnection[] channels)
+    {
+        return new DeliveryTargetResolver(channels, NullLogger.Instance);
+    }
+
     [Fact]
     public async Task ResolveDeliveryTargets_WithoutReplyTo_DeliversToOrigin()
     {
@@ -25,7 +31,7 @@ public class ChatMonitorDeliveryTests
         var channels = new[] { origin, Channel("telegram") };
         var msg = new ChannelMessage { ConversationId = "c1", Content = "x", Sender = "u", ChannelId = "signalr" };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
 
         var t = targets.ShouldHaveSingleItem();
         t.Channel.ChannelId.ShouldBe("signalr");
@@ -47,7 +53,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("signalr", null), new ReplyTarget("telegram", "t-9")]
         };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
 
         targets.Count.ShouldBe(2);
         targets[0].ConversationId.ShouldBe("minted-signalr");
@@ -65,7 +71,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("does-not-exist", "z")]
         };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
 
         targets.ShouldBeEmpty();
     }
@@ -83,7 +89,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("signalr", "conv-7")]
         };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, [origin, signalr], CancellationToken.None);
+        var targets = await Resolver(origin, signalr).ResolveAsync(msg, origin, CancellationToken.None);
 
         var target = targets.ShouldHaveSingleItem();
         target.ConversationId.ShouldBe("conv-7");
@@ -103,7 +109,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("voice", "conv-9", "fran-office-01")]
         };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, [origin, voice], CancellationToken.None);
+        var targets = await Resolver(origin, voice).ResolveAsync(msg, origin, CancellationToken.None);
 
         targets.ShouldHaveSingleItem().ConversationId.ShouldBe("conv-9");
         voice.CreatedConversations.ShouldBeEmpty();
@@ -135,7 +141,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("signalr", null)]
         };
 
-        await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+        await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
 
         capturedPrompt.ShouldBe("Check qBittorrent for stalled torrents");
     }
@@ -156,7 +162,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("signalr", null)]
         };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
 
         targets.ShouldBeEmpty();
     }
@@ -183,7 +189,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("voice", null, "fran-office-01")]
         };
 
-        await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+        await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
 
         capturedAddress.ShouldBe("fran-office-01");
     }
@@ -216,7 +222,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("signalr", null), new ReplyTarget("voice", null, "fran-office-01")]
         };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
 
         voiceExistingId.ShouldBe("minted-signalr");
         targets.Count.ShouldBe(2);
@@ -250,7 +256,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("voice", null, "fran-office-01"), new ReplyTarget("signalr", null)]
         };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
 
         targets.Count.ShouldBe(2);
         // signalr (owning) anchors and is targets[0]; voice attaches to the same id.
@@ -279,8 +285,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("notify", null), new ReplyTarget("signalr", null)]
         };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(
-            msg, origin, [origin, signalr, notify.Object], CancellationToken.None);
+        var targets = await Resolver(origin, signalr, notify.Object).ResolveAsync(msg, origin, CancellationToken.None);
 
         targets.Count.ShouldBe(2);
         targets[0].Channel.ChannelId.ShouldBe("signalr");
@@ -302,7 +307,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("signalr", null), new ReplyTarget("telegram", "t-9")]
         };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
 
         targets.Count.ShouldBe(2);
         targets.Single(t => t.Channel.ChannelId == "signalr").Minted.ShouldBeTrue();
@@ -322,7 +327,7 @@ public class ChatMonitorDeliveryTests
             ReplyTo = [new ReplyTarget("voice", "conv-9", "fran-office-01")]
         };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, [origin, voice], CancellationToken.None);
+        var targets = await Resolver(origin, voice).ResolveAsync(msg, origin, CancellationToken.None);
 
         targets.ShouldHaveSingleItem().Address.ShouldBe("fran-office-01");
     }
@@ -333,7 +338,7 @@ public class ChatMonitorDeliveryTests
         var origin = Channel("signalr");
         var msg = new ChannelMessage { ConversationId = "c1", Content = "x", Sender = "u", ChannelId = "signalr" };
 
-        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, [origin], CancellationToken.None);
+        var targets = await Resolver(origin).ResolveAsync(msg, origin, CancellationToken.None);
 
         targets.ShouldHaveSingleItem().Minted.ShouldBeFalse();
     }

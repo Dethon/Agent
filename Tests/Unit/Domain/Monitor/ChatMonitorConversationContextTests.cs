@@ -48,7 +48,7 @@ public class ChatMonitorConversationContextTests
             conversationId: "fire-1", channelId: "scheduling", agentId: "jonas");
         var targets = new[] { new DeliveryTarget(channel, "t-9") };
 
-        var context = ChatMonitor.BuildConversationContext(message, targets);
+        var context = DeliveryTargetResolver.BuildConversationContext(message, targets);
 
         context.ConversationId.ShouldBe("t-9");
         context.Origin.ShouldBe(new ReplyTarget("telegram", "t-9"));
@@ -61,7 +61,7 @@ public class ChatMonitorConversationContextTests
             conversationId: "conv-2", channelId: "voice", agentId: "jonas") with
         { SatelliteId = "fran-office-01" };
 
-        var context = ChatMonitor.BuildConversationContext(message, []);
+        var context = DeliveryTargetResolver.BuildConversationContext(message, []);
 
         context.ConversationId.ShouldBe("conv-2");
         context.Origin.ShouldBe(new ReplyTarget("voice", "conv-2", "fran-office-01"));

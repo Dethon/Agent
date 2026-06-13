@@ -2,13 +2,16 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Domain.Monitor;
 
-public class ChatMonitorAnnounceTests
+public class DeliveryTargetResolverAnnounceTests
 {
+    private static readonly DeliveryTargetResolver Resolver = new([], NullLogger.Instance);
+
     private static (Mock<IChannelConnection> Mock, List<(string? InitialPrompt, string? Address, string? ExistingConversationId)> Calls) Channel(string id)
     {
         var calls = new List<(string?, string?, string?)>();
@@ -39,7 +42,7 @@ public class ChatMonitorAnnounceTests
         var (signalr, calls) = Channel("signalr");
         var targets = new[] { new DeliveryTarget(signalr.Object, "7:42") };
 
-        await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
+        await Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
 
         var call = calls.ShouldHaveSingleItem();
         call.ExistingConversationId.ShouldBe("7:42");
@@ -52,7 +55,7 @@ public class ChatMonitorAnnounceTests
         var (signalr, calls) = Channel("signalr");
         var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
 
-        await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
+        await Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
 
         calls.ShouldBeEmpty();
     }
@@ -65,7 +68,7 @@ public class ChatMonitorAnnounceTests
         var (signalr, calls) = Channel("signalr");
         var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
 
-        await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
+        await Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
 
         calls.ShouldHaveSingleItem().ExistingConversationId.ShouldBe("minted-1");
     }
@@ -79,7 +82,7 @@ public class ChatMonitorAnnounceTests
         var (voice, calls) = Channel("voice");
         var targets = new[] { new DeliveryTarget(voice.Object, "7:42") };
 
-        await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
+        await Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
 
         calls.ShouldHaveSingleItem().ExistingConversationId.ShouldBe("7:42");
     }
@@ -92,7 +95,7 @@ public class ChatMonitorAnnounceTests
         var (voice, calls) = Channel("voice");
         var targets = new[] { new DeliveryTarget(voice.Object, "7:42", Address: "fran-office-01") };
 
-        await ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
+        await Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
 
         calls.ShouldHaveSingleItem().Address.ShouldBe("fran-office-01");
     }
@@ -112,7 +115,7 @@ public class ChatMonitorAnnounceTests
         };
 
         await Should.NotThrowAsync(
-            ChatMonitor.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None));
+            Resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None));
 
         telegramCalls.ShouldHaveSingleItem();
     }

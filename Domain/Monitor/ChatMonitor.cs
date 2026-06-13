@@ -23,106 +23,7 @@ public class ChatMonitor(
     IMemoryRecallHook? memoryRecallHook,
     ILogger<ChatMonitor> logger)
 {
-    public static async Task<IReadOnlyList<DeliveryTarget>> ResolveDeliveryTargetsAsync(
-        ChannelMessage message,
-        IChannelConnection originChannel,
-        IReadOnlyList<IChannelConnection> channels,
-        CancellationToken ct,
-        ILogger? logger = null)
-    {
-        if (message.ReplyTo is not { Count: > 0 })
-        {
-            return [new DeliveryTarget(originChannel, message.ConversationId)];
-        }
-
-        var targets = new List<DeliveryTarget>();
-        // The first resolved conversation anchors a shared id for the whole fan-out. A
-        // schedule delivering to both a WebChat channel and voice should surface as ONE
-        // conversation — displayed by WebChat and spoken by voice — not a populated thread
-        // plus an empty duplicate. Later targets that need minting attach to this id (the
-        // voice channel binds its satellite to it instead of persisting its own topic).
-        //
-        // Attach-only channels (a config-declared capability, e.g. voice) return the id they
-        // are handed instead of persisting a topic, so a topic-owning channel must anchor:
-        // order attach-only targets last regardless of how the schedule listed them. This
-        // also makes targets[0] — the chat-history persistence + approval-routing anchor — a
-        // channel that actually displays the conversation. OrderBy is stable, so the
-        // author's ordering is otherwise preserved.
-        var replyTo = message.ReplyTo
-            .OrderBy(t => channels.FirstOrDefault(c => c.ChannelId == t.ChannelId)?.AttachOnly == true ? 1 : 0)
-            .ToList();
-        string? shared = null;
-        foreach (var target in replyTo)
-        {
-            var channel = channels.FirstOrDefault(c => c.ChannelId == target.ChannelId);
-            if (channel is null)
-            {
-                continue;
-            }
-
-            var conversationId = target.ConversationId;
-            var wasMinted = false;
-            if (conversationId is null)
-            {
-                try
-                {
-                    conversationId = await channel.CreateConversationAsync(
-                        message.AgentId ?? "default", "Scheduled task", message.Sender, message.Content, target.Address, shared, ct);
-                    wasMinted = true;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // A target whose conversation can't be minted is skipped rather than
-                    // aborting the whole fan-out (and the agent run that depends on it).
-                    logger?.LogWarning(ex, "Failed to mint conversation on {ChannelId}; skipping target", target.ChannelId);
-                    continue;
-                }
-            }
-
-            if (conversationId is not null)
-            {
-                shared ??= conversationId;
-                targets.Add(new DeliveryTarget(channel, conversationId, Minted: wasMinted, Address: target.Address));
-            }
-        }
-
-        return targets;
-    }
-
-    public static async Task AnnounceTurnStartAsync(
-        IReadOnlyList<DeliveryTarget> targets,
-        ChannelMessage message,
-        bool skipMinted,
-        CancellationToken ct,
-        ILogger? logger = null)
-    {
-        // The announce is channel-agnostic: every target gets the same create_conversation
-        // call and applies its own turn-start semantics (SignalR sets up a live stream,
-        // voice binds an announcement unless the satellite session is live). Channels
-        // without a create_conversation tool no-op inside CreateConversationAsync.
-        var announceable = targets.Where(t => !(skipMinted && t.Minted));
-        foreach (var target in announceable)
-        {
-            try
-            {
-                await target.Channel.CreateConversationAsync(
-                    message.AgentId ?? "default",
-                    topicName: string.Empty,
-                    message.Sender,
-                    initialPrompt: message.Content,
-                    address: target.Address,
-                    existingConversationId: target.ConversationId,
-                    ct);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // The reply itself is persisted regardless; a failed announce only costs
-                // live streaming, so it must never abort the turn.
-                logger?.LogWarning(ex, "Turn-start announce to {ChannelId} failed; reply will not stream live",
-                    target.Channel.ChannelId);
-            }
-        }
-    }
+    private readonly DeliveryTargetResolver targetResolver = new(channels, logger);
 
     public async Task Monitor(CancellationToken cancellationToken)
     {
@@ -172,7 +73,7 @@ public class ChatMonitor(
         // These first-message targets anchor the group-level persistence key and
         // approval handler; per-message reply delivery is resolved separately below.
         var first = await group.FirstAsync(ct);
-        var targets = await ResolveDeliveryTargetsAsync(first.Message, first.Channel, channels, ct, logger);
+        var targets = await targetResolver.ResolveAsync(first.Message, first.Channel, ct);
         var (approvalChannel, approvalConversationId) = targets.Count > 0
             ? (targets[0].Channel, targets[0].ConversationId)
             : (first.Channel, first.Message.ConversationId);
@@ -224,7 +125,7 @@ public class ChatMonitor(
                         // routed back to its own origin instead of the opening channel.
                         var messageTargets = index == 0 || x.Message.ReplyTo is { Count: > 0 }
                             ? targets
-                            : await ResolveDeliveryTargetsAsync(x.Message, x.Channel, channels, linkedCt, logger);
+                            : await targetResolver.ResolveAsync(x.Message, x.Channel, linkedCt);
                         // Agent-initiated turns (downloads, schedules) land in conversations
                         // with no live stream on the receiving channel; announce the turn so
                         // the channel can set one up before reply chunks arrive. Targets the
@@ -233,14 +134,14 @@ public class ChatMonitor(
                         // those conversations as pre-existing.
                         if (x.Message.Origin is not null)
                         {
-                            await AnnounceTurnStartAsync(messageTargets, x.Message, skipMinted: index == 0, linkedCt, logger);
+                            await targetResolver.AnnounceTurnStartAsync(messageTargets, x.Message, skipMinted: index == 0, linkedCt);
                         }
                         var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);
                         userMessage.SetSenderId(x.Message.Sender);
                         userMessage.SetLocation(x.Message.Location);
                         userMessage.SetSatelliteId(x.Message.SatelliteId);
                         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
-                        userMessage.SetConversationContext(BuildConversationContext(x.Message, messageTargets));
+                        userMessage.SetConversationContext(DeliveryTargetResolver.BuildConversationContext(x.Message, messageTargets));
                         if (memoryRecallHook is not null)
                         {
                             await memoryRecallHook.EnrichAsync(userMessage, x.Message.Sender, x.Message.ConversationId, x.Message.AgentId, thread, linkedCt);
@@ -343,20 +244,6 @@ public class ChatMonitor(
             }, ct);
             return false;
         }
-    }
-
-    public static ConversationContext BuildConversationContext(
-        ChannelMessage message, IReadOnlyList<DeliveryTarget> targets)
-    {
-        var (channelId, conversationId) = targets.Count > 0
-            ? (targets[0].Channel.ChannelId, targets[0].ConversationId)
-            : (message.ChannelId, message.ConversationId);
-        var address = channelId == message.ChannelId ? message.SatelliteId : null;
-        return new ConversationContext(
-            message.AgentId ?? "default",
-            conversationId,
-            message.Sender,
-            new ReplyTarget(channelId, conversationId, address));
     }
 
     public static ScheduleExecutionEvent? BuildScheduleEvent(
