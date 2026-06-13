@@ -15,7 +15,7 @@
 - The pre-commit hook runs `dotnet format` and re-stages whole files. `git add` explicit paths only.
 - Commit on the current branch (`subscription-refactor`). Never switch branches.
 - File-scoped namespaces, primary constructors, no XML doc comments.
-- Test command: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Tests.Unit.Domain.Monitor"` covers all monitor tests (the `~` substring filter matches both `Tests.Unit.Domain.Monitor.*` and `Tests.Unit.Domain.MonitorTests`).
+- Test command: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Monitor"` covers all monitor tests — 46 at baseline (note: `MonitorTests.cs` contains class `ChatMonitorTests` in namespace `Tests.Unit.Domain`, so the broad `~Monitor` substring is required to catch it).
 
 ---
 
@@ -27,7 +27,7 @@
 
 Run:
 ```bash
-dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Tests.Unit.Domain.Monitor"
+dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Monitor"
 ```
 
 Expected: all tests pass (failed: 0). Note the passed count — every later task must end with the same count passing. If anything fails here, STOP and report; do not start the refactor on a red baseline.
@@ -83,7 +83,7 @@ var targets = new[] { new DeliveryTarget(signalr.Object, "7:42") };
 
 Run:
 ```bash
-dotnet build Domain && dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Tests.Unit.Domain.Monitor"
+dotnet build Domain && dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Monitor"
 ```
 
 Expected: build clean, same passed count as Task 1, failed: 0.
@@ -378,7 +378,7 @@ var context = DeliveryTargetResolver.BuildConversationContext(message, []);
 
 Run:
 ```bash
-dotnet build Domain && dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Tests.Unit.Domain.Monitor"
+dotnet build Domain && dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Monitor"
 ```
 
 Expected: build clean, same passed count as Task 1, failed: 0.
@@ -537,7 +537,7 @@ var deliveredContent = await replyDispatcher.DeliverUpdateAsync(update, replyTar
 
 Run:
 ```bash
-dotnet build Domain && dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Tests.Unit.Domain.Monitor"
+dotnet build Domain && dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Monitor"
 ```
 
 Expected: build clean, same passed count as Task 1, failed: 0. (Delivery isolation stays covered by `ChatMonitorScheduleMetricsTests.Monitor_ScheduledMessage_OneDeliveryTargetFails_DeliversToOthersAndEmitsMetricOnce`.)
@@ -655,7 +655,7 @@ In `Tests/Unit/Domain/MonitorTests.cs` (around line 558):
 
 Run:
 ```bash
-dotnet build Domain && dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Tests.Unit.Domain.Monitor"
+dotnet build Domain && dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Monitor"
 ```
 
 Expected: build clean, same passed count as Task 1, failed: 0.
@@ -896,7 +896,7 @@ Behavior-preservation notes for this step (verify each while editing):
 
 Run:
 ```bash
-dotnet build Domain && dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Tests.Unit.Domain.Monitor"
+dotnet build Domain && dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Monitor"
 ```
 
 Expected: build clean, same passed count as Task 1, failed: 0. The pipeline tests (`MonitorTests`, `ChatMonitorPersistenceKeyTests`, `ChatMonitorScheduleMetricsTests`, `ChatMonitorConversationContextTests`) exercise the full decomposed flow — Clear/Cancel commands, approval binding, persistence keys, announce ordering, schedule metrics, delivery isolation.
