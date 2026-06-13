@@ -48,56 +48,59 @@
 
 /* Light Theme (Default) */
 :root {
-    /* Backgrounds */
-    --bg-primary: #f8fafc;
-    --bg-secondary: #ffffff;
-    --bg-tertiary: #f1f5f9;
-    --bg-elevated: #ffffff;
+    /* Backgrounds — warm paper */
+    --bg-primary: #f3ede1;
+    --bg-secondary: #fffaf1;
+    --bg-tertiary: #ece4d4;
+    --bg-elevated: #fffaf1;
 
-    /* Text */
-    --text-primary: #0f172a;
-    --text-secondary: #64748b;
-    --text-muted: #94a3b8;
+    /* Text — warm ink */
+    --text-primary: #2a2118;
+    --text-secondary: #7a6a52;
+    --text-muted: #a08a68;
 
-    /* Accent Colors */
-    --accent: #6366f1;
-    --accent-hover: #4f46e5;
-    --accent-light: #e0e7ff;
-    --accent-subtle: #eef2ff;
+    /* Accent — ember is the single constant action color */
+    --accent: #e9601f;
+    --accent-hover: #cf5214;
+    --accent-light: #f7d9c4;
+    --accent-subtle: #fbeee2;
 
-    /* Message Bubbles */
-    --user-bg: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    --user-text: #ffffff;
-    --assistant-bg: #ffffff;
-    --assistant-border: #e2e8f0;
+    /* Per-space tint — defaults to ember (subtle differentiation only when a space overrides it) */
+    --space-accent: var(--accent);
+
+    /* Message Bubbles — solid ember user bubble (no gradient) */
+    --user-bg: #e9601f;
+    --user-text: #fff3e9;
+    --assistant-bg: #fffaf1;
+    --assistant-border: #e6dbc6;
 
     /* UI Elements */
-    --border-color: #e2e8f0;
-    --border-light: #f1f5f9;
-    --input-bg: #ffffff;
-    --input-border: #cbd5e1;
-    --input-focus: #6366f1;
+    --border-color: #e6dbc6;
+    --border-light: #efe7d7;
+    --input-bg: #fffaf1;
+    --input-border: #ddd0b8;
+    --input-focus: #e9601f;
 
     /* Scrollbar */
-    --scrollbar-thumb: #cbd5e1;
-    --scrollbar-thumb-hover: #94a3b8;
+    --scrollbar-thumb: #d9c9ad;
+    --scrollbar-thumb-hover: #c2ad8a;
     --scrollbar-track: transparent;
 
-    /* Shadows */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    --shadow-message: 0 1px 3px rgba(0, 0, 0, 0.08);
+    /* Shadows — warm-tinted */
+    --shadow-sm: 0 1px 2px rgba(60, 40, 20, 0.06);
+    --shadow-md: 0 4px 6px -1px rgba(60, 40, 20, 0.12), 0 2px 4px -1px rgba(60, 40, 20, 0.07);
+    --shadow-lg: 0 10px 15px -3px rgba(60, 40, 20, 0.14), 0 4px 6px -2px rgba(60, 40, 20, 0.08);
+    --shadow-message: 0 1px 3px rgba(60, 40, 20, 0.10);
 
     /* Status Colors */
-    --success: #22c55e;
-    --error: #ef4444;
-    --error-bg: #fef2f2;
-    --error-border: #fecaca;
+    --success: #5aa06e;
+    --error: #c0492f;
+    --error-bg: #fbe7df;
+    --error-border: #f0c4b4;
 
     /* Code Blocks */
-    --code-bg: #f1f5f9;
-    --code-border: #e2e8f0;
+    --code-bg: #efe6d4;
+    --code-border: #e6dbc6;
 
     /* Transitions */
     --transition-fast: 150ms ease;
@@ -107,56 +110,59 @@
 
 /* Dark Theme */
 [data-theme="dark"] {
-    /* Backgrounds */
-    --bg-primary: #0f172a;
-    --bg-secondary: #1e293b;
-    --bg-tertiary: #334155;
-    --bg-elevated: #1e293b;
+    /* Backgrounds — warm espresso */
+    --bg-primary: #171310;
+    --bg-secondary: #211b15;
+    --bg-tertiary: #2c241c;
+    --bg-elevated: #241e17;
 
     /* Text */
-    --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --text-primary: #efe4d2;
+    --text-secondary: #c2b49a;
+    --text-muted: #a4937a;
 
-    /* Accent Colors */
-    --accent: #818cf8;
-    --accent-hover: #a5b4fc;
-    --accent-light: #312e81;
-    --accent-subtle: #1e1b4b;
+    /* Accent — ember, slightly brighter for dark contrast */
+    --accent: #f0712f;
+    --accent-hover: #f3884c;
+    --accent-light: #3a2417;
+    --accent-subtle: #2a1d13;
+
+    /* Per-space tint */
+    --space-accent: var(--accent);
 
     /* Message Bubbles */
-    --user-bg: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
-    --user-text: #ffffff;
-    --assistant-bg: #1e293b;
-    --assistant-border: #334155;
+    --user-bg: #f0712f;
+    --user-text: #fff3e9;
+    --assistant-bg: #241e17;
+    --assistant-border: #3a2f24;
 
     /* UI Elements */
-    --border-color: #334155;
-    --border-light: #1e293b;
-    --input-bg: #1e293b;
-    --input-border: #475569;
-    --input-focus: #818cf8;
+    --border-color: #3a2f24;
+    --border-light: #241e17;
+    --input-bg: #241e17;
+    --input-border: #4a3d2e;
+    --input-focus: #f0712f;
 
     /* Scrollbar */
-    --scrollbar-thumb: #475569;
-    --scrollbar-thumb-hover: #64748b;
+    --scrollbar-thumb: #4a3d2e;
+    --scrollbar-thumb-hover: #6a5a44;
     --scrollbar-track: transparent;
 
     /* Shadows */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
-    --shadow-message: 0 2px 8px rgba(0, 0, 0, 0.25);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
+    --shadow-message: 0 2px 8px rgba(0, 0, 0, 0.35);
 
     /* Status Colors */
-    --success: #4ade80;
-    --error: #f87171;
-    --error-bg: #450a0a;
-    --error-border: #7f1d1d;
+    --success: #6cc08a;
+    --error: #f0795a;
+    --error-bg: #2e1813;
+    --error-border: #5a2c1f;
 
     /* Code Blocks */
-    --code-bg: #0f172a;
-    --code-border: #334155;
+    --code-bg: #120f0c;
+    --code-border: #3a2f24;
 }
 
 /* ===================================
@@ -165,6 +171,17 @@
 
 * {
     box-sizing: border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
 
 html, body {
