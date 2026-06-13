@@ -214,6 +214,17 @@ window.faviconHelper = {
 };
 
 // ===================================
+// Per-space accent (CSS custom property)
+// ===================================
+
+window.accentHelper = {
+    setVar: function (color) {
+        if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(color)) return;
+        document.documentElement.style.setProperty('--space-accent', color);
+    }
+};
+
+// ===================================
 // Clipboard
 // ===================================
 

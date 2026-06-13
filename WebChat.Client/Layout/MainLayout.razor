@@ -82,6 +82,7 @@
                     if (_disposed) return;
                     var displayName = _spaceName == "Main" ? null : _spaceName;
                     await Js.InvokeVoidAsync("faviconHelper.setColor", _accentColor);
+                    await Js.InvokeVoidAsync("accentHelper.setVar", _accentColor);
                     await Js.InvokeVoidAsync("faviconHelper.setSpaceTitle", displayName);
                     StateHasChanged();
                 });
