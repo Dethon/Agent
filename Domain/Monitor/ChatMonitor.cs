@@ -162,7 +162,7 @@ public class ChatMonitor(
                                 onCompletion: async (faulted, completionCt) =>
                                 {
                                     var error = faulted ? "Agent run reported an error" : null;
-                                    var evt = BuildScheduleEvent(x.Message, stopwatch.ElapsedMilliseconds, !faulted, error);
+                                    var evt = ScheduleExecutionEvent.FromMessage(x.Message, stopwatch.ElapsedMilliseconds, !faulted, error);
                                     if (evt is not null)
                                     {
                                         await metricsPublisher.PublishAsync(evt, completionCt);
@@ -192,25 +192,6 @@ public class ChatMonitor(
 
             yield return true;
         }
-    }
-
-    public static ScheduleExecutionEvent? BuildScheduleEvent(
-        ChannelMessage message, long durationMs, bool success, string? error)
-    {
-        if (message.Origin is not { Kind: MessageOriginKind.Schedule, ScheduleId: { } scheduleId })
-        {
-            return null;
-        }
-
-        return new ScheduleExecutionEvent
-        {
-            ScheduleId = scheduleId,
-            AgentId = message.AgentId ?? "default",
-            Prompt = message.Content,
-            DurationMs = durationMs,
-            Success = success,
-            Error = error
-        };
     }
 
     private static ValueTask<AgentSession> GetOrRestoreThread(
