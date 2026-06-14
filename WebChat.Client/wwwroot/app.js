@@ -239,6 +239,7 @@ window.hearthSheet.closeDialog = function (el) { if (el && el.open) el.close(); 
 Object.assign(window.hearthSheet, {
     _el: null, _ref: null, _rows: null,
     _startY: 0, _startX: 0, _lastY: 0, _lastT: 0, _vy: 0, _dragging: false, _axisLocked: null, _startOffset: 0,
+    _rowsStartY: 0, _rowsStartScroll: 0, _rowsMode: null,
 
     register: function (peekBar, dotnetRef) {
         const sheet = peekBar.closest('.hearth');
@@ -246,20 +247,33 @@ Object.assign(window.hearthSheet, {
         this._el = sheet;
         this._ref = dotnetRef;
         this._rows = sheet.querySelector('.hearth-rows');
-        peekBar.addEventListener('pointerdown', this._onDown);
+        // Drag the sheet from anywhere in the chrome (handle, search, agent strip, padding).
+        sheet.addEventListener('pointerdown', this._onDown);
+        // The conversation list scrolls natively; a pull-down at its very top collapses the
+        // sheet. Touch handlers (not pointer) so normal list scrolling keeps its momentum.
+        if (this._rows) {
+            this._rows.addEventListener('touchstart', this._onRowsTouchStart, { passive: true });
+            this._rows.addEventListener('touchmove', this._onRowsTouchMove, { passive: false });
+            this._rows.addEventListener('touchend', this._onRowsTouchEnd);
+            this._rows.addEventListener('touchcancel', this._onRowsTouchEnd);
+        }
     },
+
+    // The drag gesture only applies to the mobile bottom-sheet layout, not the desktop rail.
+    _isSheet: function () { return window.matchMedia('(max-width: 767px)').matches; },
 
     focus: function (el) { if (el) requestAnimationFrame(() => el.focus()); },
 
     _onDown: function (e) {
         const h = window.hearthSheet;
+        if (!h._isSheet()) return;                  // desktop rail doesn't drag
         // The grabber handle is the primary drag affordance — let drags start on it.
         const onHandle = !!e.target.closest('.hearth-handle');
-        // Otherwise don't start a drag if the tap target is inside a button or dialog.
-        if (!onHandle && e.target.closest('button, dialog')) return;
-        // Don't start a sheet drag if the inner list is scrolled away from its top —
-        // let the list scroll instead.
-        if (h._rows && h._rows.scrollTop > 0 && h._rows.contains(e.target)) { h._dragging = false; return; }
+        // Otherwise don't start a drag from a control where the press means something else.
+        if (!onHandle && e.target.closest('button, dialog, input, textarea, select')) return;
+        // The conversation list owns its own pull-to-collapse via touch handlers (so it keeps
+        // native scroll momentum); the pointer drag covers only the sheet chrome.
+        if (h._rows && h._rows.contains(e.target)) return;
         h._startY = h._lastY = e.clientY; h._startX = e.clientX; h._lastT = e.timeStamp;
         // Capture the sheet's current translateY so the drag continues from where it rests
         // (0 = full … restPeek = peek) instead of snapping to the peek position.
@@ -323,6 +337,54 @@ Object.assign(window.hearthSheet, {
         else detent = ratio > 0.66 ? 'Peek' : ratio > 0.28 ? 'Half' : 'Full';
         h._el.style.removeProperty('--sheet-offset');   // let the .detent-* class drive the resting transform
         if (h._ref) h._ref.invokeMethodAsync('CommitDetent', detent);
+    },
+
+    // ---- Conversation list: native scroll, plus pull-to-collapse at the top ----
+
+    _onRowsTouchStart: function (e) {
+        const h = window.hearthSheet;
+        h._rowsMode = null;
+        if (!h._isSheet() || e.touches.length !== 1) return;
+        h._rowsStartY = h._lastY = e.touches[0].clientY;
+        h._rowsStartScroll = h._rows.scrollTop;
+        h._lastT = e.timeStamp; h._vy = 0;
+        const rect = h._el.getBoundingClientRect();
+        h._startOffset = rect.top - (window.innerHeight - rect.height);
+    },
+
+    _onRowsTouchMove: function (e) {
+        const h = window.hearthSheet;
+        if (h._rowsMode === 'native' || !h._isSheet() || e.touches.length !== 1) return;
+        const y = e.touches[0].clientY;
+        const dy = y - h._rowsStartY;
+        if (h._rowsMode === null) {
+            if (Math.abs(dy) < 8) return;           // wait for a clear vertical intent
+            // Collapse only when the list is at its top and the pull is downward; otherwise
+            // hand the gesture back to the browser for normal (momentum) scrolling.
+            if (h._rowsStartScroll <= 0 && dy > 0) { h._rowsMode = 'collapse'; h._el.classList.add('dragging'); }
+            else { h._rowsMode = 'native'; return; }
+        }
+        e.preventDefault();
+        const base = h._el.getBoundingClientRect().height;
+        const restPeek = base - 64;
+        const offset = Math.min(restPeek, Math.max(0, h._startOffset + dy));
+        h._el.style.setProperty('--sheet-offset', offset + 'px');
+        h._vy = (y - h._lastY) / Math.max(1, e.timeStamp - h._lastT);
+        h._lastY = y; h._lastT = e.timeStamp;
+    },
+
+    _onRowsTouchEnd: function () {
+        const h = window.hearthSheet;
+        if (h._rowsMode === 'collapse') {
+            h._el.classList.remove('dragging');
+            h._axisLocked = 'y';
+            h._settle();
+            // Swallow the trailing click so a pull-to-collapse doesn't also select a topic.
+            const swallow = function (ev) { ev.stopPropagation(); ev.preventDefault(); };
+            document.addEventListener('click', swallow, { capture: true, once: true });
+            setTimeout(() => document.removeEventListener('click', swallow, true), 350);
+        }
+        h._rowsMode = null;
     },
 
     registerCommandKey: function (dotnetRef) {
