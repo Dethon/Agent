@@ -683,6 +683,13 @@ h1, h2, h3 {
     color: white;
 }
 
+/* Touch devices can't hover, so the delete affordance must stay visible. */
+@media (hover: none) {
+    .delete-btn {
+        opacity: 1;
+    }
+}
+
 .delete-confirm {
     display: flex;
     gap: 0.5rem;
