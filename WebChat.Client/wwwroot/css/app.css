@@ -2312,12 +2312,13 @@ select:focus:not(:focus-visible) {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* agent switcher — segmented (desktop) */
-.agent-segmented { display: flex; gap: 0.25rem; background: var(--bg-tertiary);
+.agent-segmented { display: flex; flex-wrap: wrap; gap: 0.25rem; background: var(--bg-tertiary);
     border-radius: 12px; padding: 0.25rem; }
-.agent-seg { flex: 1; display: flex; align-items: center; gap: 0.4rem; justify-content: center;
+.agent-seg { flex: 1 1 auto; min-width: 5.5rem; display: flex; align-items: center; gap: 0.4rem; justify-content: center;
     padding: 0.4rem 0.5rem; border: none; background: transparent; border-radius: 9px;
     color: var(--text-secondary); font-family: inherit; font-weight: 600; cursor: pointer; position: relative; }
 .agent-seg.on { background: var(--accent); color: var(--user-text); }
+.agent-seg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-mono { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
     color: #fff; font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.7rem; flex: 0 0 auto; }
 .agent-activity-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
