@@ -253,8 +253,10 @@ Object.assign(window.hearthSheet, {
 
     _onDown: function (e) {
         const h = window.hearthSheet;
-        // Don't start a drag if the tap target is inside a button or dialog
-        if (e.target.closest('button, dialog')) return;
+        // The grabber handle is the primary drag affordance — let drags start on it.
+        const onHandle = !!e.target.closest('.hearth-handle');
+        // Otherwise don't start a drag if the tap target is inside a button or dialog.
+        if (!onHandle && e.target.closest('button, dialog')) return;
         // Don't start a sheet drag if the inner list is scrolled away from its top —
         // let the list scroll instead.
         if (h._rows && h._rows.scrollTop > 0 && h._rows.contains(e.target)) { h._dragging = false; return; }
@@ -293,7 +295,15 @@ Object.assign(window.hearthSheet, {
         h._el.classList.remove('dragging');
         document.removeEventListener('pointermove', h._onMove);
         document.removeEventListener('pointerup', h._onUp);
+        const wasDrag = h._axisLocked === 'y';
         h._settle();
+        // After a real drag that began on the handle, swallow the trailing click so the
+        // handle's @onclick (CycleDetent) doesn't fire on top of the committed detent.
+        if (wasDrag) {
+            const swallow = function (ev) { ev.stopPropagation(); ev.preventDefault(); };
+            document.addEventListener('click', swallow, { capture: true, once: true });
+            setTimeout(() => document.removeEventListener('click', swallow, true), 350);
+        }
     },
 
     _settle: function () {
