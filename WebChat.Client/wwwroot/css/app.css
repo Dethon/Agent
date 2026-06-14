@@ -2343,7 +2343,7 @@ select:focus:not(:focus-visible) {
 /* Mobile: the Hearth is a draggable bottom sheet */
 @media (max-width: 767px) {
     .chat-layout { display: block; height: 100dvh; }
-    .chat-container { height: 100dvh; padding-bottom: 64px; }   /* room for the peek bar */
+    .chat-container { height: 100%; padding-bottom: 64px; }   /* fill area below the header; reserve room for the peek bar */
 
     .hearth {
         position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
