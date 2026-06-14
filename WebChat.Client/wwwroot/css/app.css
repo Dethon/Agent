@@ -2382,13 +2382,22 @@ select:focus:not(:focus-visible) {
     .agent-segmented { display: none; }   /* mobile uses the popover chip in the peek bar */
 }
 
-/* agent chip + popover (mobile) */
+/* agent chip + combobox (mobile) — anchored dropdown that opens UP from the peek bar */
+.agent-combo { position: relative; display: inline-flex; }
 .agent-chip { display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.6rem; border-radius: 999px;
     background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary);
     font-family: inherit; font-weight: 600; cursor: pointer; }
-.agent-popover { border: none; border-radius: 16px; padding: 0.5rem; background: var(--bg-elevated);
-    color: var(--text-primary); box-shadow: var(--shadow-lg); }
-.agent-popover::backdrop { background: rgba(40,28,18,0.35); }
-.agent-popover-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.6rem 0.75rem;
-    border: none; background: transparent; border-radius: 10px; color: var(--text-primary); font-family: inherit; cursor: pointer; }
-.agent-popover-item.on { background: var(--accent-subtle); }
+.agent-chip-caret { font-size: 0.7rem; color: var(--text-muted); transition: transform var(--transition-fast); }
+.agent-combo.open .agent-chip-caret { transform: rotate(180deg); }
+.agent-combo-menu { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 2;
+    min-width: max(220px, 100%); max-height: 50dvh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 2px; padding: 0.5rem;
+    background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 16px;
+    box-shadow: var(--shadow-lg); animation: comboRise 0.14s ease-out; }
+@keyframes comboRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.agent-combo-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.6rem 0.75rem;
+    border: none; background: transparent; border-radius: 10px; color: var(--text-primary);
+    font-family: inherit; font-weight: 500; cursor: pointer; text-align: left; white-space: nowrap; }
+.agent-combo-item:hover { background: var(--bg-tertiary); }
+.agent-combo-item.on { background: var(--accent-subtle); }
+.agent-combo-name { flex: 1; }

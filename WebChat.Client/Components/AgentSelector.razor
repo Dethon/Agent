@@ -21,34 +21,42 @@
 }
 else
 {
-    <button class="agent-chip" @onclick="OpenPopover" @onclick:stopPropagation="true" aria-haspopup="dialog">
-        <span class="agent-mono" style="background:@AvatarHelper.GetColorForUser(SelectedAgentId)">@AvatarHelper.GetInitials(SelectedAgentName)</span>
-        <span class="agent-chip-name">@SelectedAgentName</span>
-        @if (ActiveAgentIds.Any(id => id != SelectedAgentId))
-        {
-            <span class="agent-activity-dot"></span>
-        }
-    </button>
+    <div class="agent-combo @(_open ? "open" : "")">
+        <button class="agent-chip" @onclick="Toggle" @onclick:stopPropagation="true"
+                aria-haspopup="listbox" aria-expanded="@_open">
+            <span class="agent-mono" style="background:@AvatarHelper.GetColorForUser(SelectedAgentId)">@AvatarHelper.GetInitials(SelectedAgentName)</span>
+            <span class="agent-chip-name">@SelectedAgentName</span>
+            @if (ActiveAgentIds.Any(id => id != SelectedAgentId))
+            {
+                <span class="agent-activity-dot"></span>
+            }
+            <span class="agent-chip-caret" aria-hidden="true">&#9662;</span>
+        </button>
 
-    <dialog class="agent-popover" @ref="_popover">
-        <div class="agent-popover-title">Switch agent</div>
-        @foreach (var agent in Agents)
+        @if (_open)
         {
-            <button class="agent-popover-item @(agent.Id == SelectedAgentId ? "on" : "")"
-                    @onclick="() => Select(agent.Id)">
-                <span class="agent-mono" style="background:@AvatarHelper.GetColorForUser(agent.Id)">@AvatarHelper.GetInitials(agent.Name)</span>
-                <span>@agent.Name</span>
-                @if (ActiveAgentIds.Contains(agent.Id) && agent.Id != SelectedAgentId)
+            <div class="dropdown-backdrop" @onclick="Close"></div>
+            <div class="agent-combo-menu" role="listbox" aria-label="Select agent">
+                @foreach (var agent in Agents)
                 {
-                    <span class="agent-activity-dot"></span>
+                    <button class="agent-combo-item @(agent.Id == SelectedAgentId ? "on" : "")"
+                            role="option" aria-selected="@(agent.Id == SelectedAgentId)"
+                            @onclick="() => Select(agent.Id)">
+                        <span class="agent-mono" style="background:@AvatarHelper.GetColorForUser(agent.Id)">@AvatarHelper.GetInitials(agent.Name)</span>
+                        <span class="agent-combo-name">@agent.Name</span>
+                        @if (ActiveAgentIds.Contains(agent.Id) && agent.Id != SelectedAgentId)
+                        {
+                            <span class="agent-activity-dot"></span>
+                        }
+                    </button>
                 }
-            </button>
+            </div>
         }
-    </dialog>
+    </div>
 }
 
 @code {
-    public enum SwitcherMode { Segmented, Popover }
+    public enum SwitcherMode { Segmented, Combo }
 
     [Parameter] public List<AgentCatalogEntry> Agents { get; set; } = [];
     [Parameter] public string? SelectedAgentId { get; set; }
@@ -56,19 +64,16 @@ else
     [Parameter] public SwitcherMode Mode { get; set; } = SwitcherMode.Segmented;
     [Parameter] public IReadOnlySet<string> ActiveAgentIds { get; set; } = new HashSet<string>();
 
-    [Inject] private IJSRuntime Js { get; set; } = default!;
-    private ElementReference _popover;
+    private bool _open;
 
     private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select agent";
 
-    private async Task OpenPopover() => await Js.InvokeVoidAsync("hearthSheet.showDialog", _popover);
+    private void Toggle() => _open = !_open;
+    private void Close() => _open = false;
 
     private async Task Select(string agentId)
     {
-        if (Mode == SwitcherMode.Popover)
-        {
-            await Js.InvokeVoidAsync("hearthSheet.closeDialog", _popover);
-        }
+        _open = false;
         if (agentId != SelectedAgentId)
         {
             await OnAgentSelected.InvokeAsync(agentId);

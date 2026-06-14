@@ -13,7 +13,7 @@
 <div class="hearth @($"detent-{_detent.ToString().ToLowerInvariant()}")">
     <div class="hearth-peek" @ref="_peekBar">
         <button class="hearth-handle" aria-label="Expand conversations" @onclick="CycleDetent"></button>
-        <AgentSelector Mode="AgentSelector.SwitcherMode.Popover"
+        <AgentSelector Mode="AgentSelector.SwitcherMode.Combo"
                        Agents="@_agents.ToList()" SelectedAgentId="@_selectedAgentId"
                        ActiveAgentIds="@_activeAgentIds"
                        OnAgentSelected="SelectAgent" />
