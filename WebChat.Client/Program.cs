@@ -58,5 +58,6 @@ _ = app.Services.GetRequiredService<InitializationEffect>();
 _ = app.Services.GetRequiredService<AgentSelectionEffect>();
 _ = app.Services.GetRequiredService<UserIdentityEffect>();
 _ = app.Services.GetRequiredService<SpaceEffect>();
+_ = app.Services.GetRequiredService<AgentActivityEffect>();
 
 await app.RunAsync();

@@ -1,59 +1,106 @@
 /* ===================================
+   Self-hosted fonts (Ember Study)
+   =================================== */
+
+@font-face {
+    font-family: 'Fraunces';
+    src: url('/fonts/fraunces.woff2') format('woff2');
+    font-weight: 400 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Hanken Grotesk';
+    src: url('/fonts/hanken-grotesk-400.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Hanken Grotesk';
+    src: url('/fonts/hanken-grotesk-600.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'JetBrains Mono';
+    src: url('/fonts/jetbrains-mono-400.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'JetBrains Mono';
+    src: url('/fonts/jetbrains-mono-500.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* ===================================
    Theme Variables
    =================================== */
 
 /* Light Theme (Default) */
 :root {
-    /* Backgrounds */
-    --bg-primary: #f8fafc;
-    --bg-secondary: #ffffff;
-    --bg-tertiary: #f1f5f9;
-    --bg-elevated: #ffffff;
+    /* Backgrounds — warm paper */
+    --bg-primary: #f3ede1;
+    --bg-secondary: #fffaf1;
+    --bg-tertiary: #ece4d4;
+    --bg-elevated: #fffaf1;
 
-    /* Text */
-    --text-primary: #0f172a;
-    --text-secondary: #64748b;
-    --text-muted: #94a3b8;
+    /* Text — warm ink */
+    --text-primary: #2a2118;
+    --text-secondary: #7a6a52;
+    --text-muted: #a08a68;
 
-    /* Accent Colors */
-    --accent: #6366f1;
-    --accent-hover: #4f46e5;
-    --accent-light: #e0e7ff;
-    --accent-subtle: #eef2ff;
+    /* Accent — ember is the single constant action color */
+    --accent: #e9601f;
+    --accent-hover: #cf5214;
+    --accent-light: #f7d9c4;
+    --accent-subtle: #fbeee2;
 
-    /* Message Bubbles */
-    --user-bg: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    --user-text: #ffffff;
-    --assistant-bg: #ffffff;
-    --assistant-border: #e2e8f0;
+    /* Per-space tint — defaults to ember (subtle differentiation only when a space overrides it) */
+    --space-accent: var(--accent);
+
+    /* Message Bubbles — solid ember user bubble (no gradient) */
+    --user-bg: #e9601f;
+    --user-text: #fff3e9;
+    --assistant-bg: #fffaf1;
+    --assistant-border: #e6dbc6;
 
     /* UI Elements */
-    --border-color: #e2e8f0;
-    --border-light: #f1f5f9;
-    --input-bg: #ffffff;
-    --input-border: #cbd5e1;
-    --input-focus: #6366f1;
+    --border-color: #e6dbc6;
+    --border-light: #efe7d7;
+    --input-bg: #fffaf1;
+    --input-border: #ddd0b8;
+    --input-focus: #e9601f;
 
     /* Scrollbar */
-    --scrollbar-thumb: #cbd5e1;
-    --scrollbar-thumb-hover: #94a3b8;
+    --scrollbar-thumb: #d9c9ad;
+    --scrollbar-thumb-hover: #c2ad8a;
     --scrollbar-track: transparent;
 
-    /* Shadows */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    --shadow-message: 0 1px 3px rgba(0, 0, 0, 0.08);
+    /* Shadows — warm-tinted */
+    --shadow-sm: 0 1px 2px rgba(60, 40, 20, 0.06);
+    --shadow-md: 0 4px 6px -1px rgba(60, 40, 20, 0.12), 0 2px 4px -1px rgba(60, 40, 20, 0.07);
+    --shadow-lg: 0 10px 15px -3px rgba(60, 40, 20, 0.14), 0 4px 6px -2px rgba(60, 40, 20, 0.08);
+    --shadow-message: 0 1px 3px rgba(60, 40, 20, 0.10);
 
     /* Status Colors */
-    --success: #22c55e;
-    --error: #ef4444;
-    --error-bg: #fef2f2;
-    --error-border: #fecaca;
+    --success: #5aa06e;
+    --error: #c0492f;
+    --error-bg: #fbe7df;
+    --error-border: #f0c4b4;
 
     /* Code Blocks */
-    --code-bg: #f1f5f9;
-    --code-border: #e2e8f0;
+    --code-bg: #efe6d4;
+    --code-border: #e6dbc6;
 
     /* Transitions */
     --transition-fast: 150ms ease;
@@ -63,56 +110,59 @@
 
 /* Dark Theme */
 [data-theme="dark"] {
-    /* Backgrounds */
-    --bg-primary: #0f172a;
-    --bg-secondary: #1e293b;
-    --bg-tertiary: #334155;
-    --bg-elevated: #1e293b;
+    /* Backgrounds — warm espresso */
+    --bg-primary: #171310;
+    --bg-secondary: #211b15;
+    --bg-tertiary: #2c241c;
+    --bg-elevated: #241e17;
 
     /* Text */
-    --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --text-primary: #efe4d2;
+    --text-secondary: #c2b49a;
+    --text-muted: #a4937a;
 
-    /* Accent Colors */
-    --accent: #818cf8;
-    --accent-hover: #a5b4fc;
-    --accent-light: #312e81;
-    --accent-subtle: #1e1b4b;
+    /* Accent — ember, slightly brighter for dark contrast */
+    --accent: #f0712f;
+    --accent-hover: #f3884c;
+    --accent-light: #3a2417;
+    --accent-subtle: #2a1d13;
+
+    /* Per-space tint */
+    --space-accent: var(--accent);
 
     /* Message Bubbles */
-    --user-bg: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
-    --user-text: #ffffff;
-    --assistant-bg: #1e293b;
-    --assistant-border: #334155;
+    --user-bg: #f0712f;
+    --user-text: #fff3e9;
+    --assistant-bg: #241e17;
+    --assistant-border: #3a2f24;
 
     /* UI Elements */
-    --border-color: #334155;
-    --border-light: #1e293b;
-    --input-bg: #1e293b;
-    --input-border: #475569;
-    --input-focus: #818cf8;
+    --border-color: #3a2f24;
+    --border-light: #241e17;
+    --input-bg: #241e17;
+    --input-border: #4a3d2e;
+    --input-focus: #f0712f;
 
     /* Scrollbar */
-    --scrollbar-thumb: #475569;
-    --scrollbar-thumb-hover: #64748b;
+    --scrollbar-thumb: #4a3d2e;
+    --scrollbar-thumb-hover: #6a5a44;
     --scrollbar-track: transparent;
 
     /* Shadows */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
-    --shadow-message: 0 2px 8px rgba(0, 0, 0, 0.25);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
+    --shadow-message: 0 2px 8px rgba(0, 0, 0, 0.35);
 
     /* Status Colors */
-    --success: #4ade80;
-    --error: #f87171;
-    --error-bg: #450a0a;
-    --error-border: #7f1d1d;
+    --success: #6cc08a;
+    --error: #f0795a;
+    --error-bg: #2e1813;
+    --error-border: #5a2c1f;
 
     /* Code Blocks */
-    --code-bg: #0f172a;
-    --code-border: #334155;
+    --code-bg: #120f0c;
+    --code-border: #3a2f24;
 }
 
 /* ===================================
@@ -123,11 +173,22 @@
     box-sizing: border-box;
 }
 
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
 html, body {
     margin: 0;
     padding: 0;
     height: 100%;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     font-size: 15px;
     line-height: 1.6;
     background-color: var(--bg-primary);
@@ -135,6 +196,10 @@ html, body {
     transition: background-color var(--transition-slow), color var(--transition-slow);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3 {
+    font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
 }
 
 #app {
@@ -307,26 +372,6 @@ html, body {
    Topic Sidebar
    =================================== */
 
-.topic-sidebar {
-    width: 300px;
-    min-width: 300px;
-    background-color: var(--bg-secondary);
-    border-right: 1px solid var(--border-color);
-    display: flex;
-    flex-direction: column;
-    transition: background-color var(--transition-slow), border-color var(--transition-slow);
-}
-
-.sidebar-header {
-    padding: 1.25rem;
-    border-bottom: 1px solid var(--border-color);
-    display: flex;
-    flex-direction: column;
-    gap: 0.875rem;
-    background: var(--bg-secondary);
-    position: relative;
-}
-
 /* Custom Dropdown */
 .custom-dropdown {
     position: relative;
@@ -429,68 +474,6 @@ html, body {
 .custom-dropdown.disabled .dropdown-trigger {
     opacity: 0.5;
     cursor: not-allowed;
-}
-
-.new-topic-btn {
-    width: 100%;
-    padding: 0.875rem 1rem;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
-    color: white;
-    border: none;
-    border-radius: 12px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition-normal);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.625rem;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
-}
-
-.new-topic-btn svg {
-    flex-shrink: 0;
-}
-
-.new-topic-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, var(--accent-hover) 0%, #4338ca 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-}
-
-.new-topic-btn:active:not(:disabled) {
-    transform: translateY(0);
-}
-
-.new-topic-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* Topic List */
-.topic-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0.75rem;
-    position: relative;
-}
-
-.topic-list::-webkit-scrollbar {
-    width: 6px;
-}
-
-.topic-list::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
-}
-
-.topic-list::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 3px;
-}
-
-.topic-list::-webkit-scrollbar-thumb:hover {
-    background: var(--scrollbar-thumb-hover);
 }
 
 .no-topics {
@@ -764,19 +747,6 @@ html, body {
     transform: scale(0.95);
 }
 
-[data-theme="dark"] .new-topic-btn {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    box-shadow: none;
-    border: 1px solid var(--border-color);
-}
-
-[data-theme="dark"] .new-topic-btn:hover:not(:disabled) {
-    background: var(--accent-light);
-    border-color: var(--accent);
-    box-shadow: none;
-}
-
 [data-theme="dark"] .confirm-delete-btn {
     box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
 }
@@ -886,13 +856,13 @@ html, body {
     user-select: none;
 }
 
-/* Own message styling - different background color */
+/* Your own messages: ember gradient (the theme accent) */
 .chat-message.user.own {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    background: linear-gradient(135deg, #e9601f 0%, #cf4f15 100%);
 }
 
 [data-theme="dark"] .chat-message.user.own {
-    background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+    background: linear-gradient(135deg, #f0712f 0%, #d65f1e 100%);
 }
 
 /* Adjust message width within wrapper */
@@ -930,9 +900,10 @@ html, body {
     }
 }
 
+/* Other users' messages (group chats): muted terracotta, distinct from your own ember */
 .chat-message.user {
     align-self: flex-end;
-    background: var(--user-bg);
+    background: linear-gradient(135deg, #c2531f 0%, #a8431a 100%);
     color: var(--user-text);
     border-bottom-right-radius: 6px;
     box-shadow: var(--shadow-message);
@@ -1785,86 +1756,12 @@ html, body {
 }
 
 @media (max-width: 768px) {
-    .chat-layout {
-        flex-direction: column;
-    }
-
-    .topic-sidebar {
-        width: 100%;
-        min-width: 100%;
-        border-right: none;
-        border-bottom: 1px solid var(--border-color);
-    }
-
-    .sidebar-header {
-        flex-direction: row;
-        padding: 0.875rem 1rem;
-        gap: 0.75rem;
-        flex-shrink: 0;
-    }
-
     .custom-dropdown {
         flex: 1;
     }
 
     .dropdown-menu {
         min-width: 200px;
-    }
-
-    .new-topic-btn {
-        width: auto;
-        white-space: nowrap;
-        padding: 0.625rem 1rem;
-        flex-shrink: 0;
-    }
-
-    .topic-list {
-        flex-direction: row;
-        overflow-x: auto;
-        overflow-y: hidden;
-        display: flex;
-        gap: 0.5rem;
-        padding: 0.5rem 0.625rem;
-        max-height: none;
-        /* Hide scrollbar while keeping scroll functionality */
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-    }
-
-    .topic-list::-webkit-scrollbar {
-        display: none;
-    }
-
-    .no-topics {
-        padding: 0.75rem 1rem;
-        flex-direction: row;
-        gap: 0.5rem;
-    }
-
-    .no-topics svg {
-        width: 20px;
-        height: 20px;
-        margin-bottom: 0;
-    }
-
-    .no-topics-hint {
-        display: none;
-    }
-
-    .topic-item {
-        min-width: 160px;
-        max-width: 200px;
-        margin-bottom: 0;
-        padding: 0.625rem 0.75rem;
-        flex-shrink: 0;
-    }
-
-    .topic-name {
-        font-size: 0.8125rem;
-    }
-
-    .topic-meta {
-        font-size: 0.6875rem;
     }
 
     .messages-area {
@@ -2394,3 +2291,124 @@ select:focus:not(:focus-visible) {
         font-size: 0.875rem;
     }
 }
+
+/* ===================================
+   The Hearth — navigation
+   =================================== */
+
+.hearth { display: flex; flex-direction: column; min-height: 0; }
+.hearth-peek { display: none; }            /* mobile-only chrome */
+.hearth-bottom { display: none; }          /* mobile-only chrome */
+
+.hearth-body { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.hearth-rail-head { padding: 0.75rem 0.75rem 0.5rem; }
+.hearth-search { padding: 0 0.75rem 0.5rem; }
+.hearth-search-input {
+    width: 100%; padding: 0.5rem 0.75rem; border-radius: 10px;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    color: var(--text-primary); font-family: inherit; font-size: 0.85rem;
+}
+.hearth-rows { flex: 1; overflow-y: auto; padding: 0 0.625rem 0.75rem; scroll-snap-type: y proximity;
+    scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); }
+.hearth-rows::-webkit-scrollbar { width: 8px; }
+.hearth-rows::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+.hearth-rows::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+.hearth-rows::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+.topic-preview { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* agent switcher — segmented (desktop) */
+.agent-segmented { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); gap: 0.25rem;
+    background: var(--bg-tertiary); border-radius: 12px; padding: 0.25rem; }
+.agent-seg { min-width: 0; display: flex; align-items: center; gap: 0.4rem; justify-content: center;
+    padding: 0.4rem 0.5rem; border: none; background: transparent; border-radius: 9px;
+    color: var(--text-secondary); font-family: inherit; font-weight: 600; cursor: pointer; position: relative; }
+.agent-seg.on { background: var(--accent); color: var(--user-text); }
+.agent-seg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-mono { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
+    color: #fff; font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.7rem; flex: 0 0 auto; }
+.agent-activity-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 8px 1px color-mix(in srgb, var(--accent) 70%, transparent); }
+.is-streaming .agent-activity-dot, .agent-seg .agent-activity-dot { animation: emberPulse 1.6s ease-in-out infinite; }
+
+@keyframes emberPulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+.hearth-peek-name.glow { text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
+
+/* Desktop: the Hearth IS a pinned left rail */
+@media (min-width: 768px) {
+    .chat-layout { display: flex; flex-direction: row; }
+    .chat-container { order: 2; flex: 1; min-width: 0; }
+    .hearth { order: 1; width: 320px; min-width: 320px; border-right: 1px solid var(--border-color);
+        background: var(--bg-secondary); }
+    .hearth-bottom { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem;
+        border-top: 1px solid var(--border-color); }
+    .hearth-new { margin-left: auto; width: 34px; height: 34px; border-radius: 10px; border: none;
+        background: var(--accent); color: var(--user-text); font-size: 1.2rem; cursor: pointer; }
+}
+
+/* Mobile: the Hearth is a draggable bottom sheet */
+@media (max-width: 767px) {
+    .chat-layout { display: block; height: 100dvh; }
+    .chat-container { height: 100%; padding-bottom: 64px; }   /* fill area below the header; reserve room for the peek bar */
+
+    .hearth {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+        height: 92dvh; background: var(--bg-secondary);
+        border-top-left-radius: 18px; border-top-right-radius: 18px;
+        box-shadow: 0 -10px 30px -12px rgba(60,40,20,0.35);
+        transform: translateY(var(--sheet-offset, calc(92dvh - 64px)));
+        transition: transform 280ms cubic-bezier(.2,.8,.2,1);
+        touch-action: none;
+    }
+    .hearth.detent-peek  { --sheet-offset: calc(92dvh - 64px); }
+    .hearth.detent-half  { --sheet-offset: 46dvh; }
+    .hearth.detent-full  { --sheet-offset: 0dvh; }
+    .hearth.dragging { transition: none; }   /* JS owns the transform during a drag */
+
+    /* Peek bar: drag handle sits above; row = [agent-chip] [topic+time flex:1] [unread?] [new-chat] */
+    .hearth-peek {
+        display: flex; align-items: center; gap: 0.5rem;
+        min-height: 64px; padding: 0 0.875rem; padding-top: 14px;   /* 14px top clears the drag handle */
+    }
+    .hearth-handle { width: 36px; height: 4px; border-radius: 3px; background: var(--border-color);
+        border: none; position: absolute; top: 7px; left: 50%; transform: translateX(-50%); padding: 0; cursor: grab; }
+    .hearth-peek-current { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .hearth-peek-name { font-family: 'Fraunces', serif; font-weight: 600; color: var(--text-primary);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hearth-peek-time { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); }
+
+    /* Peek-bar new-chat button (mobile) */
+    .hearth-peek .hearth-new { flex-shrink: 0; width: 32px; height: 32px; border-radius: 10px; border: none;
+        background: var(--accent); color: var(--user-text); font-size: 1.2rem; cursor: pointer; }
+
+    .hearth-bottom { display: none; }   /* agent chip + new chat live in the peek bar on mobile */
+
+    .hearth-body { padding-bottom: env(safe-area-inset-bottom); }
+
+    .agent-segmented { display: none; }   /* mobile uses the popover chip in the peek bar */
+}
+
+/* agent chip + combobox (mobile) — anchored dropdown that opens UP from the peek bar */
+.agent-combo { position: relative; display: inline-flex; }
+.agent-chip { display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.6rem; border-radius: 999px;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary);
+    font-family: inherit; font-weight: 600; cursor: pointer; }
+.agent-chip-caret { font-size: 0.7rem; color: var(--text-muted); transition: transform var(--transition-fast); }
+.agent-combo.open .agent-chip-caret { transform: rotate(180deg); }
+.agent-combo-menu { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 2;
+    min-width: max(220px, 100%); max-height: 50dvh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 2px; padding: 0.5rem;
+    background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 16px;
+    box-shadow: var(--shadow-lg); animation: comboRise 0.14s ease-out; }
+@keyframes comboRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.agent-combo-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.6rem 0.75rem;
+    border: none; background: transparent; border-radius: 10px; color: var(--text-primary);
+    font-family: inherit; font-weight: 500; cursor: pointer; text-align: left; white-space: nowrap; }
+.agent-combo-item:hover { background: var(--bg-tertiary); }
+.agent-combo-item.on { background: var(--accent-subtle); }
+.agent-combo-name { flex: 1; }
+/* fully expanded: the chip sits at the top of the sheet, so the menu opens DOWN instead of up */
+.hearth.detent-full .agent-combo-menu { top: calc(100% + 8px); bottom: auto; animation: comboDrop 0.14s ease-out; }
+.hearth.detent-full .agent-combo.open .agent-chip-caret { transform: none; }
+@keyframes comboDrop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }

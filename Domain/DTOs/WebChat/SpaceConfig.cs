@@ -4,7 +4,7 @@ namespace Domain.DTOs.WebChat;
 
 public partial record SpaceConfig(string Slug, string Name, string AccentColor)
 {
-    public const string DefaultAccentColor = "#e94560";
+    public const string DefaultAccentColor = "#e9601f";
 
     private static readonly Regex _slugPattern = SpaceSlugRegex();
     private static readonly Regex _hexColorPattern = HexColorRegex();

@@ -6,30 +6,25 @@
 <ApprovalModal />
 
 <div class="chat-layout">
-    <TopicList />
-
     <div class="chat-container">
         <MessageList />
-
         <ConnectionStatus />
-
         <div class="input-area">
             <ChatInput />
         </div>
     </div>
+
+    <TopicList />
 </div>
 
 @code {
-    [Parameter]
-    public string? Slug { get; set; }
-
+    [Parameter] public string? Slug { get; set; }
     private bool _initialized;
 
     protected override void OnParametersSet()
     {
         var slug = string.IsNullOrEmpty(Slug) ? "default" : Slug;
         Dispatcher.Dispatch(new SelectSpace(slug));
-
         if (!_initialized)
         {
             _initialized = true;

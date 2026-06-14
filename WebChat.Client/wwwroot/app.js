@@ -214,6 +214,129 @@ window.faviconHelper = {
 };
 
 // ===================================
+// Per-space accent (CSS custom property)
+// ===================================
+
+window.accentHelper = {
+    setVar: function (color) {
+        if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(color)) return;
+        document.documentElement.style.setProperty('--space-accent', color);
+    }
+};
+
+// ===================================
+// Native <dialog> helpers
+// ===================================
+
+window.hearthSheet = window.hearthSheet || {};
+window.hearthSheet.showDialog = function (el) { if (el && !el.open) el.showModal(); };
+window.hearthSheet.closeDialog = function (el) { if (el && el.open) el.close(); };
+
+// ===================================
+// Hearth sheet drag gesture
+// ===================================
+
+Object.assign(window.hearthSheet, {
+    _el: null, _ref: null, _rows: null,
+    _startY: 0, _startX: 0, _lastY: 0, _lastT: 0, _vy: 0, _dragging: false, _axisLocked: null, _startOffset: 0,
+
+    register: function (peekBar, dotnetRef) {
+        const sheet = peekBar.closest('.hearth');
+        if (!sheet) return;
+        this._el = sheet;
+        this._ref = dotnetRef;
+        this._rows = sheet.querySelector('.hearth-rows');
+        peekBar.addEventListener('pointerdown', this._onDown);
+    },
+
+    focus: function (el) { if (el) requestAnimationFrame(() => el.focus()); },
+
+    _onDown: function (e) {
+        const h = window.hearthSheet;
+        // The grabber handle is the primary drag affordance — let drags start on it.
+        const onHandle = !!e.target.closest('.hearth-handle');
+        // Otherwise don't start a drag if the tap target is inside a button or dialog.
+        if (!onHandle && e.target.closest('button, dialog')) return;
+        // Don't start a sheet drag if the inner list is scrolled away from its top —
+        // let the list scroll instead.
+        if (h._rows && h._rows.scrollTop > 0 && h._rows.contains(e.target)) { h._dragging = false; return; }
+        h._startY = h._lastY = e.clientY; h._startX = e.clientX; h._lastT = e.timeStamp;
+        // Capture the sheet's current translateY so the drag continues from where it rests
+        // (0 = full … restPeek = peek) instead of snapping to the peek position.
+        const rect = h._el.getBoundingClientRect();
+        h._startOffset = rect.top - (window.innerHeight - rect.height);
+        h._vy = 0; h._axisLocked = null; h._dragging = true;
+        document.addEventListener('pointermove', h._onMove, { passive: false });
+        document.addEventListener('pointerup', h._onUp);
+    },
+
+    _onMove: function (e) {
+        const h = window.hearthSheet;
+        if (!h._dragging) return;
+        const dy = e.clientY - h._startY;
+        const dx = e.clientX - h._startX;
+        if (h._axisLocked === null) {
+            const THRESH = 8;                       // px before we commit to an axis (tunable, spec §10)
+            if (Math.abs(dy) < THRESH && Math.abs(dx) < THRESH) return;
+            h._axisLocked = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';
+            if (h._axisLocked === 'y') h._el.classList.add('dragging');
+        }
+        if (h._axisLocked !== 'y') return;          // horizontal/ambiguous → ignore (no swipe-delete in v1)
+        requestAnimationFrame(() => {
+            const base = h._el.getBoundingClientRect().height; // ~92dvh
+            const restPeek = base - 64;
+            const offset = Math.min(restPeek, Math.max(0, h._startOffset + dy));
+            h._el.style.setProperty('--sheet-offset', offset + 'px');
+        });
+        h._vy = (e.clientY - h._lastY) / Math.max(1, e.timeStamp - h._lastT);
+        h._lastY = e.clientY; h._lastT = e.timeStamp;
+        e.preventDefault();
+    },
+
+    _onUp: function () {
+        const h = window.hearthSheet;
+        h._dragging = false;
+        h._el.classList.remove('dragging');
+        document.removeEventListener('pointermove', h._onMove);
+        document.removeEventListener('pointerup', h._onUp);
+        const wasDrag = h._axisLocked === 'y';
+        h._settle();
+        // After a real drag that began on the handle, swallow the trailing click so the
+        // handle's @onclick (CycleDetent) doesn't fire on top of the committed detent.
+        if (wasDrag) {
+            const swallow = function (ev) { ev.stopPropagation(); ev.preventDefault(); };
+            document.addEventListener('click', swallow, { capture: true, once: true });
+            setTimeout(() => document.removeEventListener('click', swallow, true), 350);
+        }
+    },
+
+    _settle: function () {
+        const h = window.hearthSheet;
+        if (h._axisLocked !== 'y') { h._el.style.removeProperty('--sheet-offset'); return; }
+        const base = h._el.getBoundingClientRect().height;
+        const current = parseFloat(getComputedStyle(h._el).getPropertyValue('--sheet-offset')) || (base - 64);
+        const ratio = current / base;               // 0 = full, ~1 = peek
+        const FLICK = 0.6;                          // px/ms threshold (tunable, spec §10)
+        let detent;
+        if (h._vy < -FLICK) detent = 'Full';
+        else if (h._vy > FLICK) detent = 'Peek';
+        else detent = ratio > 0.66 ? 'Peek' : ratio > 0.28 ? 'Half' : 'Full';
+        h._el.style.removeProperty('--sheet-offset');   // let the .detent-* class drive the resting transform
+        if (h._ref) h._ref.invokeMethodAsync('CommitDetent', detent);
+    },
+
+    registerCommandKey: function (dotnetRef) {
+        document.addEventListener('keydown', function (e) {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'
+                && !(e.target.classList && e.target.classList.contains('chat-input'))) {
+                e.preventDefault();
+                dotnetRef.invokeMethodAsync('OpenSearch');
+            }
+        });
+    }
+});
+
+// ===================================
 // Clipboard
 // ===================================
 

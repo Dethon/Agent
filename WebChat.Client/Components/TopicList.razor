@@ -1,131 +1,213 @@
 @inherits StoreSubscriberComponent
+@implements IDisposable
+@using WebChat.Client.Helpers
+@using WebChat.Client.State.AgentActivity
+@using Microsoft.JSInterop
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
 @inject MessagesStore MessagesStore
+@inject AgentActivityStore AgentActivityStore
 @inject IDispatcher Dispatcher
+@inject IJSRuntime Js
+
+<div class="hearth @($"detent-{_detent.ToString().ToLowerInvariant()}")">
+    <div class="hearth-peek" @ref="_peekBar">
+        <button class="hearth-handle" aria-label="Expand conversations" @onclick="CycleDetent"></button>
+        <AgentSelector Mode="AgentSelector.SwitcherMode.Combo"
+                       Agents="@_agents.ToList()" SelectedAgentId="@_selectedAgentId"
+                       ActiveAgentIds="@_activeAgentIds"
+                       OnAgentSelected="SelectAgent" />
+        <div class="hearth-peek-current">
+            <span class="hearth-peek-name @(SelectedIsStreaming ? "glow" : "")">@SelectedTopicName</span>
+            <span class="hearth-peek-time">@SelectedTopicTime</span>
+        </div>
+        @if (AggregateUnread > 0)
+        {
+            <span class="topic-unread-badge">@(AggregateUnread > 99 ? "99+" : AggregateUnread)</span>
+        }
+        <button class="hearth-new" @onclick="HandleNewTopic" aria-label="New chat">+</button>
+    </div>
+
+    <div class="hearth-body">
+        <div class="hearth-rail-head">
+            <AgentSelector Mode="AgentSelector.SwitcherMode.Segmented"
+                           Agents="@_agents.ToList()" SelectedAgentId="@_selectedAgentId"
+                           ActiveAgentIds="@_activeAgentIds"
+                           OnAgentSelected="SelectAgent" />
+        </div>
+
+        <div class="hearth-search">
+            <input class="hearth-search-input" type="search" placeholder="Search conversations"
+                   @bind="_search" @bind:event="oninput" @ref="_searchInput" aria-label="Search conversations" />
+        </div>
+
+        <div class="hearth-rows">
+            @{
+                var rows = _topics
+                    .Where(t => t.AgentId == _selectedAgentId)
+                    .Where(t => string.IsNullOrWhiteSpace(_search) || t.Name.Contains(_search, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
+                    .ToList();
+            }
+            @if (rows.Count == 0)
+            {
+                <div class="no-topics"><span>No conversations yet</span></div>
+            }
+            else
+            {
+                @foreach (var topic in rows)
+                {
+                    var unread = GetUnreadCount(topic.TopicId);
+                    var streaming = IsTopicStreaming(topic.TopicId);
+                    <div class="topic-item @(_selectedTopicId == topic.TopicId ? "selected" : "") @(unread > 0 ? "has-unread" : "") @(streaming ? "is-streaming" : "")"
+                         @onclick="() => HandleTopicClick(topic)">
+                        <div class="topic-content">
+                            <div class="topic-name-row">
+                                <div class="topic-name" data-tooltip="@topic.Name">@topic.Name</div>
+                                @if (streaming)
+                                {
+                                    <div class="topic-streaming-indicator"><span></span><span></span><span></span></div>
+                                }
+                                @if (unread > 0)
+                                {
+                                    <div class="topic-unread-badge">@(unread > 99 ? "99+" : unread)</div>
+                                }
+                            </div>
+                            <div class="topic-meta">@FormatTime(topic.LastMessageAt ?? topic.CreatedAt)</div>
+                            <div class="topic-preview">@PreviewFor(topic.TopicId)</div>
+                        </div>
+                        @if (_deleteConfirmTopicId == topic.TopicId)
+                        {
+                            <div class="delete-confirm">
+                                <button class="confirm-delete-btn" @onclick="() => ConfirmDelete(topic)" @onclick:stopPropagation="true" aria-label="Confirm delete">&#10003;</button>
+                                <button class="cancel-delete-btn" @onclick="CancelDelete" @onclick:stopPropagation="true" aria-label="Cancel delete">&times;</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <button class="delete-btn" @onclick="() => ShowDeleteConfirm(topic.TopicId)" @onclick:stopPropagation="true" aria-label="Delete conversation">&times;</button>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="hearth-bottom">
+        <button class="hearth-new" @onclick="HandleNewTopic" aria-label="New chat">+</button>
+    </div>
+</div>
+
+<div id="tooltip" class="tooltip"></div>
 
 @code {
+    private enum Detent { Peek, Half, Full }
+
     private IReadOnlyList<StoredTopic> _topics = [];
     private string? _selectedTopicId;
     private IReadOnlyList<AgentCatalogEntry> _agents = [];
     private string? _selectedAgentId;
     private IReadOnlySet<string> _streamingTopics = new HashSet<string>();
     private IReadOnlyDictionary<string, int> _unreadCounts = new Dictionary<string, int>();
+    private IReadOnlySet<string> _activeAgentIds = new HashSet<string>();
 
     private string? _deleteConfirmTopicId;
-    private bool _dropdownOpen;
-    public ElementReference DropdownRef { get; private set; }
+    private string _search = "";
+    private Detent _detent = Detent.Peek;
+
+    private ElementReference _peekBar;
+    private ElementReference _searchInput;
+    private DotNetObjectReference<TopicList>? _selfRef;
 
     protected override void OnInitialized()
     {
-        Subscribe(TopicsStore.StateObservable,
-            state => state.Topics,
-            topics => _topics = topics);
-        Subscribe(TopicsStore.StateObservable,
-            state => state.SelectedTopicId,
-            id => _selectedTopicId = id);
-        Subscribe(TopicsStore.StateObservable,
-            state => state.Agents,
-            agents => _agents = agents);
-        Subscribe(TopicsStore.StateObservable,
-            state => state.SelectedAgentId,
-            id => _selectedAgentId = id);
-        Subscribe(StreamingStore.StateObservable,
-            state => state.StreamingTopics,
-            ids => _streamingTopics = ids);
-        // Unread counts depend on MessagesStore, TopicsStore, and StreamingStore
-        // Subscribe to all three to ensure recomputation when any changes
+        Subscribe(TopicsStore.StateObservable, s => s.Topics, t => _topics = t);
+        Subscribe(TopicsStore.StateObservable, s => s.SelectedTopicId, id => _selectedTopicId = id);
+        Subscribe(TopicsStore.StateObservable, s => s.Agents, a => _agents = a);
+        Subscribe(TopicsStore.StateObservable, s => s.SelectedAgentId, id => _selectedAgentId = id);
+        Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
         Subscribe(MessagesStore.StateObservable,
-            state => ComputeUnreadCounts(state, TopicsStore.State, StreamingStore.State),
-            counts => _unreadCounts = counts);
+            s => UnreadSelectors.ComputeUnreadCounts(s, TopicsStore.State, StreamingStore.State),
+            c => _unreadCounts = c);
         Subscribe(TopicsStore.StateObservable,
-            state => ComputeUnreadCounts(MessagesStore.State, state, StreamingStore.State),
-            counts => _unreadCounts = counts);
+            s => UnreadSelectors.ComputeUnreadCounts(MessagesStore.State, s, StreamingStore.State),
+            c => _unreadCounts = c);
         Subscribe(StreamingStore.StateObservable,
-            state => ComputeUnreadCounts(MessagesStore.State, TopicsStore.State, state),
-            counts => _unreadCounts = counts);
+            s => UnreadSelectors.ComputeUnreadCounts(MessagesStore.State, TopicsStore.State, s),
+            c => _unreadCounts = c);
+        Subscribe(AgentActivityStore.StateObservable,
+            s => AgentActivitySelectors.GetAgentsWithActivity(s, StreamingStore.State),
+            ids => _activeAgentIds = ids);
+        Subscribe(StreamingStore.StateObservable,
+            s => AgentActivitySelectors.GetAgentsWithActivity(AgentActivityStore.State, s),
+            ids => _activeAgentIds = ids);
     }
 
-    private static IReadOnlyDictionary<string, int> ComputeUnreadCounts(
-        MessagesState messagesState,
-        TopicsState topicsState,
-        StreamingState streamingState)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        var result = new Dictionary<string, int>();
-        foreach (var topic in topicsState.Topics)
+        if (firstRender)
         {
-            if (topic.TopicId == topicsState.SelectedTopicId) continue;
-
-            var messages = messagesState.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
-            var hasStreamingContent = streamingState.StreamingByTopic.TryGetValue(topic.TopicId, out var streaming)
-                                      && streaming.HasContent;
-
-            if (messages.Count == 0 && !hasStreamingContent) continue;
-
-            var hasStreamingMessageId = hasStreamingContent && streaming?.CurrentMessageId is not null;
-            List<ChatMessageModel> allMessages = hasStreamingMessageId
-                ? [..messages, new ChatMessageModel { Role = "assistant", MessageId = streaming?.CurrentMessageId }]
-                : [..messages];
-
-            var unreadCount = GetUnreadCountSince(allMessages, topic.LastReadMessageId);
-            if (unreadCount > 0)
+            _selfRef = DotNetObjectReference.Create(this);
+            try
             {
-                result[topic.TopicId] = unreadCount;
+                await Js.InvokeVoidAsync("hearthSheet.register", _peekBar, _selfRef);
+                await Js.InvokeVoidAsync("hearthSheet.registerCommandKey", _selfRef);
             }
+            catch (JSException) { /* gestures attach later when the JS lands */ }
         }
-        return result;
     }
 
-    private static int GetUnreadCountSince(IReadOnlyList<ChatMessageModel> messages, string? lastReadMessageId)
+    [JSInvokable] public void CommitDetent(string detent)
     {
-        if (lastReadMessageId is null) return messages.Count;
+        _detent = Enum.Parse<Detent>(detent, ignoreCase: true);
+        StateHasChanged();
+    }
 
-        for (var i = messages.Count - 1; i >= 0; i--)
+    [JSInvokable] public async Task OpenSearch()
+    {
+        _detent = Detent.Full;
+        StateHasChanged();
+        await Js.InvokeVoidAsync("hearthSheet.focus", _searchInput);
+    }
+
+    private void CycleDetent()
+    {
+        _detent = _detent switch
         {
-            if (messages[i].MessageId == lastReadMessageId)
-            {
-                return messages.Count - 1 - i;
-            }
-        }
-
-        // ID not found — treat all as unread
-        return messages.Count;
+            Detent.Peek => Detent.Half,
+            Detent.Half => Detent.Full,
+            _ => Detent.Peek
+        };
     }
 
-    private string SelectedAgentName => _agents.FirstOrDefault(a => a.Id == _selectedAgentId)?.Name ?? "Select Agent";
+    private int GetUnreadCount(string topicId) => _unreadCounts.GetValueOrDefault(topicId);
+    private bool IsTopicStreaming(string topicId) => _streamingTopics.Contains(topicId);
+    private int AggregateUnread => _unreadCounts.Values.Sum();
 
-    private int GetUnreadCount(string topicId)
+    private StoredTopic? Selected => _topics.FirstOrDefault(t => t.TopicId == _selectedTopicId);
+    private string SelectedTopicName => Selected?.Name ?? "Conversations";
+    private string SelectedTopicTime => Selected is { } t ? FormatTime(t.LastMessageAt ?? t.CreatedAt) : "";
+    private bool SelectedIsStreaming => _selectedTopicId is not null && _streamingTopics.Contains(_selectedTopicId);
+
+    private string PreviewFor(string topicId)
     {
-        return _unreadCounts.GetValueOrDefault(topicId);
+        var msgs = MessagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []);
+        var last = msgs.LastOrDefault(m => !string.IsNullOrWhiteSpace(m.Content));
+        var text = last?.Content ?? "";
+        return text.Length > 80 ? text[..80] + "…" : text;
     }
 
-    private bool IsTopicStreaming(string topicId)
-    {
-        return _streamingTopics.Contains(topicId);
-    }
+    private static string FormatTime(DateTime utc) => utc.ToLocalTime().ToString("MMM d, h:mm tt");
 
     private void HandleTopicClick(StoredTopic topic)
     {
-        if (_selectedTopicId != topic.TopicId)
-        {
-            Dispatcher.Dispatch(new SelectTopic(topic.TopicId));
-        }
+        if (_selectedTopicId != topic.TopicId) Dispatcher.Dispatch(new SelectTopic(topic.TopicId));
+        _detent = Detent.Peek;
     }
 
-    private void HandleNewTopic()
-    {
-        Dispatcher.Dispatch(new CreateNewTopic());
-    }
-
-    private void ShowDeleteConfirm(string topicId)
-    {
-        _deleteConfirmTopicId = topicId;
-    }
-
-    private void CancelDelete()
-    {
-        _deleteConfirmTopicId = null;
-    }
+    private void HandleNewTopic() => Dispatcher.Dispatch(new CreateNewTopic());
+    private void ShowDeleteConfirm(string topicId) => _deleteConfirmTopicId = topicId;
+    private void CancelDelete() => _deleteConfirmTopicId = null;
 
     private void ConfirmDelete(StoredTopic topic)
     {
@@ -133,145 +215,14 @@
         Dispatcher.Dispatch(new RemoveTopic(topic.TopicId, topic.AgentId, topic.ChatId, topic.ThreadId));
     }
 
-    private void ToggleDropdown()
-    {
-        _dropdownOpen = !_dropdownOpen;
-    }
-
     private void SelectAgent(string agentId)
     {
-        _dropdownOpen = false;
-        if (agentId != _selectedAgentId)
-        {
-            Dispatcher.Dispatch(new SelectAgent(agentId));
-        }
+        if (agentId != _selectedAgentId) Dispatcher.Dispatch(new SelectAgent(agentId));
     }
 
-    private void CloseDropdown()
+    public override void Dispose()
     {
-        _dropdownOpen = false;
+        _selfRef?.Dispose();
+        base.Dispose();
     }
 }
-
-<div class="topic-sidebar">
-    <div class="sidebar-header">
-        <div class="custom-dropdown @(_dropdownOpen ? "open" : "")" @ref="DropdownRef">
-            <button class="dropdown-trigger" @onclick="ToggleDropdown" @onclick:stopPropagation="true">
-                <span class="dropdown-value">@SelectedAgentName</span>
-                <svg class="dropdown-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     viewBox="0 0 24 24" fill="none"
-                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
-            </button>
-            @if (_dropdownOpen)
-            {
-                <div class="dropdown-backdrop" @onclick="CloseDropdown"></div>
-                <div class="dropdown-menu">
-                    @foreach (var agent in _agents)
-                    {
-                        <div class="dropdown-item @(agent.Id == _selectedAgentId ? "selected" : "")"
-                             @onclick="() => SelectAgent(agent.Id)">
-                            @agent.Name
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-        <button class="new-topic-btn" @onclick="HandleNewTopic">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            New Chat
-        </button>
-    </div>
-
-    <div class="topic-list">
-        @{
-            var filteredTopics = _topics
-                .Where(t => t.AgentId == _selectedAgentId)
-                .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
-                .ToList();
-        }
-        @if (filteredTopics.Count == 0)
-        {
-            <div class="no-topics">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
-                     stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-                <span>No conversations yet</span>
-                <span class="no-topics-hint">Click "New Chat" to start</span>
-            </div>
-        }
-        else
-        {
-            @foreach (var topic in filteredTopics)
-            {
-                var unreadCount = GetUnreadCount(topic.TopicId);
-                var isStreaming = IsTopicStreaming(topic.TopicId);
-                <div
-                    class="topic-item @(_selectedTopicId == topic.TopicId ? "selected" : "") @(unreadCount > 0 ? "has-unread" : "") @(isStreaming ? "is-streaming" : "")"
-                    @onclick="() => HandleTopicClick(topic)">
-                    <div class="topic-content">
-                        <div class="topic-name-row">
-                            <div class="topic-name" data-tooltip="@topic.Name">@topic.Name</div>
-                            @if (isStreaming)
-                            {
-                                <div class="topic-streaming-indicator" title="Streaming...">
-                                    <span></span>
-                                    <span></span>
-                                    <span></span>
-                                </div>
-                            }
-                            @if (unreadCount > 0)
-                            {
-                                <div class="topic-unread-badge">@(unreadCount > 99 ? "99+" : unreadCount)</div>
-                            }
-                        </div>
-                        <div class="topic-meta">
-                            @(topic.LastMessageAt?.ToLocalTime().ToString("MMM d, h:mm tt") ?? topic.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt"))
-                        </div>
-                    </div>
-                    @if (_deleteConfirmTopicId == topic.TopicId)
-                    {
-                        <div class="delete-confirm">
-                            <button class="confirm-delete-btn" @onclick="() => ConfirmDelete(topic)"
-                                    @onclick:stopPropagation="true" title="Delete conversation">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                                     fill="none"
-                                     stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-                                     stroke-linejoin="round">
-                                    <polyline points="3 6 5 6 21 6"/>
-                                    <path
-                                        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                </svg>
-                            </button>
-                            <button class="cancel-delete-btn" @onclick="CancelDelete"
-                                    @onclick:stopPropagation="true" title="Cancel">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                                     fill="none"
-                                     stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-                                     stroke-linejoin="round">
-                                    <line x1="18" y1="6" x2="6" y2="18"/>
-                                    <line x1="6" y1="6" x2="18" y2="18"/>
-                                </svg>
-                            </button>
-                        </div>
-                    }
-                    else
-                    {
-                        <button class="delete-btn" @onclick="() => ShowDeleteConfirm(topic.TopicId)"
-                                @onclick:stopPropagation="true">
-                            &times;
-                        </button>
-                    }
-                </div>
-            }
-        }
-    </div>
-</div>
-
-<div id="tooltip" class="tooltip"></div>
