@@ -15,20 +15,17 @@ app.UseBlazorFrameworkFiles();
 
 app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
 {
-    const string baseName = "Herfluffness' Assistants";
     var spaces = config.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
     var space = spaces.FirstOrDefault(s => s.Slug == slug);
     var startUrl = string.IsNullOrEmpty(slug) || slug == "default" ? "/" : $"/{slug}";
-    var name = space is not null && space.Slug != "default"
-        ? $"{baseName} \u2014 {space.Name}"
-        : baseName;
+    var (name, shortName) = WebManifestNaming.Resolve(space);
     var themeColor = space?.AccentColor ?? "#1a1a2e";
 
     var iconColor = Uri.EscapeDataString(space?.AccentColor ?? SpaceConfig.DefaultAccentColor);
     var manifest = new
     {
         name,
-        short_name = space?.Name ?? "Agent",
+        short_name = shortName,
         start_url = startUrl,
         id = startUrl,
         scope = startUrl,
