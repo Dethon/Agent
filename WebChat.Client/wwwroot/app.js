@@ -239,7 +239,7 @@ window.hearthSheet.closeDialog = function (el) { if (el && el.open) el.close(); 
 Object.assign(window.hearthSheet, {
     _el: null, _ref: null, _rows: null,
     _startY: 0, _startX: 0, _lastY: 0, _lastT: 0, _vy: 0, _dragging: false, _axisLocked: null, _startOffset: 0,
-    _rowsStartY: 0, _rowsStartScroll: 0, _rowsMode: null,
+    _rowsStartY: 0, _rowsAtTop: false, _rowsAtBottom: false, _rowsMode: null,
 
     register: function (peekBar, dotnetRef) {
         const sheet = peekBar.closest('.hearth');
@@ -346,7 +346,8 @@ Object.assign(window.hearthSheet, {
         h._rowsMode = null;
         if (!h._isSheet() || e.touches.length !== 1) return;
         h._rowsStartY = h._lastY = e.touches[0].clientY;
-        h._rowsStartScroll = h._rows.scrollTop;
+        h._rowsAtTop = h._rows.scrollTop <= 0;
+        h._rowsAtBottom = h._rows.scrollTop + h._rows.clientHeight >= h._rows.scrollHeight - 1;
         h._lastT = e.timeStamp; h._vy = 0;
         const rect = h._el.getBoundingClientRect();
         h._startOffset = rect.top - (window.innerHeight - rect.height);
@@ -359,9 +360,9 @@ Object.assign(window.hearthSheet, {
         const dy = y - h._rowsStartY;
         if (h._rowsMode === null) {
             if (Math.abs(dy) < 8) return;           // wait for a clear vertical intent
-            // Collapse only when the list is at its top and the pull is downward; otherwise
-            // hand the gesture back to the browser for normal (momentum) scrolling.
-            if (h._rowsStartScroll <= 0 && dy > 0) { h._rowsMode = 'collapse'; h._el.classList.add('dragging'); }
+            // Pull down at the top collapses; pull up at the bottom expands. Otherwise hand
+            // the gesture back to the browser for normal (momentum) scrolling.
+            if ((h._rowsAtTop && dy > 0) || (h._rowsAtBottom && dy < 0)) { h._rowsMode = 'sheet'; h._el.classList.add('dragging'); }
             else { h._rowsMode = 'native'; return; }
         }
         e.preventDefault();
@@ -375,7 +376,7 @@ Object.assign(window.hearthSheet, {
 
     _onRowsTouchEnd: function () {
         const h = window.hearthSheet;
-        if (h._rowsMode === 'collapse') {
+        if (h._rowsMode === 'sheet') {
             h._el.classList.remove('dragging');
             h._axisLocked = 'y';
             h._settle();
