@@ -372,26 +372,6 @@ h1, h2, h3 {
    Topic Sidebar
    =================================== */
 
-.topic-sidebar {
-    width: 300px;
-    min-width: 300px;
-    background-color: var(--bg-secondary);
-    border-right: 1px solid var(--border-color);
-    display: flex;
-    flex-direction: column;
-    transition: background-color var(--transition-slow), border-color var(--transition-slow);
-}
-
-.sidebar-header {
-    padding: 1.25rem;
-    border-bottom: 1px solid var(--border-color);
-    display: flex;
-    flex-direction: column;
-    gap: 0.875rem;
-    background: var(--bg-secondary);
-    position: relative;
-}
-
 /* Custom Dropdown */
 .custom-dropdown {
     position: relative;
@@ -494,68 +474,6 @@ h1, h2, h3 {
 .custom-dropdown.disabled .dropdown-trigger {
     opacity: 0.5;
     cursor: not-allowed;
-}
-
-.new-topic-btn {
-    width: 100%;
-    padding: 0.875rem 1rem;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
-    color: white;
-    border: none;
-    border-radius: 12px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition-normal);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.625rem;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
-}
-
-.new-topic-btn svg {
-    flex-shrink: 0;
-}
-
-.new-topic-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, var(--accent-hover) 0%, #4338ca 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-}
-
-.new-topic-btn:active:not(:disabled) {
-    transform: translateY(0);
-}
-
-.new-topic-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* Topic List */
-.topic-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0.75rem;
-    position: relative;
-}
-
-.topic-list::-webkit-scrollbar {
-    width: 6px;
-}
-
-.topic-list::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
-}
-
-.topic-list::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 3px;
-}
-
-.topic-list::-webkit-scrollbar-thumb:hover {
-    background: var(--scrollbar-thumb-hover);
 }
 
 .no-topics {
@@ -827,19 +745,6 @@ h1, h2, h3 {
 
 .cancel-delete-btn:active {
     transform: scale(0.95);
-}
-
-[data-theme="dark"] .new-topic-btn {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    box-shadow: none;
-    border: 1px solid var(--border-color);
-}
-
-[data-theme="dark"] .new-topic-btn:hover:not(:disabled) {
-    background: var(--accent-light);
-    border-color: var(--accent);
-    box-shadow: none;
 }
 
 [data-theme="dark"] .confirm-delete-btn {
@@ -1850,86 +1755,12 @@ h1, h2, h3 {
 }
 
 @media (max-width: 768px) {
-    .chat-layout {
-        flex-direction: column;
-    }
-
-    .topic-sidebar {
-        width: 100%;
-        min-width: 100%;
-        border-right: none;
-        border-bottom: 1px solid var(--border-color);
-    }
-
-    .sidebar-header {
-        flex-direction: row;
-        padding: 0.875rem 1rem;
-        gap: 0.75rem;
-        flex-shrink: 0;
-    }
-
     .custom-dropdown {
         flex: 1;
     }
 
     .dropdown-menu {
         min-width: 200px;
-    }
-
-    .new-topic-btn {
-        width: auto;
-        white-space: nowrap;
-        padding: 0.625rem 1rem;
-        flex-shrink: 0;
-    }
-
-    .topic-list {
-        flex-direction: row;
-        overflow-x: auto;
-        overflow-y: hidden;
-        display: flex;
-        gap: 0.5rem;
-        padding: 0.5rem 0.625rem;
-        max-height: none;
-        /* Hide scrollbar while keeping scroll functionality */
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-    }
-
-    .topic-list::-webkit-scrollbar {
-        display: none;
-    }
-
-    .no-topics {
-        padding: 0.75rem 1rem;
-        flex-direction: row;
-        gap: 0.5rem;
-    }
-
-    .no-topics svg {
-        width: 20px;
-        height: 20px;
-        margin-bottom: 0;
-    }
-
-    .no-topics-hint {
-        display: none;
-    }
-
-    .topic-item {
-        min-width: 160px;
-        max-width: 200px;
-        margin-bottom: 0;
-        padding: 0.625rem 0.75rem;
-        flex-shrink: 0;
-    }
-
-    .topic-name {
-        font-size: 0.8125rem;
-    }
-
-    .topic-meta {
-        font-size: 0.6875rem;
     }
 
     .messages-area {
@@ -2459,3 +2290,96 @@ select:focus:not(:focus-visible) {
         font-size: 0.875rem;
     }
 }
+
+/* ===================================
+   The Hearth — navigation
+   =================================== */
+
+.hearth { display: flex; flex-direction: column; min-height: 0; }
+.hearth-peek { display: none; }            /* mobile-only chrome */
+.hearth-bottom { display: none; }          /* mobile-only chrome */
+
+.hearth-body { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.hearth-rail-head { padding: 0.75rem 0.75rem 0.5rem; }
+.hearth-search { padding: 0 0.75rem 0.5rem; }
+.hearth-search-input {
+    width: 100%; padding: 0.5rem 0.75rem; border-radius: 10px;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    color: var(--text-primary); font-family: inherit; font-size: 0.85rem;
+}
+.hearth-rows { flex: 1; overflow-y: auto; padding: 0 0.625rem 0.75rem; scroll-snap-type: y proximity; }
+.topic-preview { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* agent switcher — segmented (desktop) */
+.agent-segmented { display: flex; gap: 0.25rem; background: var(--bg-tertiary);
+    border-radius: 12px; padding: 0.25rem; }
+.agent-seg { flex: 1; display: flex; align-items: center; gap: 0.4rem; justify-content: center;
+    padding: 0.4rem 0.5rem; border: none; background: transparent; border-radius: 9px;
+    color: var(--text-secondary); font-family: inherit; font-weight: 600; cursor: pointer; position: relative; }
+.agent-seg.on { background: var(--accent); color: var(--user-text); }
+.agent-mono { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
+    color: #fff; font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.7rem; flex: 0 0 auto; }
+.agent-activity-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 8px 1px color-mix(in srgb, var(--accent) 70%, transparent); }
+.is-streaming .agent-activity-dot, .agent-seg .agent-activity-dot { animation: emberPulse 1.6s ease-in-out infinite; }
+
+@keyframes emberPulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+.hearth-peek-name.glow { text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
+
+/* Desktop: the Hearth IS a pinned left rail */
+@media (min-width: 768px) {
+    .chat-layout { display: flex; flex-direction: row; }
+    .chat-container { order: 2; flex: 1; min-width: 0; }
+    .hearth { order: 1; width: 320px; min-width: 320px; border-right: 1px solid var(--border-color);
+        background: var(--bg-secondary); }
+    .hearth-bottom { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem;
+        border-top: 1px solid var(--border-color); }
+    .hearth-new { margin-left: auto; width: 34px; height: 34px; border-radius: 10px; border: none;
+        background: var(--accent); color: var(--user-text); font-size: 1.2rem; cursor: pointer; }
+}
+
+/* Mobile: the Hearth is a draggable bottom sheet */
+@media (max-width: 767px) {
+    .chat-layout { display: block; height: 100dvh; }
+    .chat-container { height: 100dvh; padding-bottom: 56px; }   /* room for the peek bar */
+
+    .hearth {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+        height: 92dvh; background: var(--bg-secondary);
+        border-top-left-radius: 18px; border-top-right-radius: 18px;
+        box-shadow: 0 -10px 30px -12px rgba(60,40,20,0.35);
+        transform: translateY(var(--sheet-offset, calc(92dvh - 56px)));
+        transition: transform 280ms cubic-bezier(.2,.8,.2,1);
+        touch-action: none;
+    }
+    .hearth.detent-peek  { --sheet-offset: calc(92dvh - 56px); }
+    .hearth.detent-half  { --sheet-offset: 46dvh; }
+    .hearth.detent-full  { --sheet-offset: 0dvh; }
+    .hearth.dragging { transition: none; }   /* JS owns the transform during a drag */
+
+    .hearth-peek { display: flex; align-items: center; gap: 0.5rem; height: 56px; padding: 0 0.875rem; }
+    .hearth-handle { width: 36px; height: 4px; border-radius: 3px; background: var(--border-color);
+        border: none; position: absolute; top: 7px; left: 50%; transform: translateX(-50%); padding: 0; }
+    .hearth-peek-current { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .hearth-peek-name { font-family: 'Fraunces', serif; font-weight: 600; color: var(--text-primary);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hearth-peek-time { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); }
+    .hearth-bottom { display: none; }   /* on mobile the agent chip + new chat live in the sheet head/bottom */
+
+    .hearth-body { padding-bottom: env(safe-area-inset-bottom); }
+
+    .agent-segmented { display: none; }   /* mobile uses the popover chip (rendered in .hearth-bottom on desktop) */
+}
+
+/* agent chip + popover (mobile) */
+.agent-chip { display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.6rem; border-radius: 999px;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary);
+    font-family: inherit; font-weight: 600; cursor: pointer; }
+.agent-popover { border: none; border-radius: 16px; padding: 0.5rem; background: var(--bg-elevated);
+    color: var(--text-primary); box-shadow: var(--shadow-lg); }
+.agent-popover::backdrop { background: rgba(40,28,18,0.35); }
+.agent-popover-item { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.6rem 0.75rem;
+    border: none; background: transparent; border-radius: 10px; color: var(--text-primary); font-family: inherit; cursor: pointer; }
+.agent-popover-item.on { background: var(--accent-subtle); }
