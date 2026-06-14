@@ -2401,3 +2401,7 @@ select:focus:not(:focus-visible) {
 .agent-combo-item:hover { background: var(--bg-tertiary); }
 .agent-combo-item.on { background: var(--accent-subtle); }
 .agent-combo-name { flex: 1; }
+/* fully expanded: the chip sits at the top of the sheet, so the menu opens DOWN instead of up */
+.hearth.detent-full .agent-combo-menu { top: calc(100% + 8px); bottom: auto; animation: comboDrop 0.14s ease-out; }
+.hearth.detent-full .agent-combo.open .agent-chip-caret { transform: none; }
+@keyframes comboDrop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
