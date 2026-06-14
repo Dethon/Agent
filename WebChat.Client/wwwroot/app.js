@@ -309,6 +309,16 @@ Object.assign(window.hearthSheet, {
         else detent = ratio > 0.66 ? 'Peek' : ratio > 0.28 ? 'Half' : 'Full';
         h._el.style.removeProperty('--sheet-offset');   // let the .detent-* class drive the resting transform
         if (h._ref) h._ref.invokeMethodAsync('CommitDetent', detent);
+    },
+
+    registerCommandKey: function (dotnetRef) {
+        document.addEventListener('keydown', function (e) {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'
+                && !(e.target.classList && e.target.classList.contains('chat-input'))) {
+                e.preventDefault();
+                dotnetRef.invokeMethodAsync('OpenSearch');
+            }
+        });
     }
 });
 
