@@ -2,6 +2,7 @@
 @implements IDisposable
 @using WebChat.Client.Helpers
 @using WebChat.Client.State.AgentActivity
+@using Microsoft.JSInterop
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
 @inject MessagesStore MessagesStore
@@ -12,6 +13,10 @@
 <div class="hearth @($"detent-{_detent.ToString().ToLowerInvariant()}")">
     <div class="hearth-peek" @ref="_peekBar">
         <button class="hearth-handle" aria-label="Expand conversations" @onclick="CycleDetent"></button>
+        <AgentSelector Mode="AgentSelector.SwitcherMode.Popover"
+                       Agents="@_agents.ToList()" SelectedAgentId="@_selectedAgentId"
+                       ActiveAgentIds="@_activeAgentIds"
+                       OnAgentSelected="SelectAgent" />
         <div class="hearth-peek-current">
             <span class="hearth-peek-name @(SelectedIsStreaming ? "glow" : "")">@SelectedTopicName</span>
             <span class="hearth-peek-time">@SelectedTopicTime</span>
@@ -20,6 +25,7 @@
         {
             <span class="topic-unread-badge">@(AggregateUnread > 99 ? "99+" : AggregateUnread)</span>
         }
+        <button class="hearth-new" @onclick="HandleNewTopic" aria-label="New chat">+</button>
     </div>
 
     <div class="hearth-body">
@@ -88,10 +94,6 @@
     </div>
 
     <div class="hearth-bottom">
-        <AgentSelector Mode="AgentSelector.SwitcherMode.Popover"
-                       Agents="@_agents.ToList()" SelectedAgentId="@_selectedAgentId"
-                       ActiveAgentIds="@_activeAgentIds"
-                       OnAgentSelected="SelectAgent" />
         <button class="hearth-new" @onclick="HandleNewTopic" aria-label="New chat">+</button>
     </div>
 </div>
@@ -146,8 +148,12 @@
         if (firstRender)
         {
             _selfRef = DotNetObjectReference.Create(this);
-            await Js.InvokeVoidAsync("hearthSheet.register", _peekBar, _selfRef);
-            await Js.InvokeVoidAsync("hearthSheet.registerCommandKey", _selfRef);
+            try
+            {
+                await Js.InvokeVoidAsync("hearthSheet.register", _peekBar, _selfRef);
+                await Js.InvokeVoidAsync("hearthSheet.registerCommandKey", _selfRef);
+            }
+            catch (JSException) { /* gestures attach later when the JS lands */ }
         }
     }
 

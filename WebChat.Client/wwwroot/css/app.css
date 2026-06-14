@@ -2343,34 +2343,43 @@ select:focus:not(:focus-visible) {
 /* Mobile: the Hearth is a draggable bottom sheet */
 @media (max-width: 767px) {
     .chat-layout { display: block; height: 100dvh; }
-    .chat-container { height: 100dvh; padding-bottom: 56px; }   /* room for the peek bar */
+    .chat-container { height: 100dvh; padding-bottom: 64px; }   /* room for the peek bar */
 
     .hearth {
         position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
         height: 92dvh; background: var(--bg-secondary);
         border-top-left-radius: 18px; border-top-right-radius: 18px;
         box-shadow: 0 -10px 30px -12px rgba(60,40,20,0.35);
-        transform: translateY(var(--sheet-offset, calc(92dvh - 56px)));
+        transform: translateY(var(--sheet-offset, calc(92dvh - 64px)));
         transition: transform 280ms cubic-bezier(.2,.8,.2,1);
         touch-action: none;
     }
-    .hearth.detent-peek  { --sheet-offset: calc(92dvh - 56px); }
+    .hearth.detent-peek  { --sheet-offset: calc(92dvh - 64px); }
     .hearth.detent-half  { --sheet-offset: 46dvh; }
     .hearth.detent-full  { --sheet-offset: 0dvh; }
     .hearth.dragging { transition: none; }   /* JS owns the transform during a drag */
 
-    .hearth-peek { display: flex; align-items: center; gap: 0.5rem; height: 56px; padding: 0 0.875rem; }
+    /* Peek bar: drag handle sits above; row = [agent-chip] [topic+time flex:1] [unread?] [new-chat] */
+    .hearth-peek {
+        display: flex; align-items: center; gap: 0.5rem;
+        min-height: 64px; padding: 0 0.875rem; padding-top: 14px;   /* 14px top clears the drag handle */
+    }
     .hearth-handle { width: 36px; height: 4px; border-radius: 3px; background: var(--border-color);
-        border: none; position: absolute; top: 7px; left: 50%; transform: translateX(-50%); padding: 0; }
+        border: none; position: absolute; top: 7px; left: 50%; transform: translateX(-50%); padding: 0; cursor: grab; }
     .hearth-peek-current { display: flex; flex-direction: column; min-width: 0; flex: 1; }
     .hearth-peek-name { font-family: 'Fraunces', serif; font-weight: 600; color: var(--text-primary);
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .hearth-peek-time { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); }
-    .hearth-bottom { display: none; }   /* on mobile the agent chip + new chat live in the sheet head/bottom */
+
+    /* Peek-bar new-chat button (mobile) */
+    .hearth-peek .hearth-new { flex-shrink: 0; width: 32px; height: 32px; border-radius: 10px; border: none;
+        background: var(--accent); color: var(--user-text); font-size: 1.2rem; cursor: pointer; }
+
+    .hearth-bottom { display: none; }   /* agent chip + new chat live in the peek bar on mobile */
 
     .hearth-body { padding-bottom: env(safe-area-inset-bottom); }
 
-    .agent-segmented { display: none; }   /* mobile uses the popover chip (rendered in .hearth-bottom on desktop) */
+    .agent-segmented { display: none; }   /* mobile uses the popover chip in the peek bar */
 }
 
 /* agent chip + popover (mobile) */
