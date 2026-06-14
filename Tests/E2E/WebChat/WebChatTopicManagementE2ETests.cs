@@ -26,7 +26,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
 
         // Create new topic
-        await page.Locator(".new-topic-btn").ClickAsync();
+        await page.Locator(".hearth-new:visible").ClickAsync();
 
         // Send second message (creates topic 2)
         await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 5_000 });

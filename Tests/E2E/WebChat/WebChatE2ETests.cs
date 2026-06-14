@@ -76,14 +76,11 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         catch (TimeoutException)
         {
             // Input still disabled — initialization may not have auto-selected an agent;
-            // fall through to manually open the dropdown and select the first agent.
-            var agentDropdown = page.Locator(".dropdown-trigger");
-            if (await agentDropdown.IsVisibleAsync())
+            // fall through to manually select the first agent in the switcher.
+            var firstAgent = page.Locator(".agent-seg:visible").First;
+            if (await firstAgent.IsVisibleAsync())
             {
-                await agentDropdown.ClickAsync();
-                var agentItem = page.Locator(".dropdown-item").First;
-                await agentItem.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
-                await agentItem.ClickAsync();
+                await firstAgent.ClickAsync();
             }
 
             await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 10_000 });
@@ -95,7 +92,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // so it can arrive at any point — including the window between the user-select
         // retry above and this click. Guard the click with the same dismiss-and-retry
         // pattern used for the user-dropdown click.
-        var newTopicBtn = page.Locator(".new-topic-btn");
+        var newTopicBtn = page.Locator(".hearth-new:visible");
         if (await newTopicBtn.IsVisibleAsync())
         {
             try
