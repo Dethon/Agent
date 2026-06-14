@@ -53,6 +53,11 @@ public sealed class ChatHub(
         return catalog.Exists(agentId);
     }
 
+    // Liveness probe. Clients invoke this on foreground to confirm the transport is actually
+    // alive (a backgrounded mobile connection can report Connected while the socket is dead).
+    // A returned value means a real round-trip completed; no registration required.
+    public bool Ping() => true;
+
     public bool StartSession(string agentId, string topicId, long chatId, long threadId, string? topicName = null)
     {
         return sessionService.StartSession(topicId, agentId, chatId, threadId, CurrentSpaceSlug, topicName);

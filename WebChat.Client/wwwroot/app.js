@@ -62,10 +62,16 @@ window.visibilityHelper = {
 
     register: function (dotnetRef) {
         this._dotnetRef = dotnetRef;
-        document.addEventListener('visibilitychange', this._handler);
+        // visibilitychange covers ordinary foreground/background. pageshow also fires on
+        // bfcache restore, which is how Android PWAs often resume (without a clean
+        // visibilitychange). online fires when connectivity returns. All route to the same
+        // reconnect check; the .NET side dedupes concurrent calls.
+        document.addEventListener('visibilitychange', this._onResume);
+        window.addEventListener('pageshow', this._onResume);
+        window.addEventListener('online', this._onResume);
     },
 
-    _handler: function () {
+    _onResume: function () {
         const ref = window.visibilityHelper._dotnetRef;
         if (ref && document.visibilityState === 'visible') {
             ref.invokeMethodAsync('OnPageVisible');
@@ -73,7 +79,9 @@ window.visibilityHelper = {
     },
 
     dispose: function () {
-        document.removeEventListener('visibilitychange', this._handler);
+        document.removeEventListener('visibilitychange', this._onResume);
+        window.removeEventListener('pageshow', this._onResume);
+        window.removeEventListener('online', this._onResume);
         this._dotnetRef = null;
     }
 };
