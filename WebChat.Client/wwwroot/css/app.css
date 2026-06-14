@@ -856,13 +856,13 @@ h1, h2, h3 {
     user-select: none;
 }
 
-/* Own message styling - different background color */
+/* Your own messages: ember gradient (the theme accent) */
 .chat-message.user.own {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    background: linear-gradient(135deg, #e9601f 0%, #cf4f15 100%);
 }
 
 [data-theme="dark"] .chat-message.user.own {
-    background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+    background: linear-gradient(135deg, #f0712f 0%, #d65f1e 100%);
 }
 
 /* Adjust message width within wrapper */
@@ -900,9 +900,10 @@ h1, h2, h3 {
     }
 }
 
+/* Other users' messages (group chats): muted terracotta, distinct from your own ember */
 .chat-message.user {
     align-self: flex-end;
-    background: var(--user-bg);
+    background: linear-gradient(135deg, #c2531f 0%, #a8431a 100%);
     color: var(--user-text);
     border-bottom-right-radius: 6px;
     box-shadow: var(--shadow-message);
