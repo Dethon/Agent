@@ -2308,7 +2308,12 @@ select:focus:not(:focus-visible) {
     background: var(--bg-tertiary); border: 1px solid var(--border-color);
     color: var(--text-primary); font-family: inherit; font-size: 0.85rem;
 }
-.hearth-rows { flex: 1; overflow-y: auto; padding: 0 0.625rem 0.75rem; scroll-snap-type: y proximity; }
+.hearth-rows { flex: 1; overflow-y: auto; padding: 0 0.625rem 0.75rem; scroll-snap-type: y proximity;
+    scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); }
+.hearth-rows::-webkit-scrollbar { width: 8px; }
+.hearth-rows::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+.hearth-rows::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+.hearth-rows::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 .topic-preview { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
