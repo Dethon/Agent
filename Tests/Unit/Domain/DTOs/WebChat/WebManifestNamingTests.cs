@@ -33,13 +33,13 @@ public sealed class WebManifestNamingTests
     }
 
     [Fact]
-    public void Resolve_DefaultSpace_NameIsBaseNameAndShortNameIsSpaceName()
+    public void Resolve_DefaultSpace_NameAndShortNameAreBaseName()
     {
-        var space = new SpaceConfig("default", "Home", SpaceConfig.DefaultAccentColor);
+        var space = new SpaceConfig("default", "Main", SpaceConfig.DefaultAccentColor);
 
         var (name, shortName) = WebManifestNaming.Resolve(space);
 
         name.ShouldBe("Herfluffness' Assistants");
-        shortName.ShouldBe("Home");
+        shortName.ShouldBe("Herfluffness' Assistants");
     }
 }

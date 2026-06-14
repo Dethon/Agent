@@ -6,10 +6,11 @@ public static class WebManifestNaming
 
     public static (string Name, string ShortName) Resolve(SpaceConfig? space)
     {
-        var name = space is not null && space.Slug != "default"
-            ? $"{BaseName} — {space.Name}"
-            : BaseName;
-        var shortName = space?.Name ?? BaseName;
-        return (name, shortName);
+        if (space is null || space.Slug == "default")
+        {
+            return (BaseName, BaseName);
+        }
+
+        return ($"{BaseName} — {space.Name}", space.Name);
     }
 }
