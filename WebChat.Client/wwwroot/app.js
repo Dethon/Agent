@@ -238,7 +238,7 @@ window.hearthSheet.closeDialog = function (el) { if (el && el.open) el.close(); 
 
 Object.assign(window.hearthSheet, {
     _el: null, _ref: null, _rows: null,
-    _startY: 0, _startX: 0, _lastY: 0, _lastT: 0, _vy: 0, _dragging: false, _axisLocked: null,
+    _startY: 0, _startX: 0, _lastY: 0, _lastT: 0, _vy: 0, _dragging: false, _axisLocked: null, _startOffset: 0,
 
     register: function (peekBar, dotnetRef) {
         const sheet = peekBar.closest('.hearth');
@@ -261,6 +261,10 @@ Object.assign(window.hearthSheet, {
         // let the list scroll instead.
         if (h._rows && h._rows.scrollTop > 0 && h._rows.contains(e.target)) { h._dragging = false; return; }
         h._startY = h._lastY = e.clientY; h._startX = e.clientX; h._lastT = e.timeStamp;
+        // Capture the sheet's current translateY so the drag continues from where it rests
+        // (0 = full … restPeek = peek) instead of snapping to the peek position.
+        const rect = h._el.getBoundingClientRect();
+        h._startOffset = rect.top - (window.innerHeight - rect.height);
         h._vy = 0; h._axisLocked = null; h._dragging = true;
         document.addEventListener('pointermove', h._onMove, { passive: false });
         document.addEventListener('pointerup', h._onUp);
@@ -281,7 +285,7 @@ Object.assign(window.hearthSheet, {
         requestAnimationFrame(() => {
             const base = h._el.getBoundingClientRect().height; // ~92dvh
             const restPeek = base - 64;
-            const offset = Math.min(restPeek, Math.max(0, restPeek + dy));
+            const offset = Math.min(restPeek, Math.max(0, h._startOffset + dy));
             h._el.style.setProperty('--sheet-offset', offset + 'px');
         });
         h._vy = (e.clientY - h._lastY) / Math.max(1, e.timeStamp - h._lastT);
