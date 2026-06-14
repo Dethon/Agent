@@ -2391,7 +2391,15 @@ select:focus:not(:focus-visible) {
 
     .hearth-bottom { display: none; }   /* agent chip + new chat live in the peek bar on mobile */
 
-    .hearth-body { padding-bottom: env(safe-area-inset-bottom); }
+    .hearth-body {
+        padding-bottom: env(safe-area-inset-bottom);
+        /* The sheet is a fixed 92dvh box slid down by --sheet-offset, so at the half/peek
+           detents its lower part hangs below the viewport. Cap the body to the visible
+           height (minus the 64px peek bar) so the conversation list scrolls within view
+           instead of overflowing off-screen. At the full detent this equals the natural
+           height, so nothing changes there. */
+        max-height: calc(92dvh - var(--sheet-offset, 0px) - 64px);
+    }
 
     .agent-segmented { display: none; }   /* mobile uses the popover chip in the peek bar */
 }
