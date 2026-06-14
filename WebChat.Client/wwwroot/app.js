@@ -225,6 +225,14 @@ window.accentHelper = {
 };
 
 // ===================================
+// Native <dialog> helpers
+// ===================================
+
+window.hearthSheet = window.hearthSheet || {};
+window.hearthSheet.showDialog = function (el) { if (el && !el.open) el.showModal(); };
+window.hearthSheet.closeDialog = function (el) { if (el && el.open) el.close(); };
+
+// ===================================
 // Clipboard
 // ===================================
 
