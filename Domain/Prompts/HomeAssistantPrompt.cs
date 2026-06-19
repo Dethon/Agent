@@ -67,6 +67,29 @@ public static class HomeAssistantPrompt
         - `exitCode` 127 = not a real action file. `/ha` is NOT a shell — only the
           listed `*.sh` files run. `stderr` lists the available actions.
 
+        ### Alarms & reminders
+
+        To set an alarm or reminder, use the `calendar.create_event` service on the
+        alarms calendar (`calendar.assistant_alarms`) — do NOT use `/schedules` for
+        human alarms. From that entity directory:
+        `exec(command="create_event.sh --summary \"Take out the trash\"
+              --start_date_time \"2026-06-19 21:30:00\"
+              --description \"{\\\"target\\\":{\\\"room\\\":\\\"Kitchen\\\"},\\\"gapSeconds\\\":30,\\\"maxRepeats\\\":5}\"")`
+
+        - `summary` is the spoken message.
+        - `start_date_time` is the local wall-clock time. Resolve relative requests
+          ("in 20 minutes", "tomorrow at 7") to an absolute date-time yourself; HA
+          interprets it in its own timezone (with DST), so you never compute UTC.
+        - `rrule` makes it recurring (e.g. `--rrule "FREQ=DAILY"` for every day,
+          `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` for weekdays).
+        - `description` is a JSON object selecting where and how insistently it speaks:
+          `target` ({satelliteId | satelliteIds | room | all}), and optional
+          `gapSeconds`, `maxRepeats`, `maxDurationSeconds`. The alarm repeats on the
+          satellite until the user says "ok nabu" there, or the cap is reached.
+
+        To change or cancel: list with `exec get_events.sh ...`, then
+        `exec delete_event.sh ...` / `exec update_event.sh ...` on the event.
+
         ### Notes
 
         - `state.json` always reflects HA's current stored state (nothing is cached
