@@ -146,6 +146,10 @@ Home Assistant runs at `http://<host>:8123` (port published on all interfaces so
 3. Set `HOMEASSISTANT__TOKEN=...` in `DockerCompose/.env` and restart the `mcp-homeassistant` container.
 4. To control the Roborock S8: Settings → Devices & Services → Add Integration → **Roborock**, log in with the Roborock account; the vacuum appears as `vacuum.<name>` once the integration finishes.
 
+For voice alarms/reminders, the agent creates events on a dedicated `calendar.assistant_alarms`
+calendar that an HA automation bridges to the voice announce endpoint — see
+`docs/home-assistant-alarms.md` for the one-time `rest_command` + automation provisioning.
+
 The agent reaches HA inside the compose network at `http://homeassistant:8123` via the `McpServerHomeAssistant` MCP server.
 
 ### Observability Architecture
