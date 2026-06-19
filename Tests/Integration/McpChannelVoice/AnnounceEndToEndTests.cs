@@ -93,6 +93,8 @@ public class AnnounceEndToEndTests
             TimeSpan.FromMinutes(5),
             NullLogger<VoiceConversationManager>.Instance));
         builder.Services.AddSingleton<AnnouncementService>();
+        builder.Services.AddSingleton<ActiveAlertRegistry>();
+        builder.Services.AddSingleton<InsistentAnnouncementController>();
         builder.Services.AddHostedService<WyomingSatelliteHost>();
 
         var app = builder.Build();
