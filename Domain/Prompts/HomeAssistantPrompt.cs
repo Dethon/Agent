@@ -74,7 +74,7 @@ public static class HomeAssistantPrompt
         human alarms. From that entity directory:
         `exec(command="create_event.sh --summary \"Take out the trash\"
               --start_date_time \"2026-06-19 21:30:00\"
-              --description \"{\\\"target\\\":{\\\"room\\\":\\\"Kitchen\\\"},\\\"gapSeconds\\\":30,\\\"maxRepeats\\\":5}\"")`
+              --description \"{\\\"target\\\":{\\\"room\\\":\\\"Kitchen\\\"},\\\"insistent\\\":{\\\"gapSeconds\\\":30,\\\"maxRepeats\\\":5}}\"")`
 
         - `summary` is the spoken message.
         - `start_date_time` is the local wall-clock time. Resolve relative requests
@@ -82,10 +82,12 @@ public static class HomeAssistantPrompt
           interprets it in its own timezone (with DST), so you never compute UTC.
         - `rrule` makes it recurring (e.g. `--rrule "FREQ=DAILY"` for every day,
           `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` for weekdays).
-        - `description` is a JSON object selecting where and how insistently it speaks:
-          `target` ({satelliteId | satelliteIds | room | all}), and optional
-          `gapSeconds`, `maxRepeats`, `maxDurationSeconds`. The alarm repeats on the
-          satellite until the user says "ok nabu" there, or the cap is reached.
+        - `description` is a JSON object with two keys: `target` ({satelliteId |
+          satelliteIds | room | all}) and `insistent` (an object with optional
+          `gapSeconds`, `maxRepeats`, `maxDurationSeconds`; use `{}` for all defaults).
+          The alarm repeats on the satellite until the user says "ok nabu" there, or
+          the cap is reached. **`insistent` must be present** — omitting it makes a
+          one-shot announce, not an alarm.
 
         To change or cancel: list with `exec get_events.sh ...`, then
         `exec delete_event.sh ...` / `exec update_event.sh ...` on the event.
