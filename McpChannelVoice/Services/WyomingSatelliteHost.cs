@@ -23,6 +23,7 @@ public sealed class WyomingSatelliteHost(
     VoiceConversationManager conversationManager,
     ISpeechToText speechToText,
     TranscriptDispatcher dispatcher,
+    ActiveAlertRegistry alerts,
     IMetricsPublisher metrics,
     TimeProvider time,
     ILogger<WyomingSatelliteHost> logger) : IHostedService
@@ -292,7 +293,14 @@ public sealed class WyomingSatelliteHost(
                 PublishVoiceMetric(VoiceMetric.FollowUpEngaged, session);
             }
 
-            return await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
+            var dispatched = await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
+            if (dispatched)
+            {
+                // A real utterance reached the agent — treat it as acknowledgment of any active alert on
+                // this satellite (the satellite mics only on local wake, so this is the dismissal path).
+                alerts.Acknowledge(session.SatelliteId);
+            }
+            return dispatched;
         }
         catch (OperationCanceledException)
         {
