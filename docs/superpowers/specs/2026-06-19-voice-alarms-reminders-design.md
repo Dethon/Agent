@@ -21,8 +21,8 @@ our satellites and HA has no visibility into it.
 
 - Let the agent set one-shot, relative ("in 20 minutes"), and recurring alarms/reminders by voice.
 - Speak them insistently on one or more satellites, repeating until acknowledged or capped.
-- Acknowledgment is **language-agnostic**: any detected utterance dismisses the alert. No phrase
-  recognition.
+- Acknowledgment is **language-agnostic**: the user dismisses by waking the satellite ("ok nabu") and
+  speaking — we match the *presence* of a dispatched utterance, never its content. No phrase recognition.
 - When the alert targets multiple satellites, **acknowledging on any one** stops it on all of them.
 - Correct local-time / DST / recurrence handling, for free, by delegating timing to HA.
 
@@ -35,6 +35,8 @@ our satellites and HA has no visibility into it.
   ack-callback from the hub to HA; deferred. (HA can still fire an *unconditional* parallel notify.)
 - **Hub retry-on-reconnect** for satellites offline at fire time.
 - **HA-driven agent wake** (HA WebSocket event ingestion into the agent). Not needed for this design.
+- **Hub-initiated satellite mic capture** ("say anything to dismiss" without a wake word). Needs a new
+  inbound event in `nabu-satellite` + on-device validation; deferred (see §4).
 - **Changes to the in-house scheduler** (`McpServerScheduling`). It remains for agent-task schedules.
 
 ## Decisions (resolved during brainstorming)
@@ -43,9 +45,9 @@ our satellites and HA has no visibility into it.
 |-------|----------|
 | Alarm vs reminder semantics | Both are *insistent spoken messages*; no mechanical distinction beyond per-event urgency params. |
 | Stop model | Repeat-until-acknowledged, capped. |
-| Acknowledgment | **Any detected utterance** on any targeted satellite. Voice-activity based, language-agnostic. No phrase matching. |
+| Acknowledgment | **Wake-word ack** — the user says "ok nabu" (+ any utterance) at any targeted satellite; the hub treats a real dispatched utterance from a satellite with an active alert as the acknowledgment. The satellite only mics on local wake — **verified** against `satellite/src/satellite/state_machine.rs`; the hub cannot open an idle mic. |
 | Snooze | **Removed.** |
-| Multi-satellite | Alert spans all targeted online satellites; **first utterance on any one acknowledges and cancels all**. |
+| Multi-satellite | Alert spans all targeted online satellites; **first ack on any one cancels the alert on all** of them. |
 | Trigger/timing layer | **Home Assistant** (local calendar + bridging automation → announce endpoint). |
 | Timezone/DST/recurrence | Handled by HA; no change to our `Schedule` DTO. |
 | Event encoding | **Per-event JSON** in the calendar event `description` carries target + urgency params. |
@@ -131,42 +133,44 @@ Provisioned in HA, not in this repo. Documented in `CLAUDE.md` (HA setup section
 2. **Synthesize the TTS once** and reuse the audio bytes across rounds and satellites (avoid
    re-synthesizing every repeat). Audio is 22 050 Hz mono S16LE (satellite sink constraint).
 3. Loop rounds `1..MaxRepeats` (or until `MaxDurationSeconds` elapses), under one shared
-   `CancellationTokenSource` for the whole alert:
-   - For each online targeted satellite: enqueue the cached audio as a **High-priority** `PlaybackJob`;
-     after playback drains, **open a wake-free mic window** and run capture.
-   - **Acknowledgment = any detected utterance** in the mic window (via `SilenceGate` voice-activity;
-     optionally require a non-empty STT result purely as an ambient-noise guard — never phrase matching).
-   - The **first satellite** to report an utterance triggers the shared cancellation: cancel in-flight
-     playback and mic windows on the *other* satellites, stop further repeats, emit
-     `AlarmAcknowledged` (record which satellite/round).
-   - If all satellites' windows close with only silence → wait `GapSeconds`, next round.
-4. Cap reached without ack → emit `AlarmUnacknowledged` metric.
+   `CancellationTokenSource` for the whole alert. Each round, for every **online** targeted satellite,
+   enqueue the cached audio as a **High-priority** `PlaybackJob`; then wait `GapSeconds` (cancellable)
+   and start the next round. Re-resolve online satellites each round so a satellite that reconnects
+   mid-alert is included.
+4. **Acknowledgment is out-of-band, via the satellite's normal wake path.** An `ActiveAlertRegistry`
+   maps each targeted `satelliteId` → the alert's `CancellationTokenSource`. When a real utterance is
+   dispatched from a satellite (`WyomingSatelliteHost.TranscribeAndDispatchAsync` returns true), the
+   host calls `registry.Acknowledge(satelliteId)`; the **first** ack cancels the shared CTS — stopping
+   the loop and preempting in-flight playback (`session.PreemptCurrent()`) on **all** targeted
+   satellites — and emits `AlarmAcknowledged`.
+5. Cap reached with no ack → `AlarmUnacknowledged`. No targeted satellite online at start → `AlarmOffline`.
 
 **Live-conversation rule:** if a targeted satellite already has a live conversation/turn active when
 the alert fires, treat the user as **present** — the alert is acknowledged for that satellite
 immediately. Play the message once at High priority as a heads-up; do not open a competing mic loop
 on that satellite. (If the live conversation is the only target, the whole alert is acknowledged.)
 
-### 4. Acknowledgment via voice-activity (no STT phrase matching)
+### 4. Acknowledgment via the existing wake path (verified satellite constraint)
 
-Reuses the existing capture stack: `UtteranceCapture` + `SilenceGate`. The win from dropping snooze
-is that we never need to know *what* was said, only *that* the user spoke — which is
-`SilenceGate.Decision.EndUtterance`. This is language-independent and immune to STT errors, and honors
-the project's "generic, non-blocking STT" rule. STT may be used only to confirm a non-empty transcript
-as a noise guard; it is never matched against a vocabulary.
+The satellite is the Wyoming **server** with **local** wake detection: it streams mic audio only after
+an on-device "ok nabu" wake (or a hardware button) and stops when the hub sends a `transcript`. Its
+`handle_hub_event` honors only `run-satellite` / `transcript` / `audio-start` / `audio-chunk` /
+`audio-stop`; **any other inbound event is ignored** (`satellite/src/satellite/state_machine.rs:215`).
+The follow-up window only works because the mic stream is held open *during* a conversation — once the
+satellite is idle, **the hub cannot reopen the mic**. Therefore the controller does **not** open mic
+windows.
 
-### 5. Opening a mic window on an idle satellite (biggest implementation risk)
+Instead, acknowledgment rides the satellite's normal wake→transcribe→dispatch flow that
+`WyomingSatelliteHost` already runs: when the user says "ok nabu" at a satellite with an active alert
+and speaks, the dispatched utterance triggers `ActiveAlertRegistry.Acknowledge(satelliteId)`. We match
+the *presence* of a dispatched utterance, never its content (language-agnostic, no phrase grammar). The
+ack fires on a **successful dispatch** (a real, confidence-passing utterance) rather than the bare wake,
+so a false wake with no speech does not cancel an alarm.
 
-Today the mic only opens **after a user-initiated turn**, driven by `FollowUpConversation` over a live
-`SatelliteSession`. The insistent controller must open a **wake-free capture window on an otherwise
-idle satellite** (the `SatelliteSession` exists whenever the satellite is connected). This is the bulk
-of the implementation effort:
-
-- Extract/extend the wake-free capture path so it can be invoked for an announcement, not just within a
-  conversation turn (reuse `UtteranceCapture` + `SilenceGate`; coordinate with the Wyoming read loop in
-  `WyomingSatelliteHost`).
-- Coordinate with `FollowUpConversation` so an alert and a live turn never fight over capture on the
-  same satellite (see live-conversation rule).
+> *Deferred (future): a hub-initiated "start-pipeline" event added to `nabu-satellite` would let the hub
+> open a mic window after each announcement for true "say anything, no wake word" dismissal. That is
+> cross-repo Rust work plus on-device validation (blocked on hardware per `satellite/CLAUDE.md`), so it
+> is out of scope for v1.*
 
 ### 6. Miss handling & metrics
 
@@ -250,19 +254,18 @@ any satellite → cancel-all → `AlarmAcknowledged`. All-silent rounds repeat o
 
 **New:**
 - `McpChannelVoice/Services/InsistentAnnouncementController.cs`
+- `McpChannelVoice/Services/ActiveAlertRegistry.cs` (+ `AlertHandle`)
 - `Domain/DTOs/Voice/InsistentOptions.cs`
-- (possibly) a small capture-window abstraction extracted from the follow-up path.
 
 **Modified:**
 - `Domain/DTOs/Voice/AnnounceRequest.cs` (+ `Insistent`)
-- `McpChannelVoice/Services/AnnounceEndpoint.cs` (route insistent)
-- `McpChannelVoice/Services/AnnouncementService.cs` (synthesize-once reuse helper)
-- `McpChannelVoice/Settings/AnnounceSettings.cs` (or new `InsistentSettings`) + defaults
-- `McpChannelVoice/Services/{FollowUpConversation,SatelliteSession,UtteranceCapture}.cs`
-  (invoke wake-free capture for an announcement; coordinate with live turns)
-- `Domain/DTOs/Metrics/Enums/VoiceMetric.cs` (+ pinned `Alarm*` values)
+- `McpChannelVoice/Settings/AnnounceSettings.cs` (+ `InsistentDefaults`)
+- `McpChannelVoice/Services/AnnounceEndpoint.cs` (route `Insistent` requests to the controller)
+- `McpChannelVoice/Services/WyomingSatelliteHost.cs` (+ `ActiveAlertRegistry` ctor param; `Acknowledge` on successful dispatch)
+- `McpChannelVoice/Modules/ConfigModule.cs` (register `ActiveAlertRegistry` + `InsistentAnnouncementController`)
+- `Domain/DTOs/Metrics/Enums/VoiceMetric.cs` (+ pinned `Alarm*` values) and `Tests/.../VoiceEnumsTests.cs`
 - `Domain/Prompts/HomeAssistantPrompt.cs` (alarm-via-calendar idiom)
-- `DockerCompose/.env` + HA setup docs in `CLAUDE.md` (shared announce token; provisioning steps)
+- HA setup docs in `CLAUDE.md` (shared announce token already in `.env`; provisioning steps)
 
 **HA-side (documented, not in repo):**
 - `calendar.assistant_alarms` local calendar
@@ -279,8 +282,10 @@ any satellite → cancel-all → `AlarmAcknowledged`. All-silent rounds repeat o
 
 ## Risks
 
-- **Idle-satellite mic window** is genuinely new wiring over the Wyoming read loop and the existing
-  turn/follow-up machinery; the live-conversation coordination is the subtle part.
+- **Wake-word ack UX**: dismissal requires saying "ok nabu", not a bare "stop". Accepted for v1; the
+  smoother "say anything" path is the deferred satellite change above.
+- **Ack utterance reaches the agent**: the "ok nabu, stop" turn is also dispatched as a normal message,
+  so the agent may produce a short spoken reply after the alarm is cancelled. Accepted for v1.
 - **HA arg-passing** through the VFS for `calendar.create_event` (JSON `description`, `rrule`,
   datetimes) needs validation and may require a small HA-tool enhancement.
 - **HA provisioning** is manual one-time config — a place for misconfiguration; must be clearly documented.
