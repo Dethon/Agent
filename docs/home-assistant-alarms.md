@@ -26,7 +26,6 @@ action); HA fires them; one automation bridges them to the voice hub's announce 
            content_type: "application/json"
            payload: >-
              {"text": {{ summary | to_json }},
-              "insistent": true,
               {{ params }} }
 
    Add `announce_token: <secret>` to HA `secrets.yaml`.
@@ -43,16 +42,18 @@ action); HA fires them; one automation bridges them to the voice hub's announce 
          - service: rest_command.voice_announce
            data:
              summary: "{{ trigger.calendar_event.summary }}"
-             # description is a JSON object: {"target": {...}, "gapSeconds":.., "maxRepeats":..}
-             # strip the outer braces so it can be spliced into the rest_command payload object.
+             # description is the request body minus text: {"target": {...}, "insistent": {...}}
+             # strip the outer braces so it splices into the payload object next to "text".
              params: "{{ trigger.calendar_event.description[1:-1] }}"
          # OPTIONAL belt-and-suspenders escalation (fires in parallel, at trigger time):
          # - service: notify.mobile_app_phone
          #   data: { message: "Alarm: {{ trigger.calendar_event.summary }}" }
 
-   The `insistent: true` flag in the rest_command body routes the request to the hub's
-   `InsistentAnnouncementController` (repeat-until-acknowledged). The user dismisses by saying
-   "ok nabu" at any targeted satellite.
+   The `insistent` object in the event description routes the request to the hub's
+   `InsistentAnnouncementController` (repeat-until-acknowledged). Every alarm's description
+   must include it — omitting it produces a one-shot announce, not a repeating alarm. Use
+   `{"target":{"room":"Kitchen"},"insistent":{}}` for default repeat caps. The user dismisses
+   by saying "ok nabu" at any targeted satellite.
 
 ## Notes & limitations (v1)
 
@@ -62,3 +63,5 @@ action); HA fires them; one automation bridges them to the voice hub's announce 
   and nothing is spoken; the optional parallel notify still reaches another channel.
 - Validate against your HA version that the local calendar supports `create_event` (with `rrule`),
   `get_events`, `delete_event`, and `update_event` as services on the calendar entity.
+- The announce endpoint's `BindToLoopbackOnly` setting defaults to `false`; if it is set to `true`,
+  cross-container POSTs from HA are rejected with 404. Keep it `false` for the HA bridge to work.
