@@ -646,6 +646,122 @@ public class WyomingSatelliteHostTests
         catch { /* cancellation */ }
     }
 
+    [Fact]
+    public async Task Hub_WakeWithoutUtterance_AcknowledgesActiveAlertOnThatSatellite()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = cts.Token;
+
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var sawRunSatellite = new TaskCompletionSource();
+        var wakeSent = new TaskCompletionSource();
+
+        var fakeSatellite = Task.Run(async () =>
+        {
+            using var conn = await listener.AcceptTcpClientAsync(ct);
+            await using var stream = conn.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+
+            var readLoop = Task.Run(async () =>
+            {
+                await foreach (var evt in reader.ReadAllAsync(ct))
+                {
+                    if (evt.Type == "run-satellite")
+                    { sawRunSatellite.TrySetResult(); }
+                    // audio-start/chunk/stop, transcript, etc. are drained and ignored.
+                }
+            }, ct);
+
+            await sawRunSatellite.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+
+            // Wake fired: send run-pipeline but NO audio data (user stays silent).
+            // Bare wake alone must be enough to dismiss the active alert.
+            await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject()), ct);
+            wakeSent.TrySetResult();
+
+            // Keep the connection open so the hub can process the event.
+            await Task.Delay(TimeSpan.FromSeconds(15), ct);
+        }, ct);
+
+        // STT returns empty so nothing would be dispatched — ack must come from wake, not dispatch.
+        var stt = new Mock<ISpeechToText>();
+        stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
+                                         It.IsAny<TranscriptionOptions>(),
+                                         It.IsAny<CancellationToken>()))
+            .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
+                async (audio, opts, token) =>
+                {
+                    await foreach (var _ in audio.WithCancellation(token))
+                    { }
+                    return new TranscriptionResult { Text = "", Language = "es", Confidence = 0.0 };
+                });
+
+        var emitter = new CapturingEmitter();
+        var publisher = new Mock<IMetricsPublisher>();
+        var factory = new Mock<IConversationFactory>();
+        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var identity = ConversationIdGenerator.CreateFor("topic-x");
+                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
+                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
+                return new ConversationCreation(identity, topic);
+            });
+        var manager = new VoiceConversationManager(
+            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+        var dispatcher = new TranscriptDispatcher(
+            emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+        var sessions = new SatelliteSessionRegistry();
+        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
+        {
+            ["kitchen-01"] = new()
+            {
+                Identity = "household",
+                Room = "Kitchen",
+                WakeWord = "hey_jarvis",
+                Address = $"tcp://127.0.0.1:{port}"
+            }
+        });
+
+        var alerts = new ActiveAlertRegistry();
+        using var alertCts = new CancellationTokenSource();
+        alerts.Register(new AlertHandle(alertCts, ["kitchen-01"]));
+
+        var host = new WyomingSatelliteHost(
+            new WyomingClientSettings
+            {
+                ReconnectDelaySeconds = 1,
+                SilenceRmsThreshold = 500,
+                TrailingSilenceMs = 200,
+                MaxUtteranceMs = 3000,
+                MinSpeechMs = 100
+            },
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
+            registry, sessions, manager, stt.Object, dispatcher, alerts, publisher.Object,
+            TimeProvider.System,
+            NullLogger<WyomingSatelliteHost>.Instance);
+
+        await host.StartAsync(ct);
+
+        // Wait until the fake satellite has sent the wake event, then assert that the
+        // alert token is cancelled — proving the bare wake dismissed it with no transcript.
+        await wakeSent.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+        await WaitForConditionAsync(() => alertCts.IsCancellationRequested, TimeSpan.FromSeconds(5));
+        alertCts.IsCancellationRequested.ShouldBeTrue(); // bare wake word dismissed the alert
+
+        await host.StopAsync(CancellationToken.None);
+        listener.Stop();
+        await cts.CancelAsync();
+        try
+        { await fakeSatellite; }
+        catch { /* cancellation */ }
+    }
+
     private static async Task WaitForCountAsync(List<string> list, int count, TimeSpan timeout)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();

@@ -179,6 +179,9 @@ public sealed class WyomingSatelliteHost(
                 {
                     case "run-pipeline":
                     case "audio-start":
+                        // Waking the satellite during an active alert dismisses it — no spoken command
+                        // needed (the satellite mics only on local wake).
+                        alerts.Acknowledge(id);
                         coordinator.OnWake();
                         break;
 
@@ -296,8 +299,8 @@ public sealed class WyomingSatelliteHost(
             var dispatched = await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
             if (dispatched)
             {
-                // A real utterance reached the agent — treat it as acknowledgment of any active alert on
-                // this satellite (the satellite mics only on local wake, so this is the dismissal path).
+                // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
+                // where a wake event was not observed. The registry makes a second Acknowledge a no-op.
                 alerts.Acknowledge(session.SatelliteId);
             }
             return dispatched;
