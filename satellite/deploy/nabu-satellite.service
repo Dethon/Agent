@@ -29,7 +29,8 @@ ExecStart=/usr/local/bin/nabu-satellite \
   --mic-command "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw" \
   --snd-command "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \
   --preroll-ms 1000 \
-  --wake-playback-ms 500
+  --wake-playback-ms 500 \
+  --threshold 0.4
 Environment=RUST_LOG=info
 Restart=always
 RestartSec=2

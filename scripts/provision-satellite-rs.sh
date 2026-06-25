@@ -27,13 +27,20 @@ mic=${2:-}     # empty => auto-detect the USB audio card, address it by name
 "$(dirname "$0")/../satellite/scripts/build-release.sh"
 bin="$(dirname "$0")/../satellite/target/aarch64-unknown-linux-musl/release/nabu-satellite"
 
-ssh "$host" "sudo apt-get install -y alsa-utils"   # arecord/aplay only; no Python
-scp "$bin" "$host:/tmp/nabu-satellite"
-scp "$(dirname "$0")/../satellite/deploy/nabu-satellite.service" "$host:/tmp/"
+# Multiplex every ssh/scp below over ONE shared connection (ControlMaster), so password auth is
+# entered exactly once instead of per-connection. The first command opens the master; the rest
+# reuse the socket. The trap closes it (ControlPersist is just a safety net if the script dies).
+ctl=$(mktemp -u "${TMPDIR:-/tmp}/nabu-ssh-XXXXXX")
+SSHOPTS=(-o ControlMaster=auto -o ControlPath="$ctl" -o ControlPersist=120)
+trap 'ssh -o ControlPath="$ctl" -O exit "$host" 2>/dev/null || true; rm -f "$ctl"' EXIT
+
+ssh "${SSHOPTS[@]}" "$host" "sudo apt-get install -y alsa-utils"   # arecord/aplay only; no Python
+scp "${SSHOPTS[@]}" "$bin" "$host:/tmp/nabu-satellite"
+scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-satellite.service" "$host:/tmp/"
 
 # Quoted heredoc + MIC env var: nothing is expanded locally; the remote bash evaluates
 # everything (and reads MIC from the command-prefix assignment).
-ssh "$host" MIC="${mic}" bash -se <<'EOF'
+ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" bash -se <<'EOF'
   set -euo pipefail
   sudo install -m755 /tmp/nabu-satellite /usr/local/bin/nabu-satellite
   user=$(whoami)
