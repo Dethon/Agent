@@ -17,6 +17,11 @@ use tracing::{info, warn};
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum Mode { Idle, Streaming }
 
+/// Play-to-wake retry ceiling: a single silent buffer wakes the Jabra ~2/3 of the time from
+/// deep sleep, so a generous cap makes a cold first connection effectively certain to catch
+/// (~5 s worst case at 500 ms/attempt) while still bounding a genuinely absent mic.
+const MIC_WAKE_MAX_ATTEMPTS: u32 = 20;
+
 /// Aborts the wrapped task on drop, so the pump tasks can never outlive run_connection —
 /// neither on loop exit / `?` error paths, nor when the whole connection task is aborted
 /// (main.rs single-hub supersede policy; the mic pump owns MicCapture, whose kill_on_drop
@@ -37,7 +42,13 @@ pub async fn run_connection(
     reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: Config, models: Option<WakeModels>,
 ) -> anyhow::Result<()> {
     let mut wr = writer;
-    let mic = MicCapture::spawn(&cfg.mic_command)?;
+    // Wake a firmware-sleeping mic (Jabra Speak2) by playing silence before opening capture;
+    // wake_playback_ms == 0 keeps the direct single-open path for mics that don't sleep.
+    let mic = if cfg.wake_playback_ms > 0 {
+        MicCapture::warm(&cfg.mic_command, &cfg.snd_command, cfg.wake_playback_ms, MIC_WAKE_MAX_ATTEMPTS).await?
+    } else {
+        MicCapture::spawn(&cfg.mic_command)?
+    };
     let mut detector =
         models.as_ref().map(|m| WakeDetector::new(m, cfg.detector.clone())).transpose()?;
     let cues = Cues::new(&cfg)?;

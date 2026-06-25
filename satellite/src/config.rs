@@ -33,6 +33,8 @@ pub struct Config {
     pub led: LedConfig,         // activity LED; default = none, --led-spi / --led-gpio opt in
     pub preroll_ms: u32,        // zero-lag: how much recent audio to flush to the hub on trigger
     pub wake_preroll_ms: u32,   // wake-path flush: detection-latency gap only, NOT the wake word
+    pub wake_playback_ms: u32,  // play-to-wake: ms of silence played before opening the mic to
+                                // wake firmware-sleeping mics (Jabra Speak2); 0 = disabled
     pub awake_cue: bool,
     pub done_cue: bool,
 }
@@ -63,6 +65,7 @@ impl Default for Config {
             led: LedConfig::None, // no LED on a Jabra build; --led-spi (HAT APA102s) or --led-gpio opt in
             preroll_ms: 1000,
             wake_preroll_ms: 240, // covers the ~181 ms measured detection latency with margin
+            wake_playback_ms: 0,  // opt-in (provisioning enables it for the Jabra); see warm_mic
             awake_cue: true,
             done_cue: true,
         }
@@ -74,6 +77,7 @@ impl Config {
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
     ///        --led-spi | --led-gpio <pin> | --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
+    ///        --wake-playback-ms <ms> | --no-wake-playback
     pub fn from_args() -> anyhow::Result<Self> {
         Self::parse(pico_args::Arguments::from_env())
     }
@@ -86,6 +90,8 @@ impl Config {
         if let Some(v) = pa.opt_value_from_str::<_, f32>("--threshold")? { c.detector.threshold = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--preroll-ms")? { c.preroll_ms = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-preroll-ms")? { c.wake_preroll_ms = v; }
+        if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-playback-ms")? { c.wake_playback_ms = v; }
+        if pa.contains("--no-wake-playback") { c.wake_playback_ms = 0; }
         if pa.contains("--no-wake") { c.wake_enabled = false; }
         if pa.contains("--no-awake-cue") { c.awake_cue = false; }
         if pa.contains("--no-done-cue") { c.done_cue = false; }
@@ -152,6 +158,23 @@ mod tests {
     fn no_led_flag_parses() {
         let c = Config::parse(args(&["--no-led"])).unwrap();
         assert_eq!(c.led, LedConfig::None);
+    }
+
+    #[test]
+    fn wake_playback_defaults_to_disabled() {
+        assert_eq!(Config::default().wake_playback_ms, 0);
+    }
+
+    #[test]
+    fn wake_playback_ms_flag_parses() {
+        let c = Config::parse(args(&["--wake-playback-ms", "500"])).unwrap();
+        assert_eq!(c.wake_playback_ms, 500);
+    }
+
+    #[test]
+    fn no_wake_playback_flag_overrides_the_value() {
+        let c = Config::parse(args(&["--wake-playback-ms", "500", "--no-wake-playback"])).unwrap();
+        assert_eq!(c.wake_playback_ms, 0);
     }
 
     #[test]
