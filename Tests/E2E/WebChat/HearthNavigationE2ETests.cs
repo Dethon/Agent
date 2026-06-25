@@ -35,8 +35,33 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
 
         // Tapping the handle cycles to half/full and reveals the search field.
-        await page.Locator(".hearth-handle").ClickAsync();
-        await page.Locator(".hearth-handle").ClickAsync();
+        await TapHearthHandleAsync(page);
+        await TapHearthHandleAsync(page);
         await Assertions.Expect(page.Locator(".hearth-search-input")).ToBeVisibleAsync();
+    }
+
+    // A pending approval leaked by a sibling test (the approval-flow tests in WebChatE2ETests)
+    // can be replayed onto this fresh page by StreamResumeService, raising a full-viewport
+    // .approval-modal-overlay (z-index 1000) that intercepts the handle tap and fails the click
+    // with "<div class=\"approval-modal-overlay\">…</div> intercepts pointer events". The overlay
+    // arrives via a fire-and-forget SignalR chain, so it can show up before the first tap or
+    // between taps — dismiss it and retry, the same guard the sibling tests use.
+    private static async Task TapHearthHandleAsync(IPage page)
+    {
+        var handle = page.Locator(".hearth-handle");
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            await WebChatE2ETests.DismissApprovalOverlayAsync(page);
+            try
+            {
+                await handle.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                return;
+            }
+            catch (TimeoutException) when (attempt < 2)
+            {
+                // Overlay re-armed between dismissal and the click; loop to dismiss and retry.
+            }
+        }
     }
 }
