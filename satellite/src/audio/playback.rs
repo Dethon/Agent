@@ -169,6 +169,18 @@ async fn play_cue(snd_command: &str, pcm: &[u8]) -> anyhow::Result<()> {
     p.finish().await
 }
 
+/// Play `ms` of silence through the playback device, then drain and exit. Used to wake a mic
+/// whose firmware sleeps when idle: the Jabra Speak2 wakes its capture ADC when the speaker
+/// stream opens, so a brief silent buffer before the mic open re-arms capture (capture-only
+/// opens race the ADC power-up and return EIO). 22050 Hz mono S16LE matches the satellite's
+/// fixed playback format, so the byte count maps directly to `ms`.
+pub async fn play_silence(snd_command: &str, ms: u32) -> anyhow::Result<()> {
+    let mut sink = PlaybackSink::start(snd_command)?;
+    let bytes = (22_050usize * 2 * ms as usize) / 1000; // 22050 Hz * 2 bytes/sample (mono)
+    sink.write_pcm(&vec![0u8; bytes]).await?;
+    sink.finish().await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,6 +220,12 @@ mod tests {
         let d = done_rx.recv().await.unwrap();
         assert!(d.result.is_ok(), "stream must not race the cue for the device: {:?}", d.result);
         let _ = std::fs::remove_file(lock);
+    }
+
+    #[tokio::test]
+    async fn play_silence_writes_and_drains() {
+        // `cat >/dev/null` stands in for aplay: consumes the silence and exits on stdin EOF.
+        play_silence("cat >/dev/null", 50).await.unwrap();
     }
 
     #[tokio::test]
