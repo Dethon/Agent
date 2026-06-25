@@ -50,7 +50,9 @@ public sealed class MultiAgentFactory(
             ? new AgentMetricsPublisher(metricsPublisher, definition.Name)
             : null;
 
-        var chatClient = CreateChatClient(definition.Model, agentPublisher, definition.MaxContextTokens);
+        var chatClient = CreateChatClient(
+            definition.Model, agentPublisher, definition.MaxContextTokens,
+            sessionId: $"subagent-{definition.Id}:{Guid.NewGuid():N}");
 
         var effectiveClient = new ToolApprovalChatClient(
             chatClient,
@@ -94,7 +96,9 @@ public sealed class MultiAgentFactory(
         var agentPublisher = metricsPublisher is not null
             ? new AgentMetricsPublisher(metricsPublisher, definition.Name)
             : metricsPublisher;
-        var chatClient = CreateChatClient(definition.Model, agentPublisher, definition.MaxContextTokens);
+        var chatClient = CreateChatClient(
+            definition.Model, agentPublisher, definition.MaxContextTokens,
+            sessionId: $"{definition.Id}:{agentKey.ConversationId}");
         var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
 
         var name = $"{definition.Name}-{agentKey.ConversationId}";
@@ -154,7 +158,8 @@ public sealed class MultiAgentFactory(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    private IChatClient CreateChatClient(string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null)
+    private IChatClient CreateChatClient(
+        string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null, string? sessionId = null)
     {
         var effectivePublisher = publisher ?? metricsPublisher;
         var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
@@ -169,7 +174,8 @@ public sealed class MultiAgentFactory(
             openRouterConfig.ApiKey,
             model,
             effectiveContext,
-            effectivePublisher);
+            effectivePublisher,
+            sessionId);
     }
 }
 
