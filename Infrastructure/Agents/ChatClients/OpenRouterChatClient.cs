@@ -29,12 +29,13 @@ public sealed class OpenRouterChatClient : IChatClient
         string apiKey,
         string model,
         int? maxContextTokens = null,
-        IMetricsPublisher? metricsPublisher = null)
+        IMetricsPublisher? metricsPublisher = null,
+        string? sessionId = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
-        _httpClient = CreateHttpClient(_reasoningQueue, _costQueue);
+        _httpClient = CreateHttpClient(_reasoningQueue, _costQueue, sessionId);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
     }
@@ -259,20 +260,20 @@ public sealed class OpenRouterChatClient : IChatClient
     internal static SocketsHttpHandler SharedHandler => _sharedHandler;
 
     private static HttpClient CreateHttpClient(
-        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue)
+        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue, string? sessionId)
     {
-        var handler = new ReasoningHandler(reasoningQueue, costQueue) { InnerHandler = _sharedHandler };
+        var handler = new ReasoningHandler(reasoningQueue, costQueue, sessionId) { InnerHandler = _sharedHandler };
         return new HttpClient(handler, disposeHandler: false);
     }
 
     private sealed class ReasoningHandler(
-        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue) : DelegatingHandler
+        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue, string? sessionId) : DelegatingHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            await OpenRouterHttpHelpers.FixEmptyAssistantContentWithToolCalls(request, cancellationToken);
+            await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, sessionId, cancellationToken);
             var response = await base.SendAsync(request, cancellationToken);
 
             if (response.Content.Headers.ContentType?.MediaType?.Equals("text/event-stream",
