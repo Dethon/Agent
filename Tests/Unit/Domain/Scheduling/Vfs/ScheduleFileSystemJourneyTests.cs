@@ -19,7 +19,7 @@ public class ScheduleFileSystemJourneyTests
 {
     private const string ValidSpec = """{"prompt":"summarize news","cron":"0 8 * * *"}""";
 
-    private static readonly TimeZoneInfo TestZone =
+    private static readonly TimeZoneInfo _testZone =
         TimeZoneInfo.CreateCustomTimeZone("test-plus2", TimeSpan.FromHours(2), "test-plus2", "test-plus2");
 
     private static ScheduleFileSystem Build(
@@ -32,7 +32,7 @@ public class ScheduleFileSystemJourneyTests
             : agents;
         catalog.Replace(entries);
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        clock.SetLocalTimeZone(TestZone);
+        clock.SetLocalTimeZone(_testZone);
         return new ScheduleFileSystem(store ?? new FakeScheduleStore(), catalog, new CronValidator(), clock);
     }
 
