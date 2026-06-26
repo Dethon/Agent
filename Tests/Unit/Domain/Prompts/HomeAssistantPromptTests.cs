@@ -16,4 +16,16 @@ public class HomeAssistantPromptTests
         prompt.ShouldContain("rrule");        // recurrence
         prompt.ShouldContain("insistent` (an object"); // nested insistent object, not a top-level boolean flag
     }
+
+    [Fact]
+    public void SystemPrompt_TeachesMusicPlaybackAndGroupingIdiom()
+    {
+        var prompt = HomeAssistantPrompt.SystemPrompt;
+
+        prompt.ShouldContain("Music playback");
+        prompt.ShouldContain("music_assistant.play_media");
+        prompt.ShouldContain("media_player.join");
+        prompt.ShouldContain("media_player.unjoin");
+        prompt.ShouldContain("speaking room"); // default target is the room the request came from
+    }
 }
