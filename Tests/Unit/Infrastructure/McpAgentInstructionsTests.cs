@@ -18,7 +18,8 @@ public class McpAgentInstructionsTests
             domainPrompts: [],
             fileSystemPrompts: [],
             clientPrompts: [],
-            now: fixedTime);
+            now: fixedTime,
+            zone: TimeZoneInfo.Utc);
 
         result.ShouldStartWith("Today is Friday, 2026-05-15.");
     }
@@ -35,7 +36,8 @@ public class McpAgentInstructionsTests
             domainPrompts: [],
             fileSystemPrompts: [],
             clientPrompts: [],
-            now: fixedTime);
+            now: fixedTime,
+            zone: TimeZoneInfo.Utc);
 
         result.ShouldContain(BasePrompt.Instructions);
         result.IndexOf("Today is").ShouldBeLessThan(result.IndexOf(BasePrompt.Instructions));
@@ -53,7 +55,8 @@ public class McpAgentInstructionsTests
             domainPrompts: ["DOMAIN"],
             fileSystemPrompts: ["FS"],
             clientPrompts: ["CLIENT"],
-            now: fixedTime);
+            now: fixedTime,
+            zone: TimeZoneInfo.Utc);
 
         // User custom instructions go last so they are the most recent guidance the
         // model sees, not buried at the top above the tool/MCP prompts.
@@ -74,7 +77,8 @@ public class McpAgentInstructionsTests
             domainPrompts: ["DOMAIN"],
             fileSystemPrompts: ["FS"],
             clientPrompts: ["CLIENT"],
-            now: fixedTime);
+            now: fixedTime,
+            zone: TimeZoneInfo.Utc);
 
         result.ShouldContain("CUSTOM");
         result.ShouldContain("DOMAIN");
@@ -95,7 +99,8 @@ public class McpAgentInstructionsTests
             domainPrompts: [],
             fileSystemPrompts: [],
             clientPrompts: [],
-            now: fixedTime);
+            now: fixedTime,
+            zone: TimeZoneInfo.Utc);
 
         result.ShouldContain("## Identity");
         result.ShouldContain("You are Mycroft. Voice assistant.");
@@ -113,7 +118,8 @@ public class McpAgentInstructionsTests
             domainPrompts: ["DOMAIN"],
             fileSystemPrompts: [],
             clientPrompts: [],
-            now: fixedTime);
+            now: fixedTime,
+            zone: TimeZoneInfo.Utc);
 
         result.IndexOf(BasePrompt.Instructions, StringComparison.Ordinal)
             .ShouldBeLessThan(result.IndexOf("## Identity", StringComparison.Ordinal));
@@ -133,8 +139,28 @@ public class McpAgentInstructionsTests
             domainPrompts: [],
             fileSystemPrompts: [],
             clientPrompts: [],
-            now: fixedTime);
+            now: fixedTime,
+            zone: TimeZoneInfo.Utc);
 
         result.ShouldNotContain("## Identity");
+    }
+
+    [Fact]
+    public void BuildInstructions_NamesZoneAndOffset()
+    {
+        var madrid = TimeZoneInfo.CreateCustomTimeZone("Europe/Madrid", TimeSpan.FromHours(2), "Madrid", "Madrid");
+        var now = new DateTimeOffset(2026, 7, 1, 16, 40, 0, TimeSpan.FromHours(2));
+
+        var result = McpAgent.BuildInstructions(
+            name: "TestAgent",
+            description: null,
+            customInstructions: null,
+            domainPrompts: [],
+            fileSystemPrompts: [],
+            clientPrompts: [],
+            now: now,
+            zone: madrid);
+
+        result.ShouldStartWith("Today is Wednesday, 2026-07-01. Current local time is 16:40 (Europe/Madrid, UTC+02:00).");
     }
 }
