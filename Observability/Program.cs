@@ -16,6 +16,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<MetricsQueryService>();
 builder.Services.AddHostedService<MetricsCollectorService>();
+builder.Services.AddHttpClient();
+builder.Services.AddHostedService<HttpHealthProbeService>();
 
 if (!builder.Environment.IsProduction())
 {
