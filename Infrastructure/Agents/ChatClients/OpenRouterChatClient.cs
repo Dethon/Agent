@@ -23,6 +23,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly IMetricsPublisher? _metricsPublisher;
     private readonly int? _maxContextTokens;
     private readonly string _model;
+    private readonly TimeProvider _timeProvider;
 
     public OpenRouterChatClient(
         string endpoint,
@@ -30,11 +31,13 @@ public sealed class OpenRouterChatClient : IChatClient
         string model,
         int? maxContextTokens = null,
         IMetricsPublisher? metricsPublisher = null,
-        string? sessionId = null)
+        string? sessionId = null,
+        TimeProvider? timeProvider = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _httpClient = CreateHttpClient(_reasoningQueue, _costQueue, sessionId);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
@@ -44,11 +47,13 @@ public sealed class OpenRouterChatClient : IChatClient
         IChatClient innerClient,
         string model,
         int? maxContextTokens = null,
-        IMetricsPublisher? metricsPublisher = null)
+        IMetricsPublisher? metricsPublisher = null,
+        TimeProvider? timeProvider = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _client = innerClient;
     }
 
@@ -90,11 +95,15 @@ public sealed class OpenRouterChatClient : IChatClient
                         (false, false) => $"Message from {msgSender}"
                     };
 
+                var localTimestamp = timestamp is { } ts
+                    ? TimeZoneInfo.ConvertTime(ts, _timeProvider.LocalTimeZone)
+                    : (DateTimeOffset?)null;
+
                 var prefix = (senderSegment, timestamp) switch
                 {
-                    (not null, not null) => $"[Current time: {timestamp:yyyy-MM-dd HH:mm:ss zzz}] {senderSegment}:\n",
+                    (not null, not null) => $"[Current time: {localTimestamp:yyyy-MM-dd HH:mm:ss zzz}] {senderSegment}:\n",
                     (not null, null) => $"{senderSegment}:\n",
-                    (null, not null) => $"[Current time: {timestamp:yyyy-MM-dd HH:mm:ss zzz}]:\n",
+                    (null, not null) => $"[Current time: {localTimestamp:yyyy-MM-dd HH:mm:ss zzz}]:\n",
                     _ => ""
                 };
                 newMessage.Contents = newMessage.Contents
@@ -142,7 +151,7 @@ public sealed class OpenRouterChatClient : IChatClient
         await foreach (var update in _client.GetStreamingResponseAsync(truncated, options, ct))
         {
             AppendReasoningContent(update);
-            update.SetTimestamp(DateTimeOffset.UtcNow);
+            update.SetTimestamp(_timeProvider.GetUtcNow());
 
             var updateUsage = update.Contents.OfType<UsageContent>().FirstOrDefault();
             if (updateUsage is not null)
