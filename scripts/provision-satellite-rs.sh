@@ -131,17 +131,23 @@ ASOUND
 
     # snapclient unit -> hub Snapcast :1704, output into the softvol PCM.
     sudo usermod -aG audio "$user"
-    sudo sed "s/%i/$user/g; s/HUBHOST/${MUSIC_HUB}/g; s/ROOM/${MUSIC_ROOM:-$cardname}/g" \
+    sudo sed "s|%i|$user|g; s|HUBHOST|${MUSIC_HUB}|g; s|ROOM|${MUSIC_ROOM:-$cardname}|g" \
       /tmp/snapclient.service | sudo tee /etc/systemd/system/snapclient.service >/dev/null
     sudo systemctl daemon-reload
     sudo systemctl enable snapclient.service
     sudo systemctl restart snapclient.service
+  else
+    # downgrade / voice-only: tear down any prior music install so a re-provisioned
+    # Pi returns to exactly the voice-only state (no orphaned restart-looping snapclient).
+    sudo systemctl disable --now snapclient.service 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/snapclient.service
+    sudo systemctl daemon-reload
   fi
 
   # Template the satellite unit: mic device stays plughw (capture untouched), snd device may be
   # duckmix (music) or plughw (voice), %i -> user, and the music flags line substituted/stripped.
-  sudo sed -e "/arecord/ s#plughw:0,0#${dev}#" \
-           -e "/aplay/  s#plughw:0,0#${snddev}#" \
+  sudo sed -e "/--mic-command/ s#plughw:0,0#${dev}#" \
+           -e "/--snd-command/ s#plughw:0,0#${snddev}#" \
            -e "s/%i/$user/g" \
            "${music_sed[@]}" \
            /tmp/nabu-satellite.service | sudo tee /etc/systemd/system/nabu-satellite.service >/dev/null
