@@ -93,16 +93,22 @@ public static class HomeAssistantPrompt
         `exec delete_event.sh ...` / `exec update_event.sh ...` on the event.
 
         ### Music playback
-        Each room's satellite is a `media_player.<room>` (a Music Assistant / Snapcast player in
-        that HA area). To play music, run the player's action via `/ha`:
-        - Play by name (artist/track/playlist/radio): `music_assistant.play_media` with
-          `media_id` set to the search text, e.g. `media_id: "miles davis"`. Default the target to
-          the **speaking room** (`media_player.<room>` for the room the request came from) unless
-          another room is named; "everywhere" => target all room players.
-        - Transport: `media_player.media_play` / `media_pause` / `media_next_track` /
-          `volume_set` on the target player.
-        - Grouping (synced multi-room): `media_player.join` (target = one player, `group_members` =
-          the others) to play in sync; `media_player.unjoin` to split a room back out.
+        Each room's satellite is a `media_player.<room>` (a Music Assistant / Snapcast player in that
+        HA area). The player directory holds two `play_media` actions — use the Music Assistant one,
+        which resolves names; never the bare one:
+        - Play by name: from the player directory, `exec music_assistant.play_media.sh --media_id
+          "<search text>"` — an artist, track, album, playlist, or radio-station name, e.g.
+          `--media_id "miles davis"`. Add `--media_type artist|album|track|playlist|radio` to
+          disambiguate when the name alone is unclear. Default the target to the **speaking room**
+          (`media_player.<room>` for the room the request came from) unless another room is named;
+          "everywhere" => run it on every room player.
+        - Do NOT use the bare `play_media.sh` (`media_player.play_media`): it needs a concrete
+          `media_content_id`/URI you cannot know, so guessing a playlist id there just fails. Only
+          `music_assistant.play_media.sh` searches by name.
+        - Transport: `media_play.sh` / `media_pause.sh` / `media_next_track.sh` / `volume_set.sh` on
+          the player.
+        - Grouping (synced multi-room): `join.sh` (`media_player.join`; `--group_members` = the other
+          players) to play in sync; `unjoin.sh` (`media_player.unjoin`) to split a room back out.
         Music ducks automatically while the satellite speaks — never lower or pause music just to
         talk.
 

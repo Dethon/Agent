@@ -56,6 +56,23 @@ public class HaTreeTests
     }
 
     [Fact]
+    public void Files_ExposesCrossDomainServiceWithQualifiedName_NoCollision()
+    {
+        var cat = new HaCatalog(
+            [Entity("media_player.office", "idle")],
+            [
+                Service("media_player", "play_media", DomainTarget("media_player")),
+                Service("music_assistant", "play_media", DomainTarget("media_player"))
+            ],
+            []);
+
+        var files = HaTree.Files(cat);
+
+        files.ShouldContain("entities/media_player/office/play_media.sh");
+        files.ShouldContain("entities/media_player/office/music_assistant.play_media.sh");
+    }
+
+    [Fact]
     public void Glob_TrailingSlash_ReturnsDirectoriesOnly_MarkedWithSlash()
     {
         HaTree.Glob(Cat(), "entities/light", "*/").ShouldBe(["entities/light/kitchen/"]);
