@@ -104,7 +104,14 @@ pub async fn run_connection(
     // LED is claimed per-connection like the button; guard drop (connection end/supersede)
     // aborts the render task, whose backend turns the light off on drop.
     let (led_tx, led_rx) = watch::channel(LedState::Idle);
+    let duck_rx = led_tx.subscribe();
     let _led_guard = led::spawn_led(&cfg.led, led_rx);
+    let _duck_guard = crate::music::spawn_duck(
+        duck_rx,
+        cfg.music_mixer.clone(),
+        cfg.music_card.clone(),
+        cfg.duck_percent,
+    );
     let ctx = Ctx { cues: &cues, led: &led_tx };
 
     // Playback is a pump task too: PlaybackSink::finish() waits for the player to drain
