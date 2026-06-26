@@ -33,8 +33,15 @@ impl DuckerBackend {
     }
 }
 
+// Duck ONLY while the satellite is actually speaking (TTS playing). Ducking on every non-Idle
+// state (Listening/Thinking too) leaked: those states can persist — a turn that ends with no
+// spoken reply sticks in Thinking, and a follow-up window sits in Listening — leaving music ducked
+// with no event to restore it until the connection ends (only a satellite restart, via
+// DuckGuard::drop, recovered). Speaking is the one non-Idle state always terminated by a playback
+// drain (apply_drain_done -> Idle/Listening), so keying the duck to it guarantees the restore and
+// matches the contract: "music ducks while the satellite speaks".
 fn target_percent(state: LedState, duck_percent: u8) -> u8 {
-    if state == LedState::Idle { 100 } else { duck_percent }
+    if state == LedState::Speaking { duck_percent } else { 100 }
 }
 
 async fn duck_loop(mut rx: watch::Receiver<LedState>, mut backend: DuckerBackend, duck_percent: u8) {
@@ -106,12 +113,15 @@ mod tests {
     }
 
     #[test]
-    fn idle_is_full_active_is_ducked() {
-        assert_eq!(target_percent(LedState::Idle, 20), 100);
-        assert_eq!(target_percent(LedState::Listening, 20), 20);
-        assert_eq!(target_percent(LedState::Thinking, 20), 20);
+    fn only_speaking_ducks_other_states_full() {
+        // Duck ONLY while the satellite is actually speaking. Listening/Thinking can persist (a
+        // no-reply turn sticks in Thinking, a follow-up window sits in Listening), so ducking on
+        // them would leave music quiet with no event to restore it.
         assert_eq!(target_percent(LedState::Speaking, 20), 20);
-        assert_eq!(target_percent(LedState::Listening, 35), 35);
+        assert_eq!(target_percent(LedState::Idle, 20), 100);
+        assert_eq!(target_percent(LedState::Listening, 20), 100);
+        assert_eq!(target_percent(LedState::Thinking, 20), 100);
+        assert_eq!(target_percent(LedState::Speaking, 35), 35); // honors duck_percent
     }
 
     async fn wait_for(log: &Arc<Mutex<Vec<u8>>>, len: usize) {
@@ -123,7 +133,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ducks_on_active_dedups_and_restores_on_idle() {
+    async fn ducks_on_speaking_and_restores_when_it_ends() {
         let (tx, rx) = watch::channel(LedState::Idle);
         let (log, backend) = probe();
         let h = tokio::spawn(duck_loop(rx, backend, 20));
@@ -131,17 +141,42 @@ mod tests {
         wait_for(&log, 1).await;                 // initial Idle -> 100
         assert_eq!(log.lock().unwrap()[0], 100);
 
-        tx.send(LedState::Listening).unwrap();
-        wait_for(&log, 2).await;                 // -> 20
+        tx.send(LedState::Speaking).unwrap();    // satellite speaks -> duck 20
+        wait_for(&log, 2).await;
         assert_eq!(log.lock().unwrap()[1], 20);
 
-        tx.send(LedState::Speaking).unwrap();    // active -> active, same 20: deduped (no new call)
-        tx.send(LedState::Idle).unwrap();
-        wait_for(&log, 3).await;                 // -> 100
+        tx.send(LedState::Idle).unwrap();        // speech ends -> restore 100
+        wait_for(&log, 3).await;
         assert_eq!(log.lock().unwrap()[2], 100);
 
         drop(tx);
         let _ = h.await;
-        assert_eq!(log.lock().unwrap().len(), 3, "active->active must not re-issue an amixer call");
+        assert_eq!(log.lock().unwrap().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn non_speaking_states_do_not_reduck() {
+        let (tx, rx) = watch::channel(LedState::Idle);
+        let (log, backend) = probe();
+        let h = tokio::spawn(duck_loop(rx, backend, 20));
+
+        wait_for(&log, 1).await;                 // initial Idle -> 100
+        assert_eq!(log.lock().unwrap()[0], 100);
+
+        // Listening and Thinking both target full volume (== current applied) so they must NOT
+        // issue another amixer call; the first new call comes only when the satellite speaks.
+        tx.send(LedState::Listening).unwrap();
+        tx.send(LedState::Thinking).unwrap();
+        tx.send(LedState::Speaking).unwrap();
+        wait_for(&log, 2).await;
+        assert_eq!(log.lock().unwrap()[1], 20);
+
+        drop(tx);
+        let _ = h.await;
+        assert_eq!(
+            log.lock().unwrap().len(),
+            2,
+            "non-speaking states must not re-issue an amixer call"
+        );
     }
 }
