@@ -92,6 +92,20 @@ public static class HomeAssistantPrompt
         To change or cancel: list with `exec get_events.sh ...`, then
         `exec delete_event.sh ...` / `exec update_event.sh ...` on the event.
 
+        ### Music playback
+        Each room's satellite is a `media_player.<room>` (a Music Assistant / Snapcast player in
+        that HA area). To play music, run the player's action via `/ha`:
+        - Play by name (artist/track/playlist/radio): `music_assistant.play_media` with
+          `media_id` set to the search text, e.g. `media_id: "miles davis"`. Default the target to
+          the **speaking room** (`media_player.<room>` for the room the request came from) unless
+          another room is named; "everywhere" => target all room players.
+        - Transport: `media_player.media_play` / `media_pause` / `media_next_track` /
+          `volume_set` on the target player.
+        - Grouping (synced multi-room): `media_player.join` (target = one player, `group_members` =
+          the others) to play in sync; `media_player.unjoin` to split a room back out.
+        Music ducks automatically while the satellite speaks — never lower or pause music just to
+        talk.
+
         ### Notes
 
         - `state.json` always reflects HA's current stored state (nothing is cached
