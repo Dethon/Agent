@@ -7,12 +7,12 @@ namespace Tests.Unit.McpChannelVoice;
 
 public class InsistentPlanTests
 {
-    private static readonly InsistentDefaults Defaults = new();
+    private static readonly InsistentDefaults _defaults = new();
 
     [Fact]
     public void Resolve_NullOptions_UsesDefaults()
     {
-        var plan = InsistentPlan.Resolve(null, Defaults);
+        var plan = InsistentPlan.Resolve(null, _defaults);
 
         plan.Gap.ShouldBe(TimeSpan.FromSeconds(30));
         plan.MaxRepeats.ShouldBe(5);
@@ -22,7 +22,7 @@ public class InsistentPlanTests
     [Fact]
     public void Resolve_RequestOverridesGapAndRepeats()
     {
-        var plan = InsistentPlan.Resolve(new InsistentOptions { GapSeconds = 10, MaxRepeats = 3 }, Defaults);
+        var plan = InsistentPlan.Resolve(new InsistentOptions { GapSeconds = 10, MaxRepeats = 3 }, _defaults);
 
         plan.Gap.ShouldBe(TimeSpan.FromSeconds(10));
         plan.MaxRepeats.ShouldBe(3);
@@ -33,7 +33,7 @@ public class InsistentPlanTests
     {
         // A request that sets only MaxDurationSeconds must be bounded by duration, not also
         // silently capped at the default repeat count.
-        var plan = InsistentPlan.Resolve(new InsistentOptions { MaxDurationSeconds = 120 }, Defaults);
+        var plan = InsistentPlan.Resolve(new InsistentOptions { MaxDurationSeconds = 120 }, _defaults);
 
         plan.MaxRepeats.ShouldBe(int.MaxValue);
         plan.MaxDuration.ShouldBe(TimeSpan.FromSeconds(120));
@@ -42,7 +42,7 @@ public class InsistentPlanTests
     [Fact]
     public void Resolve_NonPositiveDuration_IsTreatedAsNoDurationCap()
     {
-        var plan = InsistentPlan.Resolve(new InsistentOptions { MaxDurationSeconds = 0 }, Defaults);
+        var plan = InsistentPlan.Resolve(new InsistentOptions { MaxDurationSeconds = 0 }, _defaults);
 
         plan.MaxDuration.ShouldBeNull();
         plan.MaxRepeats.ShouldBe(5);
