@@ -11,8 +11,8 @@ public sealed class HttpHealthProbeService(
     IConfiguration configuration,
     ILogger<HttpHealthProbeService> logger) : BackgroundService
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan KeyTtl = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan _interval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _keyTtl = TimeSpan.FromSeconds(60);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -52,7 +52,7 @@ public sealed class HttpHealthProbeService(
 
             try
             {
-                await Task.Delay(Interval, stoppingToken);
+                await Task.Delay(_interval, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -65,7 +65,7 @@ public sealed class HttpHealthProbeService(
     {
         var now = DateTimeOffset.UtcNow;
         await Task.WhenAll(
-            db.StringSetAsync($"metrics:health:{service}", now.ToString("o"), KeyTtl),
+            db.StringSetAsync($"metrics:health:{service}", now.ToString("o"), _keyTtl),
             db.SetAddAsync("metrics:health:known", service));
         await hubContext.Clients.All.SendAsync(
             "OnHealthUpdate", new ServiceHealthUpdate(service, true, now), ct);
