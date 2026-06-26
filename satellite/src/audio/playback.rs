@@ -14,6 +14,15 @@ impl PlaybackSink {
     pub fn start(snd_command: &str) -> anyhow::Result<Self> {
         let mut child = crate::audio::build_command(snd_command)
             .stdin(std::process::Stdio::piped())
+            // Discard aplay's stderr. On a music (ALSA dmix) unit the keep-warm idle stream emits a
+            // steady trickle of harmless `underrun!!!` xruns: dmix consumes in ~one-period bursts and
+            // discards its buffer on each xrun, so NO open-loop (timer/schedule) silence feed can keep
+            // it topped up — only device-paced back-pressure can, and that fills dmix's unshrinkable
+            // ~250 ms buffer (it tanks cue onset latency). The gaps are inaudible (idle silence) and
+            // the device stays open so the DAC stays warm — onsets are unaffected. So we keep the
+            // low-latency feed and silence the cosmetic spam. Real playback failures still surface
+            // via spawn() errors, the child exit status (finish()), and EPIPE on write — not stderr.
+            .stderr(std::process::Stdio::null())
             .kill_on_drop(true)
             .spawn()?;
         let stdin = child.stdin.take();
