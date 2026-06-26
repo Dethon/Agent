@@ -43,6 +43,10 @@ async fn duck_loop(mut rx: watch::Receiver<LedState>, mut backend: DuckerBackend
         let pct = target_percent(*rx.borrow_and_update(), duck_percent);
         if applied != Some(pct) {
             if let Err(e) = backend.set(pct).await {
+                // The softvol "Music" control is created lazily the first time snapclient opens
+                // the `music` PCM.  A very-early duck call (before snapclient has run) will fail
+                // here and disable ducking for this connection; snapclient's Restart=always keeps
+                // the control alive once it has opened, so subsequent connections self-heal.
                 warn!("music duck failed, ducking disabled for this connection: {e:#}");
                 return;
             }

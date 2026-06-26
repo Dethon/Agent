@@ -99,8 +99,10 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
     snddev="duckmix"
     music_sed=(-e "s|__MUSIC_FLAGS__|--music-mixer Music --music-card ${cardname}|")
 
-    # Shared dmix + softvol over the Jabra card, by NAME. NO pcm.!default: arecord keeps its
-    # explicit plughw capture device, so the wake-tone path is untouched.
+    # Shared dmix + softvol over the Jabra card, by NAME. NO pcm.!default: the capture command
+    # keeps its explicit plughw device (capture never contended). ALL playback — TTS, cues,
+    # keep-warm, and the play-to-wake tone (emitted on the playback path) — flows through
+    # `duckmix` for music units; the tone remains full-scale (softvol is only on `music`).
     sudo tee /etc/asound.conf >/dev/null <<ASOUND
 pcm.duckmix {
     type plug

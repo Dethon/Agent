@@ -18,9 +18,12 @@
 # Other hardware: a USB foot-switch is --button-evdev /dev/input/eventX:<keycode>; a wired
 # indicator is --led-gpio <pin>.
 # Music satellites (provision with MUSIC_HUB=<hub-host> MUSIC_ROOM=<room>) additionally get an
-# /etc/asound.conf dmix+softvol mixer; --snd-command targets the `duckmix` PCM and the unit carries
-# --music-mixer Music --music-card <name>, so the satellite ducks the `music` softvol (snapclient)
-# while it speaks. Capture (arecord) stays on direct plughw — the wake-tone path is unchanged.
+# /etc/asound.conf dmix+softvol mixer; the playback command targets the `duckmix` PCM and the unit
+# carries --music-mixer Music --music-card <name>, so the satellite ducks the `music` softvol
+# (snapclient) while it speaks. The capture command stays on direct plughw. ALL playback — TTS,
+# cues, keep-warm silence, and the play-to-wake tone — flows through `duckmix` for music units
+# (softvol attenuation applies only to the `music`/snapclient branch; the tone and TTS reach
+# `duckmix` directly at full scale). Validated on-device.
 [Unit]
 Description=Nabu Rust Wyoming Satellite (%i)
 After=network-online.target sound.target
