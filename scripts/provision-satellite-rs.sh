@@ -110,11 +110,18 @@ pcm.duckmix {
         type dmix
         ipc_key 32421
         ipc_perm 0660
+        # Pin a fine period/buffer. Without these, dmix hands clients a coarse ~125 ms period
+        # (snapclient logs "Period time too small, changing from 20000 to 125000"), too coarse for
+        # snapcast to track the server clock with inaudible single-sample corrections -> it falls
+        # back to periodic audible hard-resyncs in the music. 1024-frame periods (~21 ms) restore
+        # smooth sync; the satellite's own playback rides the same finer buffer (lower onset).
         slave {
             pcm "hw:CARD=${cardname},DEV=0"
             format S16_LE
             rate 48000
             channels 2
+            period_size 1024
+            buffer_size 8192
         }
     }
 }
