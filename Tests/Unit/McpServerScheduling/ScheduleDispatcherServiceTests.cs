@@ -45,7 +45,7 @@ public class ScheduleDispatcherServiceTests
         var store = StoreWithDue(Recurring());
         var next = new DateTime(2026, 5, 26, 8, 0, 0, DateTimeKind.Utc);
         var cron = new Mock<ICronValidator>();
-        cron.Setup(c => c.GetNextOccurrence("0 8 * * *", It.IsAny<DateTime>())).Returns(next);
+        cron.Setup(c => c.GetNextOccurrence("0 8 * * *", It.IsAny<DateTimeOffset>(), It.IsAny<TimeZoneInfo>())).Returns(next);
 
         await BuildDispatcher(store.Object, Emitter(delivers: true), cron.Object).DispatchDueAsync(CancellationToken.None);
 

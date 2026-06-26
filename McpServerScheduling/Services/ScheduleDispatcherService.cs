@@ -49,7 +49,7 @@ public sealed class ScheduleDispatcherService(
         {
             var nextRun = schedule.CronExpression is null
                 ? null
-                : cronValidator.GetNextOccurrence(schedule.CronExpression, DateTime.UtcNow);
+                : cronValidator.GetNextOccurrence(schedule.CronExpression, DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
 
             var plan = ScheduleFirePlanner.Plan(schedule, settings.DefaultDeliverTo, nextRun);
 
