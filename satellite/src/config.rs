@@ -35,6 +35,8 @@ pub struct Config {
     pub wake_preroll_ms: u32,   // wake-path flush: detection-latency gap only, NOT the wake word
     pub wake_playback_ms: u32,  // play-to-wake: ms of wake TONE played on a cold mic open to
                                 // wake firmware-sleeping mics (Jabra Speak2); 0 = disabled
+    pub keep_warm: bool,        // hold an idle silence stream open so the playback DAC stays
+                                // warm and short cues/beeps don't glitch on a cold open (Jabra)
     pub awake_cue: bool,
     pub done_cue: bool,
 }
@@ -66,6 +68,7 @@ impl Default for Config {
             preroll_ms: 1000,
             wake_preroll_ms: 240, // covers the ~181 ms measured detection latency with margin
             wake_playback_ms: 0,  // opt-in (provisioning enables it for the Jabra); see warm_mic
+            keep_warm: false,     // opt-in (the Jabra unit enables it); harmless but pointless elsewhere
             awake_cue: true,
             done_cue: true,
         }
@@ -77,7 +80,7 @@ impl Config {
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
     ///        --led-spi | --led-gpio <pin> | --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
-    ///        --wake-playback-ms <ms> | --no-wake-playback
+    ///        --wake-playback-ms <ms> | --no-wake-playback   --keep-warm | --no-keep-warm
     pub fn from_args() -> anyhow::Result<Self> {
         Self::parse(pico_args::Arguments::from_env())
     }
@@ -92,6 +95,8 @@ impl Config {
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-preroll-ms")? { c.wake_preroll_ms = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-playback-ms")? { c.wake_playback_ms = v; }
         if pa.contains("--no-wake-playback") { c.wake_playback_ms = 0; }
+        if pa.contains("--keep-warm") { c.keep_warm = true; }
+        if pa.contains("--no-keep-warm") { c.keep_warm = false; } // --no- wins if both are passed
         if pa.contains("--no-wake") { c.wake_enabled = false; }
         if pa.contains("--no-awake-cue") { c.awake_cue = false; }
         if pa.contains("--no-done-cue") { c.done_cue = false; }
@@ -175,6 +180,23 @@ mod tests {
     fn no_wake_playback_flag_overrides_the_value() {
         let c = Config::parse(args(&["--wake-playback-ms", "500", "--no-wake-playback"])).unwrap();
         assert_eq!(c.wake_playback_ms, 0);
+    }
+
+    #[test]
+    fn keep_warm_defaults_to_disabled() {
+        assert!(!Config::default().keep_warm);
+    }
+
+    #[test]
+    fn keep_warm_flag_parses() {
+        let c = Config::parse(args(&["--keep-warm"])).unwrap();
+        assert!(c.keep_warm);
+    }
+
+    #[test]
+    fn no_keep_warm_flag_overrides_keep_warm() {
+        let c = Config::parse(args(&["--keep-warm", "--no-keep-warm"])).unwrap();
+        assert!(!c.keep_warm);
     }
 
     #[test]

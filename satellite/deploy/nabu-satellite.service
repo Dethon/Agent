@@ -6,10 +6,17 @@
 # host reboot) it ignores silence too — only real audio signal wakes it. The satellite opens the
 # mic first (no tone if already awake) and retries tone+open until capture catches. No button
 # (the Jabra's onboard buttons are HID-telephony, unusable on Linux), no LED.
+# --keep-warm holds an idle silence stream open on the SPEAKER between sounds: the Jabra's
+# playback DAC spins up cold on each fresh aplay session and glitches the first ~100 ms, which
+# ruins the short cue beeps (a long TTS reply hides it). A continuously-fed silent stream keeps
+# the DAC warm so every cue/reply opens clean — with no per-beep latency (the warm-up is in the
+# background, not prepended to the sound). Verified on-device: cold beep choppy, silence-warmed
+# beep clean. reSpeaker-style devices don't need it — add --no-keep-warm there.
 # reSpeaker 2-Mic HAT variant: provision with the device arg plughw:CARD=seeed2micvoicec,DEV=0
 # (16 kHz-native, used verbatim) and add --button-gpio 17 --led-spi (APA102s need dtparam=spi=on);
-# it doesn't sleep, so --no-wake-playback is fine. Other hardware: a USB foot-switch is
-# --button-evdev /dev/input/eventX:<keycode>; a wired indicator is --led-gpio <pin>.
+# its mic doesn't sleep and its DAC doesn't glitch, so add --no-wake-playback --no-keep-warm.
+# Other hardware: a USB foot-switch is --button-evdev /dev/input/eventX:<keycode>; a wired
+# indicator is --led-gpio <pin>.
 [Unit]
 Description=Nabu Rust Wyoming Satellite (%i)
 After=network-online.target sound.target
@@ -31,6 +38,7 @@ ExecStart=/usr/local/bin/nabu-satellite \
   --snd-command "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \
   --preroll-ms 1000 \
   --wake-playback-ms 1000 \
+  --keep-warm \
   --threshold 0.4
 Environment=RUST_LOG=info
 Restart=always
