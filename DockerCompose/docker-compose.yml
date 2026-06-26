@@ -1,4 +1,10 @@
 name: jackbot
+
+# Single source of truth for the agent's operating timezone (applied to the two
+# containers that surface time to the LLM / fire schedules).
+x-timezone: &timezone
+  TZ: Europe/Madrid
+
 services:
   redis:
     image: redis/redis-stack-server:latest
@@ -463,6 +469,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -642,6 +650,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
