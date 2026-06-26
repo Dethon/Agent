@@ -29,12 +29,13 @@ impl MicCapture {
 
     /// Wake a firmware-sleeping mic, then return a capture that is already streaming. The Jabra
     /// Speak2 powers its capture ADC down when idle: capture-only opens race the wake-up and
-    /// return EIO (no software retry alone reliably wakes it), but opening the speaker stream
-    /// wakes it. So each attempt plays `wake_ms` of silence through `snd_command`, opens the
-    /// mic, and verifies it streams a chunk; the play+open is retried up to `max_attempts`
-    /// (a single silent buffer isn't always enough from deep sleep, but the device wakes
-    /// progressively and stays awake once a stream is held open). The verification chunk
-    /// (~80 ms of wake-up audio) is discarded. Errors if the mic never catches.
+    /// return EIO, and from deep sleep (e.g. after a host reboot) it ignores even silent
+    /// playback — but it wakes on real audio signal. So each attempt opens the mic and verifies
+    /// it streams a chunk; on a cold miss it plays a brief `wake_ms` tone through `snd_command`
+    /// (real signal, NOT silence) and retries, up to `max_attempts`, until capture catches; once
+    /// a stream is held open continuously the device stays awake. Opening BEFORE the tone means
+    /// an already-awake device (a warm reconnect) returns immediately and never beeps. The
+    /// verification chunk (~80 ms) is discarded. Errors if the mic never catches.
     pub async fn warm(
         mic_command: &str,
         snd_command: &str,
@@ -42,19 +43,20 @@ impl MicCapture {
         max_attempts: u32,
     ) -> anyhow::Result<Self> {
         for attempt in 1..=max_attempts {
-            // Wake the device by opening the speaker stream (silence is inaudible). Errors are
-            // non-fatal here — a missed wake just means this attempt's mic open likely fails.
-            let _ = crate::audio::playback::play_silence(snd_command, wake_ms).await;
+            // Open first: an already-awake device returns here with no wake tone.
             let mut mic = Self::spawn(mic_command)?;
             if matches!(mic.next_chunk().await, Ok(Some(_))) {
                 if attempt > 1 {
-                    tracing::info!(attempt, "mic caught after play-to-wake retries");
+                    tracing::info!(attempt, "mic woke after wake-tone retries");
                 }
                 return Ok(mic);
             }
-            // Cold start (immediate EIO / EOF): drop -> kill_on_drop reaps arecord, then retry.
+            // Cold (immediate EIO/EOF): drop -> kill_on_drop reaps arecord, then wake the ADC
+            // with a real tone (it ignores silence from deep sleep) and retry.
+            drop(mic);
+            let _ = crate::audio::playback::play_wake_tone(snd_command, wake_ms).await;
         }
-        anyhow::bail!("mic did not wake after {max_attempts} play-to-wake attempts")
+        anyhow::bail!("mic did not wake after {max_attempts} wake-tone attempts")
     }
 
     /// Returns Ok(None) when the mic stream ends (EOF). This does NOT

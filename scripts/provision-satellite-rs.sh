@@ -17,9 +17,9 @@ set -euo pipefail
 #     DEV=0 (also add --button-gpio 17 --led-spi to ExecStart and dtparam=spi=on for the HAT).
 #
 # The unit passes --wake-playback-ms 500: the Jabra Speak2's mic ADC firmware-sleeps when idle
-# and capture-only opens return EIO; the satellite plays a brief silent buffer through the
-# speaker to wake it before opening the mic. Harmless for mics that don't sleep (they catch on
-# the first attempt); pass --no-wake-playback in ExecStart for a device that never needs it.
+# and capture-only opens return EIO; from deep sleep it ignores silence too, so the satellite
+# plays a brief TONE (real signal) through the speaker on a cold mic open to wake it. Harmless
+# for mics that don't sleep (they open first try, no tone); pass --no-wake-playback to disable.
 
 host=${1:?need user@host}
 mic=${2:-}     # empty => auto-detect the USB audio card, address it by name
