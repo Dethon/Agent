@@ -39,6 +39,9 @@ pub struct Config {
                                 // warm and short cues/beeps don't glitch on a cold open (Jabra)
     pub awake_cue: bool,
     pub done_cue: bool,
+    pub music_mixer: Option<String>,   // ALSA softvol control name; None => duck feature off
+    pub music_card: Option<String>,    // amixer -c target where the softvol control lives
+    pub duck_percent: u8,              // softvol level while the satellite is active
 }
 
 impl Default for Config {
@@ -71,6 +74,9 @@ impl Default for Config {
             keep_warm: false,     // opt-in (the Jabra unit enables it); harmless but pointless elsewhere
             awake_cue: true,
             done_cue: true,
+            music_mixer: None,
+            music_card: None,
+            duck_percent: 20,
         }
     }
 }
@@ -116,6 +122,9 @@ impl Config {
         } else if let Some(pin) = pa.opt_value_from_str::<_, u8>("--led-gpio")? {
             c.led = LedConfig::Gpio(pin);
         }
+        if let Some(v) = pa.opt_value_from_str::<_, String>("--music-mixer")? { c.music_mixer = Some(v); }
+        if let Some(v) = pa.opt_value_from_str::<_, String>("--music-card")? { c.music_card = Some(v); }
+        if let Some(v) = pa.opt_value_from_str::<_, u8>("--duck-percent")? { c.duck_percent = v; }
         let rest = pa.finish();
         anyhow::ensure!(rest.is_empty(), "unknown arguments: {rest:?}");
         Ok(c)
@@ -197,6 +206,23 @@ mod tests {
     fn no_keep_warm_flag_overrides_keep_warm() {
         let c = Config::parse(args(&["--keep-warm", "--no-keep-warm"])).unwrap();
         assert!(!c.keep_warm);
+    }
+
+    #[test]
+    fn music_flags_parse_and_default_off() {
+        let on = Config::parse(pico_args::Arguments::from_vec(vec![
+            "--music-mixer".into(), "Music".into(),
+            "--music-card".into(), "Jabra".into(),
+            "--duck-percent".into(), "15".into(),
+        ]))
+        .unwrap();
+        assert_eq!(on.music_mixer.as_deref(), Some("Music"));
+        assert_eq!(on.music_card.as_deref(), Some("Jabra"));
+        assert_eq!(on.duck_percent, 15);
+
+        let off = Config::parse(pico_args::Arguments::from_vec(vec![])).unwrap();
+        assert_eq!(off.music_mixer, None);
+        assert_eq!(off.duck_percent, 20); // default
     }
 
     #[test]
