@@ -1,0 +1,18 @@
+# Snapcast music client for a nabu satellite. Provisioning rewrites HUBHOST/ROOM/%i.
+# --soundcard music => the softvol PCM in /etc/asound.conf, so the satellite can duck it via amixer.
+# --hostID ROOM     => the Music Assistant / Snapcast player name; match it to the HA area slug
+#                      so /ha/areas/<room>/ resolves media_player.<room>.
+[Unit]
+Description=Snapcast music client for nabu satellite (%i)
+After=network-online.target sound.target nabu-satellite.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/snapclient --host HUBHOST --port 1704 --hostID ROOM --player alsa --soundcard music
+Restart=always
+RestartSec=2
+User=%i
+SupplementaryGroups=audio
+
+[Install]
+WantedBy=multi-user.target
