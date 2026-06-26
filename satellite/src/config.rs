@@ -33,7 +33,7 @@ pub struct Config {
     pub led: LedConfig,         // activity LED; default = none, --led-spi / --led-gpio opt in
     pub preroll_ms: u32,        // zero-lag: how much recent audio to flush to the hub on trigger
     pub wake_preroll_ms: u32,   // wake-path flush: detection-latency gap only, NOT the wake word
-    pub wake_playback_ms: u32,  // play-to-wake: ms of silence played before opening the mic to
+    pub wake_playback_ms: u32,  // play-to-wake: ms of wake TONE played on a cold mic open to
                                 // wake firmware-sleeping mics (Jabra Speak2); 0 = disabled
     pub awake_cue: bool,
     pub done_cue: bool,

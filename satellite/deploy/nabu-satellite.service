@@ -1,9 +1,10 @@
 # Jabra Speak2 (55/75) variant — provisioning rewrites the plughw:0,0 placeholder below to
 # plughw:CARD=<name>,DEV=0 (the USB card auto-detected by name; immune to ALSA index churn).
 # The mic is 16 kHz mono native (no resampling); plughw resamples only the 22050 Hz playback.
-# --wake-playback-ms plays a brief silent buffer through the speaker before opening the mic:
-# the Jabra's mic ADC firmware-sleeps when idle and capture-only opens return EIO until the
-# speaker stream wakes it (the satellite retries the play+open until capture catches). No button
+# --wake-playback-ms plays a brief TONE through the speaker on a cold mic open: the Jabra's mic
+# ADC firmware-sleeps when idle and capture-only opens return EIO, and from deep sleep (after a
+# host reboot) it ignores silence too — only real audio signal wakes it. The satellite opens the
+# mic first (no tone if already awake) and retries tone+open until capture catches. No button
 # (the Jabra's onboard buttons are HID-telephony, unusable on Linux), no LED.
 # reSpeaker 2-Mic HAT variant: provision with the device arg plughw:CARD=seeed2micvoicec,DEV=0
 # (16 kHz-native, used verbatim) and add --button-gpio 17 --led-spi (APA102s need dtparam=spi=on);
@@ -29,7 +30,7 @@ ExecStart=/usr/local/bin/nabu-satellite \
   --mic-command "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw" \
   --snd-command "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \
   --preroll-ms 1000 \
-  --wake-playback-ms 500 \
+  --wake-playback-ms 1000 \
   --threshold 0.4
 Environment=RUST_LOG=info
 Restart=always

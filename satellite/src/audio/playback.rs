@@ -169,15 +169,25 @@ async fn play_cue(snd_command: &str, pcm: &[u8]) -> anyhow::Result<()> {
     p.finish().await
 }
 
-/// Play `ms` of silence through the playback device, then drain and exit. Used to wake a mic
-/// whose firmware sleeps when idle: the Jabra Speak2 wakes its capture ADC when the speaker
-/// stream opens, so a brief silent buffer before the mic open re-arms capture (capture-only
-/// opens race the ADC power-up and return EIO). 22050 Hz mono S16LE matches the satellite's
-/// fixed playback format, so the byte count maps directly to `ms`.
-pub async fn play_silence(snd_command: &str, ms: u32) -> anyhow::Result<()> {
+/// Play a brief `ms` tone through the playback device to wake a firmware-sleeping mic, then
+/// drain and exit. The Jabra Speak2's capture ADC powers down when idle and, from deep sleep
+/// (e.g. after the host reboots), ignores BOTH capture opens AND *silent* playback — but it
+/// wakes on real audio signal. So we emit an actual tone (not zeros) before opening the mic.
+/// 22050 Hz mono S16LE matches the satellite's fixed playback format.
+pub async fn play_wake_tone(snd_command: &str, ms: u32) -> anyhow::Result<()> {
+    const RATE: f32 = 22_050.0;
+    const FREQ: f32 = 440.0;
+    // Near i16 full-scale: deep sleep needs a strong signal to wake — half-scale was measured
+    // too weak on the Speak2; a full-scale ~1s 440 Hz tone wakes it (validated on-device).
+    const AMP: f32 = 32_000.0;
+    let samples = (RATE as usize * ms as usize) / 1000;
+    let mut pcm = Vec::with_capacity(samples * 2);
+    for n in 0..samples {
+        let s = (AMP * (std::f32::consts::TAU * FREQ * n as f32 / RATE).sin()) as i16;
+        pcm.extend_from_slice(&s.to_le_bytes());
+    }
     let mut sink = PlaybackSink::start(snd_command)?;
-    let bytes = (22_050usize * 2 * ms as usize) / 1000; // 22050 Hz * 2 bytes/sample (mono)
-    sink.write_pcm(&vec![0u8; bytes]).await?;
+    sink.write_pcm(&pcm).await?;
     sink.finish().await
 }
 
@@ -223,9 +233,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn play_silence_writes_and_drains() {
-        // `cat >/dev/null` stands in for aplay: consumes the silence and exits on stdin EOF.
-        play_silence("cat >/dev/null", 50).await.unwrap();
+    async fn play_wake_tone_writes_and_drains() {
+        // `cat >/dev/null` stands in for aplay: consumes the tone and exits on stdin EOF.
+        play_wake_tone("cat >/dev/null", 50).await.unwrap();
     }
 
     #[tokio::test]
