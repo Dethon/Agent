@@ -466,6 +466,33 @@ public class ScheduleFileSystemJourneyTests
             .ShouldBeOfType<FsResult<FsExecResult>.Err>();
     }
 
+    [Fact]
+    public async Task Create_BareRunAt_InDstGap_ReturnsInvalidArgumentError()
+    {
+        // Europe/Madrid spring-forward 2027: 02:00 local → 03:00 (gap), so 02:30 does not exist.
+        var madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
+        var gapTime = new DateTime(2027, 3, 28, 2, 30, 0, DateTimeKind.Unspecified);
+
+        // Precondition: verify our tz database actually has a gap at this instant.
+        madrid.IsInvalidTime(gapTime).ShouldBeTrue("2027-03-28T02:30 must fall in the Europe/Madrid DST gap");
+
+        var store = new FakeScheduleStore();
+        var catalog = new MutableAgentCatalog();
+        catalog.Replace([new AgentCatalogEntry("jonas", "Jonas", "general")]);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        clock.SetLocalTimeZone(madrid);
+        var fs = new ScheduleFileSystem(store, catalog, new CronValidator(), clock);
+
+        var result = await fs.CreateAsync(
+            "/jonas/wake/schedule.json",
+            """{"prompt":"p","runAt":"2027-03-28T02:30:00"}""",
+            false, true, CancellationToken.None);
+
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+        err.Error.Message.ShouldContain("daylight-saving gap");
+    }
+
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> AsyncEmpty()
     {
         await Task.CompletedTask;

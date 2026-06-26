@@ -467,9 +467,18 @@ public sealed class ScheduleFileSystem(
             return Error(ToolError.Codes.InvalidArgument, $"Invalid cron expression: {spec.Cron}");
         }
 
-        if (spec.RunAt is { } runAt && ToUtc(runAt) <= timeProvider.GetUtcNow().UtcDateTime)
+        if (spec.RunAt is { } runAt)
         {
-            return Error(ToolError.Codes.InvalidArgument, "runAt must be in the future");
+            if (runAt.Kind == DateTimeKind.Unspecified && timeProvider.LocalTimeZone.IsInvalidTime(runAt))
+            {
+                return Error(ToolError.Codes.InvalidArgument,
+                    "runAt falls in a daylight-saving gap (that local time does not exist); pick another time or add an explicit offset");
+            }
+
+            if (ToUtc(runAt) <= timeProvider.GetUtcNow().UtcDateTime)
+            {
+                return Error(ToolError.Codes.InvalidArgument, "runAt must be in the future");
+            }
         }
 
         return null;
