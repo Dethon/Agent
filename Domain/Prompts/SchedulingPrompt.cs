@@ -7,7 +7,8 @@ public static class SchedulingPrompt
     public const string Description =
         "Explains how to schedule agent tasks via the /schedules filesystem (cron/one-shot, delivery, run-now)";
 
-    public const string Prompt = """
+    public static string Build(string zoneId) =>
+        $$"""
         ## Scheduled Tasks
 
         You can schedule prompts to run later — once at a future time, or repeatedly on a cron schedule. Schedules live in the virtual filesystem mounted at `/schedules`, one directory per agent, and you manage them entirely with the `domain__filesystem__*` tools. When a schedule fires, its prompt is delivered to an agent as if a user had sent it.
@@ -17,7 +18,7 @@ public static class SchedulingPrompt
         - `/schedules` — the root. Each immediate child directory is an **agent** you can schedule work for.
         - `/schedules/<agentId>/agent_info.json` — read this to learn what an agent does before scheduling against it.
         - `/schedules/<agentId>/<scheduleId>/schedule.json` — one schedule. `<scheduleId>` is a descriptive, unique id you choose (e.g. `morning-news`).
-        - `/schedules/<agentId>/<scheduleId>/status.json` — read-only timing: `createdAt`, `lastRunAt`, `nextRunAt`.
+        - `/schedules/<agentId>/<scheduleId>/status.json` — read-only timing: `createdAt`, `lastRunAt`, `nextRunAt`, shown in the **{{zoneId}}** time zone.
 
         ### Creating a schedule
 
@@ -25,11 +26,11 @@ public static class SchedulingPrompt
 
         - `prompt` (required) — the instruction delivered to the agent when the schedule fires.
         - `cron` **or** `runAt` — exactly one is required, and they are mutually exclusive.
-          - `cron` — a standard 5-field cron expression for a **recurring** schedule. All times are UTC. Examples:
-            - `"0 9 * * *"` — every day at 09:00
+          - `cron` — a standard 5-field cron expression for a **recurring** schedule. Times are interpreted in the **{{zoneId}}** time zone and adjust automatically across daylight-saving changes. Examples:
+            - `"0 9 * * *"` — every day at 09:00 {{zoneId}} time
             - `"0 */2 * * *"` — every 2 hours
-            - `"30 14 * * 1-5"` — weekdays at 14:30
-          - `runAt` — an ISO-8601 datetime for a **one-shot** schedule. It **must include a time zone**: either `Z` for UTC (e.g. `2026-06-01T14:30:00Z`) or an explicit offset (e.g. `2026-06-01T16:30:00+02:00`); it is normalized to UTC. A datetime without a zone is rejected. It is deleted automatically once it fires.
+            - `"30 14 * * 1-5"` — weekdays at 14:30 {{zoneId}} time
+          - `runAt` — an ISO-8601 datetime for a **one-shot** schedule. You may include a time zone — `Z` for UTC (e.g. `2026-06-01T14:30:00Z`) or an explicit offset (e.g. `2026-06-01T16:30:00+02:00`) — or omit it, in which case it is read as **{{zoneId}}** local time (e.g. `2026-06-01T18:00:00`). It is stored as UTC and deleted automatically once it fires.
         - `userId` (optional) — the user the fired prompt should be attributed to.
         - `deliverTo` (optional) — a list of channel ids that should receive the result (e.g. `["signalr", "telegram"]`). Omit to use the configured default.
 
@@ -40,7 +41,7 @@ public static class SchedulingPrompt
 
           Add a voice target **only when the user explicitly asked to be notified by voice** (spoken aloud / announced). Otherwise omit voice — **silence is the default**. For example, a schedule that starts the air conditioning at night must NOT announce. Offline satellites are skipped silently. To keep tool-approval prompts answerable, list a non-voice channel first, e.g. `["signalr", "voice:fran-office-01"]`.
 
-        A recurring schedule — every day at 09:00 UTC:
+        A recurring schedule — every day at 09:00 {{zoneId}} time:
 
         ```json
         {
@@ -55,7 +56,7 @@ public static class SchedulingPrompt
         ```json
         {
           "prompt": "Remind me to submit the quarterly report",
-          "runAt": "2026-06-01T14:30:00Z"
+          "runAt": "2026-06-01T14:30:00"
         }
         ```
 
