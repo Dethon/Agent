@@ -10,7 +10,8 @@ public sealed class ScheduleDispatcherService(
     ICronValidator cronValidator,
     IScheduleNotificationEmitter emitter,
     SchedulingSettings settings,
-    ILogger<ScheduleDispatcherService> logger) : BackgroundService
+    ILogger<ScheduleDispatcherService> logger,
+    TimeProvider timeProvider) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -44,12 +45,13 @@ public sealed class ScheduleDispatcherService(
             return;
         }
 
-        var due = await store.GetDueSchedulesAsync(DateTime.UtcNow, ct);
+        var now = timeProvider.GetUtcNow();
+        var due = await store.GetDueSchedulesAsync(now.UtcDateTime, ct);
         foreach (var schedule in due)
         {
             var nextRun = schedule.CronExpression is null
                 ? null
-                : cronValidator.GetNextOccurrence(schedule.CronExpression, DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
+                : cronValidator.GetNextOccurrence(schedule.CronExpression, now, timeProvider.LocalTimeZone);
 
             var plan = ScheduleFirePlanner.Plan(schedule, settings.DefaultDeliverTo, nextRun);
 
@@ -70,7 +72,7 @@ public sealed class ScheduleDispatcherService(
             }
             else
             {
-                await store.UpdateLastRunAsync(schedule.Id, DateTime.UtcNow, plan.NextRunAt, ct);
+                await store.UpdateLastRunAsync(schedule.Id, now.UtcDateTime, plan.NextRunAt, ct);
             }
 
             logger.LogInformation("Fired schedule {ScheduleId} for agent {AgentId}", schedule.Id, schedule.AgentId);
