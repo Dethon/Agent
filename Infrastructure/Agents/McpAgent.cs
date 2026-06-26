@@ -272,8 +272,7 @@ public sealed class McpAgent : DisposableAgent
                 _domainPrompts,
                 session.FileSystemPrompts,
                 session.ClientManager.Prompts,
-                _timeProvider.GetLocalNow(),
-                _timeProvider.LocalTimeZone),
+                _timeProvider.GetLocalNow()),
             Reasoning = _reasoningEffort is null
                 ? null
                 : new ReasoningOptions { Effort = _reasoningEffort.Value },
@@ -290,13 +289,9 @@ public sealed class McpAgent : DisposableAgent
         IEnumerable<string> domainPrompts,
         IEnumerable<string> fileSystemPrompts,
         IEnumerable<string> clientPrompts,
-        DateTimeOffset now,
-        TimeZoneInfo zone)
+        DateTimeOffset now)
     {
-        var datePrompt =
-            $"Today is {now.ToString("dddd, yyyy-MM-dd", CultureInfo.InvariantCulture)}. " +
-            $"Current local time is {now.ToString("HH:mm", CultureInfo.InvariantCulture)} " +
-            $"({zone.Id}, UTC{now.ToString("zzz", CultureInfo.InvariantCulture)}).";
+        var datePrompt = $"Today is {now.ToString("dddd, yyyy-MM-dd", CultureInfo.InvariantCulture)}.";
         var prompts = domainPrompts
             .Concat(fileSystemPrompts)
             .Concat(clientPrompts);
