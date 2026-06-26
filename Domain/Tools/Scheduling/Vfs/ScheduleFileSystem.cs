@@ -485,7 +485,9 @@ public sealed class ScheduleFileSystem(
     }
 
     private DateTime? ComputeNextRunAt(SpecDto spec) =>
-        spec.RunAt ?? (spec.Cron is not null ? cronValidator.GetNextOccurrence(spec.Cron, DateTime.UtcNow) : null);
+        spec.RunAt ?? (spec.Cron is not null
+            ? cronValidator.GetNextOccurrence(spec.Cron, DateTimeOffset.UtcNow, TimeZoneInfo.Utc)
+            : null);
 
     private static string ReplaceFirst(string text, string oldValue, string newValue)
     {
