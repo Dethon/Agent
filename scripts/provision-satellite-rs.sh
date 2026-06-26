@@ -37,11 +37,17 @@ trap 'ssh -o ControlPath="$ctl" -O exit "$host" 2>/dev/null || true; rm -f "$ctl
 ssh "${SSHOPTS[@]}" "$host" "sudo apt-get install -y alsa-utils"   # arecord/aplay only; no Python
 scp "${SSHOPTS[@]}" "$bin" "$host:/tmp/nabu-satellite"
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-satellite.service" "$host:/tmp/"
+scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/snapclient.service" "$host:/tmp/"
 
-# Quoted heredoc + MIC env var: nothing is expanded locally; the remote bash evaluates
-# everything (and reads MIC from the command-prefix assignment).
-ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" bash -se <<'EOF'
+# Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM env vars: nothing is expanded locally; the remote
+# bash evaluates everything (and reads vars from the command-prefix assignments).
+ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" bash -se <<'EOF'
   set -euo pipefail
+
+  if [ -n "${MUSIC_HUB:-}" ] && [ -n "${MIC}" ]; then
+    echo "ERROR: music provisioning (MUSIC_HUB) supports only the auto-detected USB card; do not also pass a mic-device." >&2
+    exit 1
+  fi
   sudo install -m755 /tmp/nabu-satellite /usr/local/bin/nabu-satellite
   user=$(whoami)
   sudo usermod -aG gpio,input "$user"     # GPIO button + evdev/USB button access
@@ -85,8 +91,60 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" bash -se <<'EOF'
     dev="${MIC}"   # explicit device, used verbatim (e.g. reSpeaker 2-Mic HAT)
   fi
 
-  sudo sed "s/%i/$user/g; s#plughw:0,0#${dev}#g" /tmp/nabu-satellite.service \
-    | sudo tee /etc/systemd/system/nabu-satellite.service >/dev/null
+  # --- music coexistence (opt-in via MUSIC_HUB) ---
+  snddev="${dev}"          # default: same device as capture (voice-only unit, unchanged)
+  music_sed=(-e "/__MUSIC_FLAGS__/d")   # default: strip the placeholder line entirely
+  if [ -n "${MUSIC_HUB:-}" ]; then
+    sudo apt-get install -y snapclient
+    snddev="duckmix"
+    music_sed=(-e "s|__MUSIC_FLAGS__|--music-mixer Music --music-card ${cardname}|")
+
+    # Shared dmix + softvol over the Jabra card, by NAME. NO pcm.!default: arecord keeps its
+    # explicit plughw capture device, so the wake-tone path is untouched.
+    sudo tee /etc/asound.conf >/dev/null <<ASOUND
+pcm.duckmix {
+    type plug
+    slave.pcm {
+        type dmix
+        ipc_key 32421
+        ipc_perm 0660
+        slave {
+            pcm "hw:CARD=${cardname},DEV=0"
+            format S16_LE
+            rate 48000
+            channels 2
+        }
+    }
+}
+pcm.music {
+    type plug
+    slave.pcm {
+        type softvol
+        slave.pcm "duckmix"
+        control { name "Music" card ${cardname} }
+        min_dB -51.0
+        max_dB 0.0
+        resolution 256
+    }
+}
+ASOUND
+
+    # snapclient unit -> hub Snapcast :1704, output into the softvol PCM.
+    sudo usermod -aG audio "$user"
+    sudo sed "s/%i/$user/g; s/HUBHOST/${MUSIC_HUB}/g; s/ROOM/${MUSIC_ROOM:-$cardname}/g" \
+      /tmp/snapclient.service | sudo tee /etc/systemd/system/snapclient.service >/dev/null
+    sudo systemctl daemon-reload
+    sudo systemctl enable snapclient.service
+    sudo systemctl restart snapclient.service
+  fi
+
+  # Template the satellite unit: mic device stays plughw (capture untouched), snd device may be
+  # duckmix (music) or plughw (voice), %i -> user, and the music flags line substituted/stripped.
+  sudo sed -e "/arecord/ s#plughw:0,0#${dev}#" \
+           -e "/aplay/  s#plughw:0,0#${snddev}#" \
+           -e "s/%i/$user/g" \
+           "${music_sed[@]}" \
+           /tmp/nabu-satellite.service | sudo tee /etc/systemd/system/nabu-satellite.service >/dev/null
 
   # restart (not just enable --now): re-provisioning must pick up the new unit even when the
   # service is already running.
