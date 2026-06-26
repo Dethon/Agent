@@ -192,8 +192,9 @@ public sealed partial class HaFileSystem(
 
     private static FsResult<FsReadResult> ReadAction(string path, string entityId, string service, HaCatalog catalog)
     {
+        var classDomain = HaCatalog.ClassOf(entityId);
         var svc = HaActionResolver.ServicesFor(entityId, catalog.Services)
-            .FirstOrDefault(s => s.Service.Equals(service, StringComparison.Ordinal));
+            .FirstOrDefault(s => HaActionResolver.CommandName(s, classDomain).Equals(service, StringComparison.Ordinal));
         return svc is null
             ? NotFound(path)
             : BuildReadResult(path, HaServiceHelpRenderer.Render(entityId, svc), null, null);
@@ -235,7 +236,8 @@ public sealed partial class HaFileSystem(
         HaVfsKind.EntityDir => (ResolveEntity(catalog, node).Entity is not null, true),
         HaVfsKind.StateFile => (ResolveEntity(catalog, node).Entity is not null, false),
         HaVfsKind.ActionFile => ResolveEntity(catalog, node).Entity is { } e
-            && HaActionResolver.ServicesFor(e.EntityId, catalog.Services).Any(s => s.Service == node.Service)
+            && HaActionResolver.ServicesFor(e.EntityId, catalog.Services)
+                .Any(s => HaActionResolver.CommandName(s, HaCatalog.ClassOf(e.EntityId)) == node.Service)
             ? (true, false)
             : (false, false),
         _ => (false, false)

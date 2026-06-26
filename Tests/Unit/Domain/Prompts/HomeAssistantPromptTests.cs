@@ -23,9 +23,10 @@ public class HomeAssistantPromptTests
         var prompt = HomeAssistantPrompt.SystemPrompt;
 
         prompt.ShouldContain("Music playback");
-        prompt.ShouldContain("music_assistant.play_media");
-        prompt.ShouldContain("media_player.join");
-        prompt.ShouldContain("media_player.unjoin");
+        prompt.ShouldContain("music_assistant.play_media.sh --media_id"); // play by NAME via the MA action
+        prompt.ShouldContain("media_player.play_media");                  // names the bare action it warns against
+        prompt.ShouldContain("`join.sh`");                                // grouping (backtick-bounded, distinct from unjoin)
+        prompt.ShouldContain("`unjoin.sh`");                              // ungrouping
         prompt.ShouldContain("speaking room"); // default target is the room the request came from
     }
 }
