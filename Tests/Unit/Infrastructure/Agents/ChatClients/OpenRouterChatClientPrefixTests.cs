@@ -1,6 +1,7 @@
 using Domain.Extensions;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 
@@ -125,5 +126,23 @@ public class OpenRouterChatClientPrefixTests : IDisposable
         FirstText().ShouldStartWith("[Current time: ");
         FirstText().ShouldContain("]:\n");
         FirstText().ShouldNotContain("Message from");
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_RendersTimestampInLocalZone()
+    {
+        var zone = TimeZoneInfo.CreateCustomTimeZone("test-plus2", TimeSpan.FromHours(2), "p2", "p2");
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        clock.SetLocalTimeZone(zone);
+        using var sut = new OpenRouterChatClient(_innerClient.Object, "test-model", timeProvider: clock);
+
+        var msg = new ChatMessage(ChatRole.User, "hi");
+        msg.SetSenderId("u");
+        msg.SetTimestamp(new DateTimeOffset(2026, 6, 4, 18, 22, 1, TimeSpan.Zero)); // 18:22:01 UTC
+
+        await sut.GetStreamingResponseAsync([msg]).ToListAsync();
+
+        var first = _captured[0].Contents.OfType<TextContent>().First().Text;
+        first.ShouldStartWith("[Current time: 2026-06-04 20:22:01 +02:00]");
     }
 }
