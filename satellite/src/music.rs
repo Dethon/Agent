@@ -2,10 +2,11 @@ use crate::led::LedState;
 use tokio::sync::watch;
 use tracing::warn;
 
-/// Bound on how long music may stay ducked with no LED-state change. A wedged active state (a
-/// no-reply turn stuck Thinking, a Listening window the hub never closes) must not hold the music
-/// down until the connection drops; on expiry the loop force-restores to full and waits for the
-/// next real state change before re-evaluating.
+/// Bound on how long music may stay ducked in the LISTENING state with no LED-state change. A mic
+/// window the hub never closes would otherwise hold the music down until the connection drops; on
+/// expiry the loop force-restores to full and waits for the next real state change. SPEAKING is
+/// exempt: a long reply legitimately holds it for tens of seconds, it is bounded by drain-completion,
+/// and a genuinely-stuck Speaking is bounded by connection teardown (DuckGuard).
 const MAX_DUCK_SECS: u64 = 30;
 
 enum DuckerBackend {
@@ -53,44 +54,80 @@ fn target_percent(state: LedState, duck_percent: u8) -> u8 {
     }
 }
 
-async fn duck_loop(mut rx: watch::Receiver<LedState>, mut backend: DuckerBackend, duck_percent: u8) {
+async fn duck_loop(
+    mut rx: watch::Receiver<LedState>,
+    mut backend: DuckerBackend,
+    duck_percent: u8,
+    restore_grace: std::time::Duration,
+) {
     let mut applied: Option<u8> = None;
     loop {
-        let pct = target_percent(*rx.borrow_and_update(), duck_percent);
-        if applied != Some(pct) {
-            if let Err(e) = backend.set(pct).await {
-                // The softvol "Music" control is created lazily the first time snapclient opens
-                // the `music` PCM.  A very-early duck call (before snapclient has run) will fail
-                // here and disable ducking for this connection; snapclient's Restart=always keeps
-                // the control alive once it has opened, so subsequent connections self-heal.
+        let state = *rx.borrow_and_update();
+        let pct = target_percent(state, duck_percent);
+        tracing::debug!(?state, pct, ?applied, "music duck");
+        if pct < 100 {
+            // Active (Listening/Speaking): duck immediately. The softvol "Music" control is created
+            // lazily when snapclient first opens the `music` PCM; a very-early call can fail here and
+            // disable ducking for this connection — Restart=always self-heals subsequent ones.
+            if applied != Some(pct) {
+                if let Err(e) = backend.set(pct).await {
+                    warn!("music duck failed, ducking disabled for this connection: {e:#}");
+                    return;
+                }
+                applied = Some(pct);
+            }
+            if state == LedState::Speaking {
+                // Speaking is active playback (plus its drain tail), bounded by drain-completion — a
+                // reply legitimately holds it for its whole duration, tens of seconds for a long
+                // answer. It must NOT be force-restored: capping it flapped the music up ~0.5 s
+                // before a ~30 s reply's drain finished, then re-ducked on the follow-up chime. A
+                // genuinely-stuck Speaking is bounded by connection teardown (DuckGuard restores on
+                // drop), so wait with no deadline.
+                if rx.changed().await.is_err() { break; }
+            } else {
+                // Listening can wedge (a mic window the hub never closes) with no natural end, so
+                // bound the ducked wait with a MAX_DUCK safety that force-restores rather than
+                // holding music down until the connection drops.
+                match tokio::time::timeout(std::time::Duration::from_secs(MAX_DUCK_SECS), rx.changed()).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(_)) => break,
+                    Err(_) => {
+                        if let Err(e) = backend.set(100).await {
+                            warn!("music duck restore failed, ducking disabled for this connection: {e:#}");
+                            return;
+                        }
+                        applied = Some(100);
+                        if rx.changed().await.is_err() { break; }
+                    }
+                }
+            }
+        } else if applied == Some(100) {
+            // Already restored: wait for the next change, no deadline.
+            if rx.changed().await.is_err() { break; }
+        } else if applied.is_none() {
+            // First evaluation and inactive: establish the un-ducked baseline immediately.
+            if let Err(e) = backend.set(100).await {
                 warn!("music duck failed, ducking disabled for this connection: {e:#}");
                 return;
             }
-            applied = Some(pct);
-        }
-        if pct >= 100 {
-            // Not ducked: wait for the next state change, no deadline.
-            if rx.changed().await.is_err() {
-                break; // sender dropped => connection ending; DuckGuard::drop restores to full
-            }
+            applied = Some(100);
+            if rx.changed().await.is_err() { break; }
         } else {
-            // Ducked: bound how long with a safety timeout so a wedged active state (no-reply turn
-            // stuck Thinking, a Listening window the hub never closes) can't hold music down until
-            // the connection drops.
-            match tokio::time::timeout(std::time::Duration::from_secs(MAX_DUCK_SECS), rx.changed()).await {
-                Ok(Ok(())) => {}     // state changed => re-evaluate
+            // Inactive (Thinking/Idle) while ducked: DEBOUNCE the restore. A long reply arrives as
+            // multiple audio segments, each ending in a brief Idle gap; restoring on every gap flaps
+            // the music up between segments. Hold the duck for restore_grace; if an active state (the
+            // next segment's Speaking) resumes within it, stay ducked. Only a truly-finished reply
+            // (grace elapses with no new speech) restores — which also bounds a no-reply turn's strand.
+            match tokio::time::timeout(restore_grace, rx.changed()).await {
+                Ok(Ok(())) => {}     // state changed => re-evaluate (may re-duck or keep waiting)
                 Ok(Err(_)) => break, // sender dropped => connection ending
                 Err(_) => {
-                    // Timed out while ducked: force-restore, then wait for the next real state
-                    // change before re-evaluating so we don't instantly re-duck the same state.
                     if let Err(e) = backend.set(100).await {
                         warn!("music duck restore failed, ducking disabled for this connection: {e:#}");
                         return;
                     }
                     applied = Some(100);
-                    if rx.changed().await.is_err() {
-                        break;
-                    }
+                    if rx.changed().await.is_err() { break; }
                 }
             }
         }
@@ -125,10 +162,11 @@ pub fn spawn_duck(
     music_mixer: Option<String>,
     music_card: Option<String>,
     duck_percent: u8,
+    restore_grace: std::time::Duration,
 ) -> Option<DuckGuard> {
     let control = music_mixer?; // None => feature off (mirrors led::spawn_led returning None)
     let backend = DuckerBackend::Real { control: control.clone(), card: music_card.clone() };
-    let handle = tokio::spawn(duck_loop(rx, backend, duck_percent));
+    let handle = tokio::spawn(duck_loop(rx, backend, duck_percent, restore_grace));
     Some(DuckGuard { handle, control, card: music_card })
 }
 
@@ -166,75 +204,126 @@ mod tests {
         panic!("timed out waiting for duck call #{len}; got {:?}", log.lock().unwrap());
     }
 
-    #[tokio::test]
-    async fn ducks_on_speaking_and_restores_when_it_ends() {
-        let (tx, rx) = watch::channel(LedState::Idle);
-        let (log, backend) = probe();
-        let h = tokio::spawn(duck_loop(rx, backend, 20));
+    // Long enough that non-paused tests never hit it; paused tests advance past it.
+    const TEST_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 
-        wait_for(&log, 1).await;                 // initial Idle -> 100
-        assert_eq!(log.lock().unwrap()[0], 100);
-
-        tx.send(LedState::Speaking).unwrap();    // satellite speaks -> duck 20
-        wait_for(&log, 2).await;
-        assert_eq!(log.lock().unwrap()[1], 20);
-
-        tx.send(LedState::Idle).unwrap();        // speech ends -> restore 100
-        wait_for(&log, 3).await;
-        assert_eq!(log.lock().unwrap()[2], 100);
-
-        drop(tx);
-        let _ = h.await;
-        assert_eq!(log.lock().unwrap().len(), 3);
+    // Let the spawned duck_loop run until it parks (on a watch change or a timeout), so a following
+    // assert / time-advance observes a settled state. (Single-threaded test runtime.)
+    async fn settle() {
+        for _ in 0..50 { tokio::task::yield_now().await; }
     }
 
     #[tokio::test]
-    async fn ducks_on_listening_command_and_restores() {
-        // The new behavior: music ducks the moment the satellite starts LISTENING to a command
-        // (so the mic/STT isn't corrupted by the music), and restores when the turn goes Idle.
+    async fn ducks_immediately_on_active_and_baselines_on_idle() {
+        // Duck is immediate on an active state; the first Idle establishes the un-ducked baseline;
+        // an active->active change keeps the same duck level (no redundant set).
         let (tx, rx) = watch::channel(LedState::Idle);
         let (log, backend) = probe();
-        let h = tokio::spawn(duck_loop(rx, backend, 20));
-
-        wait_for(&log, 1).await;                 // initial Idle -> 100
-        assert_eq!(log.lock().unwrap()[0], 100);
-
-        tx.send(LedState::Listening).unwrap();   // command capture -> duck 20
-        wait_for(&log, 2).await;
-        assert_eq!(log.lock().unwrap()[1], 20);
-
-        tx.send(LedState::Idle).unwrap();        // turn ended -> restore 100
-        wait_for(&log, 3).await;
-        assert_eq!(log.lock().unwrap()[2], 100);
-
-        drop(tx);
-        let _ = h.await;
-        assert_eq!(log.lock().unwrap().len(), 3);
-    }
-
-    #[tokio::test]
-    async fn restores_on_thinking_then_reducks_for_the_reply() {
-        // The fix for the ~10 s strand: after the command is captured the LED goes Thinking, which
-        // RESTORES the music (the user is done talking). The reply re-ducks on Speaking; the turn
-        // ends restored. A no-reply turn simply stops at the Thinking restore — no strand.
-        let (tx, rx) = watch::channel(LedState::Idle);
-        let (log, backend) = probe();
-        let h = tokio::spawn(duck_loop(rx, backend, 20));
-
+        let h = tokio::spawn(duck_loop(rx, backend, 20, std::time::Duration::from_secs(600)));
         wait_for(&log, 1).await;
-        assert_eq!(log.lock().unwrap()[0], 100); // Idle -> 100
-        tx.send(LedState::Listening).unwrap(); // command -> duck
+        assert_eq!(log.lock().unwrap()[0], 100); // Idle baseline, immediate
+        tx.send(LedState::Speaking).unwrap();
+        wait_for(&log, 2).await;
+        assert_eq!(log.lock().unwrap()[1], 20); // ducked immediately
+        tx.send(LedState::Listening).unwrap(); // still active -> stays 20 (no new set)
+        settle().await;
+        assert_eq!(log.lock().unwrap().len(), 2);
+        drop(tx);
+        let _ = h.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn restore_is_debounced_after_a_reply_ends() {
+        // A finished reply (Speaking -> Idle) does NOT restore immediately; it holds the duck for
+        // restore_grace, then restores. Same debounce bounds a no-reply turn's strand.
+        let (tx, rx) = watch::channel(LedState::Idle);
+        let (log, backend) = probe();
+        let h = tokio::spawn(duck_loop(rx, backend, 20, TEST_GRACE));
+        wait_for(&log, 1).await;
+        assert_eq!(log.lock().unwrap()[0], 100);
+        tx.send(LedState::Speaking).unwrap();
         wait_for(&log, 2).await;
         assert_eq!(log.lock().unwrap()[1], 20);
-        tx.send(LedState::Thinking).unwrap(); // command captured -> RESTORE (the fix)
+        tx.send(LedState::Idle).unwrap(); // reply ends -> debounced, NOT immediate
+        settle().await;
+        assert_eq!(log.lock().unwrap().len(), 2, "un-duck is debounced");
+        tokio::time::advance(TEST_GRACE / 2).await;
+        settle().await;
+        assert_eq!(log.lock().unwrap().len(), 2, "still ducked mid-grace");
+        tokio::time::advance(TEST_GRACE).await; // past the grace
         wait_for(&log, 3).await;
         assert_eq!(log.lock().unwrap()[2], 100);
-        tx.send(LedState::Speaking).unwrap(); // reply -> duck again
-        wait_for(&log, 4).await;
-        assert_eq!(log.lock().unwrap()[3], 20);
-        tx.send(LedState::Idle).unwrap(); // done -> restore
-        wait_for(&log, 5).await;
-        assert_eq!(log.lock().unwrap()[4], 100);
+        drop(tx);
+        let _ = h.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stays_ducked_across_a_reply_segment_gap() {
+        // THE fix: a long reply arrives in segments (Speaking -> Idle gap -> Speaking). If the next
+        // segment resumes within the grace, the Idle gap must NOT flap the music back up.
+        let (tx, rx) = watch::channel(LedState::Idle);
+        let (log, backend) = probe();
+        let h = tokio::spawn(duck_loop(rx, backend, 20, TEST_GRACE));
+        wait_for(&log, 1).await;
+        assert_eq!(log.lock().unwrap()[0], 100);
+        tx.send(LedState::Speaking).unwrap(); // segment 1
+        wait_for(&log, 2).await;
+        assert_eq!(log.lock().unwrap()[1], 20);
+        tx.send(LedState::Idle).unwrap(); // inter-segment gap
+        settle().await;
+        tokio::time::advance(TEST_GRACE / 2).await; // partway through the grace
+        settle().await;
+        tx.send(LedState::Speaking).unwrap(); // segment 2 resumes within the grace
+        settle().await;
+        assert_eq!(log.lock().unwrap().len(), 2, "no restore between segments — stayed ducked");
+        drop(tx);
+        let _ = h.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn no_reply_turn_restores_after_grace() {
+        // A command with no reply (Listening -> Thinking, no Speaking) restores after the grace so
+        // the music doesn't strand ducked — but not instantly (that delay is what bridges gaps).
+        let (tx, rx) = watch::channel(LedState::Idle);
+        let (log, backend) = probe();
+        let h = tokio::spawn(duck_loop(rx, backend, 20, TEST_GRACE));
+        wait_for(&log, 1).await;
+        assert_eq!(log.lock().unwrap()[0], 100);
+        tx.send(LedState::Listening).unwrap();
+        wait_for(&log, 2).await;
+        assert_eq!(log.lock().unwrap()[1], 20);
+        tx.send(LedState::Thinking).unwrap(); // command captured, no reply
+        settle().await;
+        assert_eq!(log.lock().unwrap().len(), 2, "debounced, not instant");
+        tokio::time::advance(TEST_GRACE + std::time::Duration::from_millis(1)).await;
+        wait_for(&log, 3).await;
+        assert_eq!(log.lock().unwrap()[2], 100);
+        drop(tx);
+        let _ = h.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn long_speaking_reply_is_not_force_restored_by_max_duck() {
+        // A single long reply holds Speaking continuously for longer than MAX_DUCK (a ~30 s spoken
+        // answer streams as one uninterrupted playback job). The safety cap must NOT fire on active
+        // playback — it is bounded by drain-completion — because force-restoring mid-reply flaps the
+        // music up under the agent's voice, then re-ducks on the follow-up chime. Only a wedged
+        // Listening window (a mic the hub never closes) is capped; a stuck Speaking is bounded by
+        // connection teardown (DuckGuard).
+        let (tx, rx) = watch::channel(LedState::Idle);
+        let (log, backend) = probe();
+        let h = tokio::spawn(duck_loop(rx, backend, 20, TEST_GRACE));
+
+        wait_for(&log, 1).await; // initial Idle -> 100
+        assert_eq!(log.lock().unwrap()[0], 100);
+
+        tx.send(LedState::Speaking).unwrap(); // reply audio starts
+        wait_for(&log, 2).await;
+        assert_eq!(log.lock().unwrap()[1], 20);
+
+        tokio::time::advance(std::time::Duration::from_secs(MAX_DUCK_SECS + 5)).await; // long reply
+        settle().await;
+        assert_eq!(log.lock().unwrap().len(), 2, "Speaking must not be force-restored mid-reply");
 
         drop(tx);
         let _ = h.await;
@@ -242,21 +331,21 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn ducked_state_force_restores_after_max_duck() {
-        // Safety backstop: an active state that persists with no further change must not hold the
-        // music ducked forever — after MAX_DUCK with no state change it force-restores to full.
+        // Safety backstop: a wedged ACTIVE state must not hold music ducked forever — after MAX_DUCK
+        // with no state change it force-restores to full.
         let (tx, rx) = watch::channel(LedState::Idle);
         let (log, backend) = probe();
-        let h = tokio::spawn(duck_loop(rx, backend, 20));
+        let h = tokio::spawn(duck_loop(rx, backend, 20, TEST_GRACE));
 
-        wait_for(&log, 1).await;                 // initial Idle -> 100
+        wait_for(&log, 1).await; // initial Idle -> 100
         assert_eq!(log.lock().unwrap()[0], 100);
 
-        tx.send(LedState::Listening).unwrap();   // command -> duck
+        tx.send(LedState::Listening).unwrap(); // command -> duck
         wait_for(&log, 2).await;
         assert_eq!(log.lock().unwrap()[1], 20);
 
         tokio::time::advance(std::time::Duration::from_secs(MAX_DUCK_SECS + 1)).await;
-        wait_for(&log, 3).await;                 // no change for MAX_DUCK -> safety restore
+        wait_for(&log, 3).await; // no change for MAX_DUCK -> safety restore
         assert_eq!(log.lock().unwrap()[2], 100);
 
         drop(tx);
