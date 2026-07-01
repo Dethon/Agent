@@ -53,12 +53,14 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             listen: "0.0.0.0:10700".into(),
-            // Defaults target a Jabra Speak2 (55/75) on USB, index-pinned to ALSA card 0 by
-            // provisioning (options snd_usb_audio index=0) — the card NAME is model/variant-
-            // dependent (75->J75, 55 MS->MS, 55 UC->UC), so plughw:0,0 is baked in instead.
-            // 48 kHz native -> plughw resamples for BOTH. For a reSpeaker 2-Mic HAT pass
-            // --mic-command/--snd-command with plughw:CARD=seeed2micvoicec,DEV=0 plus
-            // --button-gpio 17 and --led-spi; see provisioning.
+            // Defaults target a Jabra Speak2 (55/75) on USB. plughw:0,0 is a placeholder:
+            // provisioning rewrites BOTH commands to plughw:CARD=<name>,DEV=0, auto-detecting the
+            // USB card by NAME (model/variant-dependent: 75->J75, 55 MS->MS, 55 UC->UC) — by-name
+            // addressing is immune to ALSA index churn (the old `snd_usb_audio index=0` pinning
+            // collided with the Pi's built-in vc4-hdmi/headphone cards and was removed). The mic is
+            // 16 kHz mono native (no resampling); plughw resamples only the 22050 Hz playback. For a
+            // reSpeaker 2-Mic HAT pass --mic-command/--snd-command with
+            // plughw:CARD=seeed2micvoicec,DEV=0 plus --button-gpio 17 and --led-spi; see provisioning.
             // -F 20000 (20 ms period): without it arecord defaults to buffer/4 = 125 ms periods
             // and every mic sample reaches stdout up to 125 ms late — paid on the wake AND the
             // speech->STT path. The 500 ms capture buffer default is independent of -F.
@@ -76,7 +78,7 @@ impl Default for Config {
             led: LedConfig::None, // no LED on a Jabra build; --led-spi (HAT APA102s) or --led-gpio opt in
             preroll_ms: 1000,
             wake_preroll_ms: 240, // covers the ~181 ms measured detection latency with margin
-            wake_playback_ms: 0,  // opt-in (provisioning enables it for the Jabra); see warm_mic
+            wake_playback_ms: 0,  // opt-in (provisioning enables it for the Jabra); see MicCapture::warm
             keep_warm: false,     // opt-in (the Jabra unit enables it); harmless but pointless elsewhere
             awake_cue: true,
             done_cue: true,
@@ -94,6 +96,7 @@ impl Config {
     ///        --led-spi | --led-gpio <pin> | --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
     ///        --wake-playback-ms <ms> | --no-wake-playback   --keep-warm | --no-keep-warm
+    ///        --music-mixer <control> --music-card <card> --duck-percent <pct> --music-restore-grace-ms <ms>
     pub fn from_args() -> anyhow::Result<Self> {
         Self::parse(pico_args::Arguments::from_env())
     }

@@ -9,7 +9,7 @@ using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
 
-// Dials each configured satellite as a Wyoming client. wyoming-satellite is itself
+// Dials each configured satellite as a Wyoming client. The satellite is itself
 // a Wyoming server: it runs local wake detection and, once the wake word fires,
 // sends us run-pipeline followed by an open-ended mic audio stream. We segment
 // that stream with SilenceGate, transcribe it, and send a transcript back to stop

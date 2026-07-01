@@ -17,9 +17,9 @@ use tracing::{info, warn};
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum Mode { Idle, Streaming }
 
-/// Play-to-wake retry ceiling: a single silent buffer wakes the Jabra ~2/3 of the time from
-/// deep sleep, so a generous cap makes a cold first connection effectively certain to catch
-/// (~5 s worst case at 500 ms/attempt) while still bounding a genuinely absent mic.
+/// Play-to-wake retry ceiling: a wake tone doesn't always rouse the Jabra's ADC from deep sleep
+/// on the first try (each attempt is one tone + mic open), so a generous cap makes a cold first
+/// connection effectively certain to catch while still bounding a genuinely absent mic.
 const MIC_WAKE_MAX_ATTEMPTS: u32 = 20;
 
 /// Aborts the wrapped task on drop, so the pump tasks can never outlive run_connection —
@@ -42,8 +42,9 @@ pub async fn run_connection(
     reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: Config, models: Option<WakeModels>,
 ) -> anyhow::Result<()> {
     let mut wr = writer;
-    // Wake a firmware-sleeping mic (Jabra Speak2) by playing silence before opening capture;
-    // wake_playback_ms == 0 keeps the direct single-open path for mics that don't sleep.
+    // Wake a firmware-sleeping mic (Jabra Speak2) with a brief play-to-wake TONE (it ignores
+    // silence from deep sleep): warm() opens the mic first and, on a cold miss, plays the tone and
+    // retries. wake_playback_ms == 0 keeps the direct single-open path for mics that don't sleep.
     let mic = if cfg.wake_playback_ms > 0 {
         // The wake tone must reach the (firmware-sleeping) mic device itself. When TTS is routed to
         // a different sink (jack/PipeWire), --wake-snd-command targets the mic's own card; otherwise
