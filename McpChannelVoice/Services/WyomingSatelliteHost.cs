@@ -9,7 +9,7 @@ using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
 
-// Dials each configured satellite as a Wyoming client. wyoming-satellite is itself
+// Dials each configured satellite as a Wyoming client. The satellite is itself
 // a Wyoming server: it runs local wake detection and, once the wake word fires,
 // sends us run-pipeline followed by an open-ended mic audio stream. We segment
 // that stream with SilenceGate, transcribe it, and send a transcript back to stop
@@ -23,6 +23,7 @@ public sealed class WyomingSatelliteHost(
     VoiceConversationManager conversationManager,
     ISpeechToText speechToText,
     TranscriptDispatcher dispatcher,
+    ActiveAlertRegistry alerts,
     IMetricsPublisher metrics,
     TimeProvider time,
     ILogger<WyomingSatelliteHost> logger) : IHostedService
@@ -178,6 +179,9 @@ public sealed class WyomingSatelliteHost(
                 {
                     case "run-pipeline":
                     case "audio-start":
+                        // Waking the satellite during an active alert dismisses it — no spoken command
+                        // needed (the satellite mics only on local wake).
+                        alerts.Acknowledge(id);
                         coordinator.OnWake();
                         break;
 
@@ -292,7 +296,14 @@ public sealed class WyomingSatelliteHost(
                 PublishVoiceMetric(VoiceMetric.FollowUpEngaged, session);
             }
 
-            return await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
+            var dispatched = await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
+            if (dispatched)
+            {
+                // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
+                // where a wake event was not observed. The registry makes a second Acknowledge a no-op.
+                alerts.Acknowledge(session.SatelliteId);
+            }
+            return dispatched;
         }
         catch (OperationCanceledException)
         {

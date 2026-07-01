@@ -15,7 +15,8 @@ public static partial class AnnounceEndpoint
             AnnounceRequest body,
             HttpContext ctx,
             AnnounceSettings settings,
-            AnnouncementService announcer) =>
+            AnnouncementService announcer,
+            InsistentAnnouncementController insistent) =>
         {
             if (!settings.Enabled)
             {
@@ -54,9 +55,10 @@ public static partial class AnnounceEndpoint
             try
             {
                 // Synthesis and playback run on the satellite's background playback loop, which
-                // outlives this HTTP request. Flowing RequestAborted here would cancel the audio
-                // the instant we return 202 and drop the announcement, so the job runs detached.
-                var response = await announcer.AnnounceAsync(body, CancellationToken.None);
+                // outlives this HTTP request, so the job runs detached (see CancellationToken.None).
+                var response = body.Insistent is not null
+                    ? await insistent.StartAsync(body, CancellationToken.None)
+                    : await announcer.AnnounceAsync(body, CancellationToken.None);
                 return Results.Accepted(value: response);
             }
             catch (AnnounceTargetNotFoundException ex)

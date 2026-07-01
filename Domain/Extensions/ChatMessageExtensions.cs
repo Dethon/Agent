@@ -101,7 +101,13 @@ public static class ChatMessageExtensions
 
         public MemoryContext? GetMemoryContext()
         {
-            return message.AdditionalProperties?.GetValueOrDefault(MemoryContextKey) as MemoryContext;
+            var value = message.AdditionalProperties?.GetValueOrDefault(MemoryContextKey);
+            return value switch
+            {
+                MemoryContext context => context,
+                JsonElement je => je.Deserialize<MemoryContext>(),
+                _ => null
+            };
         }
 
         public void SetMemoryContext(MemoryContext? context)

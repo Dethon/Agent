@@ -96,6 +96,8 @@ public static class ConfigModule
 
         services.AddSingleton(settings.Announce);
         services.AddSingleton<AnnouncementService>();
+        services.AddSingleton<ActiveAlertRegistry>();
+        services.AddSingleton<InsistentAnnouncementController>();
 
         services
             .AddMcpServer()

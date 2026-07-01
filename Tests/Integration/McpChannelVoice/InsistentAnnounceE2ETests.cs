@@ -15,21 +15,19 @@ using Shouldly;
 
 namespace Tests.Integration.McpChannelVoice;
 
-public class AnnounceEndToEndTests
+public class InsistentAnnounceE2ETests
 {
     [Fact]
-    public async Task PostAnnounce_PushesAudioToDialedSatellite()
+    public async Task PostInsistentAnnounce_RepeatsUntilAcknowledged()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var ct = cts.Token;
 
-        // Fake satellite Wyoming server the hub will dial out to.
         var satListener = new TcpListener(IPAddress.Loopback, 0);
         satListener.Start();
         var satPort = ((IPEndPoint)satListener.LocalEndpoint).Port;
 
-        var audioEvents = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        var sawAudioStop = new TaskCompletionSource();
+        var audioStarts = new System.Collections.Concurrent.ConcurrentQueue<DateTimeOffset>();
         var fakeSatellite = Task.Run(async () =>
         {
             using var conn = await satListener.AcceptTcpClientAsync(ct);
@@ -37,13 +35,9 @@ public class AnnounceEndToEndTests
             var reader = new WyomingReader(stream);
             await foreach (var evt in reader.ReadAllAsync(ct))
             {
-                if (evt.Type is "audio-start" or "audio-chunk" or "audio-stop")
+                if (evt.Type == "audio-start")
                 {
-                    audioEvents.Enqueue(evt.Type);
-                }
-                if (evt.Type == "audio-stop")
-                {
-                    sawAudioStop.TrySetResult();
+                    audioStarts.Enqueue(DateTimeOffset.UtcNow);
                 }
             }
         }, ct);
@@ -51,7 +45,7 @@ public class AnnounceEndToEndTests
         var settings = new VoiceSettings
         {
             WyomingClient = new() { ReconnectDelaySeconds = 1 },
-            Announce = new() { Enabled = true, Token = "secret", QueueMaxDepth = 4 },
+            Announce = new() { Enabled = true, Token = "secret", QueueMaxDepth = 8 },
             Satellites = new()
             {
                 ["kitchen-01"] = new()
@@ -65,7 +59,6 @@ public class AnnounceEndToEndTests
         };
 
         var apiPort = GetFreePort();
-
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(opts => opts.Listen(IPAddress.Loopback, apiPort));
         builder.Services.AddSingleton(settings);
@@ -73,6 +66,7 @@ public class AnnounceEndToEndTests
         builder.Services.AddSingleton(settings.WyomingClient);
         builder.Services.AddSingleton(new SatelliteRegistry(settings.Satellites));
         builder.Services.AddSingleton<SatelliteSessionRegistry>();
+        builder.Services.AddSingleton<ActiveAlertRegistry>();
         builder.Services.AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>());
 
         var tts = new Mock<ITextToSpeech>();
@@ -83,17 +77,13 @@ public class AnnounceEndToEndTests
 
         var stt = new Mock<ISpeechToText>();
         builder.Services.AddSingleton(stt.Object);
-
         builder.Services.AddSingleton<ReplyTextAccumulator>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<VoiceConversationManager>(sp => new VoiceConversationManager(
-            Mock.Of<IConversationFactory>(),
-            sp.GetRequiredService<ReplyTextAccumulator>(),
-            sp.GetRequiredService<TimeProvider>(),
-            TimeSpan.FromMinutes(5),
+            Mock.Of<IConversationFactory>(), sp.GetRequiredService<ReplyTextAccumulator>(),
+            sp.GetRequiredService<TimeProvider>(), TimeSpan.FromMinutes(5),
             NullLogger<VoiceConversationManager>.Instance));
         builder.Services.AddSingleton<AnnouncementService>();
-        builder.Services.AddSingleton<ActiveAlertRegistry>();
         builder.Services.AddSingleton<InsistentAnnouncementController>();
         builder.Services.AddHostedService<WyomingSatelliteHost>();
 
@@ -101,10 +91,8 @@ public class AnnounceEndToEndTests
         AnnounceEndpoint.Map(app);
         await app.StartAsync(ct);
 
-        // Wait for the hub to dial out and register the satellite session.
         var sessions = app.Services.GetRequiredService<SatelliteSessionRegistry>();
         await WaitForAsync(() => sessions.Get("kitchen-01") is not null, TimeSpan.FromSeconds(5));
-        sessions.Get("kitchen-01").ShouldNotBeNull();
 
         using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{apiPort}") };
         http.DefaultRequestHeaders.Add("X-Announce-Token", "secret");
@@ -113,29 +101,26 @@ public class AnnounceEndToEndTests
             new AnnounceRequest
             {
                 Target = new() { SatelliteId = "kitchen-01" },
-                Text = "hello",
-                Priority = AnnouncePriority.Normal
+                Text = "alarm",
+                Insistent = new InsistentOptions { GapSeconds = 1, MaxRepeats = 10 }
             }, ct);
-
         response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
 
-        // The satellite must receive a full Wyoming playback envelope, not bare chunks:
-        // without audio-stop the satellite's paplay never closes stdin and a short clip
-        // never clears the prebuffer, so nothing is audible.
-        await sawAudioStop.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
-        var seq = audioEvents.ToArray();
-        seq.ShouldContain("audio-start");
-        seq.ShouldContain("audio-chunk");
-        seq.ShouldContain("audio-stop");
-        Array.IndexOf(seq, "audio-start").ShouldBeLessThan(Array.IndexOf(seq, "audio-chunk"));
-        Array.IndexOf(seq, "audio-chunk").ShouldBeLessThan(Array.LastIndexOf(seq, "audio-stop"));
+        // It must REPEAT: wait for at least two audio-start envelopes (gap = 1s).
+        await WaitForAsync(() => audioStarts.Count >= 2, TimeSpan.FromSeconds(10));
+
+        // Acknowledge -> the loop stops; no meaningful growth after a couple more gaps.
+        app.Services.GetRequiredService<ActiveAlertRegistry>().Acknowledge("kitchen-01").ShouldBeTrue();
+        var countAtAck = audioStarts.Count;
+        await Task.Delay(TimeSpan.FromSeconds(3), ct); // 3 gaps elapse
+        audioStarts.Count.ShouldBeLessThanOrEqualTo(countAtAck + 1); // at most one in-flight round
 
         await app.StopAsync(CancellationToken.None);
         satListener.Stop();
         await cts.CancelAsync();
         try
         { await fakeSatellite; }
-        catch { /* cancellation / disposal */ }
+        catch { /* cancellation */ }
     }
 
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
@@ -144,11 +129,10 @@ public class AnnounceEndToEndTests
         while (DateTime.UtcNow < deadline)
         {
             if (condition())
-            {
-                return;
-            }
+            { return; }
             await Task.Delay(50);
         }
+        throw new TimeoutException("condition not met");
     }
 
     private static async IAsyncEnumerable<AudioChunk> FakeTtsAudio()

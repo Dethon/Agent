@@ -27,6 +27,38 @@ impl MicCapture {
         Ok(Self { _child: child, out })
     }
 
+    /// Wake a firmware-sleeping mic, then return a capture that is already streaming. The Jabra
+    /// Speak2 powers its capture ADC down when idle: capture-only opens race the wake-up and
+    /// return EIO, and from deep sleep (e.g. after a host reboot) it ignores even silent
+    /// playback — but it wakes on real audio signal. So each attempt opens the mic and verifies
+    /// it streams a chunk; on a cold miss it plays a brief `wake_ms` tone through `snd_command`
+    /// (real signal, NOT silence) and retries, up to `max_attempts`, until capture catches; once
+    /// a stream is held open continuously the device stays awake. Opening BEFORE the tone means
+    /// an already-awake device (a warm reconnect) returns immediately and never beeps. The
+    /// verification chunk (~80 ms) is discarded. Errors if the mic never catches.
+    pub async fn warm(
+        mic_command: &str,
+        snd_command: &str,
+        wake_ms: u32,
+        max_attempts: u32,
+    ) -> anyhow::Result<Self> {
+        for attempt in 1..=max_attempts {
+            // Open first: an already-awake device returns here with no wake tone.
+            let mut mic = Self::spawn(mic_command)?;
+            if matches!(mic.next_chunk().await, Ok(Some(_))) {
+                if attempt > 1 {
+                    tracing::info!(attempt, "mic woke after wake-tone retries");
+                }
+                return Ok(mic);
+            }
+            // Cold (immediate EIO/EOF): drop -> kill_on_drop reaps arecord, then wake the ADC
+            // with a real tone (it ignores silence from deep sleep) and retry.
+            drop(mic);
+            let _ = crate::audio::playback::play_wake_tone(snd_command, wake_ms).await;
+        }
+        anyhow::bail!("mic did not wake after {max_attempts} wake-tone attempts")
+    }
+
     /// Returns Ok(None) when the mic stream ends (EOF). This does NOT
     /// distinguish a finished stream from a silently failed/absent device —
     /// callers treat it as fatal for the connection (the state machine logs
@@ -80,5 +112,31 @@ mod tests {
     #[test]
     fn bytes_to_samples_decodes_le_i16() {
         assert_eq!(bytes_to_samples(&[0x01, 0x00, 0xFF, 0xFF, 0x00, 0x80]), vec![1, -1, i16::MIN]);
+    }
+
+    #[tokio::test]
+    async fn warm_retries_through_a_cold_start_until_the_mic_catches() {
+        // Models the Jabra cold-start: a mic command that "sleeps" (exits with no output) on
+        // its first 2 opens, then streams one chunk. A counter file carries state across the
+        // separate arecord spawns. snd_command is a no-op sink standing in for the wake aplay.
+        let cnt = std::env::temp_dir().join(format!("nabu-warm-catch-{}", std::process::id()));
+        let _ = std::fs::remove_file(&cnt);
+        let bytes = CHUNK_SAMPLES * 2;
+        let mic = format!(
+            "n=$(cat {c} 2>/dev/null||echo 0); n=$((n+1)); echo $n>{c}; [ $n -le 2 ] && exit 1; head -c {b} /dev/zero",
+            c = cnt.display(),
+            b = bytes
+        );
+        let warmed = MicCapture::warm(&mic, "cat >/dev/null", 5, 5).await;
+        let _ = std::fs::remove_file(&cnt);
+        assert!(warmed.is_ok(), "warm must retry past the cold-start opens and catch");
+    }
+
+    #[tokio::test]
+    async fn warm_gives_up_after_max_attempts() {
+        // `false` spawns and exits immediately with no output (always "cold"); warm must bail
+        // after max_attempts rather than loop forever.
+        let r = MicCapture::warm("false", "cat >/dev/null", 5, 3).await;
+        assert!(r.is_err(), "warm must give up after max_attempts when the mic never catches");
     }
 }

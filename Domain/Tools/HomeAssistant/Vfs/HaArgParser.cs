@@ -7,8 +7,12 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public static class HaArgParser
 {
-    public static JsonObject Parse(IReadOnlyList<string> tokens, HaServiceDefinition svc)
+    // `commandName` is the action-file name without `.sh` (e.g. `music_assistant.play_media` for a
+    // cross-domain service); it only feeds error hints so they point at the file the caller invoked.
+    // Defaults to the bare service name for same-domain callers.
+    public static JsonObject Parse(IReadOnlyList<string> tokens, HaServiceDefinition svc, string? commandName = null)
     {
+        var command = commandName ?? svc.Service;
         var data = new JsonObject();
         for (var i = 0; i < tokens.Count; i++)
         {
@@ -26,7 +30,7 @@ public static class HaArgParser
             if (!svc.Fields.TryGetValue(name, out var field))
             {
                 throw new ArgumentException(
-                    $"Unknown argument '--{name}'. Run `{svc.Service}.sh --help` for the field list.");
+                    $"Unknown argument '--{name}'. Run `{command}.sh --help` for the field list.");
             }
 
             string raw;

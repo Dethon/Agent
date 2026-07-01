@@ -117,10 +117,10 @@ Pick the override file matching your OS:
 
 ```bash
 # Linux / WSL
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer wyoming-whisper wyoming-piper qbittorrent jackett redis caddy camoufox homeassistant
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer wyoming-whisper wyoming-piper qbittorrent jackett redis caddy camoufox homeassistant music-assistant
 
 # Windows
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer wyoming-whisper wyoming-piper qbittorrent jackett redis caddy camoufox homeassistant
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer wyoming-whisper wyoming-piper qbittorrent jackett redis caddy camoufox homeassistant music-assistant
 ```
 
 The base compose maps `/dev/dri` into `plex`/`mcp-sandbox` for GPU hardware acceleration. Hosts **without** a DRI render node (NVIDIA-only WSL2 has `/dev/dxg` + the NVIDIA Container Toolkit, never `/dev/dri`) will fail with `error gathering device information while adding custom device "/dev/dri"`. On those hosts, append `-f DockerCompose/docker-compose.override.no-dri.yml` as the last `-f` to strip the device. (The VS Code `docker-debug-up` task already includes this override — debug never needs the GPU.)
@@ -145,6 +145,10 @@ Home Assistant runs at `http://<host>:8123` (port published on all interfaces so
 2. From the user profile menu, open **Security → Long-Lived Access Tokens** and create one.
 3. Set `HOMEASSISTANT__TOKEN=...` in `DockerCompose/.env` and restart the `mcp-homeassistant` container.
 4. To control the Roborock S8: Settings → Devices & Services → Add Integration → **Roborock**, log in with the Roborock account; the vacuum appears as `vacuum.<name>` once the integration finishes.
+
+For voice alarms/reminders, the agent creates events on a dedicated `calendar.assistant_alarms`
+calendar that an HA automation bridges to the voice announce endpoint — see
+`docs/home-assistant-alarms.md` for the one-time `rest_command` + automation provisioning.
 
 The agent reaches HA inside the compose network at `http://homeassistant:8123` via the `McpServerHomeAssistant` MCP server.
 

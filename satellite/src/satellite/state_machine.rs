@@ -17,6 +17,11 @@ use tracing::{info, warn};
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum Mode { Idle, Streaming }
 
+/// Play-to-wake retry ceiling: a wake tone doesn't always rouse the Jabra's ADC from deep sleep
+/// on the first try (each attempt is one tone + mic open), so a generous cap makes a cold first
+/// connection effectively certain to catch while still bounding a genuinely absent mic.
+const MIC_WAKE_MAX_ATTEMPTS: u32 = 20;
+
 /// Aborts the wrapped task on drop, so the pump tasks can never outlive run_connection —
 /// neither on loop exit / `?` error paths, nor when the whole connection task is aborted
 /// (main.rs single-hub supersede policy; the mic pump owns MicCapture, whose kill_on_drop
@@ -37,7 +42,18 @@ pub async fn run_connection(
     reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: Config, models: Option<WakeModels>,
 ) -> anyhow::Result<()> {
     let mut wr = writer;
-    let mic = MicCapture::spawn(&cfg.mic_command)?;
+    // Wake a firmware-sleeping mic (Jabra Speak2) with a brief play-to-wake TONE (it ignores
+    // silence from deep sleep): warm() opens the mic first and, on a cold miss, plays the tone and
+    // retries. wake_playback_ms == 0 keeps the direct single-open path for mics that don't sleep.
+    let mic = if cfg.wake_playback_ms > 0 {
+        // The wake tone must reach the (firmware-sleeping) mic device itself. When TTS is routed to
+        // a different sink (jack/PipeWire), --wake-snd-command targets the mic's own card; otherwise
+        // it falls back to snd_command (mic and playback are the same device).
+        let wake_snd = cfg.wake_snd_command.as_deref().unwrap_or(&cfg.snd_command);
+        MicCapture::warm(&cfg.mic_command, wake_snd, cfg.wake_playback_ms, MIC_WAKE_MAX_ATTEMPTS).await?
+    } else {
+        MicCapture::spawn(&cfg.mic_command)?
+    };
     let mut detector =
         models.as_ref().map(|m| WakeDetector::new(m, cfg.detector.clone())).transpose()?;
     let cues = Cues::new(&cfg)?;
@@ -93,7 +109,15 @@ pub async fn run_connection(
     // LED is claimed per-connection like the button; guard drop (connection end/supersede)
     // aborts the render task, whose backend turns the light off on drop.
     let (led_tx, led_rx) = watch::channel(LedState::Idle);
+    let duck_rx = led_tx.subscribe();
     let _led_guard = led::spawn_led(&cfg.led, led_rx);
+    let _duck_guard = crate::music::spawn_duck(
+        duck_rx,
+        cfg.music_mixer.clone(),
+        cfg.music_card.clone(),
+        cfg.duck_percent,
+        std::time::Duration::from_millis(cfg.music_restore_grace_ms),
+    );
     let ctx = Ctx { cues: &cues, led: &led_tx };
 
     // Playback is a pump task too: PlaybackSink::finish() waits for the player to drain
@@ -101,7 +125,7 @@ pub async fn run_connection(
     // re-arm and mic forwarding stay live during the drain. Completions come back on an
     // unbounded channel (a bounded send from the pump could AB-deadlock against a main loop
     // blocked sending a command) and are raced below like the other pumps.
-    let (mut playback, mut playback_done, pump_task) = spawn_pump(&cfg.snd_command);
+    let (mut playback, mut playback_done, pump_task) = spawn_pump(&cfg.snd_command, cfg.keep_warm);
     let _playback_pump = AbortOnDrop(pump_task);
 
     // Pre-roll ring: keep the last `preroll_chunks()` mic chunks while Idle, so a request spoken
@@ -169,6 +193,7 @@ fn apply_drain_done(
     d: DrainDone, latest_generation: u64, mode: Mode, led: &watch::Sender<LedState>,
 ) -> anyhow::Result<()> {
     d.result?;
+    tracing::debug!(gen = d.generation, latest = latest_generation, ?mode, "drain done");
     if d.generation == latest_generation {
         let _ = led.send(if mode == Mode::Streaming { LedState::Listening } else { LedState::Idle });
     }
@@ -212,6 +237,11 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
     playback: &mut PlaybackHandle,
     ctx: &Ctx<'_>,
 ) -> anyhow::Result<()> {
+    // Skip the per-frame audio-chunk flood (100+/s during a reply); the control events
+    // (audio-start/stop, transcript, run-satellite) with the current mode are the useful trace.
+    if e.event_type != "audio-chunk" {
+        tracing::debug!(event = %e.event_type, ?mode, "hub event");
+    }
     match e.event_type.as_str() {
         "run-satellite" => info!("run-satellite: armed"),
         "transcript" => {
@@ -254,7 +284,7 @@ mod tests {
     }
 
     fn pump() -> (PlaybackHandle, tokio::sync::mpsc::UnboundedReceiver<DrainDone>, AbortOnDrop) {
-        let (handle, done_rx, task) = spawn_pump("cat >/dev/null");
+        let (handle, done_rx, task) = spawn_pump("cat >/dev/null", false);
         (handle, done_rx, AbortOnDrop(task))
     }
 
@@ -396,7 +426,7 @@ mod tests {
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
         let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle;
-        let (handle, mut done_rx, task) = spawn_pump("cat >/dev/null; sleep 1");
+        let (handle, mut done_rx, task) = spawn_pump("cat >/dev/null; sleep 1", false);
         let mut playback = handle;
         let _pump = AbortOnDrop(task);
 

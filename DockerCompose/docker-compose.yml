@@ -1,4 +1,10 @@
 name: jackbot
+
+# Single source of truth for the agent's operating timezone (applied to the two
+# containers that surface time to the LLM / fire schedules).
+x-timezone: &timezone
+  TZ: Europe/Madrid
+
 services:
   redis:
     image: redis/redis-stack-server:latest
@@ -12,7 +18,8 @@ services:
     volumes:
       - ./volumes/redis_data:/data
     environment:
-      - REDIS_ARGS=--appendonly yes
+      <<: *timezone
+      REDIS_ARGS: "--appendonly yes"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -38,14 +45,14 @@ services:
       - ./volumes/qbittorrent_config:/config
       - ${DATA_PATH:-./volumes/data}/downloads:/downloads
     environment:
-      - PUID=${PUID:-1654}
-      - PGID=${PGID:-1654}
-      - QBT_LEGAL_NOTICE=confirm
-      - QBT_VERSION=5.1.2-2
-      - QBT_TORRENTING_PORT=6881
-      - QBT_WEBUI_PORT=8001
-      - TZ=UTC
-      - UMASK=002
+      <<: *timezone
+      PUID: ${PUID:-1654}
+      PGID: ${PGID:-1654}
+      QBT_LEGAL_NOTICE: confirm
+      QBT_VERSION: 5.1.2-2
+      QBT_TORRENTING_PORT: 6881
+      QBT_WEBUI_PORT: 8001
+      UMASK: "002"
     stop_grace_period: 30m
     restart: unless-stopped
     networks:
@@ -63,7 +70,27 @@ services:
     volumes:
       - ./volumes/homeassistant_config:/config
     environment:
-      - TZ=Europe/Madrid
+      <<: *timezone
+    restart: unless-stopped
+    networks:
+      - jackbot
+
+  music-assistant:
+    image: ghcr.io/music-assistant/server:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: music-assistant
+    ports:
+      - "8095:8095"     # web UI + API/websocket (HA Music Assistant integration target)
+      - "1704:1704"     # snapcast stream  (satellite snapclients connect here)
+      - "1705:1705"     # snapcast control
+      - "1780:1780"     # snapcast web
+    volumes:
+      - music-assistant-data:/data
+    environment:
+      <<: *timezone
     restart: unless-stopped
     networks:
       - jackbot
@@ -82,6 +109,8 @@ services:
       - ${DATA_PATH:-./volumes/data}:/srv
       - ./volumes/filebrowser_database:/database
       - ./volumes/filebrowser_config:/config
+    environment:
+      <<: *timezone
     restart: unless-stopped
     networks:
       - jackbot
@@ -104,16 +133,16 @@ services:
       - ./volumes/jackett_config:/config
       - ./volumes/jackett_data/downloads:/downloads
     environment:
-      - PUID=${PUID:-1654}
-      - PGID=${PGID:-1654}
-      - TZ=UTC
-      - UMASK=022
+      <<: *timezone
+      PUID: ${PUID:-1654}
+      PGID: ${PGID:-1654}
+      UMASK: "022"
     restart: unless-stopped
     networks:
       - jackbot
         #    depends_on:
         #      - flaresolverr
-        
+
   #  flaresolverr:
   #    image: ghcr.io/flaresolverr/flaresolverr:latest
   #    logging:
@@ -125,7 +154,6 @@ services:
   #      - LOG_LEVEL=info
   #      - LOG_HTML=false
   #      - CAPTCHA_SOLVER=none
-  #      - TZ=UTC
   #    ports:
   #      - "8191:8191"
   #    networks:
@@ -146,12 +174,12 @@ services:
       - ./volumes/plex_config:/config
       - ${DATA_PATH:-./volumes/data}:/media
     environment:
-      - PUID=${PUID:-1654}
-      - PGID=${PGID:-1654}
-      - TZ=UTC
-      - VERSION=docker
+      <<: *timezone
+      PUID: ${PUID:-1654}
+      PGID: ${PGID:-1654}
+      VERSION: docker
     restart: unless-stopped
-    
+
   base-sdk:
     image: base-sdk:latest
     build:
@@ -164,6 +192,8 @@ services:
       labels:
         keep: "true"
     entrypoint: ["true"]
+    environment:
+      <<: *timezone
     restart: "no"
     networks:
       - jackbot
@@ -190,6 +220,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -224,6 +256,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -261,6 +295,7 @@ services:
     env_file:
       - .env
     environment:
+      <<: *timezone
       HOME: /home/sandbox_user
       PATH: /home/sandbox_user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     networks:
@@ -284,6 +319,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    environment:
+      <<: *timezone
     restart: unless-stopped
     networks:
       - jackbot
@@ -307,6 +344,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -334,6 +373,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -358,6 +399,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -385,6 +428,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -412,6 +457,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -439,6 +486,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -463,6 +512,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -492,6 +543,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -517,6 +570,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -557,6 +612,8 @@ services:
       - tcp://0.0.0.0:10300
     volumes:
       - ./volumes/whisper-data:/data
+    environment:
+      <<: *timezone
     restart: unless-stopped
     networks:
       - jackbot
@@ -605,6 +662,8 @@ services:
         fetch "$$laura" es_MX-laura-high.onnx.json
     volumes:
       - ./volumes/piper-data:/data
+    environment:
+      <<: *timezone
     restart: "no"
     networks:
       - jackbot
@@ -615,6 +674,8 @@ services:
     command: --voice es_ES-davefx-medium --length-scale 1.05 --noise-w-scale 0.85 --noise-scale 0.667 --uri tcp://0.0.0.0:10200
     volumes:
       - ./volumes/piper-data:/data
+    environment:
+      <<: *timezone
     restart: unless-stopped
     networks:
       - jackbot
@@ -642,6 +703,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      <<: *timezone
     networks:
       - jackbot
     depends_on:
@@ -692,6 +755,8 @@ services:
         - BUILDKIT_INLINE_CACHE=1
     env_file:
       - .env
+    environment:
+      <<: *timezone
     restart: unless-stopped
     networks:
       - jackbot
@@ -717,6 +782,8 @@ services:
       - "5003:8080"
     env_file:
       - .env
+    environment:
+      <<: *timezone
     restart: unless-stopped
     depends_on:
       redis:
@@ -739,7 +806,8 @@ services:
       - ./volumes/caddy_data:/data
       - ./volumes/caddy_config:/config
     environment:
-      - CF_API_TOKEN=${CF_API_TOKEN}
+      <<: *timezone
+      CF_API_TOKEN: ${CF_API_TOKEN}
     restart: unless-stopped
     networks:
       - jackbot
@@ -752,3 +820,4 @@ networks:
 
 volumes:
   printer-spool:
+  music-assistant-data:
