@@ -45,7 +45,11 @@ pub async fn run_connection(
     // Wake a firmware-sleeping mic (Jabra Speak2) by playing silence before opening capture;
     // wake_playback_ms == 0 keeps the direct single-open path for mics that don't sleep.
     let mic = if cfg.wake_playback_ms > 0 {
-        MicCapture::warm(&cfg.mic_command, &cfg.snd_command, cfg.wake_playback_ms, MIC_WAKE_MAX_ATTEMPTS).await?
+        // The wake tone must reach the (firmware-sleeping) mic device itself. When TTS is routed to
+        // a different sink (jack/PipeWire), --wake-snd-command targets the mic's own card; otherwise
+        // it falls back to snd_command (mic and playback are the same device).
+        let wake_snd = cfg.wake_snd_command.as_deref().unwrap_or(&cfg.snd_command);
+        MicCapture::warm(&cfg.mic_command, wake_snd, cfg.wake_playback_ms, MIC_WAKE_MAX_ATTEMPTS).await?
     } else {
         MicCapture::spawn(&cfg.mic_command)?
     };

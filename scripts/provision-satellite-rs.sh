@@ -2,8 +2,12 @@
 set -euo pipefail
 
 # Usage: scripts/provision-satellite-rs.sh <user@host> [mic-device]
+#   Music satellite: MUSIC_HUB=<snapserver-host> MUSIC_ROOM=<player-name> \
+#                    scripts/provision-satellite-rs.sh <user@host>
 # Builds the static binary (via the fp16-shim-aware build script), copies it + the systemd
-# unit to the Pi, and enables the service. The Pi needs only alsa-utils — no Python, no pipx.
+# unit to the Pi, and enables the service. A voice-only Pi needs only alsa-utils; a music Pi also
+# gets snapclient + PipeWire — music, TTS and cues share the 3.5mm jack (mixed by PipeWire, since
+# the bcm2835 jack can't ALSA-dmix), while the Jabra stays the mic + play-to-wake tone (see below).
 #
 # Audio addressing:
 #   - No [mic-device] arg (the usual case): the USB audio card is auto-detected by NAME from
@@ -64,6 +68,7 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
     al=$(arecord -l)
     cardname=$(printf '%s\n' "$al" | sed -nE 's/^card [0-9]+: ([^ ]+) \[.*/\1/p' | sed -n '1p')
     cardidx=$(printf '%s\n' "$al" | sed -nE 's/^card ([0-9]+):.*/\1/p' | sed -n '1p')
+    carddesc=$(printf '%s\n' "$al" | sed -nE 's/^card [0-9]+: [^ ]+ \[([^]]+)\].*/\1/p' | sed -n '1p')
     if [ -z "$cardname" ]; then
       echo "ERROR: no USB capture device in 'arecord -l' — is the mic plugged in?" >&2
       exit 1
@@ -92,73 +97,97 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
   fi
 
   # --- music coexistence (opt-in via MUSIC_HUB) ---
-  snddev="${dev}"          # default: same device as capture (voice-only unit, unchanged)
-  music_sed=(-e "/__MUSIC_FLAGS__/d")   # default: strip the placeholder line entirely
+  # Music + TTS + cues all share the 3.5mm JACK, mixed by PipeWire in userspace. The bcm2835 jack's
+  # ALSA dmix can't share the device (2nd client -> -22), so a sound server does the mixing. The
+  # Jabra is kept OUT of PipeWire and owned by the satellite via raw ALSA (mic + play-to-wake tone).
+  snddev="${dev}"   # base unit stays voice-style; music units add a drop-in that overrides ExecStart
+  # Clear any stale music drop-in first so a re-provision is deterministic (added back below if music).
+  sudo rm -f /etc/systemd/system/nabu-satellite.service.d/pipewire.conf
   if [ -n "${MUSIC_HUB:-}" ]; then
-    sudo apt-get install -y snapclient
-    snddev="duckmix"
-    music_sed=(-e "s|__MUSIC_FLAGS__|--music-mixer Music --music-card ${cardname}|")
+    uid=$(id -u "$user")
+    excltoken=$(printf '%s' "$carddesc" | awk '{print $1}')   # distinctive card word, e.g. "Jabra"
+    # snapclient + PipeWire (the userspace mixer). snapclient + the satellite are SYSTEM services
+    # with no login session, so enable lingering to run the user's PipeWire at boot and pass
+    # XDG_RUNTIME_DIR into both units so their aplay/snapclient reach it.
+    sudo apt-get install -y snapclient pipewire pipewire-alsa wireplumber
+    sudo usermod -aG audio "$user"
+    sudo loginctl enable-linger "$user"
+    XDG_RUNTIME_DIR=/run/user/$uid systemctl --user enable --now pipewire pipewire-pulse wireplumber 2>/dev/null || true
 
-    # Shared dmix + softvol over the Jabra card, by NAME. NO pcm.!default: the capture command
-    # keeps its explicit plughw device (capture never contended). ALL playback — TTS, cues,
-    # keep-warm, and the play-to-wake tone (emitted on the playback path) — flows through
-    # `duckmix` for music units; the tone remains full-scale (softvol is only on `music`).
-    sudo tee /etc/asound.conf >/dev/null <<ASOUND
-pcm.duckmix {
-    type plug
-    slave.pcm {
-        type dmix
-        ipc_key 32421
-        ipc_perm 0660
-        # Pin a fine period/buffer. Without these, dmix hands clients a coarse ~125 ms period
-        # (snapclient logs "Period time too small, changing from 20000 to 125000"), too coarse for
-        # snapcast to track the server clock with inaudible single-sample corrections -> it falls
-        # back to periodic audible hard-resyncs in the music. 1024-frame periods (~21 ms) restore
-        # smooth sync; the satellite's own playback rides the same finer buffer (lower onset).
-        slave {
-            pcm "hw:CARD=${cardname},DEV=0"
-            format S16_LE
-            rate 48000
-            channels 2
-            period_size 1024
-            buffer_size 8192
-        }
-    }
-}
+    # Keep the mic card OUT of PipeWire so the satellite owns it raw (mic capture + the play-to-wake
+    # tone). Without this PipeWire grabs the Jabra sink and the raw wake-tone aplay fails EBUSY, so
+    # the firmware-sleeping mic never wakes. Match the detected card by its distinctive name word.
+    sudo mkdir -p /etc/wireplumber/wireplumber.conf.d
+    sudo tee /etc/wireplumber/wireplumber.conf.d/50-nabu-exclude-mic.conf >/dev/null <<WPEOF
+monitor.alsa.rules = [
+  {
+    matches = [ { device.name = "~alsa_card.*${excltoken}.*" } ]
+    actions = { update-props = { device.disabled = true } }
+  }
+]
+WPEOF
+
+    # `music` PCM: snapclient -> a softvol the satellite ducks (amixer -c Headphones sset Music <pct>%)
+    # -> PipeWire -> jack. NO pcm.!default (PipeWire's own default stands); capture stays direct plughw.
+    sudo tee /etc/asound.conf >/dev/null <<'ASOUND'
 pcm.music {
-    type plug
-    slave.pcm {
-        type softvol
-        slave.pcm "duckmix"
-        control { name "Music" card ${cardname} }
-        min_dB -51.0
-        max_dB 0.0
-        resolution 256
-    }
+    type softvol
+    slave.pcm "pipewire"
+    control { name "Music" card Headphones }
+    min_dB -51.0
+    max_dB 0.0
+    resolution 256
 }
 ASOUND
 
-    # snapclient unit -> hub Snapcast :1704, output into the softvol PCM.
-    sudo usermod -aG audio "$user"
-    sudo sed "s|%i|$user|g; s|HUBHOST|${MUSIC_HUB}|g; s|ROOM|${MUSIC_ROOM:-$cardname}|g" \
+    # Apply the exclusion (jack becomes the only/default sink) and set a sane jack volume.
+    XDG_RUNTIME_DIR=/run/user/$uid systemctl --user restart wireplumber 2>/dev/null || true
+    sleep 3
+    XDG_RUNTIME_DIR=/run/user/$uid wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.8 2>/dev/null || true
+
+    # snapclient -> the `music` softvol PCM (so the satellite can duck it); XDGDIR so its
+    # ALSA->PipeWire bridge connects.
+    sudo sed "s|%i|$user|g; s|HUBHOST|${MUSIC_HUB}|g; s|ROOM|${MUSIC_ROOM:-$cardname}|g; s|XDGDIR|/run/user/$uid|g" \
       /tmp/snapclient.service | sudo tee /etc/systemd/system/snapclient.service >/dev/null
     sudo systemctl daemon-reload
     sudo systemctl enable snapclient.service
     sudo systemctl restart snapclient.service
+
+    # nabu-satellite drop-in: TTS/cues -> PipeWire (jack); play-to-wake tone -> the mic card (raw
+    # ALSA, --wake-snd-command); duck the `Music` softvol while active; XDG so aplay -D pipewire
+    # connects. NO --keep-warm: PipeWire's exact drain re-arms the mic only after playback truly
+    # finishes, so it never hears its own reply on the loud jack. Overrides the base voice ExecStart.
+    sudo mkdir -p /etc/systemd/system/nabu-satellite.service.d
+    sudo tee /etc/systemd/system/nabu-satellite.service.d/pipewire.conf >/dev/null <<DROPEOF
+[Service]
+Environment=XDG_RUNTIME_DIR=/run/user/$uid
+ExecStart=
+ExecStart=/usr/local/bin/nabu-satellite \\
+  --listen 0.0.0.0:10700 \\
+  --mic-command "arecord -D ${dev} -r 16000 -c 1 -f S16_LE -t raw" \\
+  --snd-command "aplay -D pipewire -r 22050 -c 1 -f S16_LE -t raw" \\
+  --wake-snd-command "aplay -D ${dev} -r 22050 -c 1 -f S16_LE -t raw" \\
+  --preroll-ms 1000 \\
+  --wake-playback-ms 1000 \\
+  --music-mixer Music --music-card Headphones \\
+  --threshold 0.7 \\
+  --trigger-level 2
+DROPEOF
   else
-    # downgrade / voice-only: tear down any prior music install so a re-provisioned
-    # Pi returns to exactly the voice-only state (no orphaned restart-looping snapclient).
+    # downgrade / voice-only: tear down any prior music install so a re-provisioned Pi returns to
+    # exactly the voice-only state (no orphaned snapclient / stale PipeWire routing config).
     sudo systemctl disable --now snapclient.service 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/snapclient.service
+    sudo rm -f /etc/systemd/system/snapclient.service /etc/asound.conf
+    sudo rm -f /etc/wireplumber/wireplumber.conf.d/50-nabu-exclude-mic.conf
     sudo systemctl daemon-reload
   fi
 
-  # Template the satellite unit: mic device stays plughw (capture untouched), snd device may be
-  # duckmix (music) or plughw (voice), %i -> user, and the music flags line substituted/stripped.
+  # Template the base (voice) unit: mic + snd devices -> the detected plughw, %i -> user. Music units
+  # additionally carry the pipewire.conf drop-in written above, which overrides this ExecStart to
+  # route TTS/cues to PipeWire and keep the wake tone on the mic card.
   sudo sed -e "/--mic-command/ s#plughw:0,0#${dev}#" \
            -e "/--snd-command/ s#plughw:0,0#${snddev}#" \
            -e "s/%i/$user/g" \
-           "${music_sed[@]}" \
            /tmp/nabu-satellite.service | sudo tee /etc/systemd/system/nabu-satellite.service >/dev/null
 
   # restart (not just enable --now): re-provisioning must pick up the new unit even when the
