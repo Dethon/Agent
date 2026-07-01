@@ -27,6 +27,9 @@ pub struct Config {
     pub listen: String,         // matches Satellites:<id>:Address port (default 10700)
     pub mic_command: String,
     pub snd_command: String,
+    pub wake_snd_command: Option<String>, // device for the play-to-wake tone; None => snd_command.
+                                          // Set when TTS is routed off the mic device (e.g. jack /
+                                          // PipeWire) but the tone must still wake the Jabra's ADC.
     pub detector: DetectorConfig,
     pub wake_enabled: bool,     // --no-wake disables on-device wake (button-only operation)
     pub button: ButtonConfig,
@@ -64,6 +67,7 @@ impl Default for Config {
             // underrun headroom). -F 50000 reads stdin in 50 ms periods so the first write
             // into the ALSA buffer happens sooner.
             snd_command: "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000".into(),
+            wake_snd_command: None,
             detector: DetectorConfig::default(),
             wake_enabled: true,
             button: ButtonConfig::None, // the Jabra's own buttons are Linux-unusable (HID telephony); --button-* opts in
@@ -82,7 +86,7 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Flags: --listen --mic-command --snd-command --threshold --no-wake
+    /// Flags: --listen --mic-command --snd-command --wake-snd-command --threshold --trigger-level --no-wake
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
     ///        --led-spi | --led-gpio <pin> | --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
@@ -96,7 +100,9 @@ impl Config {
         if let Some(v) = pa.opt_value_from_str::<_, String>("--listen")? { c.listen = v; }
         if let Some(v) = pa.opt_value_from_str::<_, String>("--mic-command")? { c.mic_command = v; }
         if let Some(v) = pa.opt_value_from_str::<_, String>("--snd-command")? { c.snd_command = v; }
+        if let Some(v) = pa.opt_value_from_str::<_, String>("--wake-snd-command")? { c.wake_snd_command = Some(v); }
         if let Some(v) = pa.opt_value_from_str::<_, f32>("--threshold")? { c.detector.threshold = v; }
+        if let Some(v) = pa.opt_value_from_str::<_, u32>("--trigger-level")? { c.detector.trigger_level = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--preroll-ms")? { c.preroll_ms = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-preroll-ms")? { c.wake_preroll_ms = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-playback-ms")? { c.wake_playback_ms = v; }
@@ -172,6 +178,23 @@ mod tests {
     fn no_led_flag_parses() {
         let c = Config::parse(args(&["--no-led"])).unwrap();
         assert_eq!(c.led, LedConfig::None);
+    }
+
+    #[test]
+    fn trigger_level_defaults_to_one_and_flag_parses() {
+        assert_eq!(Config::default().detector.trigger_level, 1);
+        let c = Config::parse(args(&["--trigger-level", "3"])).unwrap();
+        assert_eq!(c.detector.trigger_level, 3);
+    }
+
+    #[test]
+    fn wake_snd_command_defaults_none_and_flag_parses() {
+        // Default None => the wake tone uses snd_command (unchanged for existing units). When the
+        // playback device is NOT the mic device (e.g. TTS routed to a jack/PipeWire while the mic
+        // is a firmware-sleeping Jabra), the tone must still target the Jabra to wake its ADC.
+        assert_eq!(Config::default().wake_snd_command, None);
+        let c = Config::parse(args(&["--wake-snd-command", "aplay -D plughw:CARD=UC,DEV=0"])).unwrap();
+        assert_eq!(c.wake_snd_command.as_deref(), Some("aplay -D plughw:CARD=UC,DEV=0"));
     }
 
     #[test]
