@@ -45,6 +45,8 @@ pub struct Config {
     pub music_mixer: Option<String>,   // ALSA softvol control name; None => duck feature off
     pub music_card: Option<String>,    // amixer -c target where the softvol control lives
     pub duck_percent: u8,              // softvol level while the satellite is active
+    pub music_restore_grace_ms: u64,   // hold the un-duck this long so a long reply's inter-segment
+                                       // Idle gaps don't flap the music up between segments
 }
 
 impl Default for Config {
@@ -81,6 +83,7 @@ impl Default for Config {
             music_mixer: None,
             music_card: None,
             duck_percent: 20,
+            music_restore_grace_ms: 3000,
         }
     }
 }
@@ -131,6 +134,7 @@ impl Config {
         if let Some(v) = pa.opt_value_from_str::<_, String>("--music-mixer")? { c.music_mixer = Some(v); }
         if let Some(v) = pa.opt_value_from_str::<_, String>("--music-card")? { c.music_card = Some(v); }
         if let Some(v) = pa.opt_value_from_str::<_, u8>("--duck-percent")? { c.duck_percent = v; }
+        if let Some(v) = pa.opt_value_from_str::<_, u64>("--music-restore-grace-ms")? { c.music_restore_grace_ms = v; }
         let rest = pa.finish();
         anyhow::ensure!(rest.is_empty(), "unknown arguments: {rest:?}");
         Ok(c)
@@ -229,6 +233,15 @@ mod tests {
     fn no_keep_warm_flag_overrides_keep_warm() {
         let c = Config::parse(args(&["--keep-warm", "--no-keep-warm"])).unwrap();
         assert!(!c.keep_warm);
+    }
+
+    #[test]
+    fn music_restore_grace_defaults_and_flag_parses() {
+        // The un-duck is held this long so a long reply's inter-segment Idle gaps don't flap the
+        // music back up between segments; only a truly-finished reply restores.
+        assert_eq!(Config::default().music_restore_grace_ms, 3000);
+        let c = Config::parse(args(&["--music-restore-grace-ms", "5000"])).unwrap();
+        assert_eq!(c.music_restore_grace_ms, 5000);
     }
 
     #[test]
