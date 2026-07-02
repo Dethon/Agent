@@ -92,6 +92,10 @@ public static class HomeAssistantPrompt
         To change or cancel: list with `exec get_events.sh ...`, then
         `exec delete_event.sh ...` / `exec update_event.sh ...` on the event.
 
+        Snooze: when the message context says the user just dismissed an alarm and they ask to
+        snooze or be reminded again ("five more minutes"), create a new one-shot event on the
+        alarms calendar at the requested offset with the same summary and description.
+
         ### Music playback
         Each room's satellite is a `media_player.<room>` (a Music Assistant / Snapcast player in that
         HA area). The player directory holds two `play_media` actions — use the Music Assistant one,

@@ -36,9 +36,10 @@ public class TranscriptDispatcherTests
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
 
         var emitter = new CapturingEmitter();
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var sut = new TranscriptDispatcher(
             emitter, Mock.Of<IMetricsPublisher>(), manager,
-            confidenceThreshold: 0.5, NullLogger<TranscriptDispatcher>.Instance);
+            confidenceThreshold: 0.5, time, NullLogger<TranscriptDispatcher>.Instance);
         return (sut, manager, emitter);
     }
 
@@ -129,7 +130,7 @@ public class TranscriptDispatcherTests
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
             emitter, publisher.Object, manager,
-            confidenceThreshold: 0.5, NullLogger<TranscriptDispatcher>.Instance);
+            confidenceThreshold: 0.5, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "   ", Confidence = 0.9 }, "agent-1", default);
@@ -142,5 +143,22 @@ public class TranscriptDispatcherTests
             Times.Never);
         published.OfType<VoiceEvent>()
             .ShouldContain(e => e.Metric == VoiceMetric.UtteranceTranscribed && e.Outcome == "dropped");
+    }
+
+    [Fact]
+    public async Task DispatchAsync_AfterDismissal_EmitsDismissedAlertOnce()
+    {
+        var (sut, _, emitter) = Build();
+        var session = Session();
+        session.NoteDismissedAlert("alarm \"trash\"", DateTimeOffset.UtcNow);
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "five more minutes", Confidence = 0.9 }, "agent-1", default);
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "thanks", Confidence = 0.9 }, "agent-1", default);
+
+        emitter.Captured.Count.ShouldBe(2);
+        emitter.Captured[0].DismissedAlert.ShouldBe("alarm \"trash\"");
+        emitter.Captured[1].DismissedAlert.ShouldBeNull(); // consumed by the first dispatch
     }
 }

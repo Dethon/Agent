@@ -10,6 +10,7 @@ public sealed class TranscriptDispatcher(
     IMetricsPublisher publisher,
     VoiceConversationManager manager,
     double confidenceThreshold,
+    TimeProvider timeProvider,
     ILogger<TranscriptDispatcher> logger)
 {
     public async Task<bool> DispatchAsync(
@@ -47,6 +48,8 @@ public sealed class TranscriptDispatcher(
         // production, so the null-coalesce is only a defensive fallback (not expected at runtime).
         var conversationId = await manager.GetOrCreateAsync(session, agentId ?? string.Empty, transcript.Text, ct);
 
+        var dismissedAlert = session.TryConsumeDismissedAlert(timeProvider.GetUtcNow());
+
         await emitter.EmitMessageNotificationAsync(
             conversationId,
             session.Config.Identity,
@@ -54,6 +57,7 @@ public sealed class TranscriptDispatcher(
             agentId,
             session.Config.DisplayLocation,
             session.SatelliteId,
+            dismissedAlert,
             ct);
 
         await publisher.PublishAsync(
