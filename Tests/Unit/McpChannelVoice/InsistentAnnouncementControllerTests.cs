@@ -189,29 +189,43 @@ public class InsistentAnnouncementControllerTests
         await pump;
     }
 
-    // TODO: The new tone test requires investigation - it hangs waiting for chunks.
-    // The pattern should work based on existing PumpPlays tests, but there may be
-    // a timing or state issue with PumpCaptures that needs debugging.
-    // [Fact]
-    // public async Task Start_AlarmRound_PlaysToneBeforeSpeech()
-    // {
-    //     var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-    //     var h = BuildHarness(time, online: true, "kitchen-01");
-    //     var (pump, chunks) = PumpCaptures(h.Sessions.Get("kitchen-01")!, time);
-    //
-    //     await h.Controller.StartAsync(
-    //         new AnnounceRequest
-    //         {
-    //             Target = new() { SatelliteId = "kitchen-01" },
-    //             Text = "alarm",
-    //             Insistent = new() { GapSeconds = 30, MaxRepeats = 1 }
-    //         },
-    //         CancellationToken.None);
-    //
-    //     await WaitUntilAsync(() => chunks().Count >= 2, TimeSpan.FromSeconds(5)); // tone + TTS chunk
-    //     chunks()[0].ShouldBe(AlarmTone.Pcm(AnnounceKind.Alarm));
-    //
-    //     h.Sessions.Get("kitchen-01")!.CompletePlayback();
-    //     await pump;
-    // }
+    private static (Task Pump, Func<IReadOnlyList<byte[]>> Chunks) PumpCaptures(
+        SatelliteSession session, FakeTimeProvider time)
+    {
+        var captured = new List<byte[]>();
+        var pump = session.RunPlaybackLoopAsync(
+            (chunk, _) => { lock (captured) { captured.Add(chunk.Data.ToArray()); } return Task.CompletedTask; },
+            CancellationToken.None, time);
+        return (pump, () => { lock (captured) { return captured.ToList(); } }
+        );
+    }
+
+    [Fact]
+    public async Task Start_AlarmRound_PlaysToneBeforeSpeech()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: true, "kitchen-01");
+        var (pump, chunks) = PumpCaptures(h.Sessions.Get("kitchen-01")!, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "alarm",
+                Insistent = new() { GapSeconds = 30, MaxRepeats = 1 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(() => chunks().Count >= 2, TimeSpan.FromSeconds(5)); // tone + TTS chunk
+        chunks()[0].ShouldBe(AlarmTone.Pcm(AnnounceKind.Alarm));
+
+        // The single round is the last one (MaxRepeats=1), so RunLoopAsync never advances fake time
+        // for a gap delay; nothing else unblocks RunPlaybackLoopAsync's playback-completion wait
+        // (chunks written -> waits out totalAudio, real "the satellite finished playing" semantics)
+        // for this round's job. Advance past that nominal duration so the loop reaches the next
+        // ReadAllAsync iteration and observes CompletePlayback's channel completion.
+        time.Advance(TimeSpan.FromSeconds(2));
+        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        await pump;
+    }
 }
