@@ -16,7 +16,8 @@ public class VfsPromptToolNameConsistencyTests
     [
         ["scheduling_prompt", SchedulingPrompt.Build("Europe/Madrid")],
         ["printing_prompt", PrintingPrompt.Build("text,jpeg")],
-        ["downloader_prompt", DownloaderPrompt.AgentSystemPrompt]
+        ["downloader_prompt", DownloaderPrompt.AgentSystemPrompt],
+        ["timers_prompt", TimerPrompt.Prompt]
     ];
 
     [Theory]

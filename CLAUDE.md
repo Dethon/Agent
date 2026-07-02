@@ -18,7 +18,7 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | `McpChannelSignalR` | WebChat/SignalR channel — hosts SignalR hub, streams, approvals, push notifications |
 | `McpChannelTelegram` | Telegram channel — multi-bot polling (one bot per agent), inline keyboard approvals |
 | `McpChannelServiceBus` | Azure Service Bus channel — queue processor, auto-approval |
-| `McpChannelVoice` | Voice channel — Wyoming hub that dials hardware satellites, whisper STT, piper TTS, follow-up windows, announcements |
+| `McpChannelVoice` | Voice channel — Wyoming hub that dials hardware satellites, whisper STT, piper TTS, follow-up windows, announcements; dual-role: exposes `filesystem://timers` (hub-local countdown timers that ring insistently) |
 | `McpServerScheduling` | Scheduling server — dual-role: `filesystem://schedules` VFS + channel that fires due schedules as `channel/message` |
 | `McpServerPrinter` | Printer server — `filesystem://print-queue` VFS that submits copied/created files to a configured IPP/CUPS printer |
 | `WebChat`/`.Client` | Blazor WebAssembly chat interface, Redux-like state (Stores + Effects + HubEventDispatcher) |
