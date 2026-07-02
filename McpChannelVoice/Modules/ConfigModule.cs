@@ -100,6 +100,13 @@ public static class ConfigModule
         services.AddSingleton<ActiveAlertRegistry>();
         services.AddSingleton<InsistentAnnouncementController>();
 
+        services.AddSingleton<Domain.Contracts.ITimerStore, Infrastructure.Timers.InMemoryTimerStore>();
+        services.AddSingleton(sp => new Domain.Tools.Timers.Vfs.TimerFileSystem(
+            sp.GetRequiredService<Domain.Contracts.ITimerStore>(),
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<IInsistentAnnouncer>(sp => sp.GetRequiredService<InsistentAnnouncementController>());
+        services.AddHostedService<TimerFireService>();
+
         services
             .AddMcpServer()
             .WithHttpTransport(options =>
@@ -124,7 +131,18 @@ public static class ConfigModule
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
             .WithTools<CreateConversationTool>()
+            .WithTools<FsGlobTool>()
+            .WithTools<FsInfoTool>()
+            .WithTools<FsReadTool>()
+            .WithTools<FsSearchTool>()
+            .WithTools<FsCreateTool>()
+            .WithTools<FsEditTool>()
+            .WithTools<FsDeleteTool>()
+            .WithTools<FsMoveTool>()
+            .WithTools<FsExecTool>()
+            .WithResources<McpResources.FileSystemResource>()
             .WithPrompts<VoiceSystemPrompt>()
+            .WithPrompts<TimersSystemPrompt>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
