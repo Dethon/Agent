@@ -81,7 +81,8 @@ public sealed class OpenRouterChatClient : IChatClient
             var timestamp = newMessage.GetTimestamp();
             var location = newMessage.GetLocation();
             var satelliteId = newMessage.GetSatelliteId();
-            if (newMessage.Role == ChatRole.User && (msgSender is not null || timestamp is not null))
+            var dismissedAlert = newMessage.GetDismissedAlert();
+            if (newMessage.Role == ChatRole.User && (msgSender is not null || timestamp is not null || dismissedAlert is not null))
             {
                 var hasLocation = !string.IsNullOrWhiteSpace(location);
                 var hasSatellite = !string.IsNullOrWhiteSpace(satelliteId);
@@ -106,6 +107,12 @@ public sealed class OpenRouterChatClient : IChatClient
                     (null, not null) => $"[Current time: {localTimestamp:yyyy-MM-dd HH:mm:ss zzz}]:\n",
                     _ => ""
                 };
+
+                if (!string.IsNullOrWhiteSpace(dismissedAlert))
+                {
+                    prefix = $"[The user just dismissed the {dismissedAlert}]\n{prefix}";
+                }
+
                 newMessage.Contents = newMessage.Contents
                     .Prepend(new TextContent(prefix))
                     .ToList();

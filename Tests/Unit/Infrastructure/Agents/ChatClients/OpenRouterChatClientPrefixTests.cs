@@ -145,4 +145,27 @@ public class OpenRouterChatClientPrefixTests : IDisposable
         var first = _captured[0].Contents.OfType<TextContent>().First().Text;
         first.ShouldStartWith("[Current time: 2026-06-04 20:22:01 +02:00]");
     }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_WithDismissedAlert_PrefixesDismissalContext()
+    {
+        var msg = new ChatMessage(ChatRole.User, "five more minutes");
+        msg.SetSenderId("household");
+        msg.SetDismissedAlert("alarm \"Take out the trash\"");
+
+        await _sut.GetStreamingResponseAsync([msg]).ToListAsync();
+
+        FirstText().ShouldStartWith("[The user just dismissed the alarm \"Take out the trash\"]\nMessage from household:");
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_WithoutDismissedAlert_NoDismissalPrefix()
+    {
+        var msg = new ChatMessage(ChatRole.User, "lights on");
+        msg.SetSenderId("household");
+
+        await _sut.GetStreamingResponseAsync([msg]).ToListAsync();
+
+        FirstText().ShouldNotContain("dismissed");
+    }
 }
