@@ -8,6 +8,14 @@ public record AnnounceSettings
     public int QueueMaxDepth { get; init; } = 8;
     public int MaxTextLength { get; init; } = 50000;
     public InsistentDefaults Insistent { get; init; } = new();
+    public EscalationSettings Escalation { get; init; } = new();
+}
+
+public record EscalationSettings
+{
+    // HA webhook POSTed when an ALARM caps out unacknowledged (timers never escalate).
+    // Null/empty disables escalation.
+    public string? WebhookUrl { get; init; }
 }
 
 public record InsistentDefaults

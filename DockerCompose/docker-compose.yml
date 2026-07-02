@@ -572,6 +572,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      Announce__Escalation__WebhookUrl: ""
     networks:
       - jackbot
     depends_on:

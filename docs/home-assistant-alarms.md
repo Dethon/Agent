@@ -45,9 +45,6 @@ action); HA fires them; one automation bridges them to the voice hub's announce 
              # description is the request body minus text: {"target": {...}, "insistent": {...}}
              # strip the outer braces so it splices into the payload object next to "text".
              params: "{{ trigger.calendar_event.description[1:-1] }}"
-         # OPTIONAL belt-and-suspenders escalation (fires in parallel, at trigger time):
-         # - service: notify.mobile_app_phone
-         #   data: { message: "Alarm: {{ trigger.calendar_event.summary }}" }
 
    The `insistent` object in the event description routes the request to the hub's
    `InsistentAnnouncementController` (repeat-until-acknowledged). Every alarm's description
@@ -55,12 +52,28 @@ action); HA fires them; one automation bridges them to the voice hub's announce 
    `{"target":{"room":"Kitchen"},"insistent":{}}` for default repeat caps. The user dismisses
    by saying "ok nabu" at any targeted satellite.
 
+5. **Ack-gated escalation (optional).** Set `Announce__Escalation__WebhookUrl` on the
+   `mcp-channel-voice` container to an HA webhook, e.g.
+   `http://homeassistant:8123/api/webhook/alarm-unacked`. When an alarm reaches its repeat cap
+   with no acknowledgment the hub POSTs `{"text", "satellites", "rounds"}` there. Bridge it in HA:
+
+       alias: Alarm unacknowledged escalation
+       trigger:
+         - platform: webhook
+           webhook_id: alarm-unacked
+           local_only: true
+       action:
+         - service: notify.mobile_app_phone
+           data:
+             message: "Unacknowledged alarm: {{ trigger.json.text }}"
+
+   Timers never escalate. This replaces the old advice to fire a parallel notify at trigger time.
+
 ## Notes & limitations (v1)
 
-- Conditional "escalate only if unacknowledged" is not built in — the optional parallel notify above
-  fires at trigger time regardless. True ack-gated escalation needs a hub→HA callback (future).
 - If no targeted satellite is online when the event fires, the hub records an `AlarmOffline` metric
-  and nothing is spoken; the optional parallel notify still reaches another channel.
+  and nothing is spoken; the loop never starts, so the ack-gated escalation webhook does not fire
+  either (it only fires after a spoken alarm caps out unacknowledged).
 - Validate against your HA version that the local calendar supports `create_event` (with `rrule`),
   `get_events`, `delete_event`, and `update_event` as services on the calendar entity.
 - The announce endpoint's `BindToLoopbackOnly` setting defaults to `false`; if it is set to `true`,

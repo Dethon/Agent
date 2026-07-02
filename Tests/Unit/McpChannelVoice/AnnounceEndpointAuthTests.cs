@@ -35,6 +35,7 @@ public class AnnounceEndpointAuthTests
             alertRegistry,
             metricsPublisher,
             TimeProvider.System,
+            new StubHttpClientFactory(new RecordingHandler()),
             NullLogger<InsistentAnnouncementController>.Instance);
 
         builder.Services
