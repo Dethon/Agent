@@ -57,6 +57,7 @@ public static class ConfigModule
                 sp.GetRequiredService<IMetricsPublisher>(),
                 sp.GetRequiredService<VoiceConversationManager>(),
                 settings.ConfidenceThreshold,
+                sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<TranscriptDispatcher>>()))
             .AddSingleton(sp => new VoiceConversationManager(
                 sp.GetRequiredService<Domain.Contracts.IConversationFactory>(),

@@ -24,7 +24,7 @@ public class WyomingSatelliteHostTests
         public CapturingEmitter() : base(NullLogger<ChannelNotificationEmitter>.Instance) { }
         public override Task EmitMessageNotificationAsync(
             string conversationId, string sender, string content, string? agentId, string? location,
-            string? satelliteId, CancellationToken ct = default)
+            string? satelliteId, string? dismissedAlert, CancellationToken ct = default)
         {
             Tcs.TrySetResult(new ChannelMessageNotification
             {
@@ -33,7 +33,8 @@ public class WyomingSatelliteHostTests
                 Content = content,
                 AgentId = agentId,
                 Location = location,
-                SatelliteId = satelliteId
+                SatelliteId = satelliteId,
+                DismissedAlert = dismissedAlert
             });
             return Task.CompletedTask;
         }
@@ -132,7 +133,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, 0.4, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -271,7 +272,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, 0.4, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -390,7 +391,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, 0.4, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -493,7 +494,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, 0.4, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -601,7 +602,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, 0.4, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -715,7 +716,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, 0.4, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -788,7 +789,7 @@ public class WyomingSatelliteHostTests
         : ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance)
     {
         public override Task EmitMessageNotificationAsync(
-            string conversationId, string sender, string content, string? agentId, string? location, string? satelliteId, CancellationToken ct = default)
+            string conversationId, string sender, string content, string? agentId, string? location, string? satelliteId, string? dismissedAlert, CancellationToken ct = default)
         {
             lock (sink)
             {

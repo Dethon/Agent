@@ -29,4 +29,11 @@ public class HomeAssistantPromptTests
         prompt.ShouldContain("`unjoin.sh`");                              // ungrouping
         prompt.ShouldContain("speaking room"); // default target is the room the request came from
     }
+
+    [Fact]
+    public void Prompt_TeachesSnoozeAfterDismissal()
+    {
+        HomeAssistantPrompt.SystemPrompt.ShouldContain("just dismissed");
+        HomeAssistantPrompt.SystemPrompt.ShouldContain("new one-shot");
+    }
 }

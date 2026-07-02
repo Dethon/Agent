@@ -37,6 +37,10 @@ public sealed class SatelliteSession
     private TaskCompletionSource<bool> _turn = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private const long TurnNotStarted = long.MinValue;
     private long _turnStartedAt = TurnNotStarted;
+    private static readonly TimeSpan _snoozeWindow = TimeSpan.FromSeconds(60);
+    private readonly Lock _dismissGate = new();
+    private string? _dismissedAlert;
+    private DateTimeOffset _dismissedAt;
 
     public SatelliteSession(string satelliteId, SatelliteConfig config)
     {
@@ -151,6 +155,29 @@ public sealed class SatelliteSession
         lock (_turnGate)
         {
             _turn.TrySetResult(false);
+        }
+    }
+
+    // Wake-word dismissal context for LLM-mediated snooze: the host stashes what was dismissed; the
+    // next dispatched transcript within the window consumes it (single-use).
+    public void NoteDismissedAlert(string description, DateTimeOffset now)
+    {
+        lock (_dismissGate)
+        {
+            _dismissedAlert = description;
+            _dismissedAt = now;
+        }
+    }
+
+    public string? TryConsumeDismissedAlert(DateTimeOffset now)
+    {
+        lock (_dismissGate)
+        {
+            var value = _dismissedAlert is not null && now - _dismissedAt <= _snoozeWindow
+                ? _dismissedAlert
+                : null;
+            _dismissedAlert = null;
+            return value;
         }
     }
 
