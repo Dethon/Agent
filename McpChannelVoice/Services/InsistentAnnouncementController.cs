@@ -119,6 +119,11 @@ public sealed class InsistentAnnouncementController(
             else
             {
                 await SafePublishAsync(AlarmEvent(VoiceMetric.AlarmUnacknowledged, targetIds, round));
+
+                // The alert is finished — take it out of the registry before the potentially slow
+                // escalation webhook so a wake during the POST can't dismiss a dead alarm into snooze
+                // context (Discard is idempotent, so the finally's safety-net call is a no-op below).
+                alerts.Discard(handle);
                 await TryEscalateAsync(request, targetIds, round);
             }
         }
