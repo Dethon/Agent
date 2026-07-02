@@ -217,7 +217,7 @@ public class InsistentAnnouncementControllerTests
             CancellationToken.None);
 
         await WaitUntilAsync(() => chunks().Count >= 2, TimeSpan.FromSeconds(5)); // tone + TTS chunk
-        chunks()[0].ShouldBe(AlarmTone.Pcm(AnnounceKind.Alarm));
+        chunks()[0].ShouldBe(PcmGain.Apply(AlarmTone.Pcm(AnnounceKind.Alarm), 0.5).ToArray());
 
         // The single round is the last one (MaxRepeats=1), so RunLoopAsync never advances fake time
         // for a gap delay; nothing else unblocks RunPlaybackLoopAsync's playback-completion wait

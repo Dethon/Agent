@@ -47,4 +47,23 @@ public class InsistentPlanTests
         plan.MaxDuration.ShouldBeNull();
         plan.MaxRepeats.ShouldBe(12);
     }
+
+    [Fact]
+    public void GainFor_DefaultRamp_RisesFromHalfToFullByRampRounds()
+    {
+        var plan = InsistentPlan.Resolve(null, _defaults); // RampStartPercent 50, RampRounds 4
+
+        plan.GainFor(0).ShouldBe(0.5, 0.001);
+        plan.GainFor(1).ShouldBe(0.5 + 0.5 / 3, 0.001);
+        plan.GainFor(3).ShouldBe(1.0, 0.001);
+        plan.GainFor(10).ShouldBe(1.0, 0.001);
+    }
+
+    [Fact]
+    public void GainFor_RampStart100_DisablesRamp()
+    {
+        var plan = InsistentPlan.Resolve(null, new InsistentDefaults { RampStartPercent = 100 });
+
+        plan.GainFor(0).ShouldBe(1.0, 0.001);
+    }
 }

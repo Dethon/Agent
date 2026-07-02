@@ -3,7 +3,8 @@ using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
 
-public readonly record struct InsistentPlan(TimeSpan Gap, int MaxRepeats, TimeSpan? MaxDuration)
+public readonly record struct InsistentPlan(
+    TimeSpan Gap, int MaxRepeats, TimeSpan? MaxDuration, double RampStart, int RampRounds)
 {
     public static InsistentPlan Resolve(InsistentOptions? options, InsistentDefaults defaults)
     {
@@ -19,6 +20,14 @@ public readonly record struct InsistentPlan(TimeSpan Gap, int MaxRepeats, TimeSp
             ? TimeSpan.FromSeconds(maxDurationSeconds.Value)
             : (TimeSpan?)null;
 
-        return new InsistentPlan(gap, maxRepeats, maxDuration);
+        var rampStart = Math.Clamp(defaults.RampStartPercent, 1, 100) / 100.0;
+        return new InsistentPlan(gap, maxRepeats, maxDuration, rampStart, Math.Max(1, defaults.RampRounds));
     }
+
+    // Playback gain for a 0-based round: linear from RampStart to 1.0 across the first RampRounds
+    // rounds, full volume after.
+    public double GainFor(int round) =>
+        RampStart >= 1.0 || RampRounds <= 1
+            ? 1.0
+            : Math.Min(1.0, RampStart + (1.0 - RampStart) * round / (RampRounds - 1));
 }
