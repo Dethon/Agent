@@ -12,7 +12,7 @@ public record AnnounceSettings
 
 public record InsistentDefaults
 {
-    public int GapSeconds { get; init; } = 30;
-    public int MaxRepeats { get; init; } = 5;
+    public int GapSeconds { get; init; } = 15;
+    public int MaxRepeats { get; init; } = 12;
     public int? MaxDurationSeconds { get; init; }
 }

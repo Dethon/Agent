@@ -14,8 +14,8 @@ public class InsistentPlanTests
     {
         var plan = InsistentPlan.Resolve(null, _defaults);
 
-        plan.Gap.ShouldBe(TimeSpan.FromSeconds(30));
-        plan.MaxRepeats.ShouldBe(5);
+        plan.Gap.ShouldBe(TimeSpan.FromSeconds(15));
+        plan.MaxRepeats.ShouldBe(12);
         plan.MaxDuration.ShouldBeNull();
     }
 
@@ -45,6 +45,6 @@ public class InsistentPlanTests
         var plan = InsistentPlan.Resolve(new InsistentOptions { MaxDurationSeconds = 0 }, _defaults);
 
         plan.MaxDuration.ShouldBeNull();
-        plan.MaxRepeats.ShouldBe(5);
+        plan.MaxRepeats.ShouldBe(12);
     }
 }
