@@ -94,6 +94,7 @@ public class AnnounceEndToEndTests
             NullLogger<VoiceConversationManager>.Instance));
         builder.Services.AddSingleton<AnnouncementService>();
         builder.Services.AddSingleton<ActiveAlertRegistry>();
+        builder.Services.AddHttpClient();
         builder.Services.AddSingleton<InsistentAnnouncementController>();
         builder.Services.AddHostedService<WyomingSatelliteHost>();
 

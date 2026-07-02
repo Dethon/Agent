@@ -98,6 +98,7 @@ public static class ConfigModule
         services.AddSingleton(settings.Announce);
         services.AddSingleton<AnnouncementService>();
         services.AddSingleton<ActiveAlertRegistry>();
+        services.AddHttpClient();
         services.AddSingleton<InsistentAnnouncementController>();
 
         services.AddSingleton<Domain.Contracts.ITimerStore, Infrastructure.Timers.InMemoryTimerStore>();

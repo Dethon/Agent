@@ -45,7 +45,9 @@ public class InsistentAnnouncementControllerTests
         Mock<ITextToSpeech> Tts,
         FakeTimeProvider Time);
 
-    private static Harness BuildHarness(FakeTimeProvider time, bool online, params string[] satelliteIds)
+    private static Harness BuildHarness(
+        FakeTimeProvider time, bool online, VoiceSettings? settings = null,
+        RecordingHandler? http = null, params string[] satelliteIds)
     {
         var configs = satelliteIds.ToDictionary(
             id => id, id => new SatelliteConfig { Identity = "household", Room = "Kitchen" });
@@ -66,7 +68,8 @@ public class InsistentAnnouncementControllerTests
         var alerts = new ActiveAlertRegistry();
         var publisher = new CollectingPublisher();
         var controller = new InsistentAnnouncementController(
-            registry, sessions, tts.Object, new VoiceSettings(), alerts, publisher, time,
+            registry, sessions, tts.Object, settings ?? new VoiceSettings(), alerts, publisher, time,
+            new StubHttpClientFactory(http ?? new RecordingHandler()),
             NullLogger<InsistentAnnouncementController>.Instance);
         return new Harness(controller, sessions, alerts, publisher, tts, time);
     }
@@ -97,7 +100,7 @@ public class InsistentAnnouncementControllerTests
     public async Task Start_UnknownTarget_Throws()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var h = BuildHarness(time, online: true, "kitchen-01");
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
 
         await Should.ThrowAsync<AnnounceTargetNotFoundException>(() =>
             h.Controller.StartAsync(
@@ -109,7 +112,7 @@ public class InsistentAnnouncementControllerTests
     public async Task Start_NoOnlineSession_PublishesAlarmOffline()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var h = BuildHarness(time, online: false, "kitchen-01"); // configured but not connected
+        var h = BuildHarness(time, online: false, satelliteIds: "kitchen-01"); // configured but not connected
 
         var response = await h.Controller.StartAsync(
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "alarm", Insistent = new() },
@@ -124,7 +127,7 @@ public class InsistentAnnouncementControllerTests
     public async Task Start_NoAck_RepeatsToCapThenUnacknowledged_SynthesizesOnce()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var h = BuildHarness(time, online: true, "kitchen-01");
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
         var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
@@ -161,7 +164,7 @@ public class InsistentAnnouncementControllerTests
     public async Task Acknowledge_StopsLoopAndMarksAcknowledged()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var h = BuildHarness(time, online: true, "kitchen-01");
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
         var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
@@ -204,7 +207,7 @@ public class InsistentAnnouncementControllerTests
     public async Task Start_AlarmRound_PlaysToneBeforeSpeech()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var h = BuildHarness(time, online: true, "kitchen-01");
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
         var (pump, chunks) = PumpCaptures(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
@@ -224,6 +227,107 @@ public class InsistentAnnouncementControllerTests
         // (chunks written -> waits out totalAudio, real "the satellite finished playing" semantics)
         // for this round's job. Advance past that nominal duration so the loop reaches the next
         // ReadAllAsync iteration and observes CompletePlayback's channel completion.
+        time.Advance(TimeSpan.FromSeconds(2));
+        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        await pump;
+    }
+
+    private static VoiceSettings SettingsWithEscalation() => new()
+    {
+        Announce = new AnnounceSettings
+        {
+            Escalation = new EscalationSettings { WebhookUrl = "http://ha:8123/api/webhook/alarm-unacked" }
+        }
+    };
+
+    [Fact]
+    public async Task Unacknowledged_Alarm_PostsEscalationWebhook()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var http = new RecordingHandler();
+        var h = BuildHarness(time, online: true, SettingsWithEscalation(), http, "kitchen-01");
+        var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "Take out the trash",
+                Insistent = new() { GapSeconds = 30, MaxRepeats = 1 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(() => http.Requests.Count == 1, TimeSpan.FromSeconds(5));
+
+        http.Requests[0].Uri!.ToString().ShouldBe("http://ha:8123/api/webhook/alarm-unacked");
+        http.Requests[0].Body.ShouldContain("Take out the trash");
+        http.Requests[0].Body.ShouldContain("kitchen-01");
+        http.Requests[0].Body.ShouldContain("\"rounds\":1");
+
+        // MaxRepeats=1, so RunLoopAsync never advances fake time itself; nothing else unblocks
+        // RunPlaybackLoopAsync's playback-completion wait for round 1's job (see
+        // Start_AlarmRound_PlaysToneBeforeSpeech). Advance past its nominal duration first.
+        time.Advance(TimeSpan.FromSeconds(2));
+        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        await pump;
+    }
+
+    [Fact]
+    public async Task Unacknowledged_Timer_DoesNotEscalate()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var http = new RecordingHandler();
+        var h = BuildHarness(time, online: true, SettingsWithEscalation(), http, "kitchen-01");
+        var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "pasta",
+                Kind = AnnounceKind.Timer,
+                Insistent = new() { GapSeconds = 30, MaxRepeats = 1 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(
+            () => h.Publisher.Events.Any(e => e.Metric == VoiceMetric.AlarmUnacknowledged),
+            TimeSpan.FromSeconds(5));
+        http.Requests.ShouldBeEmpty();
+
+        // Same fake-time gotcha as above: unblock round 1's playback-completion wait before draining.
+        time.Advance(TimeSpan.FromSeconds(2));
+        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        await pump;
+    }
+
+    [Fact]
+    public async Task Acknowledged_Alarm_DoesNotEscalate()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var http = new RecordingHandler();
+        var h = BuildHarness(time, online: true, SettingsWithEscalation(), http, "kitchen-01");
+        var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "alarm",
+                Insistent = new() { GapSeconds = 30, MaxRepeats = 10 }
+            },
+            CancellationToken.None);
+        await WaitUntilAsync(() => plays() >= 1, TimeSpan.FromSeconds(5));
+
+        h.Alerts.Acknowledge("kitchen-01").ShouldNotBeEmpty();
+        await WaitUntilAsync(
+            () => h.Publisher.Events.Any(e => e.Metric == VoiceMetric.AlarmAcknowledged),
+            TimeSpan.FromSeconds(5));
+
+        http.Requests.ShouldBeEmpty();
+
+        // Same fake-time gotcha (see Acknowledge_StopsLoopAndMarksAcknowledged): unblock round 1's
+        // playback-completion wait before draining.
         time.Advance(TimeSpan.FromSeconds(2));
         h.Sessions.Get("kitchen-01")!.CompletePlayback();
         await pump;

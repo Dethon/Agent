@@ -84,6 +84,7 @@ public class InsistentAnnounceE2ETests
             sp.GetRequiredService<TimeProvider>(), TimeSpan.FromMinutes(5),
             NullLogger<VoiceConversationManager>.Instance));
         builder.Services.AddSingleton<AnnouncementService>();
+        builder.Services.AddHttpClient();
         builder.Services.AddSingleton<InsistentAnnouncementController>();
         builder.Services.AddHostedService<WyomingSatelliteHost>();
 

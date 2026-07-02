@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
@@ -18,6 +19,7 @@ public sealed class InsistentAnnouncementController(
     ActiveAlertRegistry alerts,
     IMetricsPublisher metrics,
     TimeProvider time,
+    IHttpClientFactory httpClientFactory,
     ILogger<InsistentAnnouncementController> logger) : IInsistentAnnouncer
 {
     public async Task<AnnounceResponse> StartAsync(AnnounceRequest request, CancellationToken ct)
@@ -117,6 +119,7 @@ public sealed class InsistentAnnouncementController(
             else
             {
                 await SafePublishAsync(AlarmEvent(VoiceMetric.AlarmUnacknowledged, targetIds, round));
+                await TryEscalateAsync(request, targetIds, round);
             }
         }
         catch (Exception ex)
@@ -214,6 +217,32 @@ public sealed class InsistentAnnouncementController(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to publish alarm metric {Metric}", evt.Metric);
+        }
+    }
+
+    // Ack-gated escalation: an unacknowledged ALARM (never a timer) is handed to HA via webhook so an
+    // automation can notify another channel. Fire-and-forget: failures are logged, never retried.
+    private async Task TryEscalateAsync(AnnounceRequest request, IReadOnlyList<string> targetIds, int rounds)
+    {
+        var url = settings.Announce.Escalation.WebhookUrl;
+        if (request.Kind != AnnounceKind.Alarm || string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        try
+        {
+            var client = httpClientFactory.CreateClient(nameof(InsistentAnnouncementController));
+            using var response = await client.PostAsJsonAsync(
+                url, new { text = request.Text, satellites = targetIds, rounds });
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Alarm escalation webhook returned {Status}", response.StatusCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Alarm escalation webhook failed");
         }
     }
 }
