@@ -77,10 +77,11 @@ public sealed class InsistentAnnouncementController(
                    && round < plan.MaxRepeats
                    && (plan.MaxDuration is not { } max || time.GetElapsedTime(start) < max))
             {
+                var gain = plan.GainFor(round);
                 foreach (var session in OnlineSessions(targetIds))
                 {
                     await session.EnqueuePlaybackAsync(
-                        BuildJob(announcementId, buffered, session), settings.Announce.QueueMaxDepth);
+                        BuildJob(announcementId, buffered, session, gain), settings.Announce.QueueMaxDepth);
                 }
                 round++;
 
@@ -142,11 +143,12 @@ public sealed class InsistentAnnouncementController(
         return chunks;
     }
 
-    private PlaybackJob BuildJob(string announcementId, IReadOnlyList<AudioChunk> buffered, SatelliteSession session) =>
+    private PlaybackJob BuildJob(
+        string announcementId, IReadOnlyList<AudioChunk> buffered, SatelliteSession session, double gain) =>
         new(
             Label: $"alarm:{announcementId}",
             Priority: AnnouncePriority.High,
-            Audio: Replay(buffered),
+            Audio: Replay(buffered, gain),
             OnStarted: _ => SafePublishAsync(new VoiceEvent
             {
                 Metric = VoiceMetric.AnnouncePlayed,
@@ -194,11 +196,11 @@ public sealed class InsistentAnnouncementController(
         return [];
     }
 
-    private static async IAsyncEnumerable<AudioChunk> Replay(IReadOnlyList<AudioChunk> chunks)
+    private static async IAsyncEnumerable<AudioChunk> Replay(IReadOnlyList<AudioChunk> chunks, double gain)
     {
         foreach (var chunk in chunks)
         {
-            yield return chunk;
+            yield return chunk with { Data = PcmGain.Apply(chunk.Data, gain) };
         }
         await Task.CompletedTask;
     }

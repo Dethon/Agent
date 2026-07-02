@@ -15,4 +15,7 @@ public record InsistentDefaults
     public int GapSeconds { get; init; } = 15;
     public int MaxRepeats { get; init; } = 12;
     public int? MaxDurationSeconds { get; init; }
+    // Round-1 playback gain in percent, ramping linearly to 100 by RampRounds. 100 disables the ramp.
+    public int RampStartPercent { get; init; } = 50;
+    public int RampRounds { get; init; } = 4;
 }
