@@ -1,3 +1,4 @@
+using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
 using Shouldly;
 
@@ -5,17 +6,20 @@ namespace Tests.Unit.McpChannelVoice;
 
 public class ActiveAlertRegistryTests
 {
+    private static AlertHandle Handle(CancellationTokenSource cts, string text = "alarm", params string[] satellites) =>
+        new(cts, satellites, text, AnnounceKind.Alarm);
+
     [Fact]
     public void Acknowledge_OnAnyTargetedSatellite_CancelsTheSharedAlert()
     {
         var registry = new ActiveAlertRegistry();
         using var cts = new CancellationTokenSource();
-        var handle = new AlertHandle(cts, ["kitchen-01", "bedroom-01"]);
+        var handle = Handle(cts, "alarm", "kitchen-01", "bedroom-01");
         registry.Register(handle);
 
-        var acknowledged = registry.Acknowledge("bedroom-01");
+        var dismissed = registry.Acknowledge("bedroom-01");
 
-        acknowledged.ShouldBeTrue();
+        dismissed.ShouldHaveSingleItem();
         handle.IsAcknowledged.ShouldBeTrue();
         handle.Token.IsCancellationRequested.ShouldBeTrue();
     }
@@ -25,18 +29,58 @@ public class ActiveAlertRegistryTests
     {
         var registry = new ActiveAlertRegistry();
         using var cts = new CancellationTokenSource();
-        registry.Register(new AlertHandle(cts, ["kitchen-01", "bedroom-01"]));
+        registry.Register(Handle(cts, "alarm", "kitchen-01", "bedroom-01"));
 
-        registry.Acknowledge("kitchen-01").ShouldBeTrue();
-        registry.Acknowledge("bedroom-01").ShouldBeFalse(); // already cleared by the first ack
+        registry.Acknowledge("kitchen-01").ShouldNotBeEmpty();
+        registry.Acknowledge("bedroom-01").ShouldBeEmpty(); // already cleared by the first ack
     }
 
     [Fact]
-    public void Acknowledge_UnknownSatellite_ReturnsFalse()
+    public void Acknowledge_UnknownSatellite_ReturnsEmpty()
     {
         var registry = new ActiveAlertRegistry();
 
-        registry.Acknowledge("ghost").ShouldBeFalse();
+        registry.Acknowledge("ghost").ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Acknowledge_OverlappingAlertsOnOneSatellite_CancelsAllAndReturnsEachDescription()
+    {
+        // The Alexa "stop" model: one wake dismisses EVERYTHING ringing on that satellite.
+        var registry = new ActiveAlertRegistry();
+        using var cts1 = new CancellationTokenSource();
+        using var cts2 = new CancellationTokenSource();
+        var alarm = new AlertHandle(cts1, ["kitchen-01"], "Take out the trash", AnnounceKind.Alarm);
+        var timer = new AlertHandle(cts2, ["kitchen-01"], "pasta", AnnounceKind.Timer);
+        registry.Register(alarm);
+        registry.Register(timer);
+
+        var dismissed = registry.Acknowledge("kitchen-01");
+
+        dismissed.Count.ShouldBe(2);
+        dismissed.ShouldContain(new DismissedAlert("Take out the trash", AnnounceKind.Alarm));
+        dismissed.ShouldContain(new DismissedAlert("pasta", AnnounceKind.Timer));
+        alarm.Token.IsCancellationRequested.ShouldBeTrue();
+        timer.Token.IsCancellationRequested.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Discard_RemovesOnlyItsOwnHandle_LeavingOverlappingAlertsActive()
+    {
+        var registry = new ActiveAlertRegistry();
+        using var cts1 = new CancellationTokenSource();
+        using var cts2 = new CancellationTokenSource();
+        var first = Handle(cts1, "first", "kitchen-01");
+        var second = Handle(cts2, "second", "kitchen-01");
+        registry.Register(first);
+        registry.Register(second);
+
+        registry.Discard(first);
+
+        var dismissed = registry.Acknowledge("kitchen-01");
+        dismissed.ShouldHaveSingleItem();
+        dismissed[0].Text.ShouldBe("second");
+        first.IsAcknowledged.ShouldBeFalse();
     }
 
     [Fact]
@@ -44,12 +88,12 @@ public class ActiveAlertRegistryTests
     {
         var registry = new ActiveAlertRegistry();
         using var cts = new CancellationTokenSource();
-        var handle = new AlertHandle(cts, ["kitchen-01"]);
+        var handle = Handle(cts, "alarm", "kitchen-01");
         registry.Register(handle);
 
         registry.Discard(handle);
 
-        registry.Acknowledge("kitchen-01").ShouldBeFalse();
+        registry.Acknowledge("kitchen-01").ShouldBeEmpty();
         handle.IsAcknowledged.ShouldBeFalse();
     }
 }

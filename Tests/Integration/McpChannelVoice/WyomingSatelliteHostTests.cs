@@ -616,7 +616,7 @@ public class WyomingSatelliteHostTests
 
         var alerts = new ActiveAlertRegistry();
         using var alertCts = new CancellationTokenSource();
-        alerts.Register(new AlertHandle(alertCts, ["kitchen-01"]));
+        alerts.Register(new AlertHandle(alertCts, ["kitchen-01"], "test alert", AnnounceKind.Alarm));
 
         var host = new WyomingSatelliteHost(
             new WyomingClientSettings
@@ -730,7 +730,7 @@ public class WyomingSatelliteHostTests
 
         var alerts = new ActiveAlertRegistry();
         using var alertCts = new CancellationTokenSource();
-        alerts.Register(new AlertHandle(alertCts, ["kitchen-01"]));
+        alerts.Register(new AlertHandle(alertCts, ["kitchen-01"], "test alert", AnnounceKind.Alarm));
 
         var host = new WyomingSatelliteHost(
             new WyomingClientSettings

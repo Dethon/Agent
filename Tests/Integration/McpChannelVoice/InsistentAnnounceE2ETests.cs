@@ -110,7 +110,7 @@ public class InsistentAnnounceE2ETests
         await WaitForAsync(() => audioStarts.Count >= 2, TimeSpan.FromSeconds(10));
 
         // Acknowledge -> the loop stops; no meaningful growth after a couple more gaps.
-        app.Services.GetRequiredService<ActiveAlertRegistry>().Acknowledge("kitchen-01").ShouldBeTrue();
+        app.Services.GetRequiredService<ActiveAlertRegistry>().Acknowledge("kitchen-01").ShouldNotBeEmpty();
         var countAtAck = audioStarts.Count;
         await Task.Delay(TimeSpan.FromSeconds(3), ct); // 3 gaps elapse
         audioStarts.Count.ShouldBeLessThanOrEqualTo(countAtAck + 1); // at most one in-flight round
