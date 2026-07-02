@@ -18,7 +18,7 @@ public sealed class InsistentAnnouncementController(
     ActiveAlertRegistry alerts,
     IMetricsPublisher metrics,
     TimeProvider time,
-    ILogger<InsistentAnnouncementController> logger)
+    ILogger<InsistentAnnouncementController> logger) : IInsistentAnnouncer
 {
     public async Task<AnnounceResponse> StartAsync(AnnounceRequest request, CancellationToken ct)
     {
