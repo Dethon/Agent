@@ -47,7 +47,7 @@ public class InsistentAnnouncementControllerTests
 
     private static Harness BuildHarness(
         FakeTimeProvider time, bool online, VoiceSettings? settings = null,
-        RecordingHandler? http = null, params string[] satelliteIds)
+        HttpMessageHandler? http = null, params string[] satelliteIds)
     {
         var configs = satelliteIds.ToDictionary(
             id => id, id => new SatelliteConfig { Identity = "household", Room = "Kitchen" });
@@ -267,6 +267,41 @@ public class InsistentAnnouncementControllerTests
         // MaxRepeats=1, so RunLoopAsync never advances fake time itself; nothing else unblocks
         // RunPlaybackLoopAsync's playback-completion wait for round 1's job (see
         // Start_AlarmRound_PlaysToneBeforeSpeech). Advance past its nominal duration first.
+        time.Advance(TimeSpan.FromSeconds(2));
+        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        await pump;
+    }
+
+    [Fact]
+    public async Task Start_WakeDuringSlowEscalationWebhook_DoesNotDismissFinishedAlarm()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var http = new BlockingHandler();
+        var h = BuildHarness(time, online: true, SettingsWithEscalation(), http, "kitchen-01");
+        var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "alarm",
+                Insistent = new() { GapSeconds = 30, MaxRepeats = 1 }
+            },
+            CancellationToken.None);
+
+        await http.Entered.WaitAsync(TimeSpan.FromSeconds(5)); // escalation POST started but not finished
+
+        // The alarm loop already decided "unacknowledged" before the slow POST — its handle must be
+        // out of the registry so a wake during the hung webhook can't dismiss a dead alarm.
+        h.Alerts.Acknowledge("kitchen-01").ShouldBeEmpty();
+
+        http.Release();
+        await WaitUntilAsync(
+            () => h.Publisher.Events.Any(e => e.Metric == VoiceMetric.AlarmUnacknowledged),
+            TimeSpan.FromSeconds(5));
+
+        // MaxRepeats=1, so RunLoopAsync never advances fake time itself; unblock round 1's
+        // playback-completion wait before draining (see Start_AlarmRound_PlaysToneBeforeSpeech).
         time.Advance(TimeSpan.FromSeconds(2));
         h.Sessions.Get("kitchen-01")!.CompletePlayback();
         await pump;
