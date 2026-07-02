@@ -175,7 +175,7 @@ public class InsistentAnnouncementControllerTests
 
         await WaitUntilAsync(() => plays() >= 1, TimeSpan.FromSeconds(5));
 
-        h.Alerts.Acknowledge("kitchen-01").ShouldBeTrue();
+        h.Alerts.Acknowledge("kitchen-01").ShouldNotBeEmpty();
 
         await WaitUntilAsync(
             () => h.Publisher.Events.Any(e => e.Metric == VoiceMetric.AlarmAcknowledged),

@@ -7,4 +7,5 @@ public record AnnounceRequest
     public string? Voice { get; init; }
     public AnnouncePriority Priority { get; init; } = AnnouncePriority.Normal;
     public InsistentOptions? Insistent { get; init; }
+    public AnnounceKind Kind { get; init; } = AnnounceKind.Alarm;
 }

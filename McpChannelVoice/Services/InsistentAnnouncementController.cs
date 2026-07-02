@@ -51,7 +51,7 @@ public sealed class InsistentAnnouncementController(
         }
 
         var plan = InsistentPlan.Resolve(request.Insistent, settings.Announce.Insistent);
-        var handle = new AlertHandle(new CancellationTokenSource(), targetIds);
+        var handle = new AlertHandle(new CancellationTokenSource(), targetIds, request.Text, request.Kind);
         alerts.Register(handle);
 
         _ = Task.Run(() => RunLoopAsync(announcementId, request, plan, handle, targetIds));

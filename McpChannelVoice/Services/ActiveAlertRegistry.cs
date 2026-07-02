@@ -1,20 +1,27 @@
-using System.Collections.Concurrent;
+using Domain.DTOs.Voice;
 
 namespace McpChannelVoice.Services;
+
+public sealed record DismissedAlert(string Text, AnnounceKind Kind);
 
 public sealed class AlertHandle
 {
     private readonly CancellationTokenSource _cts;
 
-    public AlertHandle(CancellationTokenSource cts, IReadOnlyList<string> satelliteIds)
+    public AlertHandle(CancellationTokenSource cts, IReadOnlyList<string> satelliteIds, string text, AnnounceKind kind)
     {
         ArgumentNullException.ThrowIfNull(cts);
         ArgumentNullException.ThrowIfNull(satelliteIds);
+        ArgumentNullException.ThrowIfNull(text);
         _cts = cts;
         SatelliteIds = satelliteIds;
+        Text = text;
+        Kind = kind;
     }
 
     public IReadOnlyList<string> SatelliteIds { get; }
+    public string Text { get; }
+    public AnnounceKind Kind { get; }
     public CancellationToken Token => _cts.Token;
     public bool IsAcknowledged { get; private set; }
 
@@ -25,40 +32,71 @@ public sealed class AlertHandle
     }
 }
 
-// Maps each targeted satellite id to the alert covering it. The first acknowledgment on ANY of an
-// alert's satellites cancels the whole alert (shared CTS) and removes every entry for it, so a later
-// wake on a sibling satellite is a no-op.
+// Maps each targeted satellite id to EVERY alert covering it. Acknowledging a satellite cancels all
+// of its active alerts (one wake dismisses everything ringing there — the Alexa "stop" model); each
+// alert's shared CTS also stops it on its sibling satellites. Returns what was dismissed so the
+// caller can hand the descriptions to the snooze context flow.
 public sealed class ActiveAlertRegistry
 {
-    private readonly ConcurrentDictionary<string, AlertHandle> _bySatellite = new();
+    private readonly Dictionary<string, List<AlertHandle>> _bySatellite = new();
+    private readonly Lock _gate = new();
 
     public void Register(AlertHandle handle)
     {
         ArgumentNullException.ThrowIfNull(handle);
-        foreach (var id in handle.SatelliteIds)
+        lock (_gate)
         {
-            _bySatellite[id] = handle;
+            foreach (var id in handle.SatelliteIds)
+            {
+                if (!_bySatellite.TryGetValue(id, out var handles))
+                {
+                    handles = [];
+                    _bySatellite[id] = handles;
+                }
+                handles.Add(handle);
+            }
         }
     }
 
-    public bool Acknowledge(string satelliteId)
+    public IReadOnlyList<DismissedAlert> Acknowledge(string satelliteId)
     {
-        if (!_bySatellite.TryGetValue(satelliteId, out var handle))
+        List<AlertHandle> acknowledged;
+        lock (_gate)
         {
-            return false;
+            if (!_bySatellite.TryGetValue(satelliteId, out var handles))
+            {
+                return [];
+            }
+            acknowledged = handles.ToList();
         }
-        handle.Acknowledge();
-        Discard(handle);
-        return true;
+
+        // Acknowledge/Discard outside the lock: Acknowledge cancels a CTS whose continuations may
+        // re-enter the registry (Discard from the alert loop's finally).
+        foreach (var handle in acknowledged)
+        {
+            handle.Acknowledge();
+            Discard(handle);
+        }
+        return acknowledged.Select(h => new DismissedAlert(h.Text, h.Kind)).ToList();
     }
 
     public void Discard(AlertHandle handle)
     {
         ArgumentNullException.ThrowIfNull(handle);
-        foreach (var id in handle.SatelliteIds)
+        lock (_gate)
         {
-            // Remove only if this id still points at THIS handle — a newer alert may already own it.
-            _bySatellite.TryRemove(new KeyValuePair<string, AlertHandle>(id, handle));
+            foreach (var id in handle.SatelliteIds)
+            {
+                if (!_bySatellite.TryGetValue(id, out var handles))
+                {
+                    continue;
+                }
+                handles.Remove(handle);
+                if (handles.Count == 0)
+                {
+                    _bySatellite.Remove(id);
+                }
+            }
         }
     }
 }
