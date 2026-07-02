@@ -17,5 +17,8 @@ public record ChannelMessageNotification
     // Optional originating voice satellite id. Like Location, part of the shared protocol but
     // currently only populated by the voice channel; other channels leave it null.
     public string? SatelliteId { get; init; }
+    // Optional description of an alert (alarm/timer) the user dismissed just before speaking, e.g.
+    // 'alarm "Take out the trash"'. Voice-only, like Location/SatelliteId; enables LLM-mediated snooze.
+    public string? DismissedAlert { get; init; }
     public DateTimeOffset Timestamp { get; init; }
 }

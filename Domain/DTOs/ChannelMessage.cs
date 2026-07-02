@@ -15,4 +15,5 @@ public record ChannelMessage
     public MessageOrigin? Origin { get; init; }
     public string? Location { get; init; }
     public string? SatelliteId { get; init; }
+    public string? DismissedAlert { get; init; }
 }

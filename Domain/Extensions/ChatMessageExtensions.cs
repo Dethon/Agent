@@ -13,6 +13,7 @@ public static class ChatMessageExtensions
     private const string MemoryContextKey = "MemoryContext";
     private const string LocationKey = "Location";
     private const string SatelliteIdKey = "SatelliteId";
+    private const string DismissedAlertKey = "DismissedAlert";
     private const string ConversationContextKey = "ConversationContext";
 
     extension(ChatMessage message)
@@ -81,6 +82,28 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[SatelliteIdKey] = satelliteId;
+        }
+
+        public string? GetDismissedAlert()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(DismissedAlertKey);
+            return value switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+        }
+
+        public void SetDismissedAlert(string? dismissedAlert)
+        {
+            if (string.IsNullOrWhiteSpace(dismissedAlert))
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[DismissedAlertKey] = dismissedAlert;
         }
 
         public DateTimeOffset? GetTimestamp()

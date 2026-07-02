@@ -187,4 +187,27 @@ public class ChatMessageSerializationTests
         result.Memories[0].Memory.Category.ShouldBe(MemoryCategory.Fact);
         result.Memories[0].Memory.Importance.ShouldBe(0.8);
     }
+
+    [Fact]
+    public void GetDismissedAlert_JsonElementValue_RoundTrips()
+    {
+        // After a thread reload AdditionalProperties values come back as JsonElement, not string.
+        var message = new ChatMessage(ChatRole.User, "five more minutes");
+        message.AdditionalProperties = new AdditionalPropertiesDictionary
+        {
+            ["DismissedAlert"] = JsonSerializer.SerializeToElement("alarm \"trash\"")
+        };
+
+        message.GetDismissedAlert().ShouldBe("alarm \"trash\"");
+    }
+
+    [Fact]
+    public void SetDismissedAlert_ThenGet_ReturnsValue()
+    {
+        var message = new ChatMessage(ChatRole.User, "hi");
+
+        message.SetDismissedAlert("timer \"pasta\"");
+
+        message.GetDismissedAlert().ShouldBe("timer \"pasta\"");
+    }
 }
