@@ -367,4 +367,74 @@ public class InsistentAnnouncementControllerTests
         h.Sessions.Get("kitchen-01")!.CompletePlayback();
         await pump;
     }
+
+    [Fact]
+    public async Task Start_AllTargetsOffline_Alarm_PostsEscalationWebhook()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var http = new RecordingHandler();
+        var h = BuildHarness(time, online: false, SettingsWithEscalation(), http, "kitchen-01");
+
+        var response = await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" }, Text = "Take out the trash", Insistent = new()
+            },
+            CancellationToken.None);
+
+        response.Satellites.ShouldHaveSingleItem();
+        response.Satellites[0].Status.ShouldBe("offline");
+        await WaitUntilAsync(() => http.Requests.Count == 1, TimeSpan.FromSeconds(5));
+        http.Requests[0].Uri!.ToString().ShouldBe("http://ha:8123/api/webhook/alarm-unacked");
+        http.Requests[0].Body.ShouldContain("Take out the trash");
+        http.Requests[0].Body.ShouldContain("kitchen-01");
+        http.Requests[0].Body.ShouldContain("\"rounds\":0");
+    }
+
+    [Fact]
+    public async Task Start_AllTargetsOffline_Timer_DoesNotEscalate()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var http = new RecordingHandler();
+        var h = BuildHarness(time, online: false, SettingsWithEscalation(), http, "kitchen-01");
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "pasta",
+                Kind = AnnounceKind.Timer,
+                Insistent = new()
+            },
+            CancellationToken.None);
+
+        h.Publisher.Events.ShouldContain(e => e.Metric == VoiceMetric.AlarmOffline);
+        await Task.Delay(100); // give a wrongly-fired escalation a chance to surface
+        http.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Start_MixedOfflineTargets_PublishesAlarmOfflineForOfflineSatelliteOnly()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: false, satelliteIds: ["kitchen-01", "office-01"]);
+        h.Sessions.Register(new SatelliteSession(
+            "kitchen-01", new SatelliteConfig { Identity = "household", Room = "Kitchen" }));
+
+        var response = await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteIds = ["kitchen-01", "office-01"] },
+                Text = "alarm",
+                Insistent = new() { GapSeconds = 30, MaxRepeats = 10 }
+            },
+            CancellationToken.None);
+
+        response.Satellites.Single(s => s.Id == "kitchen-01").Status.ShouldBe("started");
+        response.Satellites.Single(s => s.Id == "office-01").Status.ShouldBe("offline");
+        h.Publisher.Events.ShouldContain(e => e.Metric == VoiceMetric.AlarmOffline && e.SatelliteId == "office-01");
+        h.Publisher.Events.ShouldNotContain(e => e.Metric == VoiceMetric.AlarmOffline && e.SatelliteId == "kitchen-01");
+
+        h.Alerts.Acknowledge("kitchen-01"); // stop the ring loop
+    }
 }

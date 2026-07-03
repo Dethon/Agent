@@ -13,8 +13,8 @@ public record AnnounceSettings
 
 public record EscalationSettings
 {
-    // HA webhook POSTed when an ALARM caps out unacknowledged (timers never escalate).
-    // Null/empty disables escalation.
+    // HA webhook POSTed when an ALARM caps out unacknowledged or fires with every target offline
+    // (rounds=0). Timers never escalate. Null/empty disables escalation.
     public string? WebhookUrl { get; init; }
 }
 

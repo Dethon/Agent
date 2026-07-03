@@ -35,16 +35,21 @@ public sealed class InsistentAnnouncementController(
 
         var announcementId = Guid.NewGuid().ToString("N");
 
-        if (!targetIds.Any(id => sessions.Get(id) is not null))
+        var offlineIds = targetIds.Where(id => sessions.Get(id) is null).ToList();
+        await Task.WhenAll(offlineIds.Select(id => SafePublishAsync(new VoiceEvent
         {
-            await Task.WhenAll(targetIds.Select(id => SafePublishAsync(new VoiceEvent
-            {
-                Metric = VoiceMetric.AlarmOffline,
-                SatelliteId = id,
-                Room = registry.GetById(id)?.Room,
-                Identity = registry.GetById(id)?.Identity,
-                Outcome = "offline"
-            })));
+            Metric = VoiceMetric.AlarmOffline,
+            SatelliteId = id,
+            Room = registry.GetById(id)?.Room,
+            Identity = registry.GetById(id)?.Identity,
+            Outcome = "offline"
+        })));
+
+        if (offlineIds.Count == targetIds.Count)
+        {
+            // The alarm never rang — exactly when the phone must find out. rounds=0 marks
+            // "never spoken"; fire-and-forget so the caller's HTTP response isn't held by the POST.
+            _ = Task.Run(() => TryEscalateAsync(request, targetIds, 0));
             return new AnnounceResponse
             {
                 AnnouncementId = announcementId,
