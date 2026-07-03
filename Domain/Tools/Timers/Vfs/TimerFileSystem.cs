@@ -11,9 +11,16 @@ namespace Domain.Tools.Timers.Vfs;
 
 // Hub-local countdown timers as a VFS: create /<id>/timer.json to arm, read status.json for time
 // left, delete the directory to cancel. Timers are immutable (delete and recreate) and fire once.
-public sealed class TimerFileSystem(ITimerStore store, TimeProvider timeProvider) : IFileSystemBackend
+// /dismiss.sh (exec) silences every alert currently ringing — alarms and timers alike — so "stop
+// the alarm" works from any room or channel, not just by waking a targeted satellite.
+public sealed class TimerFileSystem(
+    ITimerStore store, TimeProvider timeProvider, IAlertDismisser dismisser) : IFileSystemBackend
 {
     public string FilesystemName => "timers";
+
+    private const string DismissHelp =
+        "# Dismiss everything currently ringing (alarms and timers) on all satellites:\n"
+        + "#   exec dismiss.sh\n";
 
     private static readonly JsonSerializerOptions _json = new()
     {
@@ -44,6 +51,7 @@ public sealed class TimerFileSystem(ITimerStore store, TimeProvider timeProvider
                 $"{t.Id}/{TimerPath.TimerFileName}",
                 $"{t.Id}/{TimerPath.StatusFileName}"
             })
+            .Concat([TimerPath.DismissFileName])
             .Where(matches)
             .Select(p => $"/{p}");
         return Glob(dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
@@ -73,6 +81,9 @@ public sealed class TimerFileSystem(ITimerStore store, TimeProvider timeProvider
                 break;
             case TimerNodeKind.StatusFile when await GetTimerAsync(node, ct) is { } t:
                 content = RenderStatus(t);
+                break;
+            case TimerNodeKind.DismissFile:
+                content = DismissHelp;
                 break;
             default:
                 return NotFound<FsReadResult>(path);
@@ -191,6 +202,7 @@ public sealed class TimerFileSystem(ITimerStore store, TimeProvider timeProvider
                 Unsupported<FsEditResult>("Timers are immutable — delete the timer and create a new one."),
             TimerNodeKind.StatusFile when await GetTimerAsync(node, ct) is not null =>
                 ReadOnly<FsEditResult>(path),
+            TimerNodeKind.DismissFile => ReadOnly<FsEditResult>(path),
             _ => NotFound<FsEditResult>(path)
         };
     }
@@ -198,6 +210,10 @@ public sealed class TimerFileSystem(ITimerStore store, TimeProvider timeProvider
     public async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
+        if (node.Kind == TimerNodeKind.DismissFile)
+        {
+            return ReadOnly<FsRemoveResult>(path);
+        }
         if (node.Kind != TimerNodeKind.TimerDir)
         {
             return node.Kind is TimerNodeKind.TimerFile or TimerNodeKind.StatusFile
@@ -217,8 +233,29 @@ public sealed class TimerFileSystem(ITimerStore store, TimeProvider timeProvider
     public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
         Task.FromResult(Unsupported<FsMoveResult>("The timers filesystem does not support move."));
 
-    public Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsExecResult>("The timers filesystem does not support exec."));
+    public Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    {
+        var node = TimerPath.Parse(path);
+        if (node.Kind is not (TimerNodeKind.Root or TimerNodeKind.DismissFile))
+        {
+            return Task.FromResult(Unsupported<FsExecResult>(
+                $"exec is only supported at the timers root: exec {TimerPath.DismissFileName}"));
+        }
+
+        var trimmed = command.Trim();
+        if (node.Kind == TimerNodeKind.Root && trimmed != TimerPath.DismissFileName)
+        {
+            return Task.FromResult(Exec(
+                "", $"command not found: {trimmed}\navailable: {TimerPath.DismissFileName}", 127, path));
+        }
+
+        var dismissed = dismisser.DismissAll();
+        var stdout = dismissed.Count == 0
+            ? "nothing is ringing\n"
+            : "dismissed " + string.Join(
+                " and ", dismissed.Select(d => $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\"")) + "\n";
+        return Task.FromResult(Exec(stdout, "", 0, path));
+    }
 
     public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
@@ -313,7 +350,7 @@ public sealed class TimerFileSystem(ITimerStore store, TimeProvider timeProvider
 
     private async Task<bool> NodeExistsAsync(TimerNode node, CancellationToken ct) => node.Kind switch
     {
-        TimerNodeKind.Root => true,
+        TimerNodeKind.Root or TimerNodeKind.DismissFile => true,
         TimerNodeKind.TimerDir or TimerNodeKind.TimerFile or TimerNodeKind.StatusFile =>
             await GetTimerAsync(node, ct) is not null,
         _ => false
@@ -336,6 +373,13 @@ public sealed class TimerFileSystem(ITimerStore store, TimeProvider timeProvider
             _ => []
         };
     }
+
+    private static FsResult<FsExecResult> Exec(string stdout, string stderr, int exitCode, string cwd) =>
+        new FsResult<FsExecResult>.Ok(new FsExecResult
+        {
+            Stdout = stdout, Stderr = stderr, ExitCode = exitCode,
+            Truncated = false, TimedOut = false, DurationMs = 0, Cwd = cwd
+        });
 
     private static FsResult<FsGlobResult> Glob(IReadOnlyList<string> entries) =>
         new FsResult<FsGlobResult>.Ok(new FsGlobResult

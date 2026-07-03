@@ -1,8 +1,7 @@
+using Domain.Contracts;
 using Domain.DTOs.Voice;
 
 namespace McpChannelVoice.Services;
-
-public sealed record DismissedAlert(string Text, AnnounceKind Kind);
 
 public sealed class AlertHandle
 {
@@ -35,8 +34,9 @@ public sealed class AlertHandle
 // Maps each targeted satellite id to EVERY alert covering it. Acknowledging a satellite cancels all
 // of its active alerts (one wake dismisses everything ringing there — the Alexa "stop" model); each
 // alert's shared CTS also stops it on its sibling satellites. Returns what was dismissed so the
-// caller can hand the descriptions to the snooze context flow.
-public sealed class ActiveAlertRegistry
+// caller can hand the descriptions to the snooze context flow. DismissAll is the agent-reachable
+// variant (exec dismiss.sh on /timers): everything ringing anywhere, from any room or channel.
+public sealed class ActiveAlertRegistry : IAlertDismisser
 {
     private readonly Dictionary<string, List<AlertHandle>> _bySatellite = new();
     private readonly Lock _gate = new();
@@ -78,6 +78,23 @@ public sealed class ActiveAlertRegistry
             Discard(handle);
         }
         return acknowledged.Select(h => new DismissedAlert(h.Text, h.Kind)).ToList();
+    }
+
+    public IReadOnlyList<DismissedAlert> DismissAll()
+    {
+        List<AlertHandle> all;
+        lock (_gate)
+        {
+            all = _bySatellite.Values.SelectMany(h => h).Distinct().ToList();
+        }
+
+        // Acknowledge/Discard outside the lock, same re-entrancy reason as Acknowledge above.
+        foreach (var handle in all)
+        {
+            handle.Acknowledge();
+            Discard(handle);
+        }
+        return all.Select(h => new DismissedAlert(h.Text, h.Kind)).ToList();
     }
 
     public void Discard(AlertHandle handle)

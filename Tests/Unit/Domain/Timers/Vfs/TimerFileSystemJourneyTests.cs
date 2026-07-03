@@ -1,5 +1,7 @@
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Voice;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Timers;
 using Microsoft.Extensions.Time.Testing;
@@ -11,12 +13,24 @@ public class TimerFileSystemJourneyTests
 {
     private static readonly TimeZoneInfo _madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
 
-    private static (TimerFileSystem Fs, InMemoryTimerStore Store, FakeTimeProvider Time) Build()
+    private sealed class FakeDismisser : IAlertDismisser
+    {
+        public List<DismissedAlert> Ringing { get; } = [];
+        public IReadOnlyList<DismissedAlert> DismissAll()
+        {
+            var result = Ringing.ToList();
+            Ringing.Clear();
+            return result;
+        }
+    }
+
+    private static (TimerFileSystem Fs, InMemoryTimerStore Store, FakeTimeProvider Time, FakeDismisser Dismisser) Build()
     {
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 10, 0, 0, TimeSpan.Zero));
         time.SetLocalTimeZone(_madrid);
         var store = new InMemoryTimerStore();
-        return (new TimerFileSystem(store, time), store, time);
+        var dismisser = new FakeDismisser();
+        return (new TimerFileSystem(store, time, dismisser), store, time, dismisser);
     }
 
     private const string PastaSpec = """
@@ -26,14 +40,14 @@ public class TimerFileSystemJourneyTests
     [Fact]
     public async Task CreateReadStatusCancel_FullJourney()
     {
-        var (fs, _, time) = Build();
+        var (fs, _, time, _) = Build();
 
         var created = await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
         created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
 
         var glob = (await fs.GlobAsync("/", "**", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
-        glob.Entries.ShouldBe(["/pasta/", "/pasta/status.json", "/pasta/timer.json"]);
+        glob.Entries.ShouldBe(["/dismiss.sh", "/pasta/", "/pasta/status.json", "/pasta/timer.json"]);
 
         var spec = (await fs.ReadAsync("/pasta/timer.json", null, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
@@ -55,7 +69,7 @@ public class TimerFileSystemJourneyTests
     [Fact]
     public async Task Create_InvalidDuration_IsRejected()
     {
-        var (fs, _, _) = Build();
+        var (fs, _, _, _) = Build();
 
         var result = await fs.CreateAsync(
             "/bad/timer.json", """{"durationSeconds": 0, "target": {"room": "Kitchen"}}""", false, true, CancellationToken.None);
@@ -67,7 +81,7 @@ public class TimerFileSystemJourneyTests
     [Fact]
     public async Task Create_DurationAboveCeiling_IsRejectedTowardAlarmsCalendar()
     {
-        var (fs, _, _) = Build();
+        var (fs, _, _, _) = Build();
 
         var result = await fs.CreateAsync(
             "/roast/timer.json",
@@ -82,7 +96,7 @@ public class TimerFileSystemJourneyTests
     [Fact]
     public async Task Create_DurationAtCeiling_IsAccepted()
     {
-        var (fs, _, _) = Build();
+        var (fs, _, _, _) = Build();
 
         var result = await fs.CreateAsync(
             "/roast/timer.json",
@@ -95,7 +109,7 @@ public class TimerFileSystemJourneyTests
     [Fact]
     public async Task Create_MissingTarget_IsRejected()
     {
-        var (fs, _, _) = Build();
+        var (fs, _, _, _) = Build();
 
         var result = await fs.CreateAsync(
             "/bad/timer.json", """{"durationSeconds": 60}""", false, true, CancellationToken.None);
@@ -107,7 +121,7 @@ public class TimerFileSystemJourneyTests
     [Fact]
     public async Task Create_DuplicateId_IsRejected()
     {
-        var (fs, _, _) = Build();
+        var (fs, _, _, _) = Build();
         await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
 
         var result = await fs.CreateAsync("/pasta/timer.json", PastaSpec, true, true, CancellationToken.None);
@@ -118,7 +132,7 @@ public class TimerFileSystemJourneyTests
     [Fact]
     public async Task Create_WrongPathShape_IsRejected()
     {
-        var (fs, _, _) = Build();
+        var (fs, _, _, _) = Build();
 
         var result = await fs.CreateAsync("/pasta.json", PastaSpec, false, true, CancellationToken.None);
 
@@ -128,7 +142,7 @@ public class TimerFileSystemJourneyTests
     [Fact]
     public async Task Edit_IsUnsupported_TimersAreImmutable()
     {
-        var (fs, _, _) = Build();
+        var (fs, _, _, _) = Build();
         await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
 
         var result = await fs.EditAsync("/pasta/timer.json",
@@ -141,7 +155,7 @@ public class TimerFileSystemJourneyTests
     [Fact]
     public async Task Delete_TimerJsonFile_IsRejected_DirIsTheUnit()
     {
-        var (fs, _, _) = Build();
+        var (fs, _, _, _) = Build();
         await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
 
         (await fs.DeleteAsync("/pasta/timer.json", CancellationToken.None))
@@ -149,9 +163,72 @@ public class TimerFileSystemJourneyTests
     }
 
     [Fact]
+    public async Task Exec_DismissAtRoot_SilencesRingingAlertsAndReportsThem()
+    {
+        var (fs, _, _, dismisser) = Build();
+        dismisser.Ringing.Add(new DismissedAlert("Take out the trash", AnnounceKind.Alarm));
+        dismisser.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
+
+        var result = (await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(0);
+        result.Stdout.ShouldContain("alarm \"Take out the trash\"");
+        result.Stdout.ShouldContain("timer \"pasta\"");
+    }
+
+    [Fact]
+    public async Task Exec_OnDismissScriptPath_AlsoWorks()
+    {
+        var (fs, _, _, dismisser) = Build();
+        dismisser.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
+
+        var result = (await fs.ExecAsync("/dismiss.sh", "dismiss.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(0);
+        result.Stdout.ShouldContain("timer \"pasta\"");
+    }
+
+    [Fact]
+    public async Task Exec_DismissWithNothingRinging_SaysSo()
+    {
+        var (fs, _, _, _) = Build();
+
+        var result = (await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(0);
+        result.Stdout.ShouldContain("nothing is ringing");
+    }
+
+    [Fact]
+    public async Task Exec_UnknownCommand_Returns127()
+    {
+        var (fs, _, _, _) = Build();
+
+        var result = (await fs.ExecAsync("/", "reboot.sh", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(127);
+        result.Stderr.ShouldContain("dismiss.sh");
+    }
+
+    [Fact]
+    public async Task Read_DismissScript_ExplainsItself()
+    {
+        var (fs, _, _, _) = Build();
+
+        var read = (await fs.ReadAsync("/dismiss.sh", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+
+        read.Content.ShouldContain("exec dismiss.sh");
+    }
+
+    [Fact]
     public async Task Search_FindsTimerSpecContent()
     {
-        var (fs, _, _) = Build();
+        var (fs, _, _, _) = Build();
         await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
 
         var result = (await fs.SearchAsync(

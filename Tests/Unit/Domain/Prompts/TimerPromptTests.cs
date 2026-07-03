@@ -20,4 +20,10 @@ public class TimerPromptTests
     {
         TimerPrompt.Prompt.ShouldContain("4 hours");
     }
+
+    [Fact]
+    public void Prompt_TeachesDismissingRingingAlerts()
+    {
+        TimerPrompt.Prompt.ShouldContain("dismiss.sh");
+    }
 }

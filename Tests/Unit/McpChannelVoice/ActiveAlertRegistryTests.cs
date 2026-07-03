@@ -84,6 +84,28 @@ public class ActiveAlertRegistryTests
     }
 
     [Fact]
+    public void DismissAll_CancelsEveryActiveAlertAcrossSatellites_AndReturnsDescriptions()
+    {
+        // The agent-reachable "stop": exec dismiss.sh silences everything ringing anywhere.
+        var registry = new ActiveAlertRegistry();
+        using var cts1 = new CancellationTokenSource();
+        using var cts2 = new CancellationTokenSource();
+        var alarm = new AlertHandle(cts1, ["kitchen-01", "bedroom-01"], "Take out the trash", AnnounceKind.Alarm);
+        var timer = new AlertHandle(cts2, ["office-01"], "pasta", AnnounceKind.Timer);
+        registry.Register(alarm);
+        registry.Register(timer);
+
+        var dismissed = registry.DismissAll();
+
+        dismissed.Count.ShouldBe(2); // the multi-satellite alarm counts once
+        dismissed.ShouldContain(new DismissedAlert("Take out the trash", AnnounceKind.Alarm));
+        dismissed.ShouldContain(new DismissedAlert("pasta", AnnounceKind.Timer));
+        alarm.IsAcknowledged.ShouldBeTrue();
+        timer.IsAcknowledged.ShouldBeTrue();
+        registry.DismissAll().ShouldBeEmpty(); // registry cleared
+    }
+
+    [Fact]
     public void Discard_RemovesEntries_WithoutAcknowledging()
     {
         var registry = new ActiveAlertRegistry();

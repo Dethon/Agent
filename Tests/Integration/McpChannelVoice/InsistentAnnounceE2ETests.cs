@@ -207,7 +207,9 @@ public class InsistentAnnounceE2ETests
         await WaitForAsync(() => sessions.Get("kitchen-01") is not null, TimeSpan.FromSeconds(5));
 
         // Arm through the VFS surface — the same path the agent's fs tools hit.
-        var fs = new TimerFileSystem(app.Services.GetRequiredService<ITimerStore>(), TimeProvider.System);
+        var fs = new TimerFileSystem(
+            app.Services.GetRequiredService<ITimerStore>(), TimeProvider.System,
+            app.Services.GetRequiredService<ActiveAlertRegistry>());
         var created = await fs.CreateAsync("/pasta/timer.json",
             """{"durationSeconds": 2, "text": "pasta is ready", "target": {"room": "Kitchen"}}""",
             false, true, ct);

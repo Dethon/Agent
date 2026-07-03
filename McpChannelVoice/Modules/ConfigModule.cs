@@ -101,10 +101,12 @@ public static class ConfigModule
         services.AddHttpClient();
         services.AddSingleton<InsistentAnnouncementController>();
 
+        services.AddSingleton<Domain.Contracts.IAlertDismisser>(sp => sp.GetRequiredService<ActiveAlertRegistry>());
         services.AddSingleton<Domain.Contracts.ITimerStore, Infrastructure.Timers.InMemoryTimerStore>();
         services.AddSingleton(sp => new Domain.Tools.Timers.Vfs.TimerFileSystem(
             sp.GetRequiredService<Domain.Contracts.ITimerStore>(),
-            sp.GetRequiredService<TimeProvider>()));
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<Domain.Contracts.IAlertDismisser>()));
         services.AddSingleton<IInsistentAnnouncer>(sp => sp.GetRequiredService<InsistentAnnouncementController>());
         services.AddHostedService<TimerFireService>();
 
