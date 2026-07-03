@@ -224,6 +224,20 @@ public class InsistentAnnounceE2ETests
         dismissed[0].Text.ShouldBe("pasta is ready");
         dismissed[0].Kind.ShouldBe(AnnounceKind.Timer);
 
+        // A second timer is silenced remotely through the VFS (exec dismiss.sh) — no wake needed.
+        var startsBefore = audioStarts.Count;
+        var created2 = await fs.CreateAsync("/tea/timer.json",
+            """{"durationSeconds": 2, "text": "tea is ready", "target": {"room": "Kitchen"}}""",
+            false, true, ct);
+        created2.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        await WaitForAsync(() => audioStarts.Count > startsBefore, TimeSpan.FromSeconds(10));
+
+        var exec = (await fs.ExecAsync("/", "dismiss.sh", null, ct))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0);
+        exec.Stdout.ShouldContain("timer \"tea is ready\"");
+        app.Services.GetRequiredService<ActiveAlertRegistry>().Acknowledge("kitchen-01").ShouldBeEmpty();
+
         await app.StopAsync(CancellationToken.None);
         satListener.Stop();
         await cts.CancelAsync();
