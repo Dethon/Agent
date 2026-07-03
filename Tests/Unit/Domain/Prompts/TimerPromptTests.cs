@@ -14,4 +14,10 @@ public class TimerPromptTests
         TimerPrompt.Prompt.ShouldContain("speaking room");
         TimerPrompt.Prompt.ShouldContain("calendar"); // steers alarms back to the HA calendar
     }
+
+    [Fact]
+    public void Prompt_TeachesTheDurationCeiling()
+    {
+        TimerPrompt.Prompt.ShouldContain("4 hours");
+    }
 }
