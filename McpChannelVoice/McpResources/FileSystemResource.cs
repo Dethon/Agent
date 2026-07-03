@@ -13,6 +13,6 @@ public class FileSystemResource
     {
         name = "timers",
         mountPoint = "/timers",
-        description = "Short countdown timers that ring on the voice satellites. Arm one by creating /timers/<descriptive-id>/timer.json with JSON {durationSeconds, text?, target} — target is {satelliteId | satelliteIds | room | all}; default it to the speaking room. Read /timers/<id>/status.json for remainingSeconds/firesAt; cancel by deleting /timers/<id>. Timers are immutable (delete and recreate) and fire once, ringing tone + message until dismissed by wake word/button or capped. Use the HA alarms calendar for clock-time alarms/reminders, not timers."
+        description = "Short countdown timers that ring on the voice satellites. Arm one by creating /timers/<descriptive-id>/timer.json with JSON {durationSeconds, text?, target} — target is {satelliteId | satelliteIds | room | all}; default it to the speaking room. Read /timers/<id>/status.json for remainingSeconds/firesAt; cancel by deleting /timers/<id>. Timers are immutable (delete and recreate) and fire once, ringing tone + message until dismissed by wake word/button or capped. Exec dismiss.sh at /timers to silence everything currently ringing (alarms and timers) from any room or channel. Use the HA alarms calendar for clock-time alarms/reminders, not timers."
     });
 }

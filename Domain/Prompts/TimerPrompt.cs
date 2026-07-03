@@ -30,5 +30,9 @@ public static class TimerPrompt
         - Timers are immutable and fire once — to change one, delete it and create a new one. To
           extend a timer the user just dismissed ("two more minutes"), create a new timer with the
           remaining request.
+        - Stop ringing: when the user asks to stop or dismiss a ringing alarm/timer (from any room
+          or any channel), `{{VfsExecTool.Name}}` `dismiss.sh` at `/timers` — it silences everything
+          currently ringing on all satellites and reports what was dismissed. A fired timer no
+          longer appears under `/timers`; `dismiss.sh` is the only way to silence it remotely.
         """;
 }
