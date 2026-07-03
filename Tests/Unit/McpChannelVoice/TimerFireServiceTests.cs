@@ -68,6 +68,7 @@ public class TimerFireServiceTests
         request.Insistent.ShouldNotBeNull();
         request.Insistent!.GapSeconds.ShouldBe(10);
         request.Insistent.MaxRepeats.ShouldBe(12);
+        request.Insistent.RampStartPercent.ShouldBe(100); // kitchen timers ring at full volume from round 1
         (await store.GetAsync("pasta")).ShouldBeNull(); // fire-once
 
         await service.StopAsync(CancellationToken.None);
