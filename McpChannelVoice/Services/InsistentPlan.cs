@@ -20,7 +20,7 @@ public readonly record struct InsistentPlan(
             ? TimeSpan.FromSeconds(maxDurationSeconds.Value)
             : (TimeSpan?)null;
 
-        var rampStart = Math.Clamp(defaults.RampStartPercent, 1, 100) / 100.0;
+        var rampStart = Math.Clamp(options?.RampStartPercent ?? defaults.RampStartPercent, 1, 100) / 100.0;
         return new InsistentPlan(gap, maxRepeats, maxDuration, rampStart, Math.Max(1, defaults.RampRounds));
     }
 

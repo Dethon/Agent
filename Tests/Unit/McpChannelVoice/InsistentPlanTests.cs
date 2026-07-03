@@ -66,4 +66,12 @@ public class InsistentPlanTests
 
         plan.GainFor(0).ShouldBe(1.0, 0.001);
     }
+
+    [Fact]
+    public void Resolve_RequestRampStartOverride_WinsOverDefaults()
+    {
+        var plan = InsistentPlan.Resolve(new InsistentOptions { RampStartPercent = 100 }, _defaults);
+
+        plan.GainFor(0).ShouldBe(1.0, 0.001);
+    }
 }
