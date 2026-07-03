@@ -89,6 +89,12 @@ public static class HomeAssistantPrompt
           the cap is reached. **`insistent` must be present** — omitting it makes a
           one-shot announce, not an alarm.
 
+        This calendar covers every message that must reach a **person** at a time — including
+        reminders phrased relatively ("remind me in 20 minutes"): resolve them to an absolute
+        time. Only bare countdowns where the user says "timer" belong in `/timers`; `/schedules`
+        is for agent tasks and must never carry a human alarm or reminder (it speaks once at
+        most and skips offline satellites).
+
         To change or cancel: list with `exec get_events.sh ...`, then
         `exec delete_event.sh ...` / `exec update_event.sh ...` on the event.
 
