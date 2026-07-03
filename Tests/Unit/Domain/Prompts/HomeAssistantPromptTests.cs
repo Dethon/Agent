@@ -42,5 +42,6 @@ public class HomeAssistantPromptTests
     {
         HomeAssistantPrompt.SystemPrompt.ShouldContain("/timers");
         HomeAssistantPrompt.SystemPrompt.ShouldContain("agent tasks");
+        HomeAssistantPrompt.SystemPrompt.ShouldContain("duration from now"); // those belong in /timers
     }
 }
