@@ -78,7 +78,7 @@ public static class HomeAssistantPrompt
 
         - `summary` is the spoken message.
         - `start_date_time` is the local wall-clock time. Resolve relative requests
-          ("in 20 minutes", "tomorrow at 7") to an absolute date-time yourself; HA
+          ("tomorrow at 7", "next Monday at 9") to an absolute date-time yourself; HA
           interprets it in its own timezone (with DST), so you never compute UTC.
         - `rrule` makes it recurring (e.g. `--rrule "FREQ=DAILY"` for every day,
           `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` for weekdays).
@@ -89,11 +89,12 @@ public static class HomeAssistantPrompt
           the cap is reached. **`insistent` must be present** — omitting it makes a
           one-shot announce, not an alarm.
 
-        This calendar covers every message that must reach a **person** at a time — including
-        reminders phrased relatively ("remind me in 20 minutes"): resolve them to an absolute
-        time. Only bare countdowns where the user says "timer" belong in `/timers`; `/schedules`
-        is for agent tasks and must never carry a human alarm or reminder (it speaks once at
-        most and skips offline satellites).
+        This calendar is for times expressed as a clock time or date ("at 7", "tomorrow at
+        9:30"), recurring alarms, and anything past the 4-hour timer ceiling. A request phrased
+        as a **duration from now** ("remind me in 20 minutes", "avísame en 5 minutos") belongs
+        in `/timers` with the message as its `text`, not here. `/schedules` is for agent tasks
+        and must never carry a human alarm or reminder (it speaks once at most and skips
+        offline satellites).
 
         To change or cancel: list with `exec get_events.sh ...`, then
         `exec delete_event.sh ...` / `exec update_event.sh ...` on the event.

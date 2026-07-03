@@ -13,7 +13,7 @@ public static class SchedulingPrompt
 
         You can schedule prompts to run later — once at a future time, or repeatedly on a cron schedule. Schedules live in the virtual filesystem mounted at `/schedules`, one directory per agent, and you manage them entirely with the `domain__filesystem__*` tools. When a schedule fires, its prompt is delivered to an agent as if a user had sent it.
 
-        `/schedules` is **not an alarm clock**: human alarms, wake-ups, and reminders belong on the HA alarms calendar (they ring insistently until acknowledged and can escalate), and bare countdowns belong in `/timers`. A schedule's voice delivery speaks once at most and skips offline satellites — never use it to remind a person of something.
+        `/schedules` is **not an alarm clock**: human alarms, wake-ups, and reminders belong on the HA alarms calendar (clock times, recurring) or in `/timers` (durations from now, e.g. "in 20 minutes") — both ring insistently until acknowledged. A schedule's voice delivery speaks once at most and skips offline satellites — never use it to remind a person of something.
 
         ### Layout
 

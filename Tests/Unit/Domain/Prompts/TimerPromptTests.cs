@@ -28,10 +28,11 @@ public class TimerPromptTests
     }
 
     [Fact]
-    public void Prompt_SteersRemindersToTheCalendar_NotTimers()
+    public void Prompt_RoutesDurationRequestsToTimers_AndClockTimesToCalendar()
     {
-        TimerPrompt.Prompt.ShouldContain("escalate");
-        TimerPrompt.Prompt.ShouldContain("reminded");
+        TimerPrompt.Prompt.ShouldContain("avísame en 5 minutos"); // duration-from-now reminders are timers
+        TimerPrompt.Prompt.ShouldContain("clock time");
+        TimerPrompt.Prompt.ShouldContain("escalate"); // the calendar's durability rationale stays visible
     }
 
     [Fact]

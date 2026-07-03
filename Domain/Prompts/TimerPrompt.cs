@@ -17,11 +17,12 @@ public static class TimerPrompt
         it rings insistently (tone + spoken message) on the target satellites until the user says
         the wake word there, presses the button, or a repeat cap is reached.
 
-        Choosing the mechanism: if the user says **timer** or asks for a bare countdown, use
-        `/timers`. If they ask to be **reminded** of something or woken up — even phrased
-        relatively ("remind me in 20 minutes") — use the HA alarms calendar instead: it survives
-        restarts and can escalate to their phone. `/schedules` is only for agent tasks, never for
-        human alarms or reminders.
+        Choosing the mechanism — go by HOW the time is expressed, not the wording: a duration
+        from now up to 4 hours ("timer for 10 minutes", "avísame en 5 minutos", "remind me in
+        20 minutes") is a `/timers` countdown — put the message to speak in `text`. A clock time
+        or date ("wake me at 7", "tomorrow at 9:30"), anything recurring, or anything past the
+        4-hour ceiling goes on the HA alarms calendar: it survives restarts and can escalate to
+        the phone. `/schedules` is only for agent tasks, never for human alarms or reminders.
 
         - Create: `{{VfsTextCreateTool.Name}}` at `/timers/<descriptive-id>/timer.json` with JSON
           `{"durationSeconds": <int>, "text"?: "<spoken message>", "target": {...} }`.
