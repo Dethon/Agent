@@ -36,4 +36,11 @@ public class HomeAssistantPromptTests
         HomeAssistantPrompt.SystemPrompt.ShouldContain("just dismissed");
         HomeAssistantPrompt.SystemPrompt.ShouldContain("new one-shot");
     }
+
+    [Fact]
+    public void Prompt_DrawsTheBoundaryAgainstTimersAndSchedules()
+    {
+        HomeAssistantPrompt.SystemPrompt.ShouldContain("/timers");
+        HomeAssistantPrompt.SystemPrompt.ShouldContain("agent tasks");
+    }
 }

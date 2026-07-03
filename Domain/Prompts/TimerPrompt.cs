@@ -17,6 +17,12 @@ public static class TimerPrompt
         it rings insistently (tone + spoken message) on the target satellites until the user says
         the wake word there, presses the button, or a repeat cap is reached.
 
+        Choosing the mechanism: if the user says **timer** or asks for a bare countdown, use
+        `/timers`. If they ask to be **reminded** of something or woken up — even phrased
+        relatively ("remind me in 20 minutes") — use the HA alarms calendar instead: it survives
+        restarts and can escalate to their phone. `/schedules` is only for agent tasks, never for
+        human alarms or reminders.
+
         - Create: `{{VfsTextCreateTool.Name}}` at `/timers/<descriptive-id>/timer.json` with JSON
           `{"durationSeconds": <int>, "text"?: "<spoken message>", "target": {...} }`.
           `durationSeconds` is capped at 4 hours — for anything longer use the alarms calendar.
@@ -30,6 +36,9 @@ public static class TimerPrompt
         - Timers are immutable and fire once — to change one, delete it and create a new one. To
           extend a timer the user just dismissed ("two more minutes"), create a new timer with the
           remaining request.
+        - To change a **running** timer ("add five minutes to the pasta timer"): read its
+          `status.json` for `remainingSeconds`, delete the timer, and recreate it with the
+          adjusted remainder.
         - Stop ringing: when the user asks to stop or dismiss a ringing alarm/timer (from any room
           or any channel), `{{VfsExecTool.Name}}` `dismiss.sh` at `/timers` — it silences everything
           currently ringing on all satellites and reports what was dismissed. A fired timer no

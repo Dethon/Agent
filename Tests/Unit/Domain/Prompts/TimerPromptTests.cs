@@ -26,4 +26,17 @@ public class TimerPromptTests
     {
         TimerPrompt.Prompt.ShouldContain("dismiss.sh");
     }
+
+    [Fact]
+    public void Prompt_SteersRemindersToTheCalendar_NotTimers()
+    {
+        TimerPrompt.Prompt.ShouldContain("escalate");
+        TimerPrompt.Prompt.ShouldContain("reminded");
+    }
+
+    [Fact]
+    public void Prompt_TeachesExtendingARunningTimer()
+    {
+        TimerPrompt.Prompt.ShouldContain("adjusted remainder");
+    }
 }
