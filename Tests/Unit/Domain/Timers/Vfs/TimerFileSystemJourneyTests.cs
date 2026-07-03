@@ -65,6 +65,34 @@ public class TimerFileSystemJourneyTests
     }
 
     [Fact]
+    public async Task Create_DurationAboveCeiling_IsRejectedTowardAlarmsCalendar()
+    {
+        var (fs, _, _) = Build();
+
+        var result = await fs.CreateAsync(
+            "/roast/timer.json",
+            """{"durationSeconds": 14401, "target": {"room": "Kitchen"}}""",
+            false, true, CancellationToken.None);
+
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.Message.ShouldContain("4 hours");
+        err.Error.Message.ShouldContain("alarms calendar");
+    }
+
+    [Fact]
+    public async Task Create_DurationAtCeiling_IsAccepted()
+    {
+        var (fs, _, _) = Build();
+
+        var result = await fs.CreateAsync(
+            "/roast/timer.json",
+            """{"durationSeconds": 14400, "target": {"room": "Kitchen"}}""",
+            false, true, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+    }
+
+    [Fact]
     public async Task Create_MissingTarget_IsRejected()
     {
         var (fs, _, _) = Build();

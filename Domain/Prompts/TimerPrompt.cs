@@ -19,6 +19,7 @@ public static class TimerPrompt
 
         - Create: `{{VfsTextCreateTool.Name}}` at `/timers/<descriptive-id>/timer.json` with JSON
           `{"durationSeconds": <int>, "text"?: "<spoken message>", "target": {...} }`.
+          `durationSeconds` is capped at 4 hours — for anything longer use the alarms calendar.
           `target` is `{satelliteId | satelliteIds | room | all}` — default to the **speaking room**
           (the room this request came from) unless another room is named. When `text` is omitted
           the timer announces itself as "<id> timer", so pick a descriptive id (e.g. `pasta`).

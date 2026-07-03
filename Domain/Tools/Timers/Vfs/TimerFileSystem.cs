@@ -257,11 +257,22 @@ public sealed class TimerFileSystem(ITimerStore store, TimeProvider timeProvider
         }
     }
 
+    // Kitchen-scale countdowns in a deliberately non-durable store: anything longer belongs on the
+    // HA alarms calendar, which survives restarts and escalates.
+    public const int MaxDurationSeconds = 4 * 60 * 60;
+
     private static ToolErrorResult? ValidateSpec(SpecDto spec)
     {
         if (spec.DurationSeconds is not > 0)
         {
             return Error(ToolError.Codes.InvalidArgument, "durationSeconds must be a positive integer");
+        }
+
+        if (spec.DurationSeconds > MaxDurationSeconds)
+        {
+            return Error(ToolError.Codes.InvalidArgument,
+                $"durationSeconds must be at most {MaxDurationSeconds} (4 hours) — use the Home Assistant "
+                + "alarms calendar for anything longer");
         }
 
         var target = spec.Target;
