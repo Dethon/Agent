@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
@@ -9,6 +11,9 @@ public class VfsTextEditTool(IVirtualFileSystemRegistry registry)
 {
     public const string Key = "edit";
     public const string Name = "text_edit";
+
+    private const string CoercionNote =
+        "One or more edits provided 'oldString'/'newString' as structured JSON rather than strings; their JSON text was used. Pass them as strings next time.";
 
     public const string ToolDescription = """
         Edits a text file by applying a non-empty list of edits in order, atomically.
@@ -24,9 +29,17 @@ public class VfsTextEditTool(IVirtualFileSystemRegistry registry)
         string filePath,
         [Description("Edits to apply in order, atomically. Must be non-empty.")]
         IReadOnlyList<TextEdit> edits,
+        AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
         var resolution = registry.Resolve(filePath);
-        return (await resolution.Backend.EditAsync(resolution.RelativePath, edits, cancellationToken)).ToNode();
+        var result = await resolution.Backend.EditAsync(resolution.RelativePath, edits, cancellationToken);
+
+        if (TextArg.EditsWereCoercedArg(arguments) && result.TryGetValue(out var value, out _))
+        {
+            return FsResultContract.ToNode(value with { Note = CoercionNote });
+        }
+
+        return result.ToNode();
     }
 }

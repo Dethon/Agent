@@ -37,7 +37,19 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
                         }
                         : default
                 })),
-            (VfsTextEditTool.Key, () => AIFunctionFactory.Create(new VfsTextEditTool(registry).RunAsync, name: $"domain__{Feature}__{VfsTextEditTool.Name}")),
+            (VfsTextEditTool.Key, () => AIFunctionFactory.Create(
+                new VfsTextEditTool(registry).RunAsync,
+                new AIFunctionFactoryOptions
+                {
+                    Name = $"domain__{Feature}__{VfsTextEditTool.Name}",
+                    ConfigureParameterBinding = parameter => parameter.Name == "edits"
+                        ? new AIFunctionFactoryOptions.ParameterBindingOptions
+                        {
+                            BindParameter = (_, args) =>
+                                TextArg.CoerceEdits(args.TryGetValue("edits", out var raw) ? raw : null)
+                        }
+                        : default
+                })),
             (VfsGlobFilesTool.Key, () => AIFunctionFactory.Create(new VfsGlobFilesTool(registry).RunAsync, name: $"domain__{Feature}__{VfsGlobFilesTool.Name}")),
             (VfsTextSearchTool.Key, () => AIFunctionFactory.Create(new VfsTextSearchTool(registry).RunAsync, name: $"domain__{Feature}__{VfsTextSearchTool.Name}")),
             (VfsMoveTool.Key, () => AIFunctionFactory.Create(new VfsMoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsMoveTool.Name}")),
