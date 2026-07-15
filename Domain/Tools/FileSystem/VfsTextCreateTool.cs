@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
@@ -8,6 +10,9 @@ public class VfsTextCreateTool(IVirtualFileSystemRegistry registry)
 {
     public const string Key = "create";
     public const string Name = "text_create";
+
+    private const string CoercionNote =
+        "The 'content' argument arrived as structured JSON rather than a string; its JSON text was written. Pass 'content' as a string next time.";
 
     public const string ToolDescription = """
         Creates a new text file.
@@ -24,9 +29,18 @@ public class VfsTextCreateTool(IVirtualFileSystemRegistry registry)
         bool overwrite = false,
         [Description("Create parent directories if they don't exist (default: true)")]
         bool createDirectories = true,
+        AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
         var resolution = registry.Resolve(filePath);
-        return (await resolution.Backend.CreateAsync(resolution.RelativePath, content, overwrite, createDirectories, cancellationToken)).ToNode();
+        var result = await resolution.Backend.CreateAsync(
+            resolution.RelativePath, content, overwrite, createDirectories, cancellationToken);
+
+        if (TextArg.WasCoercedArg(arguments, "content") && result.TryGetValue(out var value, out _))
+        {
+            return FsResultContract.ToNode(value with { Note = CoercionNote });
+        }
+
+        return result.ToNode();
     }
 }
