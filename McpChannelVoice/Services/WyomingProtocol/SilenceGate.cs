@@ -19,6 +19,7 @@ public sealed class SilenceGate(
     private TimeSpan _speechElapsed;
     private TimeSpan _trailingSilence;
     private bool _speechStarted;
+    private double _peakRms;
 
     public enum Decision
     {
@@ -29,12 +30,17 @@ public sealed class SilenceGate(
 
     public TimeSpan SpeechElapsed => _speechElapsed;
 
+    public double PeakRms => _peakRms;
+
     public Decision Process(ReadOnlySpan<byte> pcm, int sampleRateHz, int sampleWidthBytes, int channels)
     {
         var duration = DurationOf(pcm.Length, sampleRateHz, sampleWidthBytes, channels);
         _elapsed += duration;
 
-        if (Rms(pcm, sampleWidthBytes) >= rmsThreshold)
+        var rms = Rms(pcm, sampleWidthBytes);
+        _peakRms = Math.Max(_peakRms, rms);
+
+        if (rms >= rmsThreshold)
         {
             _speechStarted = true;
             _speechElapsed += duration;
@@ -67,6 +73,7 @@ public sealed class SilenceGate(
         _speechElapsed = TimeSpan.Zero;
         _trailingSilence = TimeSpan.Zero;
         _speechStarted = false;
+        _peakRms = 0;
     }
 
     private static TimeSpan DurationOf(int byteCount, int sampleRateHz, int sampleWidthBytes, int channels)
