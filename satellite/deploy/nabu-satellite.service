@@ -16,7 +16,8 @@
 # (16 kHz-native, used verbatim) and add --button-gpio 17 --led-spi (APA102s need dtparam=spi=on);
 # its mic doesn't sleep and its DAC doesn't glitch, so add --no-wake-playback --no-keep-warm.
 # reSpeaker XVF3800 USB variant: 16 kHz-native but its capture engine only runs while its OWN
-# playback stream is active — provisioning detects this (capture-alone probe) and installs
+# playback stream is active — provisioning detects this (capture-alone probe; sticky across
+# re-provisions since the probe is only valid on a cold engine) and installs
 # nabu-micclock.service (endless zero-stream into its unconnected speaker out) plus
 # --no-wake-playback; speaker output goes to the I2S DAC/amp HAT (e.g. HiFiBerry MiniAmp).
 # Other hardware: a USB foot-switch is --button-evdev /dev/input/eventX:<keycode>; a wired

@@ -123,9 +123,17 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
   # micclock=0 whether awake (capture-alone passes) or asleep (both probes fail). Correct both
   # ways.) Stop the consumers first: a running satellite/feeder holds the device and would fake
   # the probe result.
+  # The verdict is STICKY: the probe is only valid on a COLD engine. After the feeder has been
+  # running, the engine stays clocked for a while, so capture-alone succeeds and a re-provision
+  # would wrongly tear the feeder down (observed on-device 2026-07-16: capture streamed for
+  # minutes after the feeder stopped). If a prior provision installed nabu-micclock, trust it;
+  # a hardware swap needs `sudo rm /etc/systemd/system/nabu-micclock.service` before re-running.
   sudo systemctl stop nabu-satellite nabu-micclock 2>/dev/null || true
   micclock=0
-  if ! timeout 5 arecord -D "${dev}" -r 16000 -c 1 -f S16_LE -t raw -d 1 /dev/null 2>/dev/null; then
+  if [ -f /etc/systemd/system/nabu-micclock.service ]; then
+    echo "nabu-micclock already provisioned: keeping it (probe is unreliable on a warm engine)"
+    micclock=1
+  elif ! timeout 5 arecord -D "${dev}" -r 16000 -c 1 -f S16_LE -t raw -d 1 /dev/null 2>/dev/null; then
     timeout 10 aplay -D "${dev}" -r 16000 -c 2 -f S16_LE -t raw /dev/zero 2>/dev/null &
     feeder=$!
     sleep 0.5
