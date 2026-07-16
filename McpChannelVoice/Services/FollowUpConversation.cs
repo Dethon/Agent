@@ -20,10 +20,12 @@ public sealed class FollowUpConversation(
     public required Func<bool, UtteranceCapture> OpenCapture { get; init; }
     public required Action CloseCapture { get; init; }
 
-    // Transcribe the captured audio and dispatch it to the agent. Returns false when nothing
-    // reached the agent (empty/low-confidence transcript, no session) — there will be no reply,
-    // so the loop must end the conversation instead of waiting on a handshake that never settles.
-    public required Func<IAsyncEnumerable<AudioChunk>, bool, CancellationToken, Task<bool>> TranscribeAndDispatch { get; init; }
+    // Transcribe the captured audio and dispatch it to the agent. Receives the whole capture so
+    // the dispatcher can read gate stats (peak RMS, speech ms) alongside the audio. Returns false
+    // when nothing reached the agent (empty/low-confidence transcript, no session) — there will be
+    // no reply, so the loop must end the conversation instead of waiting on a handshake that never
+    // settles.
+    public required Func<UtteranceCapture, bool, CancellationToken, Task<bool>> TranscribeAndDispatch { get; init; }
 
     // Enqueue the chime and return once it has drained.
     public required Func<CancellationToken, Task> EnqueueChime { get; init; }
@@ -94,7 +96,7 @@ public sealed class FollowUpConversation(
 
                 var isFollowUp = turns > 0;
                 ResetTurn();
-                var dispatched = await TranscribeAndDispatch(capture.Audio, isFollowUp, ct);
+                var dispatched = await TranscribeAndDispatch(capture, isFollowUp, ct);
 
                 // Nothing reached the agent (or follow-up is off): no reply will resolve the turn,
                 // so end now rather than blocking the loop on a handshake that never settles.
