@@ -25,7 +25,9 @@
 # music (snapclient), TTS, and cues — to the 3.5mm JACK, mixed by PipeWire (the bcm2835 jack's
 # ALSA dmix can't share the device, so a userspace sound server does the mixing). Provisioning adds
 # a systemd drop-in (nabu-satellite.service.d/pipewire.conf) that OVERRIDES the ExecStart below:
-# --snd-command targets PipeWire (aplay -D pipewire -> jack), --wake-snd-command keeps the
+# --snd-command targets PipeWire through the `tts` ALSA softvol (aplay -D tts -> speaker), which
+# holds the calibrated agent-voice level (provision-time TTS_VOLUME, default 60%) independent of
+# music — the volume knob for amp HATs that have none (MiniAmp); --wake-snd-command keeps the
 # play-to-wake tone on the Jabra (raw ALSA; the Jabra is excluded from PipeWire so the satellite
 # owns it for mic + tone), --music-mixer Music --music-card Headphones ducks the `music` softvol
 # (snapclient) while active, and Environment=XDG_RUNTIME_DIR lets this system service reach the
