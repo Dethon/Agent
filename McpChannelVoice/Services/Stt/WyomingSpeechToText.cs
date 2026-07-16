@@ -69,14 +69,18 @@ public sealed class WyomingSpeechToText(
 
             var text = evt.Data["text"]?.GetValue<string>() ?? string.Empty;
             var lang = evt.Data["language"]?.GetValue<string>();
-            double? score = null;
-            if (evt.Data["score"] is JsonNode s)
-            {
-                score = s.GetValue<double>();
-            }
+            var score = WyomingNumber.ReadDouble(evt.Data, "score");
 
-            logger.LogInformation("Wyoming transcript: text={Text} lang={Lang}", text, lang);
-            return new TranscriptionResult { Text = text, Language = lang, Confidence = score };
+            logger.LogInformation("Wyoming transcript: text={Text} lang={Lang} score={Score}", text, lang, score);
+            return new TranscriptionResult
+            {
+                Text = text,
+                Language = lang,
+                Confidence = score,
+                AvgLogProb = WyomingNumber.ReadDouble(evt.Data, "avg_logprob"),
+                NoSpeechProb = WyomingNumber.ReadDouble(evt.Data, "no_speech_prob"),
+                CompressionRatio = WyomingNumber.ReadDouble(evt.Data, "compression_ratio")
+            };
         }
 
         return new TranscriptionResult { Text = "" };

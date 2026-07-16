@@ -138,4 +138,152 @@ public class WyomingSpeechToTextTests
         transcribeData!.ContainsKey("name").ShouldBeFalse();
         transcribeData!["language"]?.GetValue<string>().ShouldBe("es");
     }
+
+    [Fact]
+    public async Task TranscribeAsync_TranscriptWithStats_ParsesConfidenceAndStats()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var serverTask = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync();
+            await using var stream = client.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+
+            await foreach (var evt in reader.ReadAllAsync(CancellationToken.None))
+            {
+                if (evt.Type == "audio-stop")
+                {
+                    await writer.WriteAsync(
+                        WyomingEvent.Header("transcript", new JsonObject
+                        {
+                            ["text"] = "hola mundo",
+                            ["language"] = "es",
+                            ["score"] = 0.83,
+                            ["avg_logprob"] = -0.19,
+                            ["no_speech_prob"] = 0.04,
+                            ["compression_ratio"] = 1.2
+                        }),
+                        CancellationToken.None);
+                    return;
+                }
+            }
+        });
+
+        var sut = new WyomingSpeechToText(
+            new WyomingSttConfig { Host = "127.0.0.1", Port = port, Language = "es" },
+            NullLogger<WyomingSpeechToText>.Instance);
+
+        var result = await sut.TranscribeAsync(OneChunk(), new TranscriptionOptions(), CancellationToken.None);
+
+        await serverTask;
+        listener.Stop();
+
+        result.Text.ShouldBe("hola mundo");
+        result.Confidence.ShouldBe(0.83);
+        result.AvgLogProb.ShouldBe(-0.19);
+        result.NoSpeechProb.ShouldBe(0.04);
+        result.CompressionRatio.ShouldBe(1.2);
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_TranscriptWithoutStats_FailsOpenWithNulls()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var serverTask = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync();
+            await using var stream = client.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+
+            await foreach (var evt in reader.ReadAllAsync(CancellationToken.None))
+            {
+                if (evt.Type == "audio-stop")
+                {
+                    // Stock (unpatched) server shape: text only.
+                    await writer.WriteAsync(
+                        WyomingEvent.Header("transcript", new JsonObject { ["text"] = "hola" }),
+                        CancellationToken.None);
+                    return;
+                }
+            }
+        });
+
+        var sut = new WyomingSpeechToText(
+            new WyomingSttConfig { Host = "127.0.0.1", Port = port, Language = "es" },
+            NullLogger<WyomingSpeechToText>.Instance);
+
+        var result = await sut.TranscribeAsync(OneChunk(), new TranscriptionOptions(), CancellationToken.None);
+
+        await serverTask;
+        listener.Stop();
+
+        result.Text.ShouldBe("hola");
+        result.Confidence.ShouldBeNull();
+        result.AvgLogProb.ShouldBeNull();
+        result.NoSpeechProb.ShouldBeNull();
+        result.CompressionRatio.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_NonNumericScore_ToleratedAsNull()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var serverTask = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync();
+            await using var stream = client.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+
+            await foreach (var evt in reader.ReadAllAsync(CancellationToken.None))
+            {
+                if (evt.Type == "audio-stop")
+                {
+                    await writer.WriteAsync(
+                        WyomingEvent.Header("transcript", new JsonObject
+                        {
+                            ["text"] = "hola",
+                            ["score"] = "high"
+                        }),
+                        CancellationToken.None);
+                    return;
+                }
+            }
+        });
+
+        var sut = new WyomingSpeechToText(
+            new WyomingSttConfig { Host = "127.0.0.1", Port = port, Language = "es" },
+            NullLogger<WyomingSpeechToText>.Instance);
+
+        // Previously GetValue<double>() would throw here and the whole turn would drop as SttError.
+        var result = await sut.TranscribeAsync(OneChunk(), new TranscriptionOptions(), CancellationToken.None);
+
+        await serverTask;
+        listener.Stop();
+
+        result.Text.ShouldBe("hola");
+        result.Confidence.ShouldBeNull();
+    }
+
+    private static async IAsyncEnumerable<AudioChunk> OneChunk()
+    {
+        yield return new AudioChunk
+        {
+            Data = new byte[16],
+            Format = AudioFormat.WyomingStandard,
+            Timestamp = TimeSpan.Zero
+        };
+        await Task.Yield();
+    }
 }
