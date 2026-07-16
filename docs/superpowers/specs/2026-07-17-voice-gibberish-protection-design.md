@@ -15,13 +15,14 @@ The satellite occasionally wakes on background noise (accepted — wake tuning i
 - **Confidence source:** patched wyoming-whisper image (chosen over speaches/HTTP swap and over audio-gates-only). Accuracy/latency identical by construction; smallest change; fails open.
 - **Rejection UX:** nothing new — a dropped transcript ends the turn exactly like today (done-cue + re-arm), on wake turns and mid-follow-up alike. Drops are observable only via metrics.
 - **Standing constraint honored:** no text-based gibberish heuristics or model-specific post-processing; the gate must be conservative — dropping real speech is worse than passing occasional gibberish.
+- **Server VAD:** already on (`--vad-filter`, defaults); additionally bump `--vad-threshold` to 0.6 (user decision, quiet-onset-clipping risk accepted; see §3).
 
 ## 1. Patched wyoming-whisper
 
 New build context `DockerCompose/wyoming-whisper/`:
 
 - `Dockerfile` — `FROM rhasspy/wyoming-whisper@sha256:…` pinned by digest to the 3.5.0 release (digest resolved from the registry at implementation time) + overlay of patched files. Compose service `wyoming-whisper` switches from `image:` to `build:`; flags unchanged.
-- Patch to `faster_whisper_handler.py`: materialize the segments returned by `model.transcribe(...)`; compute utterance aggregates — duration-weighted mean `avg_logprob`, duration-weighted mean `no_speech_prob`, max `compression_ratio` — and carry them alongside the joined text.
+- Patch to `faster_whisper_handler.py`: materialize the segments returned by `model.transcribe(...)`; compute utterance aggregates — duration-weighted mean `avg_logprob`, duration-weighted mean `no_speech_prob`, max `compression_ratio` — and carry them alongside the joined text. **Zero-segments guard:** when VAD filters everything out, `model.transcribe` yields no segments — emit empty text with no stats (never divide by zero).
 - Patch to `dispatch_handler.py`: where the transcript event is emitted, attach extra JSON keys: `score`, `avg_logprob`, `no_speech_prob`, `compression_ratio`. Extra keys on Wyoming events are backward-compatible (canonical clients read only `text`).
 
 **Score formula (server-side, deliberately dumb):** `score = exp(weighted_avg_logprob)` → (0,1], ≈ mean token probability. All recalibration intelligence lives hub-side; the raw stats ride along so formula evolution never requires an image rebuild.
@@ -44,6 +45,7 @@ Config bumps in `McpChannelVoice/appsettings.json` (values remain knobs, env-ove
 - `WyomingClient.SilenceRmsThreshold` **500 → 700** (≈ −36 → −33 dBFS on S16LE). Sub-threshold wakes fall into `NoSpeech`, which skips STT entirely.
 - `WyomingClient.MinSpeechMs` **200 → 300**. Transients shorter than 300 ms cumulative land in `NoSpeech`. Deliberately below short Spanish follow-ups ("sí", "para" ≈ 350–500 ms); do not raise blind.
 - Inner streaming gate (`Stt.Streaming.*`) untouched — it only slices phrases inside already-accepted speech.
+- **Server-side VAD:** add `--vad-threshold 0.6` to the wyoming-whisper service (compose; Silero default is 0.5) so more borderline noise returns empty text pre-decode. Other VAD params (`--vad-min-speech-ms`, `--vad-min-silence-ms`) stay at defaults. Known risk, accepted: a stricter Silero gate can clip quiet speech onsets, and that failure is silent (audio never reaches whisper — no score, no metric). Watch-signal for rollback to 0.5: quiet/far speech getting "ignored" (dispatched-utterance rate dropping without a matching rise in dropped/no-speech metrics).
 - **New per-satellite overrides** for these two values on `SatelliteConfig` (nullable; fall back to global). The `SilenceGate` is constructed per-turn from session config, so wiring is local to `WyomingSatelliteHost`. Rationale: XVF3800 firmware AGC raises noise-floor levels relative to other hardware; one global RMS number won't fit all satellites.
 
 ## 4. Observability
