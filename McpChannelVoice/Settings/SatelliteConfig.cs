@@ -26,4 +26,21 @@ public record SatelliteConfig
     public bool? FollowUpEnabled { get; init; }
     public SttSettings? Stt { get; init; }
     public TtsSettings? Tts { get; init; }
+
+    // Per-satellite overrides of the outer SilenceGate entry bar (WyomingClientSettings).
+    // Mic front-ends sit at different noise floors (e.g. XVF3800 firmware AGC lifts quiet
+    // rooms toward speech levels), so the global values can't fit every unit.
+    public GateSettings? Gate { get; init; }
+
+    public double ResolveRmsThreshold(WyomingClientSettings global) =>
+        Gate?.SilenceRmsThreshold ?? global.SilenceRmsThreshold;
+
+    public int ResolveMinSpeechMs(WyomingClientSettings global) =>
+        Gate?.MinSpeechMs ?? global.MinSpeechMs;
+}
+
+public record GateSettings
+{
+    public double? SilenceRmsThreshold { get; init; }
+    public int? MinSpeechMs { get; init; }
 }
