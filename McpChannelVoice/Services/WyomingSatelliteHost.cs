@@ -238,8 +238,8 @@ public sealed class WyomingSatelliteHost(
                     noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
             },
             CloseCapture = session.CloseCapture,
-            TranscribeAndDispatch = (audio, isFollowUp, token) =>
-                TranscribeAndDispatchAsync(session, audio, isFollowUp, token),
+            TranscribeAndDispatch = (capture, isFollowUp, token) =>
+                TranscribeAndDispatchAsync(session, capture, isFollowUp, token),
             EnqueueChime = token => EnqueueChimeAsync(session, token),
             EndConversation = token => client.WriteAsync(
                 WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), token),
@@ -269,7 +269,7 @@ public sealed class WyomingSatelliteHost(
     // transcripts and STT errors return false so the conversation ends and wake re-arms, rather
     // than the loop blocking forever on a reply handshake the agent will never complete.
     private async Task<bool> TranscribeAndDispatchAsync(
-        SatelliteSession session, IAsyncEnumerable<AudioChunk> audio, bool isFollowUp, CancellationToken ct)
+        SatelliteSession session, UtteranceCapture capture, bool isFollowUp, CancellationToken ct)
     {
         try
         {
@@ -278,7 +278,7 @@ public sealed class WyomingSatelliteHost(
             // Tts.Wyoming.Voice override resolved in SendReplyTool/AnnouncementService); null falls
             // back to the global Stt.Wyoming.Language inside the backend.
             var options = new TranscriptionOptions { Language = session.Config.Stt?.Wyoming?.Language };
-            var result = await speechToText.TranscribeAsync(audio, options, ct);
+            var result = await speechToText.TranscribeAsync(capture.Audio, options, ct);
             sw.Stop();
 
             await metrics.PublishAsync(new VoiceEvent
@@ -296,7 +296,8 @@ public sealed class WyomingSatelliteHost(
                 PublishVoiceMetric(VoiceMetric.FollowUpEngaged, session);
             }
 
-            var dispatched = await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, null, ct);
+            var dispatched = await dispatcher.DispatchAsync(
+                session, result, voiceSettings.AgentId, capture.Stats, ct);
             if (dispatched)
             {
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
