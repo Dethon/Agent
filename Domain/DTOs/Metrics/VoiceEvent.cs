@@ -13,4 +13,9 @@ public record VoiceEvent : MetricEvent
     public long? DurationMs { get; init; }
     public double? Confidence { get; init; }
     public string? Error { get; init; }
+    public double? PeakRms { get; init; }
+    public long? SpeechMs { get; init; }
+    public double? AvgLogProb { get; init; }
+    public double? NoSpeechProb { get; init; }
+    public double? CompressionRatio { get; init; }
 }

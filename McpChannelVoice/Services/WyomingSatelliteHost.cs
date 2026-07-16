@@ -296,7 +296,7 @@ public sealed class WyomingSatelliteHost(
                 PublishVoiceMetric(VoiceMetric.FollowUpEngaged, session);
             }
 
-            var dispatched = await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
+            var dispatched = await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, null, ct);
             if (dispatched)
             {
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
