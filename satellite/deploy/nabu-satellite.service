@@ -19,7 +19,9 @@
 # playback stream is active — provisioning detects this (capture-alone probe; sticky across
 # re-provisions since the probe is only valid on a cold engine) and installs
 # nabu-micclock.service (endless zero-stream into its unconnected speaker out) plus
-# --no-wake-playback; speaker output goes to the I2S DAC/amp HAT (e.g. HiFiBerry MiniAmp).
+# --no-wake-playback; speaker output goes to the I2S DAC/amp HAT (e.g. HiFiBerry MiniAmp;
+# declare its overlay via DAC_OVERLAY=hifiberry-dac at provision time — one-shot config.txt
+# write + reboot).
 # Other hardware: a USB foot-switch is --button-evdev /dev/input/eventX:<keycode>; a wired
 # indicator is --led-gpio <pin>.
 # Music satellites (provision with MUSIC_HUB=<hub-host> MUSIC_ROOM=<room>) route ALL output —
