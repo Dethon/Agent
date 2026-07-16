@@ -53,4 +53,24 @@ internal static class WyomingNumber
         }
         return fallback;
     }
+
+    // Stats fields (score/avg_logprob/no_speech_prob/compression_ratio) are optional quality
+    // signals: absent, malformed, or non-finite values mean "no signal" (null), never an error —
+    // the confidence gate fails open on null.
+    public static double? ReadDouble(JsonObject data, string key)
+    {
+        if (data[key] is not JsonValue value)
+        {
+            return null;
+        }
+        if (value.TryGetValue<double>(out var d) && !double.IsNaN(d) && !double.IsInfinity(d))
+        {
+            return d;
+        }
+        if (value.TryGetValue<long>(out var l))
+        {
+            return l;
+        }
+        return null;
+    }
 }
