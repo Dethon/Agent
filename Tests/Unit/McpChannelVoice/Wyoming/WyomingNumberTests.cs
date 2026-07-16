@@ -59,4 +59,32 @@ public class WyomingNumberTests
         WyomingNumber.ReadLong(Parse("""{"other":1}"""), "len", 0).ShouldBe(0);
         WyomingNumber.ReadLong(Parse("""{"len":"big"}"""), "len", 0).ShouldBe(0);
     }
+
+    [Fact]
+    public void ReadDouble_FloatValue_ReturnsIt()
+    {
+        WyomingNumber.ReadDouble(Parse("""{"score":0.42}"""), "score").ShouldBe(0.42);
+    }
+
+    [Fact]
+    public void ReadDouble_IntegerValue_ReturnsIt()
+    {
+        // Whisper stats are floats, but a peer may serialize a whole number as an int.
+        WyomingNumber.ReadDouble(Parse("""{"score":1}"""), "score").ShouldBe(1.0);
+    }
+
+    [Fact]
+    public void ReadDouble_MissingKey_ReturnsNull()
+    {
+        WyomingNumber.ReadDouble(Parse("""{"text":"hola"}"""), "score").ShouldBeNull();
+    }
+
+    [Fact]
+    public void ReadDouble_NonNumericValue_ReturnsNull()
+    {
+        // A malformed score must never throw: it would surface as an STT failure and drop the turn.
+        WyomingNumber.ReadDouble(Parse("""{"score":"high"}"""), "score").ShouldBeNull();
+        WyomingNumber.ReadDouble(Parse("""{"score":null}"""), "score").ShouldBeNull();
+        WyomingNumber.ReadDouble(Parse("""{"score":{"v":1}}"""), "score").ShouldBeNull();
+    }
 }
