@@ -11,7 +11,7 @@ set -euo pipefail
 # HAT (HiFiBerry-class `sndrpihifiberry*` card, e.g. the MiniAmp driving a wired speaker) when
 # present, else the 3.5mm jack. The mic card stays OUT of PipeWire, owned raw by the satellite.
 # On music units the satellite's own playback (TTS + cues) additionally flows through a `tts`
-# ALSA softvol (control "TTS" on the speaker card, set to TTS_VOLUME%, default 60) so the agent
+# ALSA softvol (control "TTS" on the speaker card, set to TTS_VOLUME%, default 65) so the agent
 # voice is calibrated independently of music — the volume knob for amp HATs that have none
 # (e.g. the MiniAmp). Tune live: amixer -c <card> sset TTS <pct>% ; persist: sudo alsactl store.
 #
@@ -57,7 +57,7 @@ scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-micclock.service" 
 
 # Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME env vars: nothing is expanded locally; the
 # remote bash evaluates everything (and reads vars from the command-prefix assignments).
-ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${TTS_VOLUME:-60}" bash -se <<'EOF'
+ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${TTS_VOLUME:-65}" bash -se <<'EOF'
   set -euo pipefail
 
   if [ -n "${MUSIC_HUB:-}" ] && [ -n "${MIC}" ]; then
