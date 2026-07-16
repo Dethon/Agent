@@ -4,6 +4,9 @@ set -euo pipefail
 # Usage: scripts/provision-satellite-rs.sh <user@host> [mic-device]
 #   Music satellite: MUSIC_HUB=<snapserver-host> MUSIC_ROOM=<player-name> [TTS_VOLUME=<pct>] \
 #                    scripts/provision-satellite-rs.sh <user@host>
+#   I2S DAC/amp HAT (e.g. MiniAmp): additionally DAC_OVERLAY=hifiberry-dac — I2S hardware is
+#                    electrically undiscoverable, so the overlay must be declared; the script
+#                    writes it to config.txt, reboots the Pi, waits, and continues (one-shot).
 # Builds the static binary (via the fp16-shim-aware build script), copies it + the systemd
 # unit to the Pi, and enables the service. A voice-only Pi needs only alsa-utils; a music Pi also
 # gets snapclient + PipeWire — music, TTS and cues share ONE output, mixed by PipeWire (neither
@@ -35,6 +38,9 @@ set -euo pipefail
 #     a live capture dies the instant playback stops. A probe below detects this and installs
 #     nabu-micclock.service, an endless zero-stream into the mic card's (unconnected) output
 #     that keeps capture clocked 24/7; such units get --no-wake-playback (a tone adds nothing).
+#     The probe is only valid on a COLD engine (warm engines pass capture-alone for minutes), so
+#     the verdict is sticky across re-provisions — and a FIRST provision should run against a
+#     cold-booted Pi, not one whose mic was just in use.
 
 host=${1:?need user@host}
 mic=${2:-}     # empty => auto-detect the USB audio card, address it by name
@@ -48,6 +54,49 @@ bin="$(dirname "$0")/../satellite/target/aarch64-unknown-linux-musl/release/nabu
 ctl=$(mktemp -u "${TMPDIR:-/tmp}/nabu-ssh-XXXXXX")
 SSHOPTS=(-o ControlMaster=auto -o ControlPath="$ctl" -o ControlPersist=120)
 trap 'ssh -o ControlPath="$ctl" -O exit "$host" 2>/dev/null || true; rm -f "$ctl"' EXIT
+
+# --- I2S DAC/amp HAT overlay (opt-in via DAC_OVERLAY, e.g. hifiberry-dac for the MiniAmp) ---
+# I2S hardware is electrically undiscoverable: without its dtoverlay in config.txt the card
+# never exists and provisioning would silently fall back to routing the speaker through the
+# mic card / jack. Declaring the overlay keeps a fresh Pi one-shot: write it, reboot (scheduled
+# via systemd-run so the remote script exits 9 cleanly instead of dying with the connection;
+# the dropped ControlMaster re-opens on the next ssh), wait for the card, continue.
+if [ -n "${DAC_OVERLAY:-}" ]; then
+  rc=0
+  ssh "${SSHOPTS[@]}" "$host" DAC_OVERLAY="${DAC_OVERLAY}" bash -se <<'OVEOF' || rc=$?
+    set -euo pipefail
+    cfg=/boot/firmware/config.txt
+    [ -f "$cfg" ] || cfg=/boot/config.txt   # pre-bookworm layout
+    if aplay -l 2>/dev/null | grep -q sndrpihifiberry; then
+      echo "I2S DAC card already present; overlay OK"
+    elif grep -q "^dtoverlay=${DAC_OVERLAY}\b" "$cfg"; then
+      echo "ERROR: dtoverlay=${DAC_OVERLAY} already in $cfg but no sndrpihifiberry card after boot — check the HAT seating/wiring." >&2
+      exit 1
+    else
+      echo "Enabling dtoverlay=${DAC_OVERLAY} in $cfg; rebooting the Pi..."
+      printf '\n# nabu satellite speaker (added by provision-satellite-rs.sh)\ndtoverlay=%s\n' \
+        "$DAC_OVERLAY" | sudo tee -a "$cfg" >/dev/null
+      sudo systemd-run --on-active=2 systemctl reboot >/dev/null 2>&1
+      exit 9
+    fi
+OVEOF
+  if [ "$rc" = 9 ]; then
+    echo "Waiting for the Pi to come back with the I2S DAC card..."
+    sleep 10
+    tries=0
+    until ssh "${SSHOPTS[@]}" -o ConnectTimeout=3 "$host" 'aplay -l 2>/dev/null | grep -q sndrpihifiberry' 2>/dev/null; do
+      tries=$((tries + 1))
+      if [ "$tries" -gt 60 ]; then
+        echo "ERROR: Pi did not come back with an sndrpihifiberry card within ~5 min of the overlay reboot." >&2
+        exit 1
+      fi
+      sleep 5
+    done
+    echo "I2S DAC card is up."
+  elif [ "$rc" != 0 ]; then
+    exit "$rc"
+  fi
+fi
 
 ssh "${SSHOPTS[@]}" "$host" "sudo apt-get install -y alsa-utils"   # arecord/aplay only; no Python
 scp "${SSHOPTS[@]}" "$bin" "$host:/tmp/nabu-satellite"
