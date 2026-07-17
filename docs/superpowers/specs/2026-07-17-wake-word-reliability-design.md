@@ -80,6 +80,8 @@ The one real technical risk: the `conv_attention` export is opset 18 with fused
 `model_type: dnn` fallback (same op set as today's model, guaranteed compatible). Record the
 outcome in this doc.
 
+**Gate outcome (2026-07-17):** conv_attention loads and runs under tract 0.23 after onnxsim batch=1 (zeros-input score = 0.008028805)
+
 ## Training pipeline (`satellite/training/`)
 
 Committed: `ok_nabu.yaml` (adapted from `prod.yaml`) + `README.md` with exact run commands +
