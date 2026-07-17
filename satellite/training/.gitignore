@@ -1,0 +1,5 @@
+# satellite/training/.gitignore — datasets, checkpoints, venv, household audio: never in git
+.venv/
+data/
+output/
+recordings/
