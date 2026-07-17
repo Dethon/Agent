@@ -586,7 +586,10 @@ services:
         condition: service_started
 
   wyoming-whisper:
-    image: rhasspy/wyoming-whisper:latest
+    # Patched image: emits score/avg_logprob/no_speech_prob/compression_ratio on the
+    # transcript event for the hub's confidence gate. See wyoming-whisper/README.md.
+    build: ./wyoming-whisper
+    image: jackbot-wyoming-whisper
     container_name: wyoming-whisper
     # base model on CPU. Silero VAD (--vad-filter) trims non-speech before decoding to cut
     # silence/noise hallucinations; beam-size 5 and a short Spanish initial-prompt bias
@@ -604,9 +607,13 @@ services:
       - --beam-size
       - "5"
       # Silero VAD trims non-speech before the decoder (fewer silence/noise hallucinations).
-      # Start at the default threshold; if quiet word onsets get clipped, add `--vad-threshold`
-      # below 0.5 (e.g. 0.4 then 0.3) and re-test.
+      # Threshold raised 0.5 -> 0.6 to reject borderline noise wakes (2026-07 gibberish
+      # protection). Rollback signal: quiet/far speech getting "ignored" — dispatched-utterance
+      # rate dropping without a matching rise in dropped/no-speech metrics — means lower it
+      # back toward 0.5 and re-test.
       - --vad-filter
+      - --vad-threshold
+      - "0.6"
       - --initial-prompt
       - "Asistente de voz en español de España (castellano): domótica, recordatorios, listas de la compra, el tiempo y preguntas generales. Nombres propios y ciudades españolas, p. ej. Valladolid."
       - --uri
