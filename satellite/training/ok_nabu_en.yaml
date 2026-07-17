@@ -1,23 +1,39 @@
 # =============================================================================
-# ok_nabu — production-scale wake-word config (VoxCPM2 TTS, voice design)
+# ok_nabu — ENGLISH pass, half 2/2 of a two-pass accent-matched wake-word config
+# (VoxCPM2 TTS, voice design)
 # =============================================================================
 #
 # Install:   uv sync --extra train --extra voxcpm  (or the pinned-package form — see
 #            ../README.md "Install" for both).
-# Prefetch:  livekit-wakeword setup --config <this-config>.yaml
-# Pipeline:  livekit-wakeword run <this-config>.yaml
+# Prefetch:  setup was already run against ok_nabu_es.yaml (same data_dir) — re-running
+#            against this file is harmless (setup short-circuits once artifacts exist).
+# Pipeline:  see ../README.md "Runbook" — this is the config used for every stage AFTER
+#            the two generate passes (augment → train → export → onnxsim → eval); it is
+#            never run via `run` (single end-to-end command), only stage-by-stage.
 #
-# Cloned verbatim from livekit-wakeword's configs/prod_voxcpm.yaml (pinned commit 60b5d755)
-# and adapted for our household's Spanish-style "ok nabu" ("o-ké ná-bu") wake phrase.
-# Multilingual wake words require tts_backend: voxcpm (Piper is English-US only), so this
-# config uses VoxCPM2 for every generated clip — target_phrases and custom_negative_phrases
-# are Spanish, and voice_design_prompts are localized to Castilian-Spanish personas. VoxCPM's
-# auto adversarial negatives are English/CMUdict-biased, so the near-miss negatives below are
-# hand-written rather than relying on that machinery for Spanish coverage.
+# Cloned from livekit-wakeword's configs/prod_voxcpm.yaml (pinned commit 60b5d755). See
+# ok_nabu_es.yaml's header for the full rationale of the two-pass accent-matched design —
+# summary: VoxCPM's generate stage pairs clip index i with target_phrases[i % nPhrases] and
+# the (persona, cfg, steps) triple independently, so accent-matched phrase/persona pairing
+# requires two separate generate calls into the SAME model_name/output directory. This file
+# is the SECOND pass: it shares model_name: ok_nabu with ok_nabu_es.yaml (which already
+# generated the first half using Spanish target_phrases + Castilian-Spanish personas) and,
+# because n_samples/n_samples_val/n_background_samples/n_background_samples_val here are
+# the FULL totals (not half), running `generate` against this file RESUMES each split
+# directory from its existing clip count and appends English-phrase/English-persona clips
+# up to the full totals — see ../README.md "Runbook" for the exact resume mechanics
+# (start_index = existing clip count, from livekit_wakeword's own run_generate).
 #
-# target_phrases are PROVISIONAL — not yet validated by ear (VoxCPM2 wasn't downloaded when
-# this config was authored). Before the full run, do the listening pass described in
-# ../README.md ("Before the full run: generate and listen") and fix the spellings there first.
+# Validated phrase lists (Task 5 listening pass — replaces the earlier PROVISIONAL spellings):
+#   Spanish pass (ok_nabu_es.yaml):  "okey nabu", "okey-nabu", "okeynabu", "okei nabu"
+#   English pass (this file):        "okay naboo", "okay nabu", "okey naboo", "okay nahboo"
+#
+# FAST/FLUID PACING ONLY. The listening pass found that "pausado/lento/mesurado/slow/
+# measured/deliberate" persona pacing caused VoxCPM to render a long internal pause inside
+# the phrase (breaking the wake word into two disconnected words) — the root-cause bug
+# behind the earlier single-pass config. Every persona below (and in ok_nabu_es.yaml) is
+# written with brisk/fluid/conversational pacing only; do not reintroduce slow-pacing
+# wording.
 #
 # model.model_type: conv_attention is validated against tract 0.23 by the Task 1 gate test
 # (satellite/tests/tract_clf_compat.rs) — but ONLY after running onnxsim on the export; see
@@ -30,8 +46,11 @@
 # model_name (required)
 # -----------------------------------------------------------------------------
 # Used for output/<model_name>/, checkpoint basename, and exported ONNX filename.
+#
+# SAME NAME as ok_nabu_es.yaml, deliberately — see that file's header. This is the
+# config used for augment/train/export/eval (run once, after both generate passes).
 
-model_name: ok_nabu_medium
+model_name: ok_nabu
 
 # -----------------------------------------------------------------------------
 # target_phrases (required)
@@ -39,15 +58,15 @@ model_name: ok_nabu_medium
 # Exact phrases to synthesize as positives and to defend against via adversarial
 # negatives. Include spelling variants users might say.
 #
-# PROVISIONAL — Spanish spelling variants of "ok nabu" as a Castilian speaker would say/write
-# it (best guess). NOT yet confirmed by ear. Fix this list during the Task 5 setup listening
-# pass (README "Before the full run") before committing to the full-scale run.
+# Validated English-native spellings of "okey nabu" as an English voice renders it
+# (Task 5 listening pass) — NOT the Spanish spellings; an English VoxCPM persona reading
+# "okei nabu" mangles the phrase, hence the separate English-native spelling set.
 
 target_phrases:
-  - "ok nabu"
-  - "oké nabu"
+  - "okay naboo"
   - "okay nabu"
-  - "okey nabu"
+  - "okey naboo"
+  - "okay nahboo"
 
 # =============================================================================
 # Data generation (top-level)
@@ -59,14 +78,13 @@ target_phrases:
 #                multilingual wake words (phrases in target language; no extra language field).
 tts_backend: voxcpm
 
-# n_samples — Training clips per synthetic class (positive + adversarial negative).
-# Each class gets this many clips before augmentation rounds multiply variants.
+# n_samples / n_samples_val / n_background_samples / n_background_samples_val — FULL totals
+# (matches upstream prod_voxcpm.yaml). ok_nabu_es.yaml already generated the first half
+# (12500/2500/1000/250) with Spanish phrases/personas; `generate` against THIS file resumes
+# each split from its existing clip count and appends English-phrase/English-persona clips
+# up to these full totals. See ../README.md "Runbook".
 n_samples: 25000
-
-# n_samples_val — Validation clips per synthetic class (~10–20% of n_samples).
 n_samples_val: 5000
-
-# n_background_samples / n_background_samples_val — Count of tiled background-noise clips.
 n_background_samples: 2000
 n_background_samples_val: 500
 
@@ -74,29 +92,25 @@ n_background_samples_val: 500
 tts_batch_size: 50
 
 # custom_negative_phrases — Extra adversarial phrases (in addition to auto phoneme edits).
-# Spanish near-misses/partials of "ok nabu", since VoxCPM's auto adversarial negatives are
-# English/CMUdict-biased and can't be relied on for Spanish coverage. A couple of English-mix
-# phrases are kept for households that sometimes address the device in English.
+# English near-misses/partials of "okay naboo", since the negative splits also resume/append
+# in this pass (from ok_nabu_es.yaml's Spanish-negative clip count up to the full totals
+# above) — VoxCPM's own auto adversarial negatives (CMUdict-biased) already cover English
+# phonetic neighbors reasonably well, but these hand-picked ones target the specific
+# "okay/okey X naboo/nabu/nahboo" confusion space.
 custom_negative_phrases:
-  - "ok"
   - "okay"
+  - "naboo"
+  - "okay no"
+  - "okay boo"
+  - "okay move"
+  - "okay now"
+  - "hey naboo"
+  - "a boo"
+  - "okay cool"
+  - "okey dokey"
   - "nabu"
-  - "el nabo"
-  - "un nabo"
-  - "ok nada"
-  - "ok vamos"
-  - "ok bueno"
-  - "o cabo"
-  - "ok pavo"
-  - "ok guapo"
-  - "está bueno"
-  - "que apuro"
-  - "hey nabu"
-  - "oh nabu"
-  - "ok tabu"
-  - "ok mambo"
-  - "okay now boo"
-  - "okay nope"
+  - "knob you"
+  - "nah boo"
 
 # -----------------------------------------------------------------------------
 # Piper-only TTS controls (ignored when tts_backend is voxcpm; kept for schema parity)
@@ -137,43 +151,30 @@ voxcpm_tts:
   load_denoiser: false
   cfg_values: [1.5, 2.0, 2.5, 3.0]
   inference_timesteps_list: [8, 10, 12]
-  # Localized to Castilian-Spanish speaker personas (varied age/gender/pitch/pace), mirroring
-  # upstream's English persona list one-for-one so the same voice-space diversity is covered.
+  # English speaker personas (varied age/gender/pitch/timbre/accent incl. American/British/
+  # Southern), rewritten from upstream prod_voxcpm.yaml's 34-persona list into a fast-paced
+  # subset of ~18 with every slow-pacing word ("slow", "measured", "deliberate", "slower",
+  # "medium-slow") replaced by brisk/fluid pacing — see the header note on the slow-pacing
+  # internal-pause bug this fixes.
   voice_design_prompts:
-    - "Una mujer joven, voz clara de tono medio, ritmo pausado, tranquila y profesional"
-    - "Un hombre joven, barítono cálido, ritmo constante, amable y articulado"
-    - "Una mujer de mediana edad, tono ligeramente grave, ritmo mesurado, tono seguro"
-    - "Un hombre de mediana edad, voz grave y resonante, ritmo lento y deliberado"
-    - "Una mujer mayor, voz suave y amable, ritmo más lento, tono cariñoso"
-    - "Un hombre mayor, tenor áspero, ritmo moderado, tono directo"
-    - "Una mujer joven, tono enérgico y luminoso, ritmo algo más rápido"
-    - "Un hombre joven, tenor ligero, ritmo conversacional rápido"
-    - "Una mujer de unos treinta años, voz de alto suave, acento castellano neutro, ritmo uniforme"
-    - "Un hombre de unos treinta años, barítono claro, ritmo formal"
-    - "Una voz de tono más agudo, entusiasta y animada, ritmo medio-rápido"
-    - "Una voz de tono más grave, relajada y tranquila, ritmo más lento"
-    - "Una persona joven adulta, entrega de género neutro, volumen suave, articulación cuidadosa"
-    - "Una voz de presentador segura, proyección fuerte, ritmo moderado"
-    - "Una voz íntima y tranquila, sensación de cercanía, lenta y clara"
-    - "Una voz estilo presentador de telediario, con autoridad, ritmo uniforme"
-    - "Un tono amable de atención al cliente, con una leve sonrisa en la voz, ritmo medio"
-    - "Una voz cansada pero clara, energía baja, ritmo constante"
-    - "Una voz alegre y animada, amplio rango de tono, ritmo vivo"
-    - "Una voz seria y formal, mínima emoción, articulación precisa"
-    - "Un acento andaluz, tono cálido, ritmo conversacional"
-    - "Un acento castellano de Madrid, dicción clara, ritmo moderado"
-    - "Una voz con ligera fritura vocal, joven y desenfadada, ritmo medio"
-    - "Una voz muy suave y pulida, calidad de estudio, ritmo lento a medio"
-    - "Un tono nasal y brillante, enérgico, ritmo más rápido de lo habitual"
-    - "Una voz suave y entrecortada, gentil, ritmo más lento"
-    - "Una voz robusta y atlética, fuerte y directa, ritmo medio"
-    - "Un tono académico, pausas reflexivas, ritmo lento y estudiado"
-    - "Una voz adolescente, casual, algo rápida, tono agudo"
-    - "Una voz ejecutiva madura, dinámica controlada y grave, ritmo constante"
-    - "Un tono cantarín y juguetón, tono variado, ritmo medio"
-    - "Una entrega monótona y plana, claridad robótica, velocidad uniforme"
-    - "Una voz ronca, energía baja, ritmo medio-lento"
-    - "Una voz precisa y nítida, acento neutro, habla rápida y clara"
+    - "A young adult woman, clear mid-pitch voice, brisk natural pace, calm and professional"
+    - "A young adult man, warm baritone, steady brisk pace, friendly and articulate"
+    - "A middle-aged woman, slightly low pitch, quick fluid pace, confident tone"
+    - "A middle-aged man, deep resonant voice, fast direct pace"
+    - "An older adult man, gravelly tenor, brisk pace, matter-of-fact"
+    - "A young woman, bright energetic tone, fast pace"
+    - "A young man, light tenor, quick conversational pace"
+    - "A woman in her thirties, smooth alto, neutral American accent, even brisk pace"
+    - "A man in his thirties, clear baritone, businesslike brisk pace"
+    - "A speaker with a higher pitch, enthusiastic and upbeat, medium-fast pace"
+    - "A confident presenter voice, strong projection, quick pace"
+    - "A news-anchor style voice, authoritative, brisk rhythm"
+    - "A friendly customer-service tone, slightly smiling, quick pace"
+    - "A cheerful animated voice, wide pitch range, lively fast pace"
+    - "A Southern US English accent, warm tone, brisk conversational pace"
+    - "A British English accent, clear RP-like delivery, brisk pace"
+    - "A speaker with slight vocal fry, casual young adult, quick pace"
+    - "A crisp precise voice, minimal accent, fast clear speech"
 
 # =============================================================================
 # Paths

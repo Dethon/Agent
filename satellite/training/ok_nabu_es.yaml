@@ -1,23 +1,44 @@
 # =============================================================================
-# ok_nabu — production-scale wake-word config (VoxCPM2 TTS, voice design)
+# ok_nabu — SPANISH pass, half 1/2 of a two-pass accent-matched wake-word config
+# (VoxCPM2 TTS, voice design)
 # =============================================================================
 #
 # Install:   uv sync --extra train --extra voxcpm  (or the pinned-package form — see
 #            ../README.md "Install" for both).
-# Prefetch:  livekit-wakeword setup --config <this-config>.yaml
-# Pipeline:  livekit-wakeword run <this-config>.yaml
+# Prefetch:  livekit-wakeword setup --config ok_nabu_es.yaml
+# Pipeline:  see ../README.md "Runbook" — this config is run stage-by-stage
+#            (generate → [ok_nabu_en.yaml generate] → inject recordings → augment
+#            → train → export → onnxsim → eval), NEVER via `run`.
 #
-# Cloned verbatim from livekit-wakeword's configs/prod_voxcpm.yaml (pinned commit 60b5d755)
-# and adapted for our household's Spanish-style "ok nabu" ("o-ké ná-bu") wake phrase.
-# Multilingual wake words require tts_backend: voxcpm (Piper is English-US only), so this
-# config uses VoxCPM2 for every generated clip — target_phrases and custom_negative_phrases
-# are Spanish, and voice_design_prompts are localized to Castilian-Spanish personas. VoxCPM's
-# auto adversarial negatives are English/CMUdict-biased, so the near-miss negatives below are
-# hand-written rather than relying on that machinery for Spanish coverage.
+# Cloned from livekit-wakeword's configs/prod_voxcpm.yaml (pinned commit 60b5d755) and
+# adapted for our household's Spanish-style "okey nabu" ("o-KEY NA-bu", keep the /y/, no
+# internal pause) wake phrase — validated by ear in the Task 5 listening pass.
 #
-# target_phrases are PROVISIONAL — not yet validated by ear (VoxCPM2 wasn't downloaded when
-# this config was authored). Before the full run, do the listening pass described in
-# ../README.md ("Before the full run: generate and listen") and fix the spellings there first.
+# TWO-PASS ACCENT-MATCHED DESIGN. VoxCPM synthesis needs accent-matched spellings: Spanish
+# voices read Spanish spellings correctly, English voices read English-native spellings
+# correctly — mixing them mangles the phrase (a Spanish voice reading "okay naboo" or an
+# English voice reading "okei nabu" sounds wrong). VoxCPM's generate stage pairs clip index
+# i with target_phrases[i % nPhrases] and the (persona, cfg, steps) triple with
+# flat[i % (nPersonas*nCfg*nSteps)] INDEPENDENTLY — so phrase and persona are decoupled per
+# clip, and there is no way to force "Spanish persona only reads Spanish phrase" within a
+# single generate call. The fix is two separate `generate` invocations sharing the SAME
+# model_name (hence the SAME output/ok_nabu/ directory): this file (ok_nabu_es.yaml) generates
+# the first half with Spanish target_phrases + Castilian-Spanish personas, and
+# ok_nabu_en.yaml resumes generation into the same split directories with English
+# target_phrases + English personas, filling out the second half. Every clip is thus
+# synthesized by a persona that can actually pronounce the phrase text it was paired with.
+# The clip-level phrase/persona pairing math is unaffected by this split — only which
+# phrase/persona POOL is active during each pass.
+#
+# Validated phrase lists (Task 5 listening pass — replaces the earlier PROVISIONAL spellings):
+#   Spanish pass (this file):  "okey nabu", "okey-nabu", "okeynabu", "okei nabu"
+#   English pass (ok_nabu_en.yaml): "okay naboo", "okay nabu", "okey naboo", "okay nahboo"
+#
+# FAST/FLUID PACING ONLY. The listening pass found that "pausado/lento/mesurado/slow/
+# measured/deliberate" persona pacing caused VoxCPM to render a long internal pause inside
+# the phrase (breaking "okey nabu" into two disconnected words) — the root-cause bug behind
+# the earlier single-pass config. Every persona below (and in ok_nabu_en.yaml) is written
+# with brisk/fluid/conversational pacing only; do not reintroduce slow-pacing wording.
 #
 # model.model_type: conv_attention is validated against tract 0.23 by the Task 1 gate test
 # (satellite/tests/tract_clf_compat.rs) — but ONLY after running onnxsim on the export; see
@@ -30,8 +51,13 @@
 # model_name (required)
 # -----------------------------------------------------------------------------
 # Used for output/<model_name>/, checkpoint basename, and exported ONNX filename.
+#
+# SAME NAME as ok_nabu_en.yaml, deliberately — that shared model_name is what makes the
+# two generate passes land in the same output/ok_nabu/ split directories and merge into
+# one dataset before augment/train/export/eval (which are only ever run once, against
+# ok_nabu_en.yaml, after both passes complete).
 
-model_name: ok_nabu_small
+model_name: ok_nabu
 
 # -----------------------------------------------------------------------------
 # target_phrases (required)
@@ -39,15 +65,13 @@ model_name: ok_nabu_small
 # Exact phrases to synthesize as positives and to defend against via adversarial
 # negatives. Include spelling variants users might say.
 #
-# PROVISIONAL — Spanish spelling variants of "ok nabu" as a Castilian speaker would say/write
-# it (best guess). NOT yet confirmed by ear. Fix this list during the Task 5 setup listening
-# pass (README "Before the full run") before committing to the full-scale run.
+# Validated Castilian-Spanish spellings of "okey nabu" (Task 5 listening pass).
 
 target_phrases:
-  - "ok nabu"
-  - "oké nabu"
-  - "okay nabu"
   - "okey nabu"
+  - "okey-nabu"
+  - "okeynabu"
+  - "okei nabu"
 
 # =============================================================================
 # Data generation (top-level)
@@ -59,24 +83,25 @@ target_phrases:
 #                multilingual wake words (phrases in target language; no extra language field).
 tts_backend: voxcpm
 
-# n_samples — Training clips per synthetic class (positive + adversarial negative).
-# Each class gets this many clips before augmentation rounds multiply variants.
-n_samples: 25000
-
-# n_samples_val — Validation clips per synthetic class (~10–20% of n_samples).
-n_samples_val: 5000
-
-# n_background_samples / n_background_samples_val — Count of tiled background-noise clips.
-n_background_samples: 2000
-n_background_samples_val: 500
+# n_samples / n_samples_val / n_background_samples / n_background_samples_val — HALF of the
+# ok_nabu_en.yaml totals (12500/2500/1000/250 vs. 25000/5000/2000/500). This pass fills
+# indices 0..n-1 of each split; the English pass (ok_nabu_en.yaml) resumes from the existing
+# clip count and generates up to the FULL totals, appending indices n..(full-1). See
+# ../README.md "Runbook" for the exact resume mechanics.
+n_samples: 12500
+n_samples_val: 2500
+n_background_samples: 1000
+n_background_samples_val: 250
 
 # tts_batch_size — Piper: GPU batch size for VITS. VoxCPM: ignored (sequential synthesis).
 tts_batch_size: 50
 
 # custom_negative_phrases — Extra adversarial phrases (in addition to auto phoneme edits).
-# Spanish near-misses/partials of "ok nabu", since VoxCPM's auto adversarial negatives are
+# Spanish near-misses/partials of "okey nabu", since VoxCPM's auto adversarial negatives are
 # English/CMUdict-biased and can't be relied on for Spanish coverage. A couple of English-mix
-# phrases are kept for households that sometimes address the device in English.
+# phrases are kept for households that sometimes address the device in English. This is the
+# SAME negative list as the earlier single-pass ok_nabu_medium.yaml (superseded) — carried
+# over verbatim since it's still valid near-miss coverage for the Spanish spellings.
 custom_negative_phrases:
   - "ok"
   - "okay"
@@ -137,43 +162,30 @@ voxcpm_tts:
   load_denoiser: false
   cfg_values: [1.5, 2.0, 2.5, 3.0]
   inference_timesteps_list: [8, 10, 12]
-  # Localized to Castilian-Spanish speaker personas (varied age/gender/pitch/pace), mirroring
-  # upstream's English persona list one-for-one so the same voice-space diversity is covered.
+  # Castilian-Spanish speaker personas (varied age/gender/pitch/timbre/accent), rewritten from
+  # the earlier ok_nabu_medium.yaml Spanish persona list with every slow-pacing word
+  # ("ritmo pausado/lento/mesurado", "lenta", "deliberado") replaced by fast/fluid pacing
+  # ("ritmo rápido/ágil/natural/conversacional/fluido") — see the header note on the
+  # slow-pacing internal-pause bug this fixes.
   voice_design_prompts:
-    - "Una mujer joven, voz clara de tono medio, ritmo pausado, tranquila y profesional"
-    - "Un hombre joven, barítono cálido, ritmo constante, amable y articulado"
-    - "Una mujer de mediana edad, tono ligeramente grave, ritmo mesurado, tono seguro"
-    - "Un hombre de mediana edad, voz grave y resonante, ritmo lento y deliberado"
-    - "Una mujer mayor, voz suave y amable, ritmo más lento, tono cariñoso"
-    - "Un hombre mayor, tenor áspero, ritmo moderado, tono directo"
-    - "Una mujer joven, tono enérgico y luminoso, ritmo algo más rápido"
+    - "Una mujer joven, voz clara de tono medio, ritmo rápido y natural, tranquila y profesional"
+    - "Un hombre joven, barítono cálido, ritmo ágil y constante, amable y articulado"
+    - "Una mujer de mediana edad, tono ligeramente grave, ritmo fluido, tono seguro"
+    - "Un hombre de mediana edad, voz grave y resonante, ritmo rápido y directo"
+    - "Una mujer mayor, voz suave y amable, ritmo natural y ágil, tono cariñoso"
+    - "Un hombre mayor, tenor áspero, ritmo vivo, tono directo"
+    - "Una mujer joven, tono enérgico y luminoso, ritmo rápido"
     - "Un hombre joven, tenor ligero, ritmo conversacional rápido"
-    - "Una mujer de unos treinta años, voz de alto suave, acento castellano neutro, ritmo uniforme"
-    - "Un hombre de unos treinta años, barítono claro, ritmo formal"
-    - "Una voz de tono más agudo, entusiasta y animada, ritmo medio-rápido"
-    - "Una voz de tono más grave, relajada y tranquila, ritmo más lento"
-    - "Una persona joven adulta, entrega de género neutro, volumen suave, articulación cuidadosa"
-    - "Una voz de presentador segura, proyección fuerte, ritmo moderado"
-    - "Una voz íntima y tranquila, sensación de cercanía, lenta y clara"
-    - "Una voz estilo presentador de telediario, con autoridad, ritmo uniforme"
-    - "Un tono amable de atención al cliente, con una leve sonrisa en la voz, ritmo medio"
-    - "Una voz cansada pero clara, energía baja, ritmo constante"
-    - "Una voz alegre y animada, amplio rango de tono, ritmo vivo"
-    - "Una voz seria y formal, mínima emoción, articulación precisa"
-    - "Un acento andaluz, tono cálido, ritmo conversacional"
-    - "Un acento castellano de Madrid, dicción clara, ritmo moderado"
-    - "Una voz con ligera fritura vocal, joven y desenfadada, ritmo medio"
-    - "Una voz muy suave y pulida, calidad de estudio, ritmo lento a medio"
-    - "Un tono nasal y brillante, enérgico, ritmo más rápido de lo habitual"
-    - "Una voz suave y entrecortada, gentil, ritmo más lento"
-    - "Una voz robusta y atlética, fuerte y directa, ritmo medio"
-    - "Un tono académico, pausas reflexivas, ritmo lento y estudiado"
-    - "Una voz adolescente, casual, algo rápida, tono agudo"
-    - "Una voz ejecutiva madura, dinámica controlada y grave, ritmo constante"
-    - "Un tono cantarín y juguetón, tono variado, ritmo medio"
-    - "Una entrega monótona y plana, claridad robótica, velocidad uniforme"
-    - "Una voz ronca, energía baja, ritmo medio-lento"
-    - "Una voz precisa y nítida, acento neutro, habla rápida y clara"
+    - "Una mujer de unos treinta años, voz de alto suave, acento castellano neutro, ritmo ágil y uniforme"
+    - "Un hombre de unos treinta años, barítono claro, ritmo rápido y resuelto"
+    - "Una voz de tono más agudo, entusiasta y animada, ritmo rápido"
+    - "Una persona joven adulta, entrega de género neutro, volumen suave, articulación ágil"
+    - "Una voz de presentador segura, proyección fuerte, ritmo rápido"
+    - "Una voz estilo presentador de telediario, con autoridad, ritmo fluido y natural"
+    - "Un tono amable de atención al cliente, con una leve sonrisa en la voz, ritmo ágil"
+    - "Una voz alegre y animada, amplio rango de tono, ritmo vivo y rápido"
+    - "Un acento andaluz, tono cálido, ritmo conversacional rápido"
+    - "Un acento castellano de Madrid, dicción clara, ritmo ágil"
 
 # =============================================================================
 # Paths
@@ -209,7 +221,7 @@ augmentation:
 
 model:
   model_type: conv_attention
-  model_size: small
+  model_size: medium
 
 # =============================================================================
 # Training
@@ -221,6 +233,10 @@ model:
 # max_negative_weight   — Upper cap for negative-class loss weight ramp.
 # target_fp_per_hour    — Validation FPPH target for adaptive weighting / thresholding.
 # batch_n_per_class     — Samples per class per training step (keys must match trainer).
+#
+# Training is only ever driven through ok_nabu_en.yaml (the pass that completes the full
+# dataset) — these values are kept here, identical, purely so this file stays a complete,
+# independently-valid config (e.g. for `setup`/`generate` in isolation).
 
 steps: 100000
 learning_rate: 0.0001
