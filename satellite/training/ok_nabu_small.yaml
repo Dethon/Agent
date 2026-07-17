@@ -1,11 +1,11 @@
 # =============================================================================
-# ok_nabu_medium — production-scale wake-word config (VoxCPM2 TTS, voice design)
+# ok_nabu — production-scale wake-word config (VoxCPM2 TTS, voice design)
 # =============================================================================
 #
 # Install:   uv sync --extra train --extra voxcpm  (or the pinned-package form — see
 #            ../README.md "Install" for both).
-# Prefetch:  livekit-wakeword setup --config ok_nabu_medium.yaml
-# Pipeline:  livekit-wakeword run ok_nabu_medium.yaml
+# Prefetch:  livekit-wakeword setup --config <this-config>.yaml
+# Pipeline:  livekit-wakeword run <this-config>.yaml
 #
 # Cloned verbatim from livekit-wakeword's configs/prod_voxcpm.yaml (pinned commit 60b5d755)
 # and adapted for our household's Spanish-style "ok nabu" ("o-ké ná-bu") wake phrase.
