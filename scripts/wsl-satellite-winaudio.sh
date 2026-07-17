@@ -23,7 +23,7 @@ set -euo pipefail
 # MIC_DEVICE is the dshow device name; leave unset to auto-pick the first capture
 # device (the script prints the choice and all candidates).
 
-SAT_PORT="${SAT_PORT:-10700}"
+SAT_PORT="${SAT_PORT:-10800}"
 THRESHOLD="${THRESHOLD:-0.5}"
 MIC_DEVICE="${MIC_DEVICE:-}"
 
