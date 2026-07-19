@@ -2,7 +2,6 @@ namespace McpChannelVoice.Settings;
 
 public record SttSettings
 {
-    public WyomingSttConfig Wyoming { get; init; } = new();
     public OpenAiSttConfig OpenAi { get; init; } = new();
     public SegmentedSttConfig Streaming { get; init; } = new();
 }
@@ -22,13 +21,6 @@ public record OpenAiSttConfig
     // no_speech_prob rises above the ceiling. Null signals fail open (TranscriptDispatcher).
     public double AvgLogProbThreshold { get; init; } = -1.0;
     public double NoSpeechProbThreshold { get; init; } = 0.6;
-}
-
-public record WyomingSttConfig
-{
-    public string Host { get; init; } = "wyoming-whisper";
-    public int Port { get; init; } = 10300;
-    public string? Language { get; init; }
 }
 
 public record SegmentedSttConfig
