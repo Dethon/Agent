@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Voice;
-using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services.Stt;
@@ -91,7 +90,7 @@ public sealed class OpenAiSpeechToText(
         var weighted = ((json["segments"] as JsonArray)?.OfType<JsonObject>() ?? [])
             .Select(s => (
                 Weight: Math.Max(
-                    (WyomingNumber.ReadDouble(s, "end") ?? 0) - (WyomingNumber.ReadDouble(s, "start") ?? 0),
+                    (JsonNumber.ReadDouble(s, "end") ?? 0) - (JsonNumber.ReadDouble(s, "start") ?? 0),
                     1e-9),
                 Segment: s))
             .ToList();
@@ -100,8 +99,8 @@ public sealed class OpenAiSpeechToText(
         {
             Text = json["text"]?.GetValue<string>() ?? string.Empty,
             Language = json["language"]?.GetValue<string>(),
-            AvgLogProb = WeightedMean(weighted, s => WyomingNumber.ReadDouble(s, "avg_logprob")),
-            NoSpeechProb = WeightedMean(weighted, s => WyomingNumber.ReadDouble(s, "no_speech_prob"))
+            AvgLogProb = WeightedMean(weighted, s => JsonNumber.ReadDouble(s, "avg_logprob")),
+            NoSpeechProb = WeightedMean(weighted, s => JsonNumber.ReadDouble(s, "no_speech_prob"))
         };
     }
 

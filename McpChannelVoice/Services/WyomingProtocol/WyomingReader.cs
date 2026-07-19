@@ -55,7 +55,7 @@ public sealed class WyomingReader(Stream stream)
             // number, which JsonValue.GetValue<int>() throws on — and that throw would fire BEFORE
             // the MaxFrameBytes guard below, defeating it). ReadLong clamps oversized values so they
             // still hit the guard's recoverable InvalidDataException instead of an STJ throw.
-            var dataLength = WyomingNumber.ReadLong(header, "data_length", 0);
+            var dataLength = JsonNumber.ReadLong(header, "data_length", 0);
             if (dataLength > 0)
             {
                 if (dataLength > MaxFrameBytes)
@@ -77,7 +77,7 @@ public sealed class WyomingReader(Stream stream)
             }
 
             ReadOnlyMemory<byte> payload = ReadOnlyMemory<byte>.Empty;
-            var payloadLength = WyomingNumber.ReadLong(header, "payload_length", 0);
+            var payloadLength = JsonNumber.ReadLong(header, "payload_length", 0);
             if (payloadLength > 0)
             {
                 if (payloadLength > MaxFrameBytes)

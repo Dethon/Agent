@@ -1,17 +1,17 @@
 using System.Text.Json.Nodes;
-using McpChannelVoice.Services.WyomingProtocol;
+using McpChannelVoice.Services;
 using Shouldly;
 
-namespace Tests.Unit.McpChannelVoice.Wyoming;
+namespace Tests.Unit.McpChannelVoice;
 
-public class WyomingNumberTests
+public class JsonNumberTests
 {
     private static JsonObject Parse(string json) => (JsonObject)JsonNode.Parse(json)!;
 
     [Fact]
     public void ReadInt_IntegerValue_ReturnsIt()
     {
-        WyomingNumber.ReadInt(Parse("""{"rate":16000}"""), "rate", 22050).ShouldBe(16000);
+        JsonNumber.ReadInt(Parse("""{"rate":16000}"""), "rate", 22050).ShouldBe(16000);
     }
 
     [Fact]
@@ -19,30 +19,30 @@ public class WyomingNumberTests
     {
         // A non-conformant peer sending 16000.0 makes JsonValue.GetValue<int>() throw, which would
         // tear down the satellite connection mid-utterance. It must be parsed tolerantly instead.
-        WyomingNumber.ReadInt(Parse("""{"rate":16000.0}"""), "rate", 22050).ShouldBe(16000);
-        WyomingNumber.ReadInt(Parse("""{"rate":16000.6}"""), "rate", 22050).ShouldBe(16001);
+        JsonNumber.ReadInt(Parse("""{"rate":16000.0}"""), "rate", 22050).ShouldBe(16000);
+        JsonNumber.ReadInt(Parse("""{"rate":16000.6}"""), "rate", 22050).ShouldBe(16001);
     }
 
     [Fact]
     public void ReadInt_MissingKey_ReturnsFallback()
     {
-        WyomingNumber.ReadInt(Parse("""{"width":2}"""), "rate", 22050).ShouldBe(22050);
+        JsonNumber.ReadInt(Parse("""{"width":2}"""), "rate", 22050).ShouldBe(22050);
     }
 
     [Fact]
     public void ReadInt_OutOfRangeOrNonNumeric_ReturnsFallback()
     {
-        WyomingNumber.ReadInt(Parse("""{"rate":1e30}"""), "rate", 22050).ShouldBe(22050);
-        WyomingNumber.ReadInt(Parse("""{"rate":"loud"}"""), "rate", 22050).ShouldBe(22050);
+        JsonNumber.ReadInt(Parse("""{"rate":1e30}"""), "rate", 22050).ShouldBe(22050);
+        JsonNumber.ReadInt(Parse("""{"rate":"loud"}"""), "rate", 22050).ShouldBe(22050);
     }
 
     [Fact]
     public void ReadLong_IntegerAndFloatValues_ParseTolerantly()
     {
-        WyomingNumber.ReadLong(Parse("""{"len":3}"""), "len", 0).ShouldBe(3);
-        WyomingNumber.ReadLong(Parse("""{"len":3.0}"""), "len", 0).ShouldBe(3);
+        JsonNumber.ReadLong(Parse("""{"len":3}"""), "len", 0).ShouldBe(3);
+        JsonNumber.ReadLong(Parse("""{"len":3.0}"""), "len", 0).ShouldBe(3);
         // Above int.MaxValue but within long: returned as-is so the caller's frame-size guard can reject it.
-        WyomingNumber.ReadLong(Parse("""{"len":99999999999}"""), "len", 0).ShouldBe(99999999999L);
+        JsonNumber.ReadLong(Parse("""{"len":99999999999}"""), "len", 0).ShouldBe(99999999999L);
     }
 
     [Fact]
@@ -50,41 +50,41 @@ public class WyomingNumberTests
     {
         // A present-but-out-of-long-range length must NOT silently fall back (which would skip the
         // frame and bypass the MaxFrameBytes guard); it is clamped to long.MaxValue so the guard trips.
-        WyomingNumber.ReadLong(Parse("""{"len":1e30}"""), "len", 0).ShouldBe(long.MaxValue);
+        JsonNumber.ReadLong(Parse("""{"len":1e30}"""), "len", 0).ShouldBe(long.MaxValue);
     }
 
     [Fact]
     public void ReadLong_MissingOrNonNumeric_ReturnsFallback()
     {
-        WyomingNumber.ReadLong(Parse("""{"other":1}"""), "len", 0).ShouldBe(0);
-        WyomingNumber.ReadLong(Parse("""{"len":"big"}"""), "len", 0).ShouldBe(0);
+        JsonNumber.ReadLong(Parse("""{"other":1}"""), "len", 0).ShouldBe(0);
+        JsonNumber.ReadLong(Parse("""{"len":"big"}"""), "len", 0).ShouldBe(0);
     }
 
     [Fact]
     public void ReadDouble_FloatValue_ReturnsIt()
     {
-        WyomingNumber.ReadDouble(Parse("""{"score":0.42}"""), "score").ShouldBe(0.42);
+        JsonNumber.ReadDouble(Parse("""{"score":0.42}"""), "score").ShouldBe(0.42);
     }
 
     [Fact]
     public void ReadDouble_IntegerValue_ReturnsIt()
     {
         // Whisper stats are floats, but a peer may serialize a whole number as an int.
-        WyomingNumber.ReadDouble(Parse("""{"score":1}"""), "score").ShouldBe(1.0);
+        JsonNumber.ReadDouble(Parse("""{"score":1}"""), "score").ShouldBe(1.0);
     }
 
     [Fact]
     public void ReadDouble_MissingKey_ReturnsNull()
     {
-        WyomingNumber.ReadDouble(Parse("""{"text":"hola"}"""), "score").ShouldBeNull();
+        JsonNumber.ReadDouble(Parse("""{"text":"hola"}"""), "score").ShouldBeNull();
     }
 
     [Fact]
     public void ReadDouble_NonNumericValue_ReturnsNull()
     {
         // A malformed score must never throw: it would surface as an STT failure and drop the turn.
-        WyomingNumber.ReadDouble(Parse("""{"score":"high"}"""), "score").ShouldBeNull();
-        WyomingNumber.ReadDouble(Parse("""{"score":null}"""), "score").ShouldBeNull();
-        WyomingNumber.ReadDouble(Parse("""{"score":{"v":1}}"""), "score").ShouldBeNull();
+        JsonNumber.ReadDouble(Parse("""{"score":"high"}"""), "score").ShouldBeNull();
+        JsonNumber.ReadDouble(Parse("""{"score":null}"""), "score").ShouldBeNull();
+        JsonNumber.ReadDouble(Parse("""{"score":{"v":1}}"""), "score").ShouldBeNull();
     }
 }
