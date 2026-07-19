@@ -4,6 +4,12 @@ set -euo pipefail
 # Usage: scripts/provision-satellite-rs.sh <user@host> [mic-device]
 #   Music satellite: MUSIC_HUB=<snapserver-host> MUSIC_ROOM=<player-name> [TTS_VOLUME=<pct>] \
 #                    scripts/provision-satellite-rs.sh <user@host>
+#   Wake tuning:     THRESHOLD=<0..1> TRIGGER_LEVEL=<n> scripts/provision-satellite-rs.sh <user@host>
+#                    Defaults 0.7 / 2 — applied to BOTH unit paths (the voice-only ExecStart and
+#                    the music drop-in that overrides it), so a music unit is tuned by the same
+#                    two vars. LOWER threshold / trigger-level = easier wake but more false
+#                    positives; on a music satellite trigger-level 1 is what made music itself
+#                    trigger the wake word (raised to 2 to fix it) — retune one knob at a time.
 #   I2S DAC/amp HAT (e.g. MiniAmp): additionally DAC_OVERLAY=hifiberry-dac — I2S hardware is
 #                    electrically undiscoverable, so the overlay must be declared; the script
 #                    writes it to config.txt, reboots the Pi, waits, and continues (one-shot).
@@ -44,6 +50,14 @@ set -euo pipefail
 
 host=${1:?need user@host}
 mic=${2:-}     # empty => auto-detect the USB audio card, address it by name
+
+# Wake tuning. Validated HERE, before the (slow) build and any remote change: these values are
+# spliced into the unit's ExecStart, so a malformed one would install a satellite that fails to
+# start — a bricked Pi is a much worse failure than a rejected argument.
+threshold=${THRESHOLD:-0.7}
+trigger_level=${TRIGGER_LEVEL:-2}
+[[ $threshold =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "ERROR: THRESHOLD must be a number in 0..1 (got '$threshold')" >&2; exit 1; }
+[[ $trigger_level =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: TRIGGER_LEVEL must be a positive integer (got '$trigger_level')" >&2; exit 1; }
 
 "$(dirname "$0")/../satellite/scripts/build-release.sh"
 bin="$(dirname "$0")/../satellite/target/aarch64-unknown-linux-musl/release/nabu-satellite"
@@ -104,9 +118,10 @@ scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-satellite.service"
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/snapclient.service" "$host:/tmp/"
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-micclock.service" "$host:/tmp/"
 
-# Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME env vars: nothing is expanded locally; the
-# remote bash evaluates everything (and reads vars from the command-prefix assignments).
-ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${TTS_VOLUME:-65}" bash -se <<'EOF'
+# Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/THRESHOLD/TRIGGER_LEVEL env vars: nothing is
+# expanded locally; the remote bash evaluates everything (and reads vars from the command-prefix
+# assignments). THRESHOLD/TRIGGER_LEVEL arrive already defaulted and validated above.
+ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${TTS_VOLUME:-65}" THRESHOLD="${threshold}" TRIGGER_LEVEL="${trigger_level}" bash -se <<'EOF'
   set -euo pipefail
 
   if [ -n "${MUSIC_HUB:-}" ] && [ -n "${MIC}" ]; then
@@ -337,8 +352,8 @@ ExecStart=/usr/local/bin/nabu-satellite \\
   ${wakeargs} \\
   --preroll-ms 1000 \\
   --music-mixer Music --music-card ${outctl} \\
-  --threshold 0.7 \\
-  --trigger-level 2
+  --threshold ${THRESHOLD} \\
+  --trigger-level ${TRIGGER_LEVEL}
 DROPEOF
   else
     # downgrade / voice-only: tear down any prior music install so a re-provisioned Pi returns to
@@ -349,11 +364,14 @@ DROPEOF
     sudo systemctl daemon-reload
   fi
 
-  # Template the base (voice) unit: mic + snd devices -> the detected plughw, %i -> user. Music units
-  # additionally carry the pipewire.conf drop-in written above, which overrides this ExecStart to
-  # route TTS/cues to PipeWire and keep the wake tone on the mic card.
+  # Template the base (voice) unit: mic + snd devices -> the detected plughw, wake tuning -> the
+  # THRESHOLD/TRIGGER_LEVEL vars, %i -> user. Music units additionally carry the pipewire.conf
+  # drop-in written above, which overrides this ExecStart to route TTS/cues to PipeWire and keep
+  # the wake tone on the mic card — it carries the same two values, so tuning applies either way.
   sudo sed -e "/--mic-command/ s#plughw:0,0#${dev}#" \
            -e "/--snd-command/ s#plughw:0,0#${snddev}#" \
+           -e "s#--threshold 0\.7#--threshold ${THRESHOLD}#" \
+           -e "s#--trigger-level 2#--trigger-level ${TRIGGER_LEVEL}#" \
            -e "s/%i/$user/g" \
            /tmp/nabu-satellite.service | sudo tee /etc/systemd/system/nabu-satellite.service >/dev/null
 
