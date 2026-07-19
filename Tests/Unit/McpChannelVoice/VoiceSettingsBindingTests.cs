@@ -14,12 +14,11 @@ public class VoiceSettingsBindingTests
         {
           "WyomingClient": { "TrailingSilenceMs": 800, "MaxUtteranceMs": 15000 },
           "Stt": {
-            "Wyoming": { "Host": "wyoming-whisper", "Port": 10300, "Language": "es" }
+            "OpenAi": { "BaseUrl": "http://mcp-lemonade:13305/v1", "Model": "Whisper-Medium", "Language": "es", "AvgLogProbThreshold": -1.2, "NoSpeechProbThreshold": 0.5 }
           },
           "Tts": {
-            "Wyoming": { "Host": "wyoming-piper", "Port": 10200, "Voice": "es_ES-davefx-medium" }
+            "OpenAi": { "Voice": "ef_dora", "Speed": 1.1 }
           },
-          "ConfidenceThreshold": 0.4,
           "Announce": {
             "Enabled": true,
             "Token": "secret",
@@ -42,9 +41,14 @@ public class VoiceSettingsBindingTests
         settings.ShouldNotBeNull();
         settings!.WyomingClient.TrailingSilenceMs.ShouldBe(800);
         settings.WyomingClient.MaxUtteranceMs.ShouldBe(15000);
-        settings.Stt.Wyoming.Host.ShouldBe("wyoming-whisper");
-        settings.Tts.Wyoming.Voice.ShouldBe("es_ES-davefx-medium");
-        settings.ConfidenceThreshold.ShouldBe(0.4);
+        settings.Stt.OpenAi.BaseUrl.ShouldBe("http://mcp-lemonade:13305/v1");
+        settings.Stt.OpenAi.Model.ShouldBe("Whisper-Medium");
+        settings.Stt.OpenAi.Language.ShouldBe("es");
+        settings.Stt.OpenAi.AvgLogProbThreshold.ShouldBe(-1.2);
+        settings.Stt.OpenAi.NoSpeechProbThreshold.ShouldBe(0.5);
+        settings.Tts.OpenAi.Voice.ShouldBe("ef_dora");
+        settings.Tts.OpenAi.Speed.ShouldBe(1.1);
+        settings.Tts.OpenAi.Model.ShouldBe("kokoro-v1");
         settings.Announce.Token.ShouldBe("secret");
         settings.Announce.MaxTextLength.ShouldBe(500);
         settings.Satellites.Count.ShouldBe(1);
