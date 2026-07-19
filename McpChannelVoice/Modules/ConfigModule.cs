@@ -56,7 +56,8 @@ public static class ConfigModule
                 sp.GetRequiredService<ChannelNotificationEmitter>(),
                 sp.GetRequiredService<IMetricsPublisher>(),
                 sp.GetRequiredService<VoiceConversationManager>(),
-                settings.ConfidenceThreshold,
+                settings.Stt.OpenAi.AvgLogProbThreshold,
+                settings.Stt.OpenAi.NoSpeechProbThreshold,
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<TranscriptDispatcher>>()))
             .AddSingleton(sp => new VoiceConversationManager(

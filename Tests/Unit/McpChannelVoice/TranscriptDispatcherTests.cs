@@ -39,7 +39,7 @@ public class TranscriptDispatcherTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var sut = new TranscriptDispatcher(
             emitter, Mock.Of<IMetricsPublisher>(), manager,
-            confidenceThreshold: 0.5, time, NullLogger<TranscriptDispatcher>.Instance);
+            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, time, NullLogger<TranscriptDispatcher>.Instance);
         return (sut, manager, emitter);
     }
 
@@ -103,16 +103,56 @@ public class TranscriptDispatcherTests
     }
 
     [Fact]
-    public async Task DispatchAsync_LowConfidence_DoesNotOpenConversation()
+    public async Task DispatchAsync_LowAvgLogProb_DoesNotOpenConversation()
     {
         var (sut, manager, emitter) = Build();
 
         var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "mumble", Confidence = 0.1 }, "agent-1", null, default);
+            Session(), new TranscriptionResult { Text = "mumble", AvgLogProb = -2.1 }, "agent-1", null, default);
 
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
         emitter.Captured.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_HighNoSpeechProb_DoesNotOpenConversation()
+    {
+        var (sut, manager, emitter) = Build();
+
+        var ok = await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "ffff", NoSpeechProb = 0.8 }, "agent-1", null, default);
+
+        ok.ShouldBeFalse();
+        manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
+        emitter.Captured.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_NullQualitySignals_FailsOpenAndDispatches()
+    {
+        var (sut, manager, emitter) = Build();
+
+        var ok = await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "sin señales" }, "agent-1", null, default);
+
+        ok.ShouldBeTrue();
+        manager.GetActiveConversationId("kitchen-01").ShouldNotBeNull();
+        emitter.Captured.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_SignalsWithinThresholds_Dispatches()
+    {
+        var (sut, _, emitter) = Build();
+
+        var ok = await sut.DispatchAsync(
+            Session(),
+            new TranscriptionResult { Text = "hola", AvgLogProb = -0.3, NoSpeechProb = 0.1 },
+            "agent-1", null, default);
+
+        ok.ShouldBeTrue();
+        emitter.Captured.Count.ShouldBe(1);
     }
 
     [Fact]
@@ -130,7 +170,7 @@ public class TranscriptDispatcherTests
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
             emitter, publisher.Object, manager,
-            confidenceThreshold: 0.5, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
+            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "   ", Confidence = 0.9 }, "agent-1", null, default);
@@ -184,7 +224,7 @@ public class TranscriptDispatcherTests
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
             new CapturingEmitter(), publisher.Object, manager,
-            confidenceThreshold: 0.5, new FakeTimeProvider(DateTimeOffset.UtcNow),
+            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
@@ -226,7 +266,7 @@ public class TranscriptDispatcherTests
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
             new CapturingEmitter(), publisher.Object, manager,
-            confidenceThreshold: 0.5, new FakeTimeProvider(DateTimeOffset.UtcNow),
+            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(

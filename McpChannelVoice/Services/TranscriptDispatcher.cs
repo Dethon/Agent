@@ -9,7 +9,8 @@ public sealed class TranscriptDispatcher(
     ChannelNotificationEmitter emitter,
     IMetricsPublisher publisher,
     VoiceConversationManager manager,
-    double confidenceThreshold,
+    double avgLogProbThreshold,
+    double noSpeechProbThreshold,
     TimeProvider timeProvider,
     ILogger<TranscriptDispatcher> logger)
 {
@@ -20,15 +21,20 @@ public sealed class TranscriptDispatcher(
         CaptureStats? stats,
         CancellationToken ct)
     {
-        var lowConfidence = transcript.Confidence is { } c && c < confidenceThreshold;
-        if (string.IsNullOrWhiteSpace(transcript.Text) || lowConfidence)
+        // Lemonade emits no whisper score, so Confidence is never populated; the gibberish gate
+        // thresholds the raw quality signals instead. Null signals fail open — a backend that
+        // stops emitting them degrades to dispatch-everything, never to drop-everything.
+        var lowQuality = (transcript.AvgLogProb is { } lp && lp < avgLogProbThreshold)
+                         || (transcript.NoSpeechProb is { } np && np > noSpeechProbThreshold);
+        if (string.IsNullOrWhiteSpace(transcript.Text) || lowQuality)
         {
             logger.LogInformation(
-                "Dropping transcript for {Satellite}: empty={Empty} low={Low} confidence={Conf}",
+                "Dropping transcript for {Satellite}: empty={Empty} lowQuality={LowQuality} avg_logprob={AvgLogProb} no_speech_prob={NoSpeechProb}",
                 session.SatelliteId,
                 string.IsNullOrWhiteSpace(transcript.Text),
-                lowConfidence,
-                transcript.Confidence);
+                lowQuality,
+                transcript.AvgLogProb,
+                transcript.NoSpeechProb);
 
             await publisher.PublishAsync(
                 new VoiceEvent
