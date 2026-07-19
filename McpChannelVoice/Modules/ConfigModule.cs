@@ -72,16 +72,16 @@ public static class ConfigModule
                 sp.GetRequiredService<ReplyTextAccumulator>(),
                 sp.GetRequiredService<ILogger<VoiceDeliveryRegistry>>()));
 
-        const string lemonadeHttpClient = "lemonade";
         // Streaming TTS reads can outlive the default 100 s client timeout on long replies;
-        // cancellation is driven by the per-turn CancellationToken instead.
-        services.AddHttpClient(lemonadeHttpClient)
+        // cancellation is driven by the per-turn CancellationToken instead (STT self-bounds via
+        // RequestTimeout).
+        services.AddHttpClient(LemonadeHttp.ClientName)
             .ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan);
 
         services.AddSingleton<ISpeechToText>(sp =>
         {
             var inner = new McpChannelVoice.Services.Stt.OpenAiSpeechToText(
-                sp.GetRequiredService<IHttpClientFactory>().CreateClient(lemonadeHttpClient),
+                sp.GetRequiredService<IHttpClientFactory>(),
                 settings.Stt.OpenAi,
                 sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.OpenAiSpeechToText>>());
 
@@ -97,7 +97,7 @@ public static class ConfigModule
         services.AddSingleton<ITextToSpeech>(sp =>
             McpChannelVoice.Services.Tts.SilenceTrimmingTextToSpeech.Wrap(
                 new McpChannelVoice.Services.Tts.OpenAiTextToSpeech(
-                    sp.GetRequiredService<IHttpClientFactory>().CreateClient(lemonadeHttpClient),
+                    sp.GetRequiredService<IHttpClientFactory>(),
                     settings.Tts.OpenAi,
                     sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.OpenAiTextToSpeech>>()),
                 settings.Tts.OpenAi.TrailingSilenceTrimThreshold));

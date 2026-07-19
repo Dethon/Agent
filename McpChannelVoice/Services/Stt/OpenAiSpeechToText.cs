@@ -16,7 +16,7 @@ namespace McpChannelVoice.Services.Stt;
 // whisper may split); a body without segments (plain json shape) degrades to null signals and
 // the gate fails open. Lemonade emits neither score nor compression_ratio — left null.
 public sealed class OpenAiSpeechToText(
-    HttpClient http,
+    IHttpClientFactory httpFactory,
     OpenAiSttConfig config,
     ILogger<OpenAiSpeechToText> logger) : ISpeechToText
 {
@@ -71,6 +71,9 @@ public sealed class OpenAiSpeechToText(
     private async Task<HttpResponseMessage> PostWithTimeoutAsync(
         MultipartFormDataContent content, CancellationToken ct)
     {
+        // Per-call client keeps factory handler rotation working; PostAsync buffers the full
+        // response, so disposing the client here leaves the returned message readable.
+        using var http = httpFactory.CreateClient(LemonadeHttp.ClientName);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(config.RequestTimeout);
         try
