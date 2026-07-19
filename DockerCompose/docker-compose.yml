@@ -573,6 +573,7 @@ services:
     environment:
       <<: *timezone
       Announce__Escalation__WebhookUrl: ""
+      Stt__OpenAi__Model: ${STT_MODEL:-Whisper-Medium}
     networks:
       - jackbot
     depends_on:
@@ -580,116 +581,43 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
-      wyoming-whisper:
-        condition: service_started
-      wyoming-piper:
+      mcp-lemonade:
         condition: service_started
 
-  wyoming-whisper:
-    # Patched image: emits score/avg_logprob/no_speech_prob/compression_ratio on the
-    # transcript event for the hub's confidence gate. See wyoming-whisper/README.md.
-    build: ./wyoming-whisper
-    image: jackbot-wyoming-whisper
-    container_name: wyoming-whisper
-    # base model on CPU. Silero VAD (--vad-filter) trims non-speech before decoding to cut
-    # silence/noise hallucinations; beam-size 5 and a short Spanish initial-prompt bias
-    # spelling/vocabulary. List form so the prompt's spaces stay a single argument.
-    command:
-      - --model
-      - base
-      - --language
-      - es
-      - --device
-      - cpu
-      # int8_float32 is an alternative
-      - --compute-type
-      - int8
-      - --beam-size
-      - "5"
-      # Silero VAD trims non-speech before the decoder (fewer silence/noise hallucinations).
-      # Threshold raised 0.5 -> 0.6 to reject borderline noise wakes (2026-07 gibberish
-      # protection). Rollback signal: quiet/far speech getting "ignored" — dispatched-utterance
-      # rate dropping without a matching rise in dropped/no-speech metrics — means lower it
-      # back toward 0.5 and re-test.
-      - --vad-filter
-      - --vad-threshold
-      - "0.6"
-      - --initial-prompt
-      - "Asistente de voz en español de España (castellano): domótica, recordatorios, listas de la compra, el tiempo y preguntas generales. Nombres propios y ciudades españolas, p. ej. Valladolid."
-      - --uri
-      - tcp://0.0.0.0:10300
-    volumes:
-      - ./volumes/whisper-data:/data
+  mcp-lemonade:
+    image: mcp-lemonade:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-lemonade
+    build: ./lemonade
+    ports:
+      - "13305:13305"
     environment:
       <<: *timezone
+      STT_BACKEND: ${STT_BACKEND:-gpu}
+    # Vulkan whisper on the Ryzen AI iGPU. Kokoro TTS is CPU-only on Linux, so it never
+    # contends with whisper for the iGPU.
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd
+    # /dev/dri/renderD* and /dev/kfd are root:render 0660 on Ubuntu/Debian, and --device
+    # preserves host ownership. UID 10001 is in no such group, so without this the render
+    # node is EACCES, ggml-vulkan enumerates zero devices, and whisper silently decodes on
+    # CPU. Set RENDER_GID from the target host: getent group render | cut -d: -f3
+    group_add:
+      - "${RENDER_GID:-993}"
+    # v11 runs as unprivileged UID 10001 with HOME=/opt/lemonade — these are the real cache
+    # paths. (Pre-v11 /root/.cache/* mounts are silently dead: the server still runs but
+    # writes land in the container layer and every model re-downloads on recreate.)
+    volumes:
+      - ./volumes/lemonade-hf-cache:/opt/lemonade/.cache/huggingface
+      - ./volumes/lemonade-recipe:/opt/lemonade/.cache/lemonade
+      - ./volumes/lemonade-llama:/opt/lemonade/llama
     restart: unless-stopped
     networks:
       - jackbot
-
-  piper-voice-fetch:
-    # Fetch Piper voices that won't land in the shared piper-data volume on their own, before
-    # wyoming-piper starts:
-    #   - es_ES-carlfm-high — unofficial (HF friyin/vits-piper-es_ES-carlfm-high), not in the catalog.
-    #   - es_MX-claude-high — official Piper catalog voice (rhasspy/piper-voices).
-    #   - es_MX-laura-high  — unofficial community voice (HF HirCoir/Piper-TTS-Laura).
-    # wyoming-piper serves any voice present in /data; select one per request via the synthesize
-    # voice name (--voice below is only the default). Idempotent: skips files already present, so it
-    # no-ops on every `up` after the first. Runs as root because the volume is root-owned (populated
-    # by the wyoming-piper container itself).
-    image: curlimages/curl:latest
-    container_name: piper-voice-fetch
-    user: root
-    entrypoint: [ "sh", "-c" ]
-    command:
-      - |
-        set -e
-        d=/data
-        fetch() {
-          if [ -s "$$d/$$2" ]; then
-            echo "piper-voice-fetch: $$2 already present"
-          else
-            echo "piper-voice-fetch: downloading $$2"
-            # Best-effort + atomic: temp path moved on success so a truncated transfer never leaves a
-            # partial file; a failed OPTIONAL-voice download logs and continues (the if-guard keeps
-            # curl's non-zero exit from tripping `set -e` and blocking the whole stack from starting).
-            if curl -fsSL --remove-on-error -o "$$d/$$2.tmp" "$$1/$$2"; then
-              mv "$$d/$$2.tmp" "$$d/$$2"
-            else
-              echo "piper-voice-fetch: WARNING failed to download $$2 (optional voice), skipping" >&2
-            fi
-          fi
-        }
-        carlfm=https://huggingface.co/friyin/vits-piper-es_ES-carlfm-high/resolve/main
-        fetch "$$carlfm" es_ES-carlfm-high.onnx
-        fetch "$$carlfm" es_ES-carlfm-high.onnx.json
-        claude=https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/es/es_MX/claude/high
-        fetch "$$claude" es_MX-claude-high.onnx
-        fetch "$$claude" es_MX-claude-high.onnx.json
-        laura=https://huggingface.co/HirCoir/Piper-TTS-Laura/resolve/main
-        fetch "$$laura" es_MX-laura-high.onnx
-        fetch "$$laura" es_MX-laura-high.onnx.json
-    volumes:
-      - ./volumes/piper-data:/data
-    environment:
-      <<: *timezone
-    restart: "no"
-    networks:
-      - jackbot
-
-  wyoming-piper:
-    image: rhasspy/wyoming-piper:latest
-    container_name: wyoming-piper
-    command: --voice es_ES-davefx-medium --length-scale 1.05 --noise-w-scale 0.85 --noise-scale 0.667 --uri tcp://0.0.0.0:10200
-    volumes:
-      - ./volumes/piper-data:/data
-    environment:
-      <<: *timezone
-    restart: unless-stopped
-    networks:
-      - jackbot
-    depends_on:
-      piper-voice-fetch:
-        condition: service_completed_successfully
 
   agent:
     image: agent:latest
