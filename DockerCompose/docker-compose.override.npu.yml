@@ -1,0 +1,39 @@
+# Opt-in: run Whisper on the Ryzen AI NPU via Lemonade's FastFlowLM (`flm`) recipe.
+# EXPERIMENTAL — see docs/superpowers/plans/2026-07-18-voice-lemonade-migration.md Task 8.
+#
+# Requires an XDNA2 NPU, host amdxdna driver, NPU firmware >= 1.1.0.0. Apply as an extra
+# -f AFTER the base and OS override files:
+#
+#   docker compose \
+#     -f DockerCompose/docker-compose.yml \
+#     -f DockerCompose/docker-compose.override.linux.yml \
+#     -f DockerCompose/docker-compose.override.npu.yml \
+#     -p jackbot up -d mcp-lemonade mcp-channel-voice
+#
+# Lemonade auto-installs the FLM binary into the mounted recipe cache on first load and
+# runs `flm validate` before serving. STT_BACKEND is untouched: it still selects the
+# whisper.cpp device for the non-NPU tiers, which this override does not use.
+
+services:
+  mcp-lemonade:
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd
+      - /dev/accel/accel0:/dev/accel/accel0
+    # FLM pins NPU buffers. Low memlock is the documented common cause of
+    # "mmap ... Resource temporarily unavailable" on whisper load (Lemonade's own FLM-on-Linux
+    # troubleshooting sets LimitMEMLOCK=infinity in its systemd unit); issue #1472 reports that
+    # failure on Strix Halo but was closed without a diagnosis, so this is a likely fix, not a
+    # proven one.
+    ulimits:
+      memlock: -1
+    volumes:
+      # FLM keeps its models under $HOME/.flm/models, which none of the base mounts cover —
+      # without this the ~0.6 GB NPU whisper re-downloads on every recreate.
+      - ./volumes/lemonade-flm:/opt/lemonade/.flm
+    environment:
+      STT_MODEL: ${STT_MODEL:-whisper-v3-turbo-FLM}
+
+  mcp-channel-voice:
+    environment:
+      Stt__OpenAi__Model: ${STT_MODEL:-whisper-v3-turbo-FLM}
