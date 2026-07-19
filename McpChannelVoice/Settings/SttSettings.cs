@@ -21,6 +21,11 @@ public record OpenAiSttConfig
     // no_speech_prob rises above the ceiling. Null signals fail open (TranscriptDispatcher).
     public double AvgLogProbThreshold { get; init; } = -1.0;
     public double NoSpeechProbThreshold { get; init; } = 0.6;
+
+    // Bounds the transcription POST only — audio capture length is the speaker's business. The
+    // shared Lemonade HttpClient has an infinite timeout for streaming TTS, so without this a
+    // Lemonade that accepts connections but never answers stalls the utterance indefinitely.
+    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(60);
 }
 
 public record SegmentedSttConfig
