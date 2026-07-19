@@ -24,8 +24,11 @@ public sealed class TranscriptDispatcher(
         // Lemonade emits no whisper score, so Confidence is never populated; the gibberish gate
         // thresholds the raw quality signals instead. Null signals fail open — a backend that
         // stops emitting them degrades to dispatch-everything, never to drop-everything.
-        var lowQuality = (transcript.AvgLogProb is { } lp && lp < avgLogProbThreshold)
-                         || (transcript.NoSpeechProb is { } np && np > noSpeechProbThreshold);
+        // Thresholds resolve per satellite (rooms differ in noise floor), falling back to globals.
+        var avgLogProbFloor = session.Config.ResolveAvgLogProbThreshold(avgLogProbThreshold);
+        var noSpeechProbCeiling = session.Config.ResolveNoSpeechProbThreshold(noSpeechProbThreshold);
+        var lowQuality = (transcript.AvgLogProb is { } lp && lp < avgLogProbFloor)
+                         || (transcript.NoSpeechProb is { } np && np > noSpeechProbCeiling);
         if (string.IsNullOrWhiteSpace(transcript.Text) || lowQuality)
         {
             logger.LogInformation(

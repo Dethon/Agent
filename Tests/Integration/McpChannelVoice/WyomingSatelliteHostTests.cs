@@ -145,7 +145,7 @@ public class WyomingSatelliteHostTests
                 Address = $"tcp://127.0.0.1:{port}",
                 // Per-satellite STT language override must reach the backend (symmetric with the
                 // per-satellite Tts.OpenAi.Voice override), not be silently dropped.
-                Stt = new SttSettings { OpenAi = new OpenAiSttConfig { Language = "en" } }
+                Stt = new SttOverrides { OpenAi = new OpenAiSttOverrides { Language = "en" } }
             }
         });
 
