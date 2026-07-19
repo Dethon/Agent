@@ -37,6 +37,7 @@ public class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitter> logg
         string? agentId,
         string? location,
         string? satelliteId,
+        string? dismissedAlert,
         CancellationToken cancellationToken = default)
     {
         var payload = new ChannelMessageNotification
@@ -47,6 +48,7 @@ public class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitter> logg
             AgentId = agentId,
             Location = location,
             SatelliteId = satelliteId,
+            DismissedAlert = dismissedAlert,
             Timestamp = DateTimeOffset.UtcNow
         };
 

@@ -20,14 +20,34 @@ public class AnnounceEndpointAuthTests
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
+
+        var satelliteRegistry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>());
+        var sessionRegistry = new SatelliteSessionRegistry();
+        var tts = Mock.Of<ITextToSpeech>();
+        var voiceSettings = new VoiceSettings();
+        var metricsPublisher = Mock.Of<IMetricsPublisher>();
+        var alertRegistry = new ActiveAlertRegistry();
+        var insistentController = new InsistentAnnouncementController(
+            satelliteRegistry,
+            sessionRegistry,
+            tts,
+            voiceSettings,
+            alertRegistry,
+            metricsPublisher,
+            TimeProvider.System,
+            new StubHttpClientFactory(new RecordingHandler()),
+            NullLogger<InsistentAnnouncementController>.Instance);
+
         builder.Services
             .AddSingleton(announce)
+            .AddSingleton(alertRegistry)
+            .AddSingleton(insistentController)
             .AddSingleton(svc ?? new Mock<AnnouncementService>(MockBehavior.Loose,
-                new SatelliteRegistry(new Dictionary<string, SatelliteConfig>()),
-                new SatelliteSessionRegistry(),
-                Mock.Of<ITextToSpeech>(),
-                new VoiceSettings(),
-                Mock.Of<IMetricsPublisher>(),
+                satelliteRegistry,
+                sessionRegistry,
+                tts,
+                voiceSettings,
+                metricsPublisher,
                 NullLogger<AnnouncementService>.Instance).Object);
 
         var app = builder.Build();

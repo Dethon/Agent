@@ -67,6 +67,62 @@ public static class HomeAssistantPrompt
         - `exitCode` 127 = not a real action file. `/ha` is NOT a shell — only the
           listed `*.sh` files run. `stderr` lists the available actions.
 
+        ### Alarms & reminders
+
+        To set an alarm or reminder, use the `calendar.create_event` service on the
+        alarms calendar (`calendar.assistant_alarms`) — do NOT use `/schedules` for
+        human alarms. From that entity directory:
+        `exec(command="create_event.sh --summary \"Take out the trash\"
+              --start_date_time \"2026-06-19 21:30:00\"
+              --description \"{\\\"target\\\":{\\\"room\\\":\\\"Kitchen\\\"},\\\"insistent\\\":{\\\"gapSeconds\\\":30,\\\"maxRepeats\\\":5}}\"")`
+
+        - `summary` is the spoken message.
+        - `start_date_time` is the local wall-clock time. Resolve relative requests
+          ("tomorrow at 7", "next Monday at 9") to an absolute date-time yourself; HA
+          interprets it in its own timezone (with DST), so you never compute UTC.
+        - `rrule` makes it recurring (e.g. `--rrule "FREQ=DAILY"` for every day,
+          `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` for weekdays).
+        - `description` is a JSON object with two keys: `target` ({satelliteId |
+          satelliteIds | room | all}) and `insistent` (an object with optional
+          `gapSeconds`, `maxRepeats`, `maxDurationSeconds`; use `{}` for all defaults).
+          The alarm repeats on the satellite until the user says "ok nabu" there, or
+          the cap is reached. **`insistent` must be present** — omitting it makes a
+          one-shot announce, not an alarm.
+
+        This calendar is for times expressed as a clock time or date ("at 7", "tomorrow at
+        9:30"), recurring alarms, and anything past the 4-hour timer ceiling. A request phrased
+        as a **duration from now** ("remind me in 20 minutes", "avísame en 5 minutos") belongs
+        in `/timers` with the message as its `text`, not here. `/schedules` is for agent tasks
+        and must never carry a human alarm or reminder (it speaks once at most and skips
+        offline satellites).
+
+        To change or cancel: list with `exec get_events.sh ...`, then
+        `exec delete_event.sh ...` / `exec update_event.sh ...` on the event.
+
+        Snooze: when the message context says the user just dismissed an alarm and they ask to
+        snooze or be reminded again ("five more minutes"), create a new one-shot event on the
+        alarms calendar at the requested offset with the same summary and description.
+
+        ### Music playback
+        Each room's satellite is a `media_player.<room>` (a Music Assistant / Snapcast player in that
+        HA area). The player directory holds two `play_media` actions — use the Music Assistant one,
+        which resolves names; never the bare one:
+        - Play by name: from the player directory, `exec music_assistant.play_media.sh --media_id
+          "<search text>"` — an artist, track, album, playlist, or radio-station name, e.g.
+          `--media_id "miles davis"`. Add `--media_type artist|album|track|playlist|radio` to
+          disambiguate when the name alone is unclear. Default the target to the **speaking room**
+          (`media_player.<room>` for the room the request came from) unless another room is named;
+          "everywhere" => run it on every room player.
+        - Do NOT use the bare `play_media.sh` (`media_player.play_media`): it needs a concrete
+          `media_content_id`/URI you cannot know, so guessing a playlist id there just fails. Only
+          `music_assistant.play_media.sh` searches by name.
+        - Transport: `media_play.sh` / `media_pause.sh` / `media_next_track.sh` / `volume_set.sh` on
+          the player.
+        - Grouping (synced multi-room): `join.sh` (`media_player.join`; `--group_members` = the other
+          players) to play in sync; `unjoin.sh` (`media_player.unjoin`) to split a room back out.
+        Music ducks automatically while the satellite speaks — never lower or pause music just to
+        talk.
+
         ### Notes
 
         - `state.json` always reflects HA's current stored state (nothing is cached

@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Extensions;
 using Microsoft.Extensions.AI;
 using Shouldly;
@@ -138,5 +140,74 @@ public class ChatMessageSerializationTests
         msg.SetSatelliteId(satelliteId);
 
         msg.AdditionalProperties.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SetAndGetMemoryContext_StoresAndRetrievesValue()
+    {
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+        var context = new MemoryContext([], null);
+
+        msg.SetMemoryContext(context);
+
+        msg.GetMemoryContext().ShouldBe(context);
+    }
+
+    [Fact]
+    public void GetMemoryContext_ReturnsValueAfterJsonRoundtrip()
+    {
+        // Arrange - a message carrying memory context, as the recall hook attaches it.
+        // After Redis persistence the value reloads as a JsonElement; the rendered prefix
+        // must stay byte-stable across turns, so the context (and its fields) must survive.
+        var entry = new MemoryEntry
+        {
+            Id = "m1",
+            UserId = "u1",
+            Category = MemoryCategory.Fact,
+            Content = "prefers tea over coffee",
+            Importance = 0.8,
+            Confidence = 0.9,
+            CreatedAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            LastAccessedAt = new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero)
+        };
+        var context = new MemoryContext([new MemorySearchResult(entry, 0.95)], null);
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+        msg.SetMemoryContext(context);
+
+        // Act - serialize and deserialize (simulates Redis storage)
+        var json = JsonSerializer.Serialize(msg);
+        var deserialized = JsonSerializer.Deserialize<ChatMessage>(json);
+
+        // Assert - GetMemoryContext should handle JsonElement, preserving rendered fields
+        deserialized.ShouldNotBeNull();
+        var result = deserialized.GetMemoryContext();
+        result.ShouldNotBeNull();
+        result!.Memories.Count.ShouldBe(1);
+        result.Memories[0].Memory.Content.ShouldBe("prefers tea over coffee");
+        result.Memories[0].Memory.Category.ShouldBe(MemoryCategory.Fact);
+        result.Memories[0].Memory.Importance.ShouldBe(0.8);
+    }
+
+    [Fact]
+    public void GetDismissedAlert_JsonElementValue_RoundTrips()
+    {
+        // After a thread reload AdditionalProperties values come back as JsonElement, not string.
+        var message = new ChatMessage(ChatRole.User, "five more minutes");
+        message.AdditionalProperties = new AdditionalPropertiesDictionary
+        {
+            ["DismissedAlert"] = JsonSerializer.SerializeToElement("alarm \"trash\"")
+        };
+
+        message.GetDismissedAlert().ShouldBe("alarm \"trash\"");
+    }
+
+    [Fact]
+    public void SetDismissedAlert_ThenGet_ReturnsValue()
+    {
+        var message = new ChatMessage(ChatRole.User, "hi");
+
+        message.SetDismissedAlert("timer \"pasta\"");
+
+        message.GetDismissedAlert().ShouldBe("timer \"pasta\"");
     }
 }

@@ -10,6 +10,10 @@ public enum CaptureOutcome
     NoSpeech
 }
 
+// Audio-level facts about one capture, published on UtteranceTranscribed metrics so the
+// RMS/min-speech entry bar can be tuned from real data instead of guesswork.
+public readonly record struct CaptureStats(double PeakRms, long SpeechMs);
+
 // One bounded mic capture over the held-open Wyoming stream. The read loop pushes audio
 // via Feed (single-threaded); the gate decides when speech ends (Ended) or the no-speech
 // window expires (NoSpeech). Completed settles exactly once; Audio replays the buffered chunks.
@@ -22,6 +26,8 @@ public sealed class UtteranceCapture(SilenceGate gate)
     public Task<CaptureOutcome> Completed => _done.Task;
 
     public IAsyncEnumerable<AudioChunk> Audio => _chunks.Reader.ReadAllAsync();
+
+    public CaptureStats Stats => new(gate.PeakRms, (long)gate.SpeechElapsed.TotalMilliseconds);
 
     public void Feed(AudioChunk chunk)
     {

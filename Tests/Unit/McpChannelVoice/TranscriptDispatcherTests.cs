@@ -36,9 +36,10 @@ public class TranscriptDispatcherTests
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
 
         var emitter = new CapturingEmitter();
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var sut = new TranscriptDispatcher(
             emitter, Mock.Of<IMetricsPublisher>(), manager,
-            confidenceThreshold: 0.5, NullLogger<TranscriptDispatcher>.Instance);
+            confidenceThreshold: 0.5, time, NullLogger<TranscriptDispatcher>.Instance);
         return (sut, manager, emitter);
     }
 
@@ -48,7 +49,7 @@ public class TranscriptDispatcherTests
         var (sut, manager, emitter) = Build();
 
         var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", default);
+            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, default);
 
         ok.ShouldBeTrue();
         var convo = manager.GetActiveConversationId("kitchen-01");
@@ -68,7 +69,7 @@ public class TranscriptDispatcherTests
         var (sut, _, emitter) = Build();
 
         await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", default);
+            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, default);
 
         emitter.Captured.Count.ShouldBe(1);
         emitter.Captured[0].Location.ShouldBe("Kitchen");
@@ -83,7 +84,7 @@ public class TranscriptDispatcherTests
             new SatelliteConfig { Identity = "household", Room = "Kitchen", Locality = "Madrid, Spain" });
 
         await sut.DispatchAsync(
-            session, new TranscriptionResult { Text = "what's the weather", Confidence = 0.9 }, "agent-1", default);
+            session, new TranscriptionResult { Text = "what's the weather", Confidence = 0.9 }, "agent-1", null, default);
 
         emitter.Captured.Count.ShouldBe(1);
         emitter.Captured[0].Location.ShouldBe("Kitchen (Madrid, Spain)");
@@ -95,7 +96,7 @@ public class TranscriptDispatcherTests
         var (sut, _, emitter) = Build();
 
         await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", default);
+            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, default);
 
         emitter.Captured.Count.ShouldBe(1);
         emitter.Captured[0].SatelliteId.ShouldBe("kitchen-01");
@@ -107,7 +108,7 @@ public class TranscriptDispatcherTests
         var (sut, manager, emitter) = Build();
 
         var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "mumble", Confidence = 0.1 }, "agent-1", default);
+            Session(), new TranscriptionResult { Text = "mumble", Confidence = 0.1 }, "agent-1", null, default);
 
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
@@ -129,10 +130,10 @@ public class TranscriptDispatcherTests
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
             emitter, publisher.Object, manager,
-            confidenceThreshold: 0.5, NullLogger<TranscriptDispatcher>.Instance);
+            confidenceThreshold: 0.5, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "   ", Confidence = 0.9 }, "agent-1", default);
+            Session(), new TranscriptionResult { Text = "   ", Confidence = 0.9 }, "agent-1", null, default);
 
         ok.ShouldBeFalse();
         emitter.Captured.ShouldBeEmpty();
@@ -142,5 +143,114 @@ public class TranscriptDispatcherTests
             Times.Never);
         published.OfType<VoiceEvent>()
             .ShouldContain(e => e.Metric == VoiceMetric.UtteranceTranscribed && e.Outcome == "dropped");
+    }
+
+    [Fact]
+    public async Task DispatchAsync_AfterDismissal_EmitsDismissedAlertOnce()
+    {
+        var (sut, _, emitter) = Build();
+        var session = Session();
+        session.NoteDismissedAlert("alarm \"trash\"", DateTimeOffset.UtcNow);
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "five more minutes", Confidence = 0.9 }, "agent-1", null, default);
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "thanks", Confidence = 0.9 }, "agent-1", null, default);
+
+        emitter.Captured.Count.ShouldBe(2);
+        emitter.Captured[0].DismissedAlert.ShouldBe("alarm \"trash\"");
+        emitter.Captured[1].DismissedAlert.ShouldBeNull(); // consumed by the first dispatch
+    }
+
+    [Fact]
+    public async Task DispatchAsync_Dispatched_PublishesCaptureAndWhisperStats()
+    {
+        var factory = new Mock<IConversationFactory>();
+        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var identity = ConversationIdGenerator.CreateFor("topic-x");
+                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
+                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
+                return new ConversationCreation(identity, topic);
+            });
+        var manager = new VoiceConversationManager(
+            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+        var published = new List<MetricEvent>();
+        var publisher = new Mock<IMetricsPublisher>();
+        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
+            .Returns(Task.CompletedTask);
+        var sut = new TranscriptDispatcher(
+            new CapturingEmitter(), publisher.Object, manager,
+            confidenceThreshold: 0.5, new FakeTimeProvider(DateTimeOffset.UtcNow),
+            NullLogger<TranscriptDispatcher>.Instance);
+
+        var ok = await sut.DispatchAsync(
+            Session(),
+            new TranscriptionResult
+            {
+                Text = "hola",
+                Confidence = 0.8,
+                AvgLogProb = -0.22,
+                NoSpeechProb = 0.05,
+                CompressionRatio = 1.3
+            },
+            "agent-1",
+            new CaptureStats(PeakRms: 4200, SpeechMs: 1800),
+            default);
+
+        ok.ShouldBeTrue();
+        var evt = published.OfType<VoiceEvent>().Single(e => e.Metric == VoiceMetric.UtteranceTranscribed);
+        evt.Outcome.ShouldBe("dispatched");
+        evt.Confidence.ShouldBe(0.8);
+        evt.AvgLogProb.ShouldBe(-0.22);
+        evt.NoSpeechProb.ShouldBe(0.05);
+        evt.CompressionRatio.ShouldBe(1.3);
+        evt.PeakRms.ShouldBe(4200);
+        evt.SpeechMs.ShouldBe(1800);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_Dropped_PublishesCaptureAndWhisperStats()
+    {
+        var manager = new VoiceConversationManager(
+            new Mock<IConversationFactory>().Object, new ReplyTextAccumulator(),
+            new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5),
+            NullLogger<VoiceConversationManager>.Instance);
+        var published = new List<MetricEvent>();
+        var publisher = new Mock<IMetricsPublisher>();
+        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
+            .Returns(Task.CompletedTask);
+        var sut = new TranscriptDispatcher(
+            new CapturingEmitter(), publisher.Object, manager,
+            confidenceThreshold: 0.5, new FakeTimeProvider(DateTimeOffset.UtcNow),
+            NullLogger<TranscriptDispatcher>.Instance);
+
+        var ok = await sut.DispatchAsync(
+            Session(),
+            new TranscriptionResult
+            {
+                Text = "grbll xzzt",
+                Confidence = 0.12,
+                AvgLogProb = -2.1,
+                NoSpeechProb = 0.55,
+                CompressionRatio = 2.8
+            },
+            "agent-1",
+            new CaptureStats(PeakRms: 900, SpeechMs: 450),
+            default);
+
+        ok.ShouldBeFalse();
+        var evt = published.OfType<VoiceEvent>().Single(e => e.Metric == VoiceMetric.UtteranceTranscribed);
+        evt.Outcome.ShouldBe("dropped");
+        evt.Confidence.ShouldBe(0.12);
+        evt.AvgLogProb.ShouldBe(-2.1);
+        evt.NoSpeechProb.ShouldBe(0.55);
+        evt.CompressionRatio.ShouldBe(2.8);
+        evt.PeakRms.ShouldBe(900);
+        evt.SpeechMs.ShouldBe(450);
     }
 }

@@ -15,7 +15,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.FixEmptyAssistantContentWithToolCalls(request, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -35,7 +35,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.FixEmptyAssistantContentWithToolCalls(request, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -55,7 +55,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.FixEmptyAssistantContentWithToolCalls(request, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -73,7 +73,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.FixEmptyAssistantContentWithToolCalls(request, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -91,12 +91,82 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.FixEmptyAssistantContentWithToolCalls(request, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
         // Should be unchanged
         resultJson.ShouldBe(json);
+    }
+
+    [Fact]
+    public async Task PrepareRequestBody_WithSessionId_AddsTopLevelSessionId()
+    {
+        // Arrange
+        var json = "{\"model\":\"anthropic/claude-sonnet-4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
+        var request = CreateRequest(json);
+
+        // Act
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "jack:123:456", CancellationToken.None);
+
+        // Assert
+        var resultJson = await request.Content!.ReadAsStringAsync();
+        var obj = JsonNode.Parse(resultJson);
+
+        obj!["session_id"]!.GetValue<string>().ShouldBe("jack:123:456");
+    }
+
+    [Fact]
+    public async Task PrepareRequestBody_WithNullSessionId_OmitsSessionId()
+    {
+        // Arrange
+        var json = "{\"model\":\"anthropic/claude-sonnet-4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
+        var request = CreateRequest(json);
+
+        // Act
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, CancellationToken.None);
+
+        // Assert
+        var resultJson = await request.Content!.ReadAsStringAsync();
+        var obj = JsonNode.Parse(resultJson);
+
+        obj!["session_id"].ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task PrepareRequestBody_WithEmptySessionId_OmitsSessionId()
+    {
+        // Arrange
+        var json = "{\"model\":\"anthropic/claude-sonnet-4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
+        var request = CreateRequest(json);
+
+        // Act
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "  ", CancellationToken.None);
+
+        // Assert
+        var resultJson = await request.Content!.ReadAsStringAsync();
+        var obj = JsonNode.Parse(resultJson);
+
+        obj!["session_id"].ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task PrepareRequestBody_WithSessionId_StillFixesEmptyAssistantContent()
+    {
+        // Arrange
+        var json =
+            "{\"messages\":[{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[]}]}";
+        var request = CreateRequest(json);
+
+        // Act
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "jack:123:456", CancellationToken.None);
+
+        // Assert
+        var resultJson = await request.Content!.ReadAsStringAsync();
+        var obj = JsonNode.Parse(resultJson);
+
+        obj!["session_id"]!.GetValue<string>().ShouldBe("jack:123:456");
+        obj["messages"]![0]!["content"].ShouldBeNull();
     }
 
     private static HttpRequestMessage CreateRequest(string jsonContent)

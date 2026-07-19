@@ -9,7 +9,7 @@ using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
 
-// Dials each configured satellite as a Wyoming client. wyoming-satellite is itself
+// Dials each configured satellite as a Wyoming client. The satellite is itself
 // a Wyoming server: it runs local wake detection and, once the wake word fires,
 // sends us run-pipeline followed by an open-ended mic audio stream. We segment
 // that stream with SilenceGate, transcribe it, and send a transcript back to stop
@@ -23,6 +23,7 @@ public sealed class WyomingSatelliteHost(
     VoiceConversationManager conversationManager,
     ISpeechToText speechToText,
     TranscriptDispatcher dispatcher,
+    ActiveAlertRegistry alerts,
     IMetricsPublisher metrics,
     TimeProvider time,
     ILogger<WyomingSatelliteHost> logger) : IHostedService
@@ -178,6 +179,9 @@ public sealed class WyomingSatelliteHost(
                 {
                     case "run-pipeline":
                     case "audio-start":
+                        // Waking the satellite during an active alert dismisses it — no spoken command
+                        // needed (the satellite mics only on local wake).
+                        NoteDismissals(session, alerts.Acknowledge(id));
                         coordinator.OnWake();
                         break;
 
@@ -227,15 +231,15 @@ public sealed class WyomingSatelliteHost(
                 // (false trigger, user changes their mind) must re-arm after WindowMs instead of
                 // holding the mic open until the far-larger max-utterance cap.
                 return session.OpenCapture(new SilenceGate(
-                    settings.SilenceRmsThreshold,
+                    config.ResolveRmsThreshold(settings),
                     TimeSpan.FromMilliseconds(settings.TrailingSilenceMs),
                     TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
-                    TimeSpan.FromMilliseconds(settings.MinSpeechMs),
+                    TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(settings)),
                     noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
             },
             CloseCapture = session.CloseCapture,
-            TranscribeAndDispatch = (audio, isFollowUp, token) =>
-                TranscribeAndDispatchAsync(session, audio, isFollowUp, token),
+            TranscribeAndDispatch = (capture, isFollowUp, token) =>
+                TranscribeAndDispatchAsync(session, capture, isFollowUp, token),
             EnqueueChime = token => EnqueueChimeAsync(session, token),
             EndConversation = token => client.WriteAsync(
                 WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), token),
@@ -265,7 +269,7 @@ public sealed class WyomingSatelliteHost(
     // transcripts and STT errors return false so the conversation ends and wake re-arms, rather
     // than the loop blocking forever on a reply handshake the agent will never complete.
     private async Task<bool> TranscribeAndDispatchAsync(
-        SatelliteSession session, IAsyncEnumerable<AudioChunk> audio, bool isFollowUp, CancellationToken ct)
+        SatelliteSession session, UtteranceCapture capture, bool isFollowUp, CancellationToken ct)
     {
         try
         {
@@ -274,7 +278,7 @@ public sealed class WyomingSatelliteHost(
             // Tts.Wyoming.Voice override resolved in SendReplyTool/AnnouncementService); null falls
             // back to the global Stt.Wyoming.Language inside the backend.
             var options = new TranscriptionOptions { Language = session.Config.Stt?.Wyoming?.Language };
-            var result = await speechToText.TranscribeAsync(audio, options, ct);
+            var result = await speechToText.TranscribeAsync(capture.Audio, options, ct);
             sw.Stop();
 
             await metrics.PublishAsync(new VoiceEvent
@@ -292,7 +296,16 @@ public sealed class WyomingSatelliteHost(
                 PublishVoiceMetric(VoiceMetric.FollowUpEngaged, session);
             }
 
-            return await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
+            var dispatched = await dispatcher.DispatchAsync(
+                session, result, voiceSettings.AgentId, capture.Stats, ct);
+            if (dispatched)
+            {
+                // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
+                // where a wake event was not observed. The registry makes a second Acknowledge a no-op.
+                // Runs AFTER this dispatch, so its snooze context lands on the NEXT transcript.
+                NoteDismissals(session, alerts.Acknowledge(session.SatelliteId));
+            }
+            return dispatched;
         }
         catch (OperationCanceledException)
         {
@@ -329,6 +342,17 @@ public sealed class WyomingSatelliteHost(
 
         await session.EnqueuePlaybackAsync(job, voiceSettings.Announce.QueueMaxDepth);
         await drained.Task.WaitAsync(ct);
+    }
+
+    private void NoteDismissals(SatelliteSession session, IReadOnlyList<DismissedAlert> dismissed)
+    {
+        if (dismissed.Count == 0)
+        {
+            return;
+        }
+        var description = string.Join(" and ", dismissed.Select(d =>
+            $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\""));
+        session.NoteDismissedAlert(description, time.GetUtcNow());
     }
 
     private void PublishVoiceMetric(VoiceMetric metric, SatelliteSession session) =>

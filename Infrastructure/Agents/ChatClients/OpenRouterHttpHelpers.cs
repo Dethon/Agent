@@ -10,7 +10,7 @@ internal static class OpenRouterHttpHelpers
 {
     private static readonly string[] _reasoningPropertyNames = ["reasoning", "reasoning_content", "thinking"];
 
-    public static async Task FixEmptyAssistantContentWithToolCalls(HttpRequestMessage request, CancellationToken ct)
+    public static async Task PrepareRequestBodyAsync(HttpRequestMessage request, string? sessionId, CancellationToken ct)
     {
         if (request.Method != HttpMethod.Post ||
             request.Content?.Headers.ContentType?.MediaType?
@@ -19,14 +19,32 @@ internal static class OpenRouterHttpHelpers
             return;
         }
 
-        // Some OpenRouter providers (e.g., Z.AI / GLM) reject assistant messages with tool_calls when content is empty
         var body = await request.Content.ReadAsStringAsync(ct);
 
-        if (JsonNode.Parse(body) is not JsonObject obj || obj["messages"] is not JsonArray messages)
+        if (JsonNode.Parse(body) is not JsonObject obj)
         {
             return;
         }
 
+        if (obj["messages"] is JsonArray messages)
+        {
+            RemoveEmptyAssistantContent(messages);
+        }
+
+        // Pin the conversation to one provider so its prompt cache stays warm. Without this,
+        // OpenRouter derives the sticky-routing key from a message hash, which churns every turn
+        // because the opening bytes (timestamp prefix, memory context, "Today is ...") change.
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            obj["session_id"] = sessionId;
+        }
+
+        request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
+    }
+
+    // Some OpenRouter providers (e.g., Z.AI / GLM) reject assistant messages with tool_calls when content is empty
+    private static void RemoveEmptyAssistantContent(JsonArray messages)
+    {
         foreach (var msg in messages.OfType<JsonObject>())
         {
             var content = msg["content"];
@@ -52,8 +70,6 @@ internal static class OpenRouterHttpHelpers
                     }
             }
         }
-
-        request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
     }
 
     public static HttpContent WrapWithReasoningTee(

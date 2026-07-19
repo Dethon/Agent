@@ -16,6 +16,15 @@ const MEL_FRAMES: usize = 76; // embedding window: the last 76 mel frames
 const EMB_DIM: usize = 96;
 const CLF_FRAMES: usize = 16; // classifier window: the last 16 embeddings
 
+/// Root-mean-square level of a chunk of i16 PCM samples, in i16-amplitude units (0..=32768).
+/// Diagnostic only: lets the wake path log how loud each chunk is (silence vs speech vs music)
+/// so detector tuning (threshold, trigger_level, gain) is driven by real on-device levels.
+pub fn chunk_rms(samples: &[i16]) -> f32 {
+    if samples.is_empty() { return 0.0; }
+    let sum_sq: f64 = samples.iter().map(|&s| s as f64 * s as f64).sum();
+    (sum_sq / samples.len() as f64).sqrt() as f32
+}
+
 #[derive(Clone)]
 pub struct DetectorConfig {
     pub threshold: f32,
@@ -130,6 +139,12 @@ impl WakeDetector {
                 tract_ndarray::Array3::from_shape_vec((1, CLF_FRAMES, EMB_DIM), c).unwrap().into();
             let co = self.clf.run(tvec!(ct.into())).expect("clf run");
             let score = co[0].to_plain_array_view::<f32>().unwrap()[[0, 0]];
+            // Diagnostic (tuning): per-chunk wake score + mic level, for setting threshold /
+            // trigger_level from real on-device data. At debug so it's silent in production
+            // (RUST_LOG=info) but available via RUST_LOG=...=debug when tuning; gated at a low
+            // score floor so even at debug idle silence doesn't flood, and rms (and the macro
+            // fields) are only evaluated when the level is enabled — the steady path pays nothing.
+            if score >= 0.05 { tracing::debug!(score, rms = chunk_rms(chunk), "wake score"); }
             if self.evaluate(score) { return true; }
         }
         false
@@ -201,5 +216,13 @@ mod tests {
         let mut second = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
         assert_eq!(fires(&mut first), 1);
         assert_eq!(fires(&mut second), 1, "a fresh detector from the shared bundle must behave identically");
+    }
+
+    #[test]
+    fn chunk_rms_matches_known_values() {
+        assert_eq!(chunk_rms(&[]), 0.0);
+        assert_eq!(chunk_rms(&[100, -100, 100, -100]), 100.0); // constant magnitude -> rms == magnitude
+        let r = chunk_rms(&[3, 4]);
+        assert!((r - 12.5f32.sqrt()).abs() < 1e-3, "rms([3,4]) = sqrt((9+16)/2) = sqrt(12.5), got {r}");
     }
 }

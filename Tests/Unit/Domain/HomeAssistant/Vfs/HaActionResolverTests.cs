@@ -30,4 +30,35 @@ public class HaActionResolverTests
         // sensor has no class-domain entity-targeted services here.
         HaActionResolver.ServicesFor("sensor.salon_temp", _services).ShouldBeEmpty();
     }
+
+    [Fact]
+    public void ServicesFor_IncludesCrossDomainService_ThatExplicitlyTargetsThisClass()
+    {
+        // Music Assistant augments media_player entities with `music_assistant.play_media`
+        // (a different domain that explicitly targets `media_player`). It must be exposed
+        // alongside the same-domain `media_player.play_media`, while a generic global service
+        // (`homeassistant.turn_on`, target = any entity) stays excluded so directories aren't flooded.
+        var services = new List<HaServiceDefinition>
+        {
+            Service("media_player", "play_media", DomainTarget("media_player")),
+            Service("music_assistant", "play_media", DomainTarget("media_player")),
+            Service("homeassistant", "turn_on", AnyEntityTarget())
+        };
+
+        var names = HaActionResolver.ServicesFor("media_player.office", services)
+            .Select(s => HaActionResolver.CommandName(s, "media_player")).ToList();
+
+        names.ShouldContain("music_assistant.play_media");
+        names.ShouldContain("play_media");
+        names.ShouldNotContain("turn_on");
+    }
+
+    [Fact]
+    public void CommandName_QualifiesCrossDomain_LeavesSameDomainBare()
+    {
+        HaActionResolver.CommandName(Service("media_player", "play_media", null), "media_player")
+            .ShouldBe("play_media");
+        HaActionResolver.CommandName(Service("music_assistant", "play_media", null), "media_player")
+            .ShouldBe("music_assistant.play_media");
+    }
 }

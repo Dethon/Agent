@@ -14,6 +14,11 @@ impl PlaybackSink {
     pub fn start(snd_command: &str) -> anyhow::Result<Self> {
         let mut child = crate::audio::build_command(snd_command)
             .stdin(std::process::Stdio::piped())
+            // Discard aplay's stderr: it emits cosmetic `underrun!!!` xrun spam on a busy device
+            // (notably an ALSA dmix unit, which consumes in ~one-period bursts and discards its
+            // buffer on each xrun) that says nothing actionable. Real playback failures still
+            // surface via spawn() errors, the child exit status (finish()), and EPIPE on write.
+            .stderr(std::process::Stdio::null())
             .kill_on_drop(true)
             .spawn()?;
         let stdin = child.stdin.take();
@@ -117,15 +122,18 @@ async fn run_pump(
     mut cmd_rx: mpsc::Receiver<PlaybackCmd>,
     done_tx: mpsc::UnboundedSender<DrainDone>,
 ) {
+    // A fresh sink per TTS stream, closed on Stop so the exact finish()/wait() drain reports
+    // actual playback completion (the LED's Idle transition depends on it).
     let mut sink: Option<PlaybackSink> = None;
     let mut generation = 0u64;
+    let mut streaming = false; // a TTS stream (audio-start .. audio-stop) is currently playing
+
     while let Some(cmd) = cmd_rx.recv().await {
         let result: anyhow::Result<()> = match cmd {
             PlaybackCmd::Start { generation: g } => {
                 generation = g;
-                if let Some(p) = sink.take() {
-                    p.kill().await;
-                }
+                streaming = true;
+                if let Some(p) = sink.take() { p.kill().await; } // mid-stream preempt
                 PlaybackSink::start(&snd_command).map(|p| sink = Some(p))
             }
             PlaybackCmd::Pcm(pcm) => match sink.as_mut() {
@@ -133,6 +141,8 @@ async fn run_pump(
                 None => Ok(()), // stream already gone; drop the chunk
             },
             PlaybackCmd::Stop { generation: g } => {
+                streaming = false;
+                // Close the sink, let the player drain, report exact completion.
                 let result = match sink.take() {
                     Some(p) => p.finish().await,
                     None => Ok(()),
@@ -145,9 +155,8 @@ async fn run_pump(
                 continue;
             }
             PlaybackCmd::Cue(pcm) => {
-                // Serialized on the same device owner, so a cue can never race a reply's
-                // player for the exclusive ALSA device (EBUSY -> EPIPE was connection-fatal).
-                if sink.is_none() {
+                // Cues are dropped while a TTS stream is active.
+                if !streaming {
                     if let Err(e) = play_cue(&snd_command, &pcm).await {
                         tracing::warn!("cue playback failed: {e:#}");
                     }
@@ -228,5 +237,20 @@ mod tests {
             Some(d) => assert!(d.result.is_err(), "dead player must surface as a fatal error"),
             None => assert!(failed, "pump ended without reporting an error"),
         }
+    }
+
+    // While idle (no stream, no cue) the pump must not open or feed a player at all — the
+    // playback device stays free. `cat >> <file>` stands in for aplay: the file is never created.
+    #[tokio::test]
+    async fn idle_pump_leaves_the_device_untouched() {
+        let path = std::env::temp_dir().join(format!("nabu-idle-{}.raw", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let snd = format!("cat >> {}", path.display());
+        let (_handle, _done_rx, task) = spawn_pump(&snd);
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        task.abort();
+        let created = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(created, 0, "an idle pump must not open or feed a player");
     }
 }

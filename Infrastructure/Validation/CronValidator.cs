@@ -1,21 +1,17 @@
+using Cronos;
 using Domain.Contracts;
-using NCrontab;
 
 namespace Infrastructure.Validation;
 
 public class CronValidator : ICronValidator
 {
-    public bool IsValid(string cronExpression)
-    {
-        var result = CrontabSchedule.TryParse(cronExpression);
-        return result is not null;
-    }
+    public bool IsValid(string cronExpression) =>
+        CronExpression.TryParse(cronExpression, out _);
 
-    public DateTime? GetNextOccurrence(string cronExpression, DateTime from)
-    {
-        var schedule = CrontabSchedule.TryParse(cronExpression);
-        // Cron schedules are evaluated in UTC; NCrontab carries the input's Kind onto the
-        // result, so normalize to UTC to keep NextRunAt unambiguous for every caller.
-        return schedule is null ? null : DateTime.SpecifyKind(schedule.GetNextOccurrence(from), DateTimeKind.Utc);
-    }
+    // Cronos evaluates the expression against the zone's wall clock with correct DST handling,
+    // then we project to a UTC DateTime so the store/score logic stays UTC-keyed.
+    public DateTime? GetNextOccurrence(string cronExpression, DateTimeOffset from, TimeZoneInfo zone) =>
+        CronExpression.TryParse(cronExpression, out var expr)
+            ? expr.GetNextOccurrence(from, zone)?.UtcDateTime
+            : null;
 }

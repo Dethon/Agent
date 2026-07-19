@@ -147,7 +147,7 @@ services:
       args:
         - BUILD_CONFIGURATION=Debug
     # The hub dials each satellite's Wyoming server as a client; satellites running on
-    # the Docker host (e.g. a WSL wyoming-satellite) are reached via host.docker.internal.
+    # the Docker host (e.g. a WSL nabu-satellite) are reached via host.docker.internal.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:

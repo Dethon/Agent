@@ -1,9 +1,11 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Infrastructure.Validation;
 using McpServerScheduling.Services;
 using McpServerScheduling.Settings;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 using Xunit;
@@ -12,6 +14,24 @@ namespace Tests.Unit.McpServerScheduling;
 
 public class ScheduleDispatcherServiceTests
 {
+    [Fact]
+    public async Task DispatchDueAsync_RecurringSchedule_RecomputesNextRunInLocalZone()
+    {
+        var zone = TimeZoneInfo.CreateCustomTimeZone("test-plus2", TimeSpan.FromHours(2), "p2", "p2");
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero));
+        clock.SetLocalTimeZone(zone);
+        var store = StoreWithDue(Recurring());
+        var emitter = Emitter(delivers: true);
+
+        await BuildDispatcher(store.Object, emitter, new CronValidator(), clock).DispatchDueAsync(CancellationToken.None);
+
+        // "0 8 * * *" at 08:00 local (+02:00) = 06:00 UTC; now is 00:00Z so next occurrence is same day
+        store.Verify(
+            s => s.UpdateLastRunAsync(
+                "daily", It.IsAny<DateTime?>(), new DateTime(2026, 7, 1, 6, 0, 0, DateTimeKind.Utc), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     [Fact]
     public async Task DispatchDueAsync_WhenEmitFails_DoesNotMutateStore()
     {
@@ -45,7 +65,7 @@ public class ScheduleDispatcherServiceTests
         var store = StoreWithDue(Recurring());
         var next = new DateTime(2026, 5, 26, 8, 0, 0, DateTimeKind.Utc);
         var cron = new Mock<ICronValidator>();
-        cron.Setup(c => c.GetNextOccurrence("0 8 * * *", It.IsAny<DateTime>())).Returns(next);
+        cron.Setup(c => c.GetNextOccurrence("0 8 * * *", It.IsAny<DateTimeOffset>(), It.IsAny<TimeZoneInfo>())).Returns(next);
 
         await BuildDispatcher(store.Object, Emitter(delivers: true), cron.Object).DispatchDueAsync(CancellationToken.None);
 
@@ -99,11 +119,12 @@ public class ScheduleDispatcherServiceTests
     }
 
     private static ScheduleDispatcherService BuildDispatcher(
-        IScheduleStore store, IScheduleNotificationEmitter emitter, ICronValidator? cron = null) =>
+        IScheduleStore store, IScheduleNotificationEmitter emitter, ICronValidator? cron = null, TimeProvider? clock = null) =>
         new(
             store,
             cron ?? new Mock<ICronValidator>().Object,
             emitter,
             new SchedulingSettings { RedisConnectionString = "x", DefaultDeliverTo = ["signalr"] },
-            new Mock<ILogger<ScheduleDispatcherService>>().Object);
+            new Mock<ILogger<ScheduleDispatcherService>>().Object,
+            clock ?? TimeProvider.System);
 }

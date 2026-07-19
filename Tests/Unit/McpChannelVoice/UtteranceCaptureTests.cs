@@ -65,4 +65,19 @@ public class UtteranceCaptureTests
         capture.ForceEnd();
         (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
     }
+
+    [Fact]
+    public async Task Stats_AfterEndedCapture_ReportsPeakRmsAndSpeechMs()
+    {
+        var capture = new UtteranceCapture(Gate());
+
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent());
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        capture.Stats.PeakRms.ShouldBe(8000, 1.0);
+        capture.Stats.SpeechMs.ShouldBe(200);
+    }
 }

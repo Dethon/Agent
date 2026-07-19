@@ -17,13 +17,13 @@ set -euo pipefail
 #
 # Usage:
 #   ./scripts/wsl-satellite-winaudio.sh
-#   SAT_PORT=10600 THRESHOLD=0.6 MIC_DEVICE="Microphone (Jabra SPEAK 510)" \
+#   SAT_PORT=10600 THRESHOLD=0.6 MIC_DEVICE="Microphone (USB Audio Device)" \
 #     ./scripts/wsl-satellite-winaudio.sh
 #
 # MIC_DEVICE is the dshow device name; leave unset to auto-pick the first capture
 # device (the script prints the choice and all candidates).
 
-SAT_PORT="${SAT_PORT:-10700}"
+SAT_PORT="${SAT_PORT:-10800}"
 THRESHOLD="${THRESHOLD:-0.5}"
 MIC_DEVICE="${MIC_DEVICE:-}"
 
@@ -43,7 +43,7 @@ if [[ -z "$ffplay" || -z "$ffmpeg" ]]; then
 fi
 
 # dshow device names live on stderr of -list_devices; lines look like:
-#   [in#0 @ ...] "Microphone (Jabra SPEAK 510 USB)" (audio)
+#   [in#0 @ ...] "Microphone (USB Audio Device)" (audio)
 # (the [...] log prefix varies across ffmpeg versions; CRs must go before the $ anchor)
 list_mics() {
   "$ffmpeg" -hide_banner -list_devices true -f dshow -i dummy 2>&1 \

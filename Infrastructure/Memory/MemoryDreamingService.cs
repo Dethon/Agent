@@ -30,7 +30,7 @@ public class MemoryDreamingService(
     {
         while (!ct.IsCancellationRequested)
         {
-            var next = cronValidator.GetNextOccurrence(options.CronSchedule, DateTime.UtcNow);
+            var next = cronValidator.GetNextOccurrence(options.CronSchedule, DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
             if (next is null)
             {
                 logger.LogWarning("Cron schedule '{Schedule}' returned no next occurrence, stopping", options.CronSchedule);

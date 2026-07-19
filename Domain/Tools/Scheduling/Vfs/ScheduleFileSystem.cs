@@ -11,7 +11,8 @@ namespace Domain.Tools.Scheduling.Vfs;
 public sealed class ScheduleFileSystem(
     IScheduleStore store,
     IAgentCatalog agents,
-    ICronValidator cronValidator) : IFileSystemBackend
+    ICronValidator cronValidator,
+    TimeProvider timeProvider) : IFileSystemBackend
 {
     public string FilesystemName => "schedules";
 
@@ -168,20 +169,20 @@ public sealed class ScheduleFileSystem(
         };
     }
 
-    private static string RenderSpec(Schedule s) => JsonSerializer.Serialize(new
+    private string RenderSpec(Schedule s) => JsonSerializer.Serialize(new
     {
         prompt = s.Prompt,
         cron = s.CronExpression,
-        runAt = s.RunAt,
+        runAt = ToZone(s.RunAt),
         userId = s.UserId,
         deliverTo = s.DeliverTo
     }, _json);
 
-    private static string RenderStatus(Schedule s) => JsonSerializer.Serialize(new
+    private string RenderStatus(Schedule s) => JsonSerializer.Serialize(new
     {
-        createdAt = s.CreatedAt,
-        lastRunAt = s.LastRunAt,
-        nextRunAt = s.NextRunAt
+        createdAt = ToZone(s.CreatedAt),
+        lastRunAt = ToZone(s.LastRunAt),
+        nextRunAt = ToZone(s.NextRunAt)
     }, _json);
 
     private async Task<Schedule?> GetScheduleAsync(ScheduleNode node, CancellationToken ct)
@@ -242,7 +243,7 @@ public sealed class ScheduleFileSystem(
             return new FsResult<FsCreateResult>.Err(validation);
         }
 
-        spec = spec! with { RunAt = spec.RunAt?.ToUniversalTime() };
+        spec = spec! with { RunAt = spec.RunAt is { } r ? ToUtc(r) : null };
 
         var schedule = new Schedule
         {
@@ -253,7 +254,7 @@ public sealed class ScheduleFileSystem(
             RunAt = spec.RunAt,
             UserId = spec.UserId,
             DeliverTo = spec.DeliverTo,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = timeProvider.GetUtcNow().UtcDateTime,
             NextRunAt = ComputeNextRunAt(spec)
         };
 
@@ -294,7 +295,7 @@ public sealed class ScheduleFileSystem(
             return new FsResult<FsEditResult>.Err(validation);
         }
 
-        spec = spec! with { RunAt = spec.RunAt?.ToUniversalTime() };
+        spec = spec! with { RunAt = spec.RunAt is { } r ? ToUtc(r) : null };
 
         // Only recompute the next fire when the timing actually changes; a prompt-only edit must
         // not push out (or skip) an already-scheduled run by recomputing NextRunAt from "now".
@@ -468,14 +469,13 @@ public sealed class ScheduleFileSystem(
 
         if (spec.RunAt is { } runAt)
         {
-            if (runAt.Kind == DateTimeKind.Unspecified)
+            if (runAt.Kind == DateTimeKind.Unspecified && timeProvider.LocalTimeZone.IsInvalidTime(runAt))
             {
                 return Error(ToolError.Codes.InvalidArgument,
-                    "runAt must include a time zone — use 'Z' for UTC (e.g. 2026-06-01T14:30:00Z) " +
-                    "or an offset (e.g. 2026-06-01T16:30:00+02:00)");
+                    "runAt falls in a daylight-saving gap (that local time does not exist); pick another time or add an explicit offset");
             }
 
-            if (runAt.ToUniversalTime() <= DateTime.UtcNow)
+            if (ToUtc(runAt) <= timeProvider.GetUtcNow().UtcDateTime)
             {
                 return Error(ToolError.Codes.InvalidArgument, "runAt must be in the future");
             }
@@ -484,8 +484,22 @@ public sealed class ScheduleFileSystem(
         return null;
     }
 
+    // A bare (zoneless) runAt is wall-clock time in the operating zone; an offset/Z runAt is honored.
+    private DateTime ToUtc(DateTime runAt) =>
+        runAt.Kind == DateTimeKind.Unspecified
+            ? TimeZoneInfo.ConvertTimeToUtc(runAt, timeProvider.LocalTimeZone)
+            : runAt.ToUniversalTime();
+
+    // Stored times are UTC; render them in the operating zone so the LLM reads local wall-clock.
+    private DateTimeOffset? ToZone(DateTime? utc) =>
+        utc is { } u
+            ? TimeZoneInfo.ConvertTime(new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)), timeProvider.LocalTimeZone)
+            : null;
+
     private DateTime? ComputeNextRunAt(SpecDto spec) =>
-        spec.RunAt ?? (spec.Cron is not null ? cronValidator.GetNextOccurrence(spec.Cron, DateTime.UtcNow) : null);
+        spec.RunAt ?? (spec.Cron is not null
+            ? cronValidator.GetNextOccurrence(spec.Cron, timeProvider.GetUtcNow(), timeProvider.LocalTimeZone)
+            : null);
 
     private static string ReplaceFirst(string text, string oldValue, string newValue)
     {

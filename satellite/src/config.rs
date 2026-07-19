@@ -35,45 +35,59 @@ pub struct Config {
     pub wake_preroll_ms: u32,   // wake-path flush: detection-latency gap only, NOT the wake word
     pub awake_cue: bool,
     pub done_cue: bool,
+    pub music_mixer: Option<String>,   // ALSA softvol control name; None => duck feature off
+    pub music_card: Option<String>,    // amixer -c target where the softvol control lives
+    pub duck_percent: u8,              // softvol level while the satellite is active
+    pub music_restore_grace_ms: u64,   // hold the un-duck this long so a long reply's inter-segment
+                                       // Idle gaps don't flap the music up between segments
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             listen: "0.0.0.0:10700".into(),
-            // Defaults target a Jabra Speak2 (55/75) on USB, index-pinned to ALSA card 0 by
-            // provisioning (options snd_usb_audio index=0) — the card NAME is model/variant-
-            // dependent (75->J75, 55 MS->MS, 55 UC->UC), so plughw:0,0 is baked in instead.
-            // 48 kHz native -> plughw resamples for BOTH. For a reSpeaker 2-Mic HAT pass
-            // --mic-command/--snd-command with plughw:CARD=seeed2micvoicec,DEV=0 plus
-            // --button-gpio 17 and --led-spi; see provisioning.
+            // Defaults target the deployed unit: a reSpeaker XVF3800 USB mic array (card `Array`)
+            // with a HiFiBerry MiniAmp I2S speaker (card `sndrpihifiberry`). Both device strings
+            // are rewritten by provisioning, which auto-detects the capture card by NAME and the
+            // speaker by its `sndrpihifiberry*` overlay card — by-name addressing is immune to
+            // ALSA index churn (the old `snd_usb_audio index=0` pinning collided with the Pi's
+            // built-in vc4-hdmi/headphone cards and was removed). The mic is 16 kHz mono native
+            // (no resampling; the XVF3800's 2 capture channels carry the same processed signal, so
+            // plughw's stereo->mono averaging is fine); plughw resamples only the 22050 Hz
+            // playback. For a reSpeaker 2-Mic HAT pass --mic-command/--snd-command with
+            // plughw:CARD=seeed2micvoicec,DEV=0 plus --button-gpio 17 and --led-spi; see provisioning.
             // -F 20000 (20 ms period): without it arecord defaults to buffer/4 = 125 ms periods
             // and every mic sample reaches stdout up to 125 ms late — paid on the wake AND the
             // speech->STT path. The 500 ms capture buffer default is independent of -F.
-            mic_command: "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw -F 20000".into(),
+            mic_command: "arecord -D plughw:CARD=Array,DEV=0 -r 16000 -c 1 -f S16_LE -t raw -F 20000".into(),
             // --start-delay=100000 (µs): aplay's default start threshold is the FULL 500 ms
             // buffer, so a streamed reply isn't audible until 500 ms of audio has been
             // synthesized+delivered; start at 100 ms queued instead (buffer stays 500 ms for
             // underrun headroom). -F 50000 reads stdin in 50 ms periods so the first write
             // into the ALSA buffer happens sooner.
-            snd_command: "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000".into(),
+            snd_command: "aplay -D plughw:CARD=sndrpihifiberry,DEV=0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000".into(),
             detector: DetectorConfig::default(),
             wake_enabled: true,
-            button: ButtonConfig::None, // the Jabra's own buttons are Linux-unusable (HID telephony); --button-* opts in
-            led: LedConfig::None, // no LED on a Jabra build; --led-spi (HAT APA102s) or --led-gpio opt in
+            button: ButtonConfig::None, // no button by default; --button-gpio / --button-evdev opt in
+            led: LedConfig::None, // no LED by default; --led-spi (HAT APA102s) or --led-gpio opt in
             preroll_ms: 1000,
             wake_preroll_ms: 240, // covers the ~181 ms measured detection latency with margin
             awake_cue: true,
             done_cue: true,
+            music_mixer: None,
+            music_card: None,
+            duck_percent: 20,
+            music_restore_grace_ms: 3000,
         }
     }
 }
 
 impl Config {
-    /// Flags: --listen --mic-command --snd-command --threshold --no-wake
+    /// Flags: --listen --mic-command --snd-command --threshold --trigger-level --no-wake
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
     ///        --led-spi | --led-gpio <pin> | --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
+    ///        --music-mixer <control> --music-card <card> --duck-percent <pct> --music-restore-grace-ms <ms>
     pub fn from_args() -> anyhow::Result<Self> {
         Self::parse(pico_args::Arguments::from_env())
     }
@@ -84,6 +98,7 @@ impl Config {
         if let Some(v) = pa.opt_value_from_str::<_, String>("--mic-command")? { c.mic_command = v; }
         if let Some(v) = pa.opt_value_from_str::<_, String>("--snd-command")? { c.snd_command = v; }
         if let Some(v) = pa.opt_value_from_str::<_, f32>("--threshold")? { c.detector.threshold = v; }
+        if let Some(v) = pa.opt_value_from_str::<_, u32>("--trigger-level")? { c.detector.trigger_level = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--preroll-ms")? { c.preroll_ms = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-preroll-ms")? { c.wake_preroll_ms = v; }
         if pa.contains("--no-wake") { c.wake_enabled = false; }
@@ -105,6 +120,10 @@ impl Config {
         } else if let Some(pin) = pa.opt_value_from_str::<_, u8>("--led-gpio")? {
             c.led = LedConfig::Gpio(pin);
         }
+        if let Some(v) = pa.opt_value_from_str::<_, String>("--music-mixer")? { c.music_mixer = Some(v); }
+        if let Some(v) = pa.opt_value_from_str::<_, String>("--music-card")? { c.music_card = Some(v); }
+        if let Some(v) = pa.opt_value_from_str::<_, u8>("--duck-percent")? { c.duck_percent = v; }
+        if let Some(v) = pa.opt_value_from_str::<_, u64>("--music-restore-grace-ms")? { c.music_restore_grace_ms = v; }
         let rest = pa.finish();
         anyhow::ensure!(rest.is_empty(), "unknown arguments: {rest:?}");
         Ok(c)
@@ -155,14 +174,47 @@ mod tests {
     }
 
     #[test]
+    fn trigger_level_defaults_to_one_and_flag_parses() {
+        assert_eq!(Config::default().detector.trigger_level, 1);
+        let c = Config::parse(args(&["--trigger-level", "3"])).unwrap();
+        assert_eq!(c.detector.trigger_level, 3);
+    }
+
+    #[test]
+    fn music_restore_grace_defaults_and_flag_parses() {
+        // The un-duck is held this long so a long reply's inter-segment Idle gaps don't flap the
+        // music back up between segments; only a truly-finished reply restores.
+        assert_eq!(Config::default().music_restore_grace_ms, 3000);
+        let c = Config::parse(args(&["--music-restore-grace-ms", "5000"])).unwrap();
+        assert_eq!(c.music_restore_grace_ms, 5000);
+    }
+
+    #[test]
+    fn music_flags_parse_and_default_off() {
+        let on = Config::parse(pico_args::Arguments::from_vec(vec![
+            "--music-mixer".into(), "Music".into(),
+            "--music-card".into(), "sndrpihifiberry".into(),
+            "--duck-percent".into(), "15".into(),
+        ]))
+        .unwrap();
+        assert_eq!(on.music_mixer.as_deref(), Some("Music"));
+        assert_eq!(on.music_card.as_deref(), Some("sndrpihifiberry"));
+        assert_eq!(on.duck_percent, 15);
+
+        let off = Config::parse(pico_args::Arguments::from_vec(vec![])).unwrap();
+        assert_eq!(off.music_mixer, None);
+        assert_eq!(off.duck_percent, 20); // default
+    }
+
+    #[test]
     fn defaults_are_sane() {
         let c = Config::default();
         assert_eq!(c.listen, "0.0.0.0:10700");
         assert!(c.mic_command.contains("arecord"));
-        assert!(c.mic_command.contains("plughw:0,0"));
+        assert!(c.mic_command.contains("plughw:CARD=Array,DEV=0"));
         assert!(c.mic_command.contains("-F 20000"), "mic must pin a 20 ms period (default 125 ms delays every sample)");
         assert!(c.snd_command.contains("aplay"));
-        assert!(c.snd_command.contains("plughw:0,0"));
+        assert!(c.snd_command.contains("plughw:CARD=sndrpihifiberry,DEV=0"));
         assert!(c.snd_command.contains("--start-delay=100000"), "playback must start at ~100 ms queued, not a full buffer");
         assert!(c.snd_command.contains("-F 50000"), "playback period 50 ms so the first writei lands sooner");
         assert_eq!(c.detector.threshold, 0.5);

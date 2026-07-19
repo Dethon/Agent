@@ -19,6 +19,7 @@ public class FollowUpConversationTests
         public readonly List<string> Events = [];
         public readonly FakeTimeProvider Time = new(DateTimeOffset.UtcNow);
         public readonly List<UtteranceCapture> Opened = [];
+        public readonly List<UtteranceCapture> Dispatched = [];
         public bool DispatchResult = true;
         private TaskCompletionSource<bool> _reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -34,8 +35,9 @@ public class FollowUpConversationTests
                 return c;
             },
             CloseCapture = () => { },
-            TranscribeAndDispatch = (_, isFollowUp, _) =>
+            TranscribeAndDispatch = (capture, isFollowUp, _) =>
             {
+                Dispatched.Add(capture);
                 Events.Add(isFollowUp ? "dispatch-followup" : "dispatch-first");
                 return Task.FromResult(DispatchResult);
             },
@@ -228,6 +230,23 @@ public class FollowUpConversationTests
         h.Events.ShouldContain("end");
         h.Events.ShouldNotContain("timed-out");
         h.Events.Count(e => e == "open-followup").ShouldBe(1); // capped at one
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task Dispatch_ReceivesTheCaptureItOpened()
+    {
+        // The dispatcher needs the capture itself (audio + gate stats), not just the audio stream.
+        var h = new Harness();
+        var sut = h.Build(new FollowUpSettings { Enabled = false });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        h.Opened[0].ForceEnd();
+
+        await Task.Delay(50);
+        h.Dispatched.ShouldBe([h.Opened[0]]);
+
         await StopAsync(sut, run);
     }
 

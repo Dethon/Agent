@@ -14,9 +14,10 @@ public class VfsPromptToolNameConsistencyTests
 {
     public static IEnumerable<object[]> VfsPrompts =>
     [
-        ["scheduling_prompt", SchedulingPrompt.Prompt],
+        ["scheduling_prompt", SchedulingPrompt.Build("Europe/Madrid")],
         ["printing_prompt", PrintingPrompt.Build("text,jpeg")],
-        ["downloader_prompt", DownloaderPrompt.AgentSystemPrompt]
+        ["downloader_prompt", DownloaderPrompt.AgentSystemPrompt],
+        ["timers_prompt", TimerPrompt.Prompt]
     ];
 
     [Theory]
@@ -35,7 +36,7 @@ public class VfsPromptToolNameConsistencyTests
     [Fact]
     public void SchedulingPrompt_ReferencesActualExposedToolLeafNames()
     {
-        var prompt = SchedulingPrompt.Prompt;
+        var prompt = SchedulingPrompt.Build("Europe/Madrid");
 
         prompt.ShouldContain($"`{VfsTextCreateTool.Name}`");
         prompt.ShouldContain($"`{VfsGlobFilesTool.Name}`");
@@ -43,5 +44,6 @@ public class VfsPromptToolNameConsistencyTests
         prompt.ShouldContain($"`{VfsMoveTool.Name}`");
         prompt.ShouldContain($"`{VfsRemoveTool.Name}`");
         prompt.ShouldContain($"`{VfsExecTool.Name}`");
+        prompt.ShouldContain("Europe/Madrid");
     }
 }

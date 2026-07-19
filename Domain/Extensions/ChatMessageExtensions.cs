@@ -13,6 +13,7 @@ public static class ChatMessageExtensions
     private const string MemoryContextKey = "MemoryContext";
     private const string LocationKey = "Location";
     private const string SatelliteIdKey = "SatelliteId";
+    private const string DismissedAlertKey = "DismissedAlert";
     private const string ConversationContextKey = "ConversationContext";
 
     extension(ChatMessage message)
@@ -83,6 +84,28 @@ public static class ChatMessageExtensions
             message.AdditionalProperties[SatelliteIdKey] = satelliteId;
         }
 
+        public string? GetDismissedAlert()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(DismissedAlertKey);
+            return value switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+        }
+
+        public void SetDismissedAlert(string? dismissedAlert)
+        {
+            if (string.IsNullOrWhiteSpace(dismissedAlert))
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[DismissedAlertKey] = dismissedAlert;
+        }
+
         public DateTimeOffset? GetTimestamp()
         {
             return ParseTimestamp(message.AdditionalProperties?.GetValueOrDefault(TimestampKey));
@@ -101,7 +124,13 @@ public static class ChatMessageExtensions
 
         public MemoryContext? GetMemoryContext()
         {
-            return message.AdditionalProperties?.GetValueOrDefault(MemoryContextKey) as MemoryContext;
+            var value = message.AdditionalProperties?.GetValueOrDefault(MemoryContextKey);
+            return value switch
+            {
+                MemoryContext context => context,
+                JsonElement je => je.Deserialize<MemoryContext>(),
+                _ => null
+            };
         }
 
         public void SetMemoryContext(MemoryContext? context)
