@@ -6,9 +6,10 @@ public record TranscriptionResult
     public string? Language { get; init; }
     public double? Confidence { get; init; }
 
-    // Raw whisper quality signals (duration-weighted per transcription by the patched
-    // wyoming-whisper server). Recorded on metrics for threshold calibration; only
-    // Confidence gates dispatch. Null when the server doesn't emit them (fail-open).
+    // Raw whisper quality signals, duration-weighted per POST by OpenAiSpeechToText and again
+    // across utterance segments by SegmentedSpeechToText. AvgLogProb/NoSpeechProb gate dispatch
+    // (TranscriptDispatcher); null means "no signal" and fails open. Confidence and
+    // CompressionRatio stay for metrics but Lemonade emits neither (always null).
     public double? AvgLogProb { get; init; }
     public double? NoSpeechProb { get; init; }
     public double? CompressionRatio { get; init; }
