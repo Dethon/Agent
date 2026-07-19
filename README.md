@@ -10,7 +10,7 @@ Azure Service Bus, using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **WebChat** - Browser-based chat with real-time streaming, topic management, and multi-agent selection
 - **Telegram Multi-Bot** - Each agent gets its own Telegram bot with inline keyboard tool approvals
 - **Azure Service Bus** - Queue-based integration for external systems
-- **Voice Satellites** - Hands-free voice assistant on real hardware: `nabu-satellite` is a single static Rust binary for Raspberry Pi with on-device "ok nabu" wake-word detection (openWakeWord via tract, no Python), zero-lag pre-roll, audio cues, button support, and an optional activity LED; the voice channel dials each satellite over the Wyoming protocol, transcribes with Whisper, runs the agent, and streams Piper TTS back
+- **Voice Satellites** - Hands-free voice assistant on real hardware: `nabu-satellite` is a single static Rust binary for Raspberry Pi with on-device "ok nabu" wake-word detection (openWakeWord via tract, no Python), zero-lag pre-roll, audio cues, button support, and an optional activity LED; the voice channel dials each satellite over the Wyoming protocol, transcribes with Whisper, runs the agent, and streams Kokoro TTS back (via Lemonade)
 - **Conversation Persistence** - Redis-backed chat history survives application restarts
 - **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
 - **Download Completion Alerts** - The library server is dual-role (tool/filesystem server and channel): a background watcher polls qBittorrent and pushes a `channel/message` to the originating conversation when a download finishes — no client-side tracking or resubscription needed, and alerts survive restarts because routing snapshots live in Redis
@@ -152,12 +152,12 @@ The IPP transport is `IppPrinterClient` (`Infrastructure/Clients/Printer/`), a `
 
 ### Voice Satellites
 
-Voice runs as another MCP channel server (`mcp-channel-voice`) plus dedicated hardware satellites. The hub is the Wyoming-protocol **client**: for every satellite configured with an address (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) it dials out and keeps a persistent reconnecting connection. The satellite detects the wake word locally and streams mic audio to the hub; the hub segments the utterance (silence gating), transcribes it with `wyoming-whisper`, dispatches the transcript to the agent as a `channel/message`, and streams the reply back as `wyoming-piper` TTS audio. After each reply an optional wake-free follow-up window opens (announced by a listening chime) so the conversation continues without repeating the wake word.
+Voice runs as another MCP channel server (`mcp-channel-voice`) plus dedicated hardware satellites. The hub is the Wyoming-protocol **client**: for every satellite configured with an address (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) it dials out and keeps a persistent reconnecting connection. The satellite detects the wake word locally and streams mic audio to the hub; the hub segments the utterance (silence gating), transcribes it via Lemonade STT (`mcp-lemonade`, OpenAI-compatible `/v1/audio/transcriptions`, Whisper on whisper.cpp), dispatches the transcript to the agent as a `channel/message`, and streams the reply back as Lemonade Kokoro TTS audio (24 kHz PCM resampled in-hub to 22 050 Hz). After each reply an optional wake-free follow-up window opens (announced by a listening chime) so the conversation continues without repeating the wake word.
 
 ```
 ┌─ Raspberry Pi / WSL dev host ──┐                     ┌─ mcp-channel-voice (hub) ──┐
 │ nabu-satellite (static Rust)   │   Wyoming over TCP  │ silence gate → Whisper STT ┼──▶ channel/message ──▶ Agent
-│ wake "ok nabu" → mic stream    ┼◀───(hub dials in)──▶│ Piper TTS ◀── send_reply   ┼◀── agent reply
+│ wake "ok nabu" → mic stream    ┼◀───(hub dials in)──▶│ Kokoro TTS ◀── send_reply  ┼◀── agent reply
 │ arecord/aplay · cues · LED     │                     │ follow-up window + chime   │
 └────────────────────────────────┘                     └────────────────────────────┘
 ```
@@ -200,7 +200,7 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 | **mcp-channel-signalr**   | WebChat transport — hosts SignalR hub, manages streams/sessions/approvals, push notifications |
 | **mcp-channel-telegram**  | Telegram transport — multi-bot polling (one per agent), inline keyboard approvals            |
 | **mcp-channel-servicebus**| Azure Service Bus transport — queue processor, auto-approval, response sender                |
-| **mcp-channel-voice**     | Voice transport — Wyoming hub that dials hardware satellites, segments utterances, transcribes via wyoming-whisper, synthesizes replies via wyoming-piper, manages follow-up windows and announcements (see [Voice Satellites](#voice-satellites)) |
+| **mcp-channel-voice**     | Voice transport — Wyoming hub that dials hardware satellites, segments utterances, Lemonade STT/TTS (OpenAI-compatible, `mcp-lemonade`), manages follow-up windows and announcements (see [Voice Satellites](#voice-satellites)) |
 | **mcp-scheduling**        | Scheduling transport — fires due cron/one-shot schedules as channel messages; also exposes `filesystem://schedules` for managing them |
 
 ### Agents
@@ -247,7 +247,7 @@ Agent routing:
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
 | `McpChannelServiceBus`   | MCP channel server for Azure Service Bus (queues)               |
-| `McpChannelVoice`        | MCP channel server for voice satellites (Wyoming hub, Whisper STT, Piper TTS) |
+| `McpChannelVoice`        | MCP channel server for voice satellites (Wyoming hub, Lemonade STT/TTS) |
 | `satellite`              | `nabu-satellite` — standalone Rust crate: static Wyoming satellite binary for Raspberry Pi (wake word, audio I/O, button, LED) |
 | `WebChat`                | Blazor WebAssembly host server for browser-based chat           |
 | `WebChat.Client`         | Blazor WebAssembly client with chat UI and SignalR integration  |
