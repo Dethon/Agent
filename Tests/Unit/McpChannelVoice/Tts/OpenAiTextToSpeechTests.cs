@@ -72,7 +72,7 @@ public class OpenAiTextToSpeechTests
 
     private static OpenAiTextToSpeech Sut(HttpMessageHandler handler, OpenAiTtsConfig? config = null) =>
         new(
-            new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan },
+            new StubClientFactory(handler),
             config ?? new OpenAiTtsConfig(),
             NullLogger<OpenAiTextToSpeech>.Instance);
 

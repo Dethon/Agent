@@ -14,7 +14,7 @@ namespace McpChannelVoice.Services.Tts;
 // to the satellites' fixed 22 050 Hz sink. Raw reads are not 2-byte aligned: a 0/1-byte
 // remainder is carried between reads so a partial int16 never reaches the resampler.
 public sealed class OpenAiTextToSpeech(
-    HttpClient http,
+    IHttpClientFactory httpFactory,
     OpenAiTtsConfig config,
     ILogger<OpenAiTextToSpeech> logger) : ITextToSpeech
 {
@@ -41,6 +41,9 @@ public sealed class OpenAiTextToSpeech(
             ["stream_format"] = "audio"
         };
 
+        // Per-call client keeps factory handler rotation working; it lives until the iterator
+        // completes, so it spans the whole streamed read.
+        using var http = httpFactory.CreateClient(LemonadeHttp.ClientName);
         using var request = new HttpRequestMessage(
             HttpMethod.Post, $"{config.BaseUrl.TrimEnd('/')}/audio/speech")
         {
