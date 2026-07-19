@@ -49,8 +49,7 @@ public sealed class OpenAiSpeechToText(
             content.Add(new StringContent(language), "language");
         }
 
-        using var response = await http.PostAsync(
-            $"{config.BaseUrl.TrimEnd('/')}/audio/transcriptions", content, ct);
+        using var response = await PostWithTimeoutAsync(content, ct);
         response.EnsureSuccessStatusCode();
 
         var body = await response.Content.ReadAsStringAsync(ct);
@@ -64,6 +63,27 @@ public sealed class OpenAiSpeechToText(
             "Lemonade transcript: text={Text} lang={Lang} avg_logprob={AvgLogProb} no_speech_prob={NoSpeechProb}",
             result.Text, result.Language, result.AvgLogProb, result.NoSpeechProb);
         return result;
+    }
+
+    // The shared Lemonade client has an infinite timeout (streaming TTS), so transcription bounds
+    // itself. PostAsync buffers the full response, so this covers body receipt too. The timeout
+    // surfaces as TimeoutException, not OperationCanceledException: the satellite host swallows
+    // OCE as connection teardown, and a hung Lemonade must reach its SttError/re-arm path instead.
+    private async Task<HttpResponseMessage> PostWithTimeoutAsync(
+        MultipartFormDataContent content, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(config.RequestTimeout);
+        try
+        {
+            return await http.PostAsync(
+                $"{config.BaseUrl.TrimEnd('/')}/audio/transcriptions", content, timeout.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Lemonade transcription did not respond within {config.RequestTimeout.TotalSeconds:F0}s");
+        }
     }
 
     private static TranscriptionResult ParseResult(JsonObject json)

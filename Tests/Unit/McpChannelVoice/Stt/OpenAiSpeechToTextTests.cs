@@ -169,6 +169,43 @@ public class OpenAiSpeechToTextTests
         handler.Calls.ShouldBe(0);
     }
 
+    private sealed class HangingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken ct)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            throw new InvalidOperationException("unreachable");
+        }
+    }
+
+    // A hung Lemonade must surface as a TimeoutException so the host's SttError path fires;
+    // plain OperationCanceledException is swallowed there as connection teardown.
+    [Fact]
+    public async Task TranscribeAsync_LemonadeHangs_ThrowsTimeoutException()
+    {
+        var sut = Sut(
+            new HangingHandler(),
+            new OpenAiSttConfig { RequestTimeout = TimeSpan.FromMilliseconds(50) });
+
+        // WaitAsync guards the suite: without the feature this call would hang forever.
+        await Should.ThrowAsync<TimeoutException>(() =>
+                sut.TranscribeAsync(Chunks(new byte[32]), new TranscriptionOptions(), CancellationToken.None))
+            .WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_CallerCancels_ThrowsCancellationNotTimeout()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        var sut = Sut(
+            new HangingHandler(),
+            new OpenAiSttConfig { RequestTimeout = TimeSpan.FromSeconds(30) });
+
+        await Should.ThrowAsync<TaskCanceledException>(() =>
+            sut.TranscribeAsync(Chunks(new byte[32]), new TranscriptionOptions(), cts.Token));
+    }
+
     [Fact]
     public async Task TranscribeAsync_Non2xx_Throws()
     {
