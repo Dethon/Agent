@@ -56,6 +56,7 @@ public sealed class OpenAiTextToSpeech(
         var resampler = new PcmStreamResampler(SourceRateHz, _outputFormat.SampleRateHz);
         var buffer = new byte[8192];
         var carried = 0;
+        var yielded = false;
 
         while (true)
         {
@@ -77,6 +78,7 @@ public sealed class OpenAiTextToSpeech(
 
             if (resampled.Length > 0)
             {
+                yielded = true;
                 yield return new AudioChunk { Data = resampled, Format = _outputFormat };
             }
         }
@@ -84,6 +86,14 @@ public sealed class OpenAiTextToSpeech(
         if (carried > 0)
         {
             logger.LogWarning("Kokoro PCM stream ended mid-sample; dropped trailing byte");
+        }
+
+        // A Kokoro failure can close the stream cleanly with zero PCM; treating that as success
+        // would play nothing and end the turn as an invisible "assistant didn't answer". Throw so
+        // the playback loop's OnFailed path fires instead.
+        if (!yielded)
+        {
+            throw new InvalidOperationException("Kokoro synthesis returned no audio");
         }
         logger.LogDebug("Kokoro synthesis complete");
     }

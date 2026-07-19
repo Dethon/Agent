@@ -151,6 +151,19 @@ public class OpenAiTextToSpeechTests
     }
 
     [Fact]
+    public async Task SynthesizeAsync_EmptyPcmBody_ThrowsInsteadOfSilentSuccess()
+    {
+        var sut = Sut(new StubHandler(_ => PcmResponse(new ScriptedStream([]))));
+
+        await Should.ThrowAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (var _ in sut.SynthesizeAsync("hola", new SynthesisOptions(), CancellationToken.None))
+            {
+            }
+        });
+    }
+
+    [Fact]
     public async Task SynthesizeAsync_Non2xx_ThrowsBeforeYieldingAudio()
     {
         var sut = Sut(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
