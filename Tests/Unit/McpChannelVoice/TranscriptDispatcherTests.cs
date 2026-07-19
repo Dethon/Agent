@@ -155,6 +155,57 @@ public class TranscriptDispatcherTests
         emitter.Captured.Count.ShouldBe(1);
     }
 
+    private static SatelliteSession SessionWithSttOverrides(OpenAiSttOverrides overrides) =>
+        new("kitchen-01", new SatelliteConfig
+        {
+            Identity = "household",
+            Room = "Kitchen",
+            Stt = new SttOverrides { OpenAi = overrides }
+        });
+
+    [Fact]
+    public async Task DispatchAsync_SatelliteAvgLogProbOverride_TightensGate()
+    {
+        var (sut, manager, emitter) = Build(); // global floor -1.0
+        var session = SessionWithSttOverrides(new OpenAiSttOverrides { AvgLogProbThreshold = -0.5 });
+
+        var ok = await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "mumble", AvgLogProb = -0.7 }, "agent-1", null, default);
+
+        ok.ShouldBeFalse();
+        manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
+        emitter.Captured.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_SatelliteNoSpeechProbOverride_TightensGate()
+    {
+        var (sut, manager, emitter) = Build(); // global ceiling 0.6
+        var session = SessionWithSttOverrides(new OpenAiSttOverrides { NoSpeechProbThreshold = 0.2 });
+
+        var ok = await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "ffff", NoSpeechProb = 0.4 }, "agent-1", null, default);
+
+        ok.ShouldBeFalse();
+        manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
+        emitter.Captured.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_SatelliteOverrideWithoutThresholds_UsesGlobals()
+    {
+        var (sut, _, emitter) = Build();
+        var session = SessionWithSttOverrides(new OpenAiSttOverrides { Language = "en" });
+
+        var ok = await sut.DispatchAsync(
+            session,
+            new TranscriptionResult { Text = "hola", AvgLogProb = -0.7, NoSpeechProb = 0.4 },
+            "agent-1", null, default);
+
+        ok.ShouldBeTrue();
+        emitter.Captured.Count.ShouldBe(1);
+    }
+
     [Fact]
     public async Task DispatchAsync_EmptyText_DropsAndPublishesDroppedMetric()
     {

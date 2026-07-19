@@ -24,8 +24,12 @@ public record SatelliteConfig
 
     // Per-satellite override of FollowUpSettings.Enabled. Null inherits the global value.
     public bool? FollowUpEnabled { get; init; }
-    public SttSettings? Stt { get; init; }
-    public TtsSettings? Tts { get; init; }
+
+    // Dedicated override records rather than the full SttSettings/TtsSettings: every field they
+    // expose is honored per-satellite, so config can't advertise knobs that silently do nothing.
+    // Env paths stay Satellites__<id>__Stt__OpenAi__* / Satellites__<id>__Tts__OpenAi__*.
+    public SttOverrides? Stt { get; init; }
+    public TtsOverrides? Tts { get; init; }
 
     // Per-satellite overrides of the outer SilenceGate entry bar (WyomingClientSettings).
     // Mic front-ends sit at different noise floors (e.g. XVF3800 firmware AGC lifts quiet
@@ -37,10 +41,40 @@ public record SatelliteConfig
 
     public int ResolveMinSpeechMs(WyomingClientSettings global) =>
         Gate?.MinSpeechMs ?? global.MinSpeechMs;
+
+    // Mic front-ends and rooms sit at different noise floors, so the gibberish-gate thresholds
+    // are per-satellite tunable like the SilenceGate entry bar above.
+    public double ResolveAvgLogProbThreshold(double global) =>
+        Stt?.OpenAi?.AvgLogProbThreshold ?? global;
+
+    public double ResolveNoSpeechProbThreshold(double global) =>
+        Stt?.OpenAi?.NoSpeechProbThreshold ?? global;
 }
 
 public record GateSettings
 {
     public double? SilenceRmsThreshold { get; init; }
     public int? MinSpeechMs { get; init; }
+}
+
+public record SttOverrides
+{
+    public OpenAiSttOverrides? OpenAi { get; init; }
+}
+
+public record OpenAiSttOverrides
+{
+    public string? Language { get; init; }
+    public double? AvgLogProbThreshold { get; init; }
+    public double? NoSpeechProbThreshold { get; init; }
+}
+
+public record TtsOverrides
+{
+    public OpenAiTtsOverrides? OpenAi { get; init; }
+}
+
+public record OpenAiTtsOverrides
+{
+    public string? Voice { get; init; }
 }

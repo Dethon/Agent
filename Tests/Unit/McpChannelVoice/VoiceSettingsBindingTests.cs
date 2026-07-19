@@ -137,6 +137,42 @@ public class VoiceSettingsBindingTests
     }
 
     [Fact]
+    public void VoiceSettings_BindsPerSatelliteSttTtsOverridesFromEnvironmentVariables()
+    {
+        var vars = new Dictionary<string, string>
+        {
+            ["Satellites__kitchen-01__Identity"] = "household",
+            ["Satellites__kitchen-01__Room"] = "Kitchen",
+            ["Satellites__kitchen-01__Stt__OpenAi__Language"] = "en",
+            ["Satellites__kitchen-01__Stt__OpenAi__AvgLogProbThreshold"] = "-0.5",
+            ["Satellites__kitchen-01__Tts__OpenAi__Voice"] = "em_alex"
+        };
+
+        foreach (var (k, v) in vars)
+        {
+            Environment.SetEnvironmentVariable(k, v);
+        }
+        try
+        {
+            var config = new ConfigurationBuilder().AddEnvironmentVariables().Build();
+            var settings = config.Get<VoiceSettings>();
+
+            var satellite = settings!.Satellites["kitchen-01"];
+            satellite.Stt!.OpenAi!.Language.ShouldBe("en");
+            satellite.Stt.OpenAi.AvgLogProbThreshold.ShouldBe(-0.5);
+            satellite.Stt.OpenAi.NoSpeechProbThreshold.ShouldBeNull(); // unset stays null → global
+            satellite.Tts!.OpenAi!.Voice.ShouldBe("em_alex");
+        }
+        finally
+        {
+            foreach (var k in vars.Keys)
+            {
+                Environment.SetEnvironmentVariable(k, null);
+            }
+        }
+    }
+
+    [Fact]
     public void VoiceSettings_BindsSatelliteFromEnvironmentVariables()
     {
         // Mirrors how docker-compose.override.debug.yml delivers the satellite topology:
