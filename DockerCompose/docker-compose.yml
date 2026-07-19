@@ -582,7 +582,7 @@ services:
       redis:
         condition: service_healthy
       mcp-lemonade:
-        condition: service_started
+        condition: service_healthy
 
   mcp-lemonade:
     image: mcp-lemonade:latest
@@ -615,6 +615,14 @@ services:
       - ./volumes/lemonade-hf-cache:/opt/lemonade/.cache/huggingface
       - ./volumes/lemonade-recipe:/opt/lemonade/.cache/lemonade
       - ./volumes/lemonade-llama:/opt/lemonade/llama
+    # Healthy = the server answers; the entrypoint's model pre-pull is best-effort and not
+    # gated on. start_period covers slow first boots without counting against retries.
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "http://127.0.0.1:13305/api/v1/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
     restart: unless-stopped
     networks:
       - jackbot
