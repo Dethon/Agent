@@ -196,7 +196,7 @@ public sealed class SendReplyTool
         IMetricsPublisher metrics,
         CancellationToken ct)
     {
-        var voice = session.Config.Tts?.Wyoming?.Voice ?? settings.Tts.Wyoming?.Voice;
+        var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
         var options = new SynthesisOptions { Voice = voice };
 
         // Synthesis is lazy and runs inside the playback loop, so latency must be measured there.
