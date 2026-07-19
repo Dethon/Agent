@@ -170,12 +170,12 @@ The satellite is `nabu-satellite`, a from-scratch Rust replacement for the archi
 - **On-device wake word** — the openWakeWord pipeline (melspectrogram → embedding → `ok_nabu` classifier) runs in-process via `tract`, validated against the Python implementation. A pre-roll ring buffer gives zero-lag turns: on wake only the detection gap is flushed (the wake word itself is never transcribed); a button press flushes the full ring instead, since speech may precede the press.
 - **Audio** — mic capture via an `arecord` subprocess (16 kHz mono S16LE in 80 ms chunks); playback via `aplay` at a fixed 22 050 Hz (all hub-side audio — TTS, chime — is generated at that rate). Local cues bracket listening: the awake cue plays on turn start, the done cue when the transcript arrives and the mic re-arms.
 - **Buttons & LED** — optional: `--button-gpio`/`--button-evdev` starts a turn without the wake word (`--no-wake` for button-only operation); `--led-gpio` (single wired LED) or `--led-spi` (ReSpeaker 2-Mic HAT APA102s) lights a steady activity LED across listening → thinking → speaking. Missing hardware is never fatal.
-- **Defaults** target a Jabra Speak2 on USB (`plughw:0,0`, no button/LED); the ReSpeaker 2-Mic HAT path overrides the audio device and adds `--button-gpio 17 --led-spi`.
+- **Defaults** target a reSpeaker XVF3800 USB mic array paired with a HiFiBerry MiniAmp I2S speaker (no button/LED); the ReSpeaker 2-Mic HAT path overrides the audio device and adds `--button-gpio 17 --led-spi`.
 
 Build and deployment:
 
 - `satellite/scripts/build-release.sh` — cross-compiles the fully static `aarch64-unknown-linux-musl` release via `cargo-zigbuild` (a CC shim translates the fp16 target feature for zig cc).
-- `scripts/provision-satellite-rs.sh <user@host> [mic-device]` — builds, installs the binary and the `nabu-satellite.service` systemd unit on a Raspberry Pi, and — when the mic device is left at the default — applies the Jabra-specific ALSA index pinning and USB autosuspend udev rule.
+- `scripts/provision-satellite-rs.sh <user@host> [mic-device]` — builds, installs the binary and the `nabu-satellite.service` systemd unit on a Raspberry Pi, and — when the mic device is left at the default — auto-detects the USB audio card by name and applies a USB autosuspend-off udev rule.
 - `scripts/wsl-satellite.sh` — runs a satellite on a WSL dev host through WSLg PulseAudio so the dockerized hub can dial `tcp://host.docker.internal:<port>`.
 
 See `satellite/README.md` for build prerequisites, CLI flags, and dev-test commands.

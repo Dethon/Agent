@@ -35,15 +35,12 @@ set -euo pipefail
 #     already 16 kHz/22050-friendly, e.g. the reSpeaker 2-Mic HAT plughw:CARD=seeed2micvoicec,
 #     DEV=0 (also add --button-gpio 17 --led-spi to ExecStart and dtparam=spi=on for the HAT).
 #
-# Two mic quirks are handled automatically:
-#   - Jabra Speak2: its mic ADC firmware-sleeps when idle (capture-only opens EIO; deep sleep
-#     ignores silence) — the unit's --wake-playback-ms plays a brief TONE through its speaker on
-#     a cold open to wake it. Harmless for mics that don't sleep (they open first try, no tone).
+# One mic quirk is handled automatically:
 #   - reSpeaker XVF3800: its capture engine only runs while its OWN playback stream is active
 #     (both UAC endpoints are Synchronous off one internal clock) — capture-alone opens EIO and
 #     a live capture dies the instant playback stops. A probe below detects this and installs
 #     nabu-micclock.service, an endless zero-stream into the mic card's (unconnected) output
-#     that keeps capture clocked 24/7; such units get --no-wake-playback (a tone adds nothing).
+#     that keeps capture clocked 24/7.
 #     The probe is only valid on a COLD engine (warm engines pass capture-alone for minutes), so
 #     the verdict is sticky across re-provisions — and a FIRST provision should run against a
 #     cold-booted Pi, not one whose mic was just in use.
@@ -132,11 +129,12 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
   user=$(whoami)
   sudo usermod -aG gpio,input "$user"     # GPIO button + evdev/USB button access
 
-  # Drop the old, broken index-pinning artifacts from any prior provisioning run, plus any
-  # systemd drop-in (e.g. a temporary mic-command override) — it would shadow the ExecStart we
-  # write here, so re-provisioning must clear it for the unit below to be authoritative.
-  # snd-usb-audio.conf is dead nrpacks=1 latency tuning (the parameter no longer exists; the
-  # kernel logs "unknown parameter ignored").
+  # Drop artifacts from any prior provisioning run, plus any systemd drop-in (e.g. a temporary
+  # mic-command override) — it would shadow the ExecStart we write here, so re-provisioning must
+  # clear it for the unit below to be authoritative. nabu-alsa.conf is the old, broken
+  # index-pinning; snd-usb-audio.conf is dead nrpacks=1 latency tuning (the parameter no longer
+  # exists; the kernel logs "unknown parameter ignored"); 99-nabu-jabra.rules belongs to
+  # retired hardware. All three are removed so a re-provisioned Pi carries no orphans.
   sudo rm -f /etc/modprobe.d/nabu-alsa.conf /etc/modprobe.d/snd-usb-audio.conf \
              /etc/udev/rules.d/99-nabu-jabra.rules
   sudo rm -rf /etc/systemd/system/nabu-satellite.service.d
@@ -161,9 +159,8 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
     sudo rm -f /etc/asound.conf
     dev="plughw:CARD=${cardname},DEV=0"
 
-    # Stop USB autosuspend during long idle, keyed on the detected device's id. (This does NOT
-    # fix the Jabra cold-start — its mic ADC firmware-sleeps; the satellite's --wake-playback-ms
-    # play-to-wake handles that — but it's good hygiene for any USB-audio device.)
+    # Stop USB autosuspend during long idle, keyed on the detected device's id — good hygiene
+    # for any USB-audio device.
     usbid=$(cat /proc/asound/card${cardidx}/usbid 2>/dev/null || true)
     if [ -n "$usbid" ]; then
       printf 'ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="%s", ATTR{idProduct}=="%s", ATTR{power/control}="on"\n' \
@@ -182,10 +179,7 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
   # instant playback stops (verified on-device). Probe capture-alone; if it fails but works
   # with a playback stream running, install nabu-micclock.service: an endless zero-stream into
   # the mic card's (unconnected) speaker output that keeps capture clocked 24/7.
-  # (The Jabra fails differently: its ADC firmware-SLEEPS and ignores the silent probe stream
-  # too — only a real-signal tone wakes it, which --wake-playback-ms handles — so it lands on
-  # micclock=0 whether awake (capture-alone passes) or asleep (both probes fail). Correct both
-  # ways.) Stop the consumers first: a running satellite/feeder holds the device and would fake
+  # Stop the consumers first: a running satellite/feeder holds the device and would fake
   # the probe result.
   # The verdict is STICKY: the probe is only valid on a COLD engine. After the feeder has been
   # running, the engine stays clocked for a while, so capture-alone succeeds and a re-provision
@@ -226,19 +220,18 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
     echo "Detected I2S DAC/amp HAT: $outcard (speaker output)"
     snddev="plughw:CARD=${outcard},DEV=0"
   else
-    snddev="${dev}"   # no HAT: voice-only units play through the mic card (Jabra style)
+    snddev="${dev}"   # no HAT: play through the mic card's own output
   fi
 
   # --- music coexistence (opt-in via MUSIC_HUB) ---
   # Music + TTS + cues all share the speaker output ($snddev), mixed by PipeWire in userspace
   # (neither the bcm2835 jack nor an I2S DAC can ALSA-dmix; 2nd client -> -22). The mic card is
-  # kept OUT of PipeWire and owned by the satellite via raw ALSA (capture + play-to-wake tone /
-  # micclock feeder).
+  # kept OUT of PipeWire and owned by the satellite via raw ALSA (capture + the micclock feeder).
   # Clear any stale music drop-in first so a re-provision is deterministic (added back below if music).
   sudo rm -f /etc/systemd/system/nabu-satellite.service.d/pipewire.conf
   if [ -n "${MUSIC_HUB:-}" ]; then
     uid=$(id -u "$user")
-    excltoken=$(printf '%s' "$carddesc" | awk '{print $1}')   # distinctive card word, e.g. "Jabra"
+    excltoken=$(printf '%s' "$carddesc" | awk '{print $1}')   # distinctive card word, e.g. "Array"
     # snapclient + PipeWire (the userspace mixer). snapclient + the satellite are SYSTEM services
     # with no login session, so enable lingering to run the user's PipeWire at boot and pass
     # XDG_RUNTIME_DIR into both units so their aplay/snapclient reach it.
@@ -247,8 +240,8 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
     sudo loginctl enable-linger "$user"
     XDG_RUNTIME_DIR=/run/user/$uid systemctl --user enable --now pipewire pipewire-pulse wireplumber 2>/dev/null || true
 
-    # Keep the mic card OUT of PipeWire so the satellite owns it raw (capture + play-to-wake
-    # tone / micclock feeder). Without this PipeWire grabs the card — it even elects the
+    # Keep the mic card OUT of PipeWire so the satellite owns it raw (capture + the micclock
+    # feeder). Without this PipeWire grabs the card — it even elects the
     # XVF3800's unconnected speaker jack as default sink — and raw ALSA opens fail EBUSY.
     # Match the detected card by its distinctive name word. When an I2S DAC HAT is the speaker,
     # also disable the unused HDMI + headphone-jack cards so the HAT is deterministically the
@@ -327,19 +320,7 @@ ASOUND
 
     # nabu-satellite drop-in: TTS/cues -> the `tts` softvol (calibrated agent-voice level) ->
     # PipeWire (speaker); duck the `Music` softvol while active; XDG so aplay reaches PipeWire.
-    # NO --keep-warm: PipeWire's exact drain re-arms
-    # the mic only after playback truly finishes, so it never hears its own reply. Wake handling
-    # is per-mic: the Jabra keeps the raw play-to-wake tone on the mic card; micclock (XVF3800)
-    # units pass --no-wake-playback — the feeder owns capture clocking, a tone adds nothing.
-    # Mic period: -F 20000 (20 ms, the satellite default) everywhere EXCEPT the Jabra, where
-    # only the default ~125 ms period is proven reliable. Overrides the base voice ExecStart.
-    if [ "$micclock" = 1 ]; then
-      micperiod=" -F 20000"
-      wakeargs="--no-wake-playback"
-    else
-      micperiod=""
-      wakeargs="--wake-snd-command \"aplay -D ${dev} -r 22050 -c 1 -f S16_LE -t raw\" --wake-playback-ms 1000"
-    fi
+    # Overrides the base voice ExecStart.
     sudo mkdir -p /etc/systemd/system/nabu-satellite.service.d
     sudo tee /etc/systemd/system/nabu-satellite.service.d/pipewire.conf >/dev/null <<DROPEOF
 [Service]
@@ -347,9 +328,8 @@ Environment=XDG_RUNTIME_DIR=/run/user/$uid
 ExecStart=
 ExecStart=/usr/local/bin/nabu-satellite \\
   --listen 0.0.0.0:10700 \\
-  --mic-command "arecord -D ${dev} -r 16000 -c 1 -f S16_LE -t raw${micperiod}" \\
+  --mic-command "arecord -D ${dev} -r 16000 -c 1 -f S16_LE -t raw -F 20000" \\
   --snd-command "aplay -D tts -r 22050 -c 1 -f S16_LE -t raw" \\
-  ${wakeargs} \\
   --preroll-ms 1000 \\
   --music-mixer Music --music-card ${outctl} \\
   --threshold ${THRESHOLD} \\
@@ -366,10 +346,15 @@ DROPEOF
 
   # Template the base (voice) unit: mic + snd devices -> the detected plughw, wake tuning -> the
   # THRESHOLD/TRIGGER_LEVEL vars, %i -> user. Music units additionally carry the pipewire.conf
-  # drop-in written above, which overrides this ExecStart to route TTS/cues to PipeWire and keep
-  # the wake tone on the mic card — it carries the same two values, so tuning applies either way.
-  sudo sed -e "/--mic-command/ s#plughw:0,0#${dev}#" \
-           -e "/--snd-command/ s#plughw:0,0#${snddev}#" \
+  # drop-in written above, which overrides this ExecStart to route TTS/cues to PipeWire — it
+  # carries the same two tuning values, so tuning applies either way.
+  # The device substitutions rewrite the whole -D argument rather than matching a literal
+  # placeholder, so changing the unit template's default devices can't silently break
+  # provisioning. Anchored to the ExecStart continuation lines (leading whitespace) so the
+  # header COMMENTS, which also mention --mic-command/--snd-command and carry their own
+  # `-D` examples, are left alone.
+  sudo sed -e "/^[[:space:]]*--mic-command/ s#-D [^ ]*#-D ${dev}#" \
+           -e "/^[[:space:]]*--snd-command/ s#-D [^ ]*#-D ${snddev}#" \
            -e "s#--threshold 0\.7#--threshold ${THRESHOLD}#" \
            -e "s#--trigger-level 2#--trigger-level ${TRIGGER_LEVEL}#" \
            -e "s/%i/$user/g" \

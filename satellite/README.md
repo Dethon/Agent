@@ -73,15 +73,16 @@ model load. A real Pi A53 has no fp16 hwcap and auto-selects the Cortex-A53 f32 
 
 ## Hardware defaults
 
-Compiled-in defaults target a **Jabra Speak2 (55/75)** on USB: `plughw:0,0` is a placeholder that
-provisioning rewrites on both commands to `plughw:CARD=<name>,DEV=0`, auto-detecting the USB card
-by *name* (model/variant-dependent: 75 → `J75`, 55 MS → `MS`, 55 UC → `UC`; confirm yours with
-`arecord -L`). By-name addressing is immune to ALSA index churn — the old `snd_usb_audio index=0`
-pinning collided with the Pi's built-in vc4-hdmi/headphone cards and was removed. No button (the
-Jabra's onboard buttons are HID-telephony, unusable on Linux), no LED. The mic is 16 kHz mono
-native (no resampling); `plughw` resamples only the 22050 Hz playback. For a reSpeaker 2-Mic HAT
-pass `--mic-command`/`--snd-command` with `plughw:CARD=seeed2micvoicec,DEV=0`, plus `--button-gpio
-17` and `--led-spi`.
+Compiled-in defaults target a **reSpeaker XVF3800** USB mic array (`plughw:CARD=Array,DEV=0`)
+paired with a **HiFiBerry MiniAmp** I2S speaker (`plughw:CARD=sndrpihifiberry,DEV=0`), matching
+the live speaker-fran-office unit. Provisioning rewrites both device strings anyway: it
+auto-detects the USB capture card by *name* from `arecord -l` (confirm yours with `arecord -L`)
+and picks the I2S DAC/amp HAT (`sndrpihifiberry*`) as the speaker when one is present, else the
+mic card itself. By-name addressing is immune to ALSA index churn — the old `snd_usb_audio
+index=0` pinning collided with the Pi's built-in vc4-hdmi/headphone cards and was removed. No
+button by default (`--button-gpio 17` and `--led-spi` are the reSpeaker 2-Mic HAT's opt-in path;
+`--button-evdev` and `--led-gpio` are the other options). The mic is 16 kHz mono native (no
+resampling); `plughw` resamples only the 22050 Hz playback.
 
 The default audio commands carry latency-tuned ALSA flags — keep them when overriding devices:
 
@@ -95,8 +96,8 @@ The default audio commands carry latency-tuned ALSA flags — keep them when ove
 ## Status LED
 
 The satellite lights an LED while a voice interaction is active (turn start → end of TTS
-playback; announcements too). Default: none (a Jabra has no controllable LED). `--led-spi`
-drives the reSpeaker 2-Mic HAT's 3 onboard APA102 LEDs via `/dev/spidev0.1` — requires
+playback; announcements too). Default: none. `--led-spi` drives the reSpeaker 2-Mic HAT's
+3 onboard APA102 LEDs via `/dev/spidev0.1` — requires
 `dtparam=spi=on` in `/boot/firmware/config.txt` and the `spi` group (the
 [systemd unit](deploy/nabu-satellite.service) already adds it). `--led-gpio <pin>` drives a single wired
 LED (BCM numbering, pin → ~330 Ω → LED → GND). Missing LED hardware is not an

@@ -17,11 +17,6 @@ use tracing::{info, warn};
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum Mode { Idle, Streaming }
 
-/// Play-to-wake retry ceiling: a wake tone doesn't always rouse the Jabra's ADC from deep sleep
-/// on the first try (each attempt is one tone + mic open), so a generous cap makes a cold first
-/// connection effectively certain to catch while still bounding a genuinely absent mic.
-const MIC_WAKE_MAX_ATTEMPTS: u32 = 20;
-
 /// Aborts the wrapped task on drop, so the pump tasks can never outlive run_connection —
 /// neither on loop exit / `?` error paths, nor when the whole connection task is aborted
 /// (main.rs single-hub supersede policy; the mic pump owns MicCapture, whose kill_on_drop
@@ -42,18 +37,7 @@ pub async fn run_connection(
     reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: Config, models: Option<WakeModels>,
 ) -> anyhow::Result<()> {
     let mut wr = writer;
-    // Wake a firmware-sleeping mic (Jabra Speak2) with a brief play-to-wake TONE (it ignores
-    // silence from deep sleep): warm() opens the mic first and, on a cold miss, plays the tone and
-    // retries. wake_playback_ms == 0 keeps the direct single-open path for mics that don't sleep.
-    let mic = if cfg.wake_playback_ms > 0 {
-        // The wake tone must reach the (firmware-sleeping) mic device itself. When TTS is routed to
-        // a different sink (jack/PipeWire), --wake-snd-command targets the mic's own card; otherwise
-        // it falls back to snd_command (mic and playback are the same device).
-        let wake_snd = cfg.wake_snd_command.as_deref().unwrap_or(&cfg.snd_command);
-        MicCapture::warm(&cfg.mic_command, wake_snd, cfg.wake_playback_ms, MIC_WAKE_MAX_ATTEMPTS).await?
-    } else {
-        MicCapture::spawn(&cfg.mic_command)?
-    };
+    let mic = MicCapture::spawn(&cfg.mic_command)?;
     let mut detector =
         models.as_ref().map(|m| WakeDetector::new(m, cfg.detector.clone())).transpose()?;
     let cues = Cues::new(&cfg)?;
@@ -125,7 +109,7 @@ pub async fn run_connection(
     // re-arm and mic forwarding stay live during the drain. Completions come back on an
     // unbounded channel (a bounded send from the pump could AB-deadlock against a main loop
     // blocked sending a command) and are raced below like the other pumps.
-    let (mut playback, mut playback_done, pump_task) = spawn_pump(&cfg.snd_command, cfg.keep_warm);
+    let (mut playback, mut playback_done, pump_task) = spawn_pump(&cfg.snd_command);
     let _playback_pump = AbortOnDrop(pump_task);
 
     // Pre-roll ring: keep the last `preroll_chunks()` mic chunks while Idle, so a request spoken
@@ -284,7 +268,7 @@ mod tests {
     }
 
     fn pump() -> (PlaybackHandle, tokio::sync::mpsc::UnboundedReceiver<DrainDone>, AbortOnDrop) {
-        let (handle, done_rx, task) = spawn_pump("cat >/dev/null", false);
+        let (handle, done_rx, task) = spawn_pump("cat >/dev/null");
         (handle, done_rx, AbortOnDrop(task))
     }
 
@@ -426,7 +410,7 @@ mod tests {
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
         let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle;
-        let (handle, mut done_rx, task) = spawn_pump("cat >/dev/null; sleep 1", false);
+        let (handle, mut done_rx, task) = spawn_pump("cat >/dev/null; sleep 1");
         let mut playback = handle;
         let _pump = AbortOnDrop(task);
 

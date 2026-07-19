@@ -1,42 +1,28 @@
-# Jabra Speak2 (55/75) variant — provisioning rewrites the plughw:0,0 placeholder below to
-# plughw:CARD=<name>,DEV=0 (the USB card auto-detected by name; immune to ALSA index churn).
-# The mic is 16 kHz mono native (no resampling); plughw resamples only the 22050 Hz playback.
-# --wake-playback-ms plays a brief TONE through the speaker on a cold mic open: the Jabra's mic
-# ADC firmware-sleeps when idle and capture-only opens return EIO, and from deep sleep (after a
-# host reboot) it ignores silence too — only real audio signal wakes it. The satellite opens the
-# mic first (no tone if already awake) and retries tone+open until capture catches. No button
-# (the Jabra's onboard buttons are HID-telephony, unusable on Linux), no LED.
-# --keep-warm holds an idle silence stream open on the SPEAKER between sounds: the Jabra's
-# playback DAC spins up cold on each fresh aplay session and glitches the first ~100 ms, which
-# ruins the short cue beeps (a long TTS reply hides it). A continuously-fed silent stream keeps
-# the DAC warm so every cue/reply opens clean — with no per-beep latency (the warm-up is in the
-# background, not prepended to the sound). Verified on-device: cold beep choppy, silence-warmed
-# beep clean. reSpeaker-style devices don't need it — add --no-keep-warm there.
+# reSpeaker XVF3800 USB + HiFiBerry MiniAmp variant (the deployed shape) — provisioning rewrites
+# the -D device on both audio commands below: the capture card is auto-detected by name from
+# `arecord -l` (immune to ALSA index churn) and the speaker is the I2S DAC/amp HAT when one is
+# present (`sndrpihifiberry*` card), else the mic card itself. The mic is 16 kHz mono native (no
+# resampling; the XVF3800's 2 capture channels carry the same processed signal, so plughw's
+# stereo->mono averaging is fine); plughw resamples only the 22050 Hz playback. The XVF3800's
+# capture engine only runs while its OWN playback stream is active — provisioning detects this
+# (capture-alone probe; sticky across re-provisions since the probe is only valid on a cold
+# engine) and installs nabu-micclock.service, an endless zero-stream into its unconnected speaker
+# out. The MiniAmp needs its overlay declared at provision time (DAC_OVERLAY=hifiberry-dac —
+# one-shot config.txt write + reboot). No button, no LED by default.
 # reSpeaker 2-Mic HAT variant: provision with the device arg plughw:CARD=seeed2micvoicec,DEV=0
-# (16 kHz-native, used verbatim) and add --button-gpio 17 --led-spi (APA102s need dtparam=spi=on);
-# its mic doesn't sleep and its DAC doesn't glitch, so add --no-wake-playback --no-keep-warm.
-# reSpeaker XVF3800 USB variant: 16 kHz-native but its capture engine only runs while its OWN
-# playback stream is active — provisioning detects this (capture-alone probe; sticky across
-# re-provisions since the probe is only valid on a cold engine) and installs
-# nabu-micclock.service (endless zero-stream into its unconnected speaker out) plus
-# --no-wake-playback; speaker output goes to the I2S DAC/amp HAT (e.g. HiFiBerry MiniAmp;
-# declare its overlay via DAC_OVERLAY=hifiberry-dac at provision time — one-shot config.txt
-# write + reboot).
+# (16 kHz-native, used verbatim) and add --button-gpio 17 --led-spi (APA102s need dtparam=spi=on).
 # Other hardware: a USB foot-switch is --button-evdev /dev/input/eventX:<keycode>; a wired
 # indicator is --led-gpio <pin>.
 # Music satellites (provision with MUSIC_HUB=<hub-host> MUSIC_ROOM=<room>) route ALL output —
-# music (snapclient), TTS, and cues — to the 3.5mm JACK, mixed by PipeWire (the bcm2835 jack's
-# ALSA dmix can't share the device, so a userspace sound server does the mixing). Provisioning adds
+# music (snapclient), TTS, and cues — to the speaker, mixed by PipeWire (neither the bcm2835 jack
+# nor an I2S DAC can ALSA-dmix, so a userspace sound server does the mixing). Provisioning adds
 # a systemd drop-in (nabu-satellite.service.d/pipewire.conf) that OVERRIDES the ExecStart below:
 # --snd-command targets PipeWire through the `tts` ALSA softvol (aplay -D tts -> speaker), which
 # holds the calibrated agent-voice level (provision-time TTS_VOLUME, default 65%) independent of
-# music — the volume knob for amp HATs that have none (MiniAmp); --wake-snd-command keeps the
-# play-to-wake tone on the Jabra (raw ALSA; the Jabra is excluded from PipeWire so the satellite
-# owns it for mic + tone), --music-mixer Music --music-card Headphones ducks the `music` softvol
-# (snapclient) while active, and Environment=XDG_RUNTIME_DIR lets this system service reach the
-# user's PipeWire (lingering is enabled). The drop-in DROPS --keep-warm: PipeWire's exact drain
-# re-arms the mic only after playback truly finishes, so it never hears its own reply on the loud
-# jack. See scripts/provision-satellite-rs.sh. (Voice-only units use this ExecStart verbatim.)
+# music — the volume knob for amp HATs that have none (MiniAmp); --music-mixer Music --music-card
+# <speaker> ducks the `music` softvol (snapclient) while active, and Environment=XDG_RUNTIME_DIR
+# lets this system service reach the user's PipeWire (lingering is enabled).
+# See scripts/provision-satellite-rs.sh. (Voice-only units use this ExecStart verbatim.)
 [Unit]
 Description=Nabu Rust Wyoming Satellite (%i)
 After=network-online.target sound.target
@@ -54,11 +40,9 @@ ExecStartPre=+/bin/sh -c 'for g in /sys/devices/system/cpu/cpufreq/policy*/scali
 Nice=-10
 ExecStart=/usr/local/bin/nabu-satellite \
   --listen 0.0.0.0:10700 \
-  --mic-command "arecord -D plughw:0,0 -r 16000 -c 1 -f S16_LE -t raw" \
-  --snd-command "aplay -D plughw:0,0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \
+  --mic-command "arecord -D plughw:CARD=Array,DEV=0 -r 16000 -c 1 -f S16_LE -t raw -F 20000" \
+  --snd-command "aplay -D plughw:CARD=sndrpihifiberry,DEV=0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \
   --preroll-ms 1000 \
-  --wake-playback-ms 1000 \
-  --keep-warm \
   --threshold 0.7 \
   --trigger-level 2
 Environment=RUST_LOG=info
