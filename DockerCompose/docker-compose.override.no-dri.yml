@@ -23,3 +23,8 @@ services:
 
   mcp-sandbox:
     devices: !reset []
+
+  mcp-lemonade:
+    devices: !reset []
+    environment:
+      STT_BACKEND: cpu
