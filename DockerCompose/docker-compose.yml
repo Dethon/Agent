@@ -597,6 +597,12 @@ services:
     environment:
       <<: *timezone
       STT_BACKEND: ${STT_BACKEND:-gpu}
+      # Decode-quality knobs, passed through only when set (defaults — VAD 0.6, beam 5,
+      # Castilian initial prompt — live in lemonade/entrypoint.sh; set one empty in .env to
+      # disable it). The NPU/flm tier ignores all three.
+      STT_VAD_THRESHOLD:
+      STT_INITIAL_PROMPT:
+      STT_BEAM_SIZE:
     # Vulkan whisper on the Ryzen AI iGPU. Kokoro TTS is CPU-only on Linux, so it never
     # contends with whisper for the iGPU.
     devices:
