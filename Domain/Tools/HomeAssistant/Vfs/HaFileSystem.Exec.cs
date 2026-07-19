@@ -34,8 +34,9 @@ public sealed partial class HaFileSystem
 
         var tokens = ShellTokenize(command);
         var entityId = resolution.Entity.EntityId;
+        var classDomain = HaCatalog.ClassOf(entityId);
         var actions = HaActionResolver.ServicesFor(entityId, catalog.Services);
-        var available = string.Join(", ", actions.Select(a => $"{a.Service}.sh"));
+        var available = string.Join(", ", actions.Select(a => $"{HaActionResolver.CommandName(a, classDomain)}.sh"));
 
         if (tokens.Count == 0)
         {
@@ -49,7 +50,7 @@ public sealed partial class HaFileSystem
         }
 
         var serviceName = script[..^3];
-        var svc = actions.FirstOrDefault(a => a.Service.Equals(serviceName, StringComparison.Ordinal));
+        var svc = actions.FirstOrDefault(a => HaActionResolver.CommandName(a, classDomain).Equals(serviceName, StringComparison.Ordinal));
         if (svc is null)
         {
             return done(127, "", $"command not found: {script}. Available actions: {available}");
@@ -64,7 +65,7 @@ public sealed partial class HaFileSystem
         JsonObject data;
         try
         {
-            data = HaArgParser.Parse(args, svc);
+            data = HaArgParser.Parse(args, svc, serviceName);
         }
         catch (ArgumentException ex)
         {

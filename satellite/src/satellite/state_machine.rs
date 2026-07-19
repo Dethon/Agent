@@ -93,7 +93,15 @@ pub async fn run_connection(
     // LED is claimed per-connection like the button; guard drop (connection end/supersede)
     // aborts the render task, whose backend turns the light off on drop.
     let (led_tx, led_rx) = watch::channel(LedState::Idle);
+    let duck_rx = led_tx.subscribe();
     let _led_guard = led::spawn_led(&cfg.led, led_rx);
+    let _duck_guard = crate::music::spawn_duck(
+        duck_rx,
+        cfg.music_mixer.clone(),
+        cfg.music_card.clone(),
+        cfg.duck_percent,
+        std::time::Duration::from_millis(cfg.music_restore_grace_ms),
+    );
     let ctx = Ctx { cues: &cues, led: &led_tx };
 
     // Playback is a pump task too: PlaybackSink::finish() waits for the player to drain
@@ -169,6 +177,7 @@ fn apply_drain_done(
     d: DrainDone, latest_generation: u64, mode: Mode, led: &watch::Sender<LedState>,
 ) -> anyhow::Result<()> {
     d.result?;
+    tracing::debug!(gen = d.generation, latest = latest_generation, ?mode, "drain done");
     if d.generation == latest_generation {
         let _ = led.send(if mode == Mode::Streaming { LedState::Listening } else { LedState::Idle });
     }
@@ -212,6 +221,11 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
     playback: &mut PlaybackHandle,
     ctx: &Ctx<'_>,
 ) -> anyhow::Result<()> {
+    // Skip the per-frame audio-chunk flood (100+/s during a reply); the control events
+    // (audio-start/stop, transcript, run-satellite) with the current mode are the useful trace.
+    if e.event_type != "audio-chunk" {
+        tracing::debug!(event = %e.event_type, ?mode, "hub event");
+    }
     match e.event_type.as_str() {
         "run-satellite" => info!("run-satellite: armed"),
         "transcript" => {

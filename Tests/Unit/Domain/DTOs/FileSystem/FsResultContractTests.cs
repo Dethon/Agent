@@ -79,5 +79,44 @@ public class FsResultContractTests
         FsResultContract.ResultTypes.ShouldContainKey(toolName);
     }
 
+    [Fact]
+    public void CreateResult_OmitsNote_WhenNull_AndValidates()
+    {
+        var node = FsResultContract.ToNode(new FsCreateResult
+        {
+            Status = "created", FilePath = "/vault/a.md", Size = "3 B", Lines = 1
+        });
+
+        node.ToJsonString().ShouldNotContain("note");
+        FsResultContract.TryValidate("fs_create", node, out var error).ShouldBeTrue();
+        error.ShouldBeNull();
+    }
+
+    [Fact]
+    public void CreateResult_IncludesNote_WhenSet_AndValidates()
+    {
+        var node = FsResultContract.ToNode(new FsCreateResult
+        {
+            Status = "created", FilePath = "/vault/a.md", Size = "3 B", Lines = 1, Note = "coerced"
+        });
+
+        node.ToJsonString().ShouldContain("\"note\":\"coerced\"");
+        FsResultContract.TryValidate("fs_create", node, out _).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void EditResult_WithNote_Validates()
+    {
+        var node = FsResultContract.ToNode(new FsEditResult
+        {
+            Status = "edited", FilePath = "/vault/a.md", TotalOccurrencesReplaced = 1,
+            Edits = [new FsEditDetail { OccurrencesReplaced = 1, AffectedLines = new FsLineRange { Start = 1, End = 1 } }],
+            Note = "coerced"
+        });
+
+        node.ToJsonString().ShouldContain("\"note\":\"coerced\"");
+        FsResultContract.TryValidate("fs_edit", node, out _).ShouldBeTrue();
+    }
+
     private static JsonNode JsonNodeWith(string json) => JsonNode.Parse(json)!;
 }

@@ -154,6 +154,37 @@ public class HaFileSystemExecTests
         exec.Stderr.ShouldNotContain("Did you mean");
     }
 
+    [Fact]
+    public async Task Exec_RoutesCrossDomainMusicAssistantService_ByQualifiedName()
+    {
+        // The same-domain `media_player.play_media` (-> play_media.sh) needs a concrete
+        // media_content_id; Music Assistant's `music_assistant.play_media` (-> the domain-qualified
+        // music_assistant.play_media.sh) resolves a free-text name. Both must coexist without the
+        // qualified name colliding with the bare one, and exec must route to the right domain/service.
+        var client = new FakeHaClient
+        {
+            States = { Entity("media_player.office", "idle") },
+            Services =
+            {
+                Service("media_player", "play_media", DomainTarget("media_player"),
+                    ("media_content_id", new HaServiceField { Required = true }),
+                    ("media_content_type", new HaServiceField { Required = true })),
+                Service("music_assistant", "play_media", DomainTarget("media_player"),
+                    ("media_id", new HaServiceField { Required = true }))
+            }
+        };
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
+
+        var result = await fs.ExecAsync("entities/media_player/office",
+            "music_assistant.play_media.sh --media_id \"miles davis\"", null, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
+        client.LastCall!.Value.Domain.ShouldBe("music_assistant");
+        client.LastCall.Value.Service.ShouldBe("play_media");
+        client.LastCall.Value.EntityId.ShouldBe("media_player.office");
+        client.LastCall.Value.Data!["media_id"]!.GetValue<string>().ShouldBe("miles davis");
+    }
+
     private sealed class BlockingHaClient : FakeHaClient
     {
         public override async Task<HaServiceCallResult> CallServiceAsync(

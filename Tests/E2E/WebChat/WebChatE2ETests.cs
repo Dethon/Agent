@@ -107,7 +107,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         }
     }
 
-    private static async Task DismissApprovalOverlayAsync(IPage page)
+    internal static async Task DismissApprovalOverlayAsync(IPage page)
     {
         var overlay = page.Locator(".approval-modal-overlay");
         if (await overlay.IsVisibleAsync())

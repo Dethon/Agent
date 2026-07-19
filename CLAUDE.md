@@ -18,7 +18,7 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | `McpChannelSignalR` | WebChat/SignalR channel — hosts SignalR hub, streams, approvals, push notifications |
 | `McpChannelTelegram` | Telegram channel — multi-bot polling (one bot per agent), inline keyboard approvals |
 | `McpChannelServiceBus` | Azure Service Bus channel — queue processor, auto-approval |
-| `McpChannelVoice` | Voice channel — Wyoming hub that dials hardware satellites, whisper STT, piper TTS, follow-up windows, announcements |
+| `McpChannelVoice` | Voice channel — Wyoming hub that dials hardware satellites, whisper STT, piper TTS, follow-up windows, announcements; dual-role: exposes `filesystem://timers` (hub-local countdown timers that ring insistently) |
 | `McpServerScheduling` | Scheduling server — dual-role: `filesystem://schedules` VFS + channel that fires due schedules as `channel/message` |
 | `McpServerPrinter` | Printer server — `filesystem://print-queue` VFS that submits copied/created files to a configured IPP/CUPS printer |
 | `WebChat`/`.Client` | Blazor WebAssembly chat interface, Redux-like state (Stores + Effects + HubEventDispatcher) |
@@ -117,10 +117,10 @@ Pick the override file matching your OS:
 
 ```bash
 # Linux / WSL
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer wyoming-whisper wyoming-piper qbittorrent jackett redis caddy camoufox homeassistant
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer wyoming-whisper wyoming-piper qbittorrent jackett redis caddy camoufox homeassistant music-assistant
 
 # Windows
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer wyoming-whisper wyoming-piper qbittorrent jackett redis caddy camoufox homeassistant
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer wyoming-whisper wyoming-piper qbittorrent jackett redis caddy camoufox homeassistant music-assistant
 ```
 
 The base compose maps `/dev/dri` into `plex`/`mcp-sandbox` for GPU hardware acceleration. Hosts **without** a DRI render node (NVIDIA-only WSL2 has `/dev/dxg` + the NVIDIA Container Toolkit, never `/dev/dri`) will fail with `error gathering device information while adding custom device "/dev/dri"`. On those hosts, append `-f DockerCompose/docker-compose.override.no-dri.yml` as the last `-f` to strip the device. (The VS Code `docker-debug-up` task already includes this override — debug never needs the GPU.)
@@ -145,6 +145,10 @@ Home Assistant runs at `http://<host>:8123` (port published on all interfaces so
 2. From the user profile menu, open **Security → Long-Lived Access Tokens** and create one.
 3. Set `HOMEASSISTANT__TOKEN=...` in `DockerCompose/.env` and restart the `mcp-homeassistant` container.
 4. To control the Roborock S8: Settings → Devices & Services → Add Integration → **Roborock**, log in with the Roborock account; the vacuum appears as `vacuum.<name>` once the integration finishes.
+
+For voice alarms/reminders, the agent creates events on a dedicated `calendar.assistant_alarms`
+calendar that an HA automation bridges to the voice announce endpoint — see
+`docs/home-assistant-alarms.md` for the one-time `rest_command` + automation provisioning.
 
 The agent reaches HA inside the compose network at `http://homeassistant:8123` via the `McpServerHomeAssistant` MCP server.
 
@@ -209,6 +213,8 @@ Web browsing runs in McpServerWebSearch via three tools: `web_browse` (navigate 
 ### Camoufox
 
 The `camoufox` Docker service provides an anti-detect browser (Firefox-based) for web scraping. McpServerWebSearch connects to it via WebSocket (`ws://camoufox:9377/browser`). Configuration is in `McpServerWebSearch/Settings/McpSettings.cs` (`CamoufoxConfiguration`).
+
+**Bumping `Microsoft.Playwright` is a two-sided change.** Playwright's connect handshake demands an exact client/server minor match — a mismatch fails with HTTP 428 `Playwright version mismatch`, not a subtle bug. So `DockerCompose/camoufox/Dockerfile` must move in lockstep: both the `mcr.microsoft.com/playwright:vX.Y.0-noble` base and `playwright-core@X.Y.0`. Camoufox's bundled Firefox carries its own (older) juggler protocol, so a new playwright-core can also send fields it rejects; `patch-viewport.js` strips the `screenSize`/`isMobile` fields 1.61 added (upstream [camoufox#653](https://github.com/daijro/camoufox/issues/653) — their own Python library just pins `playwright<1.61`). Both `patch-*.js` scripts are anchor-checked and **exit 1 when their anchor disappears**, so a version bump fails the image build loudly instead of shipping a broken browser. Rebuild the image and run `Tests/Integration/Clients/` (Camoufox, ModalDismisser, PlaywrightWebBrowser, jQuery-widget) after any bump.
 
 ### Debugging with Playwright
 

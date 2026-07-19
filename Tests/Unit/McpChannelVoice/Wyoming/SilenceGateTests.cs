@@ -163,4 +163,27 @@ public class SilenceGateTests
             Feed(gate, Silent()).ShouldNotBe(SilenceGate.Decision.NoSpeech);
         }
     }
+
+    [Fact]
+    public void PeakRms_TracksLoudestChunkSeen()
+    {
+        var gate = NewGate();
+
+        Feed(gate, Silent());
+        Feed(gate, Loud());
+        Feed(gate, Silent());
+
+        gate.PeakRms.ShouldBe(8000, 1.0);
+    }
+
+    [Fact]
+    public void PeakRms_Reset_ClearsIt()
+    {
+        var gate = NewGate();
+        Feed(gate, Loud());
+
+        gate.Reset();
+
+        gate.PeakRms.ShouldBe(0);
+    }
 }

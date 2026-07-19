@@ -42,6 +42,7 @@ public static class ConfigModule
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
             .AddSingleton<IScheduleStore, RedisScheduleStore>()
             .AddSingleton<ICronValidator, CronValidator>()
+            .AddSingleton(TimeProvider.System)
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())

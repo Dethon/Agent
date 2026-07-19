@@ -9,15 +9,16 @@ set -euo pipefail
 # tcp://host.docker.internal:SAT_PORT. Wake detection ("ok nabu") runs EMBEDDED in the
 # binary (tract) — no wyoming-openwakeword side process, no pipx, no Python venvs.
 #
-# Defaults match `McpChannelVoice/appsettings.Development.json`: port 10700 is
-# fran-office-01; SAT_PORT=10600 is laura-office-01. The hub identifies a satellite
+# Defaults match `McpChannelVoice/appsettings.Development.json`: port 10800 is
+# fran-office-01; SAT_PORT=10600 is laura-office-01. (10700 is deliberately NOT used
+# for dev — it is the production Pi satellite's port.) The hub identifies a satellite
 # purely by which address it dialed — the binary takes no name.
 #
 # Usage:
 #   ./scripts/wsl-satellite.sh
 #   SAT_PORT=10600 MIC_GAIN=2.0 THRESHOLD=0.6 ./scripts/wsl-satellite.sh
 
-SAT_PORT="${SAT_PORT:-10700}"
+SAT_PORT="${SAT_PORT:-10800}"
 THRESHOLD="${THRESHOLD:-0.5}"
 # Linear gain applied to mic audio BEFORE wake detection and streaming to the hub.
 # WSLg's RDPSource bridge caps at 0 dB, so a quiet Windows mic arrives quiet; measured

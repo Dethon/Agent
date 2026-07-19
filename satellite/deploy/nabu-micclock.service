@@ -1,0 +1,20 @@
+# Capture-clock feeder for USB mics whose capture path only runs while their OWN playback
+# stream is active (reSpeaker XVF3800: both UAC endpoints are Synchronous off one internal
+# clock, and the firmware gates the capture engine on the output stream — capture-only opens
+# EIO on read, and a running capture dies the instant playback stops; verified on-device).
+# Feeding an endless zero stream to the (unconnected) speaker output keeps the capture engine
+# clocked 24/7 so the satellite's plain `arecord` works like on any normal mic. Costs ~64 KB/s
+# of USB zeros and ~0% CPU. Provisioning installs this only when its capture-alone probe fails
+# (see scripts/provision-satellite-rs.sh); MICDEV/%i are rewritten at install time.
+[Unit]
+Description=Mic capture-clock feeder for nabu satellite (%i)
+After=sound.target
+
+[Service]
+ExecStart=/usr/bin/aplay -D MICDEV -r 16000 -c 2 -f S16_LE -t raw /dev/zero
+Restart=always
+RestartSec=2
+User=%i
+
+[Install]
+WantedBy=multi-user.target

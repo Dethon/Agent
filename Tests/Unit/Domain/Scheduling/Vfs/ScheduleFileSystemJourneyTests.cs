@@ -7,6 +7,7 @@ using Domain.DTOs.FileSystem;
 using Domain.Tools;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.Validation;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Xunit;
 
@@ -18,6 +19,9 @@ public class ScheduleFileSystemJourneyTests
 {
     private const string ValidSpec = """{"prompt":"summarize news","cron":"0 8 * * *"}""";
 
+    private static readonly TimeZoneInfo _testZone =
+        TimeZoneInfo.CreateCustomTimeZone("test-plus2", TimeSpan.FromHours(2), "test-plus2", "test-plus2");
+
     private static ScheduleFileSystem Build(
         FakeScheduleStore? store = null,
         params AgentCatalogEntry[] agents)
@@ -27,7 +31,9 @@ public class ScheduleFileSystemJourneyTests
             ? new[] { new AgentCatalogEntry("jonas", "Jonas", "general") }
             : agents;
         catalog.Replace(entries);
-        return new ScheduleFileSystem(store ?? new FakeScheduleStore(), catalog, new CronValidator());
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        clock.SetLocalTimeZone(_testZone);
+        return new ScheduleFileSystem(store ?? new FakeScheduleStore(), catalog, new CronValidator(), clock);
     }
 
     private static Schedule SeedSchedule(string id = "morning-news", string agentId = "jonas",
@@ -300,7 +306,7 @@ public class ScheduleFileSystemJourneyTests
     }
 
     [Fact]
-    public async Task Create_RejectsDuplicateIdConflictingTriggersAndUnzonedRunAt()
+    public async Task Create_RejectsDuplicateIdAndConflictingTriggers()
     {
         var store = new FakeScheduleStore();
         await store.CreateAsync(SeedSchedule());
@@ -315,18 +321,26 @@ public class ScheduleFileSystemJourneyTests
             """{"prompt":"p","cron":"0 8 * * *","runAt":"2999-01-01T00:00:00Z"}""",
             false, true, CancellationToken.None);
         both.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+    }
 
-        // runAt without a timezone — rejected (no zone).
-        var noZone = await fs.CreateAsync("/jonas/once/schedule.json",
-            """{"prompt":"p","runAt":"2999-01-01T00:00:00"}""",
-            false, true, CancellationToken.None);
-        noZone.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+    [Theory]
+    [InlineData("2999-01-01T00:00:00", "2998-12-31T22:00:00")]    // bare → local +02:00 → UTC
+    [InlineData("2999-01-01T14:30:00.5", "2999-01-01T12:30:00.5")] // bare with fractional seconds
+    public async Task Create_BareRunAt_InterpretedInLocalZone(string runAtInput, string expectedUtc)
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store);
 
-        // runAt without a timezone — rejected (no zone, fractional seconds).
-        var noZoneFraction = await fs.CreateAsync("/jonas/once/schedule.json",
-            """{"prompt":"p","runAt":"2999-01-01T14:30:00.5"}""",
+        var result = await fs.CreateAsync(
+            "/jonas/wake/schedule.json",
+            $$"""{"prompt":"p","runAt":"{{runAtInput}}"}""",
             false, true, CancellationToken.None);
-        noZoneFraction.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+
+        result.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        var saved = store.Items["wake"];
+        saved.RunAt!.Value.Kind.ShouldBe(DateTimeKind.Utc);
+        saved.RunAt.ShouldBe(DateTime.SpecifyKind(
+            DateTime.Parse(expectedUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind), DateTimeKind.Utc));
     }
 
     [Theory]
@@ -450,6 +464,33 @@ public class ScheduleFileSystemJourneyTests
         var ghostFs = Build();
         (await ghostFs.ExecAsync("/jonas/ghost", "run_now.sh", null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsExecResult>.Err>();
+    }
+
+    [Fact]
+    public async Task Create_BareRunAt_InDstGap_ReturnsInvalidArgumentError()
+    {
+        // Europe/Madrid spring-forward 2027: 02:00 local → 03:00 (gap), so 02:30 does not exist.
+        var madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
+        var gapTime = new DateTime(2027, 3, 28, 2, 30, 0, DateTimeKind.Unspecified);
+
+        // Precondition: verify our tz database actually has a gap at this instant.
+        madrid.IsInvalidTime(gapTime).ShouldBeTrue("2027-03-28T02:30 must fall in the Europe/Madrid DST gap");
+
+        var store = new FakeScheduleStore();
+        var catalog = new MutableAgentCatalog();
+        catalog.Replace([new AgentCatalogEntry("jonas", "Jonas", "general")]);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        clock.SetLocalTimeZone(madrid);
+        var fs = new ScheduleFileSystem(store, catalog, new CronValidator(), clock);
+
+        var result = await fs.CreateAsync(
+            "/jonas/wake/schedule.json",
+            """{"prompt":"p","runAt":"2027-03-28T02:30:00"}""",
+            false, true, CancellationToken.None);
+
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+        err.Error.Message.ShouldContain("daylight-saving gap");
     }
 
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> AsyncEmpty()

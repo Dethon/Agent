@@ -47,9 +47,10 @@ public static class HaTree
     private static IEnumerable<string> LeafFiles(string entityDir, string entityId, HaCatalog catalog)
     {
         yield return $"{entityDir}/{HaVfsPath.StateFileName}";
+        var classDomain = HaCatalog.ClassOf(entityId);
         foreach (var svc in HaActionResolver.ServicesFor(entityId, catalog.Services))
         {
-            yield return $"{entityDir}/{svc.Service}.sh";
+            yield return $"{entityDir}/{HaActionResolver.CommandName(svc, classDomain)}.sh";
         }
     }
 

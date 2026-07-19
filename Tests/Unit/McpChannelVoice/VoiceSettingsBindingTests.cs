@@ -28,7 +28,7 @@ public class VoiceSettingsBindingTests
             "MaxTextLength": 500
           },
           "Satellites": {
-            "kitchen-01": { "Identity": "household", "Room": "Kitchen", "WakeWord": "hey_jarvis", "Address": "tcp://host.docker.internal:10800" }
+            "kitchen-01": { "Identity": "household", "Room": "Kitchen", "WakeWord": "hey_jarvis", "Address": "tcp://host.docker.internal:10800", "Gate": { "SilenceRmsThreshold": 900, "MinSpeechMs": 400 } }
           }
         }
         """;
@@ -50,6 +50,9 @@ public class VoiceSettingsBindingTests
         settings.Satellites.Count.ShouldBe(1);
         settings.Satellites["kitchen-01"].Identity.ShouldBe("household");
         settings.Satellites["kitchen-01"].Address.ShouldBe("tcp://host.docker.internal:10800");
+        settings.Satellites["kitchen-01"].Gate.ShouldNotBeNull();
+        settings.Satellites["kitchen-01"].Gate!.SilenceRmsThreshold.ShouldBe(900);
+        settings.Satellites["kitchen-01"].Gate!.MinSpeechMs.ShouldBe(400);
     }
 
     [Fact]

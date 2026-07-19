@@ -96,9 +96,8 @@ public sealed class SegmentedSpeechToText(
                 results.Add(await seg.Task);
             }
 
-            var confidences = results
-                .Where(r => r.Confidence is not null)
-                .Select(r => r.Confidence!.Value)
+            var weighted = segments
+                .Select((seg, i) => (Weight: Math.Max(DurationSeconds(seg.Audio), 1e-9), Result: results[i]))
                 .ToList();
 
             logger.LogInformation("Segmented STT finalized {Segments} segment(s)", segments.Count);
@@ -108,7 +107,10 @@ public sealed class SegmentedSpeechToText(
                     .Select(r => r.Text?.Trim())
                     .Where(t => !string.IsNullOrEmpty(t))),
                 Language = results.Select(r => r.Language).FirstOrDefault(l => l is not null),
-                Confidence = confidences.Count > 0 ? confidences.Average() : null
+                Confidence = WeightedMean(weighted, r => r.Confidence),
+                AvgLogProb = WeightedMean(weighted, r => r.AvgLogProb),
+                NoSpeechProb = WeightedMean(weighted, r => r.NoSpeechProb),
+                CompressionRatio = results.Max(r => r.CompressionRatio)
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -141,6 +143,29 @@ public sealed class SegmentedSpeechToText(
                 }
             }
         }, ct);
+
+    // Segments differ in length, so a plain mean would let a half-second noise segment outvote
+    // ten seconds of clean speech (and vice versa). Weight by audio duration; segments that
+    // report no value abstain rather than dragging the average (fail-open composition).
+    private static double? WeightedMean(
+        IReadOnlyList<(double Weight, TranscriptionResult Result)> weighted,
+        Func<TranscriptionResult, double?> selector)
+    {
+        var pairs = weighted
+            .Where(w => selector(w.Result) is not null)
+            .Select(w => (w.Weight, Value: selector(w.Result)!.Value))
+            .ToList();
+        return pairs.Count > 0
+            ? pairs.Sum(p => p.Weight * p.Value) / pairs.Sum(p => p.Weight)
+            : null;
+    }
+
+    private static double DurationSeconds(IReadOnlyList<AudioChunk> chunks) =>
+        chunks.Sum(c =>
+        {
+            var bytesPerSecond = c.Format.SampleRateHz * c.Format.SampleWidthBytes * c.Format.Channels;
+            return bytesPerSecond == 0 ? 0 : (double)c.Data.Length / bytesPerSecond;
+        });
 
     private static void ObserveAndDiscard(Task task) =>
         _ = task.ContinueWith(

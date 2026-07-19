@@ -14,7 +14,7 @@ internal sealed class CapturingEmitter : ChannelNotificationEmitter
 
     public override Task EmitMessageNotificationAsync(
         string conversationId, string sender, string content, string? agentId, string? location,
-        string? satelliteId, CancellationToken ct = default)
+        string? satelliteId, string? dismissedAlert, CancellationToken ct = default)
     {
         Captured.Add(new ChannelMessageNotification
         {
@@ -23,7 +23,8 @@ internal sealed class CapturingEmitter : ChannelNotificationEmitter
             Content = content,
             AgentId = agentId,
             Location = location,
-            SatelliteId = satelliteId
+            SatelliteId = satelliteId,
+            DismissedAlert = dismissedAlert
         });
         return Task.CompletedTask;
     }

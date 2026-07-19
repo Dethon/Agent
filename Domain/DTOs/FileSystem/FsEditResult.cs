@@ -6,6 +6,7 @@ public sealed record FsEditResult
     public required string FilePath { get; init; }
     public required int TotalOccurrencesReplaced { get; init; }
     public required IReadOnlyList<FsEditDetail> Edits { get; init; }
+    public string? Note { get; init; }
 }
 
 public sealed record FsEditDetail
