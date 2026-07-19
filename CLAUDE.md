@@ -214,6 +214,8 @@ Web browsing runs in McpServerWebSearch via three tools: `web_browse` (navigate 
 
 The `camoufox` Docker service provides an anti-detect browser (Firefox-based) for web scraping. McpServerWebSearch connects to it via WebSocket (`ws://camoufox:9377/browser`). Configuration is in `McpServerWebSearch/Settings/McpSettings.cs` (`CamoufoxConfiguration`).
 
+**Bumping `Microsoft.Playwright` is a two-sided change.** Playwright's connect handshake demands an exact client/server minor match — a mismatch fails with HTTP 428 `Playwright version mismatch`, not a subtle bug. So `DockerCompose/camoufox/Dockerfile` must move in lockstep: both the `mcr.microsoft.com/playwright:vX.Y.0-noble` base and `playwright-core@X.Y.0`. Camoufox's bundled Firefox carries its own (older) juggler protocol, so a new playwright-core can also send fields it rejects; `patch-viewport.js` strips the `screenSize`/`isMobile` fields 1.61 added (upstream [camoufox#653](https://github.com/daijro/camoufox/issues/653) — their own Python library just pins `playwright<1.61`). Both `patch-*.js` scripts are anchor-checked and **exit 1 when their anchor disappears**, so a version bump fails the image build loudly instead of shipping a broken browser. Rebuild the image and run `Tests/Integration/Clients/` (Camoufox, ModalDismisser, PlaywrightWebBrowser, jQuery-widget) after any bump.
+
 ### Debugging with Playwright
 
 When automating the WebChat with Playwright, use `ignoreHTTPSErrors: true` for the browser context when testing locally (the Let's Encrypt certificate is valid for `assistants.herfluffness.com`, not `localhost`). You must select a user identity from the avatar picker in the header before sending messages, otherwise sends are silently rejected with a toast error.
