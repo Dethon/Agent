@@ -72,11 +72,18 @@ public static class ConfigModule
                 sp.GetRequiredService<ReplyTextAccumulator>(),
                 sp.GetRequiredService<ILogger<VoiceDeliveryRegistry>>()));
 
+        const string lemonadeHttpClient = "lemonade";
+        // Streaming TTS reads can outlive the default 100 s client timeout on long replies;
+        // cancellation is driven by the per-turn CancellationToken instead.
+        services.AddHttpClient(lemonadeHttpClient)
+            .ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan);
+
         services.AddSingleton<ISpeechToText>(sp =>
         {
-            var inner = new McpChannelVoice.Services.Stt.WyomingSpeechToText(
-                settings.Stt.Wyoming,
-                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.WyomingSpeechToText>>());
+            var inner = new McpChannelVoice.Services.Stt.OpenAiSpeechToText(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(lemonadeHttpClient),
+                settings.Stt.OpenAi,
+                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.OpenAiSpeechToText>>());
 
             return McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
                 inner, settings.Stt.Streaming, sp.GetRequiredService<ILoggerFactory>());
@@ -89,12 +96,11 @@ public static class ConfigModule
 
         services.AddSingleton<ITextToSpeech>(sp =>
             McpChannelVoice.Services.Tts.SilenceTrimmingTextToSpeech.Wrap(
-                new McpChannelVoice.Services.Tts.WyomingTextToSpeech(
-                    settings.Tts.Wyoming,
-                    sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.WyomingTextToSpeech>>()),
-                settings.Tts.Wyoming.TrailingSilenceTrimThreshold));
-
-        services.AddHostedService<WyomingHealthProbeService>();
+                new McpChannelVoice.Services.Tts.OpenAiTextToSpeech(
+                    sp.GetRequiredService<IHttpClientFactory>().CreateClient(lemonadeHttpClient),
+                    settings.Tts.OpenAi,
+                    sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.OpenAiTextToSpeech>>()),
+                settings.Tts.OpenAi.TrailingSilenceTrimThreshold));
 
         services.AddSingleton(settings.Announce);
         services.AddSingleton<AnnouncementService>();

@@ -146,7 +146,7 @@ public sealed class InsistentAnnouncementController(
     {
         // One synthesis per alert, replayed every round/satellite. Per-satellite voice overrides are not
         // applied to insistent alerts in v1 (single synthesis); the request voice or global voice is used.
-        var voice = request.Voice ?? settings.Tts.Wyoming.Voice;
+        var voice = request.Voice ?? settings.Tts.OpenAi.Voice;
         var options = new SynthesisOptions { Voice = voice };
         var chunks = new List<AudioChunk> { AlarmTone.Chunk(request.Kind) };
         await foreach (var chunk in tts.SynthesizeAsync(request.Text, options, ct))
