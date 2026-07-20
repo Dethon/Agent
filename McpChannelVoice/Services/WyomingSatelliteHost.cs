@@ -255,9 +255,9 @@ public sealed class WyomingSatelliteHost(
                 PublishVoiceMetric(VoiceMetric.FollowUpWindowOpened, session);
                 return Task.CompletedTask;
             },
-            OnSilenceTimeout = token =>
+            OnSilenceTimeout = (stats, token) =>
             {
-                PublishVoiceMetric(VoiceMetric.FollowUpTimedOut, session);
+                PublishVoiceMetric(VoiceMetric.FollowUpTimedOut, session, stats);
                 return Task.CompletedTask;
             },
             OnReplyTimeout = token =>
@@ -360,13 +360,18 @@ public sealed class WyomingSatelliteHost(
         session.NoteDismissedAlert(description, time.GetUtcNow());
     }
 
-    private void PublishVoiceMetric(VoiceMetric metric, SatelliteSession session) =>
+    private void PublishVoiceMetric(VoiceMetric metric, SatelliteSession session, CaptureStats? stats = null) =>
         _ = SafePublishAsync(new VoiceEvent
         {
             Metric = metric,
             SatelliteId = session.SatelliteId,
             Room = session.Config.Room,
             Identity = session.Config.Identity,
+            PeakRms = stats?.PeakRms,
+            SpeechMs = stats?.SpeechMs,
+            FloorRms = stats?.FloorRms,
+            TrailingRms = stats?.TrailingRms,
+            EndReason = stats?.EndReason,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
         });
 

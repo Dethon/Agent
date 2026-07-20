@@ -198,7 +198,7 @@ public class TranscriptDispatcherTests
                 CompressionRatio = 1.3
             },
             "agent-1",
-            new CaptureStats(PeakRms: 4200, FloorRms: 320, SpeechMs: 1800, EndReason: "trailing_silence"),
+            new CaptureStats(PeakRms: 4200, FloorRms: 320, SpeechMs: 1800, EndReason: "trailing_silence", TrailingRms: 610),
             default);
 
         ok.ShouldBeTrue();
@@ -211,6 +211,7 @@ public class TranscriptDispatcherTests
         evt.PeakRms.ShouldBe(4200);
         evt.SpeechMs.ShouldBe(1800);
         evt.FloorRms.ShouldBe(320);
+        evt.TrailingRms.ShouldBe(610);
         evt.EndReason.ShouldBe("trailing_silence");
     }
 

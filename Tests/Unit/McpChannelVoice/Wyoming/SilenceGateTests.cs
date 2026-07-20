@@ -330,6 +330,39 @@ public class SilenceGateTests
     }
 
     [Fact]
+    public void TrailingRms_ExposesMeanLevelOfTheTrailingRun()
+    {
+        var gate = BabbleGate();
+        foreach (var _ in Enumerable.Range(0, 8))
+        {
+            Feed(gate, Tone(2000));
+        }
+        Feed(gate, Tone(8000)); // user speaks
+        Feed(gate, Tone(8000));
+
+        Feed(gate, Tone(2000)); // back to babble: trailing run
+        gate.TrailingRms.ShouldBe(2000, 1.0);
+
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.EndUtterance);
+        gate.TrailingRms.ShouldBe(2000, 1.0); // still readable once the capture ends (stats path)
+    }
+
+    [Fact]
+    public void TrailingRms_SpeechResumingResetsTheRun()
+    {
+        var gate = BabbleGate();
+        foreach (var _ in Enumerable.Range(0, 8))
+        {
+            Feed(gate, Tone(2000));
+        }
+        Feed(gate, Tone(8000));  // speech
+        Feed(gate, Tone(2000));  // trailing babble
+        Feed(gate, Tone(24000)); // speech resumes above any bar: run resets
+
+        gate.TrailingRms.ShouldBe(0);
+    }
+
+    [Fact]
     public void FloorRms_ExposesTrackerEstimate()
     {
         var gate = BabbleGate();

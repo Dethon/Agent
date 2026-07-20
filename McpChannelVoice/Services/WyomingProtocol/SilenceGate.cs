@@ -37,6 +37,12 @@ public sealed class SilenceGate(
 
     public double FloorRms => tracker.FloorRms;
 
+    // Mean RMS of the current trailing run — the demote check's background reference.
+    // Published with capture stats so the prominence margin can be tuned from field data.
+    public double TrailingRms => _trailingSilence > TimeSpan.Zero
+        ? Math.Sqrt(_trailingEnergyMs / _trailingSilence.TotalMilliseconds)
+        : 0;
+
     public string? EndReason { get; private set; }
 
     public Decision Process(ReadOnlySpan<byte> pcm, int sampleRateHz, int sampleWidthBytes, int channels)
