@@ -106,6 +106,10 @@ public class RequestApprovalToolTests : IDisposable
         new() { Data = new byte[3200], Format = AudioFormat.WyomingStandard };
 
     // Whenever the tool opens a capture, feed one speech-then-silence answer into it.
+    // Five silent chunks (500 ms) — not three — because the capture opens with no
+    // leading gap: the floor tracker's smoothed floor needs a full smoothing window
+    // of true silence to descend enough for the next "Loud" burst to cross the entry
+    // bar (a shorter gap is exactly what the smoothing is designed to ride through).
     private Task FeedAnswersAsync(CancellationToken ct) => Task.Run(async () =>
     {
         while (!ct.IsCancellationRequested)
@@ -114,6 +118,8 @@ public class RequestApprovalToolTests : IDisposable
             {
                 _session.RouteAudio(Loud());
                 _session.RouteAudio(Loud());
+                _session.RouteAudio(Silent());
+                _session.RouteAudio(Silent());
                 _session.RouteAudio(Silent());
                 _session.RouteAudio(Silent());
                 _session.RouteAudio(Silent());

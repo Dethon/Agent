@@ -24,11 +24,15 @@ public sealed class AdaptiveLevelTracker(
     double enterMarginDb,
     double exitMarginDb,
     double peakDropDb,
-    TimeSpan floorWindow)
+    TimeSpan floorWindow,
+    TimeSpan? floorSmoothing = null)
 {
     private readonly double _clampDb = ToDb(clampRms);
+    private readonly double _floorSmoothingMs = (floorSmoothing ?? TimeSpan.FromMilliseconds(500)).TotalMilliseconds;
     private readonly Queue<(double DurationMs, double RmsDb)> _window = new();
+    private readonly Queue<(double DurationMs, double Energy)> _smoothing = new();
     private double _windowMs;
+    private double _smoothingMs;
     private double _peakDb = double.NegativeInfinity;
     private bool _active;
 
@@ -39,7 +43,7 @@ public sealed class AdaptiveLevelTracker(
     public bool IsSpeech(double rms, double durationMs)
     {
         var rmsDb = ToDb(rms);
-        UpdateFloor(rmsDb, durationMs);
+        UpdateFloor(rms, durationMs);
 
         // Two-threshold hysteresis: enter high, exit low. In a quiet room both
         // collapse to the clamp, reproducing the legacy single-threshold gate.
@@ -58,16 +62,36 @@ public sealed class AdaptiveLevelTracker(
         return _active;
     }
 
-    private void UpdateFloor(double rmsDb, double durationMs)
+    private void UpdateFloor(double rms, double durationMs)
     {
         if (durationMs <= 0)
         {
             // A zero-duration frame (malformed/empty payload) would enqueue without ever
-            // advancing _windowMs (unbounded queue growth) and its rms of 0 would slam the
-            // floor to 0 dB for a full window — drop it instead of letting it enter.
+            // advancing _windowMs/_smoothingMs (unbounded queue growth) and its rms of 0
+            // would slam the floor to 0 dB for a full window — drop it instead of letting
+            // it enter either accumulator.
             return;
         }
-        _window.Enqueue((durationMs, rmsDb));
+
+        // Feed the min-window with SMOOTHED energy, not the raw chunk level. Real TV dialog
+        // is bursty: it drops to near room silence for 100-400 ms between phrases, and a
+        // raw-min floor latches onto those lulls (measured in the field: FloorRms 72-97 with
+        // the TV on), so TV bursts read as speech and the adaptive gate never engages. A
+        // duration-weighted moving average of chunk ENERGY (mean square) over a trailing
+        // smoothing window rides at the TV's speaking level through sub-window lulls —
+        // energy-domain averaging is dominated by the loud chunks — while a sustained quiet
+        // stretch (>= the smoothing window) still pulls it down within about one window.
+        var energy = rms * rms;
+        _smoothing.Enqueue((durationMs, energy));
+        _smoothingMs += durationMs;
+        while (_smoothing.Count > 1 && _smoothingMs - _smoothing.Peek().DurationMs >= _floorSmoothingMs)
+        {
+            _smoothingMs -= _smoothing.Dequeue().DurationMs;
+        }
+        var smoothedEnergy = _smoothing.Sum(e => e.Energy * e.DurationMs) / _smoothingMs;
+        var smoothedDb = 10 * Math.Log10(Math.Max(smoothedEnergy, 1));
+
+        _window.Enqueue((durationMs, smoothedDb));
         _windowMs += durationMs;
         while (_window.Count > 1 && _windowMs - _window.Peek().DurationMs >= floorWindow.TotalMilliseconds)
         {

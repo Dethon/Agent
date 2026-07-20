@@ -135,8 +135,12 @@ public class SegmentedSpeechToTextTests
             return new TranscriptionResult { Text = count.ToString() };
         });
 
+        // Leading Silence(1) seeds the floor (pre-roll gap): without it the smoothed
+        // floor tracker seeds itself at speech level (no leading gap to re-seed it),
+        // and a 300 ms mid-stream gap alone is shorter than the 500 ms smoothing
+        // window and can't pull it back down — no segment would ever close.
         await New(inner, Config(maxInFlight: 1)).TranscribeAsync(
-            Stream(Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
+            Stream(Silence(1), Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
             new TranscriptionOptions(), CancellationToken.None);
 
         inner.MaxConcurrent.ShouldBe(1);
@@ -154,8 +158,10 @@ public class SegmentedSpeechToTextTests
             return new TranscriptionResult { Text = count.ToString() };
         });
 
+        // Leading Silence(1) seeds the floor (pre-roll gap) — see the identical note
+        // on TranscribeAsync_ManySegments_RespectsMaxInFlightDecodes above.
         await New(inner, Config(maxInFlight: 2)).TranscribeAsync(
-            Stream(Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
+            Stream(Silence(1), Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
             new TranscriptionOptions(), CancellationToken.None);
 
         inner.MaxConcurrent.ShouldBe(2);
@@ -216,8 +222,10 @@ public class SegmentedSpeechToTextTests
         var inner = new FakeStt(count =>
             Task.FromResult(new TranscriptionResult { Text = count.ToString(), Confidence = 0.8 }));
 
+        // Leading Silence(1) seeds the floor (pre-roll gap) — see the identical note
+        // on TranscribeAsync_ManySegments_RespectsMaxInFlightDecodes above.
         var result = await New(inner).TranscribeAsync(
-            Stream(Speech(6), Silence(3), Speech(7)),
+            Stream(Silence(1), Speech(6), Silence(3), Speech(7)),
             new TranscriptionOptions(), CancellationToken.None);
 
         result.Confidence.ShouldNotBeNull();
@@ -301,10 +309,13 @@ public class SegmentedSpeechToTextTests
             NullLogger<SegmentedSpeechToText>.Instance);
 
         // babble(8): floor converges at 2000; speech(6): a 600 ms phrase (> 500 ms
-        // MinSegmentMs); babble(4): inter-phrase "silence" (>= 300 ms SegmentSilenceMs
-        // closes the segment); second phrase; babble tail.
+        // MinSegmentMs); babble(5): inter-phrase "silence" — needs >= the 500 ms
+        // smoothing window (not just >= 300 ms SegmentSilenceMs) for the smoothed
+        // floor to fully return to babble level before the next phrase, else it
+        // stays elevated from the preceding speech burst and the second phrase
+        // never crosses the entry bar; second phrase; babble tail.
         var result = await sut.TranscribeAsync(
-            Stream(Babble(8), Speech(6), Babble(4), Speech(6), Babble(4)),
+            Stream(Babble(8), Speech(6), Babble(5), Speech(6), Babble(4)),
             new TranscriptionOptions(), CancellationToken.None);
 
         // With the old fixed 500 threshold, babble RMS 2000 never reads as silence and

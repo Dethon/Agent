@@ -177,3 +177,10 @@ scope.
    tests (and sustained tones like humming) must keep the floor window longer
    than their longest dip-free run — the pin test uses 800 ms for its 600 ms
    runs. Production keeps FloorWindowMs 3000, well above natural dip spacing.
+
+5. Field fix (2026-07-20, pi5): the floor min-window is fed duration-weighted
+   SMOOTHED energy (500 ms moving average) instead of raw chunk levels. Real TV
+   dialog pauses between phrases for 100-400 ms; the raw minimum latched onto
+   those lulls (measured FloorRms 72-97 = room silence with the TV on), leaving
+   the gate in clamp mode. Smoothing makes the floor ride the TV's speaking
+   level while sustained silence still lowers it within ~one smoothing window.

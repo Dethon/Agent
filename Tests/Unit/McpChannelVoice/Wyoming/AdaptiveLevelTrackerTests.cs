@@ -7,9 +7,10 @@ public class AdaptiveLevelTrackerTests
 {
     private const double ChunkMs = 100;
 
-    private static AdaptiveLevelTracker Tracker(int floorWindowMs = 400) => new(
+    private static AdaptiveLevelTracker Tracker(int floorWindowMs = 400, int? floorSmoothingMs = null) => new(
         clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
-        floorWindow: TimeSpan.FromMilliseconds(floorWindowMs));
+        floorWindow: TimeSpan.FromMilliseconds(floorWindowMs),
+        floorSmoothing: floorSmoothingMs is null ? null : TimeSpan.FromMilliseconds(floorSmoothingMs.Value));
 
     private static bool Feed(AdaptiveLevelTracker tracker, double rms) =>
         tracker.IsSpeech(rms, ChunkMs);
@@ -49,12 +50,17 @@ public class AdaptiveLevelTrackerTests
     }
 
     [Fact]
-    public void FloorDb_LevelDrops_FallsImmediately()
+    public void FloorDb_SustainedLevelDrop_FallsWithinSmoothingWindow()
     {
         var tracker = Tracker();
         FeedAll(tracker, 2000, 6);
 
-        Feed(tracker, 0); // duck engages / TV muted
+        // A single 100 ms zero chunk no longer craters the floor (energy-domain
+        // smoothing averages it with the adjacent loud chunks, and stays dominated
+        // by them) — that's the point of the fix. A SUSTAINED drop spanning the
+        // 500 ms smoothing window (5 chunks) still pulls the floor down to true
+        // silence, just delayed by about one smoothing window.
+        FeedAll(tracker, 0, 5); // duck engages / TV muted, held past the smoothing window
 
         tracker.FloorDb.ShouldBe(0, 0.01);
         tracker.FloorRms.ShouldBe(1, 0.01);
@@ -63,7 +69,10 @@ public class AdaptiveLevelTrackerTests
     [Fact]
     public void FloorDb_LevelSteps_ConvergesAfterWindowTurnover()
     {
-        var tracker = Tracker();
+        // Explicit near-zero smoothing: this test's intent is the min-window
+        // turnover mechanics, not the smoothing feature, so disable smoothing
+        // (window <= one chunk) to keep its original pinned arithmetic valid.
+        var tracker = Tracker(floorSmoothingMs: 100);
         FeedAll(tracker, 0, 6);      // quiet baseline
         FeedAll(tracker, 2000, 3);   // duck restore: window still holds quiet frames
 
@@ -126,7 +135,12 @@ public class AdaptiveLevelTrackerTests
     [Fact]
     public void IsSpeech_CaptureOpensMidSpeech_RecoversAtFirstGap()
     {
-        var tracker = Tracker(floorWindowMs: 3000);
+        // Explicit near-zero smoothing: this test's intent is that a single
+        // inter-word dip re-seeds the min-window immediately, not the smoothing
+        // feature (which by design averages a single sub-window dip away — see
+        // FloorDb_SustainedLevelDrop_FallsWithinSmoothingWindow). Disabling
+        // smoothing (window <= one chunk) keeps the original pinned arithmetic.
+        var tracker = Tracker(floorWindowMs: 3000, floorSmoothingMs: 100);
 
         // Zero leading gap: the first loud chunks seed the floor at speech level
         // and read as silence. The first inter-word dip re-seeds the min and
@@ -162,5 +176,35 @@ public class AdaptiveLevelTrackerTests
         tracker.IsSpeech(0, 0);    // malformed frame: zero rms, zero duration
 
         tracker.FloorDb.ShouldBe(66.02, 0.1); // floor must not be slammed to 0 dB
+    }
+
+    [Fact]
+    public void IsSpeech_BurstyTvWithSubSecondLulls_StaysSilence()
+    {
+        // Field failure 2026-07-20: real TV dialog pauses for 100-400 ms between
+        // phrases; a raw-min floor latches onto those lulls (measured FloorRms 72-97
+        // = room silence with the TV on), so TV bursts read as speech. The smoothed
+        // floor must ride at the TV's speaking level instead.
+        var tracker = new AdaptiveLevelTracker(
+            clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
+            floorWindow: TimeSpan.FromMilliseconds(1200),
+            floorSmoothing: TimeSpan.FromMilliseconds(500));
+
+        foreach (var _ in Enumerable.Range(0, 3))
+        {
+            Feed(tracker, 2000).ShouldBeFalse();  // TV phrase
+        }
+        FeedAll(tracker, 0, 2);                   // 200 ms inter-phrase lull
+        foreach (var _ in Enumerable.Range(0, 3))
+        {
+            Feed(tracker, 2000).ShouldBeFalse();  // next TV phrase — must stay silence
+        }
+        FeedAll(tracker, 0, 2);
+        foreach (var _ in Enumerable.Range(0, 3))
+        {
+            Feed(tracker, 2000).ShouldBeFalse();
+        }
+
+        Feed(tracker, 8000).ShouldBeTrue();       // near-field user cuts through
     }
 }
