@@ -37,10 +37,26 @@ public record SatelliteConfig
 
     public int ResolveMinSpeechMs(WyomingClientSettings global) =>
         Gate?.MinSpeechMs ?? global.MinSpeechMs;
+
+    public int ResolveFloorWindowMs(WyomingClientSettings global) =>
+        Gate?.FloorWindowMs ?? global.FloorWindowMs;
+
+    public double ResolveEnterMarginDb(WyomingClientSettings global) =>
+        Gate?.EnterMarginDb ?? global.EnterMarginDb;
+
+    public double ResolveExitMarginDb(WyomingClientSettings global) =>
+        Gate?.ExitMarginDb ?? global.ExitMarginDb;
+
+    public double ResolvePeakDropDb(WyomingClientSettings global) =>
+        Gate?.PeakDropDb ?? global.PeakDropDb;
 }
 
 public record GateSettings
 {
     public double? SilenceRmsThreshold { get; init; }
     public int? MinSpeechMs { get; init; }
+    public int? FloorWindowMs { get; init; }
+    public double? EnterMarginDb { get; init; }
+    public double? ExitMarginDb { get; init; }
+    public double? PeakDropDb { get; init; }
 }
