@@ -126,8 +126,10 @@ following the existing `Gate`/`Resolve*` pattern.
 ### Failure handling
 
 Fail-open everywhere: missing/corrupt model, ONNX load or inference error,
-unreadable voices folder → log a warning, publish a `VerificationError`-style
-metric once, and run without the gate. Voice availability beats gating.
+unreadable voices folder → log a warning once and run without the gate. Voice
+availability beats gating. Gate inactivity is visible from the dashboard
+without a dedicated metric: `UtteranceTranscribed` events carry
+`Similarity = null` whenever verification did not run.
 
 ### Testing (TDD, red-green-refactor)
 
