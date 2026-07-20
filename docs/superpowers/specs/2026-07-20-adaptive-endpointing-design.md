@@ -167,8 +167,11 @@ scope.
    TV-only follow-up windows correctly time out as no_speech; on a TV-background
    wake turn the user must start speaking within the no-speech window (5 s), as
    today; a capture opening mid-loud-speech with zero leading gap reads that
-   speech as floor until the first inter-word dip re-seeds the minimum (the
-   satellite pre-roll's detection-latency gap supplies real gap frames).
+   speech as floor until a pause of roughly the smoothing window re-seeds the
+   minimum (superseded by refinement 5: sub-smoothing-window dips average away
+   by design; leading quiet still seeds the floor instantly because a partial
+   smoothing window contains only the quiet frames — the satellite pre-roll's
+   detection-latency gap supplies exactly that).
 3. Peak backstop armed only in the adaptive regime (floor + EnterMarginDb >
    clamp) so quiet-room loud-then-soft speech can never be clipped (Goal 3).
 4. The windowed-min floor climbs to speech level when fed constant-amplitude
