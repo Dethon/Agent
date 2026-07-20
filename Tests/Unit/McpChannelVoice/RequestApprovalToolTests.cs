@@ -222,4 +222,69 @@ public class RequestApprovalToolTests : IDisposable
         result.ShouldBe("rejected");
     }
 
+    [Fact]
+    public async Task RequestMode_UsesPerSatelliteGateOverride_NotGlobalSettings()
+    {
+        // Global RMS threshold is 500; this satellite's Gate override raises it far above
+        // the "Loud" answer level. The capture must be built from session.Config (like
+        // WyomingSatelliteHost does) rather than global wyoming.* settings alone — otherwise
+        // this satellite's answer is wrongly heard as speech and gets approved.
+        var session = new SatelliteSession("loud-room-01",
+            new SatelliteConfig
+            {
+                Identity = "household",
+                Room = "Loud Room",
+                Gate = new GateSettings { SilenceRmsThreshold = 50_000 }
+            });
+        _sessions.Register(session);
+
+        using var pump = new CancellationTokenSource();
+        var pumpTask = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), pump.Token);
+        try
+        {
+            var conversationId = await _manager.GetOrCreateAsync(session, "agent-1", "hi", default);
+
+            _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
+
+            using var feed = new CancellationTokenSource();
+            var feeder = Task.Run(async () =>
+            {
+                while (!feed.IsCancellationRequested)
+                {
+                    if (session.HasActiveCapture)
+                    {
+                        session.RouteAudio(Loud());
+                        session.RouteAudio(Loud());
+                        session.RouteAudio(Silent());
+                        session.RouteAudio(Silent());
+                        session.RouteAudio(Silent());
+                        await Task.Delay(60, feed.Token);
+                    }
+                    else
+                    {
+                        await Task.Delay(10, feed.Token);
+                    }
+                }
+            }, feed.Token);
+
+            var result = await RequestApprovalTool.McpRun(
+                conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+
+            await feed.CancelAsync();
+
+            // Under the fix the raised per-satellite threshold means "Loud" never
+            // classifies as speech, so the capture times out with no speech and the
+            // approval is declined instead of being transcribed and approved.
+            result.ShouldBe("rejected");
+        }
+        finally
+        {
+            pump.Cancel();
+            session.CompletePlayback();
+            try
+            { await pumpTask; }
+            catch { /* OCE on teardown */ }
+        }
+    }
 }
