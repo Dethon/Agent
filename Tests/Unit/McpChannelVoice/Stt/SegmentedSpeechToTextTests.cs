@@ -40,6 +40,20 @@ public class SegmentedSpeechToTextTests
         }
     }
 
+    private static AudioChunk Tone(short amplitude)
+    {
+        var pcm = new byte[ChunkBytes];
+        for (var i = 0; i < pcm.Length; i += 2)
+        {
+            pcm[i] = (byte)(amplitude & 0xFF);
+            pcm[i + 1] = (byte)((amplitude >> 8) & 0xFF);
+        }
+        return new AudioChunk { Data = pcm, Format = AudioFormat.WyomingStandard, Timestamp = TimeSpan.Zero };
+    }
+
+    private static IEnumerable<AudioChunk> Babble(int chunks) =>
+        Enumerable.Range(0, chunks).Select(_ => Tone(2000));
+
     // 100 ms chunks: 300 ms segment-silence => 3 silent chunks close a segment;
     // 500 ms min-segment => 5 loud chunks minimum.
     private static SegmentedSttConfig Config(int maxInFlight = 1) => new()
@@ -274,5 +288,28 @@ public class SegmentedSpeechToTextTests
             new TranscriptionOptions(), CancellationToken.None);
 
         result.Confidence.ShouldBe(0.6);
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_SpeechPhrasesOverBabble_StillSlicesSegments()
+    {
+        var inner = new FakeStt();
+        // 800 ms floor window — longer than the 600 ms constant-amplitude speech runs, since synthetic
+        // speech has no intra-word dips to re-seed the windowed-min floor (real speech does).
+        var sut = new SegmentedSpeechToText(
+            inner, Config(), new WyomingClientSettings { FloorWindowMs = 800 },
+            NullLogger<SegmentedSpeechToText>.Instance);
+
+        // babble(8): floor converges at 2000; speech(6): a 600 ms phrase (> 500 ms
+        // MinSegmentMs); babble(4): inter-phrase "silence" (>= 300 ms SegmentSilenceMs
+        // closes the segment); second phrase; babble tail.
+        var result = await sut.TranscribeAsync(
+            Stream(Babble(8), Speech(6), Babble(4), Speech(6), Babble(4)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        // With the old fixed 500 threshold, babble RMS 2000 never reads as silence and
+        // the whole stream decodes as ONE segment; adaptively it must slice at least twice.
+        inner.Calls.ShouldBeGreaterThanOrEqualTo(2);
+        result.Text.ShouldNotBeNullOrEmpty();
     }
 }
