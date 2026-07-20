@@ -21,7 +21,9 @@ public class UtteranceCaptureTests
         new() { Data = new byte[Bytes], Format = AudioFormat.WyomingStandard };
 
     private static SilenceGate Gate(int noSpeechMs = 0) => new(
-        rmsThreshold: 500,
+        new AdaptiveLevelTracker(
+            clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
+            floorWindow: TimeSpan.FromSeconds(3)),
         trailingSilence: TimeSpan.FromMilliseconds(200),
         maxUtterance: TimeSpan.FromMilliseconds(5000),
         minSpeech: TimeSpan.FromMilliseconds(100),
@@ -32,6 +34,7 @@ public class UtteranceCaptureTests
     {
         var capture = new UtteranceCapture(Gate());
 
+        capture.Feed(Silent()); // pre-roll gap seeds the floor
         capture.Feed(Loud());
         capture.Feed(Loud());
         capture.Feed(Silent());
@@ -42,7 +45,7 @@ public class UtteranceCaptureTests
         var count = 0;
         await foreach (var _ in capture.Audio)
         { count++; }
-        count.ShouldBe(4);
+        count.ShouldBe(5);
     }
 
     [Fact]
@@ -71,6 +74,7 @@ public class UtteranceCaptureTests
     {
         var capture = new UtteranceCapture(Gate());
 
+        capture.Feed(Silent()); // pre-roll gap seeds the floor
         capture.Feed(Loud());
         capture.Feed(Loud());
         capture.Feed(Silent());

@@ -10,7 +10,8 @@ namespace Tests.Unit.McpChannelVoice;
 public class FollowUpConversationTests
 {
     private static SilenceGate AnyGate(bool followUp) => new(
-        500, TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(5000),
+        new AdaptiveLevelTracker(500, 9, 4, 15, TimeSpan.FromSeconds(3)),
+        TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(5000),
         TimeSpan.FromMilliseconds(100),
         noSpeechTimeout: followUp ? TimeSpan.FromMilliseconds(500) : TimeSpan.Zero);
 

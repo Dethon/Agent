@@ -163,7 +163,12 @@ public sealed class RequestApprovalTool
         }
 
         var capture = session.OpenCapture(new SilenceGate(
-            wyoming.SilenceRmsThreshold,
+            new AdaptiveLevelTracker(
+                wyoming.SilenceRmsThreshold,
+                wyoming.EnterMarginDb,
+                wyoming.ExitMarginDb,
+                wyoming.PeakDropDb,
+                TimeSpan.FromMilliseconds(wyoming.FloorWindowMs)),
             TimeSpan.FromMilliseconds(wyoming.TrailingSilenceMs),
             TimeSpan.FromMilliseconds(wyoming.MaxUtteranceMs),
             TimeSpan.FromMilliseconds(wyoming.MinSpeechMs),

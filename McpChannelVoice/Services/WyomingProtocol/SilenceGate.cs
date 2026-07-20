@@ -6,10 +6,12 @@ namespace McpChannelVoice.Services.WyomingProtocol;
 // fires and only stops when it receives a Transcript back. There is no
 // audio-stop to lean on, so the hub must decide when the speaker has finished:
 // once speech has been observed, a run of trailing silence ends the utterance.
-// A max-utterance cap bounds runaway streams; speech shorter than minSpeech is
-// treated as noise and never ends the turn on its own.
+// What counts as speech vs silence is delegated to AdaptiveLevelTracker so a
+// noisy room (TV, ducked music) raises the bar instead of pinning the capture
+// open. A max-utterance cap bounds runaway streams; speech shorter than
+// minSpeech is treated as noise and never ends the turn on its own.
 public sealed class SilenceGate(
-    double rmsThreshold,
+    AdaptiveLevelTracker tracker,
     TimeSpan trailingSilence,
     TimeSpan maxUtterance,
     TimeSpan minSpeech,
@@ -32,6 +34,10 @@ public sealed class SilenceGate(
 
     public double PeakRms => _peakRms;
 
+    public double FloorRms => tracker.FloorRms;
+
+    public string? EndReason { get; private set; }
+
     public Decision Process(ReadOnlySpan<byte> pcm, int sampleRateHz, int sampleWidthBytes, int channels)
     {
         var duration = DurationOf(pcm.Length, sampleRateHz, sampleWidthBytes, channels);
@@ -40,7 +46,7 @@ public sealed class SilenceGate(
         var rms = Rms(pcm, sampleWidthBytes);
         _peakRms = Math.Max(_peakRms, rms);
 
-        if (rms >= rmsThreshold)
+        if (tracker.IsSpeech(rms, duration.TotalMilliseconds))
         {
             _speechStarted = true;
             _speechElapsed += duration;
@@ -51,6 +57,7 @@ public sealed class SilenceGate(
             _trailingSilence += duration;
             if (_speechElapsed > minSpeech && _trailingSilence >= trailingSilence)
             {
+                EndReason = "trailing_silence";
                 return Decision.EndUtterance;
             }
         }
@@ -61,12 +68,20 @@ public sealed class SilenceGate(
         // the capture would hang open until the maxUtterance cap instead of timing out here.
         if (_speechElapsed <= minSpeech && noSpeechTimeout > TimeSpan.Zero && _elapsed >= noSpeechTimeout)
         {
+            EndReason = "no_speech";
             return Decision.NoSpeech;
         }
 
-        return _elapsed >= maxUtterance ? Decision.EndUtterance : Decision.Continue;
+        if (_elapsed >= maxUtterance)
+        {
+            EndReason = "max_utterance";
+            return Decision.EndUtterance;
+        }
+        return Decision.Continue;
     }
 
+    // Deliberately does NOT reset the tracker: SegmentedSpeechToText resets the gate per
+    // phrase segment, and the learned noise floor must survive segment boundaries.
     public void Reset()
     {
         _elapsed = TimeSpan.Zero;
@@ -74,6 +89,7 @@ public sealed class SilenceGate(
         _trailingSilence = TimeSpan.Zero;
         _speechStarted = false;
         _peakRms = 0;
+        EndReason = null;
     }
 
     private static TimeSpan DurationOf(int byteCount, int sampleRateHz, int sampleWidthBytes, int channels)

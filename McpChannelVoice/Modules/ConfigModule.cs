@@ -78,7 +78,7 @@ public static class ConfigModule
                 sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.WyomingSpeechToText>>());
 
             return McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
-                inner, settings.Stt.Streaming, sp.GetRequiredService<ILoggerFactory>());
+                inner, settings.Stt.Streaming, settings.WyomingClient, sp.GetRequiredService<ILoggerFactory>());
         });
 
         services.AddHostedService<WyomingSatelliteHost>();

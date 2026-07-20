@@ -52,7 +52,7 @@ public class SegmentedSpeechToTextTests
     };
 
     private static SegmentedSpeechToText New(ISpeechToText inner, SegmentedSttConfig? config = null) =>
-        new(inner, config ?? Config(), NullLogger<SegmentedSpeechToText>.Instance);
+        new(inner, config ?? Config(), new WyomingClientSettings(), NullLogger<SegmentedSpeechToText>.Instance);
 
     // Inner stub: returns the chunk count it received as text, optionally via a custom handler.
     private sealed class FakeStt(Func<int, Task<TranscriptionResult>>? handler = null) : ISpeechToText
@@ -88,11 +88,12 @@ public class SegmentedSpeechToTextTests
     {
         var inner = new FakeStt();
 
+        // Leading Silence(1) seeds the floor (pre-roll gap); single segment of 1+6 = 7 chunks.
         var result = await New(inner).TranscribeAsync(
-            Stream(Speech(6)), new TranscriptionOptions(), CancellationToken.None);
+            Stream(Silence(1), Speech(6)), new TranscriptionOptions(), CancellationToken.None);
 
         inner.Calls.ShouldBe(1);
-        result.Text.ShouldBe("6"); // single segment of 6 chunks
+        result.Text.ShouldBe("7"); // single segment of 7 chunks
     }
 
     [Fact]
@@ -100,13 +101,14 @@ public class SegmentedSpeechToTextTests
     {
         var inner = new FakeStt();
 
-        // seg0 = 6 loud + 3 silent = 9 ; seg1 = 7 loud + 3 silent = 10 ; tail seg2 = 8 loud = 8
+        // Leading Silence(1) seeds the floor (pre-roll gap): seg0 = 1 silent + 6 loud + 3 silent = 10 ;
+        // seg1 = 7 loud + 3 silent = 10 ; tail seg2 = 8 loud = 8
         var result = await New(inner).TranscribeAsync(
-            Stream(Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
+            Stream(Silence(1), Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
             new TranscriptionOptions(), CancellationToken.None);
 
         inner.Calls.ShouldBe(3);
-        result.Text.ShouldBe("9 10 8");
+        result.Text.ShouldBe("10 10 8");
     }
 
     [Fact]
@@ -179,7 +181,7 @@ public class SegmentedSpeechToTextTests
     {
         var inner = new FakeStt();
         var result = SegmentedSpeechToText.Wrap(
-            inner, new SegmentedSttConfig { Enabled = false }, NullLoggerFactory.Instance);
+            inner, new SegmentedSttConfig { Enabled = false }, new WyomingClientSettings(), NullLoggerFactory.Instance);
 
         result.ShouldBeSameAs(inner);
     }
@@ -189,7 +191,7 @@ public class SegmentedSpeechToTextTests
     {
         var inner = new FakeStt();
         var result = SegmentedSpeechToText.Wrap(
-            inner, new SegmentedSttConfig { Enabled = true }, NullLoggerFactory.Instance);
+            inner, new SegmentedSttConfig { Enabled = true }, new WyomingClientSettings(), NullLoggerFactory.Instance);
 
         result.ShouldBeOfType<SegmentedSpeechToText>();
     }
@@ -223,37 +225,39 @@ public class SegmentedSpeechToTextTests
     [Fact]
     public async Task TranscribeAsync_SegmentsOfDifferentLengths_WeightsConfidenceByDuration()
     {
-        // seg0 = 6 loud + 3 silent = 9 chunks (0.9); tail seg1 = 12 loud = 12 chunks (0.2).
-        // Duration-weighted mean (9*0.9 + 12*0.2)/21 = 0.5; the old unweighted mean was 0.55.
+        // Leading Silence(1) seeds the floor (pre-roll gap): seg0 = 1 silent + 6 loud + 3 silent = 10
+        // chunks (0.9); tail seg1 = 12 loud = 12 chunks (0.2).
+        // Duration-weighted mean (10*0.9 + 12*0.2)/22 = 0.5181...; an unweighted mean would be 0.55.
         var inner = new FakeStt(count => Task.FromResult(
-            new TranscriptionResult { Text = count.ToString(), Confidence = count == 9 ? 0.9 : 0.2 }));
+            new TranscriptionResult { Text = count.ToString(), Confidence = count == 10 ? 0.9 : 0.2 }));
 
         var result = await New(inner).TranscribeAsync(
-            Stream(Speech(6), Silence(3), Speech(12)),
+            Stream(Silence(1), Speech(6), Silence(3), Speech(12)),
             new TranscriptionOptions(), CancellationToken.None);
 
         result.Confidence.ShouldNotBeNull();
-        result.Confidence!.Value.ShouldBe((9 * 0.9 + 12 * 0.2) / 21, 1e-9);
+        result.Confidence!.Value.ShouldBe((10 * 0.9 + 12 * 0.2) / 22, 1e-9);
     }
 
     [Fact]
     public async Task TranscribeAsync_AggregatesWhisperStats_WeightedMeansAndMaxCompression()
     {
+        // Leading Silence(1) seeds the floor (pre-roll gap): seg0 = 10 chunks, tail seg1 = 12 chunks.
         var inner = new FakeStt(count => Task.FromResult(new TranscriptionResult
         {
             Text = count.ToString(),
-            AvgLogProb = count == 9 ? -0.2 : -1.0,
-            NoSpeechProb = count == 9 ? 0.1 : 0.7,
-            CompressionRatio = count == 9 ? 1.1 : 2.9
+            AvgLogProb = count == 10 ? -0.2 : -1.0,
+            NoSpeechProb = count == 10 ? 0.1 : 0.7,
+            CompressionRatio = count == 10 ? 1.1 : 2.9
         }));
 
         var result = await New(inner).TranscribeAsync(
-            Stream(Speech(6), Silence(3), Speech(12)),
+            Stream(Silence(1), Speech(6), Silence(3), Speech(12)),
             new TranscriptionOptions(), CancellationToken.None);
 
         result.AvgLogProb.ShouldNotBeNull();
-        result.AvgLogProb!.Value.ShouldBe((9 * -0.2 + 12 * -1.0) / 21, 1e-9);
-        result.NoSpeechProb!.Value.ShouldBe((9 * 0.1 + 12 * 0.7) / 21, 1e-9);
+        result.AvgLogProb!.Value.ShouldBe((10 * -0.2 + 12 * -1.0) / 22, 1e-9);
+        result.NoSpeechProb!.Value.ShouldBe((10 * 0.1 + 12 * 0.7) / 22, 1e-9);
         result.CompressionRatio.ShouldBe(2.9);
     }
 
@@ -261,11 +265,12 @@ public class SegmentedSpeechToTextTests
     public async Task TranscribeAsync_MixedConfidenceAvailability_AveragesOnlyReportingSegments()
     {
         // Fail-open composition: a segment without stats must not zero the average.
+        // Leading Silence(1) seeds the floor (pre-roll gap): seg0 = 10 chunks.
         var inner = new FakeStt(count => Task.FromResult(new TranscriptionResult
-        { Text = count.ToString(), Confidence = count == 9 ? 0.6 : null }));
+        { Text = count.ToString(), Confidence = count == 10 ? 0.6 : null }));
 
         var result = await New(inner).TranscribeAsync(
-            Stream(Speech(6), Silence(3), Speech(12)),
+            Stream(Silence(1), Speech(6), Silence(3), Speech(12)),
             new TranscriptionOptions(), CancellationToken.None);
 
         result.Confidence.ShouldBe(0.6);

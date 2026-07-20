@@ -231,7 +231,12 @@ public sealed class WyomingSatelliteHost(
                 // (false trigger, user changes their mind) must re-arm after WindowMs instead of
                 // holding the mic open until the far-larger max-utterance cap.
                 return session.OpenCapture(new SilenceGate(
-                    config.ResolveRmsThreshold(settings),
+                    new AdaptiveLevelTracker(
+                        config.ResolveRmsThreshold(settings),
+                        settings.EnterMarginDb,
+                        settings.ExitMarginDb,
+                        settings.PeakDropDb,
+                        TimeSpan.FromMilliseconds(settings.FloorWindowMs)),
                     TimeSpan.FromMilliseconds(settings.TrailingSilenceMs),
                     TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
                     TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(settings)),

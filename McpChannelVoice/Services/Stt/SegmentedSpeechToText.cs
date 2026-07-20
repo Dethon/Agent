@@ -14,13 +14,15 @@ namespace McpChannelVoice.Services.Stt;
 public sealed class SegmentedSpeechToText(
     ISpeechToText inner,
     SegmentedSttConfig config,
+    WyomingClientSettings gateSettings,
     ILogger<SegmentedSpeechToText> logger) : ISpeechToText
 {
     private sealed record Segment(IReadOnlyList<AudioChunk> Audio, Task<TranscriptionResult> Task);
 
-    public static ISpeechToText Wrap(ISpeechToText inner, SegmentedSttConfig config, ILoggerFactory loggers) =>
+    public static ISpeechToText Wrap(
+        ISpeechToText inner, SegmentedSttConfig config, WyomingClientSettings gateSettings, ILoggerFactory loggers) =>
         config.Enabled
-            ? new SegmentedSpeechToText(inner, config, loggers.CreateLogger<SegmentedSpeechToText>())
+            ? new SegmentedSpeechToText(inner, config, gateSettings, loggers.CreateLogger<SegmentedSpeechToText>())
             : inner;
 
     public async Task<TranscriptionResult> TranscribeAsync(
@@ -28,7 +30,12 @@ public sealed class SegmentedSpeechToText(
     {
         var minSpeech = TimeSpan.FromMilliseconds(config.MinSegmentMs);
         var gate = new SilenceGate(
-            config.SilenceRmsThreshold,
+            new AdaptiveLevelTracker(
+                config.SilenceRmsThreshold,
+                gateSettings.EnterMarginDb,
+                gateSettings.ExitMarginDb,
+                gateSettings.PeakDropDb,
+                TimeSpan.FromMilliseconds(gateSettings.FloorWindowMs)),
             TimeSpan.FromMilliseconds(config.SegmentSilenceMs),
             TimeSpan.MaxValue,
             minSpeech);
