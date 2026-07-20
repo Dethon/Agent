@@ -156,3 +156,24 @@ If the TV is as loud as the user *at the mic*, no single-mic energy method can
 separate them; the turn then ends via the peak backstop or the 40 s cap. Remedies
 beyond this design (speaker-conditioned VAD, mic-array DRR) are explicitly out of
 scope.
+
+## Refinements during planning (2026-07-20)
+
+1. Floor smoothing: pure windowed minimum, no EMA — the min already provides
+   instant-fall / window-delayed-rise; an EMA adds a constant without behavior.
+2. The floor seeds from the first real chunks — no clamp-only grace period. A
+   grace period would let above-clamp TV count as speech, latch minSpeech, and
+   end the turn via trailing silence before the user speaks. Consequences:
+   TV-only follow-up windows correctly time out as no_speech; on a TV-background
+   wake turn the user must start speaking within the no-speech window (5 s), as
+   today; a capture opening mid-loud-speech with zero leading gap reads that
+   speech as floor until the first inter-word dip re-seeds the minimum (the
+   satellite pre-roll's detection-latency gap supplies real gap frames).
+3. Peak backstop armed only in the adaptive regime (floor + EnterMarginDb >
+   clamp) so quiet-room loud-then-soft speech can never be clipped (Goal 3).
+4. The windowed-min floor climbs to speech level when fed constant-amplitude
+   audio with no dips for longer than the floor window (surfaced by the Task 4
+   pin test). Real speech re-seeds the floor via intra-word dips; synthetic
+   tests (and sustained tones like humming) must keep the floor window longer
+   than their longest dip-free run — the pin test uses 800 ms for its 600 ms
+   runs. Production keeps FloorWindowMs 3000, well above natural dip spacing.
