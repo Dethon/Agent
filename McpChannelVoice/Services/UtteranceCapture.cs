@@ -13,7 +13,8 @@ public enum CaptureOutcome
 // Audio-level facts about one capture, published on UtteranceTranscribed metrics so the
 // RMS/min-speech entry bar and the adaptive-floor margins can be tuned from real data
 // instead of guesswork.
-public readonly record struct CaptureStats(double PeakRms, double FloorRms, long SpeechMs, string? EndReason);
+public readonly record struct CaptureStats(
+    double PeakRms, double FloorRms, long SpeechMs, string? EndReason, double TrailingRms = 0);
 
 // One bounded mic capture over the held-open Wyoming stream. The read loop pushes audio
 // via Feed (single-threaded); the gate decides when speech ends (Ended) or the no-speech
@@ -33,7 +34,8 @@ public sealed class UtteranceCapture(SilenceGate gate)
         gate.PeakRms,
         gate.FloorRms,
         (long)gate.SpeechElapsed.TotalMilliseconds,
-        _forced ? "forced" : gate.EndReason);
+        _forced ? "forced" : gate.EndReason,
+        gate.TrailingRms);
 
     public void Feed(AudioChunk chunk)
     {

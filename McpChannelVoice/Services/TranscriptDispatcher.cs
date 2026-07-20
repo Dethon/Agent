@@ -45,6 +45,7 @@ public sealed class TranscriptDispatcher(
                     PeakRms = stats?.PeakRms,
                     SpeechMs = stats?.SpeechMs,
                     FloorRms = stats?.FloorRms,
+                    TrailingRms = stats?.TrailingRms,
                     EndReason = stats?.EndReason,
                     ConversationId = manager.GetActiveConversationId(session.SatelliteId)
                 },
@@ -83,6 +84,7 @@ public sealed class TranscriptDispatcher(
                 PeakRms = stats?.PeakRms,
                 SpeechMs = stats?.SpeechMs,
                 FloorRms = stats?.FloorRms,
+                TrailingRms = stats?.TrailingRms,
                 EndReason = stats?.EndReason,
                 ConversationId = conversationId
             },

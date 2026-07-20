@@ -39,8 +39,10 @@ public sealed class FollowUpConversation(
     // Side effect (metric) just before a follow-up window opens.
     public required Func<CancellationToken, Task> OnFollowUpWindow { get; init; }
 
-    // Side effect (metric) when a follow-up window expires with no speech.
-    public required Func<CancellationToken, Task> OnSilenceTimeout { get; init; }
+    // Side effect (metric) when a capture ends without accepted speech — the window expired
+    // or the gate demoted a background-only capture. Receives the rejected capture's gate
+    // stats so the host can publish them (rejection tuning needs field data).
+    public required Func<CaptureStats, CancellationToken, Task> OnSilenceTimeout { get; init; }
 
     // Side effect (metric/log) when a dispatched turn's reply never resolves within ReplyTimeoutMs.
     public Func<CancellationToken, Task> OnReplyTimeout { get; init; } = _ => Task.CompletedTask;
@@ -88,7 +90,7 @@ public sealed class FollowUpConversation(
 
                 if (outcome == CaptureOutcome.NoSpeech)
                 {
-                    await OnSilenceTimeout(ct);
+                    await OnSilenceTimeout(capture.Stats, ct);
                     await EndConversation(ct);
                     return;
                 }
