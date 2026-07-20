@@ -251,6 +251,48 @@ public class SilenceGateTests
     }
 
     [Fact]
+    public void Process_TvResumesAfterLullSeededFloor_TimesOutAsNoSpeech()
+    {
+        var gate = BabbleGate(noSpeechMs: 500);
+
+        // Field failure: the capture opens during a TV lull (inter-phrase gap / scene
+        // transition), so the floor seeds at near-silence. When TV dialog resumes it
+        // reads as speech until the floor converges — latching minSpeech and disabling
+        // the no-speech window — and the capture then ends as a dispatchable utterance
+        // full of TV audio. The "speech" never stood above the trailing background, so
+        // the gate must classify the whole capture as no-speech instead.
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);  // lull seeds the floor
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue); // TV resumes: reads as speech
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue); // floor converging
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue); // now reads as silence
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.NoSpeech); // trailing run completes
+        gate.EndReason.ShouldBe("no_speech");
+    }
+
+    [Fact]
+    public void Process_UserSpeechOverBabbleWithNoSpeechWindow_StillEndsUtterance()
+    {
+        var gate = BabbleGate(noSpeechMs: 5000);
+
+        // Regression guard for the lull-seed fix: real near-field speech stands well
+        // above the trailing babble, so the end-of-capture prominence check must let
+        // it through — same scenario as Process_SpeechOverBabble_EndsOnReturnToBabble
+        // but with the no-speech window armed, as production always is.
+        foreach (var _ in Enumerable.Range(0, 8))
+        {
+            Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue);
+        }
+        Feed(gate, Tone(8000)).ShouldBe(SilenceGate.Decision.Continue); // user speaks
+        Feed(gate, Tone(8000)).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue); // back to babble
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.EndUtterance);
+        gate.EndReason.ShouldBe("trailing_silence");
+    }
+
+    [Fact]
     public void Process_MaxUtteranceCap_ReportsEndReason()
     {
         var gate = NewGate();

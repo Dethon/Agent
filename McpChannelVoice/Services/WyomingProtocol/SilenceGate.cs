@@ -20,6 +20,7 @@ public sealed class SilenceGate(
     private TimeSpan _elapsed;
     private TimeSpan _speechElapsed;
     private TimeSpan _trailingSilence;
+    private double _trailingEnergyMs;
     private bool _speechStarted;
     private double _peakRms;
 
@@ -51,12 +52,26 @@ public sealed class SilenceGate(
             _speechStarted = true;
             _speechElapsed += duration;
             _trailingSilence = TimeSpan.Zero;
+            _trailingEnergyMs = 0;
         }
         else if (_speechStarted)
         {
             _trailingSilence += duration;
+            _trailingEnergyMs += rms * rms * duration.TotalMilliseconds;
             if (_speechElapsed > minSpeech && _trailingSilence >= trailingSilence)
             {
+                // A floor seeded during a background lull lets resumed TV latch as speech
+                // until the min-window converges; the capture then ends here full of TV
+                // audio. Such pseudo-speech never stands above the trailing background it
+                // decays into, while real speech sits an entry margin (or more) over it —
+                // so demote the capture to no-speech instead of dispatching background.
+                // Only gates with a no-speech window may emit NoSpeech (the segmenting
+                // gate inside SegmentedSpeechToText must keep slicing on EndUtterance).
+                if (noSpeechTimeout > TimeSpan.Zero && !tracker.SpeechProminentOver(TrailingDb()))
+                {
+                    EndReason = "no_speech";
+                    return Decision.NoSpeech;
+                }
                 EndReason = "trailing_silence";
                 return Decision.EndUtterance;
             }
@@ -87,10 +102,14 @@ public sealed class SilenceGate(
         _elapsed = TimeSpan.Zero;
         _speechElapsed = TimeSpan.Zero;
         _trailingSilence = TimeSpan.Zero;
+        _trailingEnergyMs = 0;
         _speechStarted = false;
         _peakRms = 0;
         EndReason = null;
     }
+
+    private double TrailingDb() =>
+        10 * Math.Log10(Math.Max(_trailingEnergyMs / _trailingSilence.TotalMilliseconds, 1));
 
     private static TimeSpan DurationOf(int byteCount, int sampleRateHz, int sampleWidthBytes, int channels)
     {

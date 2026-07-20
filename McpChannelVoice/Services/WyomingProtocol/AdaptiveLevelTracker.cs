@@ -40,6 +40,14 @@ public sealed class AdaptiveLevelTracker(
 
     public double FloorRms => Math.Pow(10, FloorDb / 20);
 
+    // Capture-level accept test: did anything speech-classified stand above the given
+    // background level by the same margin required to enter speech? A floor seeded during
+    // a background lull (TV inter-phrase gap) lets resumed background latch as "speech"
+    // until the min-window converges; that pseudo-speech sits AT the level of the audio
+    // that follows it, while real near-field speech sits 15-25 dB above. False until any
+    // frame has classified as speech (_peakDb is NegativeInfinity).
+    public bool SpeechProminentOver(double backgroundDb) => _peakDb >= backgroundDb + enterMarginDb;
+
     public bool IsSpeech(double rms, double durationMs)
     {
         var rmsDb = ToDb(rms);
