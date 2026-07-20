@@ -152,25 +152,25 @@ public class SegmentedSpeechToTextTests
     {
         var inner = new FakeStt();
 
-        // seg0 = 6 loud + 3 silent = 9 ; tail = 2 loud (200 ms < 500 ms min) -> merge into seg0 => 11
+        // seg0 = 1 silent + 6 loud + 3 silent = 10 ; tail = 2 loud (200 ms < 500 ms min) -> merge into seg0 => 12
         var result = await New(inner).TranscribeAsync(
-            Stream(Speech(6), Silence(3), Speech(2)),
+            Stream(Silence(1), Speech(6), Silence(3), Speech(2)),
             new TranscriptionOptions(), CancellationToken.None);
 
-        result.Text.ShouldBe("11"); // single merged segment, not "9 2"
+        result.Text.ShouldBe("12"); // single merged segment, not "10 2"
     }
 
     [Fact]
     public async Task TranscribeAsync_SegmentDecodeFails_FallsBackToWholeUtterance()
     {
-        // seg0 = 9 chunks, tail seg1 = 7 chunks, whole = 16. Segment-sized decodes
-        // throw; only the whole-utterance fallback (16 chunks) succeeds.
+        // seg0 = 1 silent + 6 loud + 3 silent = 10, tail seg1 = 7 chunks, whole = 17. Segment-sized decodes
+        // throw; only the whole-utterance fallback (17 chunks) succeeds.
         var inner = new FakeStt(count => count >= 16
             ? Task.FromResult(new TranscriptionResult { Text = "whole" })
             : throw new InvalidOperationException("segment decode boom"));
 
         var result = await New(inner).TranscribeAsync(
-            Stream(Speech(6), Silence(3), Speech(7)),
+            Stream(Silence(1), Speech(6), Silence(3), Speech(7)),
             new TranscriptionOptions(), CancellationToken.None);
 
         result.Text.ShouldBe("whole");
