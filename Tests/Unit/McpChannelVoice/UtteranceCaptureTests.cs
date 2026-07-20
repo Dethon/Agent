@@ -113,4 +113,20 @@ public class UtteranceCaptureTests
         (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
         capture.Stats.EndReason.ShouldBe("forced");
     }
+
+    [Fact]
+    public async Task Stats_ForceEndAfterNaturalEnd_KeepsNaturalEndReason()
+    {
+        var capture = new UtteranceCapture(Gate());
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent()); // trailing silence ends the capture naturally
+
+        capture.ForceEnd(); // late audio-stop must not relabel it
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        capture.Stats.EndReason.ShouldBe("trailing_silence");
+    }
 }

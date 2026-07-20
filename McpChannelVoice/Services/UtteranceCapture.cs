@@ -56,7 +56,12 @@ public sealed class UtteranceCapture(SilenceGate gate)
 
     public void ForceEnd()
     {
-        _forced = true;
+        // Feed/ForceEnd are serialized on the same Wyoming read loop: a plain completed-check
+        // is enough to stop a late audio-stop from overwriting a natural end's EndReason.
+        if (!_done.Task.IsCompleted)
+        {
+            _forced = true;
+        }
         _chunks.Writer.TryComplete();
         _done.TrySetResult(CaptureOutcome.Ended);
     }

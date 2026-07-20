@@ -136,4 +136,31 @@ public class AdaptiveLevelTrackerTests
         Feed(tracker, 0).ShouldBeFalse();
         Feed(tracker, 8000).ShouldBeTrue();
     }
+
+    [Fact]
+    public void IsSpeech_LoudTransientBeforeSpeech_DoesNotPoisonPeakBackstop()
+    {
+        var tracker = Tracker();
+
+        // Capture opens ON a near-clipping transient: it seeds the floor at its own
+        // level (90.1 dB), classifies as silence — and must NOT become the "utterance
+        // peak". 32000 -> 90.1 dB; bar = floor + 9 => not speech.
+        Feed(tracker, 32000).ShouldBeFalse();
+        FeedAll(tracker, 1500, 6);           // transient ages out; floor 63.52 dB
+
+        // 5000 -> 73.98 dB: above the 72.52 dB entry bar, but 16.1 dB below the
+        // transient — with a poisoned peak the backstop would force silence here.
+        Feed(tracker, 5000).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void FloorDb_ZeroDurationFrame_DoesNotEnterTheWindow()
+    {
+        var tracker = Tracker();
+        FeedAll(tracker, 2000, 6); // floor 66.02 dB
+
+        tracker.IsSpeech(0, 0);    // malformed frame: zero rms, zero duration
+
+        tracker.FloorDb.ShouldBe(66.02, 0.1); // floor must not be slammed to 0 dB
+    }
 }

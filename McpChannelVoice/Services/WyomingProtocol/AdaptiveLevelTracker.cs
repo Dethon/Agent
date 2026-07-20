@@ -40,18 +40,33 @@ public sealed class AdaptiveLevelTracker(
     {
         var rmsDb = ToDb(rms);
         UpdateFloor(rmsDb, durationMs);
-        _peakDb = Math.Max(_peakDb, rmsDb);
 
         // Two-threshold hysteresis: enter high, exit low. In a quiet room both
         // collapse to the clamp, reproducing the legacy single-threshold gate.
         var threshold = Math.Max(_clampDb, FloorDb + (_active ? exitMarginDb : enterMarginDb));
         var adaptiveRegime = FloorDb + enterMarginDb > _clampDb;
+        // Backstop compares against the peak BEFORE this frame: on the first-ever speech
+        // frame _peakDb is still NegativeInfinity, so the backstop can't self-trigger.
         _active = rmsDb >= threshold && !(adaptiveRegime && _peakDb - rmsDb > peakDropDb);
+        // Only a speech-classified frame may raise the "utterance peak" — a loud non-speech
+        // transient (e.g. capture opening on a click) must not poison the backstop and
+        // suppress genuine speech that follows once the transient ages out of the floor.
+        if (_active)
+        {
+            _peakDb = Math.Max(_peakDb, rmsDb);
+        }
         return _active;
     }
 
     private void UpdateFloor(double rmsDb, double durationMs)
     {
+        if (durationMs <= 0)
+        {
+            // A zero-duration frame (malformed/empty payload) would enqueue without ever
+            // advancing _windowMs (unbounded queue growth) and its rms of 0 would slam the
+            // floor to 0 dB for a full window — drop it instead of letting it enter.
+            return;
+        }
         _window.Enqueue((durationMs, rmsDb));
         _windowMs += durationMs;
         while (_window.Count > 1 && _windowMs - _window.Peek().DurationMs >= floorWindow.TotalMilliseconds)
