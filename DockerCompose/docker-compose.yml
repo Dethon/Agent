@@ -82,18 +82,15 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: music-assistant
-    ports:
-      - "8095:8095"     # web UI + API/websocket (HA Music Assistant integration target)
-      - "1704:1704"     # snapcast stream  (satellite snapclients connect here)
-      - "1705:1705"     # snapcast control
-      - "1780:1780"     # snapcast web
+    # host networking is required for mDNS/zeroconf discovery (Spotify Connect,
+    # AirPlay, Chromecast). Binds directly on the host: 8095 (web UI + API),
+    # 1704/1705/1780 (snapcast), 8097 (stream server).
+    network_mode: host
     volumes:
       - music-assistant-data:/data
     environment:
       <<: *timezone
     restart: unless-stopped
-    networks:
-      - jackbot
 
   filebrowser:
     image: filebrowser/filebrowser:v2
