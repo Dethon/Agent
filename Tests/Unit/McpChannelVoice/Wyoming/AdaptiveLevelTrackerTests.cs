@@ -179,6 +179,29 @@ public class AdaptiveLevelTrackerTests
     }
 
     [Fact]
+    public void SpeechProminentOver_NoSpeechClassifiedYet_IsFalse()
+    {
+        var tracker = Tracker();
+
+        // A loud transient classified as silence (it seeds its own floor) must not
+        // count as a speech peak — with no speech frames at all, nothing is prominent.
+        Feed(tracker, 32000).ShouldBeFalse();
+
+        tracker.SpeechProminentOver(0).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SpeechProminentOver_ComparesSpeechPeakAgainstEntryMargin()
+    {
+        var tracker = Tracker();
+        Feed(tracker, 0);
+        Feed(tracker, 8000).ShouldBeTrue(); // speech peak 78.06 dB
+
+        tracker.SpeechProminentOver(60).ShouldBeTrue();  // 78.06 >= 60 + 9
+        tracker.SpeechProminentOver(75).ShouldBeFalse(); // 78.06 <  75 + 9
+    }
+
+    [Fact]
     public void IsSpeech_BurstyTvWithSubSecondLulls_StaysSilence()
     {
         // Field failure 2026-07-20: real TV dialog pauses for 100-400 ms between

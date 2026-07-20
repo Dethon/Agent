@@ -187,3 +187,27 @@ scope.
    those lulls (measured FloorRms 72-97 = room silence with the TV on), leaving
    the gate in clamp mode. Smoothing makes the floor ride the TV's speaking
    level while sustained silence still lowers it within ~one smoothing window.
+
+6. Field fix (2026-07-20): captures with NO user speech under TV. The claim
+   "TV-only audio never crosses floor + EnterMarginDb" only holds for a
+   *converged* floor; each capture starts a fresh tracker, and one that opens
+   during a TV lull (inter-phrase gap, scene transition, the pre-roll gap)
+   seeds the floor at near-silence. Resumed TV then reads as speech until the
+   min-window turns over (≤ FloorWindowMs), latching minSpeech — which
+   permanently disables the NoSpeech outcome — so the capture ended as a
+   dispatchable utterance full of TV dialog. Fix: when a capture is about to
+   end via trailing silence, the gate demotes it to NoSpeech unless the
+   speech-classified peak stands ≥ EnterMarginDb above the measured mean level
+   of the trailing run (`AdaptiveLevelTracker.SpeechProminentOver`).
+   Convergence pseudo-speech sits AT the level of the background it decays
+   into; real near-field speech sits 15-25 dB above it, and any real speech
+   loud enough to have latched under a converged floor passes by construction.
+   Applied only when a no-speech window is configured, so the segmenting gate
+   inside SegmentedSpeechToText keeps slicing on EndUtterance. A continuous
+   annulment variant (revoke speech credit whenever the floor rises to explain
+   the peak) was rejected: the floor is fed the utterance's own speech energy,
+   so a long dense utterance could annul genuine speech mid-command.
+   Residual (accepted): TV reaching the 40 s cap or a genuinely prominent
+   burst (music sting ≥ EnterMarginDb over its own trailing background) still
+   dispatches — energy alone cannot separate those from real speech (see Known
+   limit); the STT confidence gate remains the downstream defense.
