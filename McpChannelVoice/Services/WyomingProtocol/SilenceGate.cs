@@ -68,12 +68,13 @@ public sealed class SilenceGate(
             {
                 // A floor seeded during a background lull lets resumed TV latch as speech
                 // until the min-window converges; the capture then ends here full of TV
-                // audio. Such pseudo-speech never stands above the trailing background it
-                // decays into, while real speech sits an entry margin (or more) over it —
-                // so demote the capture to no-speech instead of dispatching background.
-                // Only gates with a no-speech window may emit NoSpeech (the segmenting
-                // gate inside SegmentedSpeechToText must keep slicing on EndUtterance).
-                if (noSpeechTimeout > TimeSpan.Zero && !tracker.SpeechProminentOver(TrailingDb()))
+                // audio. Such pseudo-speech never stands above the converged floor, while
+                // real speech that latched against a converged floor clears it by
+                // construction — so demote the capture to no-speech instead of dispatching
+                // background. Only gates with a no-speech window may emit NoSpeech (the
+                // segmenting gate inside SegmentedSpeechToText must keep slicing on
+                // EndUtterance).
+                if (noSpeechTimeout > TimeSpan.Zero && !tracker.SpeechProminent)
                 {
                     EndReason = "no_speech";
                     return Decision.NoSpeech;
@@ -113,9 +114,6 @@ public sealed class SilenceGate(
         _peakRms = 0;
         EndReason = null;
     }
-
-    private double TrailingDb() =>
-        10 * Math.Log10(Math.Max(_trailingEnergyMs / _trailingSilence.TotalMilliseconds, 1));
 
     private static TimeSpan DurationOf(int byteCount, int sampleRateHz, int sampleWidthBytes, int channels)
     {

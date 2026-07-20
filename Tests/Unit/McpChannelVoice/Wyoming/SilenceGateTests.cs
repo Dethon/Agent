@@ -206,10 +206,11 @@ public class SilenceGateTests
     }
 
     // Short 400 ms floor window so adaptivity engages within a few chunks.
-    private static SilenceGate BabbleGate(int noSpeechMs = 0) => new(
+    private static SilenceGate BabbleGate(int noSpeechMs = 0, int? floorSmoothingMs = null) => new(
         new AdaptiveLevelTracker(
             clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
-            floorWindow: TimeSpan.FromMilliseconds(400)),
+            floorWindow: TimeSpan.FromMilliseconds(400),
+            floorSmoothing: floorSmoothingMs is null ? null : TimeSpan.FromMilliseconds(floorSmoothingMs.Value)),
         trailingSilence: TimeSpan.FromMilliseconds(200),
         maxUtterance: TimeSpan.FromMilliseconds(60_000),
         minSpeech: TimeSpan.FromMilliseconds(100),
@@ -275,10 +276,15 @@ public class SilenceGateTests
     [Fact]
     public void Process_UserSpeechOverBabbleWithNoSpeechWindow_StillEndsUtterance()
     {
-        var gate = BabbleGate(noSpeechMs: 5000);
+        // Explicit near-zero smoothing: at this test's compressed scale the trailing run
+        // (200 ms) is shorter than the default smoothing window (500 ms), so the end-time
+        // floor would still carry the user's own speech energy — a state production cannot
+        // reach (TrailingSilenceMs 2000 >= smoothing 500 guarantees pure-background floor
+        // entries at end time). Near-zero smoothing restores prod-shaped arithmetic.
+        var gate = BabbleGate(noSpeechMs: 5000, floorSmoothingMs: 100);
 
         // Regression guard for the lull-seed fix: real near-field speech stands well
-        // above the trailing babble, so the end-of-capture prominence check must let
+        // above the converged floor, so the end-of-capture prominence check must let
         // it through — same scenario as Process_SpeechOverBabble_EndsOnReturnToBabble
         // but with the no-speech window armed, as production always is.
         foreach (var _ in Enumerable.Range(0, 8))

@@ -16,4 +16,12 @@ public record WyomingClientSettings
     public double EnterMarginDb { get; init; } = 9;
     public double ExitMarginDb { get; init; } = 4;
     public double PeakDropDb { get; init; } = 15;
+
+    // Capture-level accept bar: a capture ending on trailing silence is demoted to no-speech
+    // unless its speech peak stands this far above the converged floor. Independent of
+    // EnterMarginDb so it can be tuned without moving the per-frame speech classification;
+    // null inherits EnterMarginDb. Field bracket (2026-07-20, fran-office/XVF3800): TV leaks
+    // ran 14-19 dB over floor while a real AGC-compressed command sat at 11 dB — values
+    // above ~11 dB trade TV rejection directly for dropped soft commands.
+    public double? DemoteMarginDb { get; init; }
 }

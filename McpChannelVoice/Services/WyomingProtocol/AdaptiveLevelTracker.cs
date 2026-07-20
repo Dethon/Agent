@@ -25,7 +25,8 @@ public sealed class AdaptiveLevelTracker(
     double exitMarginDb,
     double peakDropDb,
     TimeSpan floorWindow,
-    TimeSpan? floorSmoothing = null)
+    TimeSpan? floorSmoothing = null,
+    double? demoteMarginDb = null)
 {
     private readonly double _clampDb = ToDb(clampRms);
     private readonly double _floorSmoothingMs = (floorSmoothing ?? TimeSpan.FromMilliseconds(500)).TotalMilliseconds;
@@ -40,13 +41,17 @@ public sealed class AdaptiveLevelTracker(
 
     public double FloorRms => Math.Pow(10, FloorDb / 20);
 
-    // Capture-level accept test: did anything speech-classified stand above the given
-    // background level by the same margin required to enter speech? A floor seeded during
-    // a background lull (TV inter-phrase gap) lets resumed background latch as "speech"
-    // until the min-window converges; that pseudo-speech sits AT the level of the audio
-    // that follows it, while real near-field speech sits 15-25 dB above. False until any
-    // frame has classified as speech (_peakDb is NegativeInfinity).
-    public bool SpeechProminentOver(double backgroundDb) => _peakDb >= backgroundDb + enterMarginDb;
+    // Capture-level accept test: did anything speech-classified stand above the CONVERGED
+    // floor by the demote margin? A floor seeded during a background lull (TV inter-phrase
+    // gap) lets resumed background latch as "speech" until the min-window converges; that
+    // pseudo-speech sits AT the converged floor, while real near-field speech sits well
+    // above it. The floor (windowed min) is the reference, not the trailing-run mean: the
+    // mean sits 2-4 dB above the min, and that gap was measured in the field demoting a
+    // real command whose AGC-compressed peak was only 11 dB over a loud-TV floor. The
+    // margin defaults to the entry margin — anything that latched under an already-
+    // converged floor then passes by construction — but is independently tunable.
+    // False until any frame has classified as speech (_peakDb is NegativeInfinity).
+    public bool SpeechProminent => _peakDb >= FloorDb + (demoteMarginDb ?? enterMarginDb);
 
     public bool IsSpeech(double rms, double durationMs)
     {

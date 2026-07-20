@@ -179,7 +179,7 @@ public class AdaptiveLevelTrackerTests
     }
 
     [Fact]
-    public void SpeechProminentOver_NoSpeechClassifiedYet_IsFalse()
+    public void SpeechProminent_NoSpeechClassifiedYet_IsFalse()
     {
         var tracker = Tracker();
 
@@ -187,18 +187,37 @@ public class AdaptiveLevelTrackerTests
         // count as a speech peak — with no speech frames at all, nothing is prominent.
         Feed(tracker, 32000).ShouldBeFalse();
 
-        tracker.SpeechProminentOver(0).ShouldBeFalse();
+        tracker.SpeechProminent.ShouldBeFalse();
     }
 
     [Fact]
-    public void SpeechProminentOver_ComparesSpeechPeakAgainstEntryMargin()
+    public void SpeechProminent_ComparesSpeechPeakAgainstTheConvergedFloor()
     {
         var tracker = Tracker();
         Feed(tracker, 0);
-        Feed(tracker, 8000).ShouldBeTrue(); // speech peak 78.06 dB
+        Feed(tracker, 8000).ShouldBeTrue(); // speech peak 78.06 dB over a quiet floor
 
-        tracker.SpeechProminentOver(60).ShouldBeTrue();  // 78.06 >= 60 + 9
-        tracker.SpeechProminentOver(75).ShouldBeFalse(); // 78.06 <  75 + 9
+        tracker.SpeechProminent.ShouldBeTrue();
+
+        // Background rises to 4000 (72.04 dB): once the quiet seed ages out of the
+        // min-window the converged floor explains the peak (78.06 < 72.04 + 9).
+        FeedAll(tracker, 4000, 10);
+        tracker.SpeechProminent.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SpeechProminent_DemoteMarginDecoupledFromEntryMargin()
+    {
+        var tracker = new AdaptiveLevelTracker(
+            clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
+            floorWindow: TimeSpan.FromMilliseconds(400),
+            demoteMarginDb: 15);
+        FeedAll(tracker, 2000, 6);           // floor 66.02 dB
+        Feed(tracker, 8000).ShouldBeTrue();  // 78.06 dB: latches at 12 dB over the floor
+
+        // Prominent under the 9 dB entry margin, but not under the 15 dB demote margin —
+        // the knobs must be independently tunable.
+        tracker.SpeechProminent.ShouldBeFalse();
     }
 
     [Fact]

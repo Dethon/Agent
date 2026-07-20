@@ -49,6 +49,9 @@ public record SatelliteConfig
 
     public double ResolvePeakDropDb(WyomingClientSettings global) =>
         Gate?.PeakDropDb ?? global.PeakDropDb;
+
+    public double? ResolveDemoteMarginDb(WyomingClientSettings global) =>
+        Gate?.DemoteMarginDb ?? global.DemoteMarginDb;
 }
 
 public record GateSettings
@@ -59,4 +62,5 @@ public record GateSettings
     public double? EnterMarginDb { get; init; }
     public double? ExitMarginDb { get; init; }
     public double? PeakDropDb { get; init; }
+    public double? DemoteMarginDb { get; init; }
 }

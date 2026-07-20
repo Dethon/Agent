@@ -197,17 +197,36 @@ scope.
    permanently disables the NoSpeech outcome — so the capture ended as a
    dispatchable utterance full of TV dialog. Fix: when a capture is about to
    end via trailing silence, the gate demotes it to NoSpeech unless the
-   speech-classified peak stands ≥ EnterMarginDb above the measured mean level
-   of the trailing run (`AdaptiveLevelTracker.SpeechProminentOver`).
-   Convergence pseudo-speech sits AT the level of the background it decays
-   into; real near-field speech sits 15-25 dB above it, and any real speech
-   loud enough to have latched under a converged floor passes by construction.
-   Applied only when a no-speech window is configured, so the segmenting gate
-   inside SegmentedSpeechToText keeps slicing on EndUtterance. A continuous
+   speech-classified peak stands ≥ the demote margin above the converged
+   floor (`AdaptiveLevelTracker.SpeechProminent`). Convergence pseudo-speech
+   sits AT the converged floor; real speech that latched against a converged
+   floor clears the default margin by construction. Applied only when a
+   no-speech window is configured, so the segmenting gate inside
+   SegmentedSpeechToText keeps slicing on EndUtterance. A continuous
    annulment variant (revoke speech credit whenever the floor rises to explain
    the peak) was rejected: the floor is fed the utterance's own speech energy,
    so a long dense utterance could annul genuine speech mid-command.
    Residual (accepted): TV reaching the 40 s cap or a genuinely prominent
-   burst (music sting ≥ EnterMarginDb over its own trailing background) still
-   dispatches — energy alone cannot separate those from real speech (see Known
-   limit); the STT confidence gate remains the downstream defense.
+   burst (music sting well above the converged floor) still dispatches —
+   energy alone cannot separate those from real speech (see Known limit); the
+   STT confidence gate remains the downstream defense.
+
+7. Field calibration (2026-07-20 night session, fran-office/XVF3800, prod
+   transcripts + metrics): the demote's reference was switched from the
+   trailing-run MEAN to the converged FLOOR (windowed min), and its margin
+   decoupled into `DemoteMarginDb` (global + per-satellite `Gate` override;
+   null inherits EnterMarginDb; appsettings ships 10). Why: the trailing mean
+   sits 2-4 dB above the floor min, and a real command was measured at only
+   11.2 dB over a loud-TV floor (AGC compresses near-field advantage), i.e.
+   inside that gap — trailing+9 would have demoted genuine speech. Measured
+   bracket for tuning: TV leak turns ran 14.4-18.9 dB over floor with STT
+   confidence up to 0.62 (a clean TV monologue out-scored a real command's
+   0.42 — confidence thresholds CANNOT separate TV), while the softest real
+   command sat at 11.2 dB. Any DemoteMarginDb above ~11 trades TV rejection
+   directly for dropped soft commands; the leaks above that line are the
+   Known limit. TrailingRms plus rejection-side capture stats (published on
+   FollowUpTimedOut) exist to audit both directions of the trade from the
+   dashboard. Remaining structural failure observed: the agent's reply
+   re-opens a follow-up window beside a talking TV, so one leak can chain
+   into a TV↔agent loop — out of scope here; needs agent-signaled
+   conversation close (turn-identity reply protocol, deferred).
