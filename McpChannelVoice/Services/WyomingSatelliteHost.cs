@@ -233,10 +233,10 @@ public sealed class WyomingSatelliteHost(
                 return session.OpenCapture(new SilenceGate(
                     new AdaptiveLevelTracker(
                         config.ResolveRmsThreshold(settings),
-                        settings.EnterMarginDb,
-                        settings.ExitMarginDb,
-                        settings.PeakDropDb,
-                        TimeSpan.FromMilliseconds(settings.FloorWindowMs)),
+                        config.ResolveEnterMarginDb(settings),
+                        config.ResolveExitMarginDb(settings),
+                        config.ResolvePeakDropDb(settings),
+                        TimeSpan.FromMilliseconds(config.ResolveFloorWindowMs(settings))),
                     TimeSpan.FromMilliseconds(settings.TrailingSilenceMs),
                     TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
                     TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(settings)),

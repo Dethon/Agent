@@ -57,4 +57,39 @@ public class SatelliteConfigTests
         config.ResolveRmsThreshold(global).ShouldBe(900);
         config.ResolveMinSpeechMs(global).ShouldBe(300);
     }
+
+    [Fact]
+    public void ResolveAdaptiveGateKnobs_WithOverrides_PreferSatelliteValues()
+    {
+        var global = new WyomingClientSettings();
+        var config = new SatelliteConfig
+        {
+            Identity = "household",
+            Room = "Office",
+            Gate = new GateSettings
+            {
+                FloorWindowMs = 5000,
+                EnterMarginDb = 12,
+                ExitMarginDb = 6,
+                PeakDropDb = 20
+            }
+        };
+
+        config.ResolveFloorWindowMs(global).ShouldBe(5000);
+        config.ResolveEnterMarginDb(global).ShouldBe(12);
+        config.ResolveExitMarginDb(global).ShouldBe(6);
+        config.ResolvePeakDropDb(global).ShouldBe(20);
+    }
+
+    [Fact]
+    public void ResolveAdaptiveGateKnobs_WithoutOverrides_FallBackToGlobal()
+    {
+        var global = new WyomingClientSettings();
+        var config = new SatelliteConfig { Identity = "household", Room = "Office" };
+
+        config.ResolveFloorWindowMs(global).ShouldBe(3000);
+        config.ResolveEnterMarginDb(global).ShouldBe(9);
+        config.ResolveExitMarginDb(global).ShouldBe(4);
+        config.ResolvePeakDropDb(global).ShouldBe(15);
+    }
 }
