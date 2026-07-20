@@ -776,6 +776,11 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: observability
+    # music-assistant runs with network_mode: host (for mDNS/zeroconf discovery), so it
+    # is not on the jackbot bridge and its container name no longer resolves. The health
+    # probe reaches its host-published port via the host gateway instead.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Observability/Dockerfile
