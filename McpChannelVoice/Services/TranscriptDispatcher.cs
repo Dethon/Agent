@@ -44,6 +44,8 @@ public sealed class TranscriptDispatcher(
                     CompressionRatio = transcript.CompressionRatio,
                     PeakRms = stats?.PeakRms,
                     SpeechMs = stats?.SpeechMs,
+                    FloorRms = stats?.FloorRms,
+                    EndReason = stats?.EndReason,
                     ConversationId = manager.GetActiveConversationId(session.SatelliteId)
                 },
                 ct);
@@ -80,6 +82,8 @@ public sealed class TranscriptDispatcher(
                 CompressionRatio = transcript.CompressionRatio,
                 PeakRms = stats?.PeakRms,
                 SpeechMs = stats?.SpeechMs,
+                FloorRms = stats?.FloorRms,
+                EndReason = stats?.EndReason,
                 ConversationId = conversationId
             },
             ct);
