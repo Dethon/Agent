@@ -25,8 +25,12 @@ public class SilenceGateTests
 
     private static byte[] Silent() => new byte[ChunkBytes];
 
+    private static AdaptiveLevelTracker Tracker() => new(
+        clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
+        floorWindow: TimeSpan.FromSeconds(3));
+
     private static SilenceGate NewGate() => new(
-        rmsThreshold: 500,
+        Tracker(),
         trailingSilence: TimeSpan.FromMilliseconds(200),
         maxUtterance: TimeSpan.FromMilliseconds(2000),
         minSpeech: TimeSpan.FromMilliseconds(100));
@@ -39,6 +43,7 @@ public class SilenceGateTests
     {
         var gate = NewGate();
 
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue); // pre-roll gap seeds the floor
         Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.Continue);
         Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.Continue);
         Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
@@ -61,6 +66,7 @@ public class SilenceGateTests
     {
         var gate = NewGate();
 
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue); // pre-roll gap seeds the floor
         Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.Continue);
         Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
         Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.Continue);
@@ -85,8 +91,8 @@ public class SilenceGateTests
     {
         var gate = NewGate();
 
-        // One loud chunk = 100 ms which does NOT meet the 100 ms-strict minSpeech
-        // gate on its own (needs to exceed), so trailing silence must not end early.
+        // A capture opening directly on a loud chunk seeds the floor at that level, so
+        // the blip never counts as speech at all — trailing silence must not end early.
         Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.Continue);
         Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
         Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
@@ -97,6 +103,7 @@ public class SilenceGateTests
     {
         var gate = NewGate();
 
+        Feed(gate, Silent()); // pre-roll gap seeds the floor
         Feed(gate, Loud());   // 100 ms speech
         Feed(gate, Loud());   // 100 ms speech
         Feed(gate, Silent()); // silence — must not count
@@ -105,7 +112,7 @@ public class SilenceGateTests
     }
 
     private static SilenceGate FollowUpGate() => new(
-        rmsThreshold: 500,
+        Tracker(),
         trailingSilence: TimeSpan.FromMilliseconds(200),
         maxUtterance: TimeSpan.FromMilliseconds(10_000),
         minSpeech: TimeSpan.FromMilliseconds(100),
@@ -185,5 +192,126 @@ public class SilenceGateTests
         gate.Reset();
 
         gate.PeakRms.ShouldBe(0);
+    }
+
+    private static byte[] Tone(short amplitude)
+    {
+        var pcm = new byte[ChunkBytes];
+        for (var i = 0; i < pcm.Length; i += 2)
+        {
+            pcm[i] = (byte)(amplitude & 0xFF);
+            pcm[i + 1] = (byte)((amplitude >> 8) & 0xFF);
+        }
+        return pcm;
+    }
+
+    // Short 400 ms floor window so adaptivity engages within a few chunks.
+    private static SilenceGate BabbleGate(int noSpeechMs = 0) => new(
+        new AdaptiveLevelTracker(
+            clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
+            floorWindow: TimeSpan.FromMilliseconds(400)),
+        trailingSilence: TimeSpan.FromMilliseconds(200),
+        maxUtterance: TimeSpan.FromMilliseconds(60_000),
+        minSpeech: TimeSpan.FromMilliseconds(100),
+        noSpeechTimeout: TimeSpan.FromMilliseconds(noSpeechMs));
+
+    [Fact]
+    public void Process_SpeechOverBabble_EndsOnReturnToBabble()
+    {
+        var gate = BabbleGate();
+
+        // TV-like babble (RMS 2000, above the 500 clamp). THE bug this change fixes:
+        // with the fixed threshold this stream never ends before the cap. Adaptively,
+        // babble is silence from chunk one — it must never end the turn on its own.
+        foreach (var _ in Enumerable.Range(0, 8))
+        {
+            Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue);
+        }
+
+        Feed(gate, Tone(8000)).ShouldBe(SilenceGate.Decision.Continue); // user speaks
+        Feed(gate, Tone(8000)).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue); // back to babble
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.EndUtterance);
+        gate.EndReason.ShouldBe("trailing_silence");
+    }
+
+    [Fact]
+    public void Process_BabbleOnlyFollowUp_TimesOutAsNoSpeech()
+    {
+        var gate = BabbleGate(noSpeechMs: 500);
+
+        // TV alone in a follow-up window: never speech, so the no-speech
+        // window must expire instead of dispatching TV dialog to the agent.
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue);
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.NoSpeech);
+        gate.EndReason.ShouldBe("no_speech");
+    }
+
+    [Fact]
+    public void Process_MaxUtteranceCap_ReportsEndReason()
+    {
+        var gate = NewGate();
+
+        foreach (var _ in Enumerable.Range(0, 19))
+        {
+            Feed(gate, Loud());
+        }
+        Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.EndUtterance);
+        gate.EndReason.ShouldBe("max_utterance");
+    }
+
+    [Fact]
+    public void Process_NoSpeechTimeout_ReportsEndReason()
+    {
+        var gate = FollowUpGate();
+
+        foreach (var _ in Enumerable.Range(0, 4))
+        {
+            Feed(gate, Silent());
+        }
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.NoSpeech);
+        gate.EndReason.ShouldBe("no_speech");
+    }
+
+    [Fact]
+    public void EndReason_BeforeAnyTerminalDecision_IsNull()
+    {
+        var gate = NewGate();
+
+        Feed(gate, Silent());
+        Feed(gate, Loud());
+
+        gate.EndReason.ShouldBeNull();
+    }
+
+    [Fact]
+    public void FloorRms_ExposesTrackerEstimate()
+    {
+        var gate = BabbleGate();
+
+        foreach (var _ in Enumerable.Range(0, 8))
+        {
+            Feed(gate, Tone(2000));
+        }
+
+        gate.FloorRms.ShouldBe(2000, 50);
+    }
+
+    [Fact]
+    public void Reset_ClearsEndReason()
+    {
+        var gate = NewGate();
+        foreach (var _ in Enumerable.Range(0, 20))
+        {
+            Feed(gate, Loud());
+        }
+        gate.EndReason.ShouldBe("max_utterance");
+
+        gate.Reset();
+
+        gate.EndReason.ShouldBeNull();
     }
 }

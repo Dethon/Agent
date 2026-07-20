@@ -92,6 +92,9 @@ public class WyomingSatelliteHostTests
             await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject()), ct);
 
             var data = new JsonObject { ["rate"] = 16_000, ["width"] = 2, ["channels"] = 1 };
+            // Pre-roll gap: real captures open on ambient/gap frames from wake-detection latency,
+            // seeding the AdaptiveLevelTracker's noise floor before real speech classifies as speech.
+            await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
             foreach (var _ in Enumerable.Range(0, 4))
             {
                 await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(8000)), ct);
@@ -222,7 +225,9 @@ public class WyomingSatelliteHostTests
             await sawRun.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
             await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject()), ct);
 
-            // First utterance: speech then trailing silence.
+            // First utterance: speech then trailing silence. Leading silent chunk seeds the
+            // AdaptiveLevelTracker's noise floor (models the real pre-roll gap).
+            await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
             foreach (var _ in Enumerable.Range(0, 4))
             {
                 await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(8000)), ct);
@@ -235,7 +240,10 @@ public class WyomingSatelliteHostTests
             // Stream the follow-up only once the test confirms the wake-free window is open.
             await streamFollowUp.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
 
-            // Follow-up utterance: more speech then silence — NO new run-pipeline (wake-free).
+            // Follow-up utterance: more speech then silence — NO new run-pipeline (wake-free). A fresh
+            // SilenceGate+AdaptiveLevelTracker is opened per capture, so this also needs its own
+            // leading silent chunk to seed the floor.
+            await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
             foreach (var _ in Enumerable.Range(0, 4))
             {
                 await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(8000)), ct);
@@ -347,7 +355,9 @@ public class WyomingSatelliteHostTests
             await sawRun.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
             await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject()), ct);
 
-            // First utterance: speech then trailing silence.
+            // First utterance: speech then trailing silence. Leading silent chunk seeds the
+            // AdaptiveLevelTracker's noise floor (models the real pre-roll gap).
+            await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
             foreach (var _ in Enumerable.Range(0, 4))
             {
                 await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(8000)), ct);
@@ -563,6 +573,9 @@ public class WyomingSatelliteHostTests
             await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject()), ct);
 
             var data = new JsonObject { ["rate"] = 16_000, ["width"] = 2, ["channels"] = 1 };
+            // Pre-roll gap: real captures open on ambient/gap frames from wake-detection latency,
+            // seeding the AdaptiveLevelTracker's noise floor before real speech classifies as speech.
+            await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
             foreach (var _ in Enumerable.Range(0, 4))
             {
                 await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(8000)), ct);
