@@ -84,4 +84,33 @@ public class UtteranceCaptureTests
         capture.Stats.PeakRms.ShouldBe(8000, 1.0);
         capture.Stats.SpeechMs.ShouldBe(200);
     }
+
+    [Fact]
+    public async Task Stats_AfterTrailingSilenceEnd_CarriesFloorAndEndReason()
+    {
+        var capture = new UtteranceCapture(Gate());
+
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent());
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        capture.Stats.EndReason.ShouldBe("trailing_silence");
+        capture.Stats.FloorRms.ShouldBeGreaterThanOrEqualTo(0);
+    }
+
+    [Fact]
+    public async Task Stats_AfterForceEnd_ReportsForced()
+    {
+        var capture = new UtteranceCapture(Gate());
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+
+        capture.ForceEnd();
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        capture.Stats.EndReason.ShouldBe("forced");
+    }
 }

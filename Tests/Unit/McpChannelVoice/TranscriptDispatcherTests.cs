@@ -198,7 +198,7 @@ public class TranscriptDispatcherTests
                 CompressionRatio = 1.3
             },
             "agent-1",
-            new CaptureStats(PeakRms: 4200, SpeechMs: 1800),
+            new CaptureStats(PeakRms: 4200, FloorRms: 320, SpeechMs: 1800, EndReason: "trailing_silence"),
             default);
 
         ok.ShouldBeTrue();
@@ -210,6 +210,8 @@ public class TranscriptDispatcherTests
         evt.CompressionRatio.ShouldBe(1.3);
         evt.PeakRms.ShouldBe(4200);
         evt.SpeechMs.ShouldBe(1800);
+        evt.FloorRms.ShouldBe(320);
+        evt.EndReason.ShouldBe("trailing_silence");
     }
 
     [Fact]
@@ -240,7 +242,7 @@ public class TranscriptDispatcherTests
                 CompressionRatio = 2.8
             },
             "agent-1",
-            new CaptureStats(PeakRms: 900, SpeechMs: 450),
+            new CaptureStats(PeakRms: 900, FloorRms: 610, SpeechMs: 450, EndReason: "max_utterance"),
             default);
 
         ok.ShouldBeFalse();
@@ -252,5 +254,7 @@ public class TranscriptDispatcherTests
         evt.CompressionRatio.ShouldBe(2.8);
         evt.PeakRms.ShouldBe(900);
         evt.SpeechMs.ShouldBe(450);
+        evt.FloorRms.ShouldBe(610);
+        evt.EndReason.ShouldBe("max_utterance");
     }
 }
