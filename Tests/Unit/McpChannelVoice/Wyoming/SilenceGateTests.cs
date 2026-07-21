@@ -252,25 +252,29 @@ public class SilenceGateTests
     }
 
     [Fact]
-    public void Process_TvResumesAfterLullSeededFloor_TimesOutAsNoSpeech()
+    public void Process_TvResumesAfterLullSeededFloor_KeepsCapturing()
     {
         var gate = BabbleGate(noSpeechMs: 500);
 
-        // Field failure: the capture opens during a TV lull (inter-phrase gap / scene
-        // transition), so the floor seeds at near-silence. When TV dialog resumes it
-        // reads as speech until the floor converges — latching minSpeech and disabling
-        // the no-speech window — and the capture then ends as a dispatchable utterance
-        // full of TV audio. The "speech" never stood above the trailing background, so
-        // the gate must classify the whole capture as no-speech instead.
+        // KNOWN LIMITATION, deliberately pinned (2026-07-21). A capture opening during a
+        // TV lull seeds the floor at near-silence, so resumed TV dialog latches as speech.
+        // The gate used to recover by letting the floor converge up until that pseudo-
+        // speech no longer stood above it, then demoting the capture to no-speech. That
+        // convergence is exactly what truncated real long messages (the floor cannot tell
+        // a talking person from a talking television), so the floor now freezes at the
+        // first accepted speech frame and this capture runs on instead of being demoted.
+        // Rejecting it is speaker verification's job now — it scores TV at 0.38-0.42
+        // against 0.50-0.85 for an enrolled voice, which is a discriminator single-mic
+        // energy simply does not have. If you are here because you want the demote back,
+        // read the freeze rationale in AdaptiveLevelTracker.IsSpeech first.
         Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);  // lull seeds the floor
         Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
-        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue); // TV resumes: reads as speech
-        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue);
-        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue);
-        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue); // floor converging
-        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue); // now reads as silence
-        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.NoSpeech); // trailing run completes
-        gate.EndReason.ShouldBe("no_speech");
+        foreach (var _ in Enumerable.Range(0, 6))
+        {
+            Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.Continue); // TV rides on
+        }
+
+        gate.EndReason.ShouldBeNull();
     }
 
     [Fact]
@@ -407,5 +411,35 @@ public class SilenceGateTests
         gate.LastFrameWasSpeech.ShouldBeTrue();
         Feed(gate, Silent());
         gate.LastFrameWasSpeech.ShouldBeFalse();
+    }
+
+    // Exact production wiring (appsettings.json WyomingClient + FollowUp.WindowMs as the
+    // no-speech window), so this pins the real deployed behaviour rather than a test rig.
+    private static SilenceGate ProductionGate() => new(
+        new AdaptiveLevelTracker(
+            clampRms: 700, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 10,
+            floorWindow: TimeSpan.FromSeconds(3), demoteMarginDb: 9),
+        trailingSilence: TimeSpan.FromSeconds(2),
+        maxUtterance: TimeSpan.FromSeconds(40),
+        minSpeech: TimeSpan.FromMilliseconds(300),
+        noSpeechTimeout: TimeSpan.FromSeconds(5));
+
+    [Fact]
+    public void Process_ContinuousSpeechPastFloorWindow_DoesNotEndUtterance()
+    {
+        // Field report 2026-07-21: "I keep talking but at some point the hub stops
+        // listening as if I had finished talking." Measured on real speech fixtures,
+        // captures died 9-13 s in — t_cut = lead-in + FloorWindowMs + TrailingSilenceMs.
+        // Someone still speaking must never be endpointed, however long they go on.
+        var gate = ProductionGate();
+        foreach (var _ in Enumerable.Range(0, 5)) // 500 ms of quiet room before speaking
+        {
+            Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
+        }
+
+        foreach (var _ in Enumerable.Range(0, 100)) // 10 s of unbroken speech
+        {
+            Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.Continue);
+        }
     }
 }

@@ -72,11 +72,14 @@ public class AdaptiveLevelTrackerTests
         // Explicit near-zero smoothing: this test's intent is the min-window
         // turnover mechanics, not the smoothing feature, so disable smoothing
         // (window <= one chunk) to keep its original pinned arithmetic valid.
+        // Levels stay under the entry bar throughout (60 dB floor => 69 dB bar, step is
+        // 66.02 dB) so nothing classifies as speech: this test is about window turnover,
+        // and an accepted-speech frame would freeze the floor and mask that mechanic.
         var tracker = Tracker(floorSmoothingMs: 100);
-        FeedAll(tracker, 0, 6);      // quiet baseline
+        FeedAll(tracker, 1000, 6);   // quiet baseline
         FeedAll(tracker, 2000, 3);   // duck restore: window still holds quiet frames
 
-        tracker.FloorDb.ShouldBe(0, 0.01);      // not converged yet
+        tracker.FloorDb.ShouldBe(60.0, 0.01);   // not converged yet
 
         FeedAll(tracker, 2000, 3);   // quiet frames aged out
 
@@ -191,7 +194,7 @@ public class AdaptiveLevelTrackerTests
     }
 
     [Fact]
-    public void SpeechProminent_ComparesSpeechPeakAgainstTheConvergedFloor()
+    public void SpeechProminent_ComparesSpeechPeakAgainstTheFloorFrozenBeforeSpeech()
     {
         var tracker = Tracker();
         Feed(tracker, 0);
@@ -199,10 +202,15 @@ public class AdaptiveLevelTrackerTests
 
         tracker.SpeechProminent.ShouldBeTrue();
 
-        // Background rises to 4000 (72.04 dB): once the quiet seed ages out of the
-        // min-window the converged floor explains the peak (78.06 < 72.04 + 9).
+        // Background rising AFTER speech latched no longer moves the reference — the
+        // floor is frozen at the room as it was before the utterance. Trade accepted
+        // 2026-07-21: this weakens the lull-seeded-TV demote (background that resumes
+        // mid-capture can no longer explain away its own peak), and in exchange a real
+        // command can never be demoted for the crime of going on too long. Speaker
+        // verification, which separates TV from an enrolled voice by identity rather
+        // than by energy, is the TV backstop now.
         FeedAll(tracker, 4000, 10);
-        tracker.SpeechProminent.ShouldBeFalse();
+        tracker.SpeechProminent.ShouldBeTrue();
     }
 
     [Fact]
@@ -218,6 +226,36 @@ public class AdaptiveLevelTrackerTests
         // Prominent under the 9 dB entry margin, but not under the 15 dB demote margin —
         // the knobs must be independently tunable.
         tracker.SpeechProminent.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void IsSpeech_SustainedSpeechPastFloorWindow_StaysSpeech()
+    {
+        // Field failure 2026-07-21: a long message is cut off mid-sentence in a QUIET
+        // room. UpdateFloor ingests every frame, including the ones just classified as
+        // speech, so once the speaker talks for longer than the floor window there is
+        // nothing left in it but their own voice. The floor climbs to their speaking
+        // level, the entry bar (floor + 9 dB) rises above their own loudest syllable,
+        // and live speech starts reading as silence. The floor estimates BACKGROUND —
+        // the accepted utterance must never be allowed to raise it.
+        var tracker = Tracker(floorWindowMs: 1000);
+        FeedAll(tracker, 0, 5); // quiet room seeds the floor before anyone speaks
+
+        foreach (var _ in Enumerable.Range(0, 25)) // 2.5 s — well past window + smoothing
+        {
+            Feed(tracker, 8000).ShouldBeTrue();
+        }
+    }
+
+    [Fact]
+    public void FloorDb_SpeechAfterTheFloorSeeded_DoesNotRaiseIt()
+    {
+        var tracker = Tracker(floorWindowMs: 1000);
+        FeedAll(tracker, 0, 5);
+
+        FeedAll(tracker, 8000, 25);
+
+        tracker.FloorDb.ShouldBe(0, 0.01); // still the quiet room, not the speaker
     }
 
     [Fact]
