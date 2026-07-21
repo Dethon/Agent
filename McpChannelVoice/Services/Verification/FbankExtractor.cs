@@ -3,9 +3,11 @@ namespace McpChannelVoice.Services.Verification;
 // Kaldi-compatible 80-dim log-mel filterbank (25 ms window / 10 ms shift, 16 kHz,
 // dither 0, snip-edges, Povey window, int16-scale input). Matches what the
 // WeSpeaker/CAM++ ONNX speaker models were trained on; verified against
-// kaldi-native-fbank golden vectors. Input scale conventions cancel under the
-// per-utterance mean subtraction (a global gain is a constant additive offset in
-// log-mel space), but the golden vectors pin the raw int16-scale convention anyway.
+// kaldi-native-fbank golden vectors. The int16-scale input convention is
+// load-bearing: the CAM++ model consumes these log-mel values directly with no
+// per-utterance mean subtraction anywhere in the pipeline, and it is scale-sensitive,
+// so switching to float [-1,1] input would perturb every bin the model sees.
+// Confirmed empirically against the sherpa-onnx reference extractor.
 // DSP hot path: plain loops by design.
 public sealed class FbankExtractor
 {
