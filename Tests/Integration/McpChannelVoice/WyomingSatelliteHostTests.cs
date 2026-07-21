@@ -62,6 +62,16 @@ public class WyomingSatelliteHostTests
                 global::McpChannelVoice.Services.Verification.SpeakerDecision.Rejected, 0.12, null));
     }
 
+    private sealed class IdentifyingVerifier(string name)
+        : global::McpChannelVoice.Services.Verification.ISpeakerVerifier
+    {
+        public Task<global::McpChannelVoice.Services.Verification.SpeakerVerification> VerifyAsync(
+            IReadOnlyList<AudioChunk> speechAudio, long speechMs, SatelliteConfig config, CancellationToken ct,
+            bool enforceMinSpeech = true) =>
+            Task.FromResult(new global::McpChannelVoice.Services.Verification.SpeakerVerification(
+                global::McpChannelVoice.Services.Verification.SpeakerDecision.Accepted, 0.91, name, name));
+    }
+
     [Fact]
     public async Task Hub_DialsSatelliteRunsAndStreams_TranscribesAndSendsTranscriptBack()
     {
@@ -189,6 +199,130 @@ public class WyomingSatelliteHostTests
 
         var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
         transcriptText.ShouldBe(""); // legacy path re-arms with an (ignored) empty transcript
+
+        await host.StopAsync(CancellationToken.None);
+        listener.Stop();
+        await cts.CancelAsync();
+        try
+        { await fakeSatellite; }
+        catch { /* cancellation / disposal */ }
+    }
+
+    [Fact]
+    public async Task Hub_ConclusiveSpeaker_EmitsIdentifiedPersonAsSender()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = cts.Token;
+
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var sawRunSatellite = new TaskCompletionSource();
+        var sawTranscript = new TaskCompletionSource<string>();
+
+        var fakeSatellite = Task.Run(async () =>
+        {
+            using var conn = await listener.AcceptTcpClientAsync(ct);
+            await using var stream = conn.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+
+            var readLoop = Task.Run(async () =>
+            {
+                await foreach (var evt in reader.ReadAllAsync(ct))
+                {
+                    if (evt.Type == "run-satellite")
+                    { sawRunSatellite.TrySetResult(); }
+                    else if (evt.Type == "transcript")
+                    { sawTranscript.TrySetResult(evt.Data["text"]?.GetValue<string>() ?? ""); }
+                }
+            }, ct);
+
+            await sawRunSatellite.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+            await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject()), ct);
+
+            var data = new JsonObject { ["rate"] = 16_000, ["width"] = 2, ["channels"] = 1 };
+            await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
+            foreach (var _ in Enumerable.Range(0, 4))
+            {
+                await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(8000)), ct);
+            }
+            foreach (var _ in Enumerable.Range(0, 6))
+            {
+                await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
+            }
+
+            await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        }, ct);
+
+        var stt = new Mock<ISpeechToText>();
+        stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
+                                         It.IsAny<TranscriptionOptions>(),
+                                         It.IsAny<CancellationToken>()))
+            .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
+                async (audio, opts, token) =>
+                {
+                    await foreach (var _ in audio.WithCancellation(token))
+                    { }
+                    return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
+                });
+
+        var emitter = new CapturingEmitter();
+        var publisher = new Mock<IMetricsPublisher>();
+        var factory = new Mock<IConversationFactory>();
+        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var identity = ConversationIdGenerator.CreateFor("topic-x");
+                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
+                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
+                return new ConversationCreation(identity, topic);
+            });
+        var manager = new VoiceConversationManager(
+            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+        var dispatcher = new TranscriptDispatcher(
+            emitter, publisher.Object, manager, 0.4, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var sessions = new SatelliteSessionRegistry();
+        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
+        {
+            ["kitchen-01"] = new()
+            {
+                Identity = "household",
+                Room = "Kitchen",
+                WakeWord = "hey_jarvis",
+                Address = $"tcp://127.0.0.1:{port}"
+            }
+        });
+
+        var host = new WyomingSatelliteHost(
+            new WyomingClientSettings
+            {
+                ReconnectDelaySeconds = 1,
+                SilenceRmsThreshold = 500,
+                TrailingSilenceMs = 200,
+                MaxUtteranceMs = 3000,
+                MinSpeechMs = 100
+            },
+            // EarlyVerifyMs = 0 keeps the fake off the early-close path; only the terminal verify
+            // (which yields the identity) drives this test.
+            new VoiceSettings
+            {
+                AgentId = "mycroft",
+                FollowUp = new FollowUpSettings { Enabled = false },
+                SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = 0 }
+            },
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
+            TimeProvider.System,
+            NullLogger<WyomingSatelliteHost>.Instance,
+            new IdentifyingVerifier("fran"));
+
+        await host.StartAsync(ct);
+
+        var msg = await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        msg.Content.ShouldBe("hola");
+        msg.Sender.ShouldBe("fran"); // conclusive identity routed into Sender, not "household"
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();

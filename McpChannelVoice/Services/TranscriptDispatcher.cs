@@ -19,6 +19,7 @@ public sealed class TranscriptDispatcher(
         string? agentId,
         CaptureStats? stats,
         double? similarity,
+        string? identifiedSpeaker,
         CancellationToken ct)
     {
         var lowConfidence = transcript.Confidence is { } c && c < confidenceThreshold;
@@ -61,9 +62,14 @@ public sealed class TranscriptDispatcher(
 
         var dismissedAlert = session.TryConsumeDismissedAlert(timeProvider.GetUtcNow());
 
+        // A conclusive speaker match routes the enrolled person's identity into the Sender (so
+        // ChatMonitor keys memory/personalization per person); a doubtful/absent match falls back to
+        // the satellite's default identity. Telemetry below keeps Identity = the satellite identity.
+        var sender = identifiedSpeaker ?? session.Config.Identity;
+
         await emitter.EmitMessageNotificationAsync(
             conversationId,
-            session.Config.Identity,
+            sender,
             transcript.Text,
             agentId,
             session.Config.DisplayLocation,
