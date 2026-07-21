@@ -15,7 +15,7 @@ public class SpeakerVerificationModelTests(ITestOutputHelper output)
     public const string ModelUrl =
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM++.onnx";
 
-    private static readonly string CachePath =
+    private static readonly string _cachePath =
         Path.Combine(Path.GetTempPath(), "jackbot-speaker-embedding.onnx");
 
     private static string FixtureRoot => Path.Combine(
@@ -23,16 +23,16 @@ public class SpeakerVerificationModelTests(ITestOutputHelper output)
 
     private static async Task<string?> TryGetModelAsync()
     {
-        if (File.Exists(CachePath) && new FileInfo(CachePath).Length > 5_000_000)
+        if (File.Exists(_cachePath) && new FileInfo(_cachePath).Length > 5_000_000)
         {
-            return CachePath;
+            return _cachePath;
         }
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
             var bytes = await http.GetByteArrayAsync(ModelUrl);
-            await File.WriteAllBytesAsync(CachePath, bytes);
-            return CachePath;
+            await File.WriteAllBytesAsync(_cachePath, bytes);
+            return _cachePath;
         }
         catch
         {
