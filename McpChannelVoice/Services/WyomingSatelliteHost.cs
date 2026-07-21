@@ -288,8 +288,11 @@ public sealed class WyomingSatelliteHost(
         }
 
         var stats = capture.Stats;
+        // A capture still running at the early mark is not a short command, and there is a full
+        // EarlyVerifyMs of continuous audio to embed — so opt out of the short-utterance skip that
+        // protects genuinely brief commands at the terminal check.
         var verification = await speakerVerifier.VerifyAsync(
-            capture.BufferedAudio, stats.SpeechMs, session.Config, ct);
+            capture.BufferedAudio, stats.SpeechMs, session.Config, ct, enforceMinSpeech: false);
         if (verification.Decision != SpeakerDecision.Rejected)
         {
             return false;

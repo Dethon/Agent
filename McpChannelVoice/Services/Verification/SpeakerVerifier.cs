@@ -37,9 +37,11 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
     private ILogger<SpeakerVerifier> Logger { get; }
 
     public async Task<SpeakerVerification> VerifyAsync(
-        IReadOnlyList<AudioChunk> captureAudio, long speechMs, SatelliteConfig config, CancellationToken ct)
+        IReadOnlyList<AudioChunk> captureAudio, long speechMs, SatelliteConfig config, CancellationToken ct,
+        bool enforceMinSpeech = true)
     {
-        if (!config.ResolveVerificationEnabled(_settings) || speechMs < _settings.MinVerifySpeechMs)
+        if (!config.ResolveVerificationEnabled(_settings)
+            || (enforceMinSpeech && speechMs < _settings.MinVerifySpeechMs))
         {
             return new SpeakerVerification(SpeakerDecision.Skipped);
         }
