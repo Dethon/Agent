@@ -30,17 +30,18 @@ fi
 trap '[ "$RESTART_SATELLITE" = 1 ] && sudo systemctl start nabu-satellite' EXIT
 
 PHRASES=(
-  "Di tu frase de activacion y una orden completa, con voz natural."
-  "Pide el tiempo de manana como lo harias normalmente."
-  "Pide que ponga tu musica favorita en el salon."
-  "Pregunta que hora es y pide un temporizador de cinco minutos."
-  "Di una frase larga cualquiera, como si hablaras con el asistente."
+  "Pon música tranquila en el salón y baja un poco el volumen, por favor."
+  "¿Qué tiempo va a hacer mañana por la tarde aquí en casa?"
+  "Recuérdame sacar la basura esta noche antes de irme a dormir."
+  "Pon un temporizador de diez minutos para la pasta que está al fuego."
+  "Dime las noticias de hoy y cómo está el tráfico para ir al centro."
 )
 
 for i in $(seq 1 "$COUNT"); do
     idx=$(( (i - 1) % ${#PHRASES[@]} ))
     echo
-    echo "[$i/$COUNT] ${PHRASES[$idx]}"
+    echo "[$i/$COUNT] Lee esta frase en voz alta:"
+    echo "    ${PHRASES[$idx]}"
     for s in 3 2 1; do echo "  $s..."; sleep 1; done
     echo "  HABLA AHORA (${SECONDS_PER_TAKE}s)"
     arecord -q -D "plughw:CARD=$CARD,DEV=0" -f S16_LE -r 16000 -c 1 \
