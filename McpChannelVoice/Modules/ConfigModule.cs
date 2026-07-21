@@ -4,6 +4,7 @@ using Infrastructure.Metrics;
 using McpChannelVoice.McpPrompts;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Settings;
 using ModelContextProtocol.Protocol;
 using StackExchange.Redis;
@@ -80,6 +81,20 @@ public static class ConfigModule
             return McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
                 inner, settings.Stt.Streaming, settings.WyomingClient, sp.GetRequiredService<ILoggerFactory>());
         });
+
+        services.AddSingleton<ISpeakerVerifier>(sp =>
+            new SpeakerVerifier(
+                settings.SpeakerVerification,
+                () =>
+                {
+                    var embedder = new OnnxSpeakerEmbedder(settings.SpeakerVerification.ModelPath);
+                    var profiles = new SpeakerProfileStore(
+                        settings.SpeakerVerification.VoicesPath,
+                        embedder,
+                        sp.GetRequiredService<ILogger<SpeakerProfileStore>>()).Load();
+                    return (embedder, profiles);
+                },
+                sp.GetRequiredService<ILogger<SpeakerVerifier>>()));
 
         services.AddHostedService<WyomingSatelliteHost>();
         services.AddSingleton(settings.WyomingClient);
