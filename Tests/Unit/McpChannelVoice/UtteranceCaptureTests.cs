@@ -144,4 +144,20 @@ public class UtteranceCaptureTests
         (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
         capture.Stats.EndReason.ShouldBe("trailing_silence");
     }
+
+    [Fact]
+    public async Task SpeechAudio_ContainsOnlySpeechClassifiedChunks()
+    {
+        var capture = new UtteranceCapture(Gate());
+
+        capture.Feed(Silent()); // pre-roll gap seeds the floor
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent());
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        capture.SpeechAudio.Count.ShouldBe(2);
+        capture.SpeechAudio.ShouldAllBe(c => c.Data.Length == 3200);
+    }
 }

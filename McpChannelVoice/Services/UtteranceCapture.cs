@@ -25,10 +25,15 @@ public sealed class UtteranceCapture(SilenceGate gate)
     private readonly TaskCompletionSource<CaptureOutcome> _done =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _forced;
+    private readonly List<AudioChunk> _speechAudio = [];
 
     public Task<CaptureOutcome> Completed => _done.Task;
 
     public IAsyncEnumerable<AudioChunk> Audio => _chunks.Reader.ReadAllAsync();
+
+    // Speech-classified chunks only (per the gate). Feed is single-threaded on the
+    // Wyoming read loop; read this after Completed settles.
+    public IReadOnlyList<AudioChunk> SpeechAudio => _speechAudio;
 
     public CaptureStats Stats => new(
         gate.PeakRms,
@@ -41,6 +46,10 @@ public sealed class UtteranceCapture(SilenceGate gate)
     {
         var decision = gate.Process(
             chunk.Data.Span, chunk.Format.SampleRateHz, chunk.Format.SampleWidthBytes, chunk.Format.Channels);
+        if (gate.LastFrameWasSpeech)
+        {
+            _speechAudio.Add(chunk);
+        }
         _chunks.Writer.TryWrite(chunk);
 
         switch (decision)

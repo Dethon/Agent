@@ -395,4 +395,17 @@ public class SilenceGateTests
 
         gate.EndReason.ShouldBeNull();
     }
+
+    [Fact]
+    public void LastFrameWasSpeech_TracksPerChunkClassification()
+    {
+        var gate = NewGate();
+
+        Feed(gate, Silent()); // pre-roll gap seeds the floor
+        gate.LastFrameWasSpeech.ShouldBeFalse();
+        Feed(gate, Loud());
+        gate.LastFrameWasSpeech.ShouldBeTrue();
+        Feed(gate, Silent());
+        gate.LastFrameWasSpeech.ShouldBeFalse();
+    }
 }
