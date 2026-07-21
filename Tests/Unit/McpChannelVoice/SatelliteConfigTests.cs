@@ -99,8 +99,8 @@ public class SatelliteConfigTests
         var global = new SpeakerVerificationSettings();
         var config = new SatelliteConfig { Identity = "household", Room = "Office" };
 
-        config.ResolveSimilarityThreshold(global).ShouldBe(0.60);
-        config.ResolveIdentifyThreshold(global).ShouldBe(0.70);
+        config.ResolveSimilarityThreshold(global).ShouldBe(0.70);
+        config.ResolveIdentifyThreshold(global).ShouldBe(0.75);
         config.ResolveIdentifyMargin(global).ShouldBe(0.10);
     }
 

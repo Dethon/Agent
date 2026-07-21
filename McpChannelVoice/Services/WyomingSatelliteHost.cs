@@ -355,6 +355,14 @@ public sealed class WyomingSatelliteHost(
                 // A conclusive match names the speaker (routed into the Sender for per-person memory);
                 // the doubtful band leaves this null so the dispatcher keeps the satellite identity.
                 identifiedSpeaker = verification.IdentifiedSpeaker;
+                if (similarity is not null)
+                {
+                    // Accepted scores only reach Redis telemetry; log them too so threshold
+                    // calibration doesn't require correlating metrics with transcripts offline.
+                    logger.LogInformation(
+                        "Accepting capture from {Id}: similarity {Similarity:F3}, speaker {Speaker}",
+                        session.SatelliteId, similarity, identifiedSpeaker ?? session.Config.Identity);
+                }
             }
 
             var sw = Stopwatch.StartNew();
