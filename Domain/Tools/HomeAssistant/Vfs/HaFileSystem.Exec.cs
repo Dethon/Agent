@@ -98,8 +98,17 @@ public sealed partial class HaFileSystem
         }
         catch (HomeAssistantException ex)
         {
-            return done(1, "",
-                $"{ex.Message}\nRe-check the field types with `{serviceName}.sh --help`; don't retry the same shape.");
+            // 400 = HA rejected the payload shape; 5xx = the payload was fine but the service
+            // itself failed (e.g. play_media couldn't resolve a name in the MA library) — the
+            // worst response there is nudging the caller back to --help to "fix" a shape that
+            // was never wrong. 401/404 messages already say what's wrong; add nothing.
+            var hint = ex.StatusCode switch
+            {
+                400 => $"\nRe-check the field types with `{serviceName}.sh --help`; don't retry the same shape.",
+                >= 500 => "\nThe arguments were accepted but the action failed inside Home Assistant — a named item may not exist. For media, list the library (`browse_media.sh`) and use an exact title instead of retrying guesses.",
+                _ => ""
+            };
+            return done(1, "", $"{ex.Message}{hint}");
         }
     }
 
