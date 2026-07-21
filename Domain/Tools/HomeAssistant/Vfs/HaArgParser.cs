@@ -95,7 +95,10 @@ public static class HaArgParser
             }
             catch (JsonException)
             {
-                throw new ArgumentException($"--{name} expects a JSON value, got '{raw}'.");
+                // HA `object` selectors accept any JSON, and for fields like MA's `media_id` the
+                // common value is a plain name. Non-JSON text becomes a JSON string so callers
+                // aren't forced into '"..."' double-quoting.
+                return JsonValue.Create(raw);
             }
         }
         if (TryGetSelectOptions(selector, out var options) && !options.Contains(raw, StringComparer.Ordinal))
