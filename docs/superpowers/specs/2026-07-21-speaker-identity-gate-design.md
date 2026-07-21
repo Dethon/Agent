@@ -61,11 +61,20 @@ minSpeech, but the code path is total).
   vectors generated offline with the reference implementation.
 - The model file is baked into the Docker image at build time from a pinned
   URL with SHA256 verification (no runtime download, no new secret).
-- **Final pick: `wespeaker_en_voxceleb_CAM++.onnx`** (CAM++/3D-Speaker), from
-  the sherpa-onnx `speaker-recongition-models` release:
-  `https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM++.onnx`,
+- **Final pick: `3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx`**
+  (ERes2NetV2/3D-Speaker), from the sherpa-onnx `speaker-recongition-models`
+  release:
+  `https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx`,
   pinned at
-  `sha256:c46fad10b5f81e1aa4a60c162714208577093655076c5450f8c469e522ec54ef`.
+  `sha256:bf1a75b9930474cf3389ef415e6e5d38ca96fea4a3a00f7e301d080a58ee2239`.
+  The original pick, `wespeaker_en_voxceleb_CAM++.onnx`, was replaced
+  2026-07-22 after field data showed a NEGATIVE genuine/impostor margin on the
+  prod mic chain (worst genuine LOO 0.845 vs best cross-person 0.871 — its
+  embeddings tracked the shared channel, not the speaker). ERes2NetV2 on the
+  same WAVs through the same C# frontend: genuine LOO 0.87–0.94 across all
+  orientations/distances, cross-person max 0.52 (margin +0.35). NeMo
+  TitaNet-large scored an even wider margin (+0.50) but needs a different
+  (librosa-style) feature frontend — rejected as not worth the frontend risk.
 
 ### Enrollment
 

@@ -13,7 +13,8 @@ public sealed class SpeakerProfileStore(string voicesPath, ISpeakerEmbedder embe
     // Pipeline version — bump whenever the embedding pipeline changes (model swap, fbank
     // change, normalization change, etc.) so every cached profile.json is invalidated.
     // v2: mean-centroid Embedding became per-take Prototypes (+ mean).
-    private const int CacheVersion = 2;
+    // v3: embedding model swapped CAM++ → ERes2NetV2 (same fbank frontend, new vectors).
+    private const int CacheVersion = 3;
 
     private sealed record CacheEntry(int Version, List<CachedFile> Files, float[][] Prototypes);
     private sealed record CachedFile(string Name, long Length, DateTime ModifiedUtc);

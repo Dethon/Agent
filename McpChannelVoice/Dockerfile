@@ -15,8 +15,8 @@ RUN dotnet publish "./McpChannelVoice.csproj" -c $BUILD_CONFIGURATION -o /app/pu
 
 FROM base AS final
 WORKDIR /app
-ADD --checksum=sha256:c46fad10b5f81e1aa4a60c162714208577093655076c5450f8c469e522ec54ef --chown=$APP_UID:$APP_UID \
-    https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM++.onnx \
+ADD --checksum=sha256:bf1a75b9930474cf3389ef415e6e5d38ca96fea4a3a00f7e301d080a58ee2239 --chown=$APP_UID:$APP_UID \
+    https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx \
     /app/models/speaker-embedding.onnx
 COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "McpChannelVoice.dll"]

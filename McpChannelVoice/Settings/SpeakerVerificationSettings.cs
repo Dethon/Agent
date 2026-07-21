@@ -6,24 +6,25 @@ public record SpeakerVerificationSettings
     public bool Enabled { get; init; }
     public string ModelPath { get; init; } = "/app/models/speaker-embedding.onnx";
     public string VoicesPath { get; init; } = "/voices";
-    // Cosine accept bar. Field-measured on real far-field hardware (fran-office XVF3800 + loud
-    // TV, with the endpointing PeakDropDb=10 and continuous-embedding fixes live): pure TV that
-    // survives endpointing scores ~0.38-0.42; the enrolled speaker ~0.50-0.85 (his low end is
-    // over loud TV, which mixes into the continuous capture). 0.45 sits in that ~0.08 gap. The
-    // earlier 0.6 came from synthetic-TTS fixtures (same-speaker ~0.93) and locked the real
-    // speaker out over loud TV. Thin margin, far-field physics — field-tune per satellite via
-    // SatelliteConfig.Verification from the published Similarity telemetry.
-    public double SimilarityThreshold { get; init; } = 0.45;
+    // Cosine accept bar, calibrated for ERes2NetV2 on the real enrollment WAVs (2026-07-22,
+    // offline harness, two enrolled people × all orientations/distances): genuine leave-one-out
+    // 0.87-0.94, cross-person (unenrolled-human proxy) max 0.52. 0.60 sits above the impostor
+    // band with headroom below the genuine band for live-capture degradation (TV bleeding into
+    // the continuous capture). The predecessor CAM++ had NEGATIVE genuine/impostor margin on
+    // this hardware (its embeddings tracked the channel, not the speaker) — do not reuse its
+    // old 0.45/0.55 calibration. TV band unmeasured on the new scale — field-verify via the
+    // published Similarity telemetry and tune per satellite via SatelliteConfig.Verification.
+    public double SimilarityThreshold { get; init; } = 0.60;
     // Below this much gate-classified speech the capture skips verification entirely:
     // sub-second embeddings are unreliable and short real commands must stay safe.
     public int MinVerifySpeechMs { get; init; } = 800;
     // Cosine bar to *name* the speaker (route the enrolled folder name into the message Sender for
     // per-person memory), distinct from — and above — the accept bar. A capture in the
     // [SimilarityThreshold, IdentifyThreshold) band is admitted but stays the generic household
-    // identity: attribute to a person only when sure. Field data 2026-07-20: enrolled speaker clear
-    // commands 0.60-0.92, over-loud-TV lows 0.50-0.60; 0.65 names clean speech and abstains in the
-    // ambiguous band. Field-tune per satellite via SatelliteConfig.Verification.
-    public double IdentifyThreshold { get; init; } = 0.65;
+    // identity: attribute to a person only when sure. ERes2NetV2 calibration (2026-07-22): the two
+    // enrolled voices score ≤0.52 against each other, genuine 0.87-0.94 — 0.70 names clean speech
+    // and abstains in the ambiguous band. Field-tune per satellite via SatelliteConfig.Verification.
+    public double IdentifyThreshold { get; init; } = 0.70;
     // Minimum best-minus-runner-up cosine gap before naming: with two enrolled voices scoring close,
     // naming the top one is a guess, so fall back to household. Auto-satisfied with a single enrolled
     // profile (no runner-up). Conservative default; calibratable only once a second voice is enrolled.

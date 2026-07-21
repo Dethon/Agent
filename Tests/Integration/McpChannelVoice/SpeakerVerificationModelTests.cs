@@ -11,12 +11,13 @@ namespace Tests.Integration.McpChannelVoice;
 // fixtures. Downloads the model once into a temp cache; skips when offline.
 public class SpeakerVerificationModelTests(ITestOutputHelper output)
 {
-    // Same artifact the Dockerfile bakes into the image (Task 9 pins the same SHA).
+    // Same artifact the Dockerfile bakes into the image (same URL, same SHA pin).
     public const string ModelUrl =
-        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM++.onnx";
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx";
 
+    // Model-specific cache name: a stale cache from a previous model must not be reused.
     private static readonly string _cachePath =
-        Path.Combine(Path.GetTempPath(), "jackbot-speaker-embedding.onnx");
+        Path.Combine(Path.GetTempPath(), "jackbot-speaker-embedding-eres2netv2.onnx");
 
     private static string FixtureRoot => Path.Combine(
         AppContext.BaseDirectory, "Integration", "McpChannelVoice", "Fixtures", "speaker-wavs");
@@ -91,8 +92,8 @@ public class SpeakerVerificationModelTests(ITestOutputHelper output)
             {
                 File.Copy(wav, Path.Combine(aliceOnly, "alice", Path.GetFileName(wav)));
             }
-            // 0.7 is the measured CAM++ operating point for these fixtures (same~=0.93,
-            // cross~=0.55) - it sits cleanly in the gap. The SHIPPED default in
+            // 0.7 sits cleanly in the measured ERes2NetV2 gap for these fixtures
+            // (same ~0.92-0.96, cross ~0.26-0.27). The SHIPPED default in
             // SpeakerVerificationSettings is 0.6, refined further per satellite in the field.
             var verifier = new SpeakerVerifier(
                 new SpeakerVerificationSettings { Enabled = true, SimilarityThreshold = 0.7 },
