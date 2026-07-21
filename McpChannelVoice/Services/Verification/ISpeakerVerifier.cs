@@ -16,9 +16,10 @@ public readonly record struct SpeakerVerification(
 
 public interface ISpeakerVerifier
 {
-    // speechAudio: the capture's speech-classified chunks; speechMs the gate's speech
-    // total. Skipped (disabled / too short) and Unavailable (no model, no profiles,
-    // inference failure) both mean "let the capture through" — only Rejected blocks.
+    // captureAudio: the full continuous capture (enrollment-matching — embedding silence-cut
+    // speech-only fragments collapses similarity); speechMs the gate's speech total, used only
+    // for the short-utterance skip. Skipped (disabled / too short) and Unavailable (no model, no
+    // profiles, inference failure) both mean "let the capture through" — only Rejected blocks.
     Task<SpeakerVerification> VerifyAsync(
-        IReadOnlyList<AudioChunk> speechAudio, long speechMs, SatelliteConfig config, CancellationToken ct);
+        IReadOnlyList<AudioChunk> captureAudio, long speechMs, SatelliteConfig config, CancellationToken ct);
 }

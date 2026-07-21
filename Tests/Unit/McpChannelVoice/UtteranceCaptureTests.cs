@@ -146,7 +146,7 @@ public class UtteranceCaptureTests
     }
 
     [Fact]
-    public async Task SpeechAudio_ContainsOnlySpeechClassifiedChunks()
+    public async Task BufferedAudio_ContainsEveryChunkContinuous()
     {
         var capture = new UtteranceCapture(Gate());
 
@@ -154,10 +154,12 @@ public class UtteranceCaptureTests
         capture.Feed(Loud());
         capture.Feed(Loud());
         capture.Feed(Silent());
-        capture.Feed(Silent());
+        capture.Feed(Silent()); // trailing silence ends the capture
 
         (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
-        capture.SpeechAudio.Count.ShouldBe(2);
-        capture.SpeechAudio.ShouldAllBe(c => c.Data.Length == 3200);
+        // The verifier embeds continuous, enrollment-matching audio: every fed chunk, not the
+        // silence-cut speech-only subset (embedding glued fragments collapses CAM++ similarity).
+        capture.BufferedAudio.Count.ShouldBe(5);
+        capture.BufferedAudio.ShouldAllBe(c => c.Data.Length == 3200);
     }
 }
