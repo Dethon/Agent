@@ -104,22 +104,38 @@ public static class HomeAssistantPrompt
         alarms calendar at the requested offset with the same summary and description.
 
         ### Music playback
-        Each room's satellite is a `media_player.<room>` (a Music Assistant / Snapcast player in that
-        HA area). The player directory holds two `play_media` actions — use the Music Assistant one,
-        which resolves names; never the bare one:
-        - Play by name: from the player directory, `exec music_assistant.play_media.sh --media_id
-          "<search text>"` — an artist, track, album, playlist, or radio-station name, e.g.
-          `--media_id "miles davis"`. Add `--media_type artist|album|track|playlist|radio` to
-          disambiguate when the name alone is unclear. Default the target to the **speaking room**
-          (`media_player.<room>` for the room the request came from) unless another room is named;
-          "everywhere" => run it on every room player.
+
+        Music plays through Music Assistant (MA). The MA player for a room is the `media_player`
+        whose `state.json` attributes include `app_id: music_assistant` and `mass_player_type`.
+        Other media_players (TVs, etc.) also list `music_assistant.*.sh` actions, but MA calls on
+        them do nothing — when a room has more than one player, read `state.json` and pick the MA
+        one. Default the target to the **speaking room**'s player (the room the request came
+        from) unless another room is named; "everywhere" => run it on every room's MA player.
+
+        - Tracks, artists, albums, radio: play directly by name from the player directory:
+          `exec music_assistant.play_media.sh --media_id "miles davis"` — add
+          `--media_type artist|album|track|radio` to disambiguate. Free-text names resolve
+          through the streaming providers.
+        - Playlists ("my playlist", "songs I like", any saved list): NEVER guess the name —
+          playlist names only resolve against the user's MA library. List it first:
+          `exec browse_media.sh --media_content_id playlists --media_content_type music_assistant`
+          then play the exact title it returned:
+          `exec music_assistant.play_media.sh --media_id "<exact title>" --media_type playlist`.
+        - A 500 from `music_assistant.play_media.sh` means the item could not be resolved (the
+          name isn't in the library) — NOT that MA is down. Browse the library and use an exact
+          title instead of retrying name variants.
+        - `search_media.sh` searches the entire provider catalog (public Spotify etc.), not the
+          user's saved items, and the URIs it returns are generally not playable via
+          `play_media`. Use it only for content the user doesn't have saved, then play the
+          result by its exact title.
         - Do NOT use the bare `play_media.sh` (`media_player.play_media`): it needs a concrete
-          `media_content_id`/URI you cannot know, so guessing a playlist id there just fails. Only
-          `music_assistant.play_media.sh` searches by name.
-        - Transport: `media_play.sh` / `media_pause.sh` / `media_next_track.sh` / `volume_set.sh` on
-          the player.
-        - Grouping (synced multi-room): `join.sh` (`media_player.join`; `--group_members` = the other
-          players) to play in sync; `unjoin.sh` (`media_player.unjoin`) to split a room back out.
+          `media_content_id`/URI you cannot know. Only `music_assistant.play_media.sh` resolves
+          names.
+        - Transport: `media_play.sh` / `media_pause.sh` / `media_next_track.sh` / `volume_set.sh`
+          on the player.
+        - Grouping (synced multi-room): `join.sh` (`media_player.join`; `--group_members` = the
+          other players) to play in sync; `unjoin.sh` (`media_player.unjoin`) to split a room
+          back out.
         Music ducks automatically while the satellite speaks — never lower or pause music just to
         talk.
 
