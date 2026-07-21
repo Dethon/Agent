@@ -3,9 +3,13 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 
 namespace McpChannelVoice.Services.Verification;
 
-// Runs a WeSpeaker/CAM++-family speaker-embedding ONNX model: input [1, T, 80]
-// mean-normalized fbank features, output [1, D] speaker embedding. InferenceSession
-// is thread-safe for concurrent Run calls; one instance serves the whole hub.
+// Runs a WeSpeaker/CAM++-family speaker-embedding ONNX model: input [1, T, 80] RAW
+// log-mel fbank features, output [1, D] speaker embedding. This model family applies
+// its own normalization internally, so feeding externally mean-normalized fbank
+// double-normalizes and collapses embeddings into a narrow cosine-similarity cone
+// (verified empirically against the sherpa-onnx reference implementation on the
+// project's fixture WAVs). InferenceSession is thread-safe for concurrent Run
+// calls; one instance serves the whole hub.
 public sealed class OnnxSpeakerEmbedder(string modelPath) : ISpeakerEmbedder, IDisposable
 {
     private readonly InferenceSession _session = new(modelPath);
@@ -17,7 +21,6 @@ public sealed class OnnxSpeakerEmbedder(string modelPath) : ISpeakerEmbedder, ID
         {
             throw new InvalidOperationException("Audio too short to embed");
         }
-        FbankExtractor.MeanNormalize(frames);
 
         var tensor = new DenseTensor<float>([1, frames.Length, 80]);
         for (var f = 0; f < frames.Length; f++)

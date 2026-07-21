@@ -80,23 +80,6 @@ public sealed class FbankExtractor
         return frames;
     }
 
-    public static void MeanNormalize(float[][] frames)
-    {
-        if (frames.Length == 0)
-        {
-            return;
-        }
-        for (var b = 0; b < NumBins; b++)
-        {
-            var mean = 0f;
-            for (var f = 0; f < frames.Length; f++)
-            { mean += frames[f][b]; }
-            mean /= frames.Length;
-            for (var f = 0; f < frames.Length; f++)
-            { frames[f][b] -= mean; }
-        }
-    }
-
     private static float[] BuildPoveyWindow()
     {
         var window = new float[FrameLength];
