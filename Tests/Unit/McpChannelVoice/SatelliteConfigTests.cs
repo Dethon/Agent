@@ -90,6 +90,6 @@ public class SatelliteConfigTests
         config.ResolveFloorWindowMs(global).ShouldBe(3000);
         config.ResolveEnterMarginDb(global).ShouldBe(9);
         config.ResolveExitMarginDb(global).ShouldBe(4);
-        config.ResolvePeakDropDb(global).ShouldBe(15);
+        config.ResolvePeakDropDb(global).ShouldBe(10);
     }
 }
