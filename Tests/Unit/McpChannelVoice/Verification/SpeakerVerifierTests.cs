@@ -13,8 +13,8 @@ public class SpeakerVerifierTests
         public float[] Embed(ReadOnlySpan<byte> pcmS16Le) => embedding;
     }
 
-    private static readonly float[] FranVoice = OnnxSpeakerEmbedder.L2Normalize([1f, 0f, 0f]);
-    private static readonly float[] TvVoice = OnnxSpeakerEmbedder.L2Normalize([0f, 1f, 0f]);
+    private static readonly float[] _franVoice = OnnxSpeakerEmbedder.L2Normalize([1f, 0f, 0f]);
+    private static readonly float[] _tvVoice = OnnxSpeakerEmbedder.L2Normalize([0f, 1f, 0f]);
 
     private static SatelliteConfig Config(VerificationOverrides? overrides = null) =>
         new() { Identity = "household", Room = "office", Verification = overrides };
@@ -28,13 +28,13 @@ public class SpeakerVerifierTests
         IReadOnlyList<SpeakerProfile>? profiles = null) =>
         new(
             settings ?? new SpeakerVerificationSettings { Enabled = true },
-            () => (new FixedEmbedder(heardVoice), profiles ?? [new SpeakerProfile("fran", FranVoice)]),
+            () => (new FixedEmbedder(heardVoice), profiles ?? [new SpeakerProfile("fran", _franVoice)]),
             NullLogger<SpeakerVerifier>.Instance);
 
     [Fact]
     public async Task VerifyAsync_EnrolledVoice_Accepts()
     {
-        var result = await Verifier(FranVoice).VerifyAsync(Chunks(), 2000, Config(), default);
+        var result = await Verifier(_franVoice).VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Accepted);
         result.Similarity!.Value.ShouldBe(1.0, 1e-5);
@@ -44,7 +44,7 @@ public class SpeakerVerifierTests
     [Fact]
     public async Task VerifyAsync_UnknownVoice_Rejects()
     {
-        var result = await Verifier(TvVoice).VerifyAsync(Chunks(), 2000, Config(), default);
+        var result = await Verifier(_tvVoice).VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Rejected);
         result.Similarity!.Value.ShouldBe(0.0, 1e-5);
@@ -53,7 +53,7 @@ public class SpeakerVerifierTests
     [Fact]
     public async Task VerifyAsync_ShortSpeech_SkipsWithoutEmbedding()
     {
-        var result = await Verifier(TvVoice).VerifyAsync(Chunks(), 500, Config(), default);
+        var result = await Verifier(_tvVoice).VerifyAsync(Chunks(), 500, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Skipped);
         result.Similarity.ShouldBeNull();
@@ -64,7 +64,7 @@ public class SpeakerVerifierTests
     {
         // The early-close check judges a still-running capture on its continuous audio, so it opts
         // out of the short-utterance skip: sub-MinVerifySpeechMs speech must still be verified.
-        var result = await Verifier(TvVoice).VerifyAsync(Chunks(), 500, Config(), default, enforceMinSpeech: false);
+        var result = await Verifier(_tvVoice).VerifyAsync(Chunks(), 500, Config(), default, enforceMinSpeech: false);
 
         result.Decision.ShouldBe(SpeakerDecision.Rejected);
         result.Similarity!.Value.ShouldBe(0.0, 1e-5);
@@ -73,7 +73,7 @@ public class SpeakerVerifierTests
     [Fact]
     public async Task VerifyAsync_DisabledGlobally_Skips()
     {
-        var verifier = Verifier(TvVoice, new SpeakerVerificationSettings { Enabled = false });
+        var verifier = Verifier(_tvVoice, new SpeakerVerificationSettings { Enabled = false });
 
         (await verifier.VerifyAsync(Chunks(), 2000, Config(), default))
             .Decision.ShouldBe(SpeakerDecision.Skipped);
@@ -84,7 +84,7 @@ public class SpeakerVerifierTests
     {
         var config = Config(new VerificationOverrides { Enabled = false });
 
-        (await Verifier(TvVoice).VerifyAsync(Chunks(), 2000, config, default))
+        (await Verifier(_tvVoice).VerifyAsync(Chunks(), 2000, config, default))
             .Decision.ShouldBe(SpeakerDecision.Skipped);
     }
 
@@ -94,14 +94,14 @@ public class SpeakerVerifierTests
         // Similarity 0.0 vs a per-satellite threshold of -1 => accepted.
         var config = Config(new VerificationOverrides { SimilarityThreshold = -1 });
 
-        (await Verifier(TvVoice).VerifyAsync(Chunks(), 2000, config, default))
+        (await Verifier(_tvVoice).VerifyAsync(Chunks(), 2000, config, default))
             .Decision.ShouldBe(SpeakerDecision.Accepted);
     }
 
     [Fact]
     public async Task VerifyAsync_NoProfiles_IsUnavailable()
     {
-        var verifier = Verifier(TvVoice, profiles: []);
+        var verifier = Verifier(_tvVoice, profiles: []);
 
         (await verifier.VerifyAsync(Chunks(), 2000, Config(), default))
             .Decision.ShouldBe(SpeakerDecision.Unavailable);
@@ -129,7 +129,7 @@ public class SpeakerVerifierTests
         var throwing = new ThrowingEmbedder();
         var verifier = new SpeakerVerifier(
             new SpeakerVerificationSettings { Enabled = true },
-            () => ((ISpeakerEmbedder)throwing, [new SpeakerProfile("fran", FranVoice)]),
+            () => ((ISpeakerEmbedder)throwing, [new SpeakerProfile("fran", _franVoice)]),
             NullLogger<SpeakerVerifier>.Instance);
 
         (await verifier.VerifyAsync(Chunks(), 2000, Config(), default))
@@ -165,7 +165,7 @@ public class SpeakerVerifierTests
     {
         // One enrolled voice, a clean match: the margin guard has no runner-up to clear, so a
         // score past IdentifyThreshold names the person.
-        var result = await VerifierWith(FranVoice, [new SpeakerProfile("fran", FranVoice)])
+        var result = await VerifierWith(_franVoice, [new SpeakerProfile("fran", _franVoice)])
             .VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Accepted);
@@ -177,7 +177,7 @@ public class SpeakerVerifierTests
     {
         // Passes the gate (>= 0.45) but sits in the doubtful band (< 0.65) -> household, not named.
         var heard = Unit(0.55f, (float)Math.Sqrt(1 - (0.55 * 0.55)), 0f); // cosine 0.55 to fran
-        var result = await VerifierWith(heard, [new SpeakerProfile("fran", FranVoice)])
+        var result = await VerifierWith(heard, [new SpeakerProfile("fran", _franVoice)])
             .VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Accepted);
@@ -192,7 +192,7 @@ public class SpeakerVerifierTests
         // margin guard withholds the identity even though the top score clears IdentifyThreshold.
         var heard = Unit(0.7f, 0.65f, 0f);
         var result = await VerifierWith(
-                heard, [new SpeakerProfile("fran", FranVoice), new SpeakerProfile("bob", TvVoice)])
+                heard, [new SpeakerProfile("fran", _franVoice), new SpeakerProfile("bob", _tvVoice)])
             .VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Accepted);
@@ -205,7 +205,7 @@ public class SpeakerVerifierTests
     {
         // Best (1.0) clears the runner-up (0.0) by well over the margin -> named.
         var result = await VerifierWith(
-                FranVoice, [new SpeakerProfile("fran", FranVoice), new SpeakerProfile("bob", TvVoice)])
+                _franVoice, [new SpeakerProfile("fran", _franVoice), new SpeakerProfile("bob", _tvVoice)])
             .VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.IdentifiedSpeaker.ShouldBe("fran");
@@ -214,7 +214,7 @@ public class SpeakerVerifierTests
     [Fact]
     public async Task VerifyAsync_Rejected_DoesNotIdentify()
     {
-        var result = await VerifierWith(TvVoice, [new SpeakerProfile("fran", FranVoice)])
+        var result = await VerifierWith(_tvVoice, [new SpeakerProfile("fran", _franVoice)])
             .VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Rejected);
