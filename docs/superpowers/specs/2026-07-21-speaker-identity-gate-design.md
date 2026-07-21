@@ -93,11 +93,13 @@ minSpeech, but the code path is total).
 ### Decision policy
 
 - Similarity = max cosine over enrolled profiles.
-- Accept iff similarity ≥ `SimilarityThreshold`. Ships at **0.35** (cosine;
-  expected operating range 0.25–0.5 for this model family), calibrated during
-  the integration test against the two-speaker fixtures and re-tuned from the
-  published field distributions — conservative first (accept unless clearly
-  foreign), tightened with data.
+- Accept iff similarity ≥ `SimilarityThreshold`. Ships at **0.5** (cosine).
+  Real CAM++ measurements from the integration test (same audio, sherpa-onnx
+  reference confirmed): same-speaker ~0.93, cross-speaker ~0.44–0.55 on
+  synthetic voices — so 0.5 sits just above the cross-speaker band as a
+  conservative starting point, and is re-tuned per satellite from the published
+  field distributions. (The earlier 0.35 guess predated the measured data and
+  would have accepted strangers.)
 - **Short-utterance skip:** captures with less than `MinVerifySpeechMs`
   (default 800 ms) of gate-classified speech skip verification and pass.
   Sub-second embeddings are unreliable, and a measured real command

@@ -6,9 +6,11 @@ public record SpeakerVerificationSettings
     public bool Enabled { get; init; }
     public string ModelPath { get; init; } = "/app/models/speaker-embedding.onnx";
     public string VoicesPath { get; init; } = "/voices";
-    // Cosine accept bar. Conservative (accept-leaning) until field-tuned; see the spec's
-    // calibration notes — the integration test prints real same/cross-speaker scores.
-    public double SimilarityThreshold { get; init; } = 0.35;
+    // Cosine accept bar. Real CAM++ measurements (integration test): same-speaker ~0.93,
+    // cross-speaker ~0.44-0.55 on synthetic voices. Ships at 0.5 — a conservative starting
+    // point just above the cross-speaker band; field-tune per satellite from the published
+    // Similarity telemetry (per-satellite override via SatelliteConfig.Verification).
+    public double SimilarityThreshold { get; init; } = 0.5;
     // Below this much gate-classified speech the capture skips verification entirely:
     // sub-second embeddings are unreliable and short real commands must stay safe.
     public int MinVerifySpeechMs { get; init; } = 800;
