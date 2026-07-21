@@ -124,4 +124,84 @@ public class SpeakerProfileStoreTests : IDisposable
         new SpeakerProfileStore(Path.Combine(_dir, "nope"), new FakeEmbedder(), NullLogger<SpeakerProfileStore>.Instance)
             .Load().ShouldBeEmpty();
     }
+
+    // Same canonical WAV as Wav(), but with an odd-length LIST chunk (plus its
+    // RIFF pad byte) inserted between fmt and data, to exercise odd-chunk padding.
+    private static byte[] WavWithOddAncillaryChunk(short value, int samples = 1600)
+    {
+        var data = new byte[samples * 2];
+        for (var i = 0; i < samples; i++)
+        {
+            data[2 * i] = (byte)(value & 0xFF);
+            data[2 * i + 1] = (byte)((value >> 8) & 0xFF);
+        }
+        var listPayload = new byte[] { 1, 2, 3, 4, 5 }; // odd length -> requires a pad byte
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+        w.Write("RIFF"u8);
+        w.Write(4 + (8 + 16) + (8 + listPayload.Length + 1) + (8 + data.Length));
+        w.Write("WAVE"u8);
+        w.Write("fmt "u8);
+        w.Write(16);
+        w.Write((short)1);      // PCM
+        w.Write((short)1);      // mono
+        w.Write(16_000);        // sample rate
+        w.Write(16_000 * 2);    // byte rate
+        w.Write((short)2);      // block align
+        w.Write((short)16);     // bits
+        w.Write("LIST"u8);
+        w.Write(listPayload.Length);
+        w.Write(listPayload);
+        w.Write((byte)0); // RIFF pad byte (chunkSize is odd)
+        w.Write("data"u8);
+        w.Write(data.Length);
+        w.Write(data);
+        return ms.ToArray();
+    }
+
+    // Same canonical WAV as Wav(), but the data chunk header claims more bytes
+    // than actually follow, to exercise truncated-data detection.
+    private static byte[] TruncatedDataWav()
+    {
+        var declaredSize = 3200;
+        var actualData = new byte[1600];
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+        w.Write("RIFF"u8);
+        w.Write(36 + declaredSize);
+        w.Write("WAVE"u8);
+        w.Write("fmt "u8);
+        w.Write(16);
+        w.Write((short)1);      // PCM
+        w.Write((short)1);      // mono
+        w.Write(16_000);        // sample rate
+        w.Write(16_000 * 2);    // byte rate
+        w.Write((short)2);      // block align
+        w.Write((short)16);     // bits
+        w.Write("data"u8);
+        w.Write(declaredSize);
+        w.Write(actualData);
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Load_WavWithOddLengthAncillaryChunk_StillBuildsProfile()
+    {
+        WriteVoice("fran", WavWithOddAncillaryChunk(1000));
+
+        var profiles = new SpeakerProfileStore(_dir, new FakeEmbedder(), NullLogger<SpeakerProfileStore>.Instance).Load();
+
+        profiles.Count.ShouldBe(1);
+        profiles.Single().Name.ShouldBe("fran");
+    }
+
+    [Fact]
+    public void Load_TruncatedDataChunk_IsSkipped()
+    {
+        WriteVoice("fran", TruncatedDataWav());
+
+        var profiles = new SpeakerProfileStore(_dir, new FakeEmbedder(), NullLogger<SpeakerProfileStore>.Instance).Load();
+
+        profiles.ShouldBeEmpty();
+    }
 }

@@ -151,10 +151,21 @@ public sealed class SpeakerProfileStore(string voicesPath, ISpeakerEmbedder embe
             else if (chunkId == "data")
             {
                 data = reader.ReadBytes(chunkSize);
+                if (data.Length != chunkSize)
+                {
+                    throw new InvalidDataException(
+                        $"Truncated data chunk: expected {chunkSize} bytes, got {data.Length}");
+                }
             }
             else
             {
                 reader.BaseStream.Seek(chunkSize, SeekOrigin.Current);
+            }
+
+            // RIFF pads every odd-sized chunk with one extra byte not counted in chunkSize.
+            if (chunkSize % 2 != 0)
+            {
+                reader.BaseStream.Seek(1, SeekOrigin.Current);
             }
         }
         return formatOk && data is not null
