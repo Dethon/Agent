@@ -62,7 +62,7 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
                 .OrderByDescending(m => m.Similarity)
                 .ToList();
             var best = ranked[0];
-            var decision = best.Similarity >= config.ResolveSimilarityThreshold(_settings)
+            var decision = best.Similarity >= EffectiveThreshold(speechMs, config)
                 ? SpeakerDecision.Accepted
                 : SpeakerDecision.Rejected;
 
@@ -78,6 +78,26 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
             Logger.LogWarning(ex, "Speaker verification failed for this capture (fail-open)");
             return new SpeakerVerification(SpeakerDecision.Unavailable);
         }
+    }
+
+    // Duration-aware accept bar: embeddings of short utterances are unreliable (genuine speech
+    // collapses toward the impostor band under ~2s), so the bar ramps linearly from the short
+    // floor at MinVerifySpeechMs up to the full threshold at FullThresholdSpeechMs.
+    private double EffectiveThreshold(long speechMs, SatelliteConfig config)
+    {
+        var full = config.ResolveSimilarityThreshold(_settings);
+        var floor = config.ResolveShortSpeechSimilarityThreshold(_settings);
+        var rampStart = _settings.MinVerifySpeechMs;
+        var rampEnd = config.ResolveFullThresholdSpeechMs(_settings);
+        if (speechMs >= rampEnd || rampEnd <= rampStart)
+        {
+            return full;
+        }
+        if (speechMs <= rampStart)
+        {
+            return floor;
+        }
+        return floor + ((full - floor) * (speechMs - rampStart) / (rampEnd - rampStart));
     }
 
     // Conclusive identity: name the speaker only when the match is Accepted, clears IdentifyThreshold,
