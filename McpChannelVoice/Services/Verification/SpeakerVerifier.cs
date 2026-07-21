@@ -57,12 +57,17 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
             var (embedder, profiles) = backend.Value;
             var pcm = Concat(captureAudio);
             var embedding = await Task.Run(() => embedder.Embed(pcm), ct);
-            var best = profiles
+            var ranked = profiles
                 .Select(p => (p.Name, Similarity: OnnxSpeakerEmbedder.Cosine(embedding, p.Embedding)))
-                .MaxBy(m => m.Similarity);
-            var threshold = config.ResolveSimilarityThreshold(_settings);
-            var decision = best.Similarity >= threshold ? SpeakerDecision.Accepted : SpeakerDecision.Rejected;
-            return new SpeakerVerification(decision, best.Similarity, best.Name);
+                .OrderByDescending(m => m.Similarity)
+                .ToList();
+            var best = ranked[0];
+            var decision = best.Similarity >= config.ResolveSimilarityThreshold(_settings)
+                ? SpeakerDecision.Accepted
+                : SpeakerDecision.Rejected;
+
+            return new SpeakerVerification(
+                decision, best.Similarity, best.Name, Identify(best, ranked, decision, config));
         }
         catch (OperationCanceledException)
         {
@@ -73,6 +78,25 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
             Logger.LogWarning(ex, "Speaker verification failed for this capture (fail-open)");
             return new SpeakerVerification(SpeakerDecision.Unavailable);
         }
+    }
+
+    // Conclusive identity: name the speaker only when the match is Accepted, clears IdentifyThreshold,
+    // and beats the runner-up by IdentifyMargin (auto-satisfied with a single enrolled profile, which
+    // has no runner-up). The doubtful band returns null, so the caller keeps the satellite's default
+    // identity rather than guess a person.
+    private string? Identify(
+        (string Name, double Similarity) best,
+        IReadOnlyList<(string Name, double Similarity)> ranked,
+        SpeakerDecision decision,
+        SatelliteConfig config)
+    {
+        if (decision != SpeakerDecision.Accepted
+            || best.Similarity < config.ResolveIdentifyThreshold(_settings))
+        {
+            return null;
+        }
+        var runnerUp = ranked.Count > 1 ? ranked[1].Similarity : double.NegativeInfinity;
+        return best.Similarity - runnerUp >= config.ResolveIdentifyMargin(_settings) ? best.Name : null;
     }
 
     private static byte[] Concat(IReadOnlyList<AudioChunk> chunks)

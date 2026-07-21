@@ -92,4 +92,29 @@ public class SatelliteConfigTests
         config.ResolveExitMarginDb(global).ShouldBe(4);
         config.ResolvePeakDropDb(global).ShouldBe(10);
     }
+
+    [Fact]
+    public void ResolveIdentify_WithoutOverrides_FallBackToGlobalDefaults()
+    {
+        var global = new SpeakerVerificationSettings();
+        var config = new SatelliteConfig { Identity = "household", Room = "Office" };
+
+        config.ResolveIdentifyThreshold(global).ShouldBe(0.65);
+        config.ResolveIdentifyMargin(global).ShouldBe(0.10);
+    }
+
+    [Fact]
+    public void ResolveIdentify_WithOverrides_PreferSatelliteValues()
+    {
+        var global = new SpeakerVerificationSettings();
+        var config = new SatelliteConfig
+        {
+            Identity = "household",
+            Room = "Office",
+            Verification = new VerificationOverrides { IdentifyThreshold = 0.8, IdentifyMargin = 0.2 }
+        };
+
+        config.ResolveIdentifyThreshold(global).ShouldBe(0.8);
+        config.ResolveIdentifyMargin(global).ShouldBe(0.2);
+    }
 }
