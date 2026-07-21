@@ -62,6 +62,12 @@ public record SatelliteConfig
     public double ResolveSimilarityThreshold(SpeakerVerificationSettings global) =>
         Verification?.SimilarityThreshold ?? global.SimilarityThreshold;
 
+    public double ResolveShortSpeechSimilarityThreshold(SpeakerVerificationSettings global) =>
+        Verification?.ShortSpeechSimilarityThreshold ?? global.ShortSpeechSimilarityThreshold;
+
+    public int ResolveFullThresholdSpeechMs(SpeakerVerificationSettings global) =>
+        Verification?.FullThresholdSpeechMs ?? global.FullThresholdSpeechMs;
+
     public double ResolveIdentifyThreshold(SpeakerVerificationSettings global) =>
         Verification?.IdentifyThreshold ?? global.IdentifyThreshold;
 
@@ -84,6 +90,8 @@ public record VerificationOverrides
 {
     public bool? Enabled { get; init; }
     public double? SimilarityThreshold { get; init; }
+    public double? ShortSpeechSimilarityThreshold { get; init; }
+    public int? FullThresholdSpeechMs { get; init; }
     public double? IdentifyThreshold { get; init; }
     public double? IdentifyMargin { get; init; }
 }

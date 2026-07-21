@@ -148,14 +148,18 @@ public class SpeakerVerifierTests
         IReadOnlyList<SpeakerProfile> profiles,
         double similarityThreshold = 0.45,
         double identifyThreshold = 0.65,
-        double identifyMargin = 0.10) =>
+        double identifyMargin = 0.10,
+        double shortSpeechSimilarityThreshold = 0.50,
+        int fullThresholdSpeechMs = 4000) =>
         new(
             new SpeakerVerificationSettings
             {
                 Enabled = true,
                 SimilarityThreshold = similarityThreshold,
                 IdentifyThreshold = identifyThreshold,
-                IdentifyMargin = identifyMargin
+                IdentifyMargin = identifyMargin,
+                ShortSpeechSimilarityThreshold = shortSpeechSimilarityThreshold,
+                FullThresholdSpeechMs = fullThresholdSpeechMs
             },
             () => (new FixedEmbedder(heardVoice), profiles),
             NullLogger<SpeakerVerifier>.Instance);
@@ -223,6 +227,48 @@ public class SpeakerVerifierTests
         result.Decision.ShouldBe(SpeakerDecision.Accepted);
         result.Similarity!.Value.ShouldBe(1.0, 1e-5);
         result.IdentifiedSpeaker.ShouldBe("fran");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ShortSpeech_RelaxedThresholdAccepts()
+    {
+        // Short utterances embed unreliably (genuine speech can score ~0.5-0.6), so the accept
+        // bar ramps down with verified speech length: at 1000ms the effective bar sits near the
+        // short floor (~0.51 for 0.50→0.70 over 800→4000ms), admitting a 0.55 match that the
+        // full-speech 0.70 bar would reject.
+        var heard = Unit(0.55f, (float)Math.Sqrt(1 - (0.55 * 0.55)), 0f);
+        var result = await VerifierWith(heard, [new SpeakerProfile("fran", [_franVoice])], similarityThreshold: 0.70)
+            .VerifyAsync(Chunks(), 1000, Config(), default);
+
+        result.Decision.ShouldBe(SpeakerDecision.Accepted);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_LongSpeech_FullThresholdRejects()
+    {
+        // At/after FullThresholdSpeechMs the ramp is over: a long capture faces the full bar.
+        var heard = Unit(0.65f, (float)Math.Sqrt(1 - (0.65 * 0.65)), 0f);
+        var result = await VerifierWith(heard, [new SpeakerProfile("fran", [_franVoice])], similarityThreshold: 0.70)
+            .VerifyAsync(Chunks(), 5000, Config(), default);
+
+        result.Decision.ShouldBe(SpeakerDecision.Rejected);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_MidRamp_InterpolatesThreshold()
+    {
+        // Halfway along the 800→4000ms ramp (2400ms) the bar is exactly midway 0.50→0.70 = 0.60.
+        var heard = Unit(0.61f, (float)Math.Sqrt(1 - (0.61 * 0.61)), 0f);
+        var result = await VerifierWith(heard, [new SpeakerProfile("fran", [_franVoice])], similarityThreshold: 0.70)
+            .VerifyAsync(Chunks(), 2400, Config(), default);
+
+        result.Decision.ShouldBe(SpeakerDecision.Accepted);
+
+        var below = Unit(0.59f, (float)Math.Sqrt(1 - (0.59 * 0.59)), 0f);
+        var rejected = await VerifierWith(below, [new SpeakerProfile("fran", [_franVoice])], similarityThreshold: 0.70)
+            .VerifyAsync(Chunks(), 2400, Config(), default);
+
+        rejected.Decision.ShouldBe(SpeakerDecision.Rejected);
     }
 
     [Fact]

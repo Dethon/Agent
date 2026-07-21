@@ -17,6 +17,16 @@ public record SpeakerVerificationSettings
     // old 0.45/0.55 calibration. Field-tune per satellite via SatelliteConfig.Verification
     // from the published Similarity telemetry.
     public double SimilarityThreshold { get; init; } = 0.70;
+    // Short utterances embed unreliably, so the accept bar ramps linearly with gate-classified
+    // speech length: ShortSpeechSimilarityThreshold at/below MinVerifySpeechMs up to
+    // SimilarityThreshold at/after FullThresholdSpeechMs. Measured (2026-07-22, enrollment takes
+    // sliced + live captures): genuine mean by slice length 0.8s≈0.44, 1.2s≈0.60, 2s≈0.76,
+    // 3s≈0.82, 5s≈0.86 while cross-person impostor stays ≤0.46 at every length — so short
+    // genuine speech collapses toward the impostor band and a flat full bar rejects real
+    // commands (field: genuine 0.599@1.0s and 0.738@0.56s vs TV narration 0.67@13s). The short
+    // floor 0.50 still sits above the measured short-impostor band (≤0.41 under 1.2s).
+    public double ShortSpeechSimilarityThreshold { get; init; } = 0.50;
+    public int FullThresholdSpeechMs { get; init; } = 4000;
     // Below this much gate-classified speech the capture skips verification entirely:
     // sub-second embeddings are unreliable and short real commands must stay safe.
     public int MinVerifySpeechMs { get; init; } = 800;
