@@ -63,10 +63,10 @@ public class SpeakerVerificationModelTests(ITestOutputHelper output)
         var aliceProbe = embedder.Embed(Pcm(Path.Combine(FixtureRoot, "alice-probe.wav")));
         var bobProbe = embedder.Embed(Pcm(Path.Combine(FixtureRoot, "bob-probe.wav")));
 
-        var aliceSame = OnnxSpeakerEmbedder.Cosine(aliceProbe, alice.Embedding);
-        var aliceCross = OnnxSpeakerEmbedder.Cosine(aliceProbe, bob.Embedding);
-        var bobSame = OnnxSpeakerEmbedder.Cosine(bobProbe, bob.Embedding);
-        var bobCross = OnnxSpeakerEmbedder.Cosine(bobProbe, alice.Embedding);
+        var aliceSame = MaxCosine(aliceProbe, alice);
+        var aliceCross = MaxCosine(aliceProbe, bob);
+        var bobSame = MaxCosine(bobProbe, bob);
+        var bobCross = MaxCosine(bobProbe, alice);
         output.WriteLine($"alice same={aliceSame:F3} cross={aliceCross:F3}");
         output.WriteLine($"bob   same={bobSame:F3} cross={bobCross:F3}");
 
@@ -115,6 +115,10 @@ public class SpeakerVerificationModelTests(ITestOutputHelper output)
             Directory.Delete(aliceOnly, true);
         }
     }
+
+    // Mirrors production scoring: a profile scores as its best prototype.
+    private static double MaxCosine(float[] probe, SpeakerProfile profile) =>
+        profile.Prototypes.Max(e => OnnxSpeakerEmbedder.Cosine(probe, e));
 
     private static AudioChunk Chunk(byte[] pcm) => new()
     {

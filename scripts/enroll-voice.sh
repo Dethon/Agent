@@ -3,6 +3,10 @@
 # the AGC chain the identity gate hears) and drops them where the hub's voices volume
 # can pick them up. Run ON the satellite Pi.
 #
+# Each take directs a different position/orientation: the hub keeps every take as its
+# own prototype, so covering the real conditions (facing the mic, facing away, across
+# the room) is what makes off-axis speech score like you instead of like a stranger.
+#
 # Usage: enroll-voice.sh <name> [count] [scp-target]
 #   name        identity folder (e.g. fran)
 #   count       recordings to take (default 5)
@@ -37,10 +41,19 @@ PHRASES=(
   "Dime las noticias de hoy y cómo está el tráfico para ir al centro."
 )
 
+CONDITIONS=(
+  "de pie, a un metro, MIRANDO al altavoz"
+  "en el mismo sitio, DE ESPALDAS al altavoz"
+  "en el mismo sitio, de LADO (90 grados) respecto al altavoz"
+  "desde la OTRA PUNTA de la habitación, mirando al altavoz"
+  "desde la OTRA PUNTA de la habitación, DE ESPALDAS al altavoz"
+)
+
 for i in $(seq 1 "$COUNT"); do
     idx=$(( (i - 1) % ${#PHRASES[@]} ))
+    cond=$(( (i - 1) % ${#CONDITIONS[@]} ))
     echo
-    echo "[$i/$COUNT] Lee esta frase en voz alta:"
+    echo "[$i/$COUNT] Colócate ${CONDITIONS[$cond]} y lee esta frase en voz alta:"
     echo "    ${PHRASES[$idx]}"
     for s in 3 2 1; do echo "  $s..."; sleep 1; done
     echo "  HABLA AHORA (${SECONDS_PER_TAKE}s)"

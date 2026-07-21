@@ -28,7 +28,7 @@ public class SpeakerVerifierTests
         IReadOnlyList<SpeakerProfile>? profiles = null) =>
         new(
             settings ?? new SpeakerVerificationSettings { Enabled = true },
-            () => (new FixedEmbedder(heardVoice), profiles ?? [new SpeakerProfile("fran", _franVoice)]),
+            () => (new FixedEmbedder(heardVoice), profiles ?? [new SpeakerProfile("fran", [_franVoice])]),
             NullLogger<SpeakerVerifier>.Instance);
 
     [Fact]
@@ -129,7 +129,7 @@ public class SpeakerVerifierTests
         var throwing = new ThrowingEmbedder();
         var verifier = new SpeakerVerifier(
             new SpeakerVerificationSettings { Enabled = true },
-            () => ((ISpeakerEmbedder)throwing, [new SpeakerProfile("fran", _franVoice)]),
+            () => ((ISpeakerEmbedder)throwing, [new SpeakerProfile("fran", [_franVoice])]),
             NullLogger<SpeakerVerifier>.Instance);
 
         (await verifier.VerifyAsync(Chunks(), 2000, Config(), default))
@@ -165,7 +165,7 @@ public class SpeakerVerifierTests
     {
         // One enrolled voice, a clean match: the margin guard has no runner-up to clear, so a
         // score past IdentifyThreshold names the person.
-        var result = await VerifierWith(_franVoice, [new SpeakerProfile("fran", _franVoice)])
+        var result = await VerifierWith(_franVoice, [new SpeakerProfile("fran", [_franVoice])])
             .VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Accepted);
@@ -177,7 +177,7 @@ public class SpeakerVerifierTests
     {
         // Passes the gate (>= 0.45) but sits in the doubtful band (< 0.65) -> household, not named.
         var heard = Unit(0.55f, (float)Math.Sqrt(1 - (0.55 * 0.55)), 0f); // cosine 0.55 to fran
-        var result = await VerifierWith(heard, [new SpeakerProfile("fran", _franVoice)])
+        var result = await VerifierWith(heard, [new SpeakerProfile("fran", [_franVoice])])
             .VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Accepted);
@@ -192,7 +192,7 @@ public class SpeakerVerifierTests
         // margin guard withholds the identity even though the top score clears IdentifyThreshold.
         var heard = Unit(0.7f, 0.65f, 0f);
         var result = await VerifierWith(
-                heard, [new SpeakerProfile("fran", _franVoice), new SpeakerProfile("bob", _tvVoice)])
+                heard, [new SpeakerProfile("fran", [_franVoice]), new SpeakerProfile("bob", [_tvVoice])])
             .VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Accepted);
@@ -205,16 +205,30 @@ public class SpeakerVerifierTests
     {
         // Best (1.0) clears the runner-up (0.0) by well over the margin -> named.
         var result = await VerifierWith(
-                _franVoice, [new SpeakerProfile("fran", _franVoice), new SpeakerProfile("bob", _tvVoice)])
+                _franVoice, [new SpeakerProfile("fran", [_franVoice]), new SpeakerProfile("bob", [_tvVoice])])
             .VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.IdentifiedSpeaker.ShouldBe("fran");
     }
 
     [Fact]
+    public async Task VerifyAsync_MultiPrototypeProfile_ScoresBestPrototypeNotMean()
+    {
+        // Off-axis enrollment take orthogonal to the on-axis one: speech matching the off-axis
+        // prototype must score as that prototype (1.0), not as the diluted mean (~0.71).
+        var offAxis = Unit(0f, 0f, 1f);
+        var result = await VerifierWith(offAxis, [new SpeakerProfile("fran", [_franVoice, offAxis])])
+            .VerifyAsync(Chunks(), 2000, Config(), default);
+
+        result.Decision.ShouldBe(SpeakerDecision.Accepted);
+        result.Similarity!.Value.ShouldBe(1.0, 1e-5);
+        result.IdentifiedSpeaker.ShouldBe("fran");
+    }
+
+    [Fact]
     public async Task VerifyAsync_Rejected_DoesNotIdentify()
     {
-        var result = await VerifierWith(_tvVoice, [new SpeakerProfile("fran", _franVoice)])
+        var result = await VerifierWith(_tvVoice, [new SpeakerProfile("fran", [_franVoice])])
             .VerifyAsync(Chunks(), 2000, Config(), default);
 
         result.Decision.ShouldBe(SpeakerDecision.Rejected);
