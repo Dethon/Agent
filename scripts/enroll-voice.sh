@@ -50,8 +50,10 @@ CONDITIONS=(
 )
 
 for i in $(seq 1 "$COUNT"); do
-    idx=$(( (i - 1) % ${#PHRASES[@]} ))
     cond=$(( (i - 1) % ${#CONDITIONS[@]} ))
+    # Shift phrases by one per pass over the conditions, so a repeat visit to a
+    # position reads a different phrase instead of re-pairing identically.
+    idx=$(( (cond + ((i - 1) / ${#CONDITIONS[@]})) % ${#PHRASES[@]} ))
     echo
     echo "[$i/$COUNT] Colócate ${CONDITIONS[$cond]} y lee esta frase en voz alta:"
     echo "    ${PHRASES[$idx]}"
