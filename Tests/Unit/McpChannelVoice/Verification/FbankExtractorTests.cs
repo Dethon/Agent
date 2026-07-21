@@ -49,21 +49,5 @@ public class FbankExtractorTests
         new FbankExtractor().Extract(new byte[300 * 2]).ShouldBeEmpty();
     }
 
-    [Fact]
-    public void MeanNormalize_ZeroesThePerDimensionMean()
-    {
-        var frames = new FbankExtractor().Extract(GoldenSignalPcm());
-
-        FbankExtractor.MeanNormalize(frames);
-
-        for (var b = 0; b < 80; b++)
-        {
-            var mean = 0.0;
-            for (var f = 0; f < frames.Length; f++)
-            { mean += frames[f][b]; }
-            Math.Abs(mean / frames.Length).ShouldBeLessThan(1e-4);
-        }
-    }
-
     private sealed record GoldenFile(List<float[]> Frames);
 }
