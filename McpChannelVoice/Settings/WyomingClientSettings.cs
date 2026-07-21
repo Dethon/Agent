@@ -15,7 +15,13 @@ public record WyomingClientSettings
     public int FloorWindowMs { get; init; } = 3000;
     public double EnterMarginDb { get; init; } = 9;
     public double ExitMarginDb { get; init; } = 4;
-    public double PeakDropDb { get; init; } = 15;
+    // Adaptive-regime backstop: a frame more than PeakDropDb below the utterance peak is
+    // background, not speech. Field-tuned to 10 dB (was 15): with a loud TV the XVF3800 AGC
+    // compresses near-field speech to only ~13-16 dB over the TV, so a 15 dB drop let TV ride in
+    // as speech and buried the command under 15-40 s of audio; 10 dB ends the capture ~2 s after
+    // the speaker stops while still dropping pure TV. Only armed in the adaptive regime (loud
+    // room), so it never clips speech in a quiet room.
+    public double PeakDropDb { get; init; } = 10;
 
     // Capture-level accept bar: a capture ending on trailing silence is demoted to no-speech
     // unless its speech peak stands this far above the converged floor. Independent of
