@@ -50,6 +50,7 @@ public class VoiceEnumsTests
     [InlineData(VoiceMetric.AlarmAcknowledged, 15)]
     [InlineData(VoiceMetric.AlarmUnacknowledged, 16)]
     [InlineData(VoiceMetric.AlarmOffline, 17)]
+    [InlineData(VoiceMetric.UtteranceRejected, 18)]
     public void VoiceMetric_HasPinnedWireValues(VoiceMetric metric, int expected) =>
         ((int)metric).ShouldBe(expected);
 

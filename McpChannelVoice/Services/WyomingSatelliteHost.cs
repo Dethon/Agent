@@ -303,7 +303,7 @@ public sealed class WyomingSatelliteHost(
             }
 
             var dispatched = await dispatcher.DispatchAsync(
-                session, result, voiceSettings.AgentId, capture.Stats, ct);
+                session, result, voiceSettings.AgentId, capture.Stats, null, ct);
             if (dispatched)
             {
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns

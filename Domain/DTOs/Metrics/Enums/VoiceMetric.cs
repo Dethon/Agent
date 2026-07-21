@@ -23,5 +23,6 @@ public enum VoiceMetric
     FollowUpTimedOut = 14,
     AlarmAcknowledged = 15,
     AlarmUnacknowledged = 16,
-    AlarmOffline = 17
+    AlarmOffline = 17,
+    UtteranceRejected = 18
 }
