@@ -30,7 +30,7 @@ fi
 trap '[ "$RESTART_SATELLITE" = 1 ] && sudo systemctl start nabu-satellite' EXIT
 
 PHRASES=(
-  "Pon música tranquila en el salón y baja un poco el volumen, por favor."
+  "Ok nabu, pon música tranquila en el salón y baja un poco el volumen, por favor."
   "¿Qué tiempo va a hacer mañana por la tarde aquí en casa?"
   "Recuérdame sacar la basura esta noche antes de irme a dormir."
   "Pon un temporizador de diez minutos para la pasta que está al fuego."
