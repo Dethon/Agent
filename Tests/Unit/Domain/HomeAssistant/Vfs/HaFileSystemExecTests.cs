@@ -170,7 +170,7 @@ public class HaFileSystemExecTests
                     ("media_content_id", new HaServiceField { Required = true }),
                     ("media_content_type", new HaServiceField { Required = true })),
                 Service("music_assistant", "play_media", DomainTarget("media_player"),
-                    ("media_id", new HaServiceField { Required = true }))
+                    ("media_id", new HaServiceField { Required = true, Selector = JsonNode.Parse("""{"object":{"multiple":false}}""") }))
             }
         };
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
