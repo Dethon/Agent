@@ -56,7 +56,8 @@ public class WyomingSatelliteHostTests
     private sealed class RejectingVerifier : global::McpChannelVoice.Services.Verification.ISpeakerVerifier
     {
         public Task<global::McpChannelVoice.Services.Verification.SpeakerVerification> VerifyAsync(
-            IReadOnlyList<AudioChunk> speechAudio, long speechMs, SatelliteConfig config, CancellationToken ct) =>
+            IReadOnlyList<AudioChunk> speechAudio, long speechMs, SatelliteConfig config, CancellationToken ct,
+            bool enforceMinSpeech = true) =>
             Task.FromResult(new global::McpChannelVoice.Services.Verification.SpeakerVerification(
                 global::McpChannelVoice.Services.Verification.SpeakerDecision.Rejected, 0.12, null));
     }

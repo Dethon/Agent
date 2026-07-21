@@ -60,6 +60,17 @@ public class SpeakerVerifierTests
     }
 
     [Fact]
+    public async Task VerifyAsync_ShortSpeech_MinSpeechNotEnforced_StillVerifies()
+    {
+        // The early-close check judges a still-running capture on its continuous audio, so it opts
+        // out of the short-utterance skip: sub-MinVerifySpeechMs speech must still be verified.
+        var result = await Verifier(TvVoice).VerifyAsync(Chunks(), 500, Config(), default, enforceMinSpeech: false);
+
+        result.Decision.ShouldBe(SpeakerDecision.Rejected);
+        result.Similarity!.Value.ShouldBe(0.0, 1e-5);
+    }
+
+    [Fact]
     public async Task VerifyAsync_DisabledGlobally_Skips()
     {
         var verifier = Verifier(TvVoice, new SpeakerVerificationSettings { Enabled = false });
