@@ -37,7 +37,7 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
     private ILogger<SpeakerVerifier> Logger { get; }
 
     public async Task<SpeakerVerification> VerifyAsync(
-        IReadOnlyList<AudioChunk> speechAudio, long speechMs, SatelliteConfig config, CancellationToken ct)
+        IReadOnlyList<AudioChunk> captureAudio, long speechMs, SatelliteConfig config, CancellationToken ct)
     {
         if (!config.ResolveVerificationEnabled(_settings) || speechMs < _settings.MinVerifySpeechMs)
         {
@@ -45,7 +45,7 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
         }
 
         var backend = _backend.Value;
-        if (backend is null || backend.Value.Profiles.Count == 0 || speechAudio.Count == 0)
+        if (backend is null || backend.Value.Profiles.Count == 0 || captureAudio.Count == 0)
         {
             return new SpeakerVerification(SpeakerDecision.Unavailable);
         }
@@ -53,7 +53,7 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
         try
         {
             var (embedder, profiles) = backend.Value;
-            var pcm = Concat(speechAudio);
+            var pcm = Concat(captureAudio);
             var embedding = await Task.Run(() => embedder.Embed(pcm), ct);
             var best = profiles
                 .Select(p => (p.Name, Similarity: OnnxSpeakerEmbedder.Cosine(embedding, p.Embedding)))

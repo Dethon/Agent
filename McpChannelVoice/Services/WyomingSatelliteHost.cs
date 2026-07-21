@@ -285,7 +285,7 @@ public sealed class WyomingSatelliteHost(
             if (speakerVerifier is not null)
             {
                 var verification = await speakerVerifier.VerifyAsync(
-                    capture.SpeechAudio, capture.Stats.SpeechMs, session.Config, ct);
+                    capture.BufferedAudio, capture.Stats.SpeechMs, session.Config, ct);
                 if (verification.Decision == SpeakerDecision.Rejected)
                 {
                     logger.LogInformation(
