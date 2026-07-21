@@ -11,8 +11,14 @@ public enum SpeakerDecision
     Unavailable
 }
 
+// IdentifiedSpeaker is the enrolled profile name to attribute this capture to (routed into the
+// message Sender for per-person memory), set only when the match is *conclusive* — Accepted, past
+// IdentifyThreshold, and clear of the runner-up by IdentifyMargin. Null (doubtful / skipped /
+// unavailable / rejected) means fall back to the satellite's default identity. BestMatch is the raw
+// top match regardless of the identify policy (telemetry); the two differ in the doubtful band.
 public readonly record struct SpeakerVerification(
-    SpeakerDecision Decision, double? Similarity = null, string? BestMatch = null);
+    SpeakerDecision Decision, double? Similarity = null, string? BestMatch = null,
+    string? IdentifiedSpeaker = null);
 
 public interface ISpeakerVerifier
 {

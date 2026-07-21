@@ -140,4 +140,84 @@ public class SpeakerVerifierTests
     {
         public float[] Embed(ReadOnlySpan<byte> pcmS16Le) => throw new InvalidOperationException("boom");
     }
+
+    private static float[] Unit(params float[] v) => OnnxSpeakerEmbedder.L2Normalize(v);
+
+    private static SpeakerVerifier VerifierWith(
+        float[] heardVoice,
+        IReadOnlyList<SpeakerProfile> profiles,
+        double similarityThreshold = 0.45,
+        double identifyThreshold = 0.65,
+        double identifyMargin = 0.10) =>
+        new(
+            new SpeakerVerificationSettings
+            {
+                Enabled = true,
+                SimilarityThreshold = similarityThreshold,
+                IdentifyThreshold = identifyThreshold,
+                IdentifyMargin = identifyMargin
+            },
+            () => (new FixedEmbedder(heardVoice), profiles),
+            NullLogger<SpeakerVerifier>.Instance);
+
+    [Fact]
+    public async Task VerifyAsync_Conclusive_SingleProfile_IdentifiesSpeaker()
+    {
+        // One enrolled voice, a clean match: the margin guard has no runner-up to clear, so a
+        // score past IdentifyThreshold names the person.
+        var result = await VerifierWith(FranVoice, [new SpeakerProfile("fran", FranVoice)])
+            .VerifyAsync(Chunks(), 2000, Config(), default);
+
+        result.Decision.ShouldBe(SpeakerDecision.Accepted);
+        result.IdentifiedSpeaker.ShouldBe("fran");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_AcceptedButBelowIdentifyThreshold_DoesNotIdentify()
+    {
+        // Passes the gate (>= 0.45) but sits in the doubtful band (< 0.65) -> household, not named.
+        var heard = Unit(0.55f, (float)Math.Sqrt(1 - (0.55 * 0.55)), 0f); // cosine 0.55 to fran
+        var result = await VerifierWith(heard, [new SpeakerProfile("fran", FranVoice)])
+            .VerifyAsync(Chunks(), 2000, Config(), default);
+
+        result.Decision.ShouldBe(SpeakerDecision.Accepted);
+        result.Similarity!.Value.ShouldBe(0.55, 1e-3);
+        result.IdentifiedSpeaker.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_AboveIdentifyThresholdButThinMargin_DoesNotIdentify()
+    {
+        // Two enrolled voices score close together: naming the top one would be a guess, so the
+        // margin guard withholds the identity even though the top score clears IdentifyThreshold.
+        var heard = Unit(0.7f, 0.65f, 0f);
+        var result = await VerifierWith(
+                heard, [new SpeakerProfile("fran", FranVoice), new SpeakerProfile("bob", TvVoice)])
+            .VerifyAsync(Chunks(), 2000, Config(), default);
+
+        result.Decision.ShouldBe(SpeakerDecision.Accepted);
+        result.BestMatch.ShouldBe("fran");
+        result.IdentifiedSpeaker.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_AboveIdentifyThresholdWithMargin_TwoProfiles_Identifies()
+    {
+        // Best (1.0) clears the runner-up (0.0) by well over the margin -> named.
+        var result = await VerifierWith(
+                FranVoice, [new SpeakerProfile("fran", FranVoice), new SpeakerProfile("bob", TvVoice)])
+            .VerifyAsync(Chunks(), 2000, Config(), default);
+
+        result.IdentifiedSpeaker.ShouldBe("fran");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_Rejected_DoesNotIdentify()
+    {
+        var result = await VerifierWith(TvVoice, [new SpeakerProfile("fran", FranVoice)])
+            .VerifyAsync(Chunks(), 2000, Config(), default);
+
+        result.Decision.ShouldBe(SpeakerDecision.Rejected);
+        result.IdentifiedSpeaker.ShouldBeNull();
+    }
 }

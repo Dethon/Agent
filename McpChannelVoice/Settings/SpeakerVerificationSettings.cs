@@ -17,6 +17,17 @@ public record SpeakerVerificationSettings
     // Below this much gate-classified speech the capture skips verification entirely:
     // sub-second embeddings are unreliable and short real commands must stay safe.
     public int MinVerifySpeechMs { get; init; } = 800;
+    // Cosine bar to *name* the speaker (route the enrolled folder name into the message Sender for
+    // per-person memory), distinct from — and above — the accept bar. A capture in the
+    // [SimilarityThreshold, IdentifyThreshold) band is admitted but stays the generic household
+    // identity: attribute to a person only when sure. Field data 2026-07-20: enrolled speaker clear
+    // commands 0.60-0.92, over-loud-TV lows 0.50-0.60; 0.65 names clean speech and abstains in the
+    // ambiguous band. Field-tune per satellite via SatelliteConfig.Verification.
+    public double IdentifyThreshold { get; init; } = 0.65;
+    // Minimum best-minus-runner-up cosine gap before naming: with two enrolled voices scoring close,
+    // naming the top one is a guess, so fall back to household. Auto-satisfied with a single enrolled
+    // profile (no runner-up). Conservative default; calibratable only once a second voice is enrolled.
+    public double IdentifyMargin { get; init; } = 0.10;
     // Early-close window: a capture still running at this mark is speaker-verified on the audio so
     // far, and an unknown voice (e.g. background TV that latched) is rejected immediately instead
     // of holding the mic open to trailing silence or the max-utterance cap. Enrolled voices and

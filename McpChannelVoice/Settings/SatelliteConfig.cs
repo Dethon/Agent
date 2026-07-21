@@ -61,6 +61,12 @@ public record SatelliteConfig
 
     public double ResolveSimilarityThreshold(SpeakerVerificationSettings global) =>
         Verification?.SimilarityThreshold ?? global.SimilarityThreshold;
+
+    public double ResolveIdentifyThreshold(SpeakerVerificationSettings global) =>
+        Verification?.IdentifyThreshold ?? global.IdentifyThreshold;
+
+    public double ResolveIdentifyMargin(SpeakerVerificationSettings global) =>
+        Verification?.IdentifyMargin ?? global.IdentifyMargin;
 }
 
 public record GateSettings
@@ -78,4 +84,6 @@ public record VerificationOverrides
 {
     public bool? Enabled { get; init; }
     public double? SimilarityThreshold { get; init; }
+    public double? IdentifyThreshold { get; init; }
+    public double? IdentifyMargin { get; init; }
 }
