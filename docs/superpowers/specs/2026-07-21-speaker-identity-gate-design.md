@@ -61,6 +61,11 @@ minSpeech, but the code path is total).
   vectors generated offline with the reference implementation.
 - The model file is baked into the Docker image at build time from a pinned
   URL with SHA256 verification (no runtime download, no new secret).
+- **Final pick: `wespeaker_en_voxceleb_CAM++.onnx`** (CAM++/3D-Speaker), from
+  the sherpa-onnx `speaker-recongition-models` release:
+  `https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM++.onnx`,
+  pinned at
+  `sha256:c46fad10b5f81e1aa4a60c162714208577093655076c5450f8c469e522ec54ef`.
 
 ### Enrollment
 

@@ -565,6 +565,8 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
+    volumes:
+      - ./volumes/voices:/voices
     env_file:
       - .env
     environment:
