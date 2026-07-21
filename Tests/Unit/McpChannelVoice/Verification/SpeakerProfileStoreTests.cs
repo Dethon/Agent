@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using McpChannelVoice.Services.Verification;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
@@ -91,6 +92,26 @@ public class SpeakerProfileStoreTests : IDisposable
 
         embedder.Calls.ShouldBe(2); // only the first Load embedded
         again.Single().Embedding.ShouldBe(first.Single().Embedding);
+    }
+
+    [Fact]
+    public void Load_CacheVersionMismatch_ReEmbeds()
+    {
+        WriteVoice("fran", Wav(1000), Wav(2000));
+        var embedder = new FakeEmbedder();
+        new SpeakerProfileStore(_dir, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
+        embedder.Calls.ShouldBe(2); // first Load embedded both WAVs and cached them
+
+        // Simulate a profile.json written by an older pipeline version: same file
+        // manifest (nothing about the WAVs changed), only the version differs.
+        var cachePath = Path.Combine(_dir, "fran", "profile.json");
+        var node = JsonNode.Parse(File.ReadAllText(cachePath))!;
+        node["Version"] = 999;
+        File.WriteAllText(cachePath, node.ToJsonString());
+
+        new SpeakerProfileStore(_dir, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
+
+        embedder.Calls.ShouldBe(4); // version mismatch forced a full re-embed despite an unchanged manifest
     }
 
     [Fact]

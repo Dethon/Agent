@@ -8,7 +8,11 @@ namespace McpChannelVoice.Services.Verification;
 // re-run the model when nothing changed. Wrong-format WAVs are skipped with a warning.
 public sealed class SpeakerProfileStore(string voicesPath, ISpeakerEmbedder embedder, ILogger<SpeakerProfileStore> logger)
 {
-    private sealed record CacheEntry(List<CachedFile> Files, float[] Embedding);
+    // Pipeline version — bump whenever the embedding pipeline changes (model swap, fbank
+    // change, normalization change, etc.) so every cached profile.json is invalidated.
+    private const int CacheVersion = 1;
+
+    private sealed record CacheEntry(int Version, List<CachedFile> Files, float[] Embedding);
     private sealed record CachedFile(string Name, long Length, DateTime ModifiedUtc);
 
     public IReadOnlyList<SpeakerProfile> Load()
@@ -43,7 +47,7 @@ public sealed class SpeakerProfileStore(string voicesPath, ISpeakerEmbedder embe
             .ToList();
         var cachePath = Path.Combine(dir, "profile.json");
         var cached = TryReadCache(cachePath);
-        if (cached is not null && cached.Files.SequenceEqual(manifest))
+        if (cached is not null && cached.Version == CacheVersion && cached.Files.SequenceEqual(manifest))
         {
             return new SpeakerProfile(name, cached.Embedding);
         }
@@ -72,7 +76,7 @@ public sealed class SpeakerProfileStore(string voicesPath, ISpeakerEmbedder embe
 
         try
         {
-            File.WriteAllText(cachePath, JsonSerializer.Serialize(new CacheEntry(manifest, profile)));
+            File.WriteAllText(cachePath, JsonSerializer.Serialize(new CacheEntry(CacheVersion, manifest, profile)));
         }
         catch (Exception ex)
         {
