@@ -13,7 +13,7 @@ set -euo pipefail
 NAME="${1:?usage: enroll-voice.sh <name> [count] [scp-target]}"
 COUNT="${2:-5}"
 TARGET="${3:-}"
-SECONDS_PER_TAKE=4
+SECONDS_PER_TAKE=5
 OUT="./voices/$NAME"
 mkdir -p "$OUT"
 
