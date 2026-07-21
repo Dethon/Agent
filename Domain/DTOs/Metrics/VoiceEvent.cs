@@ -12,6 +12,7 @@ public record VoiceEvent : MetricEvent
     public string? Priority { get; init; }
     public long? DurationMs { get; init; }
     public double? Confidence { get; init; }
+    public double? Similarity { get; init; }
     public string? Error { get; init; }
     public double? PeakRms { get; init; }
     public long? SpeechMs { get; init; }

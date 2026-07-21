@@ -18,6 +18,7 @@ public sealed class TranscriptDispatcher(
         TranscriptionResult transcript,
         string? agentId,
         CaptureStats? stats,
+        double? similarity,
         CancellationToken ct)
     {
         var lowConfidence = transcript.Confidence is { } c && c < confidenceThreshold;
@@ -39,6 +40,7 @@ public sealed class TranscriptDispatcher(
                     Identity = session.Config.Identity,
                     Outcome = "dropped",
                     Confidence = transcript.Confidence,
+                    Similarity = similarity,
                     AvgLogProb = transcript.AvgLogProb,
                     NoSpeechProb = transcript.NoSpeechProb,
                     CompressionRatio = transcript.CompressionRatio,
@@ -78,6 +80,7 @@ public sealed class TranscriptDispatcher(
                 Identity = session.Config.Identity,
                 Outcome = "dispatched",
                 Confidence = transcript.Confidence,
+                Similarity = similarity,
                 AvgLogProb = transcript.AvgLogProb,
                 NoSpeechProb = transcript.NoSpeechProb,
                 CompressionRatio = transcript.CompressionRatio,
