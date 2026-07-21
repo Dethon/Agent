@@ -332,6 +332,7 @@ public sealed class WyomingSatelliteHost(
         try
         {
             double? similarity = null;
+            string? identifiedSpeaker = null;
             if (speakerVerifier is not null)
             {
                 // Follow-up captures skip the short-utterance protection: a follow-up window
@@ -351,6 +352,9 @@ public sealed class WyomingSatelliteHost(
                     return false;
                 }
                 similarity = verification.Similarity;
+                // A conclusive match names the speaker (routed into the Sender for per-person memory);
+                // the doubtful band leaves this null so the dispatcher keeps the satellite identity.
+                identifiedSpeaker = verification.IdentifiedSpeaker;
             }
 
             var sw = Stopwatch.StartNew();
@@ -377,7 +381,7 @@ public sealed class WyomingSatelliteHost(
             }
 
             var dispatched = await dispatcher.DispatchAsync(
-                session, result, voiceSettings.AgentId, capture.Stats, similarity, ct);
+                session, result, voiceSettings.AgentId, capture.Stats, similarity, identifiedSpeaker, ct);
             if (dispatched)
             {
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
