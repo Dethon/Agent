@@ -45,6 +45,10 @@ public sealed class SilenceGate(
 
     public string? EndReason { get; private set; }
 
+    // Classification of the most recent Process frame — lets the capture tag which
+    // buffered chunks are speech, so the speaker verifier embeds speech-only audio.
+    public bool LastFrameWasSpeech { get; private set; }
+
     public Decision Process(ReadOnlySpan<byte> pcm, int sampleRateHz, int sampleWidthBytes, int channels)
     {
         var duration = DurationOf(pcm.Length, sampleRateHz, sampleWidthBytes, channels);
@@ -53,7 +57,8 @@ public sealed class SilenceGate(
         var rms = Rms(pcm, sampleWidthBytes);
         _peakRms = Math.Max(_peakRms, rms);
 
-        if (tracker.IsSpeech(rms, duration.TotalMilliseconds))
+        LastFrameWasSpeech = tracker.IsSpeech(rms, duration.TotalMilliseconds);
+        if (LastFrameWasSpeech)
         {
             _speechStarted = true;
             _speechElapsed += duration;
@@ -113,6 +118,7 @@ public sealed class SilenceGate(
         _speechStarted = false;
         _peakRms = 0;
         EndReason = null;
+        LastFrameWasSpeech = false;
     }
 
     private static TimeSpan DurationOf(int byteCount, int sampleRateHz, int sampleWidthBytes, int channels)
