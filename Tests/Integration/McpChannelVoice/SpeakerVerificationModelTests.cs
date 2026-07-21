@@ -72,8 +72,8 @@ public class SpeakerVerificationModelTests(ITestOutputHelper output)
 
         aliceSame.ShouldBeGreaterThan(aliceCross + 0.15);
         bobSame.ShouldBeGreaterThan(bobCross + 0.15);
-        aliceSame.ShouldBeGreaterThan(0.5); // ships threshold: enrolled voices must pass it
-        bobSame.ShouldBeGreaterThan(0.5);
+        aliceSame.ShouldBeGreaterThan(0.6); // ships threshold: enrolled voices must pass it
+        bobSame.ShouldBeGreaterThan(0.6);
     }
 
     [SkippableFact]
@@ -93,7 +93,7 @@ public class SpeakerVerificationModelTests(ITestOutputHelper output)
             }
             // 0.7 is the measured CAM++ operating point for these fixtures (same~=0.93,
             // cross~=0.55) - it sits cleanly in the gap. The SHIPPED default in
-            // SpeakerVerificationSettings is 0.5, refined further per satellite in the field.
+            // SpeakerVerificationSettings is 0.6, refined further per satellite in the field.
             var verifier = new SpeakerVerifier(
                 new SpeakerVerificationSettings { Enabled = true, SimilarityThreshold = 0.7 },
                 () => (embedder, new SpeakerProfileStore(
