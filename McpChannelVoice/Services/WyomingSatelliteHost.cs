@@ -334,8 +334,13 @@ public sealed class WyomingSatelliteHost(
             double? similarity = null;
             if (speakerVerifier is not null)
             {
+                // Follow-up captures skip the short-utterance protection: a follow-up window
+                // reopens the mic wake-free beside a talking TV, so a short TV burst must be
+                // verified and rejected rather than passed through. First-turn captures keep the
+                // skip so a genuinely brief opening command stays safe.
                 var verification = await speakerVerifier.VerifyAsync(
-                    capture.BufferedAudio, capture.Stats.SpeechMs, session.Config, ct);
+                    capture.BufferedAudio, capture.Stats.SpeechMs, session.Config, ct,
+                    enforceMinSpeech: !isFollowUp);
                 if (verification.Decision == SpeakerDecision.Rejected)
                 {
                     logger.LogInformation(
