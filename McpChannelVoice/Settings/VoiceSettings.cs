@@ -14,6 +14,7 @@ public record VoiceSettings
     public Dictionary<string, SatelliteConfig> Satellites { get; init; } = new();
     public TimeSpan ConversationLifetime { get; init; } = TimeSpan.FromMinutes(5);
     public FollowUpSettings FollowUp { get; init; } = new();
+    public SpeakerVerificationSettings SpeakerVerification { get; init; } = new();
 
     // Channel-wide default geographic locality (e.g. "Madrid, Spain"). Satellites that don't set
     // their own Locality inherit this one. Surfaced to the agent via SatelliteConfig.DisplayLocation.

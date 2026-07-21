@@ -52,6 +52,15 @@ public record SatelliteConfig
 
     public double? ResolveDemoteMarginDb(WyomingClientSettings global) =>
         Gate?.DemoteMarginDb ?? global.DemoteMarginDb;
+
+    // Per-satellite overrides of the speaker-identity gate. Null inherits the global value.
+    public VerificationOverrides? Verification { get; init; }
+
+    public bool ResolveVerificationEnabled(SpeakerVerificationSettings global) =>
+        Verification?.Enabled ?? global.Enabled;
+
+    public double ResolveSimilarityThreshold(SpeakerVerificationSettings global) =>
+        Verification?.SimilarityThreshold ?? global.SimilarityThreshold;
 }
 
 public record GateSettings
@@ -63,4 +72,10 @@ public record GateSettings
     public double? ExitMarginDb { get; init; }
     public double? PeakDropDb { get; init; }
     public double? DemoteMarginDb { get; init; }
+}
+
+public record VerificationOverrides
+{
+    public bool? Enabled { get; init; }
+    public double? SimilarityThreshold { get; init; }
 }
