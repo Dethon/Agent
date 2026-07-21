@@ -269,9 +269,56 @@ public sealed class WyomingSatelliteHost(
                     "Reply handshake timed out for {Id} after {TimeoutMs}ms; ending conversation and re-arming wake",
                     session.SatelliteId, followUp.ReplyTimeoutMs);
                 return Task.CompletedTask;
-            }
+            },
+            EarlyVerifyMs = speakerVerifier is null ? 0 : voiceSettings.SpeakerVerification.EarlyVerifyMs,
+            EarlyReject = (capture, token) => EarlyRejectAsync(session, capture, token)
         };
     }
+
+    // Early-close speaker check: verify the audio captured so far and, if it is an unknown voice
+    // (e.g. background TV that latched as speech), reject it now so the loop closes the capture
+    // instead of holding the mic open to trailing silence / the max-utterance cap. Sub-speech and
+    // fail-open cases return false (keep capturing), so enrolled voices are never truncated.
+    private async Task<bool> EarlyRejectAsync(
+        SatelliteSession session, UtteranceCapture capture, CancellationToken ct)
+    {
+        if (speakerVerifier is null)
+        {
+            return false;
+        }
+
+        var stats = capture.Stats;
+        var verification = await speakerVerifier.VerifyAsync(
+            capture.BufferedAudio, stats.SpeechMs, session.Config, ct);
+        if (verification.Decision != SpeakerDecision.Rejected)
+        {
+            return false;
+        }
+
+        logger.LogInformation(
+            "Early-rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
+            session.SatelliteId, verification.Similarity);
+        await PublishUnknownSpeakerAsync(session, stats, verification.Similarity, "unknown_speaker_early", ct);
+        return true;
+    }
+
+    private Task PublishUnknownSpeakerAsync(
+        SatelliteSession session, CaptureStats stats, double? similarity, string outcome, CancellationToken ct) =>
+        metrics.PublishAsync(new VoiceEvent
+        {
+            Metric = VoiceMetric.UtteranceRejected,
+            SatelliteId = session.SatelliteId,
+            Room = session.Config.Room,
+            Identity = session.Config.Identity,
+            Outcome = outcome,
+            Similarity = similarity,
+            PeakRms = stats.PeakRms,
+            SpeechMs = stats.SpeechMs,
+            FloorRms = stats.FloorRms,
+            TrailingRms = stats.TrailingRms,
+            EndReason = stats.EndReason,
+            ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
+        }, ct);
 
     // Returns true only when the transcript actually reached the agent. Empty/low-confidence
     // transcripts and STT errors return false so the conversation ends and wake re-arms, rather
@@ -291,22 +338,8 @@ public sealed class WyomingSatelliteHost(
                     logger.LogInformation(
                         "Rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
                         session.SatelliteId, verification.Similarity);
-                    var stats = capture.Stats;
-                    await metrics.PublishAsync(new VoiceEvent
-                    {
-                        Metric = VoiceMetric.UtteranceRejected,
-                        SatelliteId = session.SatelliteId,
-                        Room = session.Config.Room,
-                        Identity = session.Config.Identity,
-                        Outcome = "unknown_speaker",
-                        Similarity = verification.Similarity,
-                        PeakRms = stats.PeakRms,
-                        SpeechMs = stats.SpeechMs,
-                        FloorRms = stats.FloorRms,
-                        TrailingRms = stats.TrailingRms,
-                        EndReason = stats.EndReason,
-                        ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-                    }, ct);
+                    await PublishUnknownSpeakerAsync(
+                        session, capture.Stats, verification.Similarity, "unknown_speaker", ct);
                     return false;
                 }
                 similarity = verification.Similarity;

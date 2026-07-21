@@ -33,8 +33,12 @@ public sealed class UtteranceCapture(SilenceGate gate)
 
     // The full continuous capture — every fed chunk, buffered so the speaker verifier embeds
     // enrollment-matching continuous audio (silence-cut speech-only fragments collapse CAM++
-    // similarity). Feed is single-threaded on the Wyoming read loop; read after Completed settles.
-    public IReadOnlyList<AudioChunk> BufferedAudio => _audio;
+    // similarity). Returned as a snapshot under lock: the early-close check reads it mid-capture
+    // on the conversation task while Feed appends on the Wyoming read loop.
+    public IReadOnlyList<AudioChunk> BufferedAudio
+    {
+        get { lock (_audio) { return _audio.ToArray(); } }
+    }
 
     public CaptureStats Stats => new(
         gate.PeakRms,
@@ -47,7 +51,10 @@ public sealed class UtteranceCapture(SilenceGate gate)
     {
         var decision = gate.Process(
             chunk.Data.Span, chunk.Format.SampleRateHz, chunk.Format.SampleWidthBytes, chunk.Format.Channels);
-        _audio.Add(chunk);
+        lock (_audio)
+        {
+            _audio.Add(chunk);
+        }
         _chunks.Writer.TryWrite(chunk);
 
         switch (decision)

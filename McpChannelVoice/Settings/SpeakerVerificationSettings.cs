@@ -17,4 +17,9 @@ public record SpeakerVerificationSettings
     // Below this much gate-classified speech the capture skips verification entirely:
     // sub-second embeddings are unreliable and short real commands must stay safe.
     public int MinVerifySpeechMs { get; init; } = 800;
+    // Early-close window: a capture still running at this mark is speaker-verified on the audio so
+    // far, and an unknown voice (e.g. background TV that latched) is rejected immediately instead
+    // of holding the mic open to trailing silence or the max-utterance cap. Enrolled voices and
+    // sub-MinVerifySpeechMs captures keep going, so real commands are never truncated. 0 disables.
+    public int EarlyVerifyMs { get; init; } = 5000;
 }

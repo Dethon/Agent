@@ -23,6 +23,8 @@ public class FollowUpConversationTests
         public readonly List<UtteranceCapture> Dispatched = [];
         public readonly List<CaptureStats> Rejected = [];
         public bool DispatchResult = true;
+        public int EarlyVerify;
+        public bool EarlyRejectResult;
         private TaskCompletionSource<bool> _reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public FollowUpConversation Build(FollowUpSettings followUp) => new(
@@ -54,7 +56,9 @@ public class FollowUpConversationTests
                 Rejected.Add(stats);
                 return Task.CompletedTask;
             },
-            OnReplyTimeout = _ => { Events.Add("reply-timeout"); return Task.CompletedTask; }
+            OnReplyTimeout = _ => { Events.Add("reply-timeout"); return Task.CompletedTask; },
+            EarlyVerifyMs = EarlyVerify,
+            EarlyReject = (_, _) => { Events.Add("early-check"); return Task.FromResult(EarlyRejectResult); }
         };
 
         public void Reply(bool spoke) => _reply.TrySetResult(spoke);
@@ -73,6 +77,46 @@ public class FollowUpConversationTests
         await Task.Delay(50);
         h.Events.ShouldBe(["open-first", "dispatch-first", "end"]);
         h.Events.ShouldNotContain("timed-out");
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task EarlyReject_UnknownVoiceMidCapture_ClosesWithoutDispatch()
+    {
+        var h = new Harness { EarlyVerify = 5000, EarlyRejectResult = true };
+        var sut = h.Build(new FollowUpSettings { Enabled = true, WindowMs = 500 });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();                                    // capture opens and keeps running (no ForceEnd)
+        await Task.Delay(50);
+        h.Time.Advance(TimeSpan.FromMilliseconds(5000)); // reach the early-verify mark
+        await Task.Delay(50);
+
+        h.Events.ShouldContain("early-check");
+        h.Events.ShouldContain("end");
+        h.Dispatched.ShouldBeEmpty();                    // unknown speaker -> never reaches the agent
+        h.Events.ShouldNotContain("dispatch-first");
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task EarlyReject_AllowedVoiceMidCapture_ContinuesToNaturalEnd()
+    {
+        var h = new Harness { EarlyVerify = 5000, EarlyRejectResult = false };
+        var sut = h.Build(new FollowUpSettings { Enabled = false, WindowMs = 500 });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        await Task.Delay(50);
+        h.Time.Advance(TimeSpan.FromMilliseconds(5000)); // early check fires -> allowed -> keep going
+        await Task.Delay(50);
+        h.Opened[0].ForceEnd();                          // user finishes; capture ends naturally
+        await Task.Delay(50);
+
+        h.Events.ShouldContain("early-check");
+        h.Events.ShouldContain("dispatch-first");        // allowed voice dispatched normally, not truncated
 
         await StopAsync(sut, run);
     }

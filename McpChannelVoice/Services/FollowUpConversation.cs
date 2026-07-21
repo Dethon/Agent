@@ -47,6 +47,14 @@ public sealed class FollowUpConversation(
     // Side effect (metric/log) when a dispatched turn's reply never resolves within ReplyTimeoutMs.
     public Func<CancellationToken, Task> OnReplyTimeout { get; init; } = _ => Task.CompletedTask;
 
+    // Early-close speaker check. If > 0, a capture still running at this mark is verified on the
+    // audio so far; an unknown voice (EarlyReject returns true) closes it immediately instead of
+    // holding the mic open to trailing silence / max-utterance. Enrolled voices (or too little
+    // speech / no verifier) keep capturing, so real commands are never truncated. 0 disables.
+    public int EarlyVerifyMs { get; init; }
+    public Func<UtteranceCapture, CancellationToken, Task<bool>> EarlyReject { get; init; } =
+        (_, _) => Task.FromResult(false);
+
     public void OnWake()
     {
         if (_active || _disposed.IsCancellationRequested)
@@ -85,8 +93,16 @@ public sealed class FollowUpConversation(
 
             while (!ct.IsCancellationRequested)
             {
-                var outcome = await capture.Completed.WaitAsync(ct);
+                var outcome = await AwaitCaptureAsync(capture, ct);
                 CloseCapture();
+
+                if (outcome is null)
+                {
+                    // Unknown voice caught mid-capture by the early-close check: end now and
+                    // re-arm wake rather than holding the mic open to the natural end.
+                    await EndConversation(ct);
+                    return;
+                }
 
                 if (outcome == CaptureOutcome.NoSpeech)
                 {
@@ -145,6 +161,30 @@ public sealed class FollowUpConversation(
             // loop will read). _active stays true only DURING a conversation, when no new wake frame
             // can arrive (the satellite streams continuously until it receives the closing transcript).
             _active = false;
+        }
+    }
+
+    // Awaits the capture end; if EarlyVerifyMs elapses first, runs the speaker check on the audio
+    // so far. Returns null when that check rejects an unknown voice (the caller ends the turn),
+    // otherwise the natural outcome. Disabled (EarlyVerifyMs <= 0) awaits the end directly.
+    private async Task<CaptureOutcome?> AwaitCaptureAsync(UtteranceCapture capture, CancellationToken ct)
+    {
+        if (EarlyVerifyMs <= 0)
+        {
+            return await capture.Completed.WaitAsync(ct);
+        }
+
+        try
+        {
+            return await capture.Completed.WaitAsync(TimeSpan.FromMilliseconds(EarlyVerifyMs), time, ct);
+        }
+        catch (TimeoutException)
+        {
+            if (await EarlyReject(capture, ct))
+            {
+                return null;
+            }
+            return await capture.Completed.WaitAsync(ct);
         }
     }
 
