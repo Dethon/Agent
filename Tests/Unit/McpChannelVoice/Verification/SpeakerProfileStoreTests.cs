@@ -64,7 +64,7 @@ public class SpeakerProfileStoreTests : IDisposable
     }
 
     [Fact]
-    public void Load_TwoIdentities_BuildsNormalizedMeanProfiles()
+    public void Load_TwoIdentities_KeepsPerTakePrototypesPlusMean()
     {
         WriteVoice("fran", Wav(1000), Wav(2000));
         WriteVoice("ana", Wav(-500));
@@ -74,10 +74,14 @@ public class SpeakerProfileStoreTests : IDisposable
 
         profiles.Count.ShouldBe(2);
         var fran = profiles.Single(p => p.Name == "fran");
-        // mean of normalized [1000,1] and [2000,1], re-normalized => unit length
-        Math.Sqrt(fran.Embedding.Sum(x => (double)x * x)).ShouldBe(1.0, 1e-5);
+        // one prototype per enrollment take, plus the re-normalized mean of the takes
+        fran.Prototypes.Count.ShouldBe(3);
+        fran.Prototypes[0].ShouldBe(OnnxSpeakerEmbedder.L2Normalize([1000f, 1f]));
+        fran.Prototypes[1].ShouldBe(OnnxSpeakerEmbedder.L2Normalize([2000f, 1f]));
+        Math.Sqrt(fran.Prototypes[2].Sum(x => (double)x * x)).ShouldBe(1.0, 1e-5);
         var ana = profiles.Single(p => p.Name == "ana");
-        ana.Embedding[0].ShouldBeLessThan(0); // sign of the -500 sample survives
+        ana.Prototypes.Count.ShouldBe(1); // the mean of a single take is the take — not duplicated
+        ana.Prototypes.Single()[0].ShouldBeLessThan(0); // sign of the -500 sample survives
     }
 
     [Fact]
@@ -91,7 +95,9 @@ public class SpeakerProfileStoreTests : IDisposable
         var again = new SpeakerProfileStore(_dir, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
 
         embedder.Calls.ShouldBe(2); // only the first Load embedded
-        again.Single().Embedding.ShouldBe(first.Single().Embedding);
+        again.Single().Prototypes.Count.ShouldBe(first.Single().Prototypes.Count);
+        again.Single().Prototypes.Zip(first.Single().Prototypes)
+            .ShouldAllBe(p => p.First.SequenceEqual(p.Second));
     }
 
     [Fact]
@@ -112,6 +118,27 @@ public class SpeakerProfileStoreTests : IDisposable
         new SpeakerProfileStore(_dir, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
 
         embedder.Calls.ShouldBe(4); // version mismatch forced a full re-embed despite an unchanged manifest
+    }
+
+    [Fact]
+    public void Load_MeanCentroidV1Cache_ReEmbeds()
+    {
+        // profile.json written by the v1 pipeline held a single mean-centroid `Embedding`;
+        // the prototype pipeline bumped CacheVersion, so a v1 cache must be rebuilt, not trusted.
+        WriteVoice("fran", Wav(1000), Wav(2000));
+        var embedder = new FakeEmbedder();
+        new SpeakerProfileStore(_dir, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
+        embedder.Calls.ShouldBe(2);
+        var cachePath = Path.Combine(_dir, "fran", "profile.json");
+        var node = JsonNode.Parse(File.ReadAllText(cachePath))!;
+        node["Version"] = 1;
+        node.AsObject().Remove("Prototypes");
+        node["Embedding"] = new JsonArray(0.5, 0.5);
+        File.WriteAllText(cachePath, node.ToJsonString());
+
+        new SpeakerProfileStore(_dir, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
+
+        embedder.Calls.ShouldBe(4);
     }
 
     [Fact]

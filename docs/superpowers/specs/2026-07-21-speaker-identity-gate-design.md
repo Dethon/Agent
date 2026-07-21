@@ -72,13 +72,17 @@ minSpeech, but the code path is total).
 - A `voices/` volume is mounted into the hub container:
   `voices/<identity>/*.wav` — 3–5 short recordings per person, 16 kHz mono
   S16LE.
-- At startup the hub embeds every WAV, L2-normalizes, and averages per person
-  into one profile. Embeddings are cached beside the WAVs
+- At startup the hub embeds every WAV as its own prototype and adds the
+  re-normalized per-person mean; a profile scores as its best prototype, so
+  multi-condition takes (facing the mic, facing away, across the room) each
+  keep their own mode instead of being diluted into one centroid that off-axis
+  speech matches poorly. Prototypes are cached beside the WAVs
   (`voices/<identity>/profile.json`, invalidated when WAVs change).
 - **`scripts/enroll-voice.sh <name>`** records the enrollment WAVs *through
   the satellite mic itself* (`arecord` on the Pi against the auto-detected
-  XVF3800 card, same auto-detect idiom as satellite provisioning): prompts a
-  countdown, records N (default 5) utterances of ~4 s each, and copies them
+  XVF3800 card, same auto-detect idiom as satellite provisioning): directs a
+  position/orientation per take (facing, back turned, side-on, across the
+  room), prompts a countdown, records N (default 5) utterances, and copies them
   into the hub's voices volume (scp target parameter, defaulting to the pi5
   host path). Recording through the same mic + AGC chain the gate hears keeps
   enrollment domain-matched — a phone recording has a different channel

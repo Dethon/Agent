@@ -58,7 +58,7 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
             var pcm = Concat(captureAudio);
             var embedding = await Task.Run(() => embedder.Embed(pcm), ct);
             var ranked = profiles
-                .Select(p => (p.Name, Similarity: OnnxSpeakerEmbedder.Cosine(embedding, p.Embedding)))
+                .Select(p => (p.Name, Similarity: p.Prototypes.Max(e => OnnxSpeakerEmbedder.Cosine(embedding, e))))
                 .OrderByDescending(m => m.Similarity)
                 .ToList();
             var best = ranked[0];

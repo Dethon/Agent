@@ -3,16 +3,19 @@ using System.Text.Json;
 namespace McpChannelVoice.Services.Verification;
 
 // Builds one profile per voices/<identity>/ directory: each 16 kHz mono S16LE WAV is
-// embedded, embeddings are averaged and re-normalized. Embeddings are cached in
-// profile.json beside the WAVs, keyed by file name/length/mtime, so startup does not
-// re-run the model when nothing changed. Wrong-format WAVs are skipped with a warning.
+// embedded as its own prototype, and the re-normalized mean of the takes joins them (a
+// capture between two conditions can sit closer to the mean than to any single take).
+// Prototypes are cached in profile.json beside the WAVs, keyed by file name/length/mtime,
+// so startup does not re-run the model when nothing changed. Wrong-format WAVs are
+// skipped with a warning.
 public sealed class SpeakerProfileStore(string voicesPath, ISpeakerEmbedder embedder, ILogger<SpeakerProfileStore> logger)
 {
     // Pipeline version — bump whenever the embedding pipeline changes (model swap, fbank
     // change, normalization change, etc.) so every cached profile.json is invalidated.
-    private const int CacheVersion = 1;
+    // v2: mean-centroid Embedding became per-take Prototypes (+ mean).
+    private const int CacheVersion = 2;
 
-    private sealed record CacheEntry(int Version, List<CachedFile> Files, float[] Embedding);
+    private sealed record CacheEntry(int Version, List<CachedFile> Files, float[][] Prototypes);
     private sealed record CachedFile(string Name, long Length, DateTime ModifiedUtc);
 
     public IReadOnlyList<SpeakerProfile> Load()
@@ -47,43 +50,51 @@ public sealed class SpeakerProfileStore(string voicesPath, ISpeakerEmbedder embe
             .ToList();
         var cachePath = Path.Combine(dir, "profile.json");
         var cached = TryReadCache(cachePath);
-        if (cached is not null && cached.Version == CacheVersion && cached.Files.SequenceEqual(manifest))
+        if (cached is { Prototypes: not null } && cached.Version == CacheVersion && cached.Files.SequenceEqual(manifest))
         {
-            return new SpeakerProfile(name, cached.Embedding);
+            return new SpeakerProfile(name, cached.Prototypes);
         }
 
-        var embeddings = files
+        var takes = files
             .Select(f => TryEmbed(f.FullName))
             .Where(e => e is not null)
             .Select(e => e!)
             .ToList();
-        if (embeddings.Count == 0)
+        if (takes.Count == 0)
         {
             logger.LogWarning("No usable enrollment WAVs in {Dir}", dir);
             return null;
         }
 
-        var dim = embeddings[0].Length;
-        var mean = new float[dim];
-        foreach (var e in embeddings)
-        {
-            for (var i = 0; i < dim; i++)
-            { mean[i] += e[i]; }
-        }
-        for (var i = 0; i < dim; i++)
-        { mean[i] /= embeddings.Count; }
-        var profile = OnnxSpeakerEmbedder.L2Normalize(mean);
+        var prototypes = takes.Count > 1
+            ? takes.Append(MeanPrototype(takes)).ToArray()
+            : takes.ToArray();
 
         try
         {
-            File.WriteAllText(cachePath, JsonSerializer.Serialize(new CacheEntry(CacheVersion, manifest, profile)));
+            File.WriteAllText(cachePath, JsonSerializer.Serialize(new CacheEntry(CacheVersion, manifest, prototypes)));
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Could not write profile cache {Path}", cachePath);
         }
-        logger.LogInformation("Built speaker profile {Name} from {Count} recording(s)", name, embeddings.Count);
-        return new SpeakerProfile(name, profile);
+        logger.LogInformation(
+            "Built speaker profile {Name} from {Count} recording(s) ({Prototypes} prototypes)",
+            name, takes.Count, prototypes.Length);
+        return new SpeakerProfile(name, prototypes);
+    }
+
+    private static float[] MeanPrototype(IReadOnlyList<float[]> takes)
+    {
+        var mean = new float[takes[0].Length];
+        foreach (var e in takes)
+        {
+            for (var i = 0; i < mean.Length; i++)
+            { mean[i] += e[i]; }
+        }
+        for (var i = 0; i < mean.Length; i++)
+        { mean[i] /= takes.Count; }
+        return OnnxSpeakerEmbedder.L2Normalize(mean);
     }
 
     private CacheEntry? TryReadCache(string path)
