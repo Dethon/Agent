@@ -1,0 +1,124 @@
+using Domain.DTOs.Voice;
+using McpChannelVoice.Services.Verification;
+using McpChannelVoice.Settings;
+using Microsoft.Extensions.Logging.Abstractions;
+using Shouldly;
+using Xunit.Abstractions;
+
+namespace Tests.Integration.McpChannelVoice;
+
+// Exercises the real ONNX speaker-embedding model against the committed piper-voice
+// fixtures. Downloads the model once into a temp cache; skips when offline.
+public class SpeakerVerificationModelTests(ITestOutputHelper output)
+{
+    // Same artifact the Dockerfile bakes into the image (Task 9 pins the same SHA).
+    public const string ModelUrl =
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM++.onnx";
+
+    private static readonly string CachePath =
+        Path.Combine(Path.GetTempPath(), "jackbot-speaker-embedding.onnx");
+
+    private static string FixtureRoot => Path.Combine(
+        AppContext.BaseDirectory, "Integration", "McpChannelVoice", "Fixtures", "speaker-wavs");
+
+    private static async Task<string?> TryGetModelAsync()
+    {
+        if (File.Exists(CachePath) && new FileInfo(CachePath).Length > 5_000_000)
+        {
+            return CachePath;
+        }
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
+            var bytes = await http.GetByteArrayAsync(ModelUrl);
+            await File.WriteAllBytesAsync(CachePath, bytes);
+            return CachePath;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static byte[] Pcm(string wavPath)
+    {
+        // Fixture WAVs are canonical 44-byte-header PCM produced by ffmpeg.
+        var bytes = File.ReadAllBytes(wavPath);
+        return bytes[44..];
+    }
+
+    [SkippableFact]
+    public async Task Embeddings_SeparateEnrolledSpeakerFromStranger()
+    {
+        var model = await TryGetModelAsync();
+        Skip.If(model is null, "speaker model not downloadable (offline?)");
+
+        using var embedder = new OnnxSpeakerEmbedder(model!);
+        var profiles = new SpeakerProfileStore(
+            FixtureRoot, embedder, NullLogger<SpeakerProfileStore>.Instance).Load();
+        profiles.Count.ShouldBe(2);
+        var alice = profiles.Single(p => p.Name == "alice");
+        var bob = profiles.Single(p => p.Name == "bob");
+
+        var aliceProbe = embedder.Embed(Pcm(Path.Combine(FixtureRoot, "alice-probe.wav")));
+        var bobProbe = embedder.Embed(Pcm(Path.Combine(FixtureRoot, "bob-probe.wav")));
+
+        var aliceSame = OnnxSpeakerEmbedder.Cosine(aliceProbe, alice.Embedding);
+        var aliceCross = OnnxSpeakerEmbedder.Cosine(aliceProbe, bob.Embedding);
+        var bobSame = OnnxSpeakerEmbedder.Cosine(bobProbe, bob.Embedding);
+        var bobCross = OnnxSpeakerEmbedder.Cosine(bobProbe, alice.Embedding);
+        output.WriteLine($"alice same={aliceSame:F3} cross={aliceCross:F3}");
+        output.WriteLine($"bob   same={bobSame:F3} cross={bobCross:F3}");
+
+        aliceSame.ShouldBeGreaterThan(aliceCross + 0.15);
+        bobSame.ShouldBeGreaterThan(bobCross + 0.15);
+        aliceSame.ShouldBeGreaterThan(0.35); // ships threshold: enrolled voices must pass it
+        bobSame.ShouldBeGreaterThan(0.35);
+    }
+
+    [SkippableFact]
+    public async Task Verifier_AcceptsEnrolledRejectsStranger_WithRealModel()
+    {
+        var model = await TryGetModelAsync();
+        Skip.If(model is null, "speaker model not downloadable (offline?)");
+
+        using var embedder = new OnnxSpeakerEmbedder(model!);
+        var aliceOnly = Path.Combine(Path.GetTempPath(), $"voices-{Guid.NewGuid()}");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(aliceOnly, "alice"));
+            foreach (var wav in Directory.EnumerateFiles(Path.Combine(FixtureRoot, "alice")))
+            {
+                File.Copy(wav, Path.Combine(aliceOnly, "alice", Path.GetFileName(wav)));
+            }
+            // 0.7 is the measured CAM++ operating point for these fixtures (same~=0.93,
+            // cross~=0.55) - it sits cleanly in the gap. The SHIPPED default in
+            // SpeakerVerificationSettings stays 0.35 pending field calibration.
+            var verifier = new SpeakerVerifier(
+                new SpeakerVerificationSettings { Enabled = true, SimilarityThreshold = 0.7 },
+                () => (embedder, new SpeakerProfileStore(
+                    aliceOnly, embedder, NullLogger<SpeakerProfileStore>.Instance).Load()),
+                NullLogger<SpeakerVerifier>.Instance);
+            var config = new SatelliteConfig { Identity = "household", Room = "office" };
+
+            var aliceResult = await verifier.VerifyAsync(
+                [Chunk(Pcm(Path.Combine(FixtureRoot, "alice-probe.wav")))], 2000, config, default);
+            var bobResult = await verifier.VerifyAsync(
+                [Chunk(Pcm(Path.Combine(FixtureRoot, "bob-probe.wav")))], 2000, config, default);
+
+            aliceResult.Decision.ShouldBe(SpeakerDecision.Accepted);
+            aliceResult.BestMatch.ShouldBe("alice");
+            bobResult.Decision.ShouldBe(SpeakerDecision.Rejected);
+        }
+        finally
+        {
+            Directory.Delete(aliceOnly, true);
+        }
+    }
+
+    private static AudioChunk Chunk(byte[] pcm) => new()
+    {
+        Data = pcm,
+        Format = AudioFormat.WyomingStandard
+    };
+}
