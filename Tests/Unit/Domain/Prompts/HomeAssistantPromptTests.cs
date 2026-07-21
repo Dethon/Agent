@@ -31,6 +31,19 @@ public class HomeAssistantPromptTests
     }
 
     [Fact]
+    public void SystemPrompt_TeachesLibraryFirstPlaylistResolution()
+    {
+        var prompt = HomeAssistantPrompt.SystemPrompt;
+
+        prompt.ShouldContain("app_id");           // MA-player marker attribute
+        prompt.ShouldContain("mass_player_type"); // MA-player marker attribute
+        prompt.ShouldContain("browse_media.sh --media_content_id playlists"); // list saved playlists first
+        prompt.ShouldContain("exact title");      // play what browse returned, never a guess
+        prompt.ShouldContain("search_media.sh");  // named as the GLOBAL catalog search
+        prompt.ShouldContain("500");              // 500 = unresolved item, not MA down
+    }
+
+    [Fact]
     public void Prompt_TeachesSnoozeAfterDismissal()
     {
         HomeAssistantPrompt.SystemPrompt.ShouldContain("just dismissed");
