@@ -93,7 +93,7 @@ minSpeech, but the code path is total).
 ### Decision policy
 
 - Similarity = max cosine over enrolled profiles.
-- Accept iff similarity ≥ `SimilarityThreshold`. Ships at **0.5** (cosine).
+- Accept iff similarity ≥ `SimilarityThreshold`. Ships at **0.6** (cosine).
   Real CAM++ measurements from the integration test (same audio, sherpa-onnx
   reference confirmed): same-speaker ~0.93, cross-speaker ~0.44–0.55 on
   synthetic voices — so 0.5 sits just above the cross-speaker band as a
