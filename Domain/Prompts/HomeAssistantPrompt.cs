@@ -37,7 +37,8 @@ public static class HomeAssistantPrompt
           full `climate.0x00158d00abcd_(aire-acondicionado-salon)` under `areas/<room>/`) so
           `glob` alone identifies a device — pick by the name. Use that exact directory
           name verbatim in later calls; a bare id or a guessed `_(...)` suffix will NOT resolve
-          (a near-miss returns a "did you mean" hint with the correct name).
+          (a near-miss returns a hint with the correct name — re-issue the call with that
+          name yourself; do not ask the user to confirm it).
 
         ### Workflow
 
@@ -54,11 +55,11 @@ public static class HomeAssistantPrompt
         ### Reading results
 
         - `exitCode` 0 = the action succeeded (`stdout` carries `{ok, changed[]}` and
-          any service `response`). This is your confirmation — do NOT read `state.json`
-          afterwards to check it worked. HA performs the action right away but only
-          writes the new value into its state store after a short delay, so a read
-          taken now still returns the OLD value and would wrongly look like nothing
-          changed. Trust the `exitCode` and `changed[]`; never re-read to verify.
+          any service `response`). This is your confirmation — it is internal, so don't quote
+          `changed[]` verbatim, and do NOT read `state.json` afterwards to check it
+          worked. HA applies the action right away but only stores the new value after a
+          short delay, so a read taken now returns the OLD value and would wrongly look
+          unchanged. Trust the `exitCode` and `changed[]`; never re-read to verify.
         - `exitCode` 2 = bad argument: re-run `--help` and rebuild; don't repeat the
           same shape.
         - `exitCode` 1 = HA rejected the call; `stderr` has the reason.
@@ -66,6 +67,10 @@ public static class HomeAssistantPrompt
           have applied it — re-check the relevant `state.json` before retrying.
         - `exitCode` 127 = not a real action file. `/ha` is NOT a shell — only the
           listed `*.sh` files run. `stderr` lists the available actions.
+
+        These codes are for your own retry logic. In a written reply, give the reason from
+        `stderr` in plain words; when your reply is read aloud, state success or failure in one
+        short clause and never voice exit codes or `stderr` text.
 
         ### Alarms & reminders
 
