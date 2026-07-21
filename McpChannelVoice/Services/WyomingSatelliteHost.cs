@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
+using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 
@@ -26,7 +27,8 @@ public sealed class WyomingSatelliteHost(
     ActiveAlertRegistry alerts,
     IMetricsPublisher metrics,
     TimeProvider time,
-    ILogger<WyomingSatelliteHost> logger) : IHostedService
+    ILogger<WyomingSatelliteHost> logger,
+    ISpeakerVerifier? speakerVerifier = null) : IHostedService
 {
     private CancellationTokenSource? _cts;
     private readonly List<Task> _connections = [];
@@ -279,6 +281,37 @@ public sealed class WyomingSatelliteHost(
     {
         try
         {
+            double? similarity = null;
+            if (speakerVerifier is not null)
+            {
+                var verification = await speakerVerifier.VerifyAsync(
+                    capture.SpeechAudio, capture.Stats.SpeechMs, session.Config, ct);
+                if (verification.Decision == SpeakerDecision.Rejected)
+                {
+                    logger.LogInformation(
+                        "Rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
+                        session.SatelliteId, verification.Similarity);
+                    var stats = capture.Stats;
+                    await metrics.PublishAsync(new VoiceEvent
+                    {
+                        Metric = VoiceMetric.UtteranceRejected,
+                        SatelliteId = session.SatelliteId,
+                        Room = session.Config.Room,
+                        Identity = session.Config.Identity,
+                        Outcome = "unknown_speaker",
+                        Similarity = verification.Similarity,
+                        PeakRms = stats.PeakRms,
+                        SpeechMs = stats.SpeechMs,
+                        FloorRms = stats.FloorRms,
+                        TrailingRms = stats.TrailingRms,
+                        EndReason = stats.EndReason,
+                        ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
+                    }, ct);
+                    return false;
+                }
+                similarity = verification.Similarity;
+            }
+
             var sw = Stopwatch.StartNew();
             // Honor a per-satellite STT language override (symmetric with the per-satellite
             // Tts.Wyoming.Voice override resolved in SendReplyTool/AnnouncementService); null falls
@@ -303,7 +336,7 @@ public sealed class WyomingSatelliteHost(
             }
 
             var dispatched = await dispatcher.DispatchAsync(
-                session, result, voiceSettings.AgentId, capture.Stats, null, ct);
+                session, result, voiceSettings.AgentId, capture.Stats, similarity, ct);
             if (dispatched)
             {
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
