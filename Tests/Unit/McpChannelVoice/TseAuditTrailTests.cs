@@ -7,21 +7,21 @@ namespace Tests.Unit.McpChannelVoice;
 
 public class TseAuditTrailTests : IDisposable
 {
-    private readonly string root = Path.Combine(Path.GetTempPath(), $"tse-audit-{Guid.NewGuid():N}");
-    private readonly FakeTimeProvider clock = new(new DateTimeOffset(2026, 7, 22, 10, 0, 0, TimeSpan.Zero));
+    private readonly string _root = Path.Combine(Path.GetTempPath(), $"tse-audit-{Guid.NewGuid():N}");
+    private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 7, 22, 10, 0, 0, TimeSpan.Zero));
 
     private TseAuditTrail Trail(int maxPairs = 3) =>
-        new(root, maxPairs, clock, NullLogger<TseAuditTrail>.Instance);
+        new(_root, maxPairs, _clock, NullLogger<TseAuditTrail>.Instance);
 
     public void Dispose()
     {
-        if (Directory.Exists(root))
+        if (Directory.Exists(_root))
         {
-            Directory.Delete(root, recursive: true);
+            Directory.Delete(_root, recursive: true);
         }
-        else if (File.Exists(root))
+        else if (File.Exists(_root))
         {
-            File.Delete(root);
+            File.Delete(_root);
         }
     }
 
@@ -29,7 +29,7 @@ public class TseAuditTrailTests : IDisposable
     public void RecordWritesPairAndMetadata()
     {
         Trail().Record("Dethon", 512.5, 4200, [1, 2], [3, 4]);
-        var dir = Directory.GetDirectories(root).ShouldHaveSingleItem();
+        var dir = Directory.GetDirectories(_root).ShouldHaveSingleItem();
         Path.GetFileName(dir).ShouldStartWith("20260722-100000");
         Path.GetFileName(dir).ShouldEndWith("-Dethon");
         File.ReadAllBytes(Path.Combine(dir, "mixture.wav")).ShouldBe(new byte[] { 1, 2 });
@@ -46,9 +46,9 @@ public class TseAuditTrailTests : IDisposable
         for (var i = 0; i < 5; i++)
         {
             trail.Record("Dethon", null, i, [1], [2]);
-            clock.Advance(TimeSpan.FromSeconds(1));
+            _clock.Advance(TimeSpan.FromSeconds(1));
         }
-        var dirs = Directory.GetDirectories(root).Select(Path.GetFileName).Order().ToList();
+        var dirs = Directory.GetDirectories(_root).Select(Path.GetFileName).Order().ToList();
         dirs.Count.ShouldBe(3);
         dirs[0]!.ShouldStartWith("20260722-100002"); // the two oldest were pruned
     }
@@ -56,9 +56,9 @@ public class TseAuditTrailTests : IDisposable
     [Fact]
     public void NullDirIsDisabledNoOp()
     {
-        var trail = new TseAuditTrail(null, 3, clock, NullLogger<TseAuditTrail>.Instance);
+        var trail = new TseAuditTrail(null, 3, _clock, NullLogger<TseAuditTrail>.Instance);
         trail.Record("Dethon", null, 1, [1], [2]);
-        Directory.Exists(root).ShouldBeFalse();
+        Directory.Exists(_root).ShouldBeFalse();
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public class TseAuditTrailTests : IDisposable
         // A real filesystem fault (not a mock): a file already occupies the audit dir's path, so
         // Directory.CreateDirectory inside Record cannot create it. No permission bits involved,
         // so this behaves identically whether the suite runs as root or not.
-        File.WriteAllText(root, "occupies the audit directory path");
+        File.WriteAllText(_root, "occupies the audit directory path");
         var trail = Trail();
         Should.NotThrow(() => trail.Record("Dethon", null, 1, [1, 2], [3, 4]));
     }
@@ -81,11 +81,11 @@ public class TseAuditTrailTests : IDisposable
         // not a permission check, so it reproduces identically whether the suite runs as root.
         // Without per-entry isolation, that failure aborts the loop and C -- newer than B, still
         // beyond the cap -- is never pruned, letting the ring grow unbounded.
-        Directory.CreateDirectory(root);
-        var a = Directory.CreateDirectory(Path.Combine(root, "20200101-000000-000-A")).FullName;
-        var b = Path.Combine(root, "20200101-000000-001-B");
+        Directory.CreateDirectory(_root);
+        var a = Directory.CreateDirectory(Path.Combine(_root, "20200101-000000-000-A")).FullName;
+        var b = Path.Combine(_root, "20200101-000000-001-B");
         Directory.CreateSymbolicLink(b, a);
-        var c = Directory.CreateDirectory(Path.Combine(root, "20200101-000000-002-C")).FullName;
+        var c = Directory.CreateDirectory(Path.Combine(_root, "20200101-000000-002-C")).FullName;
 
         Trail(maxPairs: 1).Record("Dethon", null, 1, [1], [2]);
 
@@ -102,7 +102,7 @@ public class TseAuditTrailTests : IDisposable
         try
         {
             Trail().Record("../../../evil", null, 1, [1], [2]);
-            Directory.GetDirectories(root).ShouldHaveSingleItem();
+            Directory.GetDirectories(_root).ShouldHaveSingleItem();
         }
         finally
         {
