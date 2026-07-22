@@ -234,6 +234,18 @@ public class TseSpeechToTextTests
     }
 
     [Fact]
+    public async Task EmptyExtractionReplyFallsBackToRaw()
+    {
+        var reply = WavCodec.Encode([]); // well-formed RIFF, zero-length data chunk
+        var (stt, inner, _, metrics) = Build(TseMode.Auto, reply);
+        await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
+        inner.ReceivedPayload.ShouldBe(_rawPcm);
+        var evt = metrics.Events.ShouldHaveSingleItem();
+        evt.Metric.ShouldBe(VoiceMetric.TseFailed);
+        evt.Outcome.ShouldBe("empty");
+    }
+
+    [Fact]
     public async Task CallerCancellationPropagates()
     {
         var inner = new RecordingInner();
@@ -401,6 +413,8 @@ public class TseSpeechToTextTests
                 .TranscribeAsync(Chunks(), Options(), CancellationToken.None); // sidecar unavailable
             await BuildStt(new RecordingInner(), TseMode.Auto, [1, 2, 3], audit)
                 .TranscribeAsync(Chunks(), Options(), CancellationToken.None); // malformed reply
+            await BuildStt(new RecordingInner(), TseMode.Auto, WavCodec.Encode([]), audit)
+                .TranscribeAsync(Chunks(), Options(), CancellationToken.None); // empty reply
 
             Directory.Exists(dir).ShouldBeFalse();
         }

@@ -122,12 +122,12 @@ mcp-channel-voice` — this is a startup-bound setting too, not hot-reloaded.
 ## Watch during the trial
 
 - Dashboard voice metrics: `TseInvoked` / `TseSkipped` (Outcome quiet|no_speaker) /
-  `TseFailed` (Outcome unavailable|malformed) counts, `TseLatencyMs` distribution (this IS
-  the deployability number).
+  `TseFailed` (Outcome unavailable|malformed|empty) counts, `TseLatencyMs` distribution (this
+  IS the deployability number).
 - Audit pairs under `DockerCompose/volumes/tse-audit/` — listen to mixture vs extracted for
   a few TV-heavy turns (`scp` them off the pi; newest 50 kept).
 - `docker logs mcp-channel-voice` — the decorator logs a warning (with the speaker) only when
-  the sidecar call itself fails: unavailable/timeout or a malformed reply. Skipped turns (no
+  the sidecar call itself fails: unavailable/timeout, a malformed reply, or an empty one. Skipped turns (no
   target speaker, floor below threshold) are not logged — they only show up as `TseSkipped`
   in the metrics.
 - Gate behavior in noise (observational, feeds the v2 reverify question): rejected-utterance
