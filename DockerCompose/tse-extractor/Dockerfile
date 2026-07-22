@@ -1,7 +1,15 @@
 FROM python:3.11-slim
 
+# build-essential: hdbscan (pulled in transitively -- see below) publishes no linux-aarch64
+# wheel, only manylinux x86_64/macOS/win_amd64 plus an sdist; on arm64 pip falls back to
+# compiling the sdist's Cython extension, which needs a C/C++ toolchain. Verified empirically
+# (2026-07-22): forcing `pip install --no-binary hdbscan hdbscan` on this x86 box with only
+# build-essential + numpy present builds and installs hdbscan-0.8.44 cleanly via PEP517 build
+# isolation (no extra system libs needed beyond gcc/g++/make) -- the arm64 compile itself is
+# unverified until the Pi actually builds this image, but the toolchain requirement is
+# architecture-generic.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl libsndfile1 \
+    && apt-get install -y --no-install-recommends git curl libsndfile1 build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # torch first (CPU wheels; index serves x86_64 and aarch64), then the wesep/wespeaker
@@ -14,7 +22,14 @@ RUN apt-get update \
 # directly, so an unpinned torch/torchaudio 500s on every /extract call
 # (ModuleNotFoundError: No module named 'torchcodec'). numpy<2 for wespeaker@e9bbf73
 # compatibility. wespeaker --no-deps so it cannot drag a different torch or the heavy
-# s3prl frontend HEAD added.
+# s3prl frontend HEAD added. hdbscan/umap-learn/scikit-learn are NOT dead weight despite the
+# extraction path never clustering anything: wesep.cli.extractor -> wesep.models (eagerly
+# imports every model incl. bsrnn.py) -> wespeaker.models.speaker_model, and importing any
+# wespeaker submodule runs wespeaker/__init__.py first, which unconditionally imports
+# wespeaker.cli.speaker -> wespeaker.diar.umap_clusterer -> `import umap` / `import hdbscan`.
+# Confirmed empirically (2026-07-22, not just by reading the chain): removing either package
+# from a running sidecar and starting app.py raises ModuleNotFoundError before Flask even
+# binds -- the app cannot boot without them, so both stay.
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.1.2" "torchaudio==2.1.2" \
     && pip install --no-cache-dir "numpy<2" soundfile pyyaml scipy silero-vad tqdm \
         kaldiio hdbscan umap-learn scikit-learn onnxruntime requests flask \
