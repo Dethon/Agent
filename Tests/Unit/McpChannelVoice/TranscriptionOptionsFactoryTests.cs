@@ -1,0 +1,57 @@
+using McpChannelVoice.Services;
+using McpChannelVoice.Services.Stt;
+using McpChannelVoice.Services.Verification;
+using McpChannelVoice.Settings;
+using Shouldly;
+
+namespace Tests.Unit.McpChannelVoice;
+
+public class TranscriptionOptionsFactoryTests
+{
+    private static readonly CaptureStats Stats = new(PeakRms: 2000, FloorRms: 512.5, SpeechMs: 1500, EndReason: "ended");
+
+    private static SatelliteConfig MakeConfig(SttSettings? stt = null) =>
+        new() { Identity = "household", Room = "Kitchen", Stt = stt };
+
+    [Fact]
+    public void ConclusiveIdentityWins()
+    {
+        var v = new SpeakerVerification(SpeakerDecision.Accepted, 0.81, BestMatch: "Tradaly", IdentifiedSpeaker: "Dethon");
+        var options = TranscriptionOptionsFactory.Create(MakeConfig(), v, Stats);
+        options.TargetSpeaker.ShouldBe("Dethon");
+        options.NoiseFloorRms.ShouldBe(512.5);
+    }
+
+    [Fact]
+    public void AcceptedButAmbiguousFallsBackToBestMatch()
+    {
+        var v = new SpeakerVerification(SpeakerDecision.Accepted, 0.66, BestMatch: "Tradaly", IdentifiedSpeaker: null);
+        TranscriptionOptionsFactory.Create(MakeConfig(), v, Stats).TargetSpeaker.ShouldBe("Tradaly");
+    }
+
+    [Theory]
+    [InlineData(SpeakerDecision.Rejected)]
+    [InlineData(SpeakerDecision.Skipped)]
+    [InlineData(SpeakerDecision.Unavailable)]
+    public void NonAcceptedDecisionsYieldNoTarget(SpeakerDecision decision)
+    {
+        var v = new SpeakerVerification(decision, BestMatch: "Dethon", IdentifiedSpeaker: "Dethon");
+        TranscriptionOptionsFactory.Create(MakeConfig(), v, Stats).TargetSpeaker.ShouldBeNull();
+    }
+
+    [Fact]
+    public void NoVerifierMeansNoTargetButFloorStillFlows()
+    {
+        var options = TranscriptionOptionsFactory.Create(MakeConfig(), verification: null, Stats);
+        options.TargetSpeaker.ShouldBeNull();
+        options.NoiseFloorRms.ShouldBe(512.5);
+    }
+
+    [Fact]
+    public void LanguageFlowsThroughFromConfig()
+    {
+        var config = MakeConfig(new SttSettings { Wyoming = new WyomingSttConfig { Language = "es" } });
+        var options = TranscriptionOptionsFactory.Create(config, verification: null, Stats);
+        options.Language.ShouldBe("es");
+    }
+}

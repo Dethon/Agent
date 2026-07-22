@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
+using McpChannelVoice.Services.Stt;
 using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
@@ -333,28 +334,29 @@ public sealed class WyomingSatelliteHost(
         {
             double? similarity = null;
             string? identifiedSpeaker = null;
+            SpeakerVerification? verification = null;
             if (speakerVerifier is not null)
             {
                 // Follow-up captures skip the short-utterance protection: a follow-up window
                 // reopens the mic wake-free beside a talking TV, so a short TV burst must be
                 // verified and rejected rather than passed through. First-turn captures keep the
                 // skip so a genuinely brief opening command stays safe.
-                var verification = await speakerVerifier.VerifyAsync(
+                verification = await speakerVerifier.VerifyAsync(
                     capture.BufferedAudio, capture.Stats.SpeechMs, session.Config, ct,
                     enforceMinSpeech: !isFollowUp);
-                if (verification.Decision == SpeakerDecision.Rejected)
+                if (verification.Value.Decision == SpeakerDecision.Rejected)
                 {
                     logger.LogInformation(
                         "Rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
-                        session.SatelliteId, verification.Similarity);
+                        session.SatelliteId, verification.Value.Similarity);
                     await PublishUnknownSpeakerAsync(
-                        session, capture.Stats, verification.Similarity, "unknown_speaker", ct);
+                        session, capture.Stats, verification.Value.Similarity, "unknown_speaker", ct);
                     return false;
                 }
-                similarity = verification.Similarity;
+                similarity = verification.Value.Similarity;
                 // A conclusive match names the speaker (routed into the Sender for per-person memory);
                 // the doubtful band leaves this null so the dispatcher keeps the satellite identity.
-                identifiedSpeaker = verification.IdentifiedSpeaker;
+                identifiedSpeaker = verification.Value.IdentifiedSpeaker;
                 if (similarity is not null)
                 {
                     // Accepted scores only reach Redis telemetry; log them too so threshold
@@ -369,7 +371,7 @@ public sealed class WyomingSatelliteHost(
             // Honor a per-satellite STT language override (symmetric with the per-satellite
             // Tts.Wyoming.Voice override resolved in SendReplyTool/AnnouncementService); null falls
             // back to the global Stt.Wyoming.Language inside the backend.
-            var options = new TranscriptionOptions { Language = session.Config.Stt?.Wyoming?.Language };
+            var options = TranscriptionOptionsFactory.Create(session.Config, verification, capture.Stats);
             var result = await speechToText.TranscribeAsync(capture.Audio, options, ct);
             sw.Stop();
 
