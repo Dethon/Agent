@@ -36,10 +36,14 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
     && pip install --no-cache-dir --no-deps \
         "wespeaker @ git+https://github.com/wenet-e2e/wespeaker.git@e9bbf73d0fd13db6cf42a6cb2eafb0d7dd0f8e0e"
 
+# torch.onnx.export requires the onnx package at runtime (export happens at container
+# startup because the checkpoint lives in the /models volume, not the image).
+RUN pip install --no-cache-dir "onnx==1.22.0"
+
 RUN git clone https://github.com/wenet-e2e/wesep /opt/wesep-src \
     && git -C /opt/wesep-src checkout 99eca54b60300d39b9353d93cf285a14bba37854
 
-COPY app.py entrypoint.sh /opt/tse/
+COPY app.py entrypoint.sh onnx_core.py /opt/tse/
 RUN chmod +x /opt/tse/entrypoint.sh
 
 ENV WESEP_SRC=/opt/wesep-src \
