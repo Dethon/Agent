@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
+using McpChannelVoice.Services.Stt;
 using McpChannelVoice.Services.Tse;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -66,6 +67,39 @@ public class TseSpeechToTextTests
             throw new InvalidOperationException("metrics sink unavailable");
     }
 
+    // Preserves frame boundaries (unlike RecordingInner, which flattens to one byte blob) so
+    // re-chunking tests can assert on individual frame lengths and ordering.
+    private sealed class FrameRecordingInner : ISpeechToText
+    {
+        public readonly List<byte[]> ReceivedFrames = [];
+        public async Task<TranscriptionResult> TranscribeAsync(
+            IAsyncEnumerable<AudioChunk> audio, TranscriptionOptions options, CancellationToken ct)
+        {
+            await foreach (var chunk in audio.WithCancellation(ct))
+            {
+                ReceivedFrames.Add(chunk.Data.ToArray());
+            }
+            return new TranscriptionResult { Text = "ok" };
+        }
+    }
+
+    // Terminal STT for the SegmentedSpeechToText seam test: reports non-empty text whenever it
+    // is invoked at all, so the assertion isolates SegmentedSpeechToText's own segment-or-not
+    // decision (the thing the bug breaks) rather than any transcription content.
+    private sealed class CountingInner : ISpeechToText
+    {
+        public async Task<TranscriptionResult> TranscribeAsync(
+            IAsyncEnumerable<AudioChunk> audio, TranscriptionOptions options, CancellationToken ct)
+        {
+            var count = 0;
+            await foreach (var _ in audio.WithCancellation(ct))
+            {
+                count++;
+            }
+            return new TranscriptionResult { Text = count > 0 ? "speech" : "" };
+        }
+    }
+
     private static readonly byte[] RawPcm = [1, 2, 3, 4, 5, 6];
 
     private static async IAsyncEnumerable<AudioChunk> Chunks()
@@ -73,6 +107,22 @@ public class TseSpeechToTextTests
         yield return new AudioChunk { Data = RawPcm, Format = AudioFormat.WyomingStandard };
         await Task.CompletedTask;
     }
+
+    private static async IAsyncEnumerable<AudioChunk> ChunksFrom(IEnumerable<AudioChunk> parts)
+    {
+        foreach (var chunk in parts)
+        {
+            yield return chunk;
+        }
+        await Task.CompletedTask;
+    }
+
+    private static ISpeechToText BuildStt(
+        ISpeechToText inner, TseMode mode, byte[]? clientReply, TseAuditTrail? audit = null) =>
+        TseSpeechToText.Wrap(
+            inner, new TseSettings { Mode = mode, NoiseFloorThreshold = 400 }, new StubClient(clientReply),
+            audit ?? new TseAuditTrail(null, 1, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance),
+            new RecordingMetrics(), NullLoggerFactory.Instance);
 
     private static TranscriptionOptions Options(string? speaker = "Dethon", double? floor = 900) =>
         new() { TargetSpeaker = speaker, NoiseFloorRms = floor, Language = "es" };
@@ -215,5 +265,151 @@ public class TseSpeechToTextTests
 
         result.Text.ShouldBe("ok");
         inner.ReceivedPayload.ShouldBe(extractedPcm);
+    }
+
+    // The seam the task-level fakes always paper over: a REAL SegmentedSpeechToText as the
+    // inner backend. WavCodec.Decode hands the extraction reply back as one giant chunk; fed
+    // straight in, SegmentedSpeechToText's fresh SilenceGate/AdaptiveLevelTracker sees a single
+    // frame, whose smoothing/min-window each hold exactly that one entry -- so the frame becomes
+    // its own noise floor and IsSpeech can never clear floor + EnterMarginDb. SpeechElapsed stays
+    // zero, no segment is ever added, and the whole successful extraction transcribes as "".
+    [Fact]
+    public async Task AutoNoisySuccess_WithRealSegmentedSttInner_ProducesNonEmptyTranscript()
+    {
+        const int chunkBytes = 3200; // 100 ms @ 16 kHz/16-bit/mono -- matches SegmentedSpeechToTextTests' cadence
+
+        static byte[] Loud()
+        {
+            var pcm = new byte[chunkBytes];
+            for (var i = 0; i < pcm.Length; i += 2)
+            {
+                pcm[i] = 0x40;
+                pcm[i + 1] = 0x1F; // Int16 8000 little-endian => RMS >> 500 (SilenceRmsThreshold)
+            }
+            return pcm;
+        }
+
+        // 10 dummy 100 ms chunks fix the capture's frame cadence for re-chunking; their content
+        // is irrelevant here -- only Rechunk's slice LENGTHS come from them. The real speech-like
+        // content lives entirely in the sidecar's "extracted" reply below.
+        var chunks = Enumerable.Range(0, 10)
+            .Select(_ => new AudioChunk { Data = new byte[chunkBytes], Format = AudioFormat.WyomingStandard })
+            .ToArray();
+
+        // 1 silent frame seeds the adaptive floor, then 9 loud frames (900 ms, clearing the
+        // 800 ms MinSegmentMs default) -- the same speech/silence synthesis SegmentedSpeechToTextTests
+        // uses, reused here rather than inventing a new one.
+        var extractedPcm = new byte[chunkBytes].Concat(Enumerable.Range(0, 9).SelectMany(_ => Loud())).ToArray();
+        var reply = WavCodec.Encode([new AudioChunk { Data = extractedPcm, Format = AudioFormat.WyomingStandard }]);
+
+        var segmented = SegmentedSpeechToText.Wrap(
+            new CountingInner(), new SegmentedSttConfig { Enabled = true }, new WyomingClientSettings(),
+            NullLoggerFactory.Instance);
+        var stt = BuildStt(segmented, TseMode.Auto, reply);
+
+        var result = await stt.TranscribeAsync(ChunksFrom(chunks), Options(), CancellationToken.None);
+
+        result.Text.ShouldNotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task SuccessPath_ShorterExtractedAudio_RechunksToExactlyExtractedBytes()
+    {
+        var originalChunks = new[]
+        {
+            new AudioChunk { Data = new byte[] { 10, 11, 12, 13 }, Format = AudioFormat.WyomingStandard },
+            new AudioChunk { Data = new byte[] { 20, 21, 22, 23 }, Format = AudioFormat.WyomingStandard },
+            new AudioChunk { Data = new byte[] { 30, 31, 32, 33 }, Format = AudioFormat.WyomingStandard }
+        };
+        var extractedPcm = new byte[] { 100, 101, 102, 103, 104, 105 }; // 6 bytes: shorter than the 12-byte mixture
+        var reply = WavCodec.Encode([new AudioChunk { Data = extractedPcm, Format = AudioFormat.WyomingStandard }]);
+        var inner = new FrameRecordingInner();
+        var stt = BuildStt(inner, TseMode.Auto, reply);
+
+        await stt.TranscribeAsync(ChunksFrom(originalChunks), Options(), CancellationToken.None);
+
+        inner.ReceivedFrames.Select(f => f.Length).ShouldBe([4, 2]); // stops once extracted is exhausted
+        inner.ReceivedFrames.SelectMany(f => f).ToArray().ShouldBe(extractedPcm); // nothing lost or duplicated
+    }
+
+    [Fact]
+    public async Task SuccessPath_ExtractedAudioNotAnExactMultiple_RechunksToExactlyExtractedBytes()
+    {
+        var originalChunks = new[]
+        {
+            new AudioChunk { Data = new byte[] { 10, 11, 12, 13 }, Format = AudioFormat.WyomingStandard },
+            new AudioChunk { Data = new byte[] { 20, 21, 22, 23 }, Format = AudioFormat.WyomingStandard },
+            new AudioChunk { Data = new byte[] { 30, 31, 32, 33 }, Format = AudioFormat.WyomingStandard }
+        };
+        var extractedPcm = Enumerable.Range(100, 10).Select(b => (byte)b).ToArray(); // 10 bytes: not a multiple of 4
+        var reply = WavCodec.Encode([new AudioChunk { Data = extractedPcm, Format = AudioFormat.WyomingStandard }]);
+        var inner = new FrameRecordingInner();
+        var stt = BuildStt(inner, TseMode.Auto, reply);
+
+        await stt.TranscribeAsync(ChunksFrom(originalChunks), Options(), CancellationToken.None);
+
+        inner.ReceivedFrames.Select(f => f.Length).ShouldBe([4, 4, 2]);
+        inner.ReceivedFrames.SelectMany(f => f).ToArray().ShouldBe(extractedPcm);
+    }
+
+    [Fact]
+    public async Task SuccessPath_RecordsMixtureAndExtractedAudioDistinctlyToTheAuditTrail()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"tse-audit-decorator-{Guid.NewGuid():N}");
+        try
+        {
+            var extractedPcm = new byte[] { 40, 41, 42, 43 };
+            var reply = WavCodec.Encode([new AudioChunk { Data = extractedPcm, Format = AudioFormat.WyomingStandard }]);
+            var client = new StubClient(reply);
+            var audit = new TseAuditTrail(dir, 10, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance);
+            var settings = new TseSettings { Mode = TseMode.Auto, NoiseFloorThreshold = 400 };
+            var stt = TseSpeechToText.Wrap(
+                new RecordingInner(), settings, client, audit, new RecordingMetrics(), NullLoggerFactory.Instance);
+
+            await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
+
+            var pairDir = Directory.GetDirectories(dir).ShouldHaveSingleItem();
+            var mixtureOnDisk = File.ReadAllBytes(Path.Combine(pairDir, "mixture.wav"));
+            var extractedOnDisk = File.ReadAllBytes(Path.Combine(pairDir, "extracted.wav"));
+
+            mixtureOnDisk.ShouldBe(client.LastCall!.Value.Wav); // exact bytes sent to the sidecar
+            mixtureOnDisk.ShouldNotBe(reply); // sanity: mixture and extracted really are distinct payloads
+            extractedOnDisk.ShouldBe(reply); // the raw sidecar reply, not the decoded/re-chunked PCM
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SkipAndFailurePaths_NeverWriteToTheAuditTrail()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"tse-audit-decorator-{Guid.NewGuid():N}");
+        try
+        {
+            var audit = new TseAuditTrail(dir, 10, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance);
+
+            await BuildStt(new RecordingInner(), TseMode.Auto, null, audit)
+                .TranscribeAsync(Chunks(), Options(speaker: null), CancellationToken.None); // no_speaker skip
+            await BuildStt(new RecordingInner(), TseMode.Auto, null, audit)
+                .TranscribeAsync(Chunks(), Options(floor: 100), CancellationToken.None); // quiet skip
+            await BuildStt(new RecordingInner(), TseMode.Auto, null, audit)
+                .TranscribeAsync(Chunks(), Options(), CancellationToken.None); // sidecar unavailable
+            await BuildStt(new RecordingInner(), TseMode.Auto, [1, 2, 3], audit)
+                .TranscribeAsync(Chunks(), Options(), CancellationToken.None); // malformed reply
+
+            Directory.Exists(dir).ShouldBeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
     }
 }

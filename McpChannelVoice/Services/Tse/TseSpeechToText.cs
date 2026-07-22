@@ -69,7 +69,36 @@ public sealed class TseSpeechToText(
         await PublishAsync(VoiceMetric.TseInvoked, options, outcome: "ok");
         await PublishAsync(VoiceMetric.TseLatencyMs, options, durationMs: stopwatch.ElapsedMilliseconds);
         audit.Record(options.TargetSpeaker!, options.NoiseFloorRms, stopwatch.ElapsedMilliseconds, mixture, reply);
-        return await inner.TranscribeAsync(Replay([extracted]), options, ct);
+        return await inner.TranscribeAsync(Replay(Rechunk(extracted, chunks)), options, ct);
+    }
+
+    // WavCodec.Decode hands back the whole reply as one contiguous chunk. Feeding that
+    // straight to the inner STT starves SegmentedSpeechToText's gate: with a single frame,
+    // AdaptiveLevelTracker's smoothing/min-window each hold exactly one entry, so the frame
+    // becomes its own noise floor and IsSpeech can never clear floor + EnterMarginDb. Re-slice
+    // the extracted audio to the original capture's frame cadence so the gate sees the same
+    // rhythm it was calibrated on. The extracted payload may legitimately be shorter than the
+    // mixture (the sidecar clamps its output) — stop once it is exhausted rather than assuming
+    // matching lengths.
+    private static IReadOnlyList<AudioChunk> Rechunk(AudioChunk extracted, IReadOnlyList<AudioChunk> original)
+    {
+        var frames = new List<AudioChunk>();
+        var offset = 0;
+        foreach (var chunk in original)
+        {
+            if (offset >= extracted.Data.Length)
+            {
+                break;
+            }
+            var length = Math.Min(chunk.Data.Length, extracted.Data.Length - offset);
+            frames.Add(extracted with { Data = extracted.Data.Slice(offset, length) });
+            offset += length;
+        }
+        if (offset < extracted.Data.Length)
+        {
+            frames.Add(extracted with { Data = extracted.Data.Slice(offset) });
+        }
+        return frames;
     }
 
     private string? SkipReason(TranscriptionOptions options) =>
