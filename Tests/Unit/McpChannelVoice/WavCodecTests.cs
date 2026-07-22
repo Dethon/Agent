@@ -49,7 +49,7 @@ public class WavCodecTests
     }
 
     [Fact]
-    public void DecodeRejectsNegativeSubChunkSizeInsteadOfHanging()
+    public async Task DecodeRejectsNegativeSubChunkSizeInsteadOfHanging()
     {
         var wav = WavCodec.Encode([Chunk(9, 9)]).ToList();
         // Splice a bogus sub-chunk declaring size == -8 between "fmt " and "data" (offset 36).
@@ -59,9 +59,9 @@ public class WavCodecTests
         BitConverter.GetBytes(patched.Length - 8).CopyTo(patched, 4); // fix RIFF size
 
         var task = Task.Run(() => WavCodec.Decode(patched));
-        var finishedInTime = Task.WaitAny([task], TimeSpan.FromSeconds(2)) == 0;
-        finishedInTime.ShouldBeTrue("Decode must not hang forever on a corrupted sub-chunk size");
-        Should.Throw<InvalidDataException>(() => task.GetAwaiter().GetResult());
+        var finished = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(2)));
+        finished.ShouldBe(task, "Decode must not hang forever on a corrupted sub-chunk size");
+        await Should.ThrowAsync<InvalidDataException>(task);
     }
 
     [Fact]
