@@ -711,8 +711,8 @@ services:
       context: ./tse-extractor
     restart: unless-stopped
     environment:
-      # 0 = one torch thread per CPU. On SMT hosts the physical core count is ~25% faster
-      # than the logical default (see app.py); no effect below 1 thread per core hosts.
+      # 0 = auto: one torch thread per PHYSICAL core (SMT oversubscription measured ~1.6x
+      # slower — see app.py). Set an explicit count only to tune away from that.
       TSE_TORCH_THREADS: "${TSE_TORCH_THREADS:-0}"
     ports:
       - "9098:9098"

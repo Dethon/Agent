@@ -32,13 +32,32 @@ lock = threading.Lock()
 extractor = load_model_local(MODEL_DIR)
 extractor.set_device("cpu")
 
+def _physical_cores():
+    """Unique (package, core) pairs from /proc/cpuinfo — SMT siblings collapse to one."""
+    try:
+        cores, phys, core = set(), None, None
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if line.startswith("physical id"):
+                    phys = line.split(":", 1)[1].strip()
+                elif line.startswith("core id"):
+                    core = line.split(":", 1)[1].strip()
+                elif not line.strip():
+                    if phys is not None and core is not None:
+                        cores.add((phys, core))
+                    phys = core = None
+        return len(cores)
+    except OSError:
+        return 0
+
+
 # silero_vad/model.py calls torch.set_num_threads(1) at MODULE level and the wesep import
 # chain drags it in, silently single-threading every extraction (measured 11.2s -> 2.7s for
-# 8s of audio on a 5900X). Restore parallelism after all imports; 0 = one thread per CPU.
-# Oversubscription past the physical core count costs ~25%, so hosts with SMT can pin the
-# physical count via TSE_TORCH_THREADS.
+# 8s of audio on a 5900X). Restore parallelism after all imports; 0 = one thread per PHYSICAL
+# core — SMT oversubscription measured ~1.6x slower (4.3s vs 2.6s per 8s capture at 24 vs 12
+# threads on a 5900X). TSE_TORCH_THREADS pins an explicit count.
 _threads = int(os.environ.get("TSE_TORCH_THREADS", "0"))
-torch.set_num_threads(_threads if _threads > 0 else (os.cpu_count() or 1))
+torch.set_num_threads(_threads if _threads > 0 else (_physical_cores() or os.cpu_count() or 1))
 
 
 ENROLL_GLOB = "enroll-*.wav"  # matches scripts/enroll-voice.sh output and the round-1 reference
