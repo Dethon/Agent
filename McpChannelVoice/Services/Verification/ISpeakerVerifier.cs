@@ -24,10 +24,13 @@ public interface ISpeakerVerifier
 {
     // captureAudio: the full continuous capture (enrollment-matching — embedding silence-cut
     // speech-only fragments collapses similarity); speechMs the gate's speech total, used only
-    // for the short-utterance skip. enforceMinSpeech=false opts out of that skip for the
-    // early-close check (a still-running capture is not a short command and has ample continuous
-    // audio to judge). Skipped (disabled / too short) and Unavailable (no model, no profiles,
-    // inference failure) both mean "let the capture through" — only Rejected blocks.
+    // for the short-utterance skip. enforceMinSpeech=false opts out of that skip for follow-up
+    // terminal verification (a follow-up window holds the mic open beside a talking TV, so even
+    // a short follow-up burst must be judged rather than passed through). The early-close check
+    // keeps the skip: a capture still open at that mark is not necessarily someone speaking, and
+    // judging silence as an unknown voice would reject on a foregone conclusion. Skipped (disabled
+    // / too short) and Unavailable (no model, no profiles, inference failure) both mean "let the
+    // capture through" — only Rejected blocks.
     Task<SpeakerVerification> VerifyAsync(
         IReadOnlyList<AudioChunk> captureAudio, long speechMs, SatelliteConfig config, CancellationToken ct,
         bool enforceMinSpeech = true);
