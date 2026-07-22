@@ -717,6 +717,9 @@ services:
       # 1 = run the BSRNN core via onnxruntime (parity-gated at startup; any failure
       # falls back to eager torch). 0 = force the eager path.
       TSE_ONNX: "${TSE_ONNX:-1}"
+      # Persist the concat-enrollment + speaker-embedding cache in the models volume so
+      # a container recreate doesn't recompute the embedding inside the first live turn.
+      ENROLL_CACHE: /models/enroll-cache
     ports:
       - "9098:9098"
     volumes:
