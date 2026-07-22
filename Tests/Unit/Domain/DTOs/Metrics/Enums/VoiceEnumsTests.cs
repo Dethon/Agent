@@ -55,6 +55,17 @@ public class VoiceEnumsTests
         ((int)metric).ShouldBe(expected);
 
     [Theory]
+    [InlineData(VoiceMetric.TseInvoked, 19)]
+    [InlineData(VoiceMetric.TseSkipped, 20)]
+    [InlineData(VoiceMetric.TseFailed, 21)]
+    [InlineData(VoiceMetric.TseLatencyMs, 22)]
+    public void VoiceMetric_TseValues_ArePinned(VoiceMetric metric, int expected)
+    {
+        // Values persist as ints in Redis; a renumber silently re-labels historical data.
+        ((int)metric).ShouldBe(expected);
+    }
+
+    [Theory]
     [InlineData(VoiceDimension.SatelliteId, 0)]
     [InlineData(VoiceDimension.Room, 1)]
     [InlineData(VoiceDimension.Identity, 2)]
