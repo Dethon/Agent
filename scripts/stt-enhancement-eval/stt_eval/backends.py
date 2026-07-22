@@ -44,29 +44,48 @@ def _jackbot_network() -> str:
 
 def _wyoming(wavs: list[Path], out_jsonl: Path) -> None:
     # All wavs must live under one root (the run dir) so a single -v mount covers them.
-    root = Path(*__common(wavs))
+    root = _mount_root(wavs)
+    # Preserve the exact path form the caller passed in (relative/absolute), matching
+    # what _medium writes, keyed by basename since the manifest only round-trips names.
+    by_name = {w.name: str(w) for w in wavs}
     with tempfile.TemporaryDirectory(dir=root) as td:
         tdp = Path(td)
         with (tdp / "in.jsonl").open("w", encoding="utf-8") as f:
             for wav in wavs:
                 f.write(json.dumps({"wav": f"/work/{wav.resolve().relative_to(root.resolve())}"}) + "\n")
         worker = Path(__file__).resolve().parent
-        subprocess.run([
+        result = subprocess.run([
             "docker", "run", "--rm", "--network", _jackbot_network(),
             "-v", f"{root.resolve()}:/work", "-v", f"{worker}:/s:ro",
             "python:3.12-slim", "python", "/s/wyoming_worker.py",
             "--manifest", f"/work/{tdp.name}/in.jsonl", "--out", f"/work/{tdp.name}/out.jsonl",
-        ], check=True)
-        with (tdp / "out.jsonl").open(encoding="utf-8") as fin, out_jsonl.open("a", encoding="utf-8") as fout:
-            for line in fin:
-                row = json.loads(line)
-                row["wav"] = str(root.resolve() / Path(row["wav"]).relative_to("/work"))
-                fout.write(json.dumps(row, ensure_ascii=False) + "\n")
+        ])
+        # Merge whatever the worker managed to write BEFORE checking the return code, so a
+        # mid-batch docker failure doesn't discard progress that already reached out.jsonl
+        # (which lives inside this TemporaryDirectory and is gone once the `with` exits).
+        _merge_worker_output(tdp / "out.jsonl", out_jsonl, by_name)
+        if result.returncode != 0:
+            raise SystemExit(f"wyoming worker exited {result.returncode}")
 
 
-def __common(wavs: list[Path]) -> tuple[str, ...]:
+def _merge_worker_output(worker_out: Path, out_jsonl: Path, by_name: dict[str, str]) -> None:
+    if not worker_out.exists():
+        return
+    with worker_out.open(encoding="utf-8") as fin, out_jsonl.open("a", encoding="utf-8") as fout:
+        for line in fin:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            row["wav"] = by_name[Path(row["wav"]).name]
+            fout.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _mount_root(wavs: list[Path]) -> Path:
     import os
-    return Path(os.path.commonpath([w.resolve() for w in wavs])).parts
+    common = Path(os.path.commonpath([w.resolve() for w in wavs]))
+    # commonpath of a single path returns that path itself; if it isn't a directory
+    # (the normal case when exactly one wav remains, e.g. on resume), mount its parent.
+    return common if common.is_dir() else common.parent
 
 
 def transcribe_files(backend: str, wavs: list[Path], out_jsonl: Path) -> None:
