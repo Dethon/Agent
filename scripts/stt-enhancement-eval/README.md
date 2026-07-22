@@ -20,5 +20,9 @@ uv run python -m stt_eval transcribe --backend wyoming --conditions raw,gtcrn,df
 uv run python -m stt_eval report                                          # WER tables + decision block + per_utterance.csv
 ```
 
+> `fetch`'s idempotence is presence-based (a source counts as done once its `data/...`
+> subdirectory exists and is non-empty): if a fetch is interrupted partway, delete the affected
+> `data/...` subdirectory before re-running, or the partial download is silently treated as complete.
+
 Committed results live in `results/` (e.g. `results/2026-07-round1.md`); the raw `runs/` artifacts
 they annotate are gitignored.
