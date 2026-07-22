@@ -150,6 +150,7 @@ public class SpeakerVerifierTests
         double identifyThreshold = 0.65,
         double identifyMargin = 0.10,
         double shortSpeechSimilarityThreshold = 0.50,
+        double shortSpeechIdentifyThreshold = 0.65,
         int fullThresholdSpeechMs = 4000) =>
         new(
             new SpeakerVerificationSettings
@@ -159,6 +160,7 @@ public class SpeakerVerifierTests
                 IdentifyThreshold = identifyThreshold,
                 IdentifyMargin = identifyMargin,
                 ShortSpeechSimilarityThreshold = shortSpeechSimilarityThreshold,
+                ShortSpeechIdentifyThreshold = shortSpeechIdentifyThreshold,
                 FullThresholdSpeechMs = fullThresholdSpeechMs
             },
             () => (new FixedEmbedder(heardVoice), profiles),
@@ -269,6 +271,37 @@ public class SpeakerVerifierTests
             .VerifyAsync(Chunks(), 2400, Config(), default);
 
         rejected.Decision.ShouldBe(SpeakerDecision.Rejected);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ShortSpeech_RelaxedIdentifyBarNamesSpeaker()
+    {
+        // The naming bar ramps with speech length like the accept bar: at 1000ms the effective
+        // identify bar is ~0.656 (0.65→0.75 over 800→4000ms), so a 0.70 match names the speaker
+        // that the flat full-speech 0.75 would have left as household.
+        var heard = Unit(0.70f, (float)Math.Sqrt(1 - (0.70 * 0.70)), 0f);
+        var result = await VerifierWith(
+                heard, [new SpeakerProfile("fran", [_franVoice])],
+                similarityThreshold: 0.70, identifyThreshold: 0.75)
+            .VerifyAsync(Chunks(), 1000, Config(), default);
+
+        result.Decision.ShouldBe(SpeakerDecision.Accepted);
+        result.IdentifiedSpeaker.ShouldBe("fran");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_LongSpeech_FullIdentifyBarWithholdsName()
+    {
+        // At/after FullThresholdSpeechMs naming faces the full identify bar: a long capture at
+        // 0.72 is accepted but stays household (TV-length blends must never be attributed).
+        var heard = Unit(0.72f, (float)Math.Sqrt(1 - (0.72 * 0.72)), 0f);
+        var result = await VerifierWith(
+                heard, [new SpeakerProfile("fran", [_franVoice])],
+                similarityThreshold: 0.70, identifyThreshold: 0.75)
+            .VerifyAsync(Chunks(), 5000, Config(), default);
+
+        result.Decision.ShouldBe(SpeakerDecision.Accepted);
+        result.IdentifiedSpeaker.ShouldBeNull();
     }
 
     [Fact]

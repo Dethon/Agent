@@ -67,7 +67,7 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
                 : SpeakerDecision.Rejected;
 
             return new SpeakerVerification(
-                decision, best.Similarity, best.Name, Identify(best, ranked, decision, config));
+                decision, best.Similarity, best.Name, Identify(best, ranked, decision, speechMs, config));
         }
         catch (OperationCanceledException)
         {
@@ -83,10 +83,22 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
     // Duration-aware accept bar: embeddings of short utterances are unreliable (genuine speech
     // collapses toward the impostor band under ~2s), so the bar ramps linearly from the short
     // floor at MinVerifySpeechMs up to the full threshold at FullThresholdSpeechMs.
-    private double EffectiveThreshold(long speechMs, SatelliteConfig config)
+    private double EffectiveThreshold(long speechMs, SatelliteConfig config) =>
+        Ramp(
+            speechMs,
+            config.ResolveShortSpeechSimilarityThreshold(_settings),
+            config.ResolveSimilarityThreshold(_settings),
+            config);
+
+    private double EffectiveIdentifyThreshold(long speechMs, SatelliteConfig config) =>
+        Ramp(
+            speechMs,
+            config.ResolveShortSpeechIdentifyThreshold(_settings),
+            config.ResolveIdentifyThreshold(_settings),
+            config);
+
+    private double Ramp(long speechMs, double floor, double full, SatelliteConfig config)
     {
-        var full = config.ResolveSimilarityThreshold(_settings);
-        var floor = config.ResolveShortSpeechSimilarityThreshold(_settings);
         var rampStart = _settings.MinVerifySpeechMs;
         var rampEnd = config.ResolveFullThresholdSpeechMs(_settings);
         if (speechMs >= rampEnd || rampEnd <= rampStart)
@@ -100,18 +112,19 @@ public sealed class SpeakerVerifier : ISpeakerVerifier
         return floor + ((full - floor) * (speechMs - rampStart) / (rampEnd - rampStart));
     }
 
-    // Conclusive identity: name the speaker only when the match is Accepted, clears IdentifyThreshold,
-    // and beats the runner-up by IdentifyMargin (auto-satisfied with a single enrolled profile, which
-    // has no runner-up). The doubtful band returns null, so the caller keeps the satellite's default
-    // identity rather than guess a person.
+    // Conclusive identity: name the speaker only when the match is Accepted, clears the
+    // duration-ramped identify bar, and beats the runner-up by IdentifyMargin (auto-satisfied
+    // with a single enrolled profile, which has no runner-up). The doubtful band returns null,
+    // so the caller keeps the satellite's default identity rather than guess a person.
     private string? Identify(
         (string Name, double Similarity) best,
         IReadOnlyList<(string Name, double Similarity)> ranked,
         SpeakerDecision decision,
+        long speechMs,
         SatelliteConfig config)
     {
         if (decision != SpeakerDecision.Accepted
-            || best.Similarity < config.ResolveIdentifyThreshold(_settings))
+            || best.Similarity < EffectiveIdentifyThreshold(speechMs, config))
         {
             return null;
         }

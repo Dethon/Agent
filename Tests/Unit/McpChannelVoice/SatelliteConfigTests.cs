@@ -103,6 +103,7 @@ public class SatelliteConfigTests
         config.ResolveShortSpeechSimilarityThreshold(global).ShouldBe(0.50);
         config.ResolveFullThresholdSpeechMs(global).ShouldBe(4000);
         config.ResolveIdentifyThreshold(global).ShouldBe(0.75);
+        config.ResolveShortSpeechIdentifyThreshold(global).ShouldBe(0.65);
         config.ResolveIdentifyMargin(global).ShouldBe(0.10);
     }
 

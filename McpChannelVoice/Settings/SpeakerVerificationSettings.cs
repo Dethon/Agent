@@ -38,6 +38,13 @@ public record SpeakerVerificationSettings
     // and abstains in the ambiguous band just above the accept bar. Field-tune per satellite via
     // SatelliteConfig.Verification.
     public double IdentifyThreshold { get; init; } = 0.75;
+    // Naming bar for short utterances, ramping to IdentifyThreshold at FullThresholdSpeechMs —
+    // same principle as the accept ramp: a short genuine command tops out well below the
+    // full-speech band (field 2026-07-22: genuine 0.738@0.56s and 0.86@0.96s vs a flat 0.75 bar
+    // that left them unnamed), while everything that must stay unattributed measures lower
+    // (short TV bursts ≤0.61, household-chat blends 0.62-0.68 at ~2s where the ramp already
+    // demands ~0.69). Wrong-person protection is IdentifyMargin, not this bar.
+    public double ShortSpeechIdentifyThreshold { get; init; } = 0.65;
     // Minimum best-minus-runner-up cosine gap before naming: with two enrolled voices scoring close,
     // naming the top one is a guess, so fall back to household. Auto-satisfied with a single enrolled
     // profile (no runner-up). Conservative default; calibratable only once a second voice is enrolled.
