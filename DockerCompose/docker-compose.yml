@@ -567,11 +567,15 @@ services:
     restart: unless-stopped
     volumes:
       - ./volumes/voices:/voices
+      - ./volumes/tse-audit:/tse-audit
     env_file:
       - .env
     environment:
       <<: *timezone
       Announce__Escalation__WebhookUrl: ""
+      Tse__Mode: "Off"
+      Tse__Endpoint: "http://tse-extractor:9098"
+      Tse__AuditDir: ""
     networks:
       - jackbot
     depends_on:
