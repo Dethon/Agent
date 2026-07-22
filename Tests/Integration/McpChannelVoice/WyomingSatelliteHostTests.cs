@@ -257,12 +257,14 @@ public class WyomingSatelliteHostTests
         }, ct);
 
         var stt = new Mock<ISpeechToText>();
+        TranscriptionOptions? capturedOptions = null;
         stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
                                          It.IsAny<TranscriptionOptions>(),
                                          It.IsAny<CancellationToken>()))
             .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
                 async (audio, opts, token) =>
                 {
+                    capturedOptions = opts;
                     await foreach (var _ in audio.WithCancellation(token))
                     { }
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
@@ -323,6 +325,12 @@ public class WyomingSatelliteHostTests
         var msg = await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
         msg.Content.ShouldBe("hola");
         msg.Sender.ShouldBe("fran"); // conclusive identity routed into Sender, not "household"
+
+        // The gate's verdict must reach the STT chain, not just the message Sender: the decorator's
+        // whole TSE policy is keyed off TargetSpeaker, so prove the wiring lands the identified name
+        // there (not merely "the floor is positive", which would pin clamping instead of wiring).
+        capturedOptions.ShouldNotBeNull();
+        capturedOptions!.TargetSpeaker.ShouldBe("fran");
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
