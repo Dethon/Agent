@@ -289,11 +289,15 @@ public sealed class WyomingSatelliteHost(
         }
 
         var stats = capture.Stats;
-        // A capture still running at the early mark is not a short command, and there is a full
-        // EarlyVerifyMs of continuous audio to embed — so opt out of the short-utterance skip that
-        // protects genuinely brief commands at the terminal check.
+        // A capture still open at the early mark is not necessarily someone speaking — a
+        // follow-up window holds the mic open regardless of whether anyone has said anything, so
+        // a capture can sit here with zero gate-classified speech (pure room noise). Keep the
+        // short-utterance skip: with nothing to embed yet, VerifyAsync returns Skipped rather than
+        // judging silence as an unknown voice, so the capture keeps running instead of being
+        // rejected on a foregone conclusion. Once real speech (TV or otherwise) has latched, it
+        // clears MinVerifySpeechMs on its own and this check still applies to it as before.
         var verification = await speakerVerifier.VerifyAsync(
-            capture.BufferedAudio, stats.SpeechMs, session.Config, ct, enforceMinSpeech: false);
+            capture.BufferedAudio, stats.SpeechMs, session.Config, ct, enforceMinSpeech: true);
         if (verification.Decision != SpeakerDecision.Rejected)
         {
             return false;
