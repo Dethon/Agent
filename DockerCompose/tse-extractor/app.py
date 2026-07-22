@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
+import torch
 from flask import Flask, Response, request
 
 sys.path.insert(0, os.environ.get("WESEP_SRC", "/opt/wesep-src"))
@@ -30,6 +31,14 @@ app = Flask(__name__)
 lock = threading.Lock()
 extractor = load_model_local(MODEL_DIR)
 extractor.set_device("cpu")
+
+# silero_vad/model.py calls torch.set_num_threads(1) at MODULE level and the wesep import
+# chain drags it in, silently single-threading every extraction (measured 11.2s -> 2.7s for
+# 8s of audio on a 5900X). Restore parallelism after all imports; 0 = one thread per CPU.
+# Oversubscription past the physical core count costs ~25%, so hosts with SMT can pin the
+# physical count via TSE_TORCH_THREADS.
+_threads = int(os.environ.get("TSE_TORCH_THREADS", "0"))
+torch.set_num_threads(_threads if _threads > 0 else (os.cpu_count() or 1))
 
 
 ENROLL_GLOB = "enroll-*.wav"  # matches scripts/enroll-voice.sh output and the round-1 reference
