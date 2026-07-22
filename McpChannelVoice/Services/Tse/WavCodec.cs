@@ -8,6 +8,7 @@ public static class WavCodec
 {
     public static byte[] Encode(IReadOnlyList<AudioChunk> chunks)
     {
+        ArgumentNullException.ThrowIfNull(chunks);
         var format = AudioFormat.WyomingStandard;
         var dataLen = chunks.Sum(c => c.Data.Length);
         using var ms = new MemoryStream(44 + dataLen);
@@ -34,6 +35,7 @@ public static class WavCodec
 
     public static AudioChunk Decode(byte[] wav)
     {
+        ArgumentNullException.ThrowIfNull(wav);
         if (wav.Length < 44 || !wav.AsSpan(0, 4).SequenceEqual("RIFF"u8) || !wav.AsSpan(8, 4).SequenceEqual("WAVE"u8))
         {
             throw new InvalidDataException("not a RIFF/WAVE payload");
@@ -43,6 +45,14 @@ public static class WavCodec
         {
             var id = wav.AsSpan(offset, 4);
             var size = BitConverter.ToInt32(wav, offset + 4);
+            if (size < 0)
+            {
+                throw new InvalidDataException("sub-chunk declares a negative size");
+            }
+            if (id.SequenceEqual("fmt "u8))
+            {
+                ValidateFmtChunk(wav, offset, size);
+            }
             if (id.SequenceEqual("data"u8))
             {
                 if (offset + 8 + size > wav.Length)
@@ -58,5 +68,22 @@ public static class WavCodec
             offset += 8 + size + (size & 1); // sub-chunks are word-aligned
         }
         throw new InvalidDataException("no data sub-chunk found");
+    }
+
+    private static void ValidateFmtChunk(byte[] wav, int offset, int size)
+    {
+        if (size < 16 || offset + 8 + 16 > wav.Length)
+        {
+            throw new InvalidDataException("fmt sub-chunk is smaller than expected");
+        }
+        var format = AudioFormat.WyomingStandard;
+        var audioFormatTag = BitConverter.ToInt16(wav, offset + 8);
+        var channels = BitConverter.ToInt16(wav, offset + 10);
+        var sampleRateHz = BitConverter.ToInt32(wav, offset + 12);
+        var bitsPerSample = BitConverter.ToInt16(wav, offset + 22);
+        if (audioFormatTag != 1 || channels != format.Channels || sampleRateHz != format.SampleRateHz || bitsPerSample != format.SampleWidthBytes * 8)
+        {
+            throw new InvalidDataException("fmt sub-chunk does not describe 16 kHz mono S16LE PCM");
+        }
     }
 }
