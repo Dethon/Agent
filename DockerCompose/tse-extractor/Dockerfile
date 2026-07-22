@@ -32,7 +32,7 @@ RUN apt-get update \
 # binds -- the app cannot boot without them, so both stay.
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.1.2" "torchaudio==2.1.2" \
     && pip install --no-cache-dir "numpy<2" soundfile pyyaml scipy silero-vad tqdm \
-        kaldiio hdbscan umap-learn scikit-learn onnxruntime requests flask \
+        kaldiio hdbscan umap-learn scikit-learn "onnxruntime==1.27.0" requests flask \
     && pip install --no-cache-dir --no-deps \
         "wespeaker @ git+https://github.com/wenet-e2e/wespeaker.git@e9bbf73d0fd13db6cf42a6cb2eafb0d7dd0f8e0e"
 
