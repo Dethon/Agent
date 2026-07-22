@@ -15,6 +15,7 @@ Heavy torch/wesep imports happen only inside the worker process, never in the
 project venv, so ``gtcrn,dfn3`` runs stay torch-TSE-free.
 """
 import atexit
+import itertools
 import re
 import subprocess
 import tempfile
@@ -25,39 +26,53 @@ import numpy as np
 import soundfile as sf
 
 _ID_RE = re.compile(r"^(?P<speaker>.+)-t(?P<take>\d+)-")
+_SETUP = "stt_eval/conditions/tse_env_setup.sh"
 
-# Runs inside data/models/tse-env; argv: wesep_src, wesep_model_dir. Protocol:
-# read "<mix_wav>\t<enroll_wav>\t<out_wav>" lines on stdin, write "OK"/"ERR ..."
-# lines on stdout. Diagnostics go to stderr (captured to a log by the parent).
+# Runs inside data/models/tse-env; argv: wesep_src, wesep_model_dir.
+#
+# Protocol hardening: the wesep/wespeaker/silero import tree prints banners and
+# warnings to stdout, which would desync a line-based handshake. So at startup we
+# stash a private copy of the real stdout fd (`proto`) and then point BOTH the
+# Python-level sys.stdout AND the raw fd 1 at stderr (-> worker.log). Every stray
+# library print therefore lands in the log; only framed protocol lines reach the
+# parent via `proto`. Requests are "<seq> <mix>\t<enroll>\t<out>"; replies are
+# "<seq> OK" / "<seq> ERR <msg>". The parent validates the echoed <seq>.
 _WORKER_SRC = r"""
+import os
 import sys
 sys.path.insert(0, sys.argv[1])
+proto = os.fdopen(os.dup(1), "w", buffering=1)  # private handle to the pipe
+os.dup2(2, 1)                                    # fd 1 -> stderr (worker.log)
+sys.stdout = sys.stderr                          # python-level prints -> log too
+
 import soundfile as sf
 from wesep.cli.extractor import load_model_local
 
 ext = load_model_local(sys.argv[2])
 ext.set_device("cpu")
-sys.stdout.write("READY\n")
-sys.stdout.flush()
+proto.write("READY\n")
+proto.flush()
 
 for line in sys.stdin:
     line = line.rstrip("\n")
     if not line:
         continue
+    seq, _, rest = line.partition(" ")
     try:
-        mix_wav, enroll_wav, out_wav = line.split("\t")
+        mix_wav, enroll_wav, out_wav = rest.split("\t")
         speech = ext.extract_speech(mix_wav, enroll_wav)
         if speech is None:
             raise RuntimeError("extractor returned None (no speech / not joint-training)")
         arr = speech[0].detach().cpu().numpy()
         sf.write(out_wav, arr, 16000, subtype="PCM_16")
-        sys.stdout.write("OK\n")
+        proto.write(seq + " OK\n")
     except Exception as exc:  # noqa: BLE001 - report back, keep the server alive
-        sys.stdout.write("ERR " + repr(exc) + "\n")
-    sys.stdout.flush()
+        proto.write(seq + " ERR " + repr(exc) + "\n")
+    proto.flush()
 """
 
 _WORKERS: dict[str, subprocess.Popen] = {}
+_SEQ = itertools.count(1)
 
 
 def _worker(model_dir: Path) -> subprocess.Popen:
@@ -69,9 +84,9 @@ def _worker(model_dir: Path) -> subprocess.Popen:
     python = model_dir / "tse-env" / "bin" / "python"
     wesep_src = model_dir / "wesep-src"
     wesep_model = model_dir / "wesep-english"
-    for p in (python, wesep_src, wesep_model / "avg_model.pt"):
+    for p in (python, wesep_src, wesep_model / "avg_model.pt", wesep_model / "config.yaml"):
         if not p.exists():
-            raise FileNotFoundError(f"TSE stack missing: {p} (see Task 10 spike notes)")
+            raise FileNotFoundError(f"TSE stack missing: {p} -- rebuild it with {_SETUP}")
     log = open(model_dir / "tse-env" / "worker.log", "w")
     proc = subprocess.Popen(
         [str(python), "-c", _WORKER_SRC, str(wesep_src), str(wesep_model)],
@@ -102,11 +117,15 @@ def _extract(model_dir: Path, mixture: np.ndarray, enroll: np.ndarray) -> np.nda
         out_wav = Path(td) / "out.wav"
         sf.write(mix_wav, mixture, 16000, subtype="PCM_16")
         sf.write(enroll_wav, enroll, 16000, subtype="PCM_16")
-        proc.stdin.write(f"{mix_wav}\t{enroll_wav}\t{out_wav}\n")
+        seq = next(_SEQ)
+        proc.stdin.write(f"{seq} {mix_wav}\t{enroll_wav}\t{out_wav}\n")
         proc.stdin.flush()
         reply = proc.stdout.readline().strip()
-        if reply != "OK":
-            raise RuntimeError(f"TSE worker error: {reply}")
+        rseq, _, status = reply.partition(" ")
+        if rseq != str(seq):
+            raise RuntimeError(f"TSE worker desync: sent seq {seq}, got {reply!r}")
+        if status != "OK":
+            raise RuntimeError(f"TSE worker error (seq {seq}): {status}")
         extracted, _ = sf.read(out_wav, dtype="float32")
     return extracted
 
@@ -125,6 +144,6 @@ def process(model_dir: Path, wav_in: Path, wav_out: Path) -> None:
     assert m, wav_in.name
     enroll = _enrollment(str(model_dir.parent / "voices"), m["speaker"], int(m["take"]))
     mixture, sr = sf.read(wav_in, dtype="float32")
-    assert sr == 16000
+    assert sr == 16000, wav_in
     extracted = _extract(model_dir, mixture, enroll)
     sf.write(wav_out, extracted[:len(mixture)], 16000, subtype="PCM_16")
