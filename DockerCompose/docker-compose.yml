@@ -573,9 +573,11 @@ services:
     environment:
       <<: *timezone
       Announce__Escalation__WebhookUrl: ""
-      Tse__Mode: "Off"
-      Tse__Endpoint: "http://tse-extractor:9098"
-      Tse__AuditDir: ""
+      Tse__Mode: "${Tse__Mode:-Off}"
+      Tse__Endpoint: "${Tse__Endpoint:-http://tse-extractor:9098}"
+      Tse__TimeoutMs: "${Tse__TimeoutMs:-90000}"
+      Tse__NoiseFloorThreshold: "${Tse__NoiseFloorThreshold:-400}"
+      Tse__AuditDir: "${Tse__AuditDir:-}"
     networks:
       - jackbot
     depends_on:
