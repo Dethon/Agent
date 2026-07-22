@@ -66,6 +66,13 @@ public sealed class TseSpeechToText(
             return await inner.TranscribeAsync(Replay(chunks), options, ct);
         }
 
+        if (extracted.Data.Length == 0)
+        {
+            logger.LogWarning("TSE reply empty for {Speaker}; raw audio proceeds", options.TargetSpeaker);
+            await PublishAsync(VoiceMetric.TseFailed, options, outcome: "empty", durationMs: stopwatch.ElapsedMilliseconds);
+            return await inner.TranscribeAsync(Replay(chunks), options, ct);
+        }
+
         await PublishAsync(VoiceMetric.TseInvoked, options, outcome: "ok");
         await PublishAsync(VoiceMetric.TseLatencyMs, options, durationMs: stopwatch.ElapsedMilliseconds);
         audit.Record(options.TargetSpeaker!, options.NoiseFloorRms, stopwatch.ElapsedMilliseconds, mixture, reply);
