@@ -66,6 +66,10 @@ def main():
             row = transcribe_wav(args.host, args.port, wav)
             row["wav"] = wav
             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
+            # Flush per row: mirrors _medium's per-row flush so a mid-batch docker kill
+            # (or a non-zero exit the caller merges around) still leaves completed rows
+            # on disk in the worker's out.jsonl instead of buffered and lost.
+            fout.flush()
             print(wav, "->", row["text"][:60], flush=True)
 
 

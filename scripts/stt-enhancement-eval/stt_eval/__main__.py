@@ -55,7 +55,7 @@ STAGES["mix"] = _mix
 def _transcribe(args: argparse.Namespace) -> None:
     from .backends import transcribe_files
     run_dir = Path("runs") / args.run
-    for cond in args.conditions.split(","):
+    for cond in (c.strip() for c in args.conditions.split(",")):
         wav_dir = run_dir / "corpus" if cond == "raw" else run_dir / "processed" / cond
         wavs = sorted(wav_dir.glob("*.wav"))
         if not wavs:
