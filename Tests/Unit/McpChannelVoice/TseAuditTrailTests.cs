@@ -19,6 +19,10 @@ public class TseAuditTrailTests : IDisposable
         {
             Directory.Delete(root, recursive: true);
         }
+        else if (File.Exists(root))
+        {
+            File.Delete(root);
+        }
     }
 
     [Fact]
@@ -55,5 +59,57 @@ public class TseAuditTrailTests : IDisposable
         var trail = new TseAuditTrail(null, 3, clock, NullLogger<TseAuditTrail>.Instance);
         trail.Record("Dethon", null, 1, [1], [2]);
         Directory.Exists(root).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RecordSwallowsIoFailureAndDoesNotThrow()
+    {
+        // A real filesystem fault (not a mock): a file already occupies the audit dir's path, so
+        // Directory.CreateDirectory inside Record cannot create it. No permission bits involved,
+        // so this behaves identically whether the suite runs as root or not.
+        File.WriteAllText(root, "occupies the audit directory path");
+        var trail = Trail();
+        Should.NotThrow(() => trail.Record("Dethon", null, 1, [1, 2], [3, 4]));
+    }
+
+    [Fact]
+    public void PruneContinuesPastAFailingDeleteToPruneNewerStaleEntries()
+    {
+        // Seed three stale pair directories directly, sorted oldest-first by name: A (real), B (a
+        // symlink to A), C (real). Pruning A first makes B a dangling symlink, so Directory.Delete
+        // throws DirectoryNotFoundException when B's turn comes -- a genuine TOCTOU I/O failure,
+        // not a permission check, so it reproduces identically whether the suite runs as root.
+        // Without per-entry isolation, that failure aborts the loop and C -- newer than B, still
+        // beyond the cap -- is never pruned, letting the ring grow unbounded.
+        Directory.CreateDirectory(root);
+        var a = Directory.CreateDirectory(Path.Combine(root, "20200101-000000-000-A")).FullName;
+        var b = Path.Combine(root, "20200101-000000-001-B");
+        Directory.CreateSymbolicLink(b, a);
+        var c = Directory.CreateDirectory(Path.Combine(root, "20200101-000000-002-C")).FullName;
+
+        Trail(maxPairs: 1).Record("Dethon", null, 1, [1], [2]);
+
+        Directory.Exists(a).ShouldBeFalse();
+        Directory.Exists(c).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RecordSanitizesTraversalShapedSpeakerIntoAuditDirectory()
+    {
+        // Enough ".." segments to walk out of root and land at Path.GetTempPath()/evil once the
+        // unsanitized speaker is glued onto the timestamp prefix and resolved by the filesystem.
+        var escapeTarget = Path.Combine(Path.GetTempPath(), "evil");
+        try
+        {
+            Trail().Record("../../../evil", null, 1, [1], [2]);
+            Directory.GetDirectories(root).ShouldHaveSingleItem();
+        }
+        finally
+        {
+            if (Directory.Exists(escapeTarget))
+            {
+                Directory.Delete(escapeTarget, recursive: true);
+            }
+        }
     }
 }
