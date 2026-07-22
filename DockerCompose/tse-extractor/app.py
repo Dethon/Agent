@@ -87,38 +87,44 @@ def _valid_speaker(name):
 
 
 def _enrollment_wav(speaker):
-    """Concatenated enrollment for the speaker (all takes), cached; None if unknown."""
+    """Concatenated enrollment for the speaker (all takes) and its (name,size,mtime)
+    signature, cached under CACHE/<speaker>/enrollment.{wav,sig}; (None, None) if
+    unknown. The per-speaker cache directory is the single layout every cached
+    artifact for this speaker lives under -- callers must not also cache directly
+    under CACHE using the speaker name as a flat file (that collides with this dir
+    for a speaker literally named e.g. "X.wav")."""
     speaker_dir = VOICES / speaker
     takes = sorted(speaker_dir.glob(ENROLL_GLOB)) if speaker_dir.is_dir() else []
     if not takes:
-        return None
-    CACHE.mkdir(parents=True, exist_ok=True)
-    target = CACHE / f"{speaker}.wav"
-    sig_file = CACHE / f"{speaker}.sig"
+        return None, None
+    speaker_cache = CACHE / speaker
+    speaker_cache.mkdir(parents=True, exist_ok=True)
+    target = speaker_cache / "enrollment.wav"
+    sig_file = speaker_cache / "enrollment.sig"
     sig = _signature(speaker_dir)
     if not (target.exists() and sig_file.exists() and sig_file.read_text() == sig):
         parts = [sf.read(str(t), dtype="float32")[0] for t in takes]
         sf.write(str(target), np.concatenate(parts), 16000, subtype="PCM_16")
         sig_file.write_text(sig)
-    return target
+    return target, sig
 
 
-def _speaker_embedding(speaker):
-    """(1, 192) post-spk_model embedding for the speaker, cached on the same
-    (name,size,mtime) signature as the concat wav; None if unknown speaker."""
-    enrollment = _enrollment_wav(speaker)
-    if enrollment is None:
-        return None
-    speaker_dir = VOICES / speaker
-    sig = _signature(speaker_dir) + "|emb-v1"
-    emb_file = CACHE / speaker / "embedding.npy"
-    sig_file = CACHE / speaker / "embedding.sig"
-    if emb_file.exists() and sig_file.exists() and sig_file.read_text() == sig:
+def _speaker_embedding(speaker, enrollment, sig):
+    """(1, 192) post-spk_model embedding for the speaker, cached under
+    CACHE/<speaker>/embedding.{npy,sig} keyed on the enrollment signature plus an
+    embedding-format version tag. Takes the already-resolved enrollment wav path and
+    signature (see _enrollment_wav) rather than re-reading /voices itself, so a caller
+    holding a snapshot from before the lock gets a consistent view even if the live
+    enrollment directory changes mid-request."""
+    speaker_cache = CACHE / speaker
+    emb_sig = sig + "|emb-v1"
+    emb_file = speaker_cache / "embedding.npy"
+    sig_file = speaker_cache / "embedding.sig"
+    if emb_file.exists() and sig_file.exists() and sig_file.read_text() == emb_sig:
         return torch.from_numpy(np.load(emb_file))
-    emb_file.parent.mkdir(parents=True, exist_ok=True)
     emb = onnx_core.compute_embedding(extractor, str(enrollment))
     np.save(emb_file, emb.numpy())
-    sig_file.write_text(sig)
+    sig_file.write_text(emb_sig)
     return emb
 
 
@@ -132,7 +138,7 @@ def extract():
     speaker = request.args.get("speaker", "")
     if not _valid_speaker(speaker):
         return Response(f"unknown speaker {speaker!r}", status=404)
-    enrollment = _enrollment_wav(speaker)
+    enrollment, sig = _enrollment_wav(speaker)
     if enrollment is None:
         return Response(f"unknown speaker {speaker!r}", status=404)
     with tempfile.TemporaryDirectory(prefix="tse-") as td:
@@ -143,7 +149,7 @@ def extract():
         with lock:
             if ort_session is not None:
                 pcm_mix, sr = torchaudio.load(str(mix), normalize=True)
-                embedding = _speaker_embedding(speaker)
+                embedding = _speaker_embedding(speaker, enrollment, sig)
                 speech = onnx_core.run_core(ort_session, extractor, pcm_mix, embedding)
             else:
                 speech = extractor.extract_speech(str(mix), str(enrollment))
