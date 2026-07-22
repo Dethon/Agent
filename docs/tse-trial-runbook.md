@@ -68,11 +68,18 @@ of a session as a broken gate.
      `profile.json` speaker-embedding cache into `volumes/voices`, skipping re-embedding of
      every enrollment WAV on each boot.
    - pi5 only: consider `Tse__TimeoutMs=90000` (already the shipped default — only add this
-     line if tuning away from it) — extraction on Pi 5 CPU takes roughly 10–25 s per turn
-     (measured 30–60 s before the silero thread-pin fix in `app.py`; rebuild the sidecar to
-     get multi-threading); `Auto` keeps quiet turns fast by never invoking the sidecar below
-     the noise floor. `TSE_TORCH_THREADS` pins the torch thread count (0 = one per CPU;
-     on SMT hosts the physical core count is ~25 % faster than the logical default).
+     line if tuning away from it). Extraction on Pi 5 CPU uses the ONNX-compiled core by
+     default (`TSE_ONNX=1`, interpolated in docker-compose.yml); set `TSE_ONNX=0` in
+     `DockerCompose/.env` + `up -d tse-extractor` to fallback to eager torch if needed.
+     Measured on an AMD 5900X: ~1.7 s per 8 s capture warm (vs ~2.8 s eager); HX 370 projected
+     ~1.2–1.6 s; measure on Pi 5 in the field for your configuration. The first container start
+     after this change exports the ONNX core into tse-models (expect ~1–2 min) and self-verifies
+     (`exporting bsrnn core` and `onnx core parity vs eager` in logs); any export or verify
+     failure falls back to eager automatically with an error log — extraction never breaks.
+     Per-speaker embeddings cache after first extraction, so the first turn for each speaker is
+     ~0.3–0.5 s slower than steady state. `Auto` keeps quiet turns fast by never invoking the
+     sidecar below the noise floor. `TSE_TORCH_THREADS` pins the torch thread count (0 =
+     physical core count, auto-detected if unset).
 
    `DockerCompose/docker-compose.yml`'s `mcp-channel-voice` service interpolates all five
    `Tse__*` keys (`Mode`, `Endpoint`, `TimeoutMs`, `NoiseFloorThreshold`, `AuditDir`) from the
