@@ -50,13 +50,14 @@ of a session as a broken gate.
    already used for `Satellites__*` — and add:
    - `Tse__Mode=Auto` (or `Always` for a diagnostic session)
    - `Tse__AuditDir=/tse-audit` to opt into the audio audit ring. **The container must be able
-     to write the host directory.** The hub runs as `VOICE_UID:VOICE_GID` (compose knob,
-     default `1654:1654` — the aspnet image's app user); set both in the same `.env` to the
-     owner of your volumes (usually `id -u` / `id -g`) and pre-create the directory as
-     yourself so Docker doesn't auto-create it root-owned:
+     to write the host directory.** The hub runs as `PUID:PGID` — the same `.env` pair the
+     other volume-writing services (qbittorrent, jackett, plex, …) already use (default
+     `1654:1654`, the aspnet image's app user). Hosts that set them once are covered; otherwise
+     set both to the owner of your volumes (usually `id -u` / `id -g`) and pre-create the
+     directory as yourself so Docker doesn't auto-create it root-owned:
      ```
-     echo "VOICE_UID=$(id -u)" >> DockerCompose/.env
-     echo "VOICE_GID=$(id -g)" >> DockerCompose/.env
+     echo "PUID=$(id -u)" >> DockerCompose/.env
+     echo "PGID=$(id -g)" >> DockerCompose/.env
      mkdir -p DockerCompose/volumes/tse-audit
      ```
      An unwritable directory makes every `TseAuditTrail.Record` call throw
