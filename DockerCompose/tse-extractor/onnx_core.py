@@ -10,6 +10,7 @@ the caller falls back to the eager path.
 import json
 import logging
 import os
+import platform
 
 import numpy as np
 import torch
@@ -156,6 +157,8 @@ def load_or_export(extractor, model_dir, threads):
             "core_version": CORE_VERSION,
             "opset": OPSET,
             "torch": torch.__version__,
+            "onnxruntime": ort.__version__,
+            "machine": platform.machine(),
             "checkpoint_mtime": os.path.getmtime(
                 os.path.join(model_dir, "avg_model.pt")),
         }

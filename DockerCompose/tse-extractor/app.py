@@ -9,6 +9,7 @@ tooling (scripts/enroll-voice.sh writes enroll-<n>.wav) -- any other .wav droppe
 speaker's directory (debug captures, partial uploads) is intentionally ignored.
 """
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -20,6 +21,9 @@ import soundfile as sf
 import torch
 import torchaudio
 from flask import Flask, Response, request
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 sys.path.insert(0, os.environ.get("WESEP_SRC", "/opt/wesep-src"))
 from wesep.cli.extractor import load_model_local  # noqa: E402
@@ -128,6 +132,20 @@ def _speaker_embedding(speaker, enrollment, sig):
     return emb
 
 
+def _clear_embedding_cache(speaker):
+    """Best-effort delete of a speaker's cached embedding files so the next request
+    recomputes from scratch. Called when the ORT path raises -- e.g. an unclean shutdown
+    can leave embedding.npy corrupt while embedding.sig (written after, but np.save is
+    non-atomic) still matches, which would otherwise 500 every request for that speaker
+    forever (recompute only triggers on a signature mismatch)."""
+    speaker_cache = CACHE / speaker
+    for name in ("embedding.npy", "embedding.sig"):
+        try:
+            (speaker_cache / name).unlink(missing_ok=True)
+        except OSError:
+            log.exception("failed to remove cached %s for speaker %r", name, speaker)
+
+
 @app.get("/health")
 def health():
     return {"status": "ready", "speakers": _speakers()}
@@ -148,9 +166,16 @@ def extract():
         mixture_len = sf.info(str(mix)).frames
         with lock:
             if ort_session is not None:
-                pcm_mix, sr = torchaudio.load(str(mix), normalize=True)
-                embedding = _speaker_embedding(speaker, enrollment, sig)
-                speech = onnx_core.run_core(ort_session, extractor, pcm_mix, embedding)
+                try:
+                    pcm_mix, sr = torchaudio.load(str(mix), normalize=True)
+                    embedding = _speaker_embedding(speaker, enrollment, sig)
+                    speech = onnx_core.run_core(ort_session, extractor, pcm_mix, embedding)
+                except Exception:
+                    log.exception(
+                        "onnx core failed for speaker %r -- clearing cached embedding "
+                        "and falling back to eager extraction for this request", speaker)
+                    _clear_embedding_cache(speaker)
+                    speech = extractor.extract_speech(str(mix), str(enrollment))
             else:
                 speech = extractor.extract_speech(str(mix), str(enrollment))
         if speech is None:
