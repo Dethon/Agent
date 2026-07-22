@@ -14,7 +14,7 @@ namespace Tests.Integration.McpChannelVoice;
 [Trait("Category", "External")]
 public class TseExtractorServiceTests
 {
-    private static readonly HttpClient Http = new() { BaseAddress = new Uri("http://localhost:9098") };
+    private static readonly HttpClient _http = new() { BaseAddress = new Uri("http://localhost:9098") };
 
     private static byte[] SyntheticUtteranceWav(double seconds = 2.0)
     {
@@ -40,7 +40,7 @@ public class TseExtractorServiceTests
         HttpResponseMessage response;
         try
         {
-            response = await Http.GetAsync("/health", cts.Token);
+            response = await _http.GetAsync("/health", cts.Token);
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
         {
@@ -68,7 +68,7 @@ public class TseExtractorServiceTests
     {
         Skip.If(await TryGetHealthAsync() is null, "tse-extractor sidecar not reachable at http://localhost:9098");
         using var content = new ByteArrayContent(SyntheticUtteranceWav());
-        var response = await Http.PostAsync("/extract?speaker=nobody-here", content);
+        var response = await _http.PostAsync("/extract?speaker=nobody-here", content);
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
@@ -81,7 +81,7 @@ public class TseExtractorServiceTests
         Skip.If(speakers.Count == 0, "no speaker enrolled on this tse-extractor sidecar; the 404 test still covers the routing");
         var wav = SyntheticUtteranceWav();
         using var content = new ByteArrayContent(wav);
-        var response = await Http.PostAsync($"/extract?speaker={speakers[0]}", content);
+        var response = await _http.PostAsync($"/extract?speaker={speakers[0]}", content);
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var reply = await response.Content.ReadAsByteArrayAsync();
         var decoded = WavCodec.Decode(reply); // valid RIFF, hub format

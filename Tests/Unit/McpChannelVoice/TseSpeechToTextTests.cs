@@ -100,11 +100,11 @@ public class TseSpeechToTextTests
         }
     }
 
-    private static readonly byte[] RawPcm = [1, 2, 3, 4, 5, 6];
+    private static readonly byte[] _rawPcm = [1, 2, 3, 4, 5, 6];
 
     private static async IAsyncEnumerable<AudioChunk> Chunks()
     {
-        yield return new AudioChunk { Data = RawPcm, Format = AudioFormat.WyomingStandard };
+        yield return new AudioChunk { Data = _rawPcm, Format = AudioFormat.WyomingStandard };
         await Task.CompletedTask;
     }
 
@@ -154,7 +154,7 @@ public class TseSpeechToTextTests
     {
         var (stt, inner, client, metrics) = Build(TseMode.Auto, clientReply: null);
         await stt.TranscribeAsync(Chunks(), Options(speaker: null), CancellationToken.None);
-        inner.ReceivedPayload.ShouldBe(RawPcm);
+        inner.ReceivedPayload.ShouldBe(_rawPcm);
         client.LastCall.ShouldBeNull();
         metrics.Events.ShouldHaveSingleItem().Metric.ShouldBe(VoiceMetric.TseSkipped);
         metrics.Events[0].Outcome.ShouldBe("no_speaker");
@@ -165,7 +165,7 @@ public class TseSpeechToTextTests
     {
         var (stt, inner, client, metrics) = Build(TseMode.Auto, clientReply: null);
         await stt.TranscribeAsync(Chunks(), Options(floor: 100), CancellationToken.None);
-        inner.ReceivedPayload.ShouldBe(RawPcm);
+        inner.ReceivedPayload.ShouldBe(_rawPcm);
         client.LastCall.ShouldBeNull();
         var evt = metrics.Events.ShouldHaveSingleItem();
         evt.Metric.ShouldBe(VoiceMetric.TseSkipped);
@@ -177,7 +177,7 @@ public class TseSpeechToTextTests
     {
         var (stt, inner, client, metrics) = Build(TseMode.Always, clientReply: null);
         await stt.TranscribeAsync(Chunks(), Options(speaker: null), CancellationToken.None);
-        inner.ReceivedPayload.ShouldBe(RawPcm);
+        inner.ReceivedPayload.ShouldBe(_rawPcm);
         client.LastCall.ShouldBeNull();
         var evt = metrics.Events.ShouldHaveSingleItem();
         evt.Metric.ShouldBe(VoiceMetric.TseSkipped);
@@ -189,7 +189,7 @@ public class TseSpeechToTextTests
     {
         var (stt, inner, client, metrics) = Build(TseMode.Auto, clientReply: null);
         await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
-        inner.ReceivedPayload.ShouldBe(RawPcm);
+        inner.ReceivedPayload.ShouldBe(_rawPcm);
         client.LastCall.ShouldNotBeNull();
         var evt = metrics.Events.ShouldHaveSingleItem();
         evt.Metric.ShouldBe(VoiceMetric.TseFailed);
@@ -207,7 +207,7 @@ public class TseSpeechToTextTests
         inner.ReceivedPayload.ShouldBe(extractedPcm);
         inner.ReceivedOptions!.Language.ShouldBe("es");
         client.LastCall!.Value.Speaker.ShouldBe("Dethon");
-        WavCodec.Decode(client.LastCall.Value.Wav).Data.ToArray().ShouldBe(RawPcm);
+        WavCodec.Decode(client.LastCall.Value.Wav).Data.ToArray().ShouldBe(_rawPcm);
         metrics.Events.Select(e => e.Metric).ShouldBe([VoiceMetric.TseInvoked, VoiceMetric.TseLatencyMs]);
         metrics.Events[0].Identity.ShouldBe("Dethon");
     }
@@ -227,7 +227,7 @@ public class TseSpeechToTextTests
     {
         var (stt, inner, _, metrics) = Build(TseMode.Auto, clientReply: [1, 2, 3]); // not RIFF
         await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
-        inner.ReceivedPayload.ShouldBe(RawPcm);
+        inner.ReceivedPayload.ShouldBe(_rawPcm);
         var evt = metrics.Events.ShouldHaveSingleItem();
         evt.Metric.ShouldBe(VoiceMetric.TseFailed);
         evt.Outcome.ShouldBe("malformed");
@@ -278,7 +278,7 @@ public class TseSpeechToTextTests
     {
         const int chunkBytes = 3200; // 100 ms @ 16 kHz/16-bit/mono -- matches SegmentedSpeechToTextTests' cadence
 
-        static byte[] Loud()
+        static byte[] loud()
         {
             var pcm = new byte[chunkBytes];
             for (var i = 0; i < pcm.Length; i += 2)
@@ -299,7 +299,7 @@ public class TseSpeechToTextTests
         // 1 silent frame seeds the adaptive floor, then 9 loud frames (900 ms, clearing the
         // 800 ms MinSegmentMs default) -- the same speech/silence synthesis SegmentedSpeechToTextTests
         // uses, reused here rather than inventing a new one.
-        var extractedPcm = new byte[chunkBytes].Concat(Enumerable.Range(0, 9).SelectMany(_ => Loud())).ToArray();
+        var extractedPcm = new byte[chunkBytes].Concat(Enumerable.Range(0, 9).SelectMany(_ => loud())).ToArray();
         var reply = WavCodec.Encode([new AudioChunk { Data = extractedPcm, Format = AudioFormat.WyomingStandard }]);
 
         var segmented = SegmentedSpeechToText.Wrap(
