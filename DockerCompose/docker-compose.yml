@@ -694,6 +694,24 @@ services:
       piper-voice-fetch:
         condition: service_completed_successfully
 
+  tse-extractor:
+    image: tse-extractor:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: tse-extractor
+    build:
+      context: ./tse-extractor
+    restart: unless-stopped
+    ports:
+      - "9098:9098"
+    volumes:
+      - ./volumes/tse-models:/models
+      - ./volumes/voices:/voices:ro
+    networks:
+      - jackbot
+
   agent:
     image: agent:latest
     logging:
