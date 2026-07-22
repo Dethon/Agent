@@ -86,5 +86,10 @@ public class TseExtractorServiceTests
         var reply = await response.Content.ReadAsByteArrayAsync();
         var decoded = WavCodec.Decode(reply); // valid RIFF, hub format
         decoded.Data.Length.ShouldBeGreaterThan(0);
+        // The dangerous failure mode is a 200 carrying subtly wrong audio; the sidecar clamps
+        // its output to the mixture's length, so pin sample count equality (not "not silence" —
+        // a synthetic mixture against a real enrollment may legitimately come back near-silent).
+        var mixture = WavCodec.Decode(wav);
+        decoded.Data.Length.ShouldBe(mixture.Data.Length);
     }
 }

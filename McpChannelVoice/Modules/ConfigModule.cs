@@ -74,7 +74,10 @@ public static class ConfigModule
 
         services.AddSingleton<Services.Tse.ITseExtractorClient>(sp =>
             new Services.Tse.TseExtractorClient(
-                new HttpClient(),
+                // No HttpClient.Timeout: the client arms its own deadline from Tse.TimeoutMs via a
+                // linked token, so the framework's 100s default must not silently cap it — an owner
+                // raising TimeoutMs above 100s would otherwise get a misreported sidecar failure.
+                new HttpClient { Timeout = Timeout.InfiniteTimeSpan },
                 settings.Tse,
                 sp.GetRequiredService<ILogger<Services.Tse.TseExtractorClient>>()));
         services.AddSingleton(sp => new Services.Tse.TseAuditTrail(
