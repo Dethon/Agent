@@ -95,6 +95,14 @@ def _transcribe(args: argparse.Namespace) -> None:
 STAGES["transcribe"] = _transcribe
 
 
+def _report(args: argparse.Namespace) -> None:
+    from .report_stage import run_report
+    run_report(Path("runs") / args.run)
+
+
+STAGES["report"] = _report
+
+
 def main() -> None:
     args = build_parser().parse_args()
     args.func(args)
