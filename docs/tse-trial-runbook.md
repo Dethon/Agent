@@ -67,9 +67,11 @@ of a session as a broken gate.
      `profile.json` speaker-embedding cache into `volumes/voices`, skipping re-embedding of
      every enrollment WAV on each boot.
    - pi5 only: consider `Tse__TimeoutMs=90000` (already the shipped default — only add this
-     line if tuning away from it) — extraction on Pi 5 CPU is expected to take tens of
-     seconds; `Auto` keeps quiet turns fast by never invoking the sidecar below the noise
-     floor.
+     line if tuning away from it) — extraction on Pi 5 CPU takes roughly 10–25 s per turn
+     (measured 30–60 s before the silero thread-pin fix in `app.py`; rebuild the sidecar to
+     get multi-threading); `Auto` keeps quiet turns fast by never invoking the sidecar below
+     the noise floor. `TSE_TORCH_THREADS` pins the torch thread count (0 = one per CPU;
+     on SMT hosts the physical core count is ~25 % faster than the logical default).
 
    `DockerCompose/docker-compose.yml`'s `mcp-channel-voice` service interpolates all five
    `Tse__*` keys (`Mode`, `Endpoint`, `TimeoutMs`, `NoiseFloorThreshold`, `AuditDir`) from the
