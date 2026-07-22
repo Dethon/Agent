@@ -41,6 +41,14 @@ def _fetch(args: argparse.Namespace) -> None:
 STAGES["fetch"] = _fetch
 
 
+def _validate(args: argparse.Namespace) -> None:
+    from .validate_stage import run_validate
+    run_validate(Path(args.voices), Path("runs") / args.run)
+
+
+STAGES["validate"] = _validate
+
+
 def _mix(args: argparse.Namespace) -> None:
     from .mix_stage import run_mix
     run_dir = Path("runs") / args.run
