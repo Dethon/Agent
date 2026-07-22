@@ -76,8 +76,9 @@ of a session as a broken gate.
      after this change exports the ONNX core into tse-models (expect ~1–2 min) and self-verifies
      (`exporting bsrnn core` and `onnx core parity vs eager` in logs); any export or verify
      failure falls back to eager automatically with an error log — extraction never breaks.
-     Per-speaker embeddings cache after first extraction, so the first turn for each speaker is
-     ~0.3–0.5 s slower than steady state. `Auto` keeps quiet turns fast by never invoking the
+     Per-speaker embeddings cache after first extraction (persisted in the tse-models volume
+     alongside the ONNX core, so container recreates don't recompute them); only the first
+     extraction after an enrollment change pays the ~0.3–0.5 s recompute. `Auto` keeps quiet turns fast by never invoking the
      sidecar below the noise floor. `TSE_TORCH_THREADS` pins the torch thread count (0 =
      physical core count, auto-detected if unset).
 

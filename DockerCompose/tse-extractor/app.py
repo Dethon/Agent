@@ -121,7 +121,10 @@ def _speaker_embedding(speaker, enrollment, sig):
     holding a snapshot from before the lock gets a consistent view even if the live
     enrollment directory changes mid-request."""
     speaker_cache = CACHE / speaker
-    emb_sig = sig + "|emb-v1"
+    # torch version in the key: the cache may live in a persistent volume (ENROLL_CACHE),
+    # and a torch bump can shift embedding numerics without any enrollment change — the
+    # ONNX parity gate verifies the core with a FRESH embedding, so it would never notice.
+    emb_sig = sig + "|emb-v1|torch" + torch.__version__
     emb_file = speaker_cache / "embedding.npy"
     sig_file = speaker_cache / "embedding.sig"
     if emb_file.exists() and sig_file.exists() and sig_file.read_text() == emb_sig:
