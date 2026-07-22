@@ -2,8 +2,11 @@
 
 Loads the WeSep BSRNN+ECAPA checkpoint once at startup and serves one extraction per
 request under a lock (utterances arrive seconds apart; the hub enforces the deadline).
-Enrollment is the hub's voices volume: /voices/<speaker>/*.wav, concatenated and cached,
-invalidated whenever the directory's (name, size, mtime) signature changes.
+Enrollment is the hub's voices volume: /voices/<speaker>/enroll-*.wav, concatenated and
+cached, invalidated whenever the directory's (name, size, mtime) signature changes. This
+matches the round-1 eval reference (stt_eval/conditions/tse.py) and the enrollment
+tooling (scripts/enroll-voice.sh writes enroll-<n>.wav) -- any other .wav dropped in a
+speaker's directory (debug captures, partial uploads) is intentionally ignored.
 """
 import json
 import os
@@ -29,21 +32,29 @@ extractor = load_model_local(MODEL_DIR)
 extractor.set_device("cpu")
 
 
+ENROLL_GLOB = "enroll-*.wav"  # matches scripts/enroll-voice.sh output and the round-1 reference
+
+
 def _speakers():
     if not VOICES.is_dir():
         return []
-    return sorted(p.name for p in VOICES.iterdir() if p.is_dir() and any(p.glob("*.wav")))
+    return sorted(p.name for p in VOICES.iterdir() if p.is_dir() and any(p.glob(ENROLL_GLOB)))
 
 
 def _signature(speaker_dir):
     return json.dumps(sorted(
-        (f.name, f.stat().st_size, f.stat().st_mtime) for f in speaker_dir.glob("*.wav")))
+        (f.name, f.stat().st_size, f.stat().st_mtime) for f in speaker_dir.glob(ENROLL_GLOB)))
+
+
+def _valid_speaker(name):
+    """Reject anything that isn't a plain single path segment (no traversal)."""
+    return bool(name) and name not in (".", "..") and os.path.basename(name) == name
 
 
 def _enrollment_wav(speaker):
     """Concatenated enrollment for the speaker (all takes), cached; None if unknown."""
     speaker_dir = VOICES / speaker
-    takes = sorted(speaker_dir.glob("*.wav")) if speaker_dir.is_dir() else []
+    takes = sorted(speaker_dir.glob(ENROLL_GLOB)) if speaker_dir.is_dir() else []
     if not takes:
         return None
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -65,6 +76,8 @@ def health():
 @app.post("/extract")
 def extract():
     speaker = request.args.get("speaker", "")
+    if not _valid_speaker(speaker):
+        return Response(f"unknown speaker {speaker!r}", status=404)
     enrollment = _enrollment_wav(speaker)
     if enrollment is None:
         return Response(f"unknown speaker {speaker!r}", status=404)
@@ -72,11 +85,13 @@ def extract():
         mix = Path(td) / "mix.wav"
         out = Path(td) / "out.wav"
         mix.write_bytes(request.get_data())
+        mixture_len = sf.info(str(mix)).frames
         with lock:
             speech = extractor.extract_speech(str(mix), str(enrollment))
         if speech is None:
             return Response("extraction returned no speech", status=422)
-        sf.write(str(out), speech[0].detach().cpu().numpy(), 16000, subtype="PCM_16")
+        extracted = speech[0].detach().cpu().numpy()[:mixture_len]
+        sf.write(str(out), extracted, 16000, subtype="PCM_16")
         return Response(out.read_bytes(), mimetype="audio/wav")
 
 
