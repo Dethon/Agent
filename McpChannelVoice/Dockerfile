@@ -15,7 +15,8 @@ RUN dotnet publish "./McpChannelVoice.csproj" -c $BUILD_CONFIGURATION -o /app/pu
 
 FROM base AS final
 WORKDIR /app
-ADD --checksum=sha256:bf1a75b9930474cf3389ef415e6e5d38ca96fea4a3a00f7e301d080a58ee2239 --chown=$APP_UID:$APP_UID \
+# Remote-URL ADD defaults to mode 600 — chmod so any PUID/PGID runtime user can read it.
+ADD --checksum=sha256:bf1a75b9930474cf3389ef415e6e5d38ca96fea4a3a00f7e301d080a58ee2239 --chmod=444 \
     https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2netv2_sv_zh-cn_16k-common.onnx \
     /app/models/speaker-embedding.onnx
 COPY --from=publish /app/publish .
