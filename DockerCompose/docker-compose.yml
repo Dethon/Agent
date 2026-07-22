@@ -714,6 +714,9 @@ services:
       # 0 = auto: one torch thread per PHYSICAL core (SMT oversubscription measured ~1.6x
       # slower — see app.py). Set an explicit count only to tune away from that.
       TSE_TORCH_THREADS: "${TSE_TORCH_THREADS:-0}"
+      # 1 = run the BSRNN core via onnxruntime (parity-gated at startup; any failure
+      # falls back to eager torch). 0 = force the eager path.
+      TSE_ONNX: "${TSE_ONNX:-1}"
     ports:
       - "9098:9098"
     volumes:

@@ -18,10 +18,13 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import torch
+import torchaudio
 from flask import Flask, Response, request
 
 sys.path.insert(0, os.environ.get("WESEP_SRC", "/opt/wesep-src"))
 from wesep.cli.extractor import load_model_local  # noqa: E402
+
+import onnx_core  # noqa: E402
 
 VOICES = Path(os.environ.get("VOICES_DIR", "/voices"))
 MODEL_DIR = os.environ.get("MODEL_DIR", "/models/wesep-english")
@@ -58,6 +61,10 @@ def _physical_cores():
 # threads on a 5900X). TSE_TORCH_THREADS pins an explicit count.
 _threads = int(os.environ.get("TSE_TORCH_THREADS", "0"))
 torch.set_num_threads(_threads if _threads > 0 else (_physical_cores() or os.cpu_count() or 1))
+
+_onnx_enabled = os.environ.get("TSE_ONNX", "1") != "0"
+ort_session = onnx_core.load_or_export(extractor, MODEL_DIR, torch.get_num_threads()) \
+    if _onnx_enabled else None
 
 
 ENROLL_GLOB = "enroll-*.wav"  # matches scripts/enroll-voice.sh output and the round-1 reference
@@ -96,6 +103,25 @@ def _enrollment_wav(speaker):
     return target
 
 
+def _speaker_embedding(speaker):
+    """(1, 192) post-spk_model embedding for the speaker, cached on the same
+    (name,size,mtime) signature as the concat wav; None if unknown speaker."""
+    enrollment = _enrollment_wav(speaker)
+    if enrollment is None:
+        return None
+    speaker_dir = VOICES / speaker
+    sig = _signature(speaker_dir) + "|emb-v1"
+    emb_file = CACHE / speaker / "embedding.npy"
+    sig_file = CACHE / speaker / "embedding.sig"
+    if emb_file.exists() and sig_file.exists() and sig_file.read_text() == sig:
+        return torch.from_numpy(np.load(emb_file))
+    emb_file.parent.mkdir(parents=True, exist_ok=True)
+    emb = onnx_core.compute_embedding(extractor, str(enrollment))
+    np.save(emb_file, emb.numpy())
+    sig_file.write_text(sig)
+    return emb
+
+
 @app.get("/health")
 def health():
     return {"status": "ready", "speakers": _speakers()}
@@ -115,7 +141,12 @@ def extract():
         mix.write_bytes(request.get_data())
         mixture_len = sf.info(str(mix)).frames
         with lock:
-            speech = extractor.extract_speech(str(mix), str(enrollment))
+            if ort_session is not None:
+                pcm_mix, sr = torchaudio.load(str(mix), normalize=True)
+                embedding = _speaker_embedding(speaker)
+                speech = onnx_core.run_core(ort_session, extractor, pcm_mix, embedding)
+            else:
+                speech = extractor.extract_speech(str(mix), str(enrollment))
         if speech is None:
             return Response("extraction returned no speech", status=422)
         extracted = speech[0].detach().cpu().numpy()[:mixture_len]
