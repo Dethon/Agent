@@ -1,6 +1,7 @@
 """Staged STT-enhancement eval CLI. Stages: fetch, validate, mix, process, transcribe, report."""
 import argparse
 from collections.abc import Callable
+from pathlib import Path
 
 STAGES: dict[str, Callable[[argparse.Namespace], None]] = {}
 
@@ -22,6 +23,20 @@ def build_parser() -> argparse.ArgumentParser:
 def _add_stage_args(name: str, p: argparse.ArgumentParser) -> None:
     p.add_argument("--run", default="round1", help="run name under runs/")
     p.add_argument("--data", default="data", help="downloads cache dir")
+    p.add_argument("--voices", default="data/voices", help="enrollment takes dir")
+    if name == "mix":
+        p.add_argument("--seed", type=int, default=7)
+
+
+def _mix(args: argparse.Namespace) -> None:
+    from .mix_stage import run_mix
+    run_dir = Path("runs") / args.run
+    takes = run_dir / "takes.jsonl"
+    run_mix(Path(args.voices), Path(args.data), run_dir, args.seed,
+            takes if takes.exists() else None)
+
+
+STAGES["mix"] = _mix
 
 
 def main() -> None:
