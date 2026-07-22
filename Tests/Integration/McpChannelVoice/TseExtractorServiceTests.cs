@@ -11,7 +11,7 @@ namespace Tests.Integration.McpChannelVoice;
 // with no guarantee of being up on a given dev box, so this mirrors
 // SpeakerVerificationModelTests's convention for a real, possibly-absent external dependency:
 // attempt the real precondition, and skip (never hard-fail) when it isn't met.
-[Trait("Category", "Integration")]
+[Trait("Category", "External")]
 public class TseExtractorServiceTests
 {
     private static readonly HttpClient Http = new() { BaseAddress = new Uri("http://localhost:9098") };
@@ -33,15 +33,24 @@ public class TseExtractorServiceTests
         // Bounded probe: an unreachable sidecar isn't always a fast "connection refused" (a
         // stopped-but-recently-published Docker port can hang instead of resetting on this
         // host), so cap the wait rather than inheriting HttpClient's 100s default timeout.
+        // Only a connection-level failure (refused/no route) or that bounded timeout means
+        // "not reachable" and skips; a reachable sidecar answering with a non-2xx status (bad
+        // checkpoint, failed model load) must fail the test, not be mistaken for absence.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        HttpResponseMessage response;
         try
         {
-            var body = await Http.GetStringAsync("/health", cts.Token);
-            return JsonDocument.Parse(body).RootElement;
+            response = await Http.GetAsync("/health", cts.Token);
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
         {
             return null;
+        }
+        using (response)
+        {
+            response.EnsureSuccessStatusCode();
+            var body = await response.Content.ReadAsStringAsync();
+            return JsonDocument.Parse(body).RootElement;
         }
     }
 
@@ -69,10 +78,7 @@ public class TseExtractorServiceTests
         var health = await TryGetHealthAsync();
         Skip.If(health is null, "tse-extractor sidecar not reachable at http://localhost:9098");
         var speakers = health!.Value.GetProperty("speakers").EnumerateArray().Select(s => s.GetString()).ToList();
-        if (speakers.Count == 0)
-        {
-            return; // no enrollment on this machine; the 404 test still covers the routing
-        }
+        Skip.If(speakers.Count == 0, "no speaker enrolled on this tse-extractor sidecar; the 404 test still covers the routing");
         var wav = SyntheticUtteranceWav();
         using var content = new ByteArrayContent(wav);
         var response = await Http.PostAsync($"/extract?speaker={speakers[0]}", content);
