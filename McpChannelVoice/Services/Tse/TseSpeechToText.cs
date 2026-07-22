@@ -38,7 +38,7 @@ public sealed class TseSpeechToText(
         var skip = SkipReason(options);
         if (skip is not null)
         {
-            await PublishAsync(VoiceMetric.TseSkipped, options, outcome: skip, ct: ct);
+            await PublishAsync(VoiceMetric.TseSkipped, options, outcome: skip);
             return await inner.TranscribeAsync(Replay(chunks), options, ct);
         }
 
@@ -47,25 +47,28 @@ public sealed class TseSpeechToText(
         var reply = await client.ExtractAsync(mixture, options.TargetSpeaker!, ct);
         stopwatch.Stop();
 
+        if (reply is null)
+        {
+            logger.LogWarning("TSE sidecar unavailable for {Speaker}; raw audio proceeds", options.TargetSpeaker);
+            await PublishAsync(VoiceMetric.TseFailed, options, outcome: "unavailable", durationMs: stopwatch.ElapsedMilliseconds);
+            return await inner.TranscribeAsync(Replay(chunks), options, ct);
+        }
+
         AudioChunk extracted;
         try
         {
-            if (reply is null)
-            {
-                throw new InvalidDataException("sidecar unavailable");
-            }
             extracted = WavCodec.Decode(reply);
         }
         catch (InvalidDataException ex)
         {
-            logger.LogWarning(ex, "TSE extraction unavailable for {Speaker}; raw audio proceeds", options.TargetSpeaker);
-            await PublishAsync(VoiceMetric.TseFailed, options, durationMs: stopwatch.ElapsedMilliseconds, ct: ct);
+            logger.LogWarning(ex, "TSE reply malformed for {Speaker}; raw audio proceeds", options.TargetSpeaker);
+            await PublishAsync(VoiceMetric.TseFailed, options, outcome: "malformed", durationMs: stopwatch.ElapsedMilliseconds);
             return await inner.TranscribeAsync(Replay(chunks), options, ct);
         }
 
-        await PublishAsync(VoiceMetric.TseInvoked, options, outcome: "ok", ct: ct);
-        await PublishAsync(VoiceMetric.TseLatencyMs, options, durationMs: stopwatch.ElapsedMilliseconds, ct: ct);
-        audit.Record(options.TargetSpeaker!, options.NoiseFloorRms, stopwatch.ElapsedMilliseconds, mixture, reply!);
+        await PublishAsync(VoiceMetric.TseInvoked, options, outcome: "ok");
+        await PublishAsync(VoiceMetric.TseLatencyMs, options, durationMs: stopwatch.ElapsedMilliseconds);
+        audit.Record(options.TargetSpeaker!, options.NoiseFloorRms, stopwatch.ElapsedMilliseconds, mixture, reply);
         return await inner.TranscribeAsync(Replay([extracted]), options, ct);
     }
 
@@ -75,16 +78,32 @@ public sealed class TseSpeechToText(
         : null;
 
     private Task PublishAsync(
-        VoiceMetric metric, TranscriptionOptions options, string? outcome = null, long? durationMs = null,
-        CancellationToken ct = default) =>
-        metrics.PublishAsync(new VoiceEvent
+        VoiceMetric metric, TranscriptionOptions options, string? outcome = null, long? durationMs = null) =>
+        SafePublishAsync(new VoiceEvent
         {
             Metric = metric,
             Identity = options.TargetSpeaker,
             Outcome = outcome,
             DurationMs = durationMs,
             FloorRms = options.NoiseFloorRms
-        }, ct);
+        });
+
+    // Metrics are diagnostic, not part of the fail-open contract: a publish failure must
+    // never abort the turn. Always publishes with CancellationToken.None (matching the
+    // WyomingSatelliteHost.SafePublishAsync precedent) so this catch-all can never mask a
+    // genuine caller-requested cancellation of the turn itself — that only ever surfaces
+    // from audio enumeration, client.ExtractAsync, or inner.TranscribeAsync observing ct.
+    private async Task SafePublishAsync(VoiceEvent evt)
+    {
+        try
+        {
+            await metrics.PublishAsync(evt, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to publish voice metric {Metric}", evt.Metric);
+        }
+    }
 
     private static async IAsyncEnumerable<AudioChunk> Replay(IReadOnlyList<AudioChunk> chunks)
     {

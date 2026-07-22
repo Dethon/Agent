@@ -40,6 +40,12 @@ public class TseSpeechToTextTests
         }
     }
 
+    private sealed class ThrowingClient(Exception exception) : ITseExtractorClient
+    {
+        public Task<byte[]?> ExtractAsync(byte[] mixtureWav, string speaker, CancellationToken ct) =>
+            throw exception;
+    }
+
     private sealed class RecordingMetrics : IMetricsPublisher
     {
         public readonly List<VoiceEvent> Events = [];
@@ -52,6 +58,12 @@ public class TseSpeechToTextTests
 
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class ThrowingMetrics : IMetricsPublisher
+    {
+        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default) =>
+            throw new InvalidOperationException("metrics sink unavailable");
     }
 
     private static readonly byte[] RawPcm = [1, 2, 3, 4, 5, 6];
@@ -105,7 +117,21 @@ public class TseSpeechToTextTests
         await stt.TranscribeAsync(Chunks(), Options(floor: 100), CancellationToken.None);
         inner.ReceivedPayload.ShouldBe(RawPcm);
         client.LastCall.ShouldBeNull();
-        metrics.Events.ShouldHaveSingleItem().Outcome.ShouldBe("quiet");
+        var evt = metrics.Events.ShouldHaveSingleItem();
+        evt.Metric.ShouldBe(VoiceMetric.TseSkipped);
+        evt.Outcome.ShouldBe("quiet");
+    }
+
+    [Fact]
+    public async Task AlwaysModeWithoutSpeakerSkipsToRaw()
+    {
+        var (stt, inner, client, metrics) = Build(TseMode.Always, clientReply: null);
+        await stt.TranscribeAsync(Chunks(), Options(speaker: null), CancellationToken.None);
+        inner.ReceivedPayload.ShouldBe(RawPcm);
+        client.LastCall.ShouldBeNull();
+        var evt = metrics.Events.ShouldHaveSingleItem();
+        evt.Metric.ShouldBe(VoiceMetric.TseSkipped);
+        evt.Outcome.ShouldBe("no_speaker");
     }
 
     [Fact]
@@ -115,7 +141,9 @@ public class TseSpeechToTextTests
         await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
         inner.ReceivedPayload.ShouldBe(RawPcm);
         client.LastCall.ShouldNotBeNull();
-        metrics.Events.ShouldHaveSingleItem().Metric.ShouldBe(VoiceMetric.TseFailed);
+        var evt = metrics.Events.ShouldHaveSingleItem();
+        evt.Metric.ShouldBe(VoiceMetric.TseFailed);
+        evt.Outcome.ShouldBe("unavailable");
     }
 
     [Fact]
@@ -150,6 +178,42 @@ public class TseSpeechToTextTests
         var (stt, inner, _, metrics) = Build(TseMode.Auto, clientReply: [1, 2, 3]); // not RIFF
         await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
         inner.ReceivedPayload.ShouldBe(RawPcm);
-        metrics.Events.ShouldHaveSingleItem().Metric.ShouldBe(VoiceMetric.TseFailed);
+        var evt = metrics.Events.ShouldHaveSingleItem();
+        evt.Metric.ShouldBe(VoiceMetric.TseFailed);
+        evt.Outcome.ShouldBe("malformed");
+    }
+
+    [Fact]
+    public async Task CallerCancellationPropagates()
+    {
+        var inner = new RecordingInner();
+        var client = new ThrowingClient(new OperationCanceledException());
+        var metrics = new RecordingMetrics();
+        var audit = new TseAuditTrail(null, 1, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance);
+        var settings = new TseSettings { Mode = TseMode.Auto, NoiseFloorThreshold = 400 };
+        var stt = TseSpeechToText.Wrap(inner, settings, client, audit, metrics, NullLoggerFactory.Instance);
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None));
+
+        inner.ReceivedPayload.ShouldBeNull();
+        metrics.Events.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task MetricsPublishFailureDoesNotStopInner()
+    {
+        var extractedPcm = new byte[] { 40, 41, 42, 43 };
+        var reply = WavCodec.Encode([new AudioChunk { Data = extractedPcm, Format = AudioFormat.WyomingStandard }]);
+        var inner = new RecordingInner();
+        var client = new StubClient(reply);
+        var audit = new TseAuditTrail(null, 1, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance);
+        var settings = new TseSettings { Mode = TseMode.Auto, NoiseFloorThreshold = 400 };
+        var stt = TseSpeechToText.Wrap(inner, settings, client, audit, new ThrowingMetrics(), NullLoggerFactory.Instance);
+
+        var result = await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
+
+        result.Text.ShouldBe("ok");
+        inner.ReceivedPayload.ShouldBe(extractedPcm);
     }
 }
