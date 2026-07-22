@@ -49,17 +49,23 @@ of a session as a broken gate.
 2. On the deployment host, edit `DockerCompose/.env` — the same per-host override mechanism
    already used for `Satellites__*` — and add:
    - `Tse__Mode=Auto` (or `Always` for a diagnostic session)
-   - `Tse__AuditDir=/tse-audit` to opt into the audio audit ring. **Create and own the host
-     directory first** — Docker bind-mounts create the host side root-owned, but
-     `mcp-channel-voice` runs as non-root uid 1654 (`USER $APP_UID` in
-     `McpChannelVoice/Dockerfile`, and `$APP_UID` is `1654` in the base
-     `mcr.microsoft.com/dotnet/aspnet:10.0` image), so an unowned directory makes every
-     `TseAuditTrail.Record` call throw `UnauthorizedAccessException` — caught and logged as a
-     warning by design (audit failures must never affect a turn), which silently produces an
-     empty audit directory for the whole trial instead of a loud error:
+   - `Tse__AuditDir=/tse-audit` to opt into the audio audit ring. **The container must be able
+     to write the host directory.** The hub runs as `VOICE_UID:VOICE_GID` (compose knob,
+     default `1654:1654` — the aspnet image's app user); set both in the same `.env` to the
+     owner of your volumes (usually `id -u` / `id -g`) and pre-create the directory as
+     yourself so Docker doesn't auto-create it root-owned:
      ```
-     mkdir -p DockerCompose/volumes/tse-audit && sudo chown 1654:1654 DockerCompose/volumes/tse-audit
+     echo "VOICE_UID=$(id -u)" >> DockerCompose/.env
+     echo "VOICE_GID=$(id -g)" >> DockerCompose/.env
+     mkdir -p DockerCompose/volumes/tse-audit
      ```
+     An unwritable directory makes every `TseAuditTrail.Record` call throw
+     `UnauthorizedAccessException` — caught and logged as a warning by design (audit failures
+     must never affect a turn), which silently produces an empty audit directory for the whole
+     trial instead of a loud error. If Docker already created the directory root-owned, remove
+     it (or `sudo chown` it once) before restarting. The same knob lets the hub write its
+     `profile.json` speaker-embedding cache into `volumes/voices`, skipping re-embedding of
+     every enrollment WAV on each boot.
    - pi5 only: consider `Tse__TimeoutMs=90000` (already the shipped default — only add this
      line if tuning away from it) — extraction on Pi 5 CPU is expected to take tens of
      seconds; `Auto` keeps quiet turns fast by never invoking the sidecar below the noise

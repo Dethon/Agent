@@ -565,6 +565,10 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
+    # The hub writes the bind mounts below (profile.json cache, audit ring). Set VOICE_UID/
+    # VOICE_GID in .env to the host owner of ./volumes/voices (usually `id -u`/`id -g`)
+    # instead of chowning the host dirs to the image default (1654, the aspnet app user).
+    user: "${VOICE_UID:-1654}:${VOICE_GID:-1654}"
     volumes:
       - ./volumes/voices:/voices
       - ./volumes/tse-audit:/tse-audit
