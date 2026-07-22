@@ -31,6 +31,8 @@ def _add_stage_args(name: str, p: argparse.ArgumentParser) -> None:
     if name == "transcribe":
         p.add_argument("--backend", choices=["medium", "wyoming"], required=True)
         p.add_argument("--conditions", default="raw", help="comma-list of condition dirs, or 'raw' for the corpus")
+    if name == "process":
+        p.add_argument("--conditions", default="gtcrn,dfn3")
 
 
 def _fetch(args: argparse.Namespace) -> None:
@@ -58,6 +60,25 @@ def _mix(args: argparse.Namespace) -> None:
 
 
 STAGES["mix"] = _mix
+
+
+def _process(args: argparse.Namespace) -> None:
+    from tqdm import tqdm
+    from .conditions import PROCESSORS
+    from .manifest import read_manifest
+    run_dir = Path("runs") / args.run
+    rows = read_manifest(run_dir / "manifest.jsonl")
+    for cond in args.conditions.split(","):
+        proc = PROCESSORS[cond]
+        out_dir = run_dir / "processed" / cond
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for row in tqdm(rows, desc=cond):
+            out = out_dir / f"{row.id}.wav"
+            if not out.exists():
+                proc(Path(args.data) / "models", run_dir / row.wav, out)
+
+
+STAGES["process"] = _process
 
 
 def _transcribe(args: argparse.Namespace) -> None:
