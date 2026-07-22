@@ -72,14 +72,32 @@ public static class ConfigModule
                 sp.GetRequiredService<ReplyTextAccumulator>(),
                 sp.GetRequiredService<ILogger<VoiceDeliveryRegistry>>()));
 
+        services.AddSingleton<Services.Tse.ITseExtractorClient>(sp =>
+            new Services.Tse.TseExtractorClient(
+                new HttpClient(),
+                settings.Tse,
+                sp.GetRequiredService<ILogger<Services.Tse.TseExtractorClient>>()));
+        services.AddSingleton(sp => new Services.Tse.TseAuditTrail(
+            settings.Tse.AuditDir,
+            settings.Tse.AuditMaxPairs,
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<Services.Tse.TseAuditTrail>>()));
+
         services.AddSingleton<ISpeechToText>(sp =>
         {
             var inner = new McpChannelVoice.Services.Stt.WyomingSpeechToText(
                 settings.Stt.Wyoming,
                 sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.WyomingSpeechToText>>());
 
-            return McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
+            var segmented = McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
                 inner, settings.Stt.Streaming, settings.WyomingClient, sp.GetRequiredService<ILoggerFactory>());
+            return Services.Tse.TseSpeechToText.Wrap(
+                segmented,
+                settings.Tse,
+                sp.GetRequiredService<Services.Tse.ITseExtractorClient>(),
+                sp.GetRequiredService<Services.Tse.TseAuditTrail>(),
+                sp.GetRequiredService<Domain.Contracts.IMetricsPublisher>(),
+                sp.GetRequiredService<ILoggerFactory>());
         });
 
         services.AddSingleton<ISpeakerVerifier>(sp =>
