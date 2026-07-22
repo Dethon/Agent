@@ -26,6 +26,16 @@ def _add_stage_args(name: str, p: argparse.ArgumentParser) -> None:
     p.add_argument("--voices", default="data/voices", help="enrollment takes dir")
     if name == "mix":
         p.add_argument("--seed", type=int, default=7)
+    if name == "fetch":
+        p.add_argument("--pi", default="dethon@192.168.5.45:/home/dethon/jackbot/docker-compose/volumes/voices")
+
+
+def _fetch(args: argparse.Namespace) -> None:
+    from .fetch_stage import run_fetch
+    run_fetch(Path(args.data), args.pi)
+
+
+STAGES["fetch"] = _fetch
 
 
 def _mix(args: argparse.Namespace) -> None:
