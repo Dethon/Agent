@@ -28,6 +28,9 @@ def _add_stage_args(name: str, p: argparse.ArgumentParser) -> None:
         p.add_argument("--seed", type=int, default=7)
     if name == "fetch":
         p.add_argument("--pi", default="dethon@192.168.5.45:/home/dethon/jackbot/docker-compose/volumes/voices")
+    if name == "transcribe":
+        p.add_argument("--backend", choices=["medium", "wyoming"], required=True)
+        p.add_argument("--conditions", default="raw", help="comma-list of condition dirs, or 'raw' for the corpus")
 
 
 def _fetch(args: argparse.Namespace) -> None:
@@ -47,6 +50,20 @@ def _mix(args: argparse.Namespace) -> None:
 
 
 STAGES["mix"] = _mix
+
+
+def _transcribe(args: argparse.Namespace) -> None:
+    from .backends import transcribe_files
+    run_dir = Path("runs") / args.run
+    for cond in args.conditions.split(","):
+        wav_dir = run_dir / "corpus" if cond == "raw" else run_dir / "processed" / cond
+        wavs = sorted(wav_dir.glob("*.wav"))
+        if not wavs:
+            raise SystemExit(f"no wavs in {wav_dir}")
+        transcribe_files(args.backend, wavs, run_dir / "transcripts" / args.backend / f"{cond}.jsonl")
+
+
+STAGES["transcribe"] = _transcribe
 
 
 def main() -> None:
