@@ -47,4 +47,40 @@ public class WavCodecTests
     {
         Should.Throw<InvalidDataException>(() => WavCodec.Decode([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]));
     }
+
+    [Fact]
+    public void DecodeRejectsNegativeSubChunkSizeInsteadOfHanging()
+    {
+        var wav = WavCodec.Encode([Chunk(9, 9)]).ToList();
+        // Splice a bogus sub-chunk declaring size == -8 between "fmt " and "data" (offset 36).
+        // (size & 1) == 0 for -8, so the buggy advance `8 + size + (size & 1)` is exactly zero.
+        wav.InsertRange(36, "JUNK"u8.ToArray().Concat(BitConverter.GetBytes(-8)));
+        var patched = wav.ToArray();
+        BitConverter.GetBytes(patched.Length - 8).CopyTo(patched, 4); // fix RIFF size
+
+        var task = Task.Run(() => WavCodec.Decode(patched));
+        var finishedInTime = Task.WaitAny([task], TimeSpan.FromSeconds(2)) == 0;
+        finishedInTime.ShouldBeTrue("Decode must not hang forever on a corrupted sub-chunk size");
+        Should.Throw<InvalidDataException>(() => task.GetAwaiter().GetResult());
+    }
+
+    [Fact]
+    public void DecodeRejectsNonPcmFmtChunk()
+    {
+        var wav = WavCodec.Encode([Chunk(9, 9)]);
+        BitConverter.GetBytes((short)3).CopyTo(wav, 20); // audio format tag: 3 = IEEE float, not PCM
+        Should.Throw<InvalidDataException>(() => WavCodec.Decode(wav));
+    }
+
+    [Fact]
+    public void EncodeThrowsOnNullChunks()
+    {
+        Should.Throw<ArgumentNullException>(() => WavCodec.Encode(null!));
+    }
+
+    [Fact]
+    public void DecodeThrowsOnNullWav()
+    {
+        Should.Throw<ArgumentNullException>(() => WavCodec.Decode(null!));
+    }
 }
