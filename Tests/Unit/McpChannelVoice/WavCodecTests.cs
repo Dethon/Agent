@@ -64,12 +64,51 @@ public class WavCodecTests
         await Should.ThrowAsync<InvalidDataException>(task);
     }
 
-    [Fact]
-    public void DecodeRejectsNonPcmFmtChunk()
+    [Theory]
+    [InlineData(20, 3)]      // audio format tag: 3 = IEEE float, not PCM
+    [InlineData(22, 2)]      // channels: stereo
+    [InlineData(34, 8)]      // bits/sample: S8LE
+    public void DecodeRejectsForeignFmtChunk(int offset, short value)
     {
         var wav = WavCodec.Encode([Chunk(9, 9)]);
-        BitConverter.GetBytes((short)3).CopyTo(wav, 20); // audio format tag: 3 = IEEE float, not PCM
+        BitConverter.GetBytes(value).CopyTo(wav, offset);
         Should.Throw<InvalidDataException>(() => WavCodec.Decode(wav));
+    }
+
+    [Fact]
+    public void DecodeRejectsForeignSampleRate()
+    {
+        var wav = WavCodec.Encode([Chunk(9, 9)]);
+        BitConverter.GetBytes(22050).CopyTo(wav, 24);
+        Should.Throw<InvalidDataException>(() => WavCodec.Decode(wav));
+    }
+
+    [Theory]
+    [InlineData(int.MaxValue)]
+    [InlineData(1_000_000)]
+    public void DecodeRejectsSubChunkSizeOverrunningPayload(int declaredSize)
+    {
+        // A size that overflows `offset + 8 + size` must still fail as InvalidDataException,
+        // both when it labels the data chunk and when it labels a chunk the walk skips over.
+        var wav = WavCodec.Encode([Chunk(9, 9)]);
+        BitConverter.GetBytes(declaredSize).CopyTo(wav, 40); // "data" size
+        Should.Throw<InvalidDataException>(() => WavCodec.Decode(wav));
+
+        var spliced = WavCodec.Encode([Chunk(9, 9)]).ToList();
+        spliced.InsertRange(36, "JUNK"u8.ToArray().Concat(BitConverter.GetBytes(declaredSize)));
+        Should.Throw<InvalidDataException>(() => WavCodec.Decode(spliced.ToArray()));
+    }
+
+    [Fact]
+    public void DecodeRejectsDataBeforeFmt()
+    {
+        // "data" ahead of "fmt " would otherwise return audio stamped WyomingStandard
+        // without the format ever being checked.
+        var wav = WavCodec.Encode([Chunk(9, 9)]).ToList();
+        var fmt = wav.GetRange(12, 24);
+        wav.RemoveRange(12, 24);
+        wav.AddRange(fmt);
+        Should.Throw<InvalidDataException>(() => WavCodec.Decode(wav.ToArray()));
     }
 
     [Fact]

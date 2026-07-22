@@ -41,23 +41,27 @@ public static class WavCodec
             throw new InvalidDataException("not a RIFF/WAVE payload");
         }
         var offset = 12;
+        var fmtSeen = false;
         while (offset + 8 <= wav.Length)
         {
             var id = wav.AsSpan(offset, 4);
             var size = BitConverter.ToInt32(wav, offset + 4);
-            if (size < 0)
+            // Compare against the bytes left rather than adding to `offset`: a declared size near
+            // int.MaxValue would overflow the sum and slip past the check.
+            if (size < 0 || size > wav.Length - offset - 8)
             {
-                throw new InvalidDataException("sub-chunk declares a negative size");
+                throw new InvalidDataException("sub-chunk size overruns payload");
             }
             if (id.SequenceEqual("fmt "u8))
             {
                 ValidateFmtChunk(wav, offset, size);
+                fmtSeen = true;
             }
             if (id.SequenceEqual("data"u8))
             {
-                if (offset + 8 + size > wav.Length)
+                if (!fmtSeen)
                 {
-                    throw new InvalidDataException("data sub-chunk overruns payload");
+                    throw new InvalidDataException("data sub-chunk precedes fmt");
                 }
                 return new AudioChunk
                 {
@@ -72,7 +76,7 @@ public static class WavCodec
 
     private static void ValidateFmtChunk(byte[] wav, int offset, int size)
     {
-        if (size < 16 || offset + 8 + 16 > wav.Length)
+        if (size < 16)
         {
             throw new InvalidDataException("fmt sub-chunk is smaller than expected");
         }
