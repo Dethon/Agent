@@ -80,7 +80,14 @@ def run_report(run_dir: Path) -> None:
     for backend_dir in sorted((run_dir / "transcripts").iterdir()):
         for cond_file in sorted(backend_dir.glob("*.jsonl")):
             key = (backend_dir.name, cond_file.stem)
-            scored[key] = score_rows(manifest, _load_transcripts(cond_file))
+            transcripts = _load_transcripts(cond_file)
+            missing = [u.id for u in manifest if Path(u.wav).name not in transcripts]
+            if missing:
+                raise SystemExit(
+                    f"{cond_file}: {len(missing)}/{len(manifest)} manifest utterances have no "
+                    f"transcript (first: {missing[0]}) -- they would silently score as ~100% WER "
+                    f"deletions; finish `transcribe` for {key[0]}/{key[1]} before `report`")
+            scored[key] = score_rows(manifest, transcripts)
 
     lines = ["# STT enhancement eval report", ""]
     snrs = sorted({u.snr_db for u in manifest if u.snr_db is not None}, reverse=True)
