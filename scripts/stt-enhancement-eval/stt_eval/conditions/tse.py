@@ -139,10 +139,10 @@ def _enrollment(voices_dir: str, speaker: str, exclude_take: int) -> np.ndarray:
     return np.concatenate(parts)
 
 
-def process(model_dir: Path, wav_in: Path, wav_out: Path) -> None:
+def process(model_dir: Path, wav_in: Path, wav_out: Path, voices_dir: Path) -> None:
     m = _ID_RE.match(wav_in.name)
     assert m, wav_in.name
-    enroll = _enrollment(str(model_dir.parent / "voices"), m["speaker"], int(m["take"]))
+    enroll = _enrollment(str(voices_dir), m["speaker"], int(m["take"]))
     mixture, sr = sf.read(wav_in, dtype="float32")
     assert sr == 16000, wav_in
     extracted = _extract(model_dir, mixture, enroll)
