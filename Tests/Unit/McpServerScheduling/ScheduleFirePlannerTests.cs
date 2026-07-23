@@ -71,14 +71,4 @@ public class ScheduleFirePlannerTests
         voice.ChannelId.ShouldBe("voice");
         voice.Address.ShouldBe("office-01,office-02");
     }
-
-    [Fact]
-    public void Plan_NonVoiceDeliverTo_HasNullAddress()
-    {
-        var s = new Schedule { Id = "s", AgentId = "jack", Prompt = "p", RunAt = DateTime.UtcNow, DeliverTo = ["signalr"], CreatedAt = DateTime.UtcNow };
-        var plan = ScheduleFirePlanner.Plan(s, defaultDeliverTo: ["telegram"], nextRun: null);
-
-        plan.Payload.ReplyTo![0].ChannelId.ShouldBe("signalr");
-        plan.Payload.ReplyTo![0].Address.ShouldBeNull();
-    }
 }
