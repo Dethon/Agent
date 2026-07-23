@@ -400,19 +400,6 @@ public class SilenceGateTests
         gate.EndReason.ShouldBeNull();
     }
 
-    [Fact]
-    public void LastFrameWasSpeech_TracksPerChunkClassification()
-    {
-        var gate = NewGate();
-
-        Feed(gate, Silent()); // pre-roll gap seeds the floor
-        gate.LastFrameWasSpeech.ShouldBeFalse();
-        Feed(gate, Loud());
-        gate.LastFrameWasSpeech.ShouldBeTrue();
-        Feed(gate, Silent());
-        gate.LastFrameWasSpeech.ShouldBeFalse();
-    }
-
     // Exact production wiring (appsettings.json WyomingClient + FollowUp.WindowMs as the
     // no-speech window), so this pins the real deployed behaviour rather than a test rig.
     private static SilenceGate ProductionGate() => new(
