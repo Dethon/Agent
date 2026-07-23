@@ -17,8 +17,20 @@ public class LemonadeEntrypointConfigTests : IDisposable
     private const string Image = "lemonade:latest";
     private const string VadModelFile = "ggml-silero-v5.1.2.bin";
 
+    // Probing docker must never throw: on a host with no docker binary Process.Start raises
+    // Win32Exception, and (as a Lazy) that exception would be cached and re-thrown from inside
+    // every Skip.IfNot, turning skips into errors. Treat any launch failure as "not available".
     private static readonly Lazy<bool> _imageAvailable = new(() =>
-        Run("docker", ["image", "inspect", Image]).Exit == 0);
+    {
+        try
+        {
+            return Run("docker", ["image", "inspect", Image]).Exit == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    });
 
     private readonly string _configDir;
 
@@ -26,8 +38,13 @@ public class LemonadeEntrypointConfigTests : IDisposable
     {
         _configDir = Path.Combine(Path.GetTempPath(), $"lemonade-entrypoint-{Guid.NewGuid()}");
         Directory.CreateDirectory(_configDir);
-        // The image runs as UID 10001; the mount must be writable for config.json.
-        File.SetUnixFileMode(_configDir, (UnixFileMode)0b111_111_111);
+        // The image runs as UID 10001; the mount must be writable for config.json. Guarded because
+        // File.SetUnixFileMode throws PlatformNotSupportedException on Windows — which would fail
+        // the constructor (an error, not a skip) before RunEntrypoint's platform gate can fire.
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(_configDir, (UnixFileMode)0b111_111_111);
+        }
     }
 
     public void Dispose()
@@ -42,12 +59,18 @@ public class LemonadeEntrypointConfigTests : IDisposable
     {
         var vadDir = Path.Combine(_configDir, "vad");
         Directory.CreateDirectory(vadDir);
-        File.SetUnixFileMode(vadDir, (UnixFileMode)0b111_111_111);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(vadDir, (UnixFileMode)0b111_111_111);
+        }
         File.WriteAllBytes(Path.Combine(vadDir, VadModelFile), [1, 2, 3]);
     }
 
     private JsonObject RunEntrypoint(params (string Key, string Value)[] env)
     {
+        // The entrypoint is a Linux shell run through a Linux container over a unix-mode bind
+        // mount; only assert it on a Linux host rather than hard-failing elsewhere.
+        Skip.IfNot(OperatingSystem.IsLinux(), "lemonade entrypoint test requires a Linux docker host");
         Skip.IfNot(_imageAvailable.Value, $"docker image {Image} not available");
 
         var script = Path.Combine(RepoRoot(), "DockerCompose", "lemonade", "entrypoint.sh");
