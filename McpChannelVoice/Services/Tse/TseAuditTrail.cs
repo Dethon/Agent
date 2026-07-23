@@ -10,7 +10,8 @@ public sealed partial class TseAuditTrail(string? dir, int maxPairs, TimeProvide
 {
     private bool Enabled => !string.IsNullOrWhiteSpace(dir);
 
-    public void Record(string speaker, double? floorRms, long latencyMs, byte[] mixtureWav, byte[] extractedWav)
+    public void Record(
+        string speaker, string? satelliteId, double? floorRms, long latencyMs, byte[] mixtureWav, byte[] extractedWav)
     {
         if (!Enabled)
         {
@@ -26,6 +27,7 @@ public sealed partial class TseAuditTrail(string? dir, int maxPairs, TimeProvide
             File.WriteAllText(Path.Combine(pairDir, "meta.json"), JsonSerializer.Serialize(new
             {
                 speaker,
+                satellite = satelliteId,
                 floorRms,
                 latencyMs,
                 recordedAt = clock.GetUtcNow()

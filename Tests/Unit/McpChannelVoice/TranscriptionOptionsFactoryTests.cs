@@ -17,7 +17,7 @@ public class TranscriptionOptionsFactoryTests
     public void ConclusiveIdentityWins()
     {
         var v = new SpeakerVerification(SpeakerDecision.Accepted, 0.81, BestMatch: "Tradaly", IdentifiedSpeaker: "Dethon");
-        var options = TranscriptionOptionsFactory.Create(MakeConfig(), v, _stats);
+        var options = TranscriptionOptionsFactory.Create("office-01", MakeConfig(), v, _stats);
         options.TargetSpeaker.ShouldBe("Dethon");
         options.NoiseFloorRms.ShouldBe(512.5);
     }
@@ -26,7 +26,7 @@ public class TranscriptionOptionsFactoryTests
     public void AcceptedButAmbiguousFallsBackToBestMatch()
     {
         var v = new SpeakerVerification(SpeakerDecision.Accepted, 0.66, BestMatch: "Tradaly", IdentifiedSpeaker: null);
-        TranscriptionOptionsFactory.Create(MakeConfig(), v, _stats).TargetSpeaker.ShouldBe("Tradaly");
+        TranscriptionOptionsFactory.Create("office-01", MakeConfig(), v, _stats).TargetSpeaker.ShouldBe("Tradaly");
     }
 
     [Theory]
@@ -36,13 +36,13 @@ public class TranscriptionOptionsFactoryTests
     public void NonAcceptedDecisionsYieldNoTarget(SpeakerDecision decision)
     {
         var v = new SpeakerVerification(decision, BestMatch: "Dethon", IdentifiedSpeaker: "Dethon");
-        TranscriptionOptionsFactory.Create(MakeConfig(), v, _stats).TargetSpeaker.ShouldBeNull();
+        TranscriptionOptionsFactory.Create("office-01", MakeConfig(), v, _stats).TargetSpeaker.ShouldBeNull();
     }
 
     [Fact]
     public void NoVerifierMeansNoTargetButFloorStillFlows()
     {
-        var options = TranscriptionOptionsFactory.Create(MakeConfig(), verification: null, _stats);
+        var options = TranscriptionOptionsFactory.Create("office-01", MakeConfig(), verification: null, _stats);
         options.TargetSpeaker.ShouldBeNull();
         options.NoiseFloorRms.ShouldBe(512.5);
     }
@@ -51,7 +51,15 @@ public class TranscriptionOptionsFactoryTests
     public void LanguageFlowsThroughFromConfig()
     {
         var config = MakeConfig(new SttSettings { Wyoming = new WyomingSttConfig { Language = "es" } });
-        var options = TranscriptionOptionsFactory.Create(config, verification: null, _stats);
+        var options = TranscriptionOptionsFactory.Create("office-01", config, verification: null, _stats);
         options.Language.ShouldBe("es");
+    }
+
+    [Fact]
+    public void SatelliteAttributionFlowsThrough()
+    {
+        var options = TranscriptionOptionsFactory.Create("office-01", MakeConfig(), verification: null, _stats);
+        options.SatelliteId.ShouldBe("office-01");
+        options.Room.ShouldBe("Kitchen");
     }
 }
