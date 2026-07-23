@@ -161,7 +161,14 @@ def _clear_embedding_cache(speaker):
 
 @app.get("/health")
 def health():
-    return {"status": "ready", "speakers": _speakers()}
+    # core: which separation path serves /extract. load_or_export falls back to eager on any
+    # failure by design, so this is the only external signal that the ONNX path actually loaded
+    # — the integration suite pins it to keep a silent eager-only regression out of CI.
+    return {
+        "status": "ready",
+        "speakers": _speakers(),
+        "core": "onnx" if ort_session is not None else "eager",
+    }
 
 
 @app.post("/extract")
