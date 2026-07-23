@@ -39,6 +39,15 @@ lock = threading.Lock()
 extractor = load_model_local(MODEL_DIR)
 extractor.set_device("cpu")
 
+# Identity (size:mtime) of the checkpoint the in-process models were just loaded from, for the
+# embedding cache key: ENROLL_CACHE may persist in the models volume, so a checkpoint swapped in
+# place with enrollment untouched must invalidate cached embeddings — an old-model embedding fed
+# to the new separator degrades extraction silently (onnx_core keys its artifact on checkpoint
+# mtime for the same reason). Captured at startup because that is what load_model_local read; a
+# mid-process swap changes nothing until restart.
+_ckpt_stat = os.stat(os.path.join(MODEL_DIR, "avg_model.pt"))
+CHECKPOINT_SIG = f"{_ckpt_stat.st_size}:{_ckpt_stat.st_mtime}"
+
 def _physical_cores():
     """Unique (package, core) pairs from /proc/cpuinfo — SMT siblings collapse to one."""
     try:
@@ -121,10 +130,11 @@ def _speaker_embedding(speaker, enrollment, sig):
     holding a snapshot from before the lock gets a consistent view even if the live
     enrollment directory changes mid-request."""
     speaker_cache = CACHE / speaker
-    # torch version in the key: the cache may live in a persistent volume (ENROLL_CACHE),
-    # and a torch bump can shift embedding numerics without any enrollment change — the
-    # ONNX parity gate verifies the core with a FRESH embedding, so it would never notice.
-    emb_sig = sig + "|emb-v1|torch" + torch.__version__
+    # torch version and checkpoint identity in the key: the cache may live in a persistent
+    # volume (ENROLL_CACHE), and a torch bump or an in-place checkpoint swap can shift
+    # embedding numerics without any enrollment change — the ONNX parity gate verifies the
+    # core with a FRESH embedding, so it would never notice.
+    emb_sig = sig + "|emb-v1|torch" + torch.__version__ + "|ckpt" + CHECKPOINT_SIG
     emb_file = speaker_cache / "embedding.npy"
     sig_file = speaker_cache / "embedding.sig"
     if emb_file.exists() and sig_file.exists() and sig_file.read_text() == emb_sig:
