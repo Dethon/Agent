@@ -126,7 +126,7 @@ public class OpenAiTextToSpeechTests
         {
         }
 
-        handler.LastUri!.ToString().ShouldBe("http://mcp-lemonade:13305/v1/audio/speech");
+        handler.LastUri!.ToString().ShouldBe("http://lemonade:13305/v1/audio/speech");
         var body = JsonNode.Parse(handler.LastBody!)!.AsObject();
         body["model"]!.GetValue<string>().ShouldBe("kokoro-v1");
         body["input"]!.GetValue<string>().ShouldBe("hola mundo");

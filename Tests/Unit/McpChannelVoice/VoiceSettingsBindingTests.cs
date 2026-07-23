@@ -14,7 +14,7 @@ public class VoiceSettingsBindingTests
         {
           "WyomingClient": { "TrailingSilenceMs": 800, "MaxUtteranceMs": 15000 },
           "Stt": {
-            "OpenAi": { "BaseUrl": "http://mcp-lemonade:13305/v1", "Model": "Whisper-Medium", "Language": "es", "AvgLogProbThreshold": -1.2, "NoSpeechProbThreshold": 0.5 }
+            "OpenAi": { "BaseUrl": "http://lemonade:13305/v1", "Model": "Whisper-Medium", "Language": "es", "AvgLogProbThreshold": -1.2, "NoSpeechProbThreshold": 0.5 }
           },
           "Tts": {
             "OpenAi": { "Voice": "ef_dora", "Speed": 1.1 }
@@ -41,7 +41,7 @@ public class VoiceSettingsBindingTests
         settings.ShouldNotBeNull();
         settings!.WyomingClient.TrailingSilenceMs.ShouldBe(800);
         settings.WyomingClient.MaxUtteranceMs.ShouldBe(15000);
-        settings.Stt.OpenAi.BaseUrl.ShouldBe("http://mcp-lemonade:13305/v1");
+        settings.Stt.OpenAi.BaseUrl.ShouldBe("http://lemonade:13305/v1");
         settings.Stt.OpenAi.Model.ShouldBe("Whisper-Medium");
         settings.Stt.OpenAi.Language.ShouldBe("es");
         settings.Stt.OpenAi.AvgLogProbThreshold.ShouldBe(-1.2);

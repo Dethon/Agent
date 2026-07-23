@@ -4,21 +4,23 @@ using McpChannelVoice.Services.Tts;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
+using Tests.Integration.Fixtures;
 using Xunit.Abstractions;
 
 namespace Tests.Integration.McpChannelVoice;
 
-// Pins the real Lemonade container's transcription contract, end to end through both endpoints:
+// Pins the real lemonade container's transcription contract, end to end through both endpoints:
 // Kokoro synthesizes a Spanish phrase, whisper transcribes it back, and the verbose_json body
 // must carry the avg_logprob / no_speech_prob signals the gibberish gate thresholds — the unit
 // suite stubs these, so only this test proves the deployed server actually emits them.
-// Requires the mcp-lemonade compose service; skips when it isn't reachable. First run on a cold
-// volume downloads the whisper + Kokoro models, hence the generous timeouts.
-public class LemonadeQualitySignalsTests(ITestOutputHelper output)
+// LemonadeFixture spins the container (CPU tier) over the provisioned model cache; when Docker,
+// the image, or that cache is unavailable it records a SkipReason and the test skips (never
+// hard-fails) — the External-category convention. First decode loads Whisper-Medium on CPU, hence
+// the generous timeout.
+[Trait("Category", "External")]
+public class LemonadeQualitySignalsTests(LemonadeFixture fixture, ITestOutputHelper output)
+    : IClassFixture<LemonadeFixture>
 {
-    private static readonly string _baseUrl =
-        Environment.GetEnvironmentVariable("LEMONADE_BASE_URL") ?? "http://localhost:13305/v1";
-
     private sealed class PassthroughFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new() { Timeout = Timeout.InfiniteTimeSpan };
@@ -27,19 +29,19 @@ public class LemonadeQualitySignalsTests(ITestOutputHelper output)
     [SkippableFact]
     public async Task TranscribeAsync_RealLemonade_EmitsGibberishGateSignals()
     {
-        Skip.IfNot(await LemonadeIsUp(), $"mcp-lemonade not reachable at {_baseUrl}");
+        Skip.If(fixture.SkipReason is not null, fixture.SkipReason);
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var factory = new PassthroughFactory();
 
         var tts = new OpenAiTextToSpeech(
             factory,
-            new OpenAiTtsConfig { BaseUrl = _baseUrl },
+            new OpenAiTtsConfig { BaseUrl = fixture.BaseUrl },
             NullLogger<OpenAiTextToSpeech>.Instance);
         var stt = new OpenAiSpeechToText(
             factory,
             new OpenAiSttConfig
             {
-                BaseUrl = _baseUrl,
+                BaseUrl = fixture.BaseUrl,
                 Language = "es",
                 RequestTimeout = TimeSpan.FromMinutes(10)
             },
@@ -58,20 +60,5 @@ public class LemonadeQualitySignalsTests(ITestOutputHelper output)
         result.NoSpeechProb.ShouldNotBeNull();
         result.AvgLogProb!.Value.ShouldBeLessThanOrEqualTo(0);
         result.NoSpeechProb!.Value.ShouldBeInRange(0, 1);
-    }
-
-    private static async Task<bool> LemonadeIsUp()
-    {
-        var root = _baseUrl.TrimEnd('/');
-        root = root.EndsWith("/v1", StringComparison.Ordinal) ? root[..^3] : root;
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-        try
-        {
-            return (await http.GetAsync($"{root}/api/v1/health")).IsSuccessStatusCode;
-        }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
-        {
-            return false;
-        }
     }
 }

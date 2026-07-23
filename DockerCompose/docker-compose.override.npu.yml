@@ -8,14 +8,14 @@
 #     -f DockerCompose/docker-compose.yml \
 #     -f DockerCompose/docker-compose.override.linux.yml \
 #     -f DockerCompose/docker-compose.override.npu.yml \
-#     -p jackbot up -d mcp-lemonade mcp-channel-voice
+#     -p jackbot up -d lemonade mcp-channel-voice
 #
 # Lemonade auto-installs the FLM binary into the mounted recipe cache on first load and
 # runs `flm validate` before serving. STT_BACKEND is untouched: it still selects the
 # whisper.cpp device for the non-NPU tiers, which this override does not use.
 
 services:
-  mcp-lemonade:
+  lemonade:
     devices:
       - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd

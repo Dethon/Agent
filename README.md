@@ -152,7 +152,7 @@ The IPP transport is `IppPrinterClient` (`Infrastructure/Clients/Printer/`), a `
 
 ### Voice Satellites
 
-Voice runs as another MCP channel server (`mcp-channel-voice`) plus dedicated hardware satellites. The hub is the Wyoming-protocol **client**: for every satellite configured with an address (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) it dials out and keeps a persistent reconnecting connection. The satellite detects the wake word locally and streams mic audio to the hub; the hub segments the utterance (silence gating), transcribes it via Lemonade STT (`mcp-lemonade`, OpenAI-compatible `/v1/audio/transcriptions`, Whisper on whisper.cpp), dispatches the transcript to the agent as a `channel/message`, and streams the reply back as Lemonade Kokoro TTS audio (24 kHz PCM resampled in-hub to 22 050 Hz). After each reply an optional wake-free follow-up window opens (announced by a listening chime) so the conversation continues without repeating the wake word.
+Voice runs as another MCP channel server (`mcp-channel-voice`) plus dedicated hardware satellites. The hub is the Wyoming-protocol **client**: for every satellite configured with an address (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) it dials out and keeps a persistent reconnecting connection. The satellite detects the wake word locally and streams mic audio to the hub; the hub segments the utterance (silence gating), transcribes it via Lemonade STT (`lemonade`, OpenAI-compatible `/v1/audio/transcriptions`, Whisper on whisper.cpp), dispatches the transcript to the agent as a `channel/message`, and streams the reply back as Lemonade Kokoro TTS audio (24 kHz PCM resampled in-hub to 22 050 Hz). After each reply an optional wake-free follow-up window opens (announced by a listening chime) so the conversation continues without repeating the wake word.
 
 ```
 ┌─ Raspberry Pi / WSL dev host ──┐                     ┌─ mcp-channel-voice (hub) ──┐
@@ -200,7 +200,7 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 | **mcp-channel-signalr**   | WebChat transport — hosts SignalR hub, manages streams/sessions/approvals, push notifications |
 | **mcp-channel-telegram**  | Telegram transport — multi-bot polling (one per agent), inline keyboard approvals            |
 | **mcp-channel-servicebus**| Azure Service Bus transport — queue processor, auto-approval, response sender                |
-| **mcp-channel-voice**     | Voice transport — Wyoming hub that dials hardware satellites, segments utterances, Lemonade STT/TTS (OpenAI-compatible, `mcp-lemonade`), manages follow-up windows and announcements (see [Voice Satellites](#voice-satellites)) |
+| **mcp-channel-voice**     | Voice transport — Wyoming hub that dials hardware satellites, segments utterances, Lemonade STT/TTS (OpenAI-compatible, `lemonade`), manages follow-up windows and announcements (see [Voice Satellites](#voice-satellites)) |
 | **mcp-scheduling**        | Scheduling transport — fires due cron/one-shot schedules as channel messages; also exposes `filesystem://schedules` for managing them |
 
 ### Agents

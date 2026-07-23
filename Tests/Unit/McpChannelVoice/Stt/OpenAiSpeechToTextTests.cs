@@ -118,7 +118,7 @@ public class OpenAiSpeechToTextTests
         await sut.TranscribeAsync(
             Chunks(audio[..16], audio[16..]), new TranscriptionOptions(), CancellationToken.None);
 
-        handler.LastUri!.ToString().ShouldBe("http://mcp-lemonade:13305/v1/audio/transcriptions");
+        handler.LastUri!.ToString().ShouldBe("http://lemonade:13305/v1/audio/transcriptions");
         handler.FileName.ShouldBe("utterance.wav");
         handler.Fields["model"].ShouldBe("Whisper-Medium");   // config default
         handler.Fields["response_format"].ShouldBe("verbose_json");
