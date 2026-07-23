@@ -46,9 +46,14 @@ RUN git clone https://github.com/wenet-e2e/wesep /opt/wesep-src \
 COPY app.py entrypoint.sh onnx_core.py /opt/tse/
 RUN chmod +x /opt/tse/entrypoint.sh
 
+# NUMBA_CACHE_DIR: the compose service runs as PUID (non-root), which cannot write numba's
+# default cache location next to site-packages sources — and umap.layouts uses
+# @numba.njit(cache=True), which hard-fails at IMPORT ("no locator available") instead of
+# degrading, so without a writable cache dir the app cannot even boot under a non-root uid.
 ENV WESEP_SRC=/opt/wesep-src \
     MODEL_DIR=/models/wesep-english \
-    VOICES_DIR=/voices
+    VOICES_DIR=/voices \
+    NUMBA_CACHE_DIR=/tmp/numba-cache
 
 EXPOSE 9098
 ENTRYPOINT ["/opt/tse/entrypoint.sh"]
