@@ -32,7 +32,7 @@ def _session(model_path: Path):
     return _SESSION
 
 
-def process(model_dir: Path, wav_in: Path, wav_out: Path) -> None:
+def process(model_dir: Path, wav_in: Path, wav_out: Path, _voices_dir: Path | None = None) -> None:
     sess = _session(model_dir / "gtcrn_simple.onnx")
     ins = sess.get_inputs()
     out_names = [o.name for o in sess.get_outputs()]

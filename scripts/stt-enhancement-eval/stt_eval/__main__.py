@@ -75,7 +75,7 @@ def _process(args: argparse.Namespace) -> None:
         for row in tqdm(rows, desc=cond):
             out = out_dir / f"{row.id}.wav"
             if not out.exists():
-                proc(Path(args.data) / "models", run_dir / row.wav, out)
+                proc(Path(args.data) / "models", run_dir / row.wav, out, Path(args.voices))
 
 
 STAGES["process"] = _process

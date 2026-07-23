@@ -15,7 +15,7 @@ def _get_model():
     return _MODEL
 
 
-def process(model_dir: Path, wav_in: Path, wav_out: Path) -> None:
+def process(model_dir: Path, wav_in: Path, wav_out: Path, _voices_dir: Path | None = None) -> None:
     from df.enhance import enhance, load_audio
     model, df_state, _ = _get_model()
     audio, _meta = load_audio(str(wav_in), sr=df_state.sr())

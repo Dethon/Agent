@@ -78,6 +78,27 @@ def test_enrollment_excludes_two_digit_take(tmp_path):
     assert len(out) == 100
 
 
+def test_process_reads_enrollment_from_explicit_voices_dir(tmp_path, monkeypatch):
+    # Phase 2 swaps the corpus in via --voices; tse must honor that dir rather than
+    # silently deriving data/voices from --data and enrolling against stale audio.
+    voices = tmp_path / "field-voices"
+    _write_take(voices, "Spk", 1, 0.1)
+    _write_take(voices, "Spk", 2, 0.2)
+    wav_in = tmp_path / "Spk-t2-speech-snr+00.wav"
+    sf.write(wav_in, np.zeros(50, dtype="float32"), 16000, subtype="PCM_16")
+    captured = {}
+
+    def fake_extract(model_dir, mixture, enroll):
+        captured["enroll"] = enroll
+        return mixture
+
+    monkeypatch.setattr(tse, "_extract", fake_extract)
+    tse.process(tmp_path / "models", wav_in, tmp_path / "out.wav", voices)
+
+    assert len(captured["enroll"]) == 100  # take 1 only; the mixture's own t2 is excluded
+    assert np.allclose(captured["enroll"], 0.1, atol=2e-3)
+
+
 def test_enrollment_asserts_when_only_excluded_take_exists(tmp_path):
     _write_take(tmp_path, "Solo", 2, 0.2)
     try:
