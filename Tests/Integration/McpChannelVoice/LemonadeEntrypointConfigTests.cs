@@ -11,10 +11,10 @@ namespace Tests.Integration.McpChannelVoice;
 // tests the working tree, not whatever entrypoint the image was built with. Runs with
 // --network none: VAD-model presence is controlled by seeding the file, and the download
 // path degrades to no-VAD (fail-open) instead of hitting the network. Requires docker and
-// the mcp-lemonade:latest image; skips otherwise.
+// the lemonade:latest image; skips otherwise.
 public class LemonadeEntrypointConfigTests : IDisposable
 {
-    private const string Image = "mcp-lemonade:latest";
+    private const string Image = "lemonade:latest";
     private const string VadModelFile = "ggml-silero-v5.1.2.bin";
 
     private static readonly Lazy<bool> _imageAvailable = new(() =>

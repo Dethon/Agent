@@ -7,7 +7,7 @@ public record TtsSettings
 
 public record OpenAiTtsConfig
 {
-    public string BaseUrl { get; init; } = "http://mcp-lemonade:13305/v1";
+    public string BaseUrl { get; init; } = "http://lemonade:13305/v1";
     public string Model { get; init; } = "kokoro-v1";
 
     // Kokoro voice id. es-419 Spanish voices: ef_dora (female), em_alex, em_santa.

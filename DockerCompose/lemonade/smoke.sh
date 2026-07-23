@@ -1,5 +1,5 @@
 #!/bin/sh
-# On-box smoke test for mcp-lemonade (run from DockerCompose/): sh lemonade/smoke.sh [host:port]
+# On-box smoke test for lemonade (run from DockerCompose/): sh lemonade/smoke.sh [host:port]
 # Scriptable slice of the on-box validation checklist: health, verbose_json quality
 # signals, and incremental PCM streaming.
 # Requires curl and python3 ON THE HOST (python3 only to synthesize the test WAV — swap in

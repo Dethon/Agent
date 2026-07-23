@@ -8,7 +8,7 @@ public record SttSettings
 
 public record OpenAiSttConfig
 {
-    public string BaseUrl { get; init; } = "http://mcp-lemonade:13305/v1";
+    public string BaseUrl { get; init; } = "http://lemonade:13305/v1";
 
     // Lemonade catalog name. The cpu and gpu tiers run the same whisper.cpp engine on the same
     // model (only the device flips), so STT_BACKEND never changes this — it is a container-side

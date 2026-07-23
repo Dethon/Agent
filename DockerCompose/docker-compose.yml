@@ -590,16 +590,16 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
-      mcp-lemonade:
+      lemonade:
         condition: service_healthy
 
-  mcp-lemonade:
-    image: mcp-lemonade:latest
+  lemonade:
+    image: lemonade:latest
     logging:
       options:
         max-size: "5m"
         max-file: "3"
-    container_name: mcp-lemonade
+    container_name: lemonade
     build: ./lemonade
     ports:
       - "13305:13305"
