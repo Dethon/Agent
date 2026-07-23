@@ -34,34 +34,50 @@ public class TseExtractorClientTests
             Content = new ByteArrayContent([9, 8, 7])
         }));
         var result = await Client(handler).ExtractAsync([1, 2], "Dethon", CancellationToken.None);
-        result.ShouldBe(new byte[] { 9, 8, 7 });
+        result.Wav.ShouldBe(new byte[] { 9, 8, 7 });
+        result.Rejected.ShouldBeFalse();
         handler.LastRequest!.RequestUri!.ToString().ShouldBe("http://tse-extractor:9098/extract?speaker=Dethon");
         handler.LastRequest.Method.ShouldBe(HttpMethod.Post);
     }
 
     [Fact]
-    public async Task UnknownSpeaker404ReturnsNull()
+    public async Task UnknownSpeaker404ReturnsRejected()
     {
         var handler = new StubHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)));
-        (await Client(handler).ExtractAsync([1], "ghost", CancellationToken.None)).ShouldBeNull();
+        var result = await Client(handler).ExtractAsync([1], "ghost", CancellationToken.None);
+        result.Wav.ShouldBeNull();
+        result.Rejected.ShouldBeTrue();
     }
 
     [Fact]
-    public async Task TransportErrorReturnsNull()
+    public async Task ServerError500ReturnsUnavailable()
+    {
+        var handler = new StubHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
+        var result = await Client(handler).ExtractAsync([1], "Dethon", CancellationToken.None);
+        result.Wav.ShouldBeNull();
+        result.Rejected.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task TransportErrorReturnsUnavailable()
     {
         var handler = new StubHandler(_ => throw new HttpRequestException("boom"));
-        (await Client(handler).ExtractAsync([1], "Dethon", CancellationToken.None)).ShouldBeNull();
+        var result = await Client(handler).ExtractAsync([1], "Dethon", CancellationToken.None);
+        result.Wav.ShouldBeNull();
+        result.Rejected.ShouldBeFalse();
     }
 
     [Fact]
-    public async Task DeadlineExpiryReturnsNull()
+    public async Task DeadlineExpiryReturnsUnavailable()
     {
         var handler = new StubHandler(async _ =>
         {
             await Task.Delay(Timeout.Infinite);
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        (await Client(handler, timeoutMs: 50).ExtractAsync([1], "Dethon", CancellationToken.None)).ShouldBeNull();
+        var result = await Client(handler, timeoutMs: 50).ExtractAsync([1], "Dethon", CancellationToken.None);
+        result.Wav.ShouldBeNull();
+        result.Rejected.ShouldBeFalse();
     }
 
     [Fact]

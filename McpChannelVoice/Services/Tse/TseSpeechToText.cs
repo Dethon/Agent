@@ -47,17 +47,18 @@ public sealed class TseSpeechToText(
         var reply = await client.ExtractAsync(mixture, options.TargetSpeaker!, ct);
         stopwatch.Stop();
 
-        if (reply is null)
+        if (reply.Wav is null)
         {
-            logger.LogWarning("TSE sidecar unavailable for {Speaker}; raw audio proceeds", options.TargetSpeaker);
-            await PublishAsync(VoiceMetric.TseFailed, options, outcome: "unavailable", durationMs: stopwatch.ElapsedMilliseconds);
+            var outcome = reply.Rejected ? "rejected" : "unavailable";
+            logger.LogWarning("TSE sidecar {Outcome} for {Speaker}; raw audio proceeds", outcome, options.TargetSpeaker);
+            await PublishAsync(VoiceMetric.TseFailed, options, outcome, durationMs: stopwatch.ElapsedMilliseconds);
             return await inner.TranscribeAsync(Replay(chunks), options, ct);
         }
 
         AudioChunk extracted;
         try
         {
-            extracted = WavCodec.Decode(reply);
+            extracted = WavCodec.Decode(reply.Wav);
         }
         catch (InvalidDataException ex)
         {
@@ -77,7 +78,7 @@ public sealed class TseSpeechToText(
         await PublishAsync(VoiceMetric.TseLatencyMs, options, durationMs: stopwatch.ElapsedMilliseconds);
         audit.Record(
             options.TargetSpeaker!, options.SatelliteId, options.NoiseFloorRms,
-            stopwatch.ElapsedMilliseconds, mixture, reply);
+            stopwatch.ElapsedMilliseconds, mixture, reply.Wav);
         return await inner.TranscribeAsync(Replay(Rechunk(extracted, chunks)), options, ct);
     }
 

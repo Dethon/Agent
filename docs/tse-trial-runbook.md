@@ -20,9 +20,14 @@ fired":
    `docker-compose.yml`, so no compose edit is needed for this key — recreate
    `mcp-channel-voice` the same way as step 3 below to pick it up.
 2. **At least one enrolled speaker must exist.** `voices/<name>/enroll-*.wav`, written by
-   `scripts/enroll-voice.sh` — both the gate's `SpeakerProfileStore`
-   (`SpeakerVerification.VoicesPath`, default `/voices`) and the sidecar's `app.py` scan the
-   same `enroll-*.wav` glob under the shared `./volumes/voices` mount.
+   `scripts/enroll-voice.sh`. Both the gate's `SpeakerProfileStore`
+   (`SpeakerVerification.VoicesPath`, default `/voices`) and the sidecar's `app.py` read the
+   shared `./volumes/voices` mount, but with **different globs**: the gate embeds every
+   `*.wav` in a speaker directory, while the sidecar only enrolls from `enroll-*.wav`. A
+   speaker directory holding only non-`enroll-*` WAVs (debug captures, a hand-copied file) is
+   therefore gate-known but sidecar-unknown: every noisy turn for that speaker burns a sidecar
+   round-trip and comes back `TseFailed/rejected`. Stick to `scripts/enroll-voice.sh` output
+   and the two views stay in sync.
 
 **Reading `TseSkipped`:** outcome `no_speaker` means the gate did not accept-and-name a
 speaker on that turn — it is not a noise/quiet signal (that's the separate `quiet` outcome,
@@ -122,12 +127,16 @@ mcp-channel-voice` — this is a startup-bound setting too, not hot-reloaded.
 ## Watch during the trial
 
 - Dashboard voice metrics: `TseInvoked` / `TseSkipped` (Outcome quiet|no_speaker) /
-  `TseFailed` (Outcome unavailable|malformed|empty) counts, `TseLatencyMs` distribution (this
-  IS the deployability number).
+  `TseFailed` (Outcome unavailable|rejected|malformed|empty) counts, `TseLatencyMs`
+  distribution (this IS the deployability number). `rejected` is a sidecar 4xx — the sidecar
+  is up but refused the request (almost always: the speaker has no `enroll-*.wav` takes it
+  can see) — where `unavailable` is downtime/timeout; a persistent `rejected` stream means an
+  enrollment mismatch, not a sidecar outage.
 - Audit pairs under `DockerCompose/volumes/tse-audit/` — listen to mixture vs extracted for
   a few TV-heavy turns (`scp` them off the pi; newest 50 kept).
 - `docker logs mcp-channel-voice` — the decorator logs a warning (with the speaker) only when
-  the sidecar call itself fails: unavailable/timeout, a malformed reply, or an empty one. Skipped turns (no
+  the sidecar call itself fails: unavailable/timeout, rejected (4xx), a malformed reply, or an
+  empty one. Skipped turns (no
   target speaker, floor below threshold) are not logged — they only show up as `TseSkipped`
   in the metrics.
 - Gate behavior in noise (observational, feeds the v2 reverify question): rejected-utterance
