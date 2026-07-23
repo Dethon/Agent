@@ -1,5 +1,9 @@
-from stt_eval.manifest import Utterance
-from stt_eval.report_stage import decision, score_rows
+import json
+
+import pytest
+
+from stt_eval.manifest import Utterance, write_manifest
+from stt_eval.report_stage import decision, run_report, score_rows
 
 
 def _u(uid, interference, snr):
@@ -12,6 +16,30 @@ def test_score_rows_computes_wer_and_keeps_score():
     rows = score_rows(man, {"a.wav": ("pon un temporizador de veinte minutos", 0.62)})
     assert abs(rows[0]["wer"] - 1 / 6) < 1e-9
     assert rows[0]["score"] == 0.62
+
+
+def _run_dir(tmp_path, transcribed):
+    write_manifest(tmp_path / "manifest.jsonl", [_u("a", "speech", 0.0), _u("b", "speech", 0.0)])
+    tdir = tmp_path / "transcripts" / "medium"
+    tdir.mkdir(parents=True)
+    with (tdir / "raw.jsonl").open("w", encoding="utf-8") as f:
+        for uid in transcribed:
+            f.write(json.dumps({"wav": f"{uid}.wav", "text": "pon un temporizador de diez minutos",
+                                "score": 0.5}) + "\n")
+    return tmp_path
+
+
+def test_report_fails_loudly_on_missing_transcripts(tmp_path):
+    # A transcribe run interrupted mid-batch must not silently score the missing
+    # utterances as empty hypotheses (jiwer: ~100% WER) - that fabricates a FAIL.
+    with pytest.raises(SystemExit, match="1/2"):
+        run_report(_run_dir(tmp_path, ["a"]))
+
+
+def test_report_with_full_coverage_writes_report(tmp_path):
+    run_dir = _run_dir(tmp_path, ["a", "b"])
+    run_report(run_dir)
+    assert (run_dir / "report.md").exists()
 
 
 def test_decision_rule_fails_on_high_snr_regression():
