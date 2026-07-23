@@ -2059,7 +2059,7 @@ Copied from the spec — these are empirical checks the design does **not** assu
 
 **The GPU checks are not optional.** Three independent conditions — no Vulkan ICD in the image, wrong-owner bind mounts, and render-node group permissions — each produce a container that starts cleanly, logs `Using backend: vulkan`, and decodes on CPU. Tasks 7 and 8 fix all three, but only the box can prove it.
 
-- [ ] **`docker exec mcp-lemonade vulkaninfo --summary` lists the Radeon 890M** under a RADV driver. The backend banner in `docker logs` is NOT evidence of GPU use. Then time a transcription: expect ~0.08–0.1 RTF, not ~0.3–0.5.
+- [ ] **`docker exec lemonade vulkaninfo --summary` lists the Radeon 890M** under a RADV driver. The backend banner in `docker logs` is NOT evidence of GPU use. Then time a transcription: expect ~0.08–0.1 RTF, not ~0.3–0.5.
 - [ ] `getent group render | cut -d: -f3` on the host, and `RENDER_GID` set to that value wherever compose reads it. (If `/dev/dri/renderD*` happens to be mode 0666 this is a no-op — check, don't assume.)
 - [ ] Mesa in ubuntu:24.04 genuinely supports gfx1150 (RDNA 3.5). If Vulkan underperforms or misbehaves, switch the `gpu` tier to `rocm` — the fork ships `linux-rocm-gfx1150` assets and needs no ICD.
 - [ ] Bind-mount persistence: `DockerCompose/volumes/lemonade-*` owned by UID 10001, and models survive `docker compose up --force-recreate` (a re-download means a dead mount).
