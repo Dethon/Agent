@@ -1,5 +1,6 @@
 """Builds the synthetic corpus: enrollment takes x {clean, speech-bed, music-bed} x SNR grid."""
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -49,12 +50,34 @@ def _excluded_takes(takes_file: Path | None) -> set[tuple[str, int]]:
     return out
 
 
-def run_mix(voices_dir: Path, data_dir: Path, run_dir: Path, seed: int, takes_file: Path | None) -> None:
+def _guard_stale_derivatives(run_dir: Path, force: bool) -> None:
+    """One RNG threads through the whole take iteration, so a given id's noise bed depends on
+    every take mixed before it: any re-mix (new take, changed exclusions, different seed) can
+    rewrite corpus wavs whose ids are unchanged. process/transcribe resume by id/path only, so
+    they would keep stale outputs for those ids and report would silently join fresh raw audio
+    against enhanced audio/transcripts from a different corpus. Re-mixing therefore requires
+    --force, which drops the corpus and every stage derived from it."""
+    stale = [d for d in (run_dir / "corpus", run_dir / "processed", run_dir / "transcripts")
+             if d.exists()]
+    if not stale:
+        return
+    if not force:
+        raise SystemExit(
+            f"{run_dir} already holds a mixed corpus; re-mixing would desynchronize it from "
+            "processed/transcript caches. Re-run with --force to drop them all and re-mix.")
+    for d in stale:
+        shutil.rmtree(d)
+    (run_dir / "manifest.jsonl").unlink(missing_ok=True)
+
+
+def run_mix(voices_dir: Path, data_dir: Path, run_dir: Path, seed: int, takes_file: Path | None,
+            force: bool = False) -> None:
     rng = np.random.default_rng(seed)
     speech_files = sorted((data_dir / "interference/speech").rglob("*.wav"))
     music_files = sorted((data_dir / "interference/music").rglob("*.wav"))
     if not speech_files or not music_files:
         raise SystemExit("interference beds missing - run the fetch stage first")
+    _guard_stale_derivatives(run_dir, force)
     excluded = _excluded_takes(takes_file)
     corpus = run_dir / "corpus"
     corpus.mkdir(parents=True, exist_ok=True)

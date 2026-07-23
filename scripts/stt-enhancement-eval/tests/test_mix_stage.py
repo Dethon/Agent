@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import soundfile as sf
 from pathlib import Path
 from stt_eval.manifest import read_manifest
@@ -33,3 +34,30 @@ def test_grid_and_determinism(tmp_path: Path):
     rows2 = read_manifest(tmp_path / "runs/test2/manifest.jsonl")
     again = sf.read(tmp_path / "runs/test2" / rows2[1].wav)[0]
     assert np.array_equal(first, again)  # same seed -> identical corpus
+
+
+# Noise-bed draws depend on every take iterated before a given id, so re-mixing into an
+# existing run silently desynchronizes the overwritten corpus from processed/transcript
+# artifacts that process/transcribe would then resume as "already done".
+def test_remix_without_force_refuses_when_corpus_exists(tmp_path: Path):
+    voices, data, run = _setup(tmp_path)
+    run_mix(voices, data, run, seed=7, takes_file=None)
+    with pytest.raises(SystemExit, match="--force"):
+        run_mix(voices, data, run, seed=7, takes_file=None)
+
+
+def test_remix_with_force_clears_stale_derived_stages(tmp_path: Path):
+    voices, data, run = _setup(tmp_path)
+    run_mix(voices, data, run, seed=7, takes_file=None)
+    stale_processed = run / "processed/gtcrn/fran-t1-music-snr+05.wav"
+    stale_processed.parent.mkdir(parents=True)
+    stale_processed.write_bytes(b"stale")
+    stale_transcripts = run / "transcripts/medium/raw.jsonl"
+    stale_transcripts.parent.mkdir(parents=True)
+    stale_transcripts.write_text("{}\n")
+
+    run_mix(voices, data, run, seed=7, takes_file=None, force=True)
+
+    assert not stale_processed.exists()
+    assert not stale_transcripts.exists()
+    assert len(read_manifest(run / "manifest.jsonl")) == 2 * (1 + 2 * 5)

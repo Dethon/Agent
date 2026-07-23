@@ -24,5 +24,10 @@ uv run python -m stt_eval report                                          # WER 
 > subdirectory exists and is non-empty): if a fetch is interrupted partway, delete the affected
 > `data/...` subdirectory before re-running, or the partial download is silently treated as complete.
 
+> `mix` refuses to re-mix a run that already has a corpus: noise beds depend on every take
+> iterated before a given id, so a re-mix (new take, changed exclusions, another seed) rewrites
+> wavs whose ids are unchanged, and the path-keyed `process`/`transcribe` resume caches would keep
+> serving stale outputs for them. `mix --force` drops corpus/processed/transcripts and rebuilds.
+
 Committed results live in `results/` (e.g. `results/2026-07-round1.md`); the raw `runs/` artifacts
 they annotate are gitignored.

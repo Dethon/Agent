@@ -26,6 +26,8 @@ def _add_stage_args(name: str, p: argparse.ArgumentParser) -> None:
     p.add_argument("--voices", default="data/voices", help="enrollment takes dir")
     if name == "mix":
         p.add_argument("--seed", type=int, default=7)
+        p.add_argument("--force", action="store_true",
+                       help="re-mix an existing run, dropping its corpus/processed/transcripts")
     if name == "fetch":
         p.add_argument("--pi", default="dethon@192.168.5.45:/home/dethon/jackbot/docker-compose/volumes/voices")
     if name == "transcribe":
@@ -56,7 +58,7 @@ def _mix(args: argparse.Namespace) -> None:
     run_dir = Path("runs") / args.run
     takes = run_dir / "takes.jsonl"
     run_mix(Path(args.voices), Path(args.data), run_dir, args.seed,
-            takes if takes.exists() else None)
+            takes if takes.exists() else None, force=args.force)
 
 
 STAGES["mix"] = _mix
