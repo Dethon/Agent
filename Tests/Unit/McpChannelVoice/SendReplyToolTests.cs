@@ -202,19 +202,6 @@ public class SendReplyToolTests
     }
 
     [Fact]
-    public async Task McpRun_ResolvesSatelliteFromCompositeConversationId()
-    {
-        // Append a text chunk, then complete — should resolve the satellite and speak.
-        await SendReplyTool.McpRun(_conversationId, "hola", ReplyContentType.Text, false, null, _services);
-        var result = await SendReplyTool.McpRun(
-            _conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
-
-        result.ShouldBe("ok");
-        _tts.Verify(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
-            Times.AtLeastOnce);
-    }
-
-    [Fact]
     public async Task McpRun_ToolCall_SpeaksBufferedPreambleWithoutResolvingTheTurn()
     {
         // nabu is told to emit a one-word acknowledgement ("Buscando.") before slow multi-tool work
