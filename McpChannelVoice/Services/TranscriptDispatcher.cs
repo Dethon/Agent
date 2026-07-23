@@ -18,6 +18,8 @@ public sealed class TranscriptDispatcher(
         TranscriptionResult transcript,
         string? agentId,
         CaptureStats? stats,
+        double? similarity,
+        string? identifiedSpeaker,
         CancellationToken ct)
     {
         var lowConfidence = transcript.Confidence is { } c && c < confidenceThreshold;
@@ -39,11 +41,15 @@ public sealed class TranscriptDispatcher(
                     Identity = session.Config.Identity,
                     Outcome = "dropped",
                     Confidence = transcript.Confidence,
+                    Similarity = similarity,
                     AvgLogProb = transcript.AvgLogProb,
                     NoSpeechProb = transcript.NoSpeechProb,
                     CompressionRatio = transcript.CompressionRatio,
                     PeakRms = stats?.PeakRms,
                     SpeechMs = stats?.SpeechMs,
+                    FloorRms = stats?.FloorRms,
+                    TrailingRms = stats?.TrailingRms,
+                    EndReason = stats?.EndReason,
                     ConversationId = manager.GetActiveConversationId(session.SatelliteId)
                 },
                 ct);
@@ -56,9 +62,14 @@ public sealed class TranscriptDispatcher(
 
         var dismissedAlert = session.TryConsumeDismissedAlert(timeProvider.GetUtcNow());
 
+        // A conclusive speaker match routes the enrolled person's identity into the Sender (so
+        // ChatMonitor keys memory/personalization per person); a doubtful/absent match falls back to
+        // the satellite's default identity. Telemetry below keeps Identity = the satellite identity.
+        var sender = identifiedSpeaker ?? session.Config.Identity;
+
         await emitter.EmitMessageNotificationAsync(
             conversationId,
-            session.Config.Identity,
+            sender,
             transcript.Text,
             agentId,
             session.Config.DisplayLocation,
@@ -75,11 +86,15 @@ public sealed class TranscriptDispatcher(
                 Identity = session.Config.Identity,
                 Outcome = "dispatched",
                 Confidence = transcript.Confidence,
+                Similarity = similarity,
                 AvgLogProb = transcript.AvgLogProb,
                 NoSpeechProb = transcript.NoSpeechProb,
                 CompressionRatio = transcript.CompressionRatio,
                 PeakRms = stats?.PeakRms,
                 SpeechMs = stats?.SpeechMs,
+                FloorRms = stats?.FloorRms,
+                TrailingRms = stats?.TrailingRms,
+                EndReason = stats?.EndReason,
                 ConversationId = conversationId
             },
             ct);

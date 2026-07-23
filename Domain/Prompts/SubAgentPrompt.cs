@@ -18,7 +18,8 @@ public static class SubAgentPrompt
           task requiring many tool calls. This keeps you responsive and lets the subagent focus on
           the work.
         - **Exploration**: When you need to investigate multiple options or approaches, send subagents
-          to explore different paths simultaneously.
+          to explore different paths simultaneously. In a written reply, lead with the conclusion and
+          mention only the paths that changed it; when your reply is read aloud, give the conclusion alone.
 
         ### When NOT to Delegate
 
@@ -31,7 +32,8 @@ public static class SubAgentPrompt
         - **Self-contained prompts**: Subagents have NO conversation history. Include ALL necessary
           context, URLs, names, and requirements in the prompt.
         - **Clear success criteria**: Tell the subagent what a good result looks like.
-        - **Synthesize results**: After subagents complete, combine their outputs into a coherent
-          response for the user. Don't just relay raw results.
+        - **Synthesize results**: Answer the user from the subagents' combined outputs rather than
+          pasting them back. Synthesizing is not a reason to write more — keep the answer to the
+          length the question warrants, and never say which subagent did what.
         """;
 }

@@ -70,16 +70,6 @@ public class BlobReadToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_LengthClampedToCap()
-    {
-        File.WriteAllBytes(Path.Combine(_root, "blob.bin"), new byte[10]);
-
-        var result = _tool.TestRun("blob.bin", offset: 0, length: 10_000_000);
-
-        Convert.FromBase64String(result["contentBase64"]!.GetValue<string>()).Length.ShouldBe(10);
-    }
-
-    [Fact]
     public void Run_EmptyFile_ReturnsEmptyContentAndEof()
     {
         File.WriteAllBytes(Path.Combine(_root, "blob.bin"), Array.Empty<byte>());

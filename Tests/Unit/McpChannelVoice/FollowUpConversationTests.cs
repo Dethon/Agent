@@ -10,7 +10,8 @@ namespace Tests.Unit.McpChannelVoice;
 public class FollowUpConversationTests
 {
     private static SilenceGate AnyGate(bool followUp) => new(
-        500, TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(5000),
+        new AdaptiveLevelTracker(500, 9, 4, 15, TimeSpan.FromSeconds(3)),
+        TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(5000),
         TimeSpan.FromMilliseconds(100),
         noSpeechTimeout: followUp ? TimeSpan.FromMilliseconds(500) : TimeSpan.Zero);
 
@@ -20,7 +21,10 @@ public class FollowUpConversationTests
         public readonly FakeTimeProvider Time = new(DateTimeOffset.UtcNow);
         public readonly List<UtteranceCapture> Opened = [];
         public readonly List<UtteranceCapture> Dispatched = [];
+        public readonly List<CaptureStats> Rejected = [];
         public bool DispatchResult = true;
+        public int EarlyVerify;
+        public bool EarlyRejectResult;
         private TaskCompletionSource<bool> _reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public FollowUpConversation Build(FollowUpSettings followUp) => new(
@@ -46,8 +50,15 @@ public class FollowUpConversationTests
             ResetTurn = () => _reply = new(TaskCreationOptions.RunContinuationsAsynchronously),
             AwaitReply = () => _reply.Task,
             OnFollowUpWindow = _ => Task.CompletedTask,
-            OnSilenceTimeout = _ => { Events.Add("timed-out"); return Task.CompletedTask; },
-            OnReplyTimeout = _ => { Events.Add("reply-timeout"); return Task.CompletedTask; }
+            OnSilenceTimeout = (stats, _) =>
+            {
+                Events.Add("timed-out");
+                Rejected.Add(stats);
+                return Task.CompletedTask;
+            },
+            OnReplyTimeout = _ => { Events.Add("reply-timeout"); return Task.CompletedTask; },
+            EarlyVerifyMs = EarlyVerify,
+            EarlyReject = (_, _) => { Events.Add("early-check"); return Task.FromResult(EarlyRejectResult); }
         };
 
         public void Reply(bool spoke) => _reply.TrySetResult(spoke);
@@ -66,6 +77,46 @@ public class FollowUpConversationTests
         await Task.Delay(50);
         h.Events.ShouldBe(["open-first", "dispatch-first", "end"]);
         h.Events.ShouldNotContain("timed-out");
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task EarlyReject_UnknownVoiceMidCapture_ClosesWithoutDispatch()
+    {
+        var h = new Harness { EarlyVerify = 5000, EarlyRejectResult = true };
+        var sut = h.Build(new FollowUpSettings { Enabled = true, WindowMs = 500 });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();                                    // capture opens and keeps running (no ForceEnd)
+        await Task.Delay(50);
+        h.Time.Advance(TimeSpan.FromMilliseconds(5000)); // reach the early-verify mark
+        await Task.Delay(50);
+
+        h.Events.ShouldContain("early-check");
+        h.Events.ShouldContain("end");
+        h.Dispatched.ShouldBeEmpty();                    // unknown speaker -> never reaches the agent
+        h.Events.ShouldNotContain("dispatch-first");
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task EarlyReject_AllowedVoiceMidCapture_ContinuesToNaturalEnd()
+    {
+        var h = new Harness { EarlyVerify = 5000, EarlyRejectResult = false };
+        var sut = h.Build(new FollowUpSettings { Enabled = false, WindowMs = 500 });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        await Task.Delay(50);
+        h.Time.Advance(TimeSpan.FromMilliseconds(5000)); // early check fires -> allowed -> keep going
+        await Task.Delay(50);
+        h.Opened[0].ForceEnd();                          // user finishes; capture ends naturally
+        await Task.Delay(50);
+
+        h.Events.ShouldContain("early-check");
+        h.Events.ShouldContain("dispatch-first");        // allowed voice dispatched normally, not truncated
 
         await StopAsync(sut, run);
     }
@@ -117,6 +168,32 @@ public class FollowUpConversationTests
         await Task.Delay(50);
         h.Events.ShouldContain("end");
         h.Events.ShouldContain("timed-out");
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task Enabled_FollowUpSilence_ReportsRejectedCaptureStats()
+    {
+        var h = new Harness();
+        var sut = h.Build(new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 500 });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        h.Opened[0].ForceEnd();
+        await Task.Delay(50);
+        h.Reply(spoke: true);
+        h.Time.Advance(TimeSpan.FromMilliseconds(1));
+        await Task.Delay(50);
+
+        var silent = new AudioChunk { Data = new byte[3200], Format = AudioFormat.WyomingStandard };
+        for (var i = 0; i < 6; i++)
+        { h.Opened[1].Feed(silent); }
+        await Task.Delay(50);
+
+        // The rejected capture's gate stats reach the timeout callback, so the host can
+        // publish them — rejection decisions must be tunable from field data, not guesswork.
+        h.Rejected.ShouldHaveSingleItem().EndReason.ShouldBe("no_speech");
 
         await StopAsync(sut, run);
     }

@@ -21,7 +21,9 @@ public class UtteranceCaptureTests
         new() { Data = new byte[Bytes], Format = AudioFormat.WyomingStandard };
 
     private static SilenceGate Gate(int noSpeechMs = 0) => new(
-        rmsThreshold: 500,
+        new AdaptiveLevelTracker(
+            clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
+            floorWindow: TimeSpan.FromSeconds(3)),
         trailingSilence: TimeSpan.FromMilliseconds(200),
         maxUtterance: TimeSpan.FromMilliseconds(5000),
         minSpeech: TimeSpan.FromMilliseconds(100),
@@ -32,6 +34,7 @@ public class UtteranceCaptureTests
     {
         var capture = new UtteranceCapture(Gate());
 
+        capture.Feed(Silent()); // pre-roll gap seeds the floor
         capture.Feed(Loud());
         capture.Feed(Loud());
         capture.Feed(Silent());
@@ -42,7 +45,7 @@ public class UtteranceCaptureTests
         var count = 0;
         await foreach (var _ in capture.Audio)
         { count++; }
-        count.ShouldBe(4);
+        count.ShouldBe(5);
     }
 
     [Fact]
@@ -71,6 +74,7 @@ public class UtteranceCaptureTests
     {
         var capture = new UtteranceCapture(Gate());
 
+        capture.Feed(Silent()); // pre-roll gap seeds the floor
         capture.Feed(Loud());
         capture.Feed(Loud());
         capture.Feed(Silent());
@@ -79,5 +83,83 @@ public class UtteranceCaptureTests
         (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
         capture.Stats.PeakRms.ShouldBe(8000, 1.0);
         capture.Stats.SpeechMs.ShouldBe(200);
+    }
+
+    [Fact]
+    public async Task Stats_AfterTrailingSilenceEnd_CarriesFloorAndEndReason()
+    {
+        var capture = new UtteranceCapture(Gate());
+
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent());
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        capture.Stats.EndReason.ShouldBe("trailing_silence");
+        capture.Stats.FloorRms.ShouldBeGreaterThanOrEqualTo(0);
+    }
+
+    [Fact]
+    public async Task Stats_AfterTrailingSilenceEnd_CarriesTrailingRms()
+    {
+        var capture = new UtteranceCapture(Gate());
+
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent());
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        capture.Stats.TrailingRms.ShouldBe(0, 1.0); // trailing run was true silence
+    }
+
+    [Fact]
+    public async Task Stats_AfterForceEnd_ReportsForced()
+    {
+        var capture = new UtteranceCapture(Gate());
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+
+        capture.ForceEnd();
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        capture.Stats.EndReason.ShouldBe("forced");
+    }
+
+    [Fact]
+    public async Task Stats_ForceEndAfterNaturalEnd_KeepsNaturalEndReason()
+    {
+        var capture = new UtteranceCapture(Gate());
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent()); // trailing silence ends the capture naturally
+
+        capture.ForceEnd(); // late audio-stop must not relabel it
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        capture.Stats.EndReason.ShouldBe("trailing_silence");
+    }
+
+    [Fact]
+    public async Task BufferedAudio_ContainsEveryChunkContinuous()
+    {
+        var capture = new UtteranceCapture(Gate());
+
+        capture.Feed(Silent()); // pre-roll gap seeds the floor
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent()); // trailing silence ends the capture
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        // The verifier embeds continuous, enrollment-matching audio: every fed chunk, not the
+        // silence-cut speech-only subset (embedding glued fragments collapses CAM++ similarity).
+        capture.BufferedAudio.Count.ShouldBe(5);
+        capture.BufferedAudio.ShouldAllBe(c => c.Data.Length == 3200);
     }
 }

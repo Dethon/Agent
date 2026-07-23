@@ -61,4 +61,9 @@
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Unit/McpChannelVoice/Verification/Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Integration/McpChannelVoice/Fixtures/speaker-wavs/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
