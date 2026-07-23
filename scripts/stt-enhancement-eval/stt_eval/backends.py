@@ -42,7 +42,8 @@ def _jackbot_network() -> str:
     return nets[0]
 
 
-def _wyoming(wavs: list[Path], out_jsonl: Path) -> None:
+def _lemonade(wavs: list[Path], out_jsonl: Path) -> None:
+    # Prod-parity backend: transcribes through the same Lemonade OpenAI endpoint the hub uses.
     # All wavs must live under one root (the run dir) so a single -v mount covers them.
     root = _mount_root(wavs)
     # Preserve the exact path form the caller passed in (relative/absolute), matching
@@ -57,7 +58,7 @@ def _wyoming(wavs: list[Path], out_jsonl: Path) -> None:
         result = subprocess.run([
             "docker", "run", "--rm", "--network", _jackbot_network(),
             "-v", f"{root.resolve()}:/work", "-v", f"{worker}:/s:ro",
-            "python:3.12-slim", "python", "/s/wyoming_worker.py",
+            "python:3.12-slim", "python", "/s/lemonade_worker.py",
             "--manifest", f"/work/{tdp.name}/in.jsonl", "--out", f"/work/{tdp.name}/out.jsonl",
         ])
         # Merge whatever the worker managed to write BEFORE checking the return code, so a
@@ -65,7 +66,7 @@ def _wyoming(wavs: list[Path], out_jsonl: Path) -> None:
         # (which lives inside this TemporaryDirectory and is gone once the `with` exits).
         _merge_worker_output(tdp / "out.jsonl", out_jsonl, by_name)
         if result.returncode != 0:
-            raise SystemExit(f"wyoming worker exited {result.returncode}")
+            raise SystemExit(f"lemonade worker exited {result.returncode}")
 
 
 def _merge_worker_output(worker_out: Path, out_jsonl: Path, by_name: dict[str, str]) -> None:
@@ -95,4 +96,4 @@ def transcribe_files(backend: str, wavs: list[Path], out_jsonl: Path) -> None:
     if not todo:
         print(f"{out_jsonl}: complete ({len(done)} rows)")
         return
-    {"medium": _medium, "wyoming": _wyoming}[backend](todo, out_jsonl)
+    {"medium": _medium, "lemonade": _lemonade}[backend](todo, out_jsonl)

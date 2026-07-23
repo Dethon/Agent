@@ -31,7 +31,7 @@ def _add_stage_args(name: str, p: argparse.ArgumentParser) -> None:
     if name == "fetch":
         p.add_argument("--pi", default="dethon@192.168.5.45:/home/dethon/jackbot/docker-compose/volumes/voices")
     if name == "transcribe":
-        p.add_argument("--backend", choices=["medium", "wyoming"], required=True)
+        p.add_argument("--backend", choices=["medium", "lemonade"], required=True)
         p.add_argument("--conditions", default="raw", help="comma-list of condition dirs, or 'raw' for the corpus")
     if name == "process":
         p.add_argument("--conditions", default="gtcrn,dfn3")
