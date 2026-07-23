@@ -43,6 +43,20 @@ public class TseExtractorServiceTests(TseExtractorFixture fixture) : IClassFixtu
         speakers.ShouldContain(TseExtractorFixture.EnrolledSpeaker);
     }
 
+    // load_or_export falls back to eager on ANY failure — silently, by design, for production.
+    // The suite must not inherit that silence: pin /health's core field to "onnx" so a broken
+    // export/load turns into a visible failure here instead of every test quietly exercising
+    // only the eager path.
+    [SkippableFact]
+    public async Task HealthReportsTheOnnxCoreIsServing()
+    {
+        Skip.If(fixture.SkipReason is not null, fixture.SkipReason);
+        var health = await GetHealthAsync();
+        health.TryGetProperty("core", out var core)
+            .ShouldBeTrue("/health does not expose which core is serving");
+        core.GetString().ShouldBe("onnx");
+    }
+
     [SkippableFact]
     public async Task UnknownSpeakerIs404()
     {

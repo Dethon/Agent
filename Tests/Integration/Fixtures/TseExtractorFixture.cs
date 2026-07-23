@@ -12,9 +12,12 @@ namespace Tests.Integration.Fixtures;
 // leaning on a manually-run local sidecar. The WeSep BSRNN+ECAPA checkpoint is a ~280 MB runtime
 // download the compose stack provisions into DockerCompose/volumes/tse-models; we bind-mount that
 // (read-only) rather than re-download it inside a test, so the checkpoint being present is a hard
-// precondition. When Docker, the image, or the checkpoint is unavailable the fixture skips (never
-// hard-fails) by exposing a SkipReason the tests gate on -- matching the External-category
-// convention of the Camoufox/Playwright container tests.
+// precondition -- and so is the exported ONNX core artifact: the RO mount means load_or_export
+// cannot create it in here (it would silently fall back to eager for the whole container
+// lifetime), so it too must come from booting the compose service once. When Docker, the image,
+// or the provisioned volume is unavailable the fixture skips (never hard-fails) by exposing a
+// SkipReason the tests gate on -- matching the External-category convention of the
+// Camoufox/Playwright container tests.
 public class TseExtractorFixture : IAsyncLifetime
 {
     private const string Image = "tse-extractor:latest";
@@ -35,9 +38,9 @@ public class TseExtractorFixture : IAsyncLifetime
         var modelDir = LocateCheckpointDir();
         if (modelDir is null)
         {
-            SkipReason = "tse-extractor checkpoint not provisioned at "
+            SkipReason = "tse-extractor checkpoint (or its exported ONNX core) not provisioned at "
                 + "DockerCompose/volumes/tse-models/wesep-english (build/run the tse-extractor "
-                + "compose service once to download it)";
+                + "compose service once to download the checkpoint and export the core)";
             return;
         }
 
@@ -58,8 +61,9 @@ public class TseExtractorFixture : IAsyncLifetime
                     .UntilHttpRequestIsSucceeded(r => r.ForPort(TsePort).ForPath("/health")))
                 .Build();
 
-            // Cold start loads the 282 MB checkpoint and (on a fresh box) exports the ONNX core,
-            // well past the default port-wait budget, so give StartAsync a generous ceiling.
+            // Cold start loads the 282 MB checkpoint, well past the default port-wait budget, so
+            // give StartAsync a generous ceiling. (No export happens in here: /models is RO and
+            // the ONNX artifact is a provisioning precondition, checked in LocateCheckpointDir.)
             using var startCts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
             await _container.StartAsync(startCts.Token);
 
@@ -118,7 +122,8 @@ public class TseExtractorFixture : IAsyncLifetime
             E2E.Fixtures.TestHelpers.FindSolutionRoot(), "DockerCompose", "volumes", "tse-models");
         var checkpoint = Path.Combine(modelDir, "wesep-english");
         var provisioned = File.Exists(Path.Combine(checkpoint, "avg_model.pt"))
-            && File.Exists(Path.Combine(checkpoint, "config.yaml"));
+            && File.Exists(Path.Combine(checkpoint, "config.yaml"))
+            && Directory.GetFiles(checkpoint, "bsrnn_core_v*.onnx").Length > 0;
         return provisioned ? modelDir : null;
     }
 
