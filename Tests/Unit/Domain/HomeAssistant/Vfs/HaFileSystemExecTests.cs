@@ -109,6 +109,33 @@ public class HaFileSystemExecTests
     }
 
     [Fact]
+    public async Task Exec_HaServerSideFailure_Returns1_WithResolveHint()
+    {
+        var fs = Build(out var client);
+        client.CallHandler = (_, _, _, _) =>
+            throw new HomeAssistantException("Home Assistant returned 500: Server got itself in trouble", 500);
+        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(1);
+        exec.Stderr.ShouldContain("500");
+        exec.Stderr.ShouldContain("browse_media.sh");
+        exec.Stderr.ShouldNotContain("field types");
+    }
+
+    [Fact]
+    public async Task Exec_HaFailure_NoStatusCode_Returns1_MessageOnly()
+    {
+        var fs = Build(out var client);
+        client.CallHandler = (_, _, _, _) => throw new HomeAssistantException("boom");
+        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", null, CancellationToken.None);
+
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(1);
+        exec.Stderr.ShouldBe("boom");
+    }
+
+    [Fact]
     public async Task ExecAsync_Success_ReportsCwdAndDuration()
     {
         var client = new FakeHaClient
@@ -170,7 +197,7 @@ public class HaFileSystemExecTests
                     ("media_content_id", new HaServiceField { Required = true }),
                     ("media_content_type", new HaServiceField { Required = true })),
                 Service("music_assistant", "play_media", DomainTarget("media_player"),
-                    ("media_id", new HaServiceField { Required = true }))
+                    ("media_id", new HaServiceField { Required = true, Selector = JsonNode.Parse("""{"object":{"multiple":false}}""") }))
             }
         };
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);

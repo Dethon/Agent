@@ -269,6 +269,7 @@ public class MetricsQueryServiceGroupingTests
     [InlineData(VoiceDimension.Room, VoiceMetric.UtteranceTranscribed)]
     [InlineData(VoiceDimension.Identity, VoiceMetric.SttLatencyMs)]
     [InlineData(VoiceDimension.SatelliteId, VoiceMetric.WakeToFirstAudioMs)]
+    [InlineData(VoiceDimension.SatelliteId, VoiceMetric.TseLatencyMs)]
     public async Task GetVoiceGroupedAsync_GroupsByDimensionAndMetric(
         VoiceDimension dimension, VoiceMetric metric)
     {
@@ -282,6 +283,8 @@ public class MetricsQueryServiceGroupingTests
             new VoiceEvent { Metric = VoiceMetric.SttLatencyMs, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household", DurationMs = 300 },
             new VoiceEvent { Metric = VoiceMetric.WakeToFirstAudioMs, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household", DurationMs = 200 },
             new VoiceEvent { Metric = VoiceMetric.WakeToFirstAudioMs, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household", DurationMs = 400 },
+            new VoiceEvent { Metric = VoiceMetric.TseLatencyMs, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household", DurationMs = 50 },
+            new VoiceEvent { Metric = VoiceMetric.TseLatencyMs, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household", DurationMs = 150 },
         ]);
 
         var result = await _sut.GetVoiceGroupedAsync(dimension, metric, date, date);
@@ -301,6 +304,9 @@ public class MetricsQueryServiceGroupingTests
                 break;
             case (VoiceDimension.SatelliteId, VoiceMetric.WakeToFirstAudioMs):
                 result["kitchen-01"].ShouldBe(300m);  // avg branch: avg(200,400)
+                break;
+            case (VoiceDimension.SatelliteId, VoiceMetric.TseLatencyMs):
+                result["kitchen-01"].ShouldBe(100m);  // avg branch: avg(50,150), not a raw event count (2)
                 break;
         }
     }

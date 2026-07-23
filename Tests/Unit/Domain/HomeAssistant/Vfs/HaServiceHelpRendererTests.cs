@@ -46,4 +46,13 @@ public class HaServiceHelpRendererTests
         help.ShouldContain("AREA_ID");
         help.ShouldContain("slug");
     }
+
+    [Fact]
+    public void Render_ObjectSelector_SaysTextOrJson()
+    {
+        var svc = Service("music_assistant", "play_media", AnyEntityTarget(),
+            ("media_id", Field(null, true, JsonNode.Parse("""{"object":{"multiple":false}}"""))));
+
+        HaServiceHelpRenderer.Render("media_player.office", svc).ShouldContain("TEXT or JSON");
+    }
 }

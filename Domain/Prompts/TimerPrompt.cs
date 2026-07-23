@@ -31,18 +31,18 @@ public static class TimerPrompt
           (the room this request came from) unless another room is named. When `text` is omitted
           the timer announces itself as "<id> timer", so pick a descriptive id (e.g. `pasta`).
         - Time left: `{{VfsTextReadTool.Name}}` on `/timers/<id>/status.json` → `remainingSeconds`
-          and `firesAt`.
+          and `firesAt`; speak only the remaining time.
         - List: `{{VfsGlobFilesTool.Name}}` on `/timers`.
         - Cancel: `{{VfsRemoveTool.Name}}` on `/timers/<id>`.
-        - Timers are immutable and fire once — to change one, delete it and create a new one. To
-          extend a timer the user just dismissed ("two more minutes"), create a new timer with the
-          remaining request.
+        - Timers are immutable and fire once — to change one, delete it and create a new one; to
+          extend one just dismissed ("two more minutes"), create a new timer. This is internal —
+          never mention deleting or recreating, just state the new time.
         - To change a **running** timer ("add five minutes to the pasta timer"): read its
           `status.json` for `remainingSeconds`, delete the timer, and recreate it with the
           adjusted remainder.
         - Stop ringing: when the user asks to stop or dismiss a ringing alarm/timer (from any room
           or any channel), `{{VfsExecTool.Name}}` `dismiss.sh` at `/timers` — it silences everything
-          currently ringing on all satellites and reports what was dismissed. A fired timer no
-          longer appears under `/timers`; `dismiss.sh` is the only way to silence it remotely.
+          currently ringing on all satellites. A fired timer no longer appears under `/timers`;
+          `dismiss.sh` is the only way to silence it remotely.
         """;
 }

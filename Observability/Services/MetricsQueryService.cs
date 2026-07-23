@@ -423,6 +423,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
                     VoiceMetric.SttLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
                     VoiceMetric.TtsLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
                     VoiceMetric.WakeToFirstAudioMs => (decimal)g.Average(e => e.DurationMs ?? 0),
+                    VoiceMetric.TseLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
                     _ => (decimal)g.Count()
                 });
     }

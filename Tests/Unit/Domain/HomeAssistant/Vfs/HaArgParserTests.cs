@@ -90,4 +90,25 @@ public class HaArgParserTests
         // Only '--' starts a flag; a single '-' (e.g. a negative number) is a valid value.
         HaArgParser.Parse(["--brightness_pct", "-5"], Svc())["brightness_pct"]!.GetValue<int>().ShouldBe(-5);
     }
+
+    [Fact]
+    public void Parse_ObjectSelector_BareText_FallsBackToString()
+    {
+        HaArgParser.Parse(["--advanced", "chill relaxing music"], Svc())["advanced"]!
+            .GetValue<string>().ShouldBe("chill relaxing music");
+    }
+
+    [Fact]
+    public void Parse_ObjectSelector_QuotedJsonString_StillParses()
+    {
+        HaArgParser.Parse(["--advanced", "\"Liked Songs\""], Svc())["advanced"]!
+            .GetValue<string>().ShouldBe("Liked Songs");
+    }
+
+    [Fact]
+    public void Parse_ObjectSelector_JsonArray_StillParses()
+    {
+        ((JsonArray)HaArgParser.Parse(["--advanced", """["a","b"]"""], Svc())["advanced"]!)
+            .Count.ShouldBe(2);
+    }
 }

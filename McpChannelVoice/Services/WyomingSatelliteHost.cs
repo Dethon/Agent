@@ -4,6 +4,8 @@ using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
+using McpChannelVoice.Services.Stt;
+using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 
@@ -26,7 +28,8 @@ public sealed class WyomingSatelliteHost(
     ActiveAlertRegistry alerts,
     IMetricsPublisher metrics,
     TimeProvider time,
-    ILogger<WyomingSatelliteHost> logger) : IHostedService
+    ILogger<WyomingSatelliteHost> logger,
+    ISpeakerVerifier? speakerVerifier = null) : IHostedService
 {
     private CancellationTokenSource? _cts;
     private readonly List<Task> _connections = [];
@@ -231,7 +234,13 @@ public sealed class WyomingSatelliteHost(
                 // (false trigger, user changes their mind) must re-arm after WindowMs instead of
                 // holding the mic open until the far-larger max-utterance cap.
                 return session.OpenCapture(new SilenceGate(
-                    config.ResolveRmsThreshold(settings),
+                    new AdaptiveLevelTracker(
+                        config.ResolveRmsThreshold(settings),
+                        config.ResolveEnterMarginDb(settings),
+                        config.ResolveExitMarginDb(settings),
+                        config.ResolvePeakDropDb(settings),
+                        TimeSpan.FromMilliseconds(config.ResolveFloorWindowMs(settings)),
+                        demoteMarginDb: config.ResolveDemoteMarginDb(settings)),
                     TimeSpan.FromMilliseconds(settings.TrailingSilenceMs),
                     TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
                     TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(settings)),
@@ -250,9 +259,9 @@ public sealed class WyomingSatelliteHost(
                 PublishVoiceMetric(VoiceMetric.FollowUpWindowOpened, session);
                 return Task.CompletedTask;
             },
-            OnSilenceTimeout = token =>
+            OnSilenceTimeout = (stats, token) =>
             {
-                PublishVoiceMetric(VoiceMetric.FollowUpTimedOut, session);
+                PublishVoiceMetric(VoiceMetric.FollowUpTimedOut, session, stats);
                 return Task.CompletedTask;
             },
             OnReplyTimeout = token =>
@@ -261,9 +270,66 @@ public sealed class WyomingSatelliteHost(
                     "Reply handshake timed out for {Id} after {TimeoutMs}ms; ending conversation and re-arming wake",
                     session.SatelliteId, followUp.ReplyTimeoutMs);
                 return Task.CompletedTask;
-            }
+            },
+            EarlyVerifyMs = speakerVerifier is null ? 0 : voiceSettings.SpeakerVerification.EarlyVerifyMs,
+            EarlyReject = (capture, token) => EarlyRejectAsync(session, capture, token)
         };
     }
+
+    // Early-close speaker check: verify the audio captured so far and, if it is an unknown voice
+    // (e.g. background TV that latched as speech), reject it now so the loop closes the capture
+    // instead of holding the mic open to trailing silence / the max-utterance cap. Sub-speech and
+    // fail-open cases return false (keep capturing), so enrolled voices are never truncated.
+    private async Task<bool> EarlyRejectAsync(
+        SatelliteSession session, UtteranceCapture capture, CancellationToken ct)
+    {
+        if (speakerVerifier is null)
+        {
+            return false;
+        }
+
+        var stats = capture.Stats;
+        // A capture still open at the early mark is not necessarily someone speaking — a
+        // follow-up window holds the mic open regardless of whether anyone has said anything, so
+        // a capture can sit here with zero gate-classified speech (pure room noise). Keep the
+        // short-utterance skip: with nothing to embed yet, VerifyAsync returns Skipped rather than
+        // judging silence as an unknown voice, so the capture keeps running instead of being
+        // rejected on a foregone conclusion. Once real speech (TV or otherwise) has latched, it
+        // clears MinVerifySpeechMs on its own and this check still applies to it as before.
+        var verification = await speakerVerifier.VerifyAsync(
+            capture.BufferedAudio, stats.SpeechMs, session.Config, ct, enforceMinSpeech: true);
+        if (verification.Decision != SpeakerDecision.Rejected)
+        {
+            return false;
+        }
+
+        logger.LogInformation(
+            "Early-rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
+            session.SatelliteId, verification.Similarity);
+        await PublishUnknownSpeakerAsync(session, stats, verification.Similarity, "unknown_speaker_early");
+        return true;
+    }
+
+    // Rejection telemetry is diagnostic, not part of the turn contract: this is awaited from the
+    // conversation loop (EarlyRejectAsync has no catch above it), so a metrics-backbone outage must
+    // be swallowed here or it faults the loop and wedges the satellite until reconnect.
+    private Task PublishUnknownSpeakerAsync(
+        SatelliteSession session, CaptureStats stats, double? similarity, string outcome) =>
+        SafePublishAsync(new VoiceEvent
+        {
+            Metric = VoiceMetric.UtteranceRejected,
+            SatelliteId = session.SatelliteId,
+            Room = session.Config.Room,
+            Identity = session.Config.Identity,
+            Outcome = outcome,
+            Similarity = similarity,
+            PeakRms = stats.PeakRms,
+            SpeechMs = stats.SpeechMs,
+            FloorRms = stats.FloorRms,
+            TrailingRms = stats.TrailingRms,
+            EndReason = stats.EndReason,
+            ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
+        });
 
     // Returns true only when the transcript actually reached the agent. Empty/low-confidence
     // transcripts and STT errors return false so the conversation ends and wake re-arms, rather
@@ -273,11 +339,48 @@ public sealed class WyomingSatelliteHost(
     {
         try
         {
+            double? similarity = null;
+            string? identifiedSpeaker = null;
+            SpeakerVerification? verification = null;
+            if (speakerVerifier is not null)
+            {
+                // Follow-up captures skip the short-utterance protection: a follow-up window
+                // reopens the mic wake-free beside a talking TV, so a short TV burst must be
+                // verified and rejected rather than passed through. First-turn captures keep the
+                // skip so a genuinely brief opening command stays safe.
+                verification = await speakerVerifier.VerifyAsync(
+                    capture.BufferedAudio, capture.Stats.SpeechMs, session.Config, ct,
+                    enforceMinSpeech: !isFollowUp);
+                if (verification.Value.Decision == SpeakerDecision.Rejected)
+                {
+                    logger.LogInformation(
+                        "Rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
+                        session.SatelliteId, verification.Value.Similarity);
+                    await PublishUnknownSpeakerAsync(
+                        session, capture.Stats, verification.Value.Similarity, "unknown_speaker");
+                    return false;
+                }
+                similarity = verification.Value.Similarity;
+                // A conclusive match names the speaker (routed into the Sender for per-person memory);
+                // the doubtful band leaves this null so the dispatcher keeps the satellite identity.
+                identifiedSpeaker = verification.Value.IdentifiedSpeaker;
+                if (similarity is not null)
+                {
+                    // Accepted scores only reach Redis telemetry; log them too so threshold
+                    // calibration doesn't require correlating metrics with transcripts offline.
+                    logger.LogInformation(
+                        "Accepting capture from {Id}: similarity {Similarity:F3}, speaker {Speaker}",
+                        session.SatelliteId, similarity, identifiedSpeaker ?? session.Config.Identity);
+                }
+            }
+
             var sw = Stopwatch.StartNew();
             // Honor a per-satellite STT language override (symmetric with the per-satellite
             // Tts.OpenAi.Voice override resolved in SendReplyTool/AnnouncementService); null falls
-            // back to the global Stt.OpenAi.Language inside the backend.
-            var options = new TranscriptionOptions { Language = session.Config.Stt?.OpenAi?.Language };
+            // back to the global Stt.OpenAi.Language inside the backend. The factory also derives
+            // the TSE hints (target speaker, noise floor) from the speaker gate's verdict.
+            var options = TranscriptionOptionsFactory.Create(
+                session.SatelliteId, session.Config, verification, capture.Stats);
             var result = await speechToText.TranscribeAsync(capture.Audio, options, ct);
             sw.Stop();
 
@@ -297,7 +400,7 @@ public sealed class WyomingSatelliteHost(
             }
 
             var dispatched = await dispatcher.DispatchAsync(
-                session, result, voiceSettings.AgentId, capture.Stats, ct);
+                session, result, voiceSettings.AgentId, capture.Stats, similarity, identifiedSpeaker, ct);
             if (dispatched)
             {
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
@@ -355,13 +458,18 @@ public sealed class WyomingSatelliteHost(
         session.NoteDismissedAlert(description, time.GetUtcNow());
     }
 
-    private void PublishVoiceMetric(VoiceMetric metric, SatelliteSession session) =>
+    private void PublishVoiceMetric(VoiceMetric metric, SatelliteSession session, CaptureStats? stats = null) =>
         _ = SafePublishAsync(new VoiceEvent
         {
             Metric = metric,
             SatelliteId = session.SatelliteId,
             Room = session.Config.Room,
             Identity = session.Config.Identity,
+            PeakRms = stats?.PeakRms,
+            SpeechMs = stats?.SpeechMs,
+            FloorRms = stats?.FloorRms,
+            TrailingRms = stats?.TrailingRms,
+            EndReason = stats?.EndReason,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
         });
 

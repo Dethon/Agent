@@ -297,12 +297,15 @@ public class SatelliteSessionPlaybackTests
         Should.NotThrow(() => session.RouteAudio(silent));
 
         var capture = session.OpenCapture(new SilenceGate(
-            rmsThreshold: 500,
+            new AdaptiveLevelTracker(
+                clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
+                floorWindow: TimeSpan.FromSeconds(3)),
             trailingSilence: TimeSpan.FromMilliseconds(200),
             maxUtterance: TimeSpan.FromMilliseconds(1000),
             minSpeech: TimeSpan.FromMilliseconds(100)));
 
         // Speech then trailing silence routed through the session must end the active capture.
+        session.RouteAudio(silent); // pre-roll gap seeds the floor
         session.RouteAudio(loudChunk());
         session.RouteAudio(loudChunk());
         session.RouteAudio(silent);

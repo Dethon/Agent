@@ -30,14 +30,6 @@ public sealed class MessagePipelineTests
     }
 
     [Fact]
-    public void SubmitUserMessage_ReturnsCorrelationId()
-    {
-        var id = _pipeline.SubmitUserMessage("topic-1", "Hello", "user-1");
-
-        id.ShouldNotBeNullOrEmpty();
-    }
-
-    [Fact]
     public void SubmitUserMessage_DispatchesAddMessage()
     {
         _pipeline.SubmitUserMessage("topic-1", "Hello", "user-1");

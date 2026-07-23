@@ -49,12 +49,56 @@ public record SatelliteConfig
 
     public double ResolveNoSpeechProbThreshold(double global) =>
         Stt?.OpenAi?.NoSpeechProbThreshold ?? global;
+
+    public int ResolveFloorWindowMs(WyomingClientSettings global) =>
+        Gate?.FloorWindowMs ?? global.FloorWindowMs;
+
+    public double ResolveEnterMarginDb(WyomingClientSettings global) =>
+        Gate?.EnterMarginDb ?? global.EnterMarginDb;
+
+    public double ResolveExitMarginDb(WyomingClientSettings global) =>
+        Gate?.ExitMarginDb ?? global.ExitMarginDb;
+
+    public double ResolvePeakDropDb(WyomingClientSettings global) =>
+        Gate?.PeakDropDb ?? global.PeakDropDb;
+
+    public double? ResolveDemoteMarginDb(WyomingClientSettings global) =>
+        Gate?.DemoteMarginDb ?? global.DemoteMarginDb;
+
+    // Per-satellite overrides of the speaker-identity gate. Null inherits the global value.
+    public VerificationOverrides? Verification { get; init; }
+
+    public bool ResolveVerificationEnabled(SpeakerVerificationSettings global) =>
+        Verification?.Enabled ?? global.Enabled;
+
+    public double ResolveSimilarityThreshold(SpeakerVerificationSettings global) =>
+        Verification?.SimilarityThreshold ?? global.SimilarityThreshold;
+
+    public double ResolveShortSpeechSimilarityThreshold(SpeakerVerificationSettings global) =>
+        Verification?.ShortSpeechSimilarityThreshold ?? global.ShortSpeechSimilarityThreshold;
+
+    public int ResolveFullThresholdSpeechMs(SpeakerVerificationSettings global) =>
+        Verification?.FullThresholdSpeechMs ?? global.FullThresholdSpeechMs;
+
+    public double ResolveIdentifyThreshold(SpeakerVerificationSettings global) =>
+        Verification?.IdentifyThreshold ?? global.IdentifyThreshold;
+
+    public double ResolveShortSpeechIdentifyThreshold(SpeakerVerificationSettings global) =>
+        Verification?.ShortSpeechIdentifyThreshold ?? global.ShortSpeechIdentifyThreshold;
+
+    public double ResolveIdentifyMargin(SpeakerVerificationSettings global) =>
+        Verification?.IdentifyMargin ?? global.IdentifyMargin;
 }
 
 public record GateSettings
 {
     public double? SilenceRmsThreshold { get; init; }
     public int? MinSpeechMs { get; init; }
+    public int? FloorWindowMs { get; init; }
+    public double? EnterMarginDb { get; init; }
+    public double? ExitMarginDb { get; init; }
+    public double? PeakDropDb { get; init; }
+    public double? DemoteMarginDb { get; init; }
 }
 
 public record SttOverrides
@@ -77,4 +121,15 @@ public record TtsOverrides
 public record OpenAiTtsOverrides
 {
     public string? Voice { get; init; }
+}
+
+public record VerificationOverrides
+{
+    public bool? Enabled { get; init; }
+    public double? SimilarityThreshold { get; init; }
+    public double? ShortSpeechSimilarityThreshold { get; init; }
+    public int? FullThresholdSpeechMs { get; init; }
+    public double? IdentifyThreshold { get; init; }
+    public double? ShortSpeechIdentifyThreshold { get; init; }
+    public double? IdentifyMargin { get; init; }
 }

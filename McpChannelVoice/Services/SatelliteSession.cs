@@ -37,6 +37,7 @@ public sealed class SatelliteSession
     private TaskCompletionSource<bool> _turn = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private const long TurnNotStarted = long.MinValue;
     private long _turnStartedAt = TurnNotStarted;
+    private int _preambleClaimed;
     private static readonly TimeSpan _snoozeWindow = TimeSpan.FromSeconds(60);
     private readonly Lock _dismissGate = new();
     private string? _dismissedAlert;
@@ -128,11 +129,17 @@ public sealed class SatelliteSession
     // the new turn; otherwise a signal lands on the discarded TCS and the awaiter blocks forever.
     public void ResetTurn()
     {
+        Interlocked.Exchange(ref _preambleClaimed, 0);
         lock (_turnGate)
         {
             _turn = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
     }
+
+    // Claimed by the first tool call of a turn, which speaks whatever the model said before it
+    // ("Buscando") instead of leaving it buffered until the answer. One claim per turn: later tool
+    // calls keep mid-run narration buffered so it cannot race the answer into the playback queue.
+    public bool TryClaimPreamble() => Interlocked.CompareExchange(ref _preambleClaimed, 1, 0) == 0;
 
     public Task<bool> WaitForTurnSpokenAsync()
     {

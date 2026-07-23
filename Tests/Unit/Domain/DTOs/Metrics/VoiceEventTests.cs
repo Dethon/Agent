@@ -38,7 +38,9 @@ public class VoiceEventTests
             Metric = VoiceMetric.SttLatencyMs,
             SatelliteId = "kitchen-01",
             Room = "Kitchen",
-            DurationMs = 320
+            DurationMs = 320,
+            FloorRms = 320,
+            EndReason = "trailing_silence"
         };
 
         var json = JsonSerializer.Serialize(evt, _options);
@@ -47,5 +49,7 @@ public class VoiceEventTests
         decoded.ShouldBeOfType<VoiceEvent>();
         ((VoiceEvent)decoded!).Metric.ShouldBe(VoiceMetric.SttLatencyMs);
         ((VoiceEvent)decoded!).DurationMs.ShouldBe(320);
+        ((VoiceEvent)decoded!).FloorRms.ShouldBe(320);
+        ((VoiceEvent)decoded!).EndReason.ShouldBe("trailing_silence");
     }
 }

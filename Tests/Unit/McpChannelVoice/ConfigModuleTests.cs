@@ -4,19 +4,22 @@ using McpChannelVoice.Services.Stt;
 using McpChannelVoice.Services.Tts;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
 
 public class ConfigModuleTests
 {
-    // Registration-only smoke: nothing here connects to Redis or starts hosted services —
-    // resolving the STT/TTS graph must work from settings alone.
+    // Registration-only smoke: nothing here starts hosted services — resolving the STT/TTS graph
+    // must work from settings alone. The STT graph now runs through the TSE metrics decorator, so
+    // stub IMetricsPublisher to keep the Redis-backed one out and avoid a live connection.
     private static ServiceProvider Build(VoiceSettings settings)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.ConfigureVoiceChannel(settings);
+        services.AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>());
         return services.BuildServiceProvider();
     }
 
