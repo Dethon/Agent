@@ -57,6 +57,18 @@ public class TseExtractorServiceTests(TseExtractorFixture fixture) : IClassFixtu
         core.GetString().ShouldBe("onnx");
     }
 
+    // The entrypoint serves the app with gunicorn (1 worker so the checkpoint is loaded once);
+    // werkzeug identifies itself in the Server header, so pin gunicorn here to keep a silent
+    // revert to Flask's dev server (app.run) out of the image.
+    [SkippableFact]
+    public async Task HealthIsServedByGunicornNotTheWerkzeugDevServer()
+    {
+        Skip.If(fixture.SkipReason is not null, fixture.SkipReason);
+        using var http = fixture.CreateHttpClient();
+        var response = await http.GetAsync("/health");
+        response.Headers.Server.ToString().ShouldContain("gunicorn");
+    }
+
     [SkippableFact]
     public async Task UnknownSpeakerIs404()
     {

@@ -40,6 +40,10 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 # startup because the checkpoint lives in the /models volume, not the image).
 RUN pip install --no-cache-dir "onnx==1.22.0"
 
+# Production WSGI server -- entrypoint.sh serves app:app with it instead of Flask's
+# werkzeug dev server (app.run). Own layer so it never invalidates the torch layer.
+RUN pip install --no-cache-dir "gunicorn==26.0.0"
+
 RUN git clone https://github.com/wenet-e2e/wesep /opt/wesep-src \
     && git -C /opt/wesep-src checkout 99eca54b60300d39b9353d93cf285a14bba37854
 
