@@ -60,5 +60,13 @@ public class LemonadeQualitySignalsTests(LemonadeFixture fixture, ITestOutputHel
         result.NoSpeechProb.ShouldNotBeNull();
         result.AvgLogProb!.Value.ShouldBeLessThanOrEqualTo(0);
         result.NoSpeechProb!.Value.ShouldBeInRange(0, 1);
+
+        // Calibration, not just contract: a clean Kokoro-synthesized phrase must clear the shipped
+        // default gate, or the migration silently drops every real utterance in production. This is
+        // the one check the fail-open null-guard cannot substitute for — mis-scaled (non-null)
+        // signals would sail past the range asserts above while failing the gate.
+        var defaults = new OpenAiSttConfig();
+        result.AvgLogProb!.Value.ShouldBeGreaterThan(defaults.AvgLogProbThreshold);
+        result.NoSpeechProb!.Value.ShouldBeLessThan(defaults.NoSpeechProbThreshold);
     }
 }
