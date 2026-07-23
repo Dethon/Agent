@@ -117,8 +117,16 @@ def _enrollment_wav(speaker):
     sig = _signature(speaker_dir)
     if not (target.exists() and sig_file.exists() and sig_file.read_text() == sig):
         parts = [sf.read(str(t), dtype="float32")[0] for t in takes]
-        sf.write(str(target), np.concatenate(parts), 16000, subtype="PCM_16")
-        sig_file.write_text(sig)
+        # tmp + os.replace (the onnx_core artifact pattern): Flask serves requests on threads,
+        # and concurrent extracts that both observe a stale cache would interleave direct
+        # writes to the same file — a third reader could then see a torn wav. Unique tmp per
+        # thread, wav replaced before sig, so a matching sig always describes a complete wav.
+        tmp = speaker_cache / f".enrollment-{threading.get_ident()}.tmp.wav"
+        sf.write(str(tmp), np.concatenate(parts), 16000, subtype="PCM_16")
+        os.replace(tmp, target)
+        sig_tmp = speaker_cache / f".enrollment-{threading.get_ident()}.tmp.sig"
+        sig_tmp.write_text(sig)
+        os.replace(sig_tmp, sig_file)
     return target, sig
 
 
