@@ -162,11 +162,18 @@ public sealed class RequestApprovalTool
             await Task.Delay(followUp.PlaybackTailMs, ct); // echo guard after the prompt finishes
         }
 
+        var config = session.Config;
         var capture = session.OpenCapture(new SilenceGate(
-            wyoming.SilenceRmsThreshold,
+            new AdaptiveLevelTracker(
+                config.ResolveRmsThreshold(wyoming),
+                config.ResolveEnterMarginDb(wyoming),
+                config.ResolveExitMarginDb(wyoming),
+                config.ResolvePeakDropDb(wyoming),
+                TimeSpan.FromMilliseconds(config.ResolveFloorWindowMs(wyoming)),
+                demoteMarginDb: config.ResolveDemoteMarginDb(wyoming)),
             TimeSpan.FromMilliseconds(wyoming.TrailingSilenceMs),
             TimeSpan.FromMilliseconds(wyoming.MaxUtteranceMs),
-            TimeSpan.FromMilliseconds(wyoming.MinSpeechMs),
+            TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(wyoming)),
             noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
 
         CaptureOutcome outcome;

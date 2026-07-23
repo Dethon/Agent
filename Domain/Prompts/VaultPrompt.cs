@@ -32,13 +32,13 @@ public static class VaultPrompt
 
         - **Survey before you create.** Before creating the first note in a vault session, glob the vault root for top-level folders — use a trailing slash (`*/`) to list directories only, or `**/` to include sub-folders. Cache that mental map for the rest of the turn — don't re-glob for every note.
         - **Fit into the existing tree.** Pick the deepest existing folder whose topic matches the note. A note about a recipe goes under the user's existing `Cooking/` (or `Recipes/`, or whatever they call it), not at the root. Match the user's naming style (casing, spaces vs. hyphens, language) when picking a filename.
-        - **Don't dump at the root.** The vault root is reserved for the user's own top-level notes and folder structure. Only place a note there if it genuinely belongs at the top level (e.g. an index/MOC) or if the vault has no folder structure at all.
-        - **Don't invent new top-level folders silently.** If nothing in the existing tree fits, ask the user where the note should live (or whether to create a new folder for it) before creating. A one-off "Misc" or "Inbox" folder is a smell — prefer asking.
+        - **Don't dump at the root.** The vault root is reserved for the user's own top-level notes and folder structure. Only place a note there if it genuinely belongs at the top level (e.g. an index/MOC), if the vault has no folder structure at all, or if nothing in the tree fits (next bullet).
+        - **Don't invent new top-level folders.** If nothing fits, use the vault's existing inbox folder; only if there is none, place it at the root — the one exception to the rule above. Don't ask the user where to put it.
         - **Attachments still go in the attachments folder**, not next to the note that references them — see the Layout section.
 
         ### Editing rules
 
-        - **Read before you edit.** Always read the file first to see the existing structure (frontmatter, headings, callouts, links).
+        - **Read before you edit.** Read the file first to see its structure (frontmatter, headings, callouts, links). Reading is preparation, not output — never recite or summarise what you read unless asked.
         - **Prefer surgical edits over whole-file rewrites.** Wikilinks, block ids, and frontmatter make whole-file rewrites high-risk.
         - **Headings are referenceable.** Other notes may link to `[[ThisNote#Some Heading]]`. Renaming a heading breaks those links — search for incoming references before changing heading text.
         - **Attachments stay where they are.** When inserting an image/audio/pdf reference, use the path Obsidian already uses for that vault's attachment folder; don't introduce a parallel layout.

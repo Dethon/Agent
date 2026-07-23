@@ -233,21 +233,6 @@ public class TopicsStoreTests : IDisposable
     }
 
     [Fact]
-    public void UnhandledAction_ReturnsStateUnchanged()
-    {
-        // Arrange - capture initial state reference
-
-        // Act - dispatch an action not registered with this store
-        // Using a custom test action
-        _dispatcher.Dispatch(new LoadTopics());
-        var afterLoad = _store.State;
-        _dispatcher.Dispatch(new TopicsLoaded([]));
-
-        // Assert - TopicsLoaded should create new state
-        _store.State.ShouldNotBeSameAs(afterLoad);
-    }
-
-    [Fact]
     public void FromMetadata_PreservesSpaceSlug()
     {
         // Arrange

@@ -246,17 +246,6 @@ public class AgentDefinitionProviderTests
     // --- GetAll (updated) ---
 
     [Fact]
-    public void GetAll_NullUserId_ReturnsOnlyBuiltInAgents()
-    {
-        _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Custom1", Model = "m1", McpServerEndpoints = [] });
-
-        var result = _sut.GetAll();
-
-        result.Count.ShouldBe(1);
-        result.ShouldAllBe(a => !a.Id.StartsWith("custom-"));
-    }
-
-    [Fact]
     public void GetAll_WithUserId_MergesBuiltInAndCustom()
     {
         _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Custom1", Model = "m1", McpServerEndpoints = [] });

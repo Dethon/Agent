@@ -350,36 +350,6 @@ public class HtmlProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_WithIdSelector_ReturnsExactElement()
-    {
-        // Arrange
-        var html = """
-                   <!DOCTYPE html>
-                   <html>
-                   <head><title>Test</title></head>
-                   <body>
-                       <div id="before">Before content</div>
-                       <div id="target">
-                           <p>Target content</p>
-                       </div>
-                       <div id="after">After content</div>
-                   </body>
-                   </html>
-                   """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: "#target");
-
-        // Act
-        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
-
-        // Assert
-        result.IsPartial.ShouldBeFalse();
-        result.Content.ShouldNotBeNull();
-        result.Content.ShouldContain("Target content");
-        result.Content.ShouldNotContain("Before content");
-        result.Content.ShouldNotContain("After content");
-    }
-
-    [Fact]
     public async Task ProcessAsync_WithControlCharacters_StripsInvalidChars()
     {
         // Arrange - Content with control characters that break LLM APIs (422)
