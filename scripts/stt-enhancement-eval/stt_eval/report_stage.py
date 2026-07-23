@@ -9,6 +9,7 @@ from .manifest import Utterance, read_manifest
 from .textnorm import normalize
 
 LOW_SNR_MAX = 5.0
+HIGH_SNR_MIN = 10.0
 MIN_REL_IMPROVEMENT = 0.20
 MAX_CLEAN_DELTA = 0.02
 
@@ -41,13 +42,25 @@ def decision(raw_cells: list[dict], model_cells: list[dict]) -> dict:
     def clean(cells):
         return [c["wer"] for c in cells if c["interference"] == "none"]
 
+    # The no-regression gate covers the clean AND high-SNR cells (spec: "does not regress the
+    # clean/high-SNR cells") -- a model that helps at 0 dB but hurts the easy +15/+10 dB turns
+    # would otherwise slip through as a false PASS.
+    def high_snr(cells):
+        return [c["wer"] for c in cells
+                if c["interference"] != "none" and c["snr_db"] is not None and c["snr_db"] >= HIGH_SNR_MIN]
+
     raw_low, model_low = _mean(low_snr(raw_cells)), _mean(low_snr(model_cells))
     rel = (raw_low - model_low) / raw_low if raw_low else 0.0
     delta = _mean(clean(model_cells)) - _mean(clean(raw_cells))
+    high_delta = _mean(high_snr(model_cells)) - _mean(high_snr(raw_cells))
     return {
         "rel_improvement_low_snr": rel,
         "clean_wer_delta": delta,
-        "passes": rel >= MIN_REL_IMPROVEMENT and delta <= MAX_CLEAN_DELTA,
+        "high_snr_wer_delta": high_delta,
+        # `not >` (rather than `<=`) so a sweep with no high-SNR cells (delta = nan)
+        # doesn't fail the gate on absence.
+        "passes": rel >= MIN_REL_IMPROVEMENT and delta <= MAX_CLEAN_DELTA
+                  and not high_delta > MAX_CLEAN_DELTA,
     }
 
 
@@ -88,13 +101,14 @@ def run_report(run_dir: Path) -> None:
                 lines.append(f"| {label} | " + " | ".join(cells) + " |")
             lines.append("")
         if "raw" in conds:
-            lines.append(f"### Decision (backend={backend}, rule: ≥{MIN_REL_IMPROVEMENT:.0%} relative WER cut at SNR ≤ {LOW_SNR_MAX:.0f} dB speech, clean delta ≤ {MAX_CLEAN_DELTA})")
+            lines.append(f"### Decision (backend={backend}, rule: ≥{MIN_REL_IMPROVEMENT:.0%} relative WER cut at SNR ≤ {LOW_SNR_MAX:.0f} dB speech, clean and ≥{HIGH_SNR_MIN:.0f} dB deltas ≤ {MAX_CLEAN_DELTA})")
             for cond in conds:
                 if cond == "raw":
                     continue
                 d = decision(scored[(backend, "raw")], scored[(backend, cond)])
                 lines.append(f"- **{cond}**: rel low-SNR improvement {d['rel_improvement_low_snr']:+.1%}, "
-                             f"clean ΔWER {d['clean_wer_delta']:+.3f} → "
+                             f"clean ΔWER {d['clean_wer_delta']:+.3f}, "
+                             f"≥{HIGH_SNR_MIN:.0f} dB ΔWER {d['high_snr_wer_delta']:+.3f} → "
                              f"{'PASS' if d['passes'] else 'FAIL'}")
             conf = []
             for cond in conds:

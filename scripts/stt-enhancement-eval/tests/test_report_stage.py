@@ -14,6 +14,25 @@ def test_score_rows_computes_wer_and_keeps_score():
     assert rows[0]["score"] == 0.62
 
 
+def test_decision_rule_fails_on_high_snr_regression():
+    # The dfn3 shape from round 1: clears the low-SNR bar and leaves clean untouched,
+    # but badly regresses the +15 dB cell (19.2% -> 31.2% WER). The spec's gate is
+    # "does not regress the clean/HIGH-SNR cells", so this must FAIL.
+    raw = [
+        {"interference": "speech", "snr_db": 0.0, "wer": 0.8},
+        {"interference": "speech", "snr_db": 15.0, "wer": 0.192},
+        {"interference": "none", "snr_db": None, "wer": 0.05},
+    ]
+    model = [
+        {"interference": "speech", "snr_db": 0.0, "wer": 0.4},
+        {"interference": "speech", "snr_db": 15.0, "wer": 0.312},
+        {"interference": "none", "snr_db": None, "wer": 0.05},
+    ]
+    d = decision(raw_cells=raw, model_cells=model)
+    assert d["high_snr_wer_delta"] > 0.02
+    assert not d["passes"]
+
+
 def test_decision_rule():
     raw = [
         {"interference": "speech", "snr_db": 0.0, "wer": 0.8},
