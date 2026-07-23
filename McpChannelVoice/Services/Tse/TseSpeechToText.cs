@@ -75,7 +75,9 @@ public sealed class TseSpeechToText(
 
         await PublishAsync(VoiceMetric.TseInvoked, options, outcome: "ok");
         await PublishAsync(VoiceMetric.TseLatencyMs, options, durationMs: stopwatch.ElapsedMilliseconds);
-        audit.Record(options.TargetSpeaker!, options.NoiseFloorRms, stopwatch.ElapsedMilliseconds, mixture, reply);
+        audit.Record(
+            options.TargetSpeaker!, options.SatelliteId, options.NoiseFloorRms,
+            stopwatch.ElapsedMilliseconds, mixture, reply);
         return await inner.TranscribeAsync(Replay(Rechunk(extracted, chunks)), options, ct);
     }
 
@@ -118,6 +120,8 @@ public sealed class TseSpeechToText(
         SafePublishAsync(new VoiceEvent
         {
             Metric = metric,
+            SatelliteId = options.SatelliteId,
+            Room = options.Room,
             Identity = options.TargetSpeaker,
             Outcome = outcome,
             DurationMs = durationMs,

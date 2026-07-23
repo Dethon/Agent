@@ -10,4 +10,8 @@ public record TranscriptionOptions
     // means extraction cannot run for this call.
     public string? TargetSpeaker { get; init; }
     public double? NoiseFloorRms { get; init; }
+    // Originating satellite, so decorators deeper in the STT chain (TSE metrics/audit) can
+    // attribute their events to the satellite/room the way the host's own publishes do.
+    public string? SatelliteId { get; init; }
+    public string? Room { get; init; }
 }

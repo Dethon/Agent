@@ -10,13 +10,15 @@ public static class TranscriptionOptionsFactory
     // (BestMatch). Any non-Accepted decision leaves it null — extraction has no reliable
     // target for skipped/unavailable verifications, and rejected captures never reach STT.
     public static TranscriptionOptions Create(
-        SatelliteConfig config, SpeakerVerification? verification, CaptureStats stats) =>
+        string satelliteId, SatelliteConfig config, SpeakerVerification? verification, CaptureStats stats) =>
         new()
         {
             Language = config.Stt?.Wyoming?.Language,
             TargetSpeaker = verification is { Decision: SpeakerDecision.Accepted } v
                 ? v.IdentifiedSpeaker ?? v.BestMatch
                 : null,
-            NoiseFloorRms = stats.FloorRms
+            NoiseFloorRms = stats.FloorRms,
+            SatelliteId = satelliteId,
+            Room = config.Room
         };
 }

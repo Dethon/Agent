@@ -375,7 +375,8 @@ public sealed class WyomingSatelliteHost(
             // Honor a per-satellite STT language override (symmetric with the per-satellite
             // Tts.Wyoming.Voice override resolved in SendReplyTool/AnnouncementService); null falls
             // back to the global Stt.Wyoming.Language inside the backend.
-            var options = TranscriptionOptionsFactory.Create(session.Config, verification, capture.Stats);
+            var options = TranscriptionOptionsFactory.Create(
+                session.SatelliteId, session.Config, verification, capture.Stats);
             var result = await speechToText.TranscribeAsync(capture.Audio, options, ct);
             sw.Stop();
 

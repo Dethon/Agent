@@ -125,7 +125,14 @@ public class TseSpeechToTextTests
             new RecordingMetrics(), NullLoggerFactory.Instance);
 
     private static TranscriptionOptions Options(string? speaker = "Dethon", double? floor = 900) =>
-        new() { TargetSpeaker = speaker, NoiseFloorRms = floor, Language = "es" };
+        new()
+        {
+            TargetSpeaker = speaker,
+            NoiseFloorRms = floor,
+            Language = "es",
+            SatelliteId = "office-01",
+            Room = "Office"
+        };
 
     private static (ISpeechToText Stt, RecordingInner Inner, StubClient Client, RecordingMetrics Metrics) Build(
         TseMode mode, byte[]? clientReply)
@@ -231,6 +238,16 @@ public class TseSpeechToTextTests
         var evt = metrics.Events.ShouldHaveSingleItem();
         evt.Metric.ShouldBe(VoiceMetric.TseFailed);
         evt.Outcome.ShouldBe("malformed");
+    }
+
+    [Fact]
+    public async Task PublishedEventsCarrySatelliteAttribution()
+    {
+        var reply = WavCodec.Encode([new AudioChunk { Data = new byte[] { 7 }, Format = AudioFormat.WyomingStandard }]);
+        var (stt, _, _, metrics) = Build(TseMode.Auto, reply);
+        await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
+        metrics.Events.ShouldNotBeEmpty();
+        metrics.Events.ShouldAllBe(e => e.SatelliteId == "office-01" && e.Room == "Office");
     }
 
     [Fact]
