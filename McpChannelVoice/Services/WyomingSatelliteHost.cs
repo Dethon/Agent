@@ -306,13 +306,16 @@ public sealed class WyomingSatelliteHost(
         logger.LogInformation(
             "Early-rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
             session.SatelliteId, verification.Similarity);
-        await PublishUnknownSpeakerAsync(session, stats, verification.Similarity, "unknown_speaker_early", ct);
+        await PublishUnknownSpeakerAsync(session, stats, verification.Similarity, "unknown_speaker_early");
         return true;
     }
 
+    // Rejection telemetry is diagnostic, not part of the turn contract: this is awaited from the
+    // conversation loop (EarlyRejectAsync has no catch above it), so a metrics-backbone outage must
+    // be swallowed here or it faults the loop and wedges the satellite until reconnect.
     private Task PublishUnknownSpeakerAsync(
-        SatelliteSession session, CaptureStats stats, double? similarity, string outcome, CancellationToken ct) =>
-        metrics.PublishAsync(new VoiceEvent
+        SatelliteSession session, CaptureStats stats, double? similarity, string outcome) =>
+        SafePublishAsync(new VoiceEvent
         {
             Metric = VoiceMetric.UtteranceRejected,
             SatelliteId = session.SatelliteId,
@@ -326,7 +329,7 @@ public sealed class WyomingSatelliteHost(
             TrailingRms = stats.TrailingRms,
             EndReason = stats.EndReason,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-        }, ct);
+        });
 
     // Returns true only when the transcript actually reached the agent. Empty/low-confidence
     // transcripts and STT errors return false so the conversation ends and wake re-arms, rather
@@ -354,7 +357,7 @@ public sealed class WyomingSatelliteHost(
                         "Rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
                         session.SatelliteId, verification.Value.Similarity);
                     await PublishUnknownSpeakerAsync(
-                        session, capture.Stats, verification.Value.Similarity, "unknown_speaker", ct);
+                        session, capture.Stats, verification.Value.Similarity, "unknown_speaker");
                     return false;
                 }
                 similarity = verification.Value.Similarity;
