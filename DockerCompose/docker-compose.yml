@@ -710,6 +710,11 @@ services:
     build:
       context: ./tse-extractor
     restart: unless-stopped
+    # Writes the /models bind mount (checkpoint provisioning, ONNX export, enroll cache), so it
+    # follows the same PUID/PGID convention as the other volume-writing services: PUID must own
+    # ./volumes/tse-models. Deployments that ran the pre-user root container need a one-time
+    # chown of that dir or provisioning/export/cache writes fail after the upgrade.
+    user: ${PUID:-1654}:${PGID:-1654}
     environment:
       # 0 = auto: one torch thread per PHYSICAL core (SMT oversubscription measured ~1.6x
       # slower — see app.py). Set an explicit count only to tune away from that.
