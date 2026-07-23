@@ -93,6 +93,7 @@
         new("Satellite", nameof(VoiceDimension.SatelliteId)),
         new("Room", nameof(VoiceDimension.Room)),
         new("Identity", nameof(VoiceDimension.Identity)),
+        new("Outcome", nameof(VoiceDimension.Outcome)),
     ];
 
     private static readonly IReadOnlyList<PillOption> MetricOptions =
@@ -103,6 +104,10 @@
         new("TTS latency (ms)", nameof(VoiceMetric.TtsLatencyMs)),
         new("Announcements", nameof(VoiceMetric.AnnouncePlayed)),
         new("STT errors", nameof(VoiceMetric.SttError)),
+        new("TSE invoked", nameof(VoiceMetric.TseInvoked)),
+        new("TSE skipped", nameof(VoiceMetric.TseSkipped)),
+        new("TSE failed", nameof(VoiceMetric.TseFailed)),
+        new("TSE latency (ms)", nameof(VoiceMetric.TseLatencyMs)),
     ];
 
     private static readonly IReadOnlyList<PillOption> TimeOptions =
@@ -182,6 +187,7 @@
         VoiceMetric.WakeToFirstAudioMs => "ms",
         VoiceMetric.SttLatencyMs => "ms",
         VoiceMetric.TtsLatencyMs => "ms",
+        VoiceMetric.TseLatencyMs => "ms",
         _ => ""
     };
 

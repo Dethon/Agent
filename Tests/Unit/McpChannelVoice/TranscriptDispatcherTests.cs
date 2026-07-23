@@ -49,7 +49,7 @@ public class TranscriptDispatcherTests
         var (sut, manager, emitter) = Build();
 
         var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, default);
+            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
         ok.ShouldBeTrue();
         var convo = manager.GetActiveConversationId("kitchen-01");
@@ -64,12 +64,36 @@ public class TranscriptDispatcherTests
     }
 
     [Fact]
+    public async Task DispatchAsync_IdentifiedSpeaker_EmitsThatSenderNotConfigIdentity()
+    {
+        var (sut, _, emitter) = Build();
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.8, "fran", default);
+
+        emitter.Captured.Count.ShouldBe(1);
+        emitter.Captured[0].Sender.ShouldBe("fran"); // conclusive identity drives per-person memory
+    }
+
+    [Fact]
+    public async Task DispatchAsync_NoIdentifiedSpeaker_FallsBackToConfigIdentity()
+    {
+        var (sut, _, emitter) = Build();
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, null, null, default);
+
+        emitter.Captured.Count.ShouldBe(1);
+        emitter.Captured[0].Sender.ShouldBe("household"); // doubtful/absent -> satellite default
+    }
+
+    [Fact]
     public async Task DispatchAsync_GoodTranscript_EmitsRoomAsLocation()
     {
         var (sut, _, emitter) = Build();
 
         await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, default);
+            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
         emitter.Captured.Count.ShouldBe(1);
         emitter.Captured[0].Location.ShouldBe("Kitchen");
@@ -84,7 +108,7 @@ public class TranscriptDispatcherTests
             new SatelliteConfig { Identity = "household", Room = "Kitchen", Locality = "Madrid, Spain" });
 
         await sut.DispatchAsync(
-            session, new TranscriptionResult { Text = "what's the weather", Confidence = 0.9 }, "agent-1", null, default);
+            session, new TranscriptionResult { Text = "what's the weather", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
         emitter.Captured.Count.ShouldBe(1);
         emitter.Captured[0].Location.ShouldBe("Kitchen (Madrid, Spain)");
@@ -96,7 +120,7 @@ public class TranscriptDispatcherTests
         var (sut, _, emitter) = Build();
 
         await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, default);
+            Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
         emitter.Captured.Count.ShouldBe(1);
         emitter.Captured[0].SatelliteId.ShouldBe("kitchen-01");
@@ -108,7 +132,7 @@ public class TranscriptDispatcherTests
         var (sut, manager, emitter) = Build();
 
         var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "mumble", AvgLogProb = -2.1 }, "agent-1", null, default);
+            Session(), new TranscriptionResult { Text = "mumble", AvgLogProb = -2.1 }, "agent-1", null, null, null, default);
 
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
@@ -121,7 +145,7 @@ public class TranscriptDispatcherTests
         var (sut, manager, emitter) = Build();
 
         var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "ffff", NoSpeechProb = 0.8 }, "agent-1", null, default);
+            Session(), new TranscriptionResult { Text = "ffff", NoSpeechProb = 0.8 }, "agent-1", null, null, null, default);
 
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
@@ -134,7 +158,7 @@ public class TranscriptDispatcherTests
         var (sut, manager, emitter) = Build();
 
         var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "sin señales" }, "agent-1", null, default);
+            Session(), new TranscriptionResult { Text = "sin señales" }, "agent-1", null, null, null, default);
 
         ok.ShouldBeTrue();
         manager.GetActiveConversationId("kitchen-01").ShouldNotBeNull();
@@ -149,7 +173,7 @@ public class TranscriptDispatcherTests
         var ok = await sut.DispatchAsync(
             Session(),
             new TranscriptionResult { Text = "hola", AvgLogProb = -0.3, NoSpeechProb = 0.1 },
-            "agent-1", null, default);
+            "agent-1", null, null, null, default);
 
         ok.ShouldBeTrue();
         emitter.Captured.Count.ShouldBe(1);
@@ -170,7 +194,7 @@ public class TranscriptDispatcherTests
         var session = SessionWithSttOverrides(new OpenAiSttOverrides { AvgLogProbThreshold = -0.5 });
 
         var ok = await sut.DispatchAsync(
-            session, new TranscriptionResult { Text = "mumble", AvgLogProb = -0.7 }, "agent-1", null, default);
+            session, new TranscriptionResult { Text = "mumble", AvgLogProb = -0.7 }, "agent-1", null, null, null, default);
 
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
@@ -184,7 +208,7 @@ public class TranscriptDispatcherTests
         var session = SessionWithSttOverrides(new OpenAiSttOverrides { NoSpeechProbThreshold = 0.2 });
 
         var ok = await sut.DispatchAsync(
-            session, new TranscriptionResult { Text = "ffff", NoSpeechProb = 0.4 }, "agent-1", null, default);
+            session, new TranscriptionResult { Text = "ffff", NoSpeechProb = 0.4 }, "agent-1", null, null, null, default);
 
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
@@ -200,7 +224,7 @@ public class TranscriptDispatcherTests
         var ok = await sut.DispatchAsync(
             session,
             new TranscriptionResult { Text = "hola", AvgLogProb = -0.7, NoSpeechProb = 0.4 },
-            "agent-1", null, default);
+            "agent-1", null, null, null, default);
 
         ok.ShouldBeTrue();
         emitter.Captured.Count.ShouldBe(1);
@@ -224,7 +248,7 @@ public class TranscriptDispatcherTests
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
-            Session(), new TranscriptionResult { Text = "   ", Confidence = 0.9 }, "agent-1", null, default);
+            Session(), new TranscriptionResult { Text = "   ", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
         ok.ShouldBeFalse();
         emitter.Captured.ShouldBeEmpty();
@@ -244,9 +268,9 @@ public class TranscriptDispatcherTests
         session.NoteDismissedAlert("alarm \"trash\"", DateTimeOffset.UtcNow);
 
         await sut.DispatchAsync(
-            session, new TranscriptionResult { Text = "five more minutes", Confidence = 0.9 }, "agent-1", null, default);
+            session, new TranscriptionResult { Text = "five more minutes", Confidence = 0.9 }, "agent-1", null, null, null, default);
         await sut.DispatchAsync(
-            session, new TranscriptionResult { Text = "thanks", Confidence = 0.9 }, "agent-1", null, default);
+            session, new TranscriptionResult { Text = "thanks", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
         emitter.Captured.Count.ShouldBe(2);
         emitter.Captured[0].DismissedAlert.ShouldBe("alarm \"trash\"");
@@ -289,7 +313,9 @@ public class TranscriptDispatcherTests
                 CompressionRatio = 1.3
             },
             "agent-1",
-            new CaptureStats(PeakRms: 4200, SpeechMs: 1800),
+            new CaptureStats(PeakRms: 4200, FloorRms: 320, SpeechMs: 1800, EndReason: "trailing_silence", TrailingRms: 610),
+            0.72,
+            null,
             default);
 
         ok.ShouldBeTrue();
@@ -301,6 +327,10 @@ public class TranscriptDispatcherTests
         evt.CompressionRatio.ShouldBe(1.3);
         evt.PeakRms.ShouldBe(4200);
         evt.SpeechMs.ShouldBe(1800);
+        evt.FloorRms.ShouldBe(320);
+        evt.TrailingRms.ShouldBe(610);
+        evt.EndReason.ShouldBe("trailing_silence");
+        evt.Similarity.ShouldBe(0.72);
     }
 
     [Fact]
@@ -331,7 +361,9 @@ public class TranscriptDispatcherTests
                 CompressionRatio = 2.8
             },
             "agent-1",
-            new CaptureStats(PeakRms: 900, SpeechMs: 450),
+            new CaptureStats(PeakRms: 900, FloorRms: 610, SpeechMs: 450, EndReason: "max_utterance"),
+            null,
+            null,
             default);
 
         ok.ShouldBeFalse();
@@ -343,5 +375,7 @@ public class TranscriptDispatcherTests
         evt.CompressionRatio.ShouldBe(2.8);
         evt.PeakRms.ShouldBe(900);
         evt.SpeechMs.ShouldBe(450);
+        evt.FloorRms.ShouldBe(610);
+        evt.EndReason.ShouldBe("max_utterance");
     }
 }

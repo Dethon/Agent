@@ -4,6 +4,7 @@ using Infrastructure.Metrics;
 using McpChannelVoice.McpPrompts;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Settings;
 using ModelContextProtocol.Protocol;
 using StackExchange.Redis;
@@ -78,6 +79,20 @@ public static class ConfigModule
         services.AddHttpClient(LemonadeHttp.ClientName)
             .ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan);
 
+        services.AddSingleton<Services.Tse.ITseExtractorClient>(sp =>
+            new Services.Tse.TseExtractorClient(
+                // No HttpClient.Timeout: the client arms its own deadline from Tse.TimeoutMs via a
+                // linked token, so the framework's 100s default must not silently cap it — an owner
+                // raising TimeoutMs above 100s would otherwise get a misreported sidecar failure.
+                new HttpClient { Timeout = Timeout.InfiniteTimeSpan },
+                settings.Tse,
+                sp.GetRequiredService<ILogger<Services.Tse.TseExtractorClient>>()));
+        services.AddSingleton(sp => new Services.Tse.TseAuditTrail(
+            settings.Tse.AuditDir,
+            settings.Tse.AuditMaxPairs,
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<Services.Tse.TseAuditTrail>>()));
+
         services.AddSingleton<ISpeechToText>(sp =>
         {
             var inner = new McpChannelVoice.Services.Stt.OpenAiSpeechToText(
@@ -85,9 +100,30 @@ public static class ConfigModule
                 settings.Stt.OpenAi,
                 sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.OpenAiSpeechToText>>());
 
-            return McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
-                inner, settings.Stt.Streaming, sp.GetRequiredService<ILoggerFactory>());
+            var segmented = McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
+                inner, settings.Stt.Streaming, settings.WyomingClient, sp.GetRequiredService<ILoggerFactory>());
+            return Services.Tse.TseSpeechToText.Wrap(
+                segmented,
+                settings.Tse,
+                sp.GetRequiredService<Services.Tse.ITseExtractorClient>(),
+                sp.GetRequiredService<Services.Tse.TseAuditTrail>(),
+                sp.GetRequiredService<Domain.Contracts.IMetricsPublisher>(),
+                sp.GetRequiredService<ILoggerFactory>());
         });
+
+        services.AddSingleton<ISpeakerVerifier>(sp =>
+            new SpeakerVerifier(
+                settings.SpeakerVerification,
+                () =>
+                {
+                    var embedder = new OnnxSpeakerEmbedder(settings.SpeakerVerification.ModelPath);
+                    var profiles = new SpeakerProfileStore(
+                        settings.SpeakerVerification.VoicesPath,
+                        embedder,
+                        sp.GetRequiredService<ILogger<SpeakerProfileStore>>()).Load();
+                    return (embedder, profiles);
+                },
+                sp.GetRequiredService<ILogger<SpeakerVerifier>>()));
 
         services.AddHostedService<WyomingSatelliteHost>();
         services.AddSingleton(settings.WyomingClient);

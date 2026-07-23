@@ -82,18 +82,15 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: music-assistant
-    ports:
-      - "8095:8095"     # web UI + API/websocket (HA Music Assistant integration target)
-      - "1704:1704"     # snapcast stream  (satellite snapclients connect here)
-      - "1705:1705"     # snapcast control
-      - "1780:1780"     # snapcast web
+    # host networking is required for mDNS/zeroconf discovery (Spotify Connect,
+    # AirPlay, Chromecast). Binds directly on the host: 8095 (web UI + API),
+    # 1704/1705/1780 (snapcast), 8097 (stream server).
+    network_mode: host
     volumes:
       - music-assistant-data:/data
     environment:
       <<: *timezone
     restart: unless-stopped
-    networks:
-      - jackbot
 
   filebrowser:
     image: filebrowser/filebrowser:v2
@@ -568,12 +565,24 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
+    # The hub writes the bind mounts below (profile.json cache, audit ring). PUID/PGID in
+    # .env — the same pair the other volume-writing services use — must own ./volumes/voices
+    # instead of chowning the host dirs to the image default (1654, the aspnet app user).
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/voices:/voices
+      - ./volumes/tse-audit:/tse-audit
     env_file:
       - .env
     environment:
       <<: *timezone
       Announce__Escalation__WebhookUrl: ""
       Stt__OpenAi__Model: ${STT_MODEL:-Whisper-Medium}
+      Tse__Mode: "${Tse__Mode:-Off}"
+      Tse__Endpoint: "${Tse__Endpoint:-http://tse-extractor:9098}"
+      Tse__TimeoutMs: "${Tse__TimeoutMs:-90000}"
+      Tse__NoiseFloorThreshold: "${Tse__NoiseFloorThreshold:-400}"
+      Tse__AuditDir: "${Tse__AuditDir:-}"
     networks:
       - jackbot
     depends_on:
@@ -630,6 +639,39 @@ services:
       retries: 5
       start_period: 120s
     restart: unless-stopped
+    networks:
+      - jackbot
+
+  tse-extractor:
+    image: tse-extractor:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: tse-extractor
+    build:
+      context: ./tse-extractor
+    restart: unless-stopped
+    # Writes the /models bind mount (checkpoint provisioning, ONNX export, enroll cache), so it
+    # follows the same PUID/PGID convention as the other volume-writing services: PUID must own
+    # ./volumes/tse-models. Deployments that ran the pre-user root container need a one-time
+    # chown of that dir or provisioning/export/cache writes fail after the upgrade.
+    user: ${PUID:-1654}:${PGID:-1654}
+    environment:
+      # 0 = auto: one torch thread per PHYSICAL core (SMT oversubscription measured ~1.6x
+      # slower — see app.py). Set an explicit count only to tune away from that.
+      TSE_TORCH_THREADS: "${TSE_TORCH_THREADS:-0}"
+      # 1 = run the BSRNN core via onnxruntime (parity-gated at startup; any failure
+      # falls back to eager torch). 0 = force the eager path.
+      TSE_ONNX: "${TSE_ONNX:-1}"
+      # Persist the concat-enrollment + speaker-embedding cache in the models volume so
+      # a container recreate doesn't recompute the embedding inside the first live turn.
+      ENROLL_CACHE: /models/enroll-cache
+    ports:
+      - "9098:9098"
+    volumes:
+      - ./volumes/tse-models:/models
+      - ./volumes/voices:/voices:ro
     networks:
       - jackbot
 
@@ -721,6 +763,11 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: observability
+    # music-assistant runs with network_mode: host (for mDNS/zeroconf discovery), so it
+    # is not on the jackbot bridge and its container name no longer resolves. The health
+    # probe reaches its host-published port via the host gateway instead.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Observability/Dockerfile

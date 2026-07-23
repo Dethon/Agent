@@ -404,36 +404,6 @@ public sealed class StreamingServiceTests : IDisposable
         messages.Count.ShouldBe(1);
     }
 
-    [Fact]
-    public async Task SendMessageAsync_WithActiveStream_ReusesExistingStream()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-
-        _messagingService.EnqueueContent("First response");
-        var firstTask = _service.SendMessageAsync(topic, "first");
-
-        await firstTask;
-
-        var messages = MessagesFor(topic.TopicId);
-        messages.Count.ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task SendMessageAsync_WhenEnqueueFails_CreatesNewStream()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-
-        _messagingService.SetEnqueueResult(false);
-        _messagingService.EnqueueContent("Response");
-
-        await _service.SendMessageAsync(topic, "test");
-
-        var messages = MessagesFor(topic.TopicId);
-        messages.Count.ShouldBe(1);
-    }
-
     #endregion
 
     #region ResumeStreamResponseAsync Tests

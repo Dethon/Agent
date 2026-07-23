@@ -64,7 +64,7 @@ public static class HaServiceHelpRenderer
         }
         if (selector["object"] is not null)
         {
-            return "JSON";
+            return "TEXT or JSON";
         }
         // HA's `area` selector means the field wants an area_id — the lowercase registry slug
         // (e.g. `salon`), shown in the setup-index parens and as the /ha/areas/<room> segment,

@@ -70,7 +70,20 @@ public sealed class SendReplyTool
         switch (p.ContentType)
         {
             case ReplyContentType.Reasoning:
+                return "ok";
+
+            // The agent is told to say one word ("Buscando") before slow multi-tool work so the user
+            // hears that something started. Text chunks are buffered until StreamComplete, so without
+            // this flush that word is spoken glued to the front of the answer — after the wait it
+            // exists to cover, costing words and buying nothing. The first tool call of the turn is
+            // the moment the wait becomes real, so speak it here. It is a cue, not the reply: it must
+            // not resolve the turn handshake (that would end FollowUpConversation and re-arm the mic
+            // mid-turn) and it must not publish the reply-latency metrics, which measure time-to-answer.
             case ReplyContentType.ToolCall:
+                if (session.TryClaimPreamble())
+                {
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, isReply: false);
+                }
                 return "ok";
 
             case ReplyContentType.Error:
@@ -176,14 +189,15 @@ public sealed class SendReplyTool
         string conversationId,
         ITextToSpeech tts,
         VoiceSettings settings,
-        IMetricsPublisher metrics)
+        IMetricsPublisher metrics,
+        bool isReply = true)
     {
         var text = accumulator.Flush(conversationId);
         if (string.IsNullOrWhiteSpace(text))
         {
             return false;
         }
-        await SpeakAsync(session, text, conversationId, tts, settings, metrics, default);
+        await SpeakAsync(session, text, conversationId, tts, settings, metrics, isReply, default);
         return true;
     }
 
@@ -194,6 +208,7 @@ public sealed class SendReplyTool
         ITextToSpeech tts,
         VoiceSettings settings,
         IMetricsPublisher metrics,
+        bool isReply,
         CancellationToken ct)
     {
         var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
@@ -203,12 +218,16 @@ public sealed class SendReplyTool
         // The loop times synthesis -> first audio chunk (TtsLatencyMs) and turn-open -> first audio
         // (WakeToFirstAudioMs); emitting from here would only ever record the ~0 ms enqueue.
         var job = new PlaybackJob(
-            Label: $"reply:{session.SatelliteId}",
+            Label: $"{(isReply ? "reply" : "preamble")}:{session.SatelliteId}",
             Priority: AnnouncePriority.Normal,
             Audio: tts.SynthesizeAsync(text, options, ct),
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: async _ =>
             {
+                if (!isReply)
+                {
+                    return;
+                }
                 await metrics.PublishAsync(new VoiceEvent
                 {
                     Metric = VoiceMetric.AnnouncePreemptedReply,
@@ -218,14 +237,22 @@ public sealed class SendReplyTool
                     ConversationId = conversationId
                 }, ct);
             },
-            OnDrained: () => { session.SignalTurnSpoken(); return Task.CompletedTask; },
+            OnDrained: () => { if (isReply) { session.SignalTurnSpoken(); } return Task.CompletedTask; },
             // If synthesis/playback fails (e.g. a Wyoming TTS error event throws), resolve the turn
             // as silent so FollowUpConversation ends and re-arms wake instead of blocking on the
             // handshake until the ~120s ReplyTimeoutMs. No audio actually played, hence Silent (not
             // Spoken). Mirrors the chime and approval jobs, which also settle their handshake on failure.
-            OnFailed: _ => { session.SignalTurnSilent(); return Task.CompletedTask; },
+            // A failed preamble settles nothing: the answer still owes the handshake a signal.
+            OnFailed: _ => { if (isReply) { session.SignalTurnSilent(); } return Task.CompletedTask; },
+            // Reply-latency metrics stay anchored to the ANSWER, not the preamble cue, so
+            // WakeToFirstAudioMs keeps meaning the same thing before and after this change.
             OnFirstAudio: async timing =>
             {
+                if (!isReply)
+                {
+                    return;
+                }
+
                 await metrics.PublishAsync(new VoiceEvent
                 {
                     Metric = VoiceMetric.TtsLatencyMs,

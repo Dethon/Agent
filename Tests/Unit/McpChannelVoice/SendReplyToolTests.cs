@@ -202,16 +202,67 @@ public class SendReplyToolTests
     }
 
     [Fact]
-    public async Task McpRun_ResolvesSatelliteFromCompositeConversationId()
+    public async Task McpRun_ToolCall_SpeaksBufferedPreambleWithoutResolvingTheTurn()
     {
-        // Append a text chunk, then complete — should resolve the satellite and speak.
-        await SendReplyTool.McpRun(_conversationId, "hola", ReplyContentType.Text, false, null, _services);
-        var result = await SendReplyTool.McpRun(
-            _conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+        // nabu is told to emit a one-word acknowledgement ("Buscando.") before slow multi-tool work
+        // so the user hears that something started. Text chunks are buffered and StreamComplete used
+        // to be the only flush, so the ack was spoken glued to the front of the final answer —
+        // arriving after the wait it existed to cover, and costing words for nothing. The first tool
+        // call of a turn must flush and speak it. It must NOT resolve the turn handshake: that ends
+        // FollowUpConversation and re-arms the mic mid-turn, before the answer is even spoken.
+        _session.ResetTurn();
+        var turn = _session.WaitForTurnSpokenAsync();
+
+        await SendReplyTool.McpRun(_conversationId, "Buscando.", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.ToolCall, false, "m-1", _services);
+
+        _tts.Verify(t => t.SynthesizeAsync("Buscando.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        _session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        turn.IsCompleted.ShouldBeFalse(); // the preamble is not the end of the turn
+    }
+
+    [Fact]
+    public async Task McpRun_PreambleThenAnswer_SpeaksThemAsSeparateUtterances()
+    {
+        // ReplyTextAccumulator concatenates with no separator, so before the tool-call flush the
+        // satellite spoke a single "Buscando.Veintiún grados." utterance at the end of the turn.
+        await SendReplyTool.McpRun(_conversationId, "Buscando.", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.ToolCall, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "Veintiún grados.", ReplyContentType.Text, false, "m-2", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _tts.Verify(t => t.SynthesizeAsync("Buscando.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+        _tts.Verify(t => t.SynthesizeAsync("Veintiún grados.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task McpRun_ToolCall_NothingBuffered_SpeaksNothing()
+    {
+        // The overwhelmingly common case: the model went straight to a tool without a preamble.
+        var result = await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.ToolCall, false, null, _services);
 
         result.ShouldBe("ok");
-        _tts.Verify(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
-            Times.AtLeastOnce);
+        _tts.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task McpRun_SecondToolCall_KeepsMidRunNarrationBufferedForTheAnswer()
+    {
+        // Only the FIRST tool call of a turn flushes. Anything the model says between later tool
+        // rounds stays buffered and is spoken with the answer, so mid-run chatter can never become a
+        // second utterance racing the reply into the playback queue.
+        _session.ResetTurn();
+
+        await SendReplyTool.McpRun(_conversationId, "Buscando.", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.ToolCall, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "Ahora miro el termostato.", ReplyContentType.Text, false, "m-2", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.ToolCall, false, "m-2", _services);
+
+        _tts.Verify(t => t.SynthesizeAsync("Ahora miro el termostato.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
