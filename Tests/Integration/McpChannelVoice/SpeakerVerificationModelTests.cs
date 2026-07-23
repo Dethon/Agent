@@ -73,8 +73,9 @@ public class SpeakerVerificationModelTests(ITestOutputHelper output)
 
         aliceSame.ShouldBeGreaterThan(aliceCross + 0.15);
         bobSame.ShouldBeGreaterThan(bobCross + 0.15);
-        aliceSame.ShouldBeGreaterThan(0.6); // ships threshold: enrolled voices must pass it
-        bobSame.ShouldBeGreaterThan(0.6);
+        // Shipped SimilarityThreshold (SpeakerVerificationSettings): enrolled voices must clear it.
+        aliceSame.ShouldBeGreaterThan(0.70);
+        bobSame.ShouldBeGreaterThan(0.70);
     }
 
     [SkippableFact]
@@ -92,9 +93,9 @@ public class SpeakerVerificationModelTests(ITestOutputHelper output)
             {
                 File.Copy(wav, Path.Combine(aliceOnly, "alice", Path.GetFileName(wav)));
             }
-            // 0.7 sits cleanly in the measured ERes2NetV2 gap for these fixtures
-            // (same ~0.92-0.96, cross ~0.26-0.27). The SHIPPED default in
-            // SpeakerVerificationSettings is 0.6, refined further per satellite in the field.
+            // 0.7 matches the shipped SpeakerVerificationSettings default and sits cleanly in
+            // the measured ERes2NetV2 gap for these fixtures (same ~0.92-0.96, cross ~0.26-0.27);
+            // satellites refine it further in the field via SatelliteConfig.Verification.
             var verifier = new SpeakerVerifier(
                 new SpeakerVerificationSettings { Enabled = true, SimilarityThreshold = 0.7 },
                 () => (embedder, new SpeakerProfileStore(
