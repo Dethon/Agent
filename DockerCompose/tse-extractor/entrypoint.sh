@@ -20,4 +20,13 @@ if [ ! -f "$CKPT_DIR/avg_model.pt" ] || [ ! -f "$CKPT_DIR/config.yaml" ]; then
     mv -f "$TMP/config.yaml" "$CKPT_DIR/"
     rm -rf "$TMP"
 fi
-exec python /opt/tse/app.py
+# gunicorn pinned to 1 worker: every worker imports app.py and loads its own copy of the
+# checkpoint, so scaling workers multiplies memory for a sidecar whose extractions serialize
+# under an in-app lock anyway; the thread pool keeps /health responsive during a long
+# /extract. --timeout guards worker BOOT, not requests (gthread heartbeats while requests
+# run): the import loads the checkpoint and may export the ONNX core -- minutes on a Pi --
+# and the 30s default would kill the worker mid-boot and crash-loop. --no-control-socket:
+# unused, and its default path ($HOME/.gunicorn) is unwritable for the non-root PUID this
+# service runs as -- it ERRORs at every boot otherwise.
+exec gunicorn --chdir /opt/tse --workers 1 --threads 4 --timeout 600 \
+    --bind 0.0.0.0:9098 --access-logfile - --no-control-socket app:app
