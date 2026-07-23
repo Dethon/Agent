@@ -109,7 +109,7 @@ When executing TDD plans with triplet tasks (RED → GREEN → REVIEW), **commit
 | `DockerCompose/docker-compose.yml`                  | Main service definitions |
 | `DockerCompose/docker-compose.override.windows.yml` | Windows user secrets mount (`%APPDATA%/Microsoft/UserSecrets`) |
 | `DockerCompose/docker-compose.override.linux.yml`   | Linux user secrets mount (`$HOME/.microsoft/usersecrets`) |
-| `DockerCompose/docker-compose.override.no-dri.yml`  | Strips the `/dev/dri` device from `plex`/`mcp-sandbox` on hosts without a DRI render node (e.g. NVIDIA-only WSL2) |
+| `DockerCompose/docker-compose.override.no-dri.yml`  | Strips the `/dev/dri` device from `plex`/`mcp-sandbox`/`lemonade` (and forces `lemonade` STT to CPU) on hosts without a DRI render node (e.g. NVIDIA-only WSL2) |
 
 ### Launching
 
@@ -123,7 +123,7 @@ docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compo
 docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer lemonade tse-extractor qbittorrent jackett redis caddy camoufox homeassistant music-assistant
 ```
 
-The base compose maps `/dev/dri` into `plex`/`mcp-sandbox` for GPU hardware acceleration. Hosts **without** a DRI render node (NVIDIA-only WSL2 has `/dev/dxg` + the NVIDIA Container Toolkit, never `/dev/dri`) will fail with `error gathering device information while adding custom device "/dev/dri"`. On those hosts, append `-f DockerCompose/docker-compose.override.no-dri.yml` as the last `-f` to strip the device. (The VS Code `docker-debug-up` task already includes this override — debug never needs the GPU.)
+The base compose maps `/dev/dri` into `plex`/`mcp-sandbox` (and `lemonade`, for Vulkan whisper) for GPU hardware acceleration. Only `/dev/dri` is mapped — the shipped Vulkan tier needs just the render node, so a host with `/dev/dri` but no `/dev/kfd` (Intel iGPU, Raspberry Pi) still comes up; `/dev/kfd` (ROCm compute) is added back only by `docker-compose.override.npu.yml`. Hosts **without** a DRI render node (NVIDIA-only WSL2 has `/dev/dxg` + the NVIDIA Container Toolkit, never `/dev/dri`) will fail with `error gathering device information while adding custom device "/dev/dri"`. On those hosts, append `-f DockerCompose/docker-compose.override.no-dri.yml` as the last `-f` to strip the device (it also drops `lemonade` to the CPU STT tier). (The VS Code `docker-debug-up` task already includes this override — debug never needs the GPU.)
 
 ### Secrets
 

@@ -606,6 +606,10 @@ services:
     environment:
       <<: *timezone
       STT_BACKEND: ${STT_BACKEND:-gpu}
+      # Warmed by the entrypoint's pre-pull; kept in lockstep with the hub's Stt__OpenAi__Model
+      # (mcp-channel-voice above) so an override warms the model the hub actually requests instead
+      # of leaving the container to lazily download the right one on the first utterance.
+      STT_MODEL: ${STT_MODEL:-Whisper-Medium}
       # Decode-quality knobs, passed through only when set (defaults — VAD 0.6, beam 5,
       # Castilian initial prompt — live in lemonade/entrypoint.sh; set one empty in .env to
       # disable it). The NPU/flm tier ignores all three.
@@ -613,14 +617,16 @@ services:
       STT_INITIAL_PROMPT:
       STT_BEAM_SIZE:
     # Vulkan whisper on the Ryzen AI iGPU. Kokoro TTS is CPU-only on Linux, so it never
-    # contends with whisper for the iGPU.
+    # contends with whisper for the iGPU. Only /dev/dri is mapped: the shipped Vulkan tier
+    # (RADV) needs just the render node, so this stays up on non-AMD hosts that have /dev/dri
+    # but no /dev/kfd (Intel iGPU, Raspberry Pi). /dev/kfd is ROCm-compute only and is added
+    # back by docker-compose.override.npu.yml, the sole tier that needs it.
     devices:
       - /dev/dri:/dev/dri
-      - /dev/kfd:/dev/kfd
-    # /dev/dri/renderD* and /dev/kfd are root:render 0660 on Ubuntu/Debian, and --device
-    # preserves host ownership. UID 10001 is in no such group, so without this the render
-    # node is EACCES, ggml-vulkan enumerates zero devices, and whisper silently decodes on
-    # CPU. Set RENDER_GID from the target host: getent group render | cut -d: -f3
+    # /dev/dri/renderD* is root:render 0660 on Ubuntu/Debian, and --device preserves host
+    # ownership. UID 10001 is in no such group, so without this the render node is EACCES,
+    # ggml-vulkan enumerates zero devices, and whisper silently decodes on CPU. Set RENDER_GID
+    # from the target host: getent group render | cut -d: -f3
     group_add:
       - "${RENDER_GID:-993}"
     # v11 runs as unprivileged UID 10001 with HOME=/opt/lemonade — these are the real cache
