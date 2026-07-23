@@ -93,6 +93,19 @@ def compute_embedding(extractor, enroll_path):
     return emb[-1] if isinstance(emb, tuple) else emb
 
 
+def normalize_output(speech):
+    """Peak-normalize to 0.9, matching wesep's eager output norm — EXCEPT when the extraction
+    is essentially silence (the enrolled speaker wasn't in the mixture, e.g. a false-accepted
+    capture): dividing by a vanishing peak amplifies numerical residue to full scale, and a
+    digital-zero output becomes 0/0 = NaN that PCM_16 serialization won't flag — a 200 OK
+    carrying loud garbage instead of the correct quiet audio. Below the floor the output is
+    returned unamplified. 1e-3 (-60 dBFS) sits far under any real speech extraction's peak and
+    far above residue; the startup parity gate's synthetic audio peaks orders of magnitude
+    higher, so ONNX-vs-eager parity is unaffected."""
+    peak = abs(speech).max(dim=1, keepdim=True).values
+    return torch.where(peak > 1e-3, speech / peak.clamp_min(1e-9) * 0.9, speech)
+
+
 def run_core(sess, extractor, pcm_mix, embedding):
     """Host stft -> ONNX core -> host istft + output norm. Mirrors
     extract_speech_from_pcm's joint_training branch with a precomputed embedding."""
@@ -108,7 +121,7 @@ def run_core(sess, extractor, pcm_mix, embedding):
         speech = torch.istft(est, n_fft=model.win, hop_length=model.stride,
                              window=torch.hann_window(model.win),
                              length=pcm_mix.shape[1])
-        return speech / abs(speech).max(dim=1, keepdim=True).values * 0.9
+        return normalize_output(speech)
 
 
 def _artifact_paths(model_dir):
