@@ -31,10 +31,11 @@ public class TseSpeechToTextTests
         }
     }
 
-    private sealed class StubClient(byte[]? reply) : ITseExtractorClient
+    private sealed class StubClient(TseExtractReply reply) : ITseExtractorClient
     {
+        public StubClient(byte[]? wav) : this(new TseExtractReply(wav, Rejected: false)) { }
         public (byte[] Wav, string Speaker)? LastCall;
-        public Task<byte[]?> ExtractAsync(byte[] mixtureWav, string speaker, CancellationToken ct)
+        public Task<TseExtractReply> ExtractAsync(byte[] mixtureWav, string speaker, CancellationToken ct)
         {
             LastCall = (mixtureWav, speaker);
             return Task.FromResult(reply);
@@ -43,7 +44,7 @@ public class TseSpeechToTextTests
 
     private sealed class ThrowingClient(Exception exception) : ITseExtractorClient
     {
-        public Task<byte[]?> ExtractAsync(byte[] mixtureWav, string speaker, CancellationToken ct) =>
+        public Task<TseExtractReply> ExtractAsync(byte[] mixtureWav, string speaker, CancellationToken ct) =>
             throw exception;
     }
 
@@ -150,7 +151,7 @@ public class TseSpeechToTextTests
     public void OffModeWrapsNothing()
     {
         var inner = new RecordingInner();
-        TseSpeechToText.Wrap(inner, new TseSettings { Mode = TseMode.Off }, new StubClient(null),
+        TseSpeechToText.Wrap(inner, new TseSettings { Mode = TseMode.Off }, new StubClient((byte[]?)null),
                 new TseAuditTrail(null, 1, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance),
                 new RecordingMetrics(), NullLoggerFactory.Instance)
             .ShouldBeSameAs(inner);
@@ -227,6 +228,25 @@ public class TseSpeechToTextTests
         await stt.TranscribeAsync(Chunks(), Options(floor: 0), CancellationToken.None);
         inner.ReceivedPayload.ShouldBe(new byte[] { 7 });
         client.LastCall.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task RejectedReplyFallsBackToRawWithRejectedOutcome()
+    {
+        var inner = new RecordingInner();
+        var metrics = new RecordingMetrics();
+        var stt = TseSpeechToText.Wrap(
+            inner, new TseSettings { Mode = TseMode.Auto, NoiseFloorThreshold = 400 },
+            new StubClient(new TseExtractReply(Wav: null, Rejected: true)),
+            new TseAuditTrail(null, 1, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance),
+            metrics, NullLoggerFactory.Instance);
+
+        await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
+
+        inner.ReceivedPayload.ShouldBe(_rawPcm);
+        var evt = metrics.Events.ShouldHaveSingleItem();
+        evt.Metric.ShouldBe(VoiceMetric.TseFailed);
+        evt.Outcome.ShouldBe("rejected");
     }
 
     [Fact]

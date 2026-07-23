@@ -6,7 +6,7 @@ namespace McpChannelVoice.Services.Tse;
 public sealed class TseExtractorClient(
     HttpClient http, TseSettings settings, ILogger<TseExtractorClient> logger) : ITseExtractorClient
 {
-    public async Task<byte[]?> ExtractAsync(byte[] mixtureWav, string speaker, CancellationToken ct)
+    public async Task<TseExtractReply> ExtractAsync(byte[] mixtureWav, string speaker, CancellationToken ct)
     {
         try
         {
@@ -19,14 +19,14 @@ public sealed class TseExtractorClient(
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("TSE extract for {Speaker} returned {Status}", speaker, response.StatusCode);
-                return null;
+                return new TseExtractReply(Wav: null, Rejected: (int)response.StatusCode is >= 400 and < 500);
             }
-            return await response.Content.ReadAsByteArrayAsync(cts.Token);
+            return new TseExtractReply(await response.Content.ReadAsByteArrayAsync(cts.Token), Rejected: false);
         }
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "TSE extract for {Speaker} failed (fail-open, raw audio proceeds)", speaker);
-            return null;
+            return new TseExtractReply(Wav: null, Rejected: false);
         }
     }
 }
