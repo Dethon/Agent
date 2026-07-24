@@ -1,3 +1,4 @@
+using Domain.DTOs.Voice;
 using Domain.Tools.FileSystem;
 
 namespace Domain.Prompts;
@@ -49,4 +50,22 @@ public static class TimerPrompt
           currently ringing on all satellites. A fired timer no longer appears under `/timers`;
           `dismiss.sh` is the only way to silence it remotely.
         """;
+
+    // The roster comes live from the hub at prompt-fetch time; an empty roster (hub unreachable —
+    // the fail-open path) degrades to the static idiom text, which already tells the agent to ask.
+    public static string Build(IReadOnlyList<SatelliteDescriptor> satellites) =>
+        satellites.Count == 0
+            ? Prompt
+            : string.Join("\n", [
+                Prompt,
+                "",
+                "### Voice satellites",
+                "",
+                "The satellites a timer can ring on — each entry is the stable satellite id and its room:",
+                "",
+                .. satellites.Select(s => $"- {s.Id} — {s.Room}"),
+                "",
+                "When asking which room a timer should ring in, offer these rooms instead of asking "
+                + "blind; target by `room` or by exact satellite id."
+            ]);
 }
