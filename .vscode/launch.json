@@ -399,6 +399,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/McpServerTimers/bin/Debug/net10.0/McpServerTimers.dll",
       "cwd": "${workspaceFolder}/McpServerTimers",
+      "envFile": "${workspaceFolder}/DockerCompose/.env",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:6016",
