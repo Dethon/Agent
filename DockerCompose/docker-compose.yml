@@ -619,8 +619,9 @@ services:
     # Vulkan whisper on the Ryzen AI iGPU. Kokoro TTS is CPU-only on Linux, so it never
     # contends with whisper for the iGPU. Only /dev/dri is mapped: the shipped Vulkan tier
     # (RADV) needs just the render node, so this stays up on non-AMD hosts that have /dev/dri
-    # but no /dev/kfd (Intel iGPU, Raspberry Pi). /dev/kfd is ROCm-compute only and is added
-    # back by docker-compose.override.npu.yml, the sole tier that needs it.
+    # but no /dev/kfd (Intel iGPU, Raspberry Pi). /dev/kfd (ROCm compute) is never mapped —
+    # the 890M runs Vulkan/RADV here, not ROCm/HIP. The opt-in NPU tier
+    # (docker-compose.override.npu.yml) instead adds /dev/accel/accel0, the XDNA NPU node.
     devices:
       - /dev/dri:/dev/dri
     # /dev/dri/renderD* is root:render 0660 on Ubuntu/Debian, and --device preserves host
