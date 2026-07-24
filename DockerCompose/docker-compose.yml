@@ -87,7 +87,7 @@ services:
     # 1704/1705/1780 (snapcast), 8097 (stream server).
     network_mode: host
     volumes:
-      - music-assistant-data:/data
+      - ./volumes/music-assistant-data:/data
     environment:
       <<: *timezone
     restart: unless-stopped
@@ -137,8 +137,8 @@ services:
     restart: unless-stopped
     networks:
       - jackbot
-        #    depends_on:
-        #      - flaresolverr
+  #    depends_on:
+  #      - flaresolverr
 
   #  flaresolverr:
   #    image: ghcr.io/flaresolverr/flaresolverr:latest
@@ -824,4 +824,3 @@ networks:
 
 volumes:
   printer-spool:
-  music-assistant-data:
