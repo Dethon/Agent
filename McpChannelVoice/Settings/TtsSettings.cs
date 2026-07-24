@@ -12,8 +12,8 @@ public record OpenAiTtsConfig
 
     // Kokoro voice id. es-419 Spanish voices: ef_dora (female), em_alex, em_santa.
     // Castilian quality is deliberately out of scope for this migration.
-    public string? Voice { get; init; } = "ef_dora";
-    public double Speed { get; init; } = 1.0;
+    public string? Voice { get; init; } = "em_santa";
+    public double Speed { get; init; } = 1.2;
 
     // Per-sample int16 amplitude below which tail audio is treated as silence and trimmed from each
     // synthesized utterance, tightening the gap before the follow-up beep. 0 disables trimming.
