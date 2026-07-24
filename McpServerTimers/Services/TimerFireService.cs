@@ -64,10 +64,13 @@ public sealed class TimerFireService(
             }, ct);
             logger.LogInformation("Timer {TimerId} fired", armed.Id);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             // The timer was already removed by TakeDueAsync; a bad target means it just doesn't ring
-            // (documented v1 behavior — no durability/retry).
+            // (documented v1 behavior — no durability/retry). Guard on the host token, not the
+            // exception type: the announce HttpClient throws TaskCanceledException (an
+            // OperationCanceledException) on its request timeout even when the host isn't stopping,
+            // and that must not unwind the poll loop. Only real shutdown (ct cancelled) propagates.
             logger.LogWarning(ex, "Timer {TimerId} failed to ring", armed.Id);
         }
     }
