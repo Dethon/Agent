@@ -29,18 +29,25 @@ public static class ConfigModule
 
     public static IServiceCollection ConfigureTimers(this IServiceCollection services, TimerSettings settings)
     {
-        var hubUri = new Uri(settings.VoiceHub.BaseUrl);
+        services.AddHttpClient(VoiceHubHttp.ClientName, client =>
+        {
+            client.BaseAddress = new Uri(settings.VoiceHub.BaseUrl);
+            // Bound the wait: the hub returns 202 for announce (ringing is async) and resolves/dismisses
+            // instantly, so a slow response means the hub is unhealthy. Fail fast rather than block the
+            // once-per-second fire loop (or an agent's fs_create) on the default 100s timeout.
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
 
         services
             .AddSingleton(settings)
             .AddSingleton(TimeProvider.System)
-            .AddHttpClient()
             .AddSingleton<ITimerStore, InMemoryTimerStore>()
             // The three hub-local capabilities reached over HTTP: fire (announce), stop (dismiss),
-            // and target resolution/roster (satellites).
-            .AddSingleton<IInsistentAnnouncer>(sp => new HttpInsistentAnnouncer(HubClient(sp, hubUri), settings.Announce.Token))
-            .AddSingleton<IAlertDismisser>(sp => new HttpAlertDismisser(HubClient(sp, hubUri), settings.Announce.Token))
-            .AddSingleton<ISatelliteCatalog>(sp => new HttpSatelliteCatalog(HubClient(sp, hubUri), settings.Announce.Token))
+            // and target resolution/roster (satellites). The adapters create the named client per
+            // call, so the factory's handler rotation works despite their singleton lifetimes.
+            .AddSingleton<IInsistentAnnouncer>(sp => new HttpInsistentAnnouncer(sp.GetRequiredService<IHttpClientFactory>(), settings.Announce.Token))
+            .AddSingleton<IAlertDismisser>(sp => new HttpAlertDismisser(sp.GetRequiredService<IHttpClientFactory>(), settings.Announce.Token))
+            .AddSingleton<ISatelliteCatalog>(sp => new HttpSatelliteCatalog(sp.GetRequiredService<IHttpClientFactory>(), settings.Announce.Token))
             .AddSingleton(sp => new TimerFileSystem(
                 sp.GetRequiredService<ITimerStore>(),
                 sp.GetRequiredService<TimeProvider>(),
@@ -77,16 +84,5 @@ public static class ConfigModule
             }));
 
         return services;
-    }
-
-    private static HttpClient HubClient(IServiceProvider sp, Uri baseUri)
-    {
-        var client = sp.GetRequiredService<IHttpClientFactory>().CreateClient();
-        client.BaseAddress = baseUri;
-        // Bound the wait: the hub returns 202 for announce (ringing is async) and resolves/dismisses
-        // instantly, so a slow response means the hub is unhealthy. Fail fast rather than block the
-        // once-per-second fire loop (or an agent's fs_create) on the default 100s timeout.
-        client.Timeout = TimeSpan.FromSeconds(15);
-        return client;
     }
 }

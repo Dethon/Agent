@@ -13,7 +13,7 @@ public class HttpInsistentAnnouncerTests
     {
         var handler = new VoiceHubStubHandler(_ => VoiceHubStubHandler.Json(
             HttpStatusCode.Accepted, new AnnounceResponse { AnnouncementId = "a1", Satellites = [] }));
-        var sut = new HttpInsistentAnnouncer(VoiceHubStubHandler.Client(handler), "secret");
+        var sut = new HttpInsistentAnnouncer(VoiceHubStubHandler.Factory(handler), "secret");
 
         var result = await sut.StartAsync(
             new AnnounceRequest { Target = new() { Room = "Kitchen" }, Text = "pasta is ready" }, CancellationToken.None);
@@ -29,7 +29,7 @@ public class HttpInsistentAnnouncerTests
     public async Task StartAsync_ConnectionFailure_ThrowsVoiceHubUnavailable()
     {
         var handler = new VoiceHubStubHandler(_ => throw new HttpRequestException("connection refused"));
-        var sut = new HttpInsistentAnnouncer(VoiceHubStubHandler.Client(handler), "secret");
+        var sut = new HttpInsistentAnnouncer(VoiceHubStubHandler.Factory(handler), "secret");
 
         await Should.ThrowAsync<VoiceHubUnavailableException>(() => sut.StartAsync(
             new AnnounceRequest { Target = new() { Room = "Kitchen" }, Text = "pasta is ready" }, CancellationToken.None));
