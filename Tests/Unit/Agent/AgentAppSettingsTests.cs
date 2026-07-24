@@ -8,29 +8,41 @@ namespace Tests.Unit.Agent;
 // agents is only shared if every one of them lists it.
 public class AgentAppSettingsTests
 {
+    private const string TimersEndpoint = "http://mcp-timers:8080/mcp";
     private const string VoiceEndpoint = "http://mcp-channel-voice:8080/mcp";
 
-    // mcp-channel-voice hosts filesystem://timers. Countdown timers are household state, not
-    // per-agent state, so an agent reached from any channel must be able to read, arm and
+    // mcp-timers hosts filesystem://timers as a pure tool server. Countdown timers are household
+    // state, not per-agent state, so an agent reached from any channel must be able to read, arm and
     // dismiss them -- not only the voice agent that happened to create one.
     [Fact]
-    public void McpServerEndpoints_Jonas_IncludesVoiceServerForTimers()
+    public void McpServerEndpoints_Jonas_MountsTimersServer()
     {
-        Endpoints("jonas").ShouldContain(VoiceEndpoint);
+        Endpoints("jonas").ShouldContain(TimersEndpoint);
     }
 
     [Fact]
-    public void McpServerEndpoints_Nabu_IncludesVoiceServerForTimers()
+    public void McpServerEndpoints_Nabu_MountsTimersServer()
     {
-        Endpoints("nabu").ShouldContain(VoiceEndpoint);
+        Endpoints("nabu").ShouldContain(TimersEndpoint);
     }
 
     // Jack is the download bot: it has neither filesystem.create nor filesystem.exec, so it could
     // not arm or dismiss a timer anyway.
     [Fact]
-    public void McpServerEndpoints_Jack_ExcludesVoiceServer()
+    public void McpServerEndpoints_Jack_DoesNotMountTimersServer()
     {
-        Endpoints("jack").ShouldNotContain(VoiceEndpoint);
+        Endpoints("jack").ShouldNotContain(TimersEndpoint);
+    }
+
+    // The voice hub is a pure channel again: timers moved out to mcp-timers, so no agent mounts the
+    // voice server as a tool server. It reaches agents only via channelEndpoints.
+    [Fact]
+    public void McpServerEndpoints_NoAgentMountsTheVoiceChannelServer()
+    {
+        foreach (var agentId in new[] { "jack", "jonas", "nabu" })
+        {
+            Endpoints(agentId).ShouldNotContain(VoiceEndpoint);
+        }
     }
 
     private static string[] Endpoints(string agentId)
