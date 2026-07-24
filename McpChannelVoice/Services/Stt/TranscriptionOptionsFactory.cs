@@ -13,7 +13,7 @@ public static class TranscriptionOptionsFactory
         string satelliteId, SatelliteConfig config, SpeakerVerification? verification, CaptureStats stats) =>
         new()
         {
-            Language = config.Stt?.Wyoming?.Language,
+            Language = config.Stt?.OpenAi?.Language,
             TargetSpeaker = verification is { Decision: SpeakerDecision.Accepted } v
                 ? v.IdentifiedSpeaker ?? v.BestMatch
                 : null,

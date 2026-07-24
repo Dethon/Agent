@@ -376,8 +376,9 @@ public sealed class WyomingSatelliteHost(
 
             var sw = Stopwatch.StartNew();
             // Honor a per-satellite STT language override (symmetric with the per-satellite
-            // Tts.Wyoming.Voice override resolved in SendReplyTool/AnnouncementService); null falls
-            // back to the global Stt.Wyoming.Language inside the backend.
+            // Tts.OpenAi.Voice override resolved in SendReplyTool/AnnouncementService); null falls
+            // back to the global Stt.OpenAi.Language inside the backend. The factory also derives
+            // the TSE hints (target speaker, noise floor) from the speaker gate's verdict.
             var options = TranscriptionOptionsFactory.Create(
                 session.SatelliteId, session.Config, verification, capture.Stats);
             var result = await speechToText.TranscribeAsync(capture.Audio, options, ct);
@@ -504,9 +505,9 @@ public sealed class WyomingSatelliteHost(
 
     private static (int Rate, int Width, int Channels) FormatOf(JsonObject data) =>
     (
-        WyomingNumber.ReadInt(data, "rate", AudioFormat.WyomingStandard.SampleRateHz),
-        WyomingNumber.ReadInt(data, "width", AudioFormat.WyomingStandard.SampleWidthBytes),
-        WyomingNumber.ReadInt(data, "channels", AudioFormat.WyomingStandard.Channels)
+        JsonNumber.ReadInt(data, "rate", AudioFormat.WyomingStandard.SampleRateHz),
+        JsonNumber.ReadInt(data, "width", AudioFormat.WyomingStandard.SampleWidthBytes),
+        JsonNumber.ReadInt(data, "channels", AudioFormat.WyomingStandard.Channels)
     );
 
     private static bool TryParseAddress(string address, out string host, out int port)

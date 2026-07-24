@@ -14,12 +14,11 @@ public class VoiceSettingsBindingTests
         {
           "WyomingClient": { "TrailingSilenceMs": 800, "MaxUtteranceMs": 15000 },
           "Stt": {
-            "Wyoming": { "Host": "wyoming-whisper", "Port": 10300, "Language": "es" }
+            "OpenAi": { "BaseUrl": "http://lemonade:13305/v1", "Model": "Whisper-Medium", "Language": "es", "AvgLogProbThreshold": -1.2, "NoSpeechProbThreshold": 0.5 }
           },
           "Tts": {
-            "Wyoming": { "Host": "wyoming-piper", "Port": 10200, "Voice": "es_ES-davefx-medium" }
+            "OpenAi": { "Voice": "ef_dora", "Speed": 1.1 }
           },
-          "ConfidenceThreshold": 0.4,
           "Announce": {
             "Enabled": true,
             "Token": "secret",
@@ -42,9 +41,14 @@ public class VoiceSettingsBindingTests
         settings.ShouldNotBeNull();
         settings!.WyomingClient.TrailingSilenceMs.ShouldBe(800);
         settings.WyomingClient.MaxUtteranceMs.ShouldBe(15000);
-        settings.Stt.Wyoming.Host.ShouldBe("wyoming-whisper");
-        settings.Tts.Wyoming.Voice.ShouldBe("es_ES-davefx-medium");
-        settings.ConfidenceThreshold.ShouldBe(0.4);
+        settings.Stt.OpenAi.BaseUrl.ShouldBe("http://lemonade:13305/v1");
+        settings.Stt.OpenAi.Model.ShouldBe("Whisper-Medium");
+        settings.Stt.OpenAi.Language.ShouldBe("es");
+        settings.Stt.OpenAi.AvgLogProbThreshold.ShouldBe(-1.2);
+        settings.Stt.OpenAi.NoSpeechProbThreshold.ShouldBe(0.5);
+        settings.Tts.OpenAi.Voice.ShouldBe("ef_dora");
+        settings.Tts.OpenAi.Speed.ShouldBe(1.1);
+        settings.Tts.OpenAi.Model.ShouldBe("kokoro-v1");
         settings.Announce.Token.ShouldBe("secret");
         settings.Announce.MaxTextLength.ShouldBe(500);
         settings.Satellites.Count.ShouldBe(1);
@@ -61,6 +65,19 @@ public class VoiceSettingsBindingTests
         var settings = new VoiceSettings();
 
         settings.ConversationLifetime.ShouldBe(TimeSpan.FromMinutes(5));
+    }
+
+    [Fact]
+    public void OpenAiSttConfig_DefaultThresholds_MatchShippedGibberishGate()
+    {
+        // These defaults are what production runs when appsettings/env omit the thresholds; a
+        // sign flip here would silently invert the gate (see TranscriptDispatcher). avg_logprob
+        // is a negative log scale (closer to 0 is better), no_speech_prob is 0..1 (higher = more
+        // likely non-speech), so the floor is negative and the ceiling is in (0,1).
+        var config = new OpenAiSttConfig();
+
+        config.AvgLogProbThreshold.ShouldBe(-1.0);
+        config.NoSpeechProbThreshold.ShouldBe(0.6);
     }
 
     [Fact]
@@ -130,6 +147,42 @@ public class VoiceSettingsBindingTests
         var resolved = settings.WithResolvedLocalityDefaults();
 
         resolved.Satellites["kitchen-01"].Locality.ShouldBeNull();
+    }
+
+    [Fact]
+    public void VoiceSettings_BindsPerSatelliteSttTtsOverridesFromEnvironmentVariables()
+    {
+        var vars = new Dictionary<string, string>
+        {
+            ["Satellites__kitchen-01__Identity"] = "household",
+            ["Satellites__kitchen-01__Room"] = "Kitchen",
+            ["Satellites__kitchen-01__Stt__OpenAi__Language"] = "en",
+            ["Satellites__kitchen-01__Stt__OpenAi__AvgLogProbThreshold"] = "-0.5",
+            ["Satellites__kitchen-01__Tts__OpenAi__Voice"] = "em_alex"
+        };
+
+        foreach (var (k, v) in vars)
+        {
+            Environment.SetEnvironmentVariable(k, v);
+        }
+        try
+        {
+            var config = new ConfigurationBuilder().AddEnvironmentVariables().Build();
+            var settings = config.Get<VoiceSettings>();
+
+            var satellite = settings!.Satellites["kitchen-01"];
+            satellite.Stt!.OpenAi!.Language.ShouldBe("en");
+            satellite.Stt.OpenAi.AvgLogProbThreshold.ShouldBe(-0.5);
+            satellite.Stt.OpenAi.NoSpeechProbThreshold.ShouldBeNull(); // unset stays null → global
+            satellite.Tts!.OpenAi!.Voice.ShouldBe("em_alex");
+        }
+        finally
+        {
+            foreach (var k in vars.Keys)
+            {
+                Environment.SetEnvironmentVariable(k, null);
+            }
+        }
     }
 
     [Fact]

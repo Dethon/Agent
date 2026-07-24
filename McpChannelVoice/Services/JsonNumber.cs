@@ -1,13 +1,14 @@
 using System.Text.Json.Nodes;
 
-namespace McpChannelVoice.Services.WyomingProtocol;
+namespace McpChannelVoice.Services;
 
-// Wyoming audio headers carry integer rate/width/channels, but a non-conformant peer may send a
-// JSON float (e.g. 16000.0) or an out-of-range number. JsonValue.GetValue<int>() THROWS on a
-// non-integral or out-of-range Number (a documented .NET 10 STJ gotcha), which — read inside an
-// audio-chunk/audio-start frame on the read loop — would unwind and tear down the whole satellite
-// connection mid-utterance. Parse tolerantly and fall back to the expected value instead.
-internal static class WyomingNumber
+// Tolerant JSON number reading for peer-supplied payloads (Wyoming frame headers, Lemonade
+// transcription bodies): a non-conformant peer may send a float where an int belongs (e.g.
+// 16000.0) or an out-of-range number, and JsonValue.GetValue<int>() THROWS on a non-integral or
+// out-of-range Number (a documented .NET 10 STJ gotcha) — read inside an audio frame on the read
+// loop, that would tear down the whole satellite connection mid-utterance. Parse tolerantly and
+// fall back to the expected value instead.
+internal static class JsonNumber
 {
     public static int ReadInt(JsonObject data, string key, int fallback)
     {

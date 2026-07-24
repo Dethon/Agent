@@ -18,7 +18,7 @@
 # nor an I2S DAC can ALSA-dmix, so a userspace sound server does the mixing). Provisioning adds
 # a systemd drop-in (nabu-satellite.service.d/pipewire.conf) that OVERRIDES the ExecStart below:
 # --snd-command targets PipeWire through the `tts` ALSA softvol (aplay -D tts -> speaker), which
-# holds the calibrated agent-voice level (provision-time TTS_VOLUME, default 65%) independent of
+# holds the calibrated agent-voice level (provision-time TTS_VOLUME, default 75%) independent of
 # music — the volume knob for amp HATs that have none (MiniAmp); --music-mixer Music --music-card
 # <speaker> ducks the `music` softvol (snapclient) while active, and Environment=XDG_RUNTIME_DIR
 # lets this system service reach the user's PipeWire (lingering is enabled).

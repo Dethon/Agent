@@ -15,8 +15,8 @@ uv run python -m stt_eval fetch                                             # vo
 uv run python -m stt_eval validate                                         # then inspect takes.jsonl (drops clean-WER > 0.3)
 uv run python -m stt_eval mix                                              # build the corpus + manifest.jsonl
 uv run python -m stt_eval process --conditions gtcrn,dfn3,tse             # tse needs data/models/tse-env (conditions/tse_env_setup.sh)
-uv run python -m stt_eval transcribe --backend medium  --conditions raw,gtcrn,dfn3,tse
-uv run python -m stt_eval transcribe --backend wyoming --conditions raw,gtcrn,dfn3,tse   # needs the compose stack up
+uv run python -m stt_eval transcribe --backend medium   --conditions raw,gtcrn,dfn3,tse
+uv run python -m stt_eval transcribe --backend lemonade --conditions raw,gtcrn,dfn3,tse   # prod parity; needs the `lemonade` compose service up
 uv run python -m stt_eval report                                          # WER tables + decision block + per_utterance.csv
 ```
 

@@ -56,8 +56,8 @@ public class AnnouncementService(
             }
 
             var voice = request.Voice
-                        ?? session.Config.Tts?.Wyoming?.Voice
-                        ?? settings.Tts.Wyoming?.Voice;
+                        ?? session.Config.Tts?.OpenAi?.Voice
+                        ?? settings.Tts.OpenAi.Voice;
             var options = new SynthesisOptions { Voice = voice };
 
             var job = new PlaybackJob(

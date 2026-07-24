@@ -1,0 +1,57 @@
+# Opt-in: run Whisper on the Ryzen AI NPU via Lemonade's FastFlowLM (`flm`) recipe.
+# EXPERIMENTAL — see docs/superpowers/plans/2026-07-18-voice-lemonade-migration.md Task 8.
+#
+# Requires an XDNA2 NPU with the host amdxdna driver loaded (mainline kernel >= 6.14, or the
+# amdxdna-dkms backport on older kernels), AMD IOMMU enabled, and NPU firmware >= 1.1.0.0.
+# Apply as an extra -f AFTER the base and OS override files:
+#
+#   docker compose \
+#     -f DockerCompose/docker-compose.yml \
+#     -f DockerCompose/docker-compose.override.linux.yml \
+#     -f DockerCompose/docker-compose.override.npu.yml \
+#     -p jackbot up -d lemonade mcp-channel-voice
+#
+# ONE-TIME PER HOST — the FLM backend does NOT auto-install, despite what Lemonade's release
+# notes imply. Until it is installed, `flm list --json` returns nothing, Lemonade registers
+# zero FLM models, and every pull fails with a misleading "must include the `user` namespace"
+# HTTP 400. Install it once (it lands in the lemonade-recipe mount, so it survives recreates):
+#
+#   docker exec lemonade /opt/lemonade/lemonade backends install flm:npu
+#   docker exec lemonade /opt/lemonade/.cache/lemonade/bin/flm/npu/flm validate
+#
+# `flm validate` should report the NPU node, FW >= 1.1.0.0, amdxdna version and memlock.
+#
+# CAVEAT — the gibberish gate is inert on this tier. FLM ignores `response_format=verbose_json`
+# and returns only {model, text}, with no avg_logprob/no_speech_prob. TranscriptDispatcher
+# treats null signals as "not low quality" (fails OPEN), so nothing is dropped, but the
+# low-confidence guard that protects the whisper.cpp tiers does nothing here.
+#
+# STT_BACKEND is untouched: it still selects the whisper.cpp device for the non-NPU tiers,
+# which this override does not use. (whisper.cpp's own `npu` device is Windows-only; on Linux
+# the FLM recipe is the only path to the NPU.)
+
+services:
+  lemonade:
+    # /dev/accel/accel0 is the XDNA NPU node FLM drives via XRT — this is what makes it the NPU
+    # tier. /dev/dri stays so Lemonade can still enumerate the iGPU; /dev/kfd (the ROCm compute
+    # node) is intentionally NOT mapped, because FLM is NPU-only and never touches ROCm/HIP.
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/accel/accel0:/dev/accel/accel0
+    # FLM pins NPU buffers; too low a limit gives "mmap ... Resource temporarily unavailable"
+    # on whisper load. Confirmed working on hardware: `flm validate` reports
+    # "Memlock Limit: infinity" with this set.
+    ulimits:
+      memlock: -1
+    volumes:
+      # FLM stores models under $HOME/.config/flm/models — NOT $HOME/.flm as its docs suggest —
+      # and no base mount covers it, so without this the ~0.6 GB NPU whisper re-downloads on
+      # every recreate. (The flm binary itself installs under .cache/lemonade/bin/flm/, which
+      # the base lemonade-recipe mount already covers.)
+      - ./volumes/lemonade-flm:/opt/lemonade/.config/flm
+    environment:
+      STT_MODEL: ${STT_MODEL:-whisper-v3-turbo-FLM}
+
+  mcp-channel-voice:
+    environment:
+      Stt__OpenAi__Model: ${STT_MODEL:-whisper-v3-turbo-FLM}
