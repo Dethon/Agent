@@ -13,7 +13,7 @@ public sealed class HttpAlertDismisser(HttpClient httpClient, string token) : IA
         using var message = new HttpRequestMessage(HttpMethod.Post, "api/voice/dismiss");
         message.Headers.Add("X-Announce-Token", token);
 
-        var response = await httpClient.SendAsync(message, ct);
+        var response = await VoiceHubHttp.SendAsync(httpClient, message, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<List<DismissedAlert>>(ct) ?? [];
     }

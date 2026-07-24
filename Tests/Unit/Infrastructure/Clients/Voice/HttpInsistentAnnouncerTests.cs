@@ -1,5 +1,6 @@
 using System.Net;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Infrastructure.Clients.Voice;
 using Shouldly;
 
@@ -22,5 +23,15 @@ public class HttpInsistentAnnouncerTests
         handler.LastRequest.Headers.GetValues("X-Announce-Token").ShouldContain("secret");
         handler.LastBody.ShouldContain("pasta is ready");
         result.AnnouncementId.ShouldBe("a1");
+    }
+
+    [Fact]
+    public async Task StartAsync_ConnectionFailure_ThrowsVoiceHubUnavailable()
+    {
+        var handler = new VoiceHubStubHandler(_ => throw new HttpRequestException("connection refused"));
+        var sut = new HttpInsistentAnnouncer(VoiceHubStubHandler.Client(handler), "secret");
+
+        await Should.ThrowAsync<VoiceHubUnavailableException>(() => sut.StartAsync(
+            new AnnounceRequest { Target = new() { Room = "Kitchen" }, Text = "pasta is ready" }, CancellationToken.None));
     }
 }
