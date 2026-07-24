@@ -1,5 +1,6 @@
 using System.Net;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Infrastructure.Clients.Voice;
 using Shouldly;
 
@@ -35,6 +36,26 @@ public class HttpSatelliteCatalogTests
 
         (await sut.GetAllAsync(CancellationToken.None)).ShouldContain(s => s.Id == "sat-1");
         (await sut.GetAllAsync(CancellationToken.None)).ShouldContain(s => s.Id == "sat-2");
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ConnectionFailure_ThrowsVoiceHubUnavailable()
+    {
+        var handler = new VoiceHubStubHandler(_ => throw new HttpRequestException("connection refused"));
+        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Client(handler), "secret");
+
+        await Should.ThrowAsync<VoiceHubUnavailableException>(() => sut.GetAllAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetAllAsync_RequestTimeout_ThrowsVoiceHubUnavailable()
+    {
+        // The HttpClient request timeout surfaces as TaskCanceledException with the caller's token
+        // still live — hub sickness, not caller cancellation, so it maps to unavailable too.
+        var handler = new VoiceHubStubHandler(_ => throw new TaskCanceledException("timed out"));
+        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Client(handler), "secret");
+
+        await Should.ThrowAsync<VoiceHubUnavailableException>(() => sut.GetAllAsync(CancellationToken.None));
     }
 
     [Fact]

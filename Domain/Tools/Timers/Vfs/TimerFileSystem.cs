@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
 
@@ -171,7 +172,15 @@ public sealed class TimerFileSystem(
             return new FsResult<FsCreateResult>.Err(specError);
         }
 
-        var validation = await ValidateSpec(spec!, ct);
+        ToolErrorResult? validation;
+        try
+        {
+            validation = await ValidateSpec(spec!, ct);
+        }
+        catch (VoiceHubUnavailableException)
+        {
+            return HubUnavailable<FsCreateResult>("the timer was not armed");
+        }
         if (validation is not null)
         {
             return new FsResult<FsCreateResult>.Err(validation);
@@ -250,7 +259,15 @@ public sealed class TimerFileSystem(
                 "", $"command not found: {trimmed}\navailable: {TimerPath.DismissFileName}", 127, path);
         }
 
-        var dismissed = await dismisser.DismissAllAsync(ct);
+        IReadOnlyList<DismissedAlert> dismissed;
+        try
+        {
+            dismissed = await dismisser.DismissAllAsync(ct);
+        }
+        catch (VoiceHubUnavailableException)
+        {
+            return HubUnavailable<FsExecResult>("nothing was dismissed");
+        }
         var stdout = dismissed.Count == 0
             ? "nothing is ringing\n"
             : "dismissed " + string.Join(
@@ -434,6 +451,10 @@ public sealed class TimerFileSystem(
     private static FsResult<T> Unsupported<T>(string message) where T : class =>
         new FsResult<T>.Err(Error(ToolError.Codes.UnsupportedOperation, message));
 
-    private static ToolErrorResult Error(string code, string message) =>
-        new() { ErrorCode = code, Message = message, Retryable = false };
+    private static FsResult<T> HubUnavailable<T>(string consequence) where T : class =>
+        new FsResult<T>.Err(Error(ToolError.Codes.Unavailable,
+            $"The voice hub is unreachable, so {consequence} — try again shortly.", retryable: true));
+
+    private static ToolErrorResult Error(string code, string message, bool retryable = false) =>
+        new() { ErrorCode = code, Message = message, Retryable = retryable };
 }

@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Domain.Tools;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Timers;
@@ -49,6 +50,21 @@ public class TimerFileSystemJourneyTests
             }
             return target.All == true ? ["kitchen-01"] : [];
         }
+    }
+
+    private sealed class UnreachableCatalog : ISatelliteCatalog
+    {
+        public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) =>
+            throw new VoiceHubUnavailableException("connection refused");
+
+        public Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct) =>
+            throw new VoiceHubUnavailableException("connection refused");
+    }
+
+    private sealed class UnreachableDismisser : IAlertDismisser
+    {
+        public Task<IReadOnlyList<DismissedAlert>> DismissAllAsync(CancellationToken ct) =>
+            throw new VoiceHubUnavailableException("connection refused");
     }
 
     private static (TimerFileSystem Fs, InMemoryTimerStore Store, FakeTimeProvider Time, FakeDismisser Dismisser) Build()
@@ -198,6 +214,38 @@ public class TimerFileSystemJourneyTests
         err.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
         err.Error.Message.ShouldContain("text");
         (await store.ListAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_HubUnreachable_ReturnsRetryableUnavailableAndDoesNotArm()
+    {
+        var store = new InMemoryTimerStore();
+        var fs = new TimerFileSystem(store, new FakeTimeProvider(), new FakeDismisser(), new UnreachableCatalog());
+
+        var result = await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
+
+        // Fail closed and say so: no unvalidated timer gets armed, and the agent learns this is
+        // the hub being down (retryable), not a bad spec — instead of a raw exception envelope.
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.Unavailable);
+        err.Error.Retryable.ShouldBeTrue();
+        err.Error.Message.ShouldContain("voice hub");
+        err.Error.Message.ShouldContain("not armed");
+        (await store.ListAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Exec_Dismiss_HubUnreachable_ReturnsRetryableUnavailable()
+    {
+        var fs = new TimerFileSystem(
+            new InMemoryTimerStore(), new FakeTimeProvider(), new UnreachableDismisser(), new FakeSatelliteCatalog());
+
+        var result = await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None);
+
+        var err = result.ShouldBeOfType<FsResult<FsExecResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.Unavailable);
+        err.Error.Retryable.ShouldBeTrue();
+        err.Error.Message.ShouldContain("voice hub");
     }
 
     [Fact]

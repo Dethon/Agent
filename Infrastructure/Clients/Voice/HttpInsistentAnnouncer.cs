@@ -17,7 +17,7 @@ public sealed class HttpInsistentAnnouncer(HttpClient httpClient, string token) 
         };
         message.Headers.Add("X-Announce-Token", token);
 
-        var response = await httpClient.SendAsync(message, ct);
+        var response = await VoiceHubHttp.SendAsync(httpClient, message, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<AnnounceResponse>(ct)
             ?? throw new InvalidOperationException("Voice hub returned an empty announce response.");

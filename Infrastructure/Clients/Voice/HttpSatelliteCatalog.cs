@@ -16,7 +16,7 @@ public sealed class HttpSatelliteCatalog(HttpClient httpClient, string token) : 
         using var message = new HttpRequestMessage(HttpMethod.Get, "api/voice/satellites");
         message.Headers.Add("X-Announce-Token", token);
 
-        var response = await httpClient.SendAsync(message, ct);
+        var response = await VoiceHubHttp.SendAsync(httpClient, message, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<List<SatelliteDescriptor>>(ct) ?? [];
     }
@@ -29,7 +29,7 @@ public sealed class HttpSatelliteCatalog(HttpClient httpClient, string token) : 
         };
         message.Headers.Add("X-Announce-Token", token);
 
-        var response = await httpClient.SendAsync(message, ct);
+        var response = await VoiceHubHttp.SendAsync(httpClient, message, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<List<string>>(ct) ?? [];
     }
