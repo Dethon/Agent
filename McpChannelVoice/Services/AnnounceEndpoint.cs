@@ -1,6 +1,3 @@
-using System.Net;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Settings;
@@ -18,23 +15,9 @@ public static partial class AnnounceEndpoint
             AnnouncementService announcer,
             InsistentAnnouncementController insistent) =>
         {
-            if (!settings.Enabled)
+            if (VoiceHubAuth.Reject(ctx, settings) is { } rejection)
             {
-                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
-            }
-
-            // Loopback-only is enforced per-request (by remote IP) rather than by binding Kestrel
-            // to 127.0.0.1, which would also take the shared /mcp endpoint off the container network
-            // and break the agent's connection. Non-loopback callers get a 404 (endpoint hidden).
-            if (settings.BindToLoopbackOnly && !IsLoopback(ctx.Connection.RemoteIpAddress))
-            {
-                return Results.NotFound();
-            }
-
-            var token = ctx.Request.Headers["X-Announce-Token"].FirstOrDefault();
-            if (!TokenMatches(settings.Token, token))
-            {
-                return Results.Unauthorized();
+                return rejection;
             }
 
             if (string.IsNullOrWhiteSpace(body.Text) || body.Text.Length > settings.MaxTextLength)
@@ -68,24 +51,11 @@ public static partial class AnnounceEndpoint
         });
     }
 
-    // Constant-time comparison so a wrong token cannot be recovered byte-by-byte via response timing.
-    private static bool TokenMatches(string configured, string? provided)
-    {
-        if (string.IsNullOrEmpty(configured) || provided is null)
-        {
-            return false;
-        }
-        return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(provided), Encoding.UTF8.GetBytes(configured));
-    }
-
     private static bool HasTarget(AnnounceTarget target) =>
         !string.IsNullOrWhiteSpace(target.SatelliteId)
         || target.SatelliteIds is { Count: > 0 }
         || !string.IsNullOrWhiteSpace(target.Room)
         || target.All == true;
-
-    private static bool IsLoopback(IPAddress? ip) => ip is not null && IPAddress.IsLoopback(ip);
 
     [GeneratedRegex(@"^[A-Za-z0-9_\-]+$")]
     private static partial Regex VoiceId();
