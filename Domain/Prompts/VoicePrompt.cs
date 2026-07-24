@@ -22,7 +22,7 @@ public static class VoicePrompt
             "",
             .. satellites.Select(s => $"- {s.Id} — {s.Location}"),
             "",
-            "Each incoming message tells you which satellite and room it came from. Use it silently — act on it only when the room changes the answer, such as which device to control — and never mention the satellite or the room in your reply."
+            "A message from one of these satellites tells you which one and which room it came from. When your reply is spoken there, use that silently — act on it only when the room changes the answer, such as which device to control — and never say the satellite or the room aloud. Messages from other channels carry no satellite or room."
         ];
 
         return string.Join("\n", sections);

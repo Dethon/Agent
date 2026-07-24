@@ -27,11 +27,15 @@ public static class TimerPrompt
         - Create: `{{VfsTextCreateTool.Name}}` at `/timers/<descriptive-id>/timer.json` with JSON
           `{"durationSeconds": <int>, "text"?: "<spoken message>", "target": {...} }`.
           `durationSeconds` is capped at 4 hours — for anything longer use the alarms calendar.
-          `target` is `{satelliteId | satelliteIds | room | all}` — default to the **speaking room**
-          (the room this request came from) unless another room is named. When `text` is omitted
-          the timer announces itself as "<id> timer", so pick a descriptive id (e.g. `pasta`).
+          `target` is `{satelliteId | satelliteIds | room | all}`. On a voice turn, default to the
+          **speaking room** (the room this request came from) unless another room is named. On any
+          other channel there is no speaking room — ask which room or satellite it should ring on
+          before creating the timer, and never guess (a timer rings only on its target satellites,
+          so a wrong or absent one either rings in the wrong place or fails to arm). When `text` is
+          omitted the timer announces itself as "<id> timer", so pick a descriptive id (e.g. `pasta`).
         - Time left: `{{VfsTextReadTool.Name}}` on `/timers/<id>/status.json` → `remainingSeconds`
-          and `firesAt`; speak only the remaining time.
+          and `firesAt`. When your reply is spoken, give only the remaining time; in a written reply
+          include `firesAt` if the user asked when it fires.
         - List: `{{VfsGlobFilesTool.Name}}` on `/timers`.
         - Cancel: `{{VfsRemoveTool.Name}}` on `/timers/<id>`.
         - Timers are immutable and fire once — to change one, delete it and create a new one; to

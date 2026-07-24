@@ -35,10 +35,13 @@ public class VoicePromptTests
     {
         var result = VoicePrompt.Build([("fran-office-01", "Fran's office")]);
 
-        // voice_prompt is the satellite catalog and nothing else. Reply-style rules must not live
-        // here: MCP prompts are pulled unfiltered from every mounted server, so a style contract in
-        // this prompt would govern every agent that mounts the voice server for its /timers tools,
-        // including text-only ones. Per-agent customInstructions is where style belongs.
+        // voice_prompt is the satellite catalog. MCP prompts are pulled unfiltered into every agent
+        // that mounts the voice server for its /timers tools, so any reply-style rule here must be
+        // conditioned on the reply being spoken ("aloud") or it governs text channels too. The flat
+        // spoken-style paragraph that used to lead this prompt must stay gone.
         result.ShouldStartWith("## Voice satellites\n\nThese are the satellites");
+        result.ShouldNotContain("One short sentence");
+        result.ShouldNotContain("read on a screen");
+        result.ShouldContain("aloud");
     }
 }
