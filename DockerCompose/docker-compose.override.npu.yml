@@ -11,9 +11,24 @@
 #     -f DockerCompose/docker-compose.override.npu.yml \
 #     -p jackbot up -d lemonade mcp-channel-voice
 #
-# Lemonade auto-installs the FLM binary into the mounted recipe cache on first load and
-# runs `flm validate` before serving. STT_BACKEND is untouched: it still selects the
-# whisper.cpp device for the non-NPU tiers, which this override does not use.
+# ONE-TIME PER HOST — the FLM backend does NOT auto-install, despite what Lemonade's release
+# notes imply. Until it is installed, `flm list --json` returns nothing, Lemonade registers
+# zero FLM models, and every pull fails with a misleading "must include the `user` namespace"
+# HTTP 400. Install it once (it lands in the lemonade-recipe mount, so it survives recreates):
+#
+#   docker exec lemonade /opt/lemonade/lemonade backends install flm:npu
+#   docker exec lemonade /opt/lemonade/.cache/lemonade/bin/flm/npu/flm validate
+#
+# `flm validate` should report the NPU node, FW >= 1.1.0.0, amdxdna version and memlock.
+#
+# CAVEAT — the gibberish gate is inert on this tier. FLM ignores `response_format=verbose_json`
+# and returns only {model, text}, with no avg_logprob/no_speech_prob. TranscriptDispatcher
+# treats null signals as "not low quality" (fails OPEN), so nothing is dropped, but the
+# low-confidence guard that protects the whisper.cpp tiers does nothing here.
+#
+# STT_BACKEND is untouched: it still selects the whisper.cpp device for the non-NPU tiers,
+# which this override does not use. (whisper.cpp's own `npu` device is Windows-only; on Linux
+# the FLM recipe is the only path to the NPU.)
 
 services:
   lemonade:
@@ -23,17 +38,17 @@ services:
     devices:
       - /dev/dri:/dev/dri
       - /dev/accel/accel0:/dev/accel/accel0
-    # FLM pins NPU buffers. Low memlock is the documented common cause of
-    # "mmap ... Resource temporarily unavailable" on whisper load (Lemonade's own FLM-on-Linux
-    # troubleshooting sets LimitMEMLOCK=infinity in its systemd unit); issue #1472 reports that
-    # failure on Strix Halo but was closed without a diagnosis, so this is a likely fix, not a
-    # proven one.
+    # FLM pins NPU buffers; too low a limit gives "mmap ... Resource temporarily unavailable"
+    # on whisper load. Confirmed working on hardware: `flm validate` reports
+    # "Memlock Limit: infinity" with this set.
     ulimits:
       memlock: -1
     volumes:
-      # FLM keeps its models under $HOME/.flm/models, which none of the base mounts cover —
-      # without this the ~0.6 GB NPU whisper re-downloads on every recreate.
-      - ./volumes/lemonade-flm:/opt/lemonade/.flm
+      # FLM stores models under $HOME/.config/flm/models — NOT $HOME/.flm as its docs suggest —
+      # and no base mount covers it, so without this the ~0.6 GB NPU whisper re-downloads on
+      # every recreate. (The flm binary itself installs under .cache/lemonade/bin/flm/, which
+      # the base lemonade-recipe mount already covers.)
+      - ./volumes/lemonade-flm:/opt/lemonade/.config/flm
     environment:
       STT_MODEL: ${STT_MODEL:-whisper-v3-turbo-FLM}
 
