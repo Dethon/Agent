@@ -83,6 +83,10 @@ public static class ConfigModule
     {
         var client = sp.GetRequiredService<IHttpClientFactory>().CreateClient();
         client.BaseAddress = baseUri;
+        // Bound the wait: the hub returns 202 for announce (ringing is async) and resolves/dismisses
+        // instantly, so a slow response means the hub is unhealthy. Fail fast rather than block the
+        // once-per-second fire loop (or an agent's fs_create) on the default 100s timeout.
+        client.Timeout = TimeSpan.FromSeconds(15);
         return client;
     }
 }

@@ -129,6 +129,61 @@ public class TimerFireServiceTests
         await service.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_AnnouncerTimesOut_LoopSurvives()
+    {
+        // HttpClient's request timeout throws TaskCanceledException — an OperationCanceledException —
+        // even though the host stopping token is not cancelled. The poll loop must treat that as a
+        // ring failure, not as shutdown, or one hung hub call kills all future timers.
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new InMemoryTimerStore();
+        var announcer = new TimeoutThenRecordingAnnouncer();
+        var now = time.GetUtcNow().UtcDateTime;
+        await store.ArmAsync(new ArmedTimer
+        {
+            Id = "first", Target = new AnnounceTarget { Room = "Slow" }, DurationSeconds = 1,
+            CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(1)
+        });
+        await store.ArmAsync(new ArmedTimer
+        {
+            Id = "second", Target = new AnnounceTarget { Room = "Kitchen" }, DurationSeconds = 3,
+            CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(3)
+        });
+        var service = new TimerFireService(store, announcer, time, NullLogger<TimerFireService>.Instance);
+
+        await service.StartAsync(CancellationToken.None);
+        time.Advance(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => announcer.Calls >= 1, TimeSpan.FromSeconds(5)); // first times out
+        time.Advance(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => announcer.Succeeded.Count == 1, TimeSpan.FromSeconds(5)); // loop survived
+
+        announcer.Succeeded[0].ShouldBe("second timer");
+        await service.StopAsync(CancellationToken.None);
+    }
+
+    private sealed class TimeoutThenRecordingAnnouncer : IInsistentAnnouncer
+    {
+        private int _calls;
+        private readonly List<string> _succeeded = [];
+        public int Calls => Volatile.Read(ref _calls);
+        public IReadOnlyList<string> Succeeded
+        {
+            get { lock (_succeeded) { return _succeeded.ToList(); } }
+        }
+        public Task<AnnounceResponse> StartAsync(AnnounceRequest request, CancellationToken ct)
+        {
+            Interlocked.Increment(ref _calls);
+            if (request.Target.Room == "Slow")
+            {
+                // The HttpClient 100s timeout: a TaskCanceledException NOT tied to `ct`.
+                throw new TaskCanceledException("request timed out");
+            }
+            lock (_succeeded)
+            { _succeeded.Add(request.Text); }
+            return Task.FromResult(new AnnounceResponse { AnnouncementId = "a1", Satellites = [] });
+        }
+    }
+
     private sealed class ThrowingThenRecordingAnnouncer : IInsistentAnnouncer
     {
         private int _calls;
