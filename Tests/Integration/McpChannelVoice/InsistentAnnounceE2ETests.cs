@@ -209,7 +209,8 @@ public class InsistentAnnounceE2ETests
         // Arm through the VFS surface — the same path the agent's fs tools hit.
         var fs = new TimerFileSystem(
             app.Services.GetRequiredService<ITimerStore>(), TimeProvider.System,
-            app.Services.GetRequiredService<ActiveAlertRegistry>());
+            app.Services.GetRequiredService<ActiveAlertRegistry>(),
+            app.Services.GetRequiredService<SatelliteRegistry>());
         var created = await fs.CreateAsync("/pasta/timer.json",
             """{"durationSeconds": 2, "text": "pasta is ready", "target": {"room": "Kitchen"}}""",
             false, true, ct);

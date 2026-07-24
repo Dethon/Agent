@@ -20,7 +20,7 @@ public class AnnouncementService(
         AnnounceRequest request,
         CancellationToken ct)
     {
-        var targetIds = ResolveTargets(request.Target);
+        var targetIds = registry.Resolve(request.Target);
         if (targetIds.Count == 0)
         {
             // Log the requested target internally, but keep the client-facing message generic so the
@@ -106,34 +106,6 @@ public class AnnouncementService(
             string.Join(",", outcomes.Select(o => $"{o.Id}={o.Status}")));
 
         return new AnnounceResponse { AnnouncementId = announcementId, Satellites = outcomes };
-    }
-
-    private IReadOnlyList<string> ResolveTargets(AnnounceTarget target)
-    {
-        if (target.SatelliteIds is { Count: > 0 })
-        {
-            return target.SatelliteIds
-                .Where(id => registry.GetById(id) is not null)
-                .Distinct()
-                .ToList();
-        }
-        if (target.SatelliteId is not null)
-        {
-            return registry.GetById(target.SatelliteId) is null
-                ? []
-                : [target.SatelliteId];
-        }
-        if (target.Room is not null)
-        {
-            return registry.GetIdsByRoom(target.Room);
-        }
-
-        if (target.All == true)
-        {
-            return registry.GetAllIds();
-        }
-
-        return [];
     }
 
     // A transient metrics-publisher failure must not abort the announce fan-out (and 500 the caller),
