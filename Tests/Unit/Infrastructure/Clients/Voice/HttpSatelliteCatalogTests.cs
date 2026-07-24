@@ -23,6 +23,21 @@ public class HttpSatelliteCatalogTests
     }
 
     [Fact]
+    public async Task GetAllAsync_RefetchesTheRosterOnEveryCall()
+    {
+        // The roster only changes when the hub restarts with new config — exactly the moment a
+        // process-lifetime cache would go stale and wrongly reject the new satellite at create
+        // time (or list a dead one in the error roster). Creates are rare: always ask the hub.
+        var calls = 0;
+        var handler = new VoiceHubStubHandler(_ => VoiceHubStubHandler.Json(
+            HttpStatusCode.OK, new List<SatelliteDescriptor> { new($"sat-{++calls}", "Kitchen") }));
+        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Client(handler), "secret");
+
+        (await sut.GetAllAsync(CancellationToken.None)).ShouldContain(s => s.Id == "sat-1");
+        (await sut.GetAllAsync(CancellationToken.None)).ShouldContain(s => s.Id == "sat-2");
+    }
+
+    [Fact]
     public async Task ResolveAsync_ForwardsTargetToHubResolveEndpoint()
     {
         // Resolution is never done locally off the roster — a DisplayLocation-form room must go to the
