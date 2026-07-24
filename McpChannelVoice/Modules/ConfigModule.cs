@@ -1,7 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Metrics;
-using McpChannelVoice.McpPrompts;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.Verification;
@@ -168,7 +167,6 @@ public static class ConfigModule
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
             .WithTools<CreateConversationTool>()
-            .WithPrompts<VoiceSystemPrompt>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
