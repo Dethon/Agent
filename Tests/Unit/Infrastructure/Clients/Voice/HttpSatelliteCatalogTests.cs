@@ -71,7 +71,7 @@ public class HttpSatelliteCatalogTests
 
         handler.LastRequest!.Method.ShouldBe(HttpMethod.Post);
         handler.LastRequest.RequestUri!.AbsolutePath.ShouldBe("/api/voice/satellites/resolve");
-        handler.LastBody.ShouldContain("Madrid");
+        handler.LastBody!.ShouldContain("Madrid");
         ids.ShouldBe(["kitchen-01"]);
     }
 }
