@@ -29,4 +29,16 @@ public class VoicePromptTests
     {
         VoicePrompt.Build([]).ShouldBe(string.Empty);
     }
+
+    [Fact]
+    public void Build_WithSatellites_IsCatalogOnly()
+    {
+        var result = VoicePrompt.Build([("fran-office-01", "Fran's office")]);
+
+        // voice_prompt is the satellite catalog and nothing else. Reply-style rules must not live
+        // here: MCP prompts are pulled unfiltered from every mounted server, so a style contract in
+        // this prompt would govern every agent that mounts the voice server for its /timers tools,
+        // including text-only ones. Per-agent customInstructions is where style belongs.
+        result.ShouldStartWith("## Voice satellites\n\nThese are the satellites");
+    }
 }
