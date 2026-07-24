@@ -13,7 +13,7 @@ public class HttpSatelliteCatalogTests
     {
         var handler = new VoiceHubStubHandler(_ => VoiceHubStubHandler.Json(
             HttpStatusCode.OK, new List<SatelliteDescriptor> { new("kitchen-01", "Kitchen") }));
-        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Client(handler), "secret");
+        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Factory(handler), "secret");
 
         var roster = await sut.GetAllAsync(CancellationToken.None);
 
@@ -32,7 +32,7 @@ public class HttpSatelliteCatalogTests
         var calls = 0;
         var handler = new VoiceHubStubHandler(_ => VoiceHubStubHandler.Json(
             HttpStatusCode.OK, new List<SatelliteDescriptor> { new($"sat-{++calls}", "Kitchen") }));
-        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Client(handler), "secret");
+        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Factory(handler), "secret");
 
         (await sut.GetAllAsync(CancellationToken.None)).ShouldContain(s => s.Id == "sat-1");
         (await sut.GetAllAsync(CancellationToken.None)).ShouldContain(s => s.Id == "sat-2");
@@ -42,7 +42,7 @@ public class HttpSatelliteCatalogTests
     public async Task GetAllAsync_ConnectionFailure_ThrowsVoiceHubUnavailable()
     {
         var handler = new VoiceHubStubHandler(_ => throw new HttpRequestException("connection refused"));
-        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Client(handler), "secret");
+        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Factory(handler), "secret");
 
         await Should.ThrowAsync<VoiceHubUnavailableException>(() => sut.GetAllAsync(CancellationToken.None));
     }
@@ -53,7 +53,7 @@ public class HttpSatelliteCatalogTests
         // The HttpClient request timeout surfaces as TaskCanceledException with the caller's token
         // still live — hub sickness, not caller cancellation, so it maps to unavailable too.
         var handler = new VoiceHubStubHandler(_ => throw new TaskCanceledException("timed out"));
-        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Client(handler), "secret");
+        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Factory(handler), "secret");
 
         await Should.ThrowAsync<VoiceHubUnavailableException>(() => sut.GetAllAsync(CancellationToken.None));
     }
@@ -65,7 +65,7 @@ public class HttpSatelliteCatalogTests
         // hub, whose registry dual-keys Room and DisplayLocation, or it would resolve to nothing here.
         var handler = new VoiceHubStubHandler(_ => VoiceHubStubHandler.Json(
             HttpStatusCode.OK, new List<string> { "kitchen-01" }));
-        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Client(handler), "secret");
+        var sut = new HttpSatelliteCatalog(VoiceHubStubHandler.Factory(handler), "secret");
 
         var ids = await sut.ResolveAsync(new AnnounceTarget { Room = "Kitchen (Madrid, Spain)" }, CancellationToken.None);
 

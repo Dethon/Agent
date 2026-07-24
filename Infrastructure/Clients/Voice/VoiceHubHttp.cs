@@ -6,11 +6,17 @@ namespace Infrastructure.Clients.Voice;
 // typed VoiceHubUnavailableException so callers can fail closed with a retryable error instead of
 // leaking a raw HTTP exception. An error *status* is deliberately not mapped — that is the hub
 // answering (e.g. a token mismatch), which retrying will not fix.
-internal static class VoiceHubHttp
+public static class VoiceHubHttp
 {
+    // The named client carrying the hub base address and fail-fast timeout (configured by the
+    // timers server's DI). Created fresh per send so the factory's handler rotation keeps working
+    // even though the adapters themselves are singletons.
+    public const string ClientName = "voice-hub";
+
     public static async Task<HttpResponseMessage> SendAsync(
-        HttpClient client, HttpRequestMessage message, CancellationToken ct)
+        IHttpClientFactory factory, HttpRequestMessage message, CancellationToken ct)
     {
+        var client = factory.CreateClient(ClientName);
         try
         {
             return await client.SendAsync(message, ct);

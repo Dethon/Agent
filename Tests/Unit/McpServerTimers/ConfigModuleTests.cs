@@ -31,6 +31,19 @@ public class ConfigModuleTests
     }
 
     [Fact]
+    public void ConfigureTimers_RegistersTheNamedVoiceHubClient()
+    {
+        using var sp = Build();
+
+        // The adapters create this named client on every hub call; if its registration drifts
+        // from VoiceHubHttp.ClientName they get an unconfigured client (no BaseAddress) at runtime.
+        var client = sp.GetRequiredService<IHttpClientFactory>().CreateClient(VoiceHubHttp.ClientName);
+
+        client.BaseAddress.ShouldBe(new Uri("http://mcp-channel-voice:8080"));
+        client.Timeout.ShouldBe(TimeSpan.FromSeconds(15));
+    }
+
+    [Fact]
     public void ConfigureTimers_BacksHubContractsWithHttpAdapters()
     {
         using var sp = Build();

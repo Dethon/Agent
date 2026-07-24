@@ -13,7 +13,7 @@ public class HttpAlertDismisserTests
     {
         var handler = new VoiceHubStubHandler(_ => VoiceHubStubHandler.Json(
             HttpStatusCode.OK, new List<DismissedAlert> { new("pasta", AnnounceKind.Timer) }));
-        var sut = new HttpAlertDismisser(VoiceHubStubHandler.Client(handler), "secret");
+        var sut = new HttpAlertDismisser(VoiceHubStubHandler.Factory(handler), "secret");
 
         var result = await sut.DismissAllAsync(CancellationToken.None);
 
@@ -27,7 +27,7 @@ public class HttpAlertDismisserTests
     public async Task DismissAllAsync_ConnectionFailure_ThrowsVoiceHubUnavailable()
     {
         var handler = new VoiceHubStubHandler(_ => throw new HttpRequestException("connection refused"));
-        var sut = new HttpAlertDismisser(VoiceHubStubHandler.Client(handler), "secret");
+        var sut = new HttpAlertDismisser(VoiceHubStubHandler.Factory(handler), "secret");
 
         await Should.ThrowAsync<VoiceHubUnavailableException>(() => sut.DismissAllAsync(CancellationToken.None));
     }

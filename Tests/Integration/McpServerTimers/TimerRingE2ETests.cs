@@ -108,13 +108,14 @@ public class TimerRingE2ETests
 
         // ---- The timers server half: store + VFS + fire loop, reaching the hub only over HTTP ----
         using var hubClient = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{apiPort}") };
+        var hubClientFactory = new FixedClientFactory(hubClient);
         var store = new InMemoryTimerStore();
         var fs = new TimerFileSystem(
             store, TimeProvider.System,
-            new HttpAlertDismisser(hubClient, "secret"),
-            new HttpSatelliteCatalog(hubClient, "secret"));
+            new HttpAlertDismisser(hubClientFactory, "secret"),
+            new HttpSatelliteCatalog(hubClientFactory, "secret"));
         var fireLoop = new TimerFireService(
-            store, new HttpInsistentAnnouncer(hubClient, "secret"), TimeProvider.System,
+            store, new HttpInsistentAnnouncer(hubClientFactory, "secret"), TimeProvider.System,
             NullLogger<TimerFireService>.Instance);
         await fireLoop.StartAsync(ct);
 
@@ -154,6 +155,11 @@ public class TimerRingE2ETests
         try
         { await fakeSatellite; }
         catch { /* cancellation */ }
+    }
+
+    private sealed class FixedClientFactory(HttpClient client) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => client;
     }
 
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
