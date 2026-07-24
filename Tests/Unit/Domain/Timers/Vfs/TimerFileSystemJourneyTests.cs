@@ -35,14 +35,14 @@ public class TimerFileSystemJourneyTests
         {
             // Yield so a caller that forgets to await this cross-process resolve is caught by the tests.
             await Task.Yield();
-            bool Exists(string id) => id == "kitchen-01";
+            static bool exists(string id) => id == "kitchen-01";
             if (target.SatelliteIds is { Count: > 0 })
             {
-                return target.SatelliteIds.Where(id => id is not null && Exists(id)).ToList();
+                return target.SatelliteIds.Where(id => id is not null && exists(id)).ToList();
             }
             if (target.SatelliteId is not null)
             {
-                return Exists(target.SatelliteId) ? [target.SatelliteId] : [];
+                return exists(target.SatelliteId) ? [target.SatelliteId] : [];
             }
             if (target.Room is not null)
             {
