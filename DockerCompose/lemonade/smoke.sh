@@ -20,7 +20,7 @@ curl -fsS -N -o /tmp/lemonade-smoke.pcm \
   -w 'ttfb=%{time_starttransfer}s total=%{time_total}s bytes=%{size_download}\n' \
   -X POST "http://$HOST/v1/audio/speech" \
   -H "Content-Type: application/json" \
-  -d '{"model":"kokoro-v1","input":"Hola, esto es una prueba de síntesis de voz en streaming.","voice":"ef_dora","speed":1.0,"response_format":"pcm","stream_format":"audio"}'
+  -d '{"model":"kokoro-v1","input":"Hola, esto es una prueba de síntesis de voz en streaming.","voice":"em_santa","speed":1.2,"response_format":"pcm","stream_format":"audio"}'
 echo "pcm is 24 kHz mono s16le: 48000 bytes per second of audio"
 
 echo "== transcription: transcribe the synthesized speech; expect JSON with text + segments carrying avg_logprob/no_speech_prob =="
