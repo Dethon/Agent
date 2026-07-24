@@ -16,6 +16,26 @@ public class TimerPromptTests
     }
 
     [Fact]
+    public void Prompt_TargetDefaultIsChannelConditional()
+    {
+        // On a voice turn, default to the speaking room; on a text channel there is no speaking
+        // room, so the agent must ask which room rather than guess a target the timer would ring
+        // in the wrong place (or fail to arm against the create-time target validation).
+        TimerPrompt.Prompt.ShouldContain("speaking room");
+        TimerPrompt.Prompt.ShouldContain("no speaking room");
+        TimerPrompt.Prompt.ShouldContain("never guess");
+    }
+
+    [Fact]
+    public void Prompt_TimeLeftBrevityIsScopedToSpokenReplies()
+    {
+        // "Speak only the remaining time" is a spoken-brevity rule; a written channel asking when a
+        // timer fires wants firesAt too, so the rule is scoped to spoken replies.
+        TimerPrompt.Prompt.ShouldContain("firesAt");
+        TimerPrompt.Prompt.ShouldContain("when your reply is spoken");
+    }
+
+    [Fact]
     public void Prompt_TeachesTheDurationCeiling()
     {
         TimerPrompt.Prompt.ShouldContain("4 hours");

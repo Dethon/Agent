@@ -208,8 +208,8 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 | Agent     | MCP Servers                                         | Features                                    | Purpose                                                                   |
 |-----------|-----------------------------------------------------|---------------------------------------------|---------------------------------------------------------------------------|
 | **Jack**  | mcp-library, mcp-websearch                          | filesystem (glob, move)                     | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant, mcp-scheduling, mcp-printer | filesystem, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, scheduled tasks, Home Assistant control, and printing |
-| **Nabu**  | same as Jonas + mcp-channel-voice                   | filesystem, subagents, memory               | Voice-optimized assistant — brief, formatting-free spoken replies delivered through the voice satellites |
+| **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant, mcp-scheduling, mcp-printer, mcp-channel-voice | filesystem, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, scheduled tasks, Home Assistant control, printing, and countdown timers |
+| **Nabu**  | same as Jonas                                       | filesystem, subagents, memory               | Voice-optimized assistant — brief, formatting-free spoken replies delivered through the voice satellites (also serves as the `voice` channel) |
 
 ### Multi-Agent Configuration
 

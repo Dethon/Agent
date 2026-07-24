@@ -79,6 +79,13 @@ public class SatelliteRegistryTests
         registry.Resolve(new AnnounceTarget { Room = "Basement" }).ShouldBeEmpty();
         registry.Resolve(new AnnounceTarget { All = true }).Count.ShouldBe(3);
         registry.Resolve(new AnnounceTarget()).ShouldBeEmpty();
+
+        // Precedence, not just presence: with several dimensions set at once the earlier one wins,
+        // so a reordering of Resolve's branches (e.g. All checked first) would fan out wrongly and
+        // must fail here rather than pass because every case set a single field.
+        registry.Resolve(new AnnounceTarget { SatelliteIds = ["kitchen-01"], All = true }).ShouldBe(["kitchen-01"]);
+        registry.Resolve(new AnnounceTarget { SatelliteId = "bedroom-01", Room = "Kitchen", All = true }).ShouldBe(["bedroom-01"]);
+        registry.Resolve(new AnnounceTarget { Room = "Bedroom", All = true }).ShouldBe(["bedroom-01"]);
     }
 
     [Fact]
