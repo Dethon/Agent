@@ -97,6 +97,9 @@ public sealed class ActiveAlertRegistry : IAlertDismisser
         return all.Select(h => new DismissedAlert(h.Text, h.Kind)).ToList();
     }
 
+    // Async IAlertDismisser surface — in-process here, over HTTP from the timers server.
+    public Task<IReadOnlyList<DismissedAlert>> DismissAllAsync(CancellationToken ct) => Task.FromResult(DismissAll());
+
     public void Discard(AlertHandle handle)
     {
         ArgumentNullException.ThrowIfNull(handle);

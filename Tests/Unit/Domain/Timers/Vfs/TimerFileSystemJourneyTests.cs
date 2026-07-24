@@ -17,22 +17,24 @@ public class TimerFileSystemJourneyTests
     private sealed class FakeDismisser : IAlertDismisser
     {
         public List<DismissedAlert> Ringing { get; } = [];
-        public IReadOnlyList<DismissedAlert> DismissAll()
+        public Task<IReadOnlyList<DismissedAlert>> DismissAllAsync(CancellationToken ct)
         {
             var result = Ringing.ToList();
             Ringing.Clear();
-            return result;
+            return Task.FromResult<IReadOnlyList<DismissedAlert>>(result);
         }
     }
 
     private sealed class FakeSatelliteCatalog : ISatelliteCatalog
     {
-        public IReadOnlyList<SatelliteDescriptor> GetAll() => [new("kitchen-01", "Kitchen")];
+        public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<SatelliteDescriptor>>([new("kitchen-01", "Kitchen")]);
 
-        public bool Exists(string satelliteId) => satelliteId == "kitchen-01";
-
-        public IReadOnlyList<string> Resolve(AnnounceTarget target)
+        public async Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct)
         {
+            // Yield so a caller that forgets to await this cross-process resolve is caught by the tests.
+            await Task.Yield();
+            bool Exists(string id) => id == "kitchen-01";
             if (target.SatelliteIds is { Count: > 0 })
             {
                 return target.SatelliteIds.Where(id => id is not null && Exists(id)).ToList();

@@ -58,4 +58,11 @@ public sealed class SatelliteRegistry : ISatelliteCatalog
         }
         return target.All == true ? GetAllIds() : [];
     }
+
+    // Async ISatelliteCatalog surface — in-process here, over HTTP from the timers server. The hub
+    // resolves synchronously off static config; these just adapt the shape.
+    public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) => Task.FromResult(GetAll());
+
+    public Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct) =>
+        Task.FromResult(Resolve(target));
 }
