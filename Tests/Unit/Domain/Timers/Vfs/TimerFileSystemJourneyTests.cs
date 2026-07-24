@@ -182,6 +182,25 @@ public class TimerFileSystemJourneyTests
     }
 
     [Fact]
+    public async Task Create_BlankText_IsRejected()
+    {
+        var (fs, store, _, _) = Build();
+
+        var result = await fs.CreateAsync(
+            "/pasta/timer.json",
+            """{"durationSeconds": 300, "text": "   ", "target": {"room": "Kitchen"}}""",
+            false, true, CancellationToken.None);
+
+        // A blank (non-null) text bypasses the `?? "<id> timer"` fallback and the announce endpoint
+        // rejects it at fire time (400) -> the timer never rings. Reject at create so validation
+        // matches the fire-time contract. (Omitting text is fine -- it auto-names.)
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+        err.Error.Message.ShouldContain("text");
+        (await store.ListAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task Create_DuplicateId_IsRejected()
     {
         var (fs, _, _, _) = Build();
