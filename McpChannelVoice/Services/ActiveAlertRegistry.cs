@@ -1,4 +1,3 @@
-using Domain.Contracts;
 using Domain.DTOs.Voice;
 
 namespace McpChannelVoice.Services;
@@ -36,7 +35,7 @@ public sealed class AlertHandle
 // alert's shared CTS also stops it on its sibling satellites. Returns what was dismissed so the
 // caller can hand the descriptions to the snooze context flow. DismissAll is the agent-reachable
 // variant (exec dismiss.sh on /timers): everything ringing anywhere, from any room or channel.
-public sealed class ActiveAlertRegistry : IAlertDismisser
+public sealed class ActiveAlertRegistry
 {
     private readonly Dictionary<string, List<AlertHandle>> _bySatellite = new();
     private readonly Lock _gate = new();
@@ -96,9 +95,6 @@ public sealed class ActiveAlertRegistry : IAlertDismisser
         }
         return all.Select(h => new DismissedAlert(h.Text, h.Kind)).ToList();
     }
-
-    // Async IAlertDismisser surface — in-process here, over HTTP from the timers server.
-    public Task<IReadOnlyList<DismissedAlert>> DismissAllAsync(CancellationToken ct) => Task.FromResult(DismissAll());
 
     public void Discard(AlertHandle handle)
     {
