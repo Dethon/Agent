@@ -57,7 +57,8 @@ public static class ConfigModule
                 sp.GetRequiredService<ChannelNotificationEmitter>(),
                 sp.GetRequiredService<IMetricsPublisher>(),
                 sp.GetRequiredService<VoiceConversationManager>(),
-                settings.ConfidenceThreshold,
+                avgLogProbThreshold: settings.Stt.OpenAi.AvgLogProbThreshold,
+                noSpeechProbThreshold: settings.Stt.OpenAi.NoSpeechProbThreshold,
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<TranscriptDispatcher>>()))
             .AddSingleton(sp => new VoiceConversationManager(
@@ -71,6 +72,12 @@ public static class ConfigModule
                 settings.ConversationLifetime,
                 sp.GetRequiredService<ReplyTextAccumulator>(),
                 sp.GetRequiredService<ILogger<VoiceDeliveryRegistry>>()));
+
+        // Streaming TTS reads can outlive the default 100 s client timeout on long replies;
+        // cancellation is driven by the per-turn CancellationToken instead (STT self-bounds via
+        // RequestTimeout).
+        services.AddHttpClient(LemonadeHttp.ClientName)
+            .ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan);
 
         services.AddSingleton<Services.Tse.ITseExtractorClient>(sp =>
             new Services.Tse.TseExtractorClient(
@@ -88,9 +95,10 @@ public static class ConfigModule
 
         services.AddSingleton<ISpeechToText>(sp =>
         {
-            var inner = new McpChannelVoice.Services.Stt.WyomingSpeechToText(
-                settings.Stt.Wyoming,
-                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.WyomingSpeechToText>>());
+            var inner = new McpChannelVoice.Services.Stt.OpenAiSpeechToText(
+                sp.GetRequiredService<IHttpClientFactory>(),
+                settings.Stt.OpenAi,
+                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.OpenAiSpeechToText>>());
 
             var segmented = McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
                 inner, settings.Stt.Streaming, settings.WyomingClient, sp.GetRequiredService<ILoggerFactory>());
@@ -124,12 +132,11 @@ public static class ConfigModule
 
         services.AddSingleton<ITextToSpeech>(sp =>
             McpChannelVoice.Services.Tts.SilenceTrimmingTextToSpeech.Wrap(
-                new McpChannelVoice.Services.Tts.WyomingTextToSpeech(
-                    settings.Tts.Wyoming,
-                    sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.WyomingTextToSpeech>>()),
-                settings.Tts.Wyoming.TrailingSilenceTrimThreshold));
-
-        services.AddHostedService<WyomingHealthProbeService>();
+                new McpChannelVoice.Services.Tts.OpenAiTextToSpeech(
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    settings.Tts.OpenAi,
+                    sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.OpenAiTextToSpeech>>()),
+                settings.Tts.OpenAi.TrailingSilenceTrimThreshold));
 
         services.AddSingleton(settings.Announce);
         services.AddSingleton<AnnouncementService>();

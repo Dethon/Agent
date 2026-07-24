@@ -10,7 +10,7 @@ public class TranscriptionOptionsFactoryTests
 {
     private static readonly CaptureStats _stats = new(PeakRms: 2000, FloorRms: 512.5, SpeechMs: 1500, EndReason: "ended");
 
-    private static SatelliteConfig MakeConfig(SttSettings? stt = null) =>
+    private static SatelliteConfig MakeConfig(SttOverrides? stt = null) =>
         new() { Identity = "household", Room = "Kitchen", Stt = stt };
 
     [Fact]
@@ -50,7 +50,7 @@ public class TranscriptionOptionsFactoryTests
     [Fact]
     public void LanguageFlowsThroughFromConfig()
     {
-        var config = MakeConfig(new SttSettings { Wyoming = new WyomingSttConfig { Language = "es" } });
+        var config = MakeConfig(new SttOverrides { OpenAi = new OpenAiSttOverrides { Language = "es" } });
         var options = TranscriptionOptionsFactory.Create("office-01", config, verification: null, _stats);
         options.Language.ShouldBe("es");
     }
