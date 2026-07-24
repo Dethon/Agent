@@ -18,7 +18,8 @@
         "Docker: MCP Channel ServiceBus",
         "Docker: MCP Channel Voice",
         "Docker: MCP Scheduling",
-        "Docker: MCP Printer"
+        "Docker: MCP Printer",
+        "Docker: MCP Timers"
       ],
       "preLaunchTask": "docker-debug-up",
       "stopAll": true
@@ -40,7 +41,8 @@
         "Local: MCP Channel ServiceBus",
         "Local: MCP Channel Voice",
         "Local: MCP Scheduling",
-        "Local: MCP Printer"
+        "Local: MCP Printer",
+        "Local: MCP Timers"
       ],
       "preLaunchTask": "build-all-local",
       "stopAll": true
@@ -392,6 +394,18 @@
       }
     },
     {
+      "name": "Local: MCP Timers",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpServerTimers/bin/Debug/net10.0/McpServerTimers.dll",
+      "cwd": "${workspaceFolder}/McpServerTimers",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6016",
+        "VoiceHub__BaseUrl": "http://localhost:6015"
+      }
+    },
+    {
       "name": "Docker: MCP Channel ServiceBus",
       "type": "coreclr",
       "request": "attach",
@@ -429,6 +443,21 @@
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-printer"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Docker: MCP Timers",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-timers"],
         "debuggerPath": "/remote_debugger/vsdbg",
         "quoteArgs": false
       },

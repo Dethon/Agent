@@ -192,6 +192,7 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 | **mcp-homeassistant** | fs_glob, fs_read, fs_info, fs_search, fs_exec                                                                          | `filesystem://ha`     | Control a Home Assistant instance as a virtual filesystem (entities, areas, `.sh` action files); injects a slim setup index into the system prompt |
 | **mcp-scheduling** | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_exec                                  | `filesystem://schedules` | Manage cron/one-shot scheduled agent tasks as a virtual filesystem; also runs as a channel that fires due schedules (see [Scheduled Tasks](#scheduled-tasks)) |
 | **mcp-printer**   | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_copy, fs_delete, fs_blob_read, fs_blob_write              | `filesystem://print-queue` | Print plain text/JPEG to a configured IPP/CUPS printer as a virtual filesystem — copy/create to submit, remove to cancel (see [Printing](#printing)) |
+| **mcp-timers**    | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_delete, fs_move, fs_exec                                  | `filesystem://timers`      | Hub-local countdown timers as a virtual filesystem — create to arm, read status.json for time left, remove to cancel, exec dismiss.sh to stop ringing; rings on the voice satellites via the voice hub |
 
 ### MCP Channel Servers
 
@@ -208,7 +209,7 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 | Agent     | MCP Servers                                         | Features                                    | Purpose                                                                   |
 |-----------|-----------------------------------------------------|---------------------------------------------|---------------------------------------------------------------------------|
 | **Jack**  | mcp-library, mcp-websearch                          | filesystem (glob, move)                     | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant, mcp-scheduling, mcp-printer, mcp-channel-voice | filesystem, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, scheduled tasks, Home Assistant control, printing, and countdown timers |
+| **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant, mcp-scheduling, mcp-printer, mcp-timers | filesystem, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, scheduled tasks, Home Assistant control, printing, and countdown timers |
 | **Nabu**  | same as Jonas                                       | filesystem, subagents, memory               | Voice-optimized assistant — brief, formatting-free spoken replies delivered through the voice satellites (also serves as the `voice` channel) |
 
 ### Multi-Agent Configuration
@@ -244,6 +245,7 @@ Agent routing:
 | `McpServerHomeAssistant` | MCP server exposing Home Assistant as `filesystem://ha`         |
 | `McpServerScheduling`    | MCP server for scheduled tasks (`filesystem://schedules` + channel) |
 | `McpServerPrinter`       | MCP server exposing a print queue as `filesystem://print-queue` (IPP/CUPS) |
+| `McpServerTimers`        | MCP server exposing countdown timers as `filesystem://timers`; rings via the voice hub's HTTP endpoints |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
 | `McpChannelServiceBus`   | MCP channel server for Azure Service Bus (queues)               |
