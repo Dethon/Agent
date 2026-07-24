@@ -313,6 +313,14 @@ public sealed class TimerFileSystem(
                 + "alarms calendar for anything longer");
         }
 
+        // A blank (non-null) text bypasses the "<id> timer" fallback and the announcer rejects it at
+        // fire time, so the timer would never ring. Omitting text is fine — it auto-names.
+        if (spec.Text is not null && string.IsNullOrWhiteSpace(spec.Text))
+        {
+            return Error(ToolError.Codes.InvalidArgument,
+                "text must not be blank — omit it to auto-name the timer");
+        }
+
         var target = spec.Target;
         if (target is null
             || (target.SatelliteId is null
