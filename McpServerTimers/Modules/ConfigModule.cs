@@ -1,0 +1,88 @@
+using Domain.Contracts;
+using Domain.Tools.Timers.Vfs;
+using Infrastructure.Clients.Voice;
+using Infrastructure.Timers;
+using Infrastructure.Utils;
+using McpServerTimers.McpPrompts;
+using McpServerTimers.McpResources;
+using McpServerTimers.McpTools;
+using McpServerTimers.Services;
+using McpServerTimers.Settings;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
+namespace McpServerTimers.Modules;
+
+public static class ConfigModule
+{
+    public static TimerSettings GetSettings(this IConfigurationBuilder configBuilder)
+    {
+        var config = configBuilder
+            .AddEnvironmentVariables()
+            .AddUserSecrets<Program>()
+            .Build();
+
+        return config.Get<TimerSettings>()
+               ?? throw new InvalidOperationException("Settings not found");
+    }
+
+    public static IServiceCollection ConfigureTimers(this IServiceCollection services, TimerSettings settings)
+    {
+        var hubUri = new Uri(settings.VoiceHub.BaseUrl);
+
+        services
+            .AddSingleton(settings)
+            .AddSingleton(TimeProvider.System)
+            .AddHttpClient()
+            .AddSingleton<ITimerStore, InMemoryTimerStore>()
+            // The three hub-local capabilities reached over HTTP: fire (announce), stop (dismiss),
+            // and target resolution/roster (satellites).
+            .AddSingleton<IInsistentAnnouncer>(sp => new HttpInsistentAnnouncer(HubClient(sp, hubUri), settings.Announce.Token))
+            .AddSingleton<IAlertDismisser>(sp => new HttpAlertDismisser(HubClient(sp, hubUri), settings.Announce.Token))
+            .AddSingleton<ISatelliteCatalog>(sp => new HttpSatelliteCatalog(HubClient(sp, hubUri), settings.Announce.Token))
+            .AddSingleton(sp => new TimerFileSystem(
+                sp.GetRequiredService<ITimerStore>(),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<IAlertDismisser>(),
+                sp.GetRequiredService<ISatelliteCatalog>()))
+            .AddHostedService<TimerFireService>();
+
+        services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<FsGlobTool>()
+            .WithTools<FsInfoTool>()
+            .WithTools<FsReadTool>()
+            .WithTools<FsSearchTool>()
+            .WithTools<FsCreateTool>()
+            .WithTools<FsEditTool>()
+            .WithTools<FsDeleteTool>()
+            .WithTools<FsMoveTool>()
+            .WithTools<FsExecTool>()
+            .WithResources<FileSystemResource>()
+            .WithPrompts<TimersSystemPrompt>()
+            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
+            {
+                try
+                {
+                    return await next(context, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
+                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
+                    return ToolResponse.Create(ex);
+                }
+            }));
+
+        return services;
+    }
+
+    private static HttpClient HubClient(IServiceProvider sp, Uri baseUri)
+    {
+        var client = sp.GetRequiredService<IHttpClientFactory>().CreateClient();
+        client.BaseAddress = baseUri;
+        return client;
+    }
+}

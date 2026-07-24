@@ -548,6 +548,34 @@ services:
       base-sdk:
         condition: service_started
 
+  mcp-timers:
+    image: mcp-timers:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-timers
+    ports:
+      - "6016:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerTimers/Dockerfile
+      cache_from:
+        - mcp-timers:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      <<: *timezone
+      VoiceHub__BaseUrl: http://mcp-channel-voice:8080
+    networks:
+      - jackbot
+    depends_on:
+      base-sdk:
+        condition: service_started
+
   mcp-channel-voice:
     image: mcp-channel-voice:latest
     logging:
