@@ -38,7 +38,6 @@ public static class ConfigModule
             .AddSingleton(settings)
             .AddSingleton(emitter)
             .AddSingleton(new SatelliteRegistry(settings.Satellites))
-            .AddSingleton<Domain.Contracts.ISatelliteCatalog>(sp => sp.GetRequiredService<SatelliteRegistry>())
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection))
             .AddSingleton<IMetricsPublisher, RedisMetricsPublisher>()
             .AddSingleton<MutableAgentCatalog>()
@@ -145,16 +144,6 @@ public static class ConfigModule
         services.AddHttpClient();
         services.AddSingleton<InsistentAnnouncementController>();
 
-        services.AddSingleton<Domain.Contracts.IAlertDismisser>(sp => sp.GetRequiredService<ActiveAlertRegistry>());
-        services.AddSingleton<Domain.Contracts.ITimerStore, Infrastructure.Timers.InMemoryTimerStore>();
-        services.AddSingleton(sp => new Domain.Tools.Timers.Vfs.TimerFileSystem(
-            sp.GetRequiredService<Domain.Contracts.ITimerStore>(),
-            sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<Domain.Contracts.IAlertDismisser>(),
-            sp.GetRequiredService<Domain.Contracts.ISatelliteCatalog>()));
-        services.AddSingleton<IInsistentAnnouncer>(sp => sp.GetRequiredService<InsistentAnnouncementController>());
-        services.AddHostedService<TimerFireService>();
-
         services
             .AddMcpServer()
             .WithHttpTransport(options =>
@@ -179,18 +168,7 @@ public static class ConfigModule
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
             .WithTools<CreateConversationTool>()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsReadTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsExecTool>()
-            .WithResources<McpResources.FileSystemResource>()
             .WithPrompts<VoiceSystemPrompt>()
-            .WithPrompts<TimersSystemPrompt>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try

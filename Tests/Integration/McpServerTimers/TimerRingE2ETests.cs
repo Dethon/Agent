@@ -1,11 +1,15 @@
 using System.Net;
-using System.Net.Http.Json;
 using System.Net.Sockets;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
+using Domain.Tools.Timers.Vfs;
+using Infrastructure.Clients.Voice;
+using Infrastructure.Timers;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
+using McpServerTimers.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,12 +17,16 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
 
-namespace Tests.Integration.McpChannelVoice;
+namespace Tests.Integration.McpServerTimers;
 
-public class InsistentAnnounceE2ETests
+// End-to-end proof of the extracted architecture: the timers half (store + TimerFileSystem +
+// TimerFireService) runs in-process against the HTTP adapters, and the voice hub runs on loopback
+// Kestrel exposing announce/dismiss/satellites. Arming a timer resolves its target over HTTP, firing
+// rings the satellite over HTTP, and both wake-dismiss and remote dismiss.sh cross the boundary.
+public class TimerRingE2ETests
 {
     [Fact]
-    public async Task PostInsistentAnnounce_RepeatsUntilAcknowledged()
+    public async Task ArmedTimer_FiresRingsAndDismissesAcrossTheHubBoundary()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var ct = cts.Token;
@@ -58,6 +66,7 @@ public class InsistentAnnounceE2ETests
             }
         };
 
+        // ---- The voice hub: rings satellites, holds the ring state, resolves targets ----
         var apiPort = GetFreePort();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(opts => opts.Listen(IPAddress.Loopback, apiPort));
@@ -90,32 +99,55 @@ public class InsistentAnnounceE2ETests
 
         var app = builder.Build();
         AnnounceEndpoint.Map(app);
+        DismissEndpoint.Map(app);
+        SatellitesEndpoint.Map(app);
         await app.StartAsync(ct);
 
         var sessions = app.Services.GetRequiredService<SatelliteSessionRegistry>();
         await WaitForAsync(() => sessions.Get("kitchen-01") is not null, TimeSpan.FromSeconds(5));
 
-        using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{apiPort}") };
-        http.DefaultRequestHeaders.Add("X-Announce-Token", "secret");
+        // ---- The timers server half: store + VFS + fire loop, reaching the hub only over HTTP ----
+        using var hubClient = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{apiPort}") };
+        var store = new InMemoryTimerStore();
+        var fs = new TimerFileSystem(
+            store, TimeProvider.System,
+            new HttpAlertDismisser(hubClient, "secret"),
+            new HttpSatelliteCatalog(hubClient, "secret"));
+        var fireLoop = new TimerFireService(
+            store, new HttpInsistentAnnouncer(hubClient, "secret"), TimeProvider.System,
+            NullLogger<TimerFireService>.Instance);
+        await fireLoop.StartAsync(ct);
 
-        var response = await http.PostAsJsonAsync("/api/voice/announce",
-            new AnnounceRequest
-            {
-                Target = new() { SatelliteId = "kitchen-01" },
-                Text = "alarm",
-                Insistent = new InsistentOptions { GapSeconds = 1, MaxRepeats = 10 }
-            }, ct);
-        response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        // Arm through the VFS — CreateAsync resolves {room: Kitchen} against the hub's /satellites.
+        var created = await fs.CreateAsync("/pasta/timer.json",
+            """{"durationSeconds": 2, "text": "pasta is ready", "target": {"room": "Kitchen"}}""",
+            false, true, ct);
+        created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
 
-        // It must REPEAT: wait for at least two audio-start envelopes (gap = 1s).
-        await WaitForAsync(() => audioStarts.Count >= 2, TimeSpan.FromSeconds(10));
+        // Fires within duration + 1s poll and rings on the satellite via POST /api/voice/announce.
+        await WaitForAsync(() => !audioStarts.IsEmpty, TimeSpan.FromSeconds(10));
 
-        // Acknowledge -> the loop stops; no meaningful growth after a couple more gaps.
-        app.Services.GetRequiredService<ActiveAlertRegistry>().Acknowledge("kitchen-01").ShouldNotBeEmpty();
-        var countAtAck = audioStarts.Count;
-        await Task.Delay(TimeSpan.FromSeconds(3), ct); // 3 gaps elapse
-        audioStarts.Count.ShouldBeLessThanOrEqualTo(countAtAck + 1); // at most one in-flight round
+        // Wake on the satellite dismisses it (hub-local acknowledgment).
+        var dismissed = app.Services.GetRequiredService<ActiveAlertRegistry>().Acknowledge("kitchen-01");
+        dismissed.ShouldHaveSingleItem();
+        dismissed[0].Text.ShouldBe("pasta is ready");
+        dismissed[0].Kind.ShouldBe(AnnounceKind.Timer);
 
+        // A second timer, silenced remotely through the VFS: exec dismiss.sh -> POST /api/voice/dismiss.
+        var startsBefore = audioStarts.Count;
+        var created2 = await fs.CreateAsync("/tea/timer.json",
+            """{"durationSeconds": 2, "text": "tea is ready", "target": {"room": "Kitchen"}}""",
+            false, true, ct);
+        created2.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        await WaitForAsync(() => audioStarts.Count > startsBefore, TimeSpan.FromSeconds(10));
+
+        var exec = (await fs.ExecAsync("/", "dismiss.sh", null, ct))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0);
+        exec.Stdout.ShouldContain("timer \"tea is ready\"");
+        app.Services.GetRequiredService<ActiveAlertRegistry>().Acknowledge("kitchen-01").ShouldBeEmpty();
+
+        await fireLoop.StopAsync(CancellationToken.None);
         await app.StopAsync(CancellationToken.None);
         satListener.Stop();
         await cts.CancelAsync();
