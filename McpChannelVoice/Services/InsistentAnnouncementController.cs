@@ -24,7 +24,7 @@ public sealed class InsistentAnnouncementController(
 {
     public async Task<AnnounceResponse> StartAsync(AnnounceRequest request, CancellationToken ct)
     {
-        var targetIds = ResolveConfigured(request.Target);
+        var targetIds = registry.Resolve(request.Target);
         if (targetIds.Count == 0)
         {
             logger.LogWarning(
@@ -186,27 +186,6 @@ public sealed class InsistentAnnouncementController(
             Identity = first?.Identity,
             DurationMs = rounds
         };
-    }
-
-    private IReadOnlyList<string> ResolveConfigured(AnnounceTarget target)
-    {
-        if (target.SatelliteIds is { Count: > 0 })
-        {
-            return target.SatelliteIds.Where(id => registry.GetById(id) is not null).Distinct().ToList();
-        }
-        if (target.SatelliteId is not null)
-        {
-            return registry.GetById(target.SatelliteId) is null ? [] : [target.SatelliteId];
-        }
-        if (target.Room is not null)
-        {
-            return registry.GetIdsByRoom(target.Room);
-        }
-        if (target.All == true)
-        {
-            return registry.GetAllIds();
-        }
-        return [];
     }
 
     private static async IAsyncEnumerable<AudioChunk> Replay(IReadOnlyList<AudioChunk> chunks, double gain)

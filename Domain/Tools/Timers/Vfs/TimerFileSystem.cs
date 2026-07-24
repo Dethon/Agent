@@ -14,7 +14,8 @@ namespace Domain.Tools.Timers.Vfs;
 // /dismiss.sh (exec) silences every alert currently ringing — alarms and timers alike — so "stop
 // the alarm" works from any room or channel, not just by waking a targeted satellite.
 public sealed class TimerFileSystem(
-    ITimerStore store, TimeProvider timeProvider, IAlertDismisser dismisser) : IFileSystemBackend
+    ITimerStore store, TimeProvider timeProvider, IAlertDismisser dismisser,
+    ISatelliteCatalog satellites) : IFileSystemBackend
 {
     public string FilesystemName => "timers";
 
@@ -298,7 +299,7 @@ public sealed class TimerFileSystem(
     // HA alarms calendar, which survives restarts and escalates.
     public const int MaxDurationSeconds = 4 * 60 * 60;
 
-    private static ToolErrorResult? ValidateSpec(SpecDto spec)
+    private ToolErrorResult? ValidateSpec(SpecDto spec)
     {
         if (spec.DurationSeconds is not > 0)
         {
@@ -313,16 +314,37 @@ public sealed class TimerFileSystem(
         }
 
         var target = spec.Target;
-        var hasTarget = target is not null
-            && (target.SatelliteId is not null
-                || target.SatelliteIds is { Count: > 0 }
-                || target.Room is not null
-                || target.All == true);
-        return hasTarget
-            ? null
-            : Error(ToolError.Codes.InvalidArgument,
+        if (target is null
+            || (target.SatelliteId is null
+                && target.SatelliteIds is not { Count: > 0 }
+                && target.Room is null
+                && target.All != true))
+        {
+            return Error(ToolError.Codes.InvalidArgument,
                 "target is required: {satelliteId | satelliteIds | room | all}");
+        }
+
+        // A target the announcer can't resolve arms a timer that never rings: by fire time the
+        // timer has already been claimed out of the store and the failure is only logged. Reject
+        // it here instead, naming the satellites so the agent can retry with a real one.
+        var named = target.SatelliteIds is { Count: > 0 }
+            ? target.SatelliteIds.Where(id => id is not null)
+            : target.SatelliteId is not null ? [target.SatelliteId] : [];
+        var unknown = named.Where(id => !satellites.Exists(id)).ToList();
+        if (unknown.Count > 0)
+        {
+            return Error(ToolError.Codes.NotFound,
+                $"unknown satellite(s): {string.Join(", ", unknown)}. Known satellites: {DescribeSatellites()}");
+        }
+
+        return satellites.Resolve(target).Count > 0
+            ? null
+            : Error(ToolError.Codes.NotFound,
+                $"target matches no satellite. Known satellites: {DescribeSatellites()}");
     }
+
+    private string DescribeSatellites() =>
+        string.Join(", ", satellites.GetAll().Select(s => $"{s.Id} (room \"{s.Room}\")"));
 
     private string RenderSpec(ArmedTimer t) => JsonSerializer.Serialize(new
     {

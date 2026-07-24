@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
+using Domain.Tools;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Timers;
 using Microsoft.Extensions.Time.Testing;
@@ -24,13 +25,37 @@ public class TimerFileSystemJourneyTests
         }
     }
 
+    private sealed class FakeSatelliteCatalog : ISatelliteCatalog
+    {
+        public IReadOnlyList<SatelliteDescriptor> GetAll() => [new("kitchen-01", "Kitchen")];
+
+        public bool Exists(string satelliteId) => satelliteId == "kitchen-01";
+
+        public IReadOnlyList<string> Resolve(AnnounceTarget target)
+        {
+            if (target.SatelliteIds is { Count: > 0 })
+            {
+                return target.SatelliteIds.Where(id => id is not null && Exists(id)).ToList();
+            }
+            if (target.SatelliteId is not null)
+            {
+                return Exists(target.SatelliteId) ? [target.SatelliteId] : [];
+            }
+            if (target.Room is not null)
+            {
+                return target.Room.Equals("Kitchen", StringComparison.OrdinalIgnoreCase) ? ["kitchen-01"] : [];
+            }
+            return target.All == true ? ["kitchen-01"] : [];
+        }
+    }
+
     private static (TimerFileSystem Fs, InMemoryTimerStore Store, FakeTimeProvider Time, FakeDismisser Dismisser) Build()
     {
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 10, 0, 0, TimeSpan.Zero));
         time.SetLocalTimeZone(_madrid);
         var store = new InMemoryTimerStore();
         var dismisser = new FakeDismisser();
-        return (new TimerFileSystem(store, time, dismisser), store, time, dismisser);
+        return (new TimerFileSystem(store, time, dismisser, new FakeSatelliteCatalog()), store, time, dismisser);
     }
 
     private const string PastaSpec = """
@@ -116,6 +141,42 @@ public class TimerFileSystemJourneyTests
 
         var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
         err.Error.Message.ShouldContain("target");
+    }
+
+    [Fact]
+    public async Task Create_UnresolvableRoom_IsRejectedWithTheRoster()
+    {
+        var (fs, store, _, _) = Build();
+
+        var result = await fs.CreateAsync(
+            "/pasta/timer.json",
+            """{"durationSeconds": 300, "target": {"room": "Basement"}}""",
+            false, true, CancellationToken.None);
+
+        // A target the announcer cannot resolve arms a timer that never rings: the fire path
+        // swallows the failure and the timer is already gone by then. Reject at create instead,
+        // and name the satellites so the agent can retry with a real one.
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+        err.Error.Message.ShouldContain("kitchen-01");
+        err.Error.Message.ShouldContain("Kitchen");
+        (await store.ListAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_UnknownSatelliteInList_IsRejected()
+    {
+        var (fs, _, _, _) = Build();
+
+        var result = await fs.CreateAsync(
+            "/pasta/timer.json",
+            """{"durationSeconds": 300, "target": {"satelliteIds": ["kitchen-01", "ghost-01"]}}""",
+            false, true, CancellationToken.None);
+
+        // Half-resolvable is still wrong: silently ringing only the kitchen hides the typo.
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+        err.Error.Message.ShouldContain("ghost-01");
     }
 
     [Fact]
