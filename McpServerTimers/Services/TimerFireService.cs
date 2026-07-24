@@ -66,11 +66,14 @@ public sealed class TimerFireService(
         }
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
-            // The timer was already removed by TakeDueAsync; a bad target means it just doesn't ring
-            // (documented v1 behavior — no durability/retry). Guard on the host token, not the
-            // exception type: the announce HttpClient throws TaskCanceledException (an
-            // OperationCanceledException) on its request timeout even when the host isn't stopping,
-            // and that must not unwind the poll loop. Only real shutdown (ct cancelled) propagates.
+            // One attempt, then the timer is gone — TakeDueAsync already claimed it. Targets are
+            // validated at create, so failing here means the hub was unreachable at the due second
+            // (typically a hub redeploy overlapping it). Accepted trade, not an oversight:
+            // retry/durability machinery isn't worth it for kitchen-scale countdowns on a
+            // deliberately non-durable store. Guard on the host token, not the exception type:
+            // whatever the announcer throws while the host is live (the HTTP adapter's typed
+            // unavailable, a raw timeout from an in-process implementation) must not unwind the
+            // poll loop — only real shutdown (ct cancelled) propagates.
             logger.LogWarning(ex, "Timer {TimerId} failed to ring", armed.Id);
         }
     }
