@@ -575,6 +575,8 @@ services:
     depends_on:
       base-sdk:
         condition: service_started
+      mcp-channel-voice:
+        condition: service_started
 
   mcp-channel-voice:
     image: mcp-channel-voice:latest
