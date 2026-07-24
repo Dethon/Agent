@@ -171,7 +171,7 @@ public sealed class TimerFileSystem(
             return new FsResult<FsCreateResult>.Err(specError);
         }
 
-        var validation = ValidateSpec(spec!);
+        var validation = await ValidateSpec(spec!, ct);
         if (validation is not null)
         {
             return new FsResult<FsCreateResult>.Err(validation);
@@ -234,28 +234,28 @@ public sealed class TimerFileSystem(
     public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
         Task.FromResult(Unsupported<FsMoveResult>("The timers filesystem does not support move."));
 
-    public Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    public async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
         if (node.Kind is not (TimerNodeKind.Root or TimerNodeKind.DismissFile))
         {
-            return Task.FromResult(Unsupported<FsExecResult>(
-                $"exec is only supported at the timers root: exec {TimerPath.DismissFileName}"));
+            return Unsupported<FsExecResult>(
+                $"exec is only supported at the timers root: exec {TimerPath.DismissFileName}");
         }
 
         var trimmed = command.Trim();
         if (node.Kind == TimerNodeKind.Root && trimmed != TimerPath.DismissFileName)
         {
-            return Task.FromResult(Exec(
-                "", $"command not found: {trimmed}\navailable: {TimerPath.DismissFileName}", 127, path));
+            return Exec(
+                "", $"command not found: {trimmed}\navailable: {TimerPath.DismissFileName}", 127, path);
         }
 
-        var dismissed = dismisser.DismissAll();
+        var dismissed = await dismisser.DismissAllAsync(ct);
         var stdout = dismissed.Count == 0
             ? "nothing is ringing\n"
             : "dismissed " + string.Join(
                 " and ", dismissed.Select(d => $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\"")) + "\n";
-        return Task.FromResult(Exec(stdout, "", 0, path));
+        return Exec(stdout, "", 0, path);
     }
 
     public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
@@ -299,7 +299,7 @@ public sealed class TimerFileSystem(
     // HA alarms calendar, which survives restarts and escalates.
     public const int MaxDurationSeconds = 4 * 60 * 60;
 
-    private ToolErrorResult? ValidateSpec(SpecDto spec)
+    private async Task<ToolErrorResult?> ValidateSpec(SpecDto spec, CancellationToken ct)
     {
         if (spec.DurationSeconds is not > 0)
         {
@@ -326,25 +326,28 @@ public sealed class TimerFileSystem(
 
         // A target the announcer can't resolve arms a timer that never rings: by fire time the
         // timer has already been claimed out of the store and the failure is only logged. Reject
-        // it here instead, naming the satellites so the agent can retry with a real one.
-        var named = target.SatelliteIds is { Count: > 0 }
+        // it here instead, naming the satellites so the agent can retry with a real one. The roster
+        // is fetched once and reused for both the unknown-id check and the error message.
+        var roster = await satellites.GetAllAsync(ct);
+        var known = roster.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        IEnumerable<string> named = target.SatelliteIds is { Count: > 0 }
             ? target.SatelliteIds.Where(id => id is not null)
             : target.SatelliteId is not null ? [target.SatelliteId] : [];
-        var unknown = named.Where(id => !satellites.Exists(id)).ToList();
+        var unknown = named.Where(id => !known.Contains(id)).ToList();
         if (unknown.Count > 0)
         {
             return Error(ToolError.Codes.NotFound,
-                $"unknown satellite(s): {string.Join(", ", unknown)}. Known satellites: {DescribeSatellites()}");
+                $"unknown satellite(s): {string.Join(", ", unknown)}. Known satellites: {Describe(roster)}");
         }
 
-        return satellites.Resolve(target).Count > 0
+        return (await satellites.ResolveAsync(target, ct)).Count > 0
             ? null
             : Error(ToolError.Codes.NotFound,
-                $"target matches no satellite. Known satellites: {DescribeSatellites()}");
+                $"target matches no satellite. Known satellites: {Describe(roster)}");
     }
 
-    private string DescribeSatellites() =>
-        string.Join(", ", satellites.GetAll().Select(s => $"{s.Id} (room \"{s.Room}\")"));
+    private static string Describe(IReadOnlyList<SatelliteDescriptor> roster) =>
+        string.Join(", ", roster.Select(s => $"{s.Id} (room \"{s.Room}\")"));
 
     private string RenderSpec(ArmedTimer t) => JsonSerializer.Serialize(new
     {
