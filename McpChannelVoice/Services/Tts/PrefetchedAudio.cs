@@ -46,7 +46,11 @@ public sealed class PrefetchedAudio : IAsyncDisposable
             }
             _buffer.Writer.TryComplete();
         }
-        catch (OperationCanceledException)
+        // Only OUR cancellation is a clean stop. Any other OperationCanceledException falls through
+        // to the catch-all below and surfaces, because completing the stream cleanly here would hand
+        // the loop a zero-chunk segment: drained, no error, no metric — a silently dropped sentence
+        // reported as a success.
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
             _buffer.Writer.TryComplete();
         }
