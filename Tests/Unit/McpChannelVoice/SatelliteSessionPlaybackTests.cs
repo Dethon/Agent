@@ -570,6 +570,33 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
+    public async Task RunPlaybackLoop_FirstChunk_WritesTheAudioBeforeInvokingOnFirstAudio()
+    {
+        // Four awaited metric publishes now hang off OnFirstAudio, so invoking it before the first
+        // writer call delays the first audio byte reaching the satellite by however long Redis takes:
+        // the observer changing what it observes. Every timestamp the callback reports is captured
+        // before the write, so ordering the write first costs no accuracy at all.
+        var session = MakeSession();
+        var order = new List<string>();
+
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("hi", count: 2),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: _ => { order.Add("metrics"); return Task.CompletedTask; });
+
+        var pump = session.RunPlaybackLoopAsync(
+            (_, _) => { order.Add("write"); return Task.CompletedTask; }, CancellationToken.None);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        order.ShouldBe(["write", "metrics", "write"]);
+    }
+
+    [Fact]
     public async Task RunPlaybackLoop_FirstChunk_SpeechEndAnchorRewindsTheEndpointTail()
     {
         // The caller can only see the capture CLOSE, which SilenceGate reaches a whole

@@ -279,6 +279,7 @@ public sealed class SatelliteSession
                 var synthesisStart = time.GetTimestamp();
                 await foreach (var chunk in job.Audio.WithCancellation(jobCts.Token))
                 {
+                    FirstAudioTiming? firstAudio = null;
                     if (chunks == 0)
                     {
                         firstChunkTimestamp = time.GetTimestamp();
@@ -290,7 +291,7 @@ public sealed class SatelliteSession
                         {
                             var turnStart = Interlocked.Read(ref _turnStartedAt);
                             var speechEnd = Interlocked.Read(ref _speechEndedAt);
-                            var timing = new FirstAudioTiming(
+                            firstAudio = new FirstAudioTiming(
                                 time.GetElapsedTime(synthesisStart, firstChunkTimestamp),
                                 turnStart == TurnNotStarted
                                     ? null
@@ -301,20 +302,27 @@ public sealed class SatelliteSession
                                 job.EnqueuedAt == 0
                                     ? null
                                     : time.GetElapsedTime(job.EnqueuedAt, synthesisStart));
-                            // A failing metrics publish must neither abort playback nor tear down the loop.
-                            try
-                            {
-                                await job.OnFirstAudio(timing);
-                            }
-                            catch (Exception ex)
-                            {
-                                logger?.LogWarning(ex, "Playback OnFirstAudio callback failed for {Label}", job.Label);
-                            }
                         }
                     }
                     totalAudio += DurationOf(chunk);
                     chunks++;
                     await writer(chunk, jobCts.Token);
+                    // Deliberately after the write: OnFirstAudio carries several awaited metric
+                    // publishes, and running them first would delay the first audio byte reaching the
+                    // satellite by however long the metrics backbone takes — the observer changing what
+                    // it observes. Every timestamp above is already captured, so accuracy is unaffected.
+                    // A failing metrics publish must neither abort playback nor tear down the loop.
+                    if (firstAudio is { } timing)
+                    {
+                        try
+                        {
+                            await job.OnFirstAudio!(timing);
+                        }
+                        catch (Exception ex)
+                        {
+                            logger?.LogWarning(ex, "Playback OnFirstAudio callback failed for {Label}", job.Label);
+                        }
+                    }
                 }
                 logger?.LogInformation("Playback job {Label} drained {Chunks} chunk(s)", job.Label, chunks);
                 drained = true;

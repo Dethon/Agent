@@ -680,6 +680,16 @@ public class WyomingSatelliteHostTests
         verify.ShouldAllBe(e => e.Outcome == "final");
         publishedEvents.ShouldNotContain(e => e.Metric == VoiceMetric.SpeakerVerifyEarlyMs);
 
+        // The EndpointTailMs PUBLISH SITE, not just the gate underneath it: the satellite streams
+        // 6 silent 100 ms frames after 4 loud ones and TrailingSilenceMs is 200, so the gate ends on
+        // the second silent frame and the reported tail must be that 200 — not the 600 ms of silence
+        // that kept arriving afterwards. Published even though this capture is rejected, because
+        // tuning TrailingSilenceMs needs the rejected captures too.
+        var tail = publishedEvents.SingleOrDefault(e => e.Metric == VoiceMetric.EndpointTailMs);
+        tail.ShouldNotBeNull();
+        tail!.DurationMs.ShouldBe(200);
+        tail.EndReason.ShouldBe("trailing_silence");
+
         emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);

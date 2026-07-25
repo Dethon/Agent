@@ -233,6 +233,12 @@ public sealed class SendReplyTool
         // proof that this reply answers a transcript this hub dispatched, which the turn-anchored
         // spans below need — see the OnFirstAudio gate.
         var dispatchedAtStamp = isReply ? session.TryConsumeDispatchedAt() : null;
+
+        // Taken before the publish below and used as its end bound, so the round trip ends exactly
+        // where the queue wait begins: the publish is itself an awaited Redis round trip, and stamping
+        // afterwards left its cost in no span at all on every turn.
+        var enqueuedAt = time.GetTimestamp();
+
         if (dispatchedAtStamp is { } dispatchedAt)
         {
             try
@@ -243,7 +249,7 @@ public sealed class SendReplyTool
                     SatelliteId = session.SatelliteId,
                     Room = session.Config.Room,
                     Identity = session.Config.Identity,
-                    DurationMs = (long)time.GetElapsedTime(dispatchedAt).TotalMilliseconds,
+                    DurationMs = (long)time.GetElapsedTime(dispatchedAt, enqueuedAt).TotalMilliseconds,
                     ConversationId = conversationId
                 }, ct);
             }
@@ -255,8 +261,6 @@ public sealed class SendReplyTool
                 logger.LogWarning(ex, "Failed to publish AgentRoundTripMs metric");
             }
         }
-
-        var enqueuedAt = time.GetTimestamp();
 
         // Synthesis is lazy and runs inside the playback loop, so latency must be measured there.
         // The loop times synthesis -> first audio chunk (TtsLatencyMs) and turn-open -> first audio
