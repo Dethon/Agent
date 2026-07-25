@@ -28,6 +28,7 @@ public class SendReplyToolTests
     private readonly string _conversationId;
     private readonly IServiceProvider _services;
     private readonly List<VoiceEvent> _published = [];
+    private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
 
     public SendReplyToolTests()
     {
@@ -81,6 +82,7 @@ public class SendReplyToolTests
             .AddSingleton(new VoiceSettings())
             .AddSingleton(delivery)
             .AddSingleton<ILogger<SendReplyTool>>(NullLogger<SendReplyTool>.Instance)
+            .AddSingleton<TimeProvider>(_clock)
             .BuildServiceProvider();
     }
 
@@ -291,5 +293,24 @@ public class SendReplyToolTests
         var wake = _published.SingleOrDefault(e => e.Metric == VoiceMetric.WakeToFirstAudioMs);
         wake.ShouldNotBeNull();
         wake.DurationMs.ShouldBe(1000); // turn-start -> first audio (synthesis was instant in fake time)
+    }
+
+    [Fact]
+    public async Task McpRun_StreamComplete_PublishesSpeechEndAndQueueWaitMetrics()
+    {
+        _session.ResetTurn();
+        _session.MarkTurnStart(_clock.GetTimestamp());
+        _session.MarkSpeechEnd(_clock.GetTimestamp());
+
+        await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
+        _session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var published = _published.Select(e => e.Metric).ToList();
+        published.ShouldContain(VoiceMetric.SpeechEndToFirstAudioMs);
+        published.ShouldContain(VoiceMetric.ReplyQueueWaitMs);
     }
 }

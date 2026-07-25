@@ -520,6 +520,82 @@ public class SatelliteSessionPlaybackTests
         accepted.ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task RunPlaybackLoop_FirstChunk_PublishesSpeechEndAndQueueWaitTiming()
+    {
+        var session = MakeSession();
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        session.MarkTurnStart(time.GetTimestamp());
+        time.Advance(TimeSpan.FromSeconds(3));            // the user talking
+        session.MarkSpeechEnd(time.GetTimestamp());
+        time.Advance(TimeSpan.FromSeconds(2));            // verify + STT + agent
+        var enqueuedAt = time.GetTimestamp();
+        time.Advance(TimeSpan.FromMilliseconds(400));     // the reply waits behind the preamble
+
+        // Synthesis takes 300 ms to produce its first chunk; 16000 bytes = 500 ms of audio.
+        async IAsyncEnumerable<AudioChunk> audio()
+        {
+            time.Advance(TimeSpan.FromMilliseconds(300));
+            yield return new AudioChunk { Data = new byte[16000], Format = AudioFormat.WyomingStandard };
+            await Task.CompletedTask;
+        }
+
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: audio(),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; },
+            EnqueuedAt: enqueuedAt);
+
+        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+
+        var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        // Speech end -> first audio excludes the 3 s the user spent talking: 2000 + 400 + 300.
+        timing.SinceSpeechEnd.ShouldBe(TimeSpan.FromMilliseconds(2700));
+        // Queue wait ends at synthesis start, so it is the 400 ms behind the preamble — NOT the
+        // 300 ms of synthesis, which SinceSynthesisStart already owns.
+        timing.QueueWait.ShouldBe(TimeSpan.FromMilliseconds(400));
+        timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
+
+        session.CompletePlayback();
+        await Task.Delay(80);                            // let the loop reach the playback-drain wait
+        time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RunPlaybackLoop_FirstChunk_NoSpeechEndOrEnqueueStamp_TimingsAreNull()
+    {
+        var session = MakeSession();
+        var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // A job with no preceding capture (chime, announce) must report nulls rather than a garbage
+        // value, so the hub simply publishes nothing for those spans.
+        var job = new PlaybackJob(
+            Label: "chime:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("hi", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
+
+        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        session.CompletePlayback();
+
+        var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        timing.SinceSpeechEnd.ShouldBeNull();
+        timing.QueueWait.ShouldBeNull();
+
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
     private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)
     {
         for (var i = 0; i < count; i++)
