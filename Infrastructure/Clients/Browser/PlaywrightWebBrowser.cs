@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Infrastructure.HtmlProcessing;
@@ -28,6 +29,11 @@ public class PlaywrightWebBrowser(
     private long _connectionGeneration;
     private const int MaxCaptchaRetries = 2;
     private const int DefaultOperationTimeoutMs = 15_000;
+
+    // Resolving a ref is an existence check, not a wait for something in flight: the element was in
+    // the snapshot the agent is holding, so either it is still there or the page moved on. Kept
+    // generous enough to ride out an in-progress re-render, but far below the operation timeout.
+    private const int RefResolutionTimeoutMs = 2_000;
     private const int ConnectionRetryAttempts = 3;
     private const int ConnectionRetryDelayMs = 2_000;
 
@@ -80,11 +86,14 @@ public class PlaywrightWebBrowser(
 
     private async Task<BrowseResult> NavigateOnceAsync(BrowseRequest request, CancellationToken ct)
     {
+        // The pre-navigation jitter and acquiring the page are independent, so the delay runs
+        // alongside page creation (measured ~150ms) instead of after it. A random gap still precedes
+        // GotoAsync — it just no longer costs anything on top of work already happening.
+        var jitter = Task.Delay(_random.Next(50, 150), ct);
         var session = await _sessions.GetOrCreateAsync(request.SessionId, _context!, ct);
         var page = session.Page;
 
-        // Brief random delay before navigation
-        await Task.Delay(_random.Next(50, 150), ct);
+        await jitter;
 
         var navigationTimedOut = false;
 
@@ -341,7 +350,22 @@ public class PlaywrightWebBrowser(
         }
 
         var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
-        await locator.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = DefaultOperationTimeoutMs });
+        try
+        {
+            await locator.WaitForAsync(
+                new() { State = WaitForSelectorState.Visible, Timeout = RefResolutionTimeoutMs });
+        }
+        catch (TimeoutException)
+        {
+            // A ref that is not on the page is stale, not slow — the page re-rendered, or a browse
+            // replaced the document, and no amount of extra waiting brings it back. Waiting the full
+            // operation timeout here burned 15s only to report "Operation timed out.", which told
+            // the agent nothing it could act on. Fail fast and name the recovery instead.
+            return new WebActionResult(request.SessionId, WebActionStatus.ElementNotFound,
+                page.Url, false, null, null,
+                $"Element {request.Ref} is no longer on the page — the page has changed since the " +
+                "snapshot was taken. Call web_snapshot to get current refs, then retry.");
+        }
 
         // Capture before-snapshot for diffing — use preserveRefs to avoid clearing the
         // data-ref attributes that the locator depends on
@@ -808,31 +832,61 @@ public class PlaywrightWebBrowser(
         }
     }
 
-    // Polls page HTML until it stops changing (catches client-side rendering after DOMContentLoaded).
-    // ContentAsync is cheap (a few ms even on large pages), so the poll interval is the only real
-    // cost: at 200ms a settled page clears in ~3 checks (~0.6s) instead of the old ~1.5s, while still
-    // requiring two consecutive identical reads before declaring stability.
-    private static async Task WaitForDomStabilityAsync(
+    // Ramped so an already-settled page is not made to wait as long as one that is still rendering.
+    // Two consecutive identical reads at 100ms and 400ms span the same 400ms of page time the old
+    // fixed 200ms schedule needed three sleeps (600ms) to cover. The total is held at the same
+    // 1200ms ceiling as before on purpose: a longer tail was measured costing 2.4s on pages that
+    // never settle at all (elmundo.es, github.com), where extra patience buys nothing because the
+    // churn is ads and carousels rather than content still arriving.
+    private static readonly int[] StabilityIntervalsMs = [100, 300, 400, 400];
+
+    // Element count plus text length, rather than the serialised document the loop used to compare.
+    // Two reasons. It is far cheaper — a ~20-byte reply instead of up to 2MB per check, measured at
+    // 824ms of pure transfer on a 1.8MB page — and it is a better signal, because it tracks what is
+    // actually extracted. Comparing whole HTML meant a rotating spinner's inline style or a class
+    // toggle counted as "still rendering", so ad-heavy pages never settled and always paid the cap
+    // for content that had finished arriving long before.
+    //
+    // documentElement, not body: body is null on XML and frameset documents, and an evaluate that
+    // dereferenced it would throw, be caught as a PlaywrightException, and turn a working browse
+    // into an error result.
+    private const string DomFingerprintScript =
+        """
+        () => {
+            const root = document.documentElement;
+            if (!root) return '0:0';
+            return root.getElementsByTagName('*').length + ':' + (root.textContent || '').length;
+        }
+        """;
+
+    // Polls the page until it stops changing (catches client-side rendering after DOMContentLoaded).
+    // The fingerprint is a single cheap evaluate, so the sleeps are the only real cost — which is why
+    // the first reading is taken immediately, as the baseline to compare against, rather than after a
+    // sleep that bought nothing.
+    internal static async Task WaitForDomStabilityAsync(
         IPage page,
-        int checkIntervalMs = 200,
         CancellationToken ct = default,
         int stableCountRequired = 2,
-        int maxChecks = 6)
+        IReadOnlyList<int>? intervalsMs = null)
     {
-        string? previousHtml = null;
+        var intervals = intervalsMs ?? StabilityIntervalsMs;
+        var previousHtml = await page.EvaluateAsync<string>(DomFingerprintScript);
         var stableCount = 0;
-        var checks = 0;
 
-        while (stableCount < stableCountRequired && checks < maxChecks)
+        foreach (var interval in intervals)
         {
             ct.ThrowIfCancellationRequested();
 
-            await Task.Delay(checkIntervalMs, ct);
-            var currentHtml = await page.ContentAsync();
+            await Task.Delay(interval, ct);
+            var currentHtml = await page.EvaluateAsync<string>(DomFingerprintScript);
 
             if (currentHtml == previousHtml)
             {
                 stableCount++;
+                if (stableCount >= stableCountRequired)
+                {
+                    return;
+                }
             }
             else
             {
@@ -840,7 +894,6 @@ public class PlaywrightWebBrowser(
             }
 
             previousHtml = currentHtml;
-            checks++;
         }
     }
 
@@ -902,13 +955,20 @@ public class PlaywrightWebBrowser(
         );
     }
 
-    private static bool ContainsCaptcha(string html)
+    // DataDome serves its loader as dd.js, but matching that as a bare substring also matches any
+    // content-hashed bundle whose name ends in "dd" — github.com ships
+    // marketing-navigation-ece1017251744ddd.js — which reported CaptchaRequired and returned no
+    // content for the whole site. Anchoring on a path or attribute boundary keeps the detection and
+    // drops the collision. ("geo.captcha-delivery.com" is subsumed by "captcha-delivery.com".)
+    private static readonly Regex DataDomeLoaderPattern =
+        new("""[/"'=]dd\.js\b""", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    internal static bool ContainsCaptcha(string html)
     {
         // DataDome CAPTCHA patterns
         return html.Contains("captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
-               html.Contains("geo.captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
                html.Contains("datadome", StringComparison.OrdinalIgnoreCase) ||
-               html.Contains("dd.js", StringComparison.OrdinalIgnoreCase);
+               DataDomeLoaderPattern.IsMatch(html);
     }
 
     private async Task<(bool Solved, string? Message)> TrySolveCaptchaAsync(

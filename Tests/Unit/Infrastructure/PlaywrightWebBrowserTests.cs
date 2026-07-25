@@ -311,4 +311,24 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await browser.NavigateAsync(new BrowseRequest(SessionId: sessionId, Url: url));
         return (browser, page);
     }
+
+    // A DataDome loader must still be detected, but the probe used to be a bare "dd.js" substring
+    // test, which matches any content-hashed bundle whose name happens to end in "dd" — github.com
+    // ships marketing-navigation-ece1017251744ddd.js, and that alone made the whole site report
+    // CaptchaRequired and return no content on every browse.
+    [Theory]
+    [InlineData("""<script src="/dd.js"></script>""", true)]
+    [InlineData("""<script src="https://cdn.example.com/dd.js"></script>""", true)]
+    [InlineData("""<script src='/static/dd.js?v=3'></script>""", true)]
+    [InlineData("""<img src="https://geo.captcha-delivery.com/captcha/?initialCid=x">""", true)]
+    [InlineData("""<script>window.datadome = {};</script>""", true)]
+    [InlineData(
+        """<script src="/assets/marketing-navigation-ece1017251744ddd.js" fetchpriority="low"></script>""",
+        false)]
+    [InlineData("""<link href="/a/bundle-4fdd.js"><script src="/b/chunk.add.js"></script>""", false)]
+    [InlineData("<html><body><p>An ordinary page</p></body></html>", false)]
+    public void ContainsCaptcha_MatchesDataDomeLoaderButNotHashedBundleNames(string html, bool expected)
+    {
+        PlaywrightWebBrowser.ContainsCaptcha(html).ShouldBe(expected);
+    }
 }

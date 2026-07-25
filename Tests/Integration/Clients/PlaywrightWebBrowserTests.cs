@@ -26,6 +26,37 @@ public class PlaywrightWebBrowserTests(
         return $"test-{Guid.NewGuid():N}";
     }
 
+    // Every web_action call in four weeks of production failed at almost exactly 15.0s — the
+    // operation timeout — because an unresolvable ref was waited on as if it were merely slow. A ref
+    // that is not on the page is stale, so the wait cannot succeed no matter how long it runs; the
+    // agent needs to be told to re-snapshot, quickly, rather than after a 15-second silence.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task ActionAsync_WithStaleRef_FailsFastWithRefreshHint()
+    {
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
+
+        var sessionId = GetUniqueSessionId();
+        try
+        {
+            await fixture.Browser.NavigateAsync(new BrowseRequest(
+                SessionId: sessionId, Url: "https://example.com", MaxLength: 5000));
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = await fixture.Browser.ActionAsync(new WebActionRequest(
+                SessionId: sessionId, Ref: "e9999", Action: WebActionType.Click));
+            sw.Stop();
+
+            result.Status.ShouldBe(WebActionStatus.ElementNotFound);
+            result.ErrorMessage.ShouldNotBeNull().ShouldContain("web_snapshot");
+            sw.ElapsedMilliseconds.ShouldBeLessThan(6000);
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
     [Trait("Category", "External")]
     [SkippableFact]
     public async Task NavigateAsync_WithSimplePage_ReturnsContent()
