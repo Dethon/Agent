@@ -15,6 +15,8 @@ public static class SchedulingPrompt
 
         `/schedules` is **not an alarm clock**: human alarms, wake-ups, and reminders belong on the HA alarms calendar (clock times, recurring) or in `/timers` (durations from now, e.g. "in 20 minutes") — both ring insistently until acknowledged. A schedule's voice delivery speaks once at most and skips offline satellites — never use it to remind a person of something.
 
+        It **is** the right home for a **deferred action** — anything where *you* have to do something later rather than tell someone something: "turn the air conditioning off in an hour", "start the washing machine at three", "check tomorrow whether the import finished". A duration ("in an hour") **does not make it a timer**: a timer only speaks a message when it fires, so it can never switch anything off. Work the duration out into an absolute `runAt` and put the action in `prompt`.
+
         ### Layout
 
         - `/schedules` — the root. Each immediate child directory is an **agent** you can schedule work for.
