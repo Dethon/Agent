@@ -661,4 +661,83 @@ public class SendReplyToolTests
             It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+
+    [Fact]
+    public async Task McpRun_QueuedSegments_StartSynthesisWithoutWaitingForThePlaybackLoop()
+    {
+        // Prefetch: the TTS request must go out when the segment is queued. The playback loop is
+        // sequential and will not touch a job's audio until the previous one has finished its
+        // real-time drain, so leaving it lazy puts a full round trip into every sentence seam.
+        // No playback loop runs in this test at all — every recorded synthesis is therefore one the
+        // loop did not ask for.
+        var synthesized = new List<string>();
+        _tts.Setup(t => t.SynthesizeAsync(
+                It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
+            .Returns<string, SynthesisOptions, CancellationToken>((text, _, _) => Recording(text, synthesized));
+
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+
+        await SendReplyTool.McpRun(_conversationId,
+            "Mañana por la tarde hará sol y unos veintidós grados. ",
+            ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId,
+            "Por la noche bajará bastante la temperatura y habrá algo de viento del norte, así que conviene cerrar las ventanas antes de irse a dormir esta noche. ",
+            ReplyContentType.Text, false, "m-2", _services);
+
+        await WaitForCountAsync(synthesized, 2, TimeSpan.FromSeconds(5));
+        lock (synthesized)
+        { synthesized.Count.ShouldBe(2); }
+    }
+
+    [Fact]
+    public async Task McpRun_PrefetchDisabled_LeavesSynthesisToThePlaybackLoop()
+    {
+        var synthesized = new List<string>();
+        _tts.Setup(t => t.SynthesizeAsync(
+                It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
+            .Returns<string, SynthesisOptions, CancellationToken>((text, _, _) => Recording(text, synthesized));
+
+        var services = BuildServices(new VoiceSettings
+        {
+            Tts = new TtsSettings { Streaming = new StreamingTtsConfig { Prefetch = false } }
+        });
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+
+        await SendReplyTool.McpRun(_conversationId,
+            "Mañana por la tarde hará sol y unos veintidós grados. ",
+            ReplyContentType.Text, false, "m-1", services);
+
+        await Task.Delay(200);
+        lock (synthesized)
+        { synthesized.ShouldBeEmpty(); }
+    }
+
+    private static async IAsyncEnumerable<AudioChunk> Recording(string text, List<string> sink)
+    {
+        lock (sink)
+        { sink.Add(text); }
+        await Task.Yield();
+        yield return new AudioChunk
+        {
+            Data = System.Text.Encoding.UTF8.GetBytes(text),
+            Format = AudioFormat.WyomingStandard
+        };
+    }
+
+    private static async Task WaitForCountAsync(List<string> sink, int count, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            lock (sink)
+            {
+                if (sink.Count >= count)
+                { return; }
+            }
+            await Task.Delay(20);
+        }
+    }
+
 }

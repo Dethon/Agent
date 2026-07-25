@@ -160,8 +160,15 @@ public class VoiceTurnDecompositionTests
         var whole = Duration(VoiceMetric.SpeechEndToFirstAudioMs);
 
         roundTrip.ShouldBe(AgentMs);
-        queueWait.ShouldBe(QueueWaitMs);
-        tts.ShouldBe(TtsMs);
+
+        // Prefetch starts a reply segment's synthesis at enqueue, so on a turn that waits behind
+        // another job the synthesis happens DURING that wait: the queue-wait span absorbs it and the
+        // loop-observed TTS span goes to zero. The pair is conserved, which is what keeps the
+        // decomposition additive. TtsLatencyMs still reports real synthesis time on the common path,
+        // where the loop is idle and pulls the moment the job is queued.
+        (queueWait + tts).ShouldBe(QueueWaitMs + TtsMs);
+        queueWait.ShouldBe(QueueWaitMs + TtsMs);
+        tts.ShouldBe(0);
 
         // The sum must close exactly: on a FakeTimeProvider nothing elapses that the test did not
         // advance, so any residual is a real unattributed (or double-counted) span, not jitter.

@@ -19,6 +19,15 @@ public record StreamingTtsConfig
     // inter-segment gaps, and better cross-sentence prosody.
     public int FirstSegmentMinChars { get; init; } = 40;
     public int MinChars { get; init; } = 140;
+
+    // Start a segment's synthesis when it is queued rather than when the playback loop reaches it.
+    // The loop is sequential and does not touch a job's audio until the previous one has finished
+    // its real-time drain, so without this every sentence seam costs a full TTS round trip.
+    public bool Prefetch { get; init; } = true;
+
+    // How far ahead the prefetch may run before parking, in chunks. Bounded so a long utterance
+    // cannot buffer its entire synthesis into memory.
+    public int PrefetchBufferChunks { get; init; } = 64;
 }
 
 public record OpenAiTtsConfig
