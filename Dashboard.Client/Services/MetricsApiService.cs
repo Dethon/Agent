@@ -99,7 +99,7 @@ public sealed class MetricsApiService(HttpClient http)
 
     public Task<Dictionary<string, decimal>?> GetVoiceGroupedAsync(
         VoiceDimension dimension, VoiceMetric metric, DateOnly from, DateOnly to,
-        CancellationToken ct = default) =>
+        LatencyMetric agg = LatencyMetric.Avg, CancellationToken ct = default) =>
         http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/voice/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+            $"api/metrics/voice/by/{dimension}?metric={metric}&agg={agg}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 }

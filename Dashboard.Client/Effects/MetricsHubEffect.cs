@@ -130,7 +130,7 @@ public sealed class MetricsHubEffect(
         try
         {
             var s = voiceStore.State;
-            var result = await api.GetVoiceGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
+            var result = await api.GetVoiceGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, s.Agg, ct);
             ct.ThrowIfCancellationRequested();
             voiceStore.SetBreakdown(result ?? []);
         }

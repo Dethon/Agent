@@ -226,12 +226,14 @@ public static class MetricsApiEndpoints
             MetricsQueryService query,
             VoiceDimension dimension,
             VoiceMetric metric,
+            LatencyMetric? agg,
             DateOnly? from,
             DateOnly? to) =>
         {
             var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
             var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetVoiceGroupedAsync(dimension, metric, fromDate, toDate);
+            return await query.GetVoiceGroupedAsync(
+                dimension, metric, fromDate, toDate, agg ?? LatencyMetric.Avg);
         });
     }
 }

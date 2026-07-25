@@ -312,6 +312,56 @@ public class MetricsQueryServiceGroupingTests
     }
 
     [Fact]
+    public async Task GetVoiceGroupedAsync_NewDurationMetric_AveragesInsteadOfCounting()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:voice:2026-03-15",
+        [
+            new VoiceEvent { Metric = VoiceMetric.SpeechEndToFirstAudioMs, Room = "office", DurationMs = 1000 },
+            new VoiceEvent { Metric = VoiceMetric.SpeechEndToFirstAudioMs, Room = "office", DurationMs = 3000 },
+        ]);
+
+        var result = await _sut.GetVoiceGroupedAsync(
+            VoiceDimension.Room, VoiceMetric.SpeechEndToFirstAudioMs, date, date);
+
+        // Regression guard: the old hard-coded switch listed only four duration metrics, so every
+        // newly appended ...Ms member silently reported a count (here it would have been 2).
+        result["office"].ShouldBe(2000m);
+    }
+
+    [Fact]
+    public async Task GetVoiceGroupedAsync_HonoursRequestedAggregation()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:voice:2026-03-15",
+        [
+            new VoiceEvent { Metric = VoiceMetric.EndpointTailMs, Room = "office", DurationMs = 1000 },
+            new VoiceEvent { Metric = VoiceMetric.EndpointTailMs, Room = "office", DurationMs = 9000 },
+        ]);
+
+        var result = await _sut.GetVoiceGroupedAsync(
+            VoiceDimension.Room, VoiceMetric.EndpointTailMs, date, date, LatencyMetric.Max);
+
+        result["office"].ShouldBe(9000m);
+    }
+
+    [Fact]
+    public async Task GetVoiceGroupedAsync_NonDurationMetric_StillCounts()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:voice:2026-03-15",
+        [
+            new VoiceEvent { Metric = VoiceMetric.WakeTriggered, Room = "office" },
+            new VoiceEvent { Metric = VoiceMetric.WakeTriggered, Room = "office" },
+        ]);
+
+        var result = await _sut.GetVoiceGroupedAsync(
+            VoiceDimension.Room, VoiceMetric.WakeTriggered, date, date);
+
+        result["office"].ShouldBe(2m);
+    }
+
+    [Fact]
     public async Task GetVoiceGroupedAsync_NullDimensionValue_BucketsAsUnknown()
     {
         var date = new DateOnly(2026, 3, 15);
