@@ -97,9 +97,15 @@ public static class HomeAssistantPrompt
         This calendar is for times expressed as a clock time or date ("at 7", "tomorrow at
         9:30"), recurring alarms, and anything past the 4-hour timer ceiling. A request phrased
         as a **duration from now** ("remind me in 20 minutes", "avísame en 5 minutos") belongs
-        in `/timers` with the message as its `text`, not here. `/schedules` is for agent tasks
-        and must never carry a human alarm or reminder (it speaks once at most and skips
-        offline satellites).
+        in `/timers` with the message as its `text`, not here.
+
+        Both of those exist to **tell a person something**. A request to **perform an action
+        later** — "apaga el aire en una hora", "turn the lights off at midnight", "start the
+        washing machine at three" — is neither an alarm nor a timer: it is a `/schedules` one-shot
+        whose `prompt` is the HA action to run, however the time is phrased. Never put a command
+        in a timer's `text` or a calendar event's `summary`; those are only spoken aloud, so the
+        action would never happen. `/schedules` is for agent tasks and must never carry a human
+        alarm or reminder (it speaks once at most and skips offline satellites).
 
         To change or cancel: list with `exec get_events.sh ...`, then
         `exec delete_event.sh ...` / `exec update_event.sh ...` on the event.

@@ -2,6 +2,8 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
+using Domain.Tools;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Timers;
 using Microsoft.Extensions.Time.Testing;
@@ -16,12 +18,53 @@ public class TimerFileSystemJourneyTests
     private sealed class FakeDismisser : IAlertDismisser
     {
         public List<DismissedAlert> Ringing { get; } = [];
-        public IReadOnlyList<DismissedAlert> DismissAll()
+        public Task<IReadOnlyList<DismissedAlert>> DismissAllAsync(CancellationToken ct)
         {
             var result = Ringing.ToList();
             Ringing.Clear();
-            return result;
+            return Task.FromResult<IReadOnlyList<DismissedAlert>>(result);
         }
+    }
+
+    private sealed class FakeSatelliteCatalog : ISatelliteCatalog
+    {
+        public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<SatelliteDescriptor>>([new("kitchen-01", "Kitchen")]);
+
+        public async Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct)
+        {
+            // Yield so a caller that forgets to await this cross-process resolve is caught by the tests.
+            await Task.Yield();
+            static bool exists(string id) => id == "kitchen-01";
+            if (target.SatelliteIds is { Count: > 0 })
+            {
+                return target.SatelliteIds.Where(id => id is not null && exists(id)).ToList();
+            }
+            if (target.SatelliteId is not null)
+            {
+                return exists(target.SatelliteId) ? [target.SatelliteId] : [];
+            }
+            if (target.Room is not null)
+            {
+                return target.Room.Equals("Kitchen", StringComparison.OrdinalIgnoreCase) ? ["kitchen-01"] : [];
+            }
+            return target.All == true ? ["kitchen-01"] : [];
+        }
+    }
+
+    private sealed class UnreachableCatalog : ISatelliteCatalog
+    {
+        public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) =>
+            throw new VoiceHubUnavailableException("connection refused");
+
+        public Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct) =>
+            throw new VoiceHubUnavailableException("connection refused");
+    }
+
+    private sealed class UnreachableDismisser : IAlertDismisser
+    {
+        public Task<IReadOnlyList<DismissedAlert>> DismissAllAsync(CancellationToken ct) =>
+            throw new VoiceHubUnavailableException("connection refused");
     }
 
     private static (TimerFileSystem Fs, InMemoryTimerStore Store, FakeTimeProvider Time, FakeDismisser Dismisser) Build()
@@ -30,7 +73,7 @@ public class TimerFileSystemJourneyTests
         time.SetLocalTimeZone(_madrid);
         var store = new InMemoryTimerStore();
         var dismisser = new FakeDismisser();
-        return (new TimerFileSystem(store, time, dismisser), store, time, dismisser);
+        return (new TimerFileSystem(store, time, dismisser, new FakeSatelliteCatalog()), store, time, dismisser);
     }
 
     private const string PastaSpec = """
@@ -116,6 +159,93 @@ public class TimerFileSystemJourneyTests
 
         var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
         err.Error.Message.ShouldContain("target");
+    }
+
+    [Fact]
+    public async Task Create_UnresolvableRoom_IsRejectedWithTheRoster()
+    {
+        var (fs, store, _, _) = Build();
+
+        var result = await fs.CreateAsync(
+            "/pasta/timer.json",
+            """{"durationSeconds": 300, "target": {"room": "Basement"}}""",
+            false, true, CancellationToken.None);
+
+        // A target the announcer cannot resolve arms a timer that never rings: the fire path
+        // swallows the failure and the timer is already gone by then. Reject at create instead,
+        // and name the satellites so the agent can retry with a real one.
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+        err.Error.Message.ShouldContain("kitchen-01");
+        err.Error.Message.ShouldContain("Kitchen");
+        (await store.ListAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_UnknownSatelliteInList_IsRejected()
+    {
+        var (fs, _, _, _) = Build();
+
+        var result = await fs.CreateAsync(
+            "/pasta/timer.json",
+            """{"durationSeconds": 300, "target": {"satelliteIds": ["kitchen-01", "ghost-01"]}}""",
+            false, true, CancellationToken.None);
+
+        // Half-resolvable is still wrong: silently ringing only the kitchen hides the typo.
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+        err.Error.Message.ShouldContain("ghost-01");
+    }
+
+    [Fact]
+    public async Task Create_BlankText_IsRejected()
+    {
+        var (fs, store, _, _) = Build();
+
+        var result = await fs.CreateAsync(
+            "/pasta/timer.json",
+            """{"durationSeconds": 300, "text": "   ", "target": {"room": "Kitchen"}}""",
+            false, true, CancellationToken.None);
+
+        // A blank (non-null) text bypasses the `?? "<id> timer"` fallback and the announce endpoint
+        // rejects it at fire time (400) -> the timer never rings. Reject at create so validation
+        // matches the fire-time contract. (Omitting text is fine -- it auto-names.)
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+        err.Error.Message.ShouldContain("text");
+        (await store.ListAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_HubUnreachable_ReturnsRetryableUnavailableAndDoesNotArm()
+    {
+        var store = new InMemoryTimerStore();
+        var fs = new TimerFileSystem(store, new FakeTimeProvider(), new FakeDismisser(), new UnreachableCatalog());
+
+        var result = await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
+
+        // Fail closed and say so: no unvalidated timer gets armed, and the agent learns this is
+        // the hub being down (retryable), not a bad spec — instead of a raw exception envelope.
+        var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.Unavailable);
+        err.Error.Retryable.ShouldBeTrue();
+        err.Error.Message.ShouldContain("voice hub");
+        err.Error.Message.ShouldContain("not armed");
+        (await store.ListAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Exec_Dismiss_HubUnreachable_ReturnsRetryableUnavailable()
+    {
+        var fs = new TimerFileSystem(
+            new InMemoryTimerStore(), new FakeTimeProvider(), new UnreachableDismisser(), new FakeSatelliteCatalog());
+
+        var result = await fs.ExecAsync("/", "dismiss.sh", null, CancellationToken.None);
+
+        var err = result.ShouldBeOfType<FsResult<FsExecResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.Unavailable);
+        err.Error.Retryable.ShouldBeTrue();
+        err.Error.Message.ShouldContain("voice hub");
     }
 
     [Fact]
