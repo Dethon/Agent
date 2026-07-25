@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Microsoft.Playwright;
 
@@ -117,7 +119,12 @@ public class ModalDismisser
         var sw = Stopwatch.StartNew();
         while (true)
         {
-            var results = await Task.WhenAll(patterns
+            // One round trip decides, for every pattern at once, whether a real overlay is on the
+            // page. Only patterns that matched go on to the (much rarer) button-probing path.
+            var hasOverlay = await DetectOverlayContainersAsync(page, patterns);
+            var candidates = patterns.Where((_, i) => hasOverlay[i]).ToList();
+
+            var results = await Task.WhenAll(candidates
                 .Select(pattern => TryDismissPatternSafeAsync(page, pattern, ct)));
             var dismissed = results.Where(r => r != null).Cast<ModalDismissed>().ToList();
 
@@ -169,63 +176,45 @@ public class ModalDismisser
         ModalPattern pattern,
         CancellationToken ct)
     {
-        // Require a matching container that is an actual visible OVERLAY, not just any visible
-        // element. The container selectors use generic substrings ([class*='age'], [class*='modal'],
-        // …) that match ordinary article elements on content-rich pages; gating on overlay
-        // positioning (fixed/absolute/sticky, on-screen, non-transparent) is what distinguishes a
-        // real modal from page content. Immediate checks only — no blocking waits.
-        if (!string.IsNullOrEmpty(pattern.ContainerSelector))
-        {
-            var containerLocator = page.Locator(pattern.ContainerSelector);
-            var count = await containerLocator.CountAsync();
-            if (count == 0)
-            {
-                return null;
-            }
-
-            var anyOverlay = false;
-
-            for (var i = 0; i < Math.Min(count, 10); i++)
-            {
-                if (await IsVisibleOverlayAsync(containerLocator.Nth(i)))
-                {
-                    anyOverlay = true;
-                    break;
-                }
-            }
-
-            if (!anyOverlay)
-            {
-                return null;
-            }
-        }
-
         var urlBefore = page.Url;
 
+        // Probe every button selector in one round trip. Per-selector this used to be an
+        // IsVisibleAsync, a tagName evaluate, a possible getAttribute, and a TextContentAsync — and
+        // Playwright re-resolves the selector on each. Across a pattern's ~9 selectors that is ~30
+        // round trips and ~30 full-document traversals, which is what made dismissal cost seconds on
+        // large pages once a container actually matched.
+        var probes = await ProbeButtonsAsync(page, pattern.ButtonSelectors, urlBefore);
+
         // Try each button selector
-        foreach (var buttonSelector in pattern.ButtonSelectors)
+        for (var index = 0; index < pattern.ButtonSelectors.Count; index++)
         {
             ct.ThrowIfCancellationRequested();
+
+            var buttonSelector = pattern.ButtonSelectors[index];
+            var probe = probes[index];
+            if (probe.Outcome == ButtonProbeOutcome.NotActionable)
+            {
+                continue;
+            }
 
             try
             {
                 var button = page.Locator(buttonSelector).First;
 
-                // Immediate visibility check instead of a blocking WaitForAsync(500): absent buttons
-                // are skipped in ~ms. The old per-selector waits summed to ~14s across the ~29
-                // button/text probes whenever a generic container selector false-matched.
-                if (!await IsCurrentlyVisibleAsync(button))
+                // The in-page probe could not evaluate this selector (a Playwright-only selector
+                // engine such as :has()), so fall back to resolving it through Playwright.
+                if (probe.Outcome == ButtonProbeOutcome.Unsupported)
                 {
-                    continue;
+                    if (!await IsCurrentlyVisibleAsync(button) ||
+                        await WouldCauseNavigationAsync(button, urlBefore))
+                    {
+                        continue;
+                    }
                 }
 
-                // Skip elements that would cause navigation (links with href to different pages)
-                if (await WouldCauseNavigationAsync(button, urlBefore))
-                {
-                    continue;
-                }
-
-                var buttonText = await button.TextContentAsync(new LocatorTextContentOptions { Timeout = 500 });
+                var buttonText = probe.Outcome == ButtonProbeOutcome.Actionable
+                    ? probe.Text
+                    : await button.TextContentAsync(new LocatorTextContentOptions { Timeout = 500 });
                 await button.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
 
                 // Verify we didn't navigate away - if we did, this wasn't a modal dismiss
@@ -245,71 +234,84 @@ public class ModalDismisser
             }
         }
 
-        // If button selectors didn't work, try text patterns
-        if (pattern.ButtonTextPatterns != null)
+        // If button selectors didn't work, try text patterns.
+        //
+        // Resolving GetByRole(..., Name: pattern) once per text pattern meant Playwright computed
+        // the accessibility tree 18 times (9 patterns x button+link). Each of those measured
+        // 250-480ms on a 1.8MB page, which is where dismissal spent 4.5-4.9s of every imdb.com
+        // browse. One combined regex per role computes it twice instead, and Playwright still does
+        // the accessible-name matching itself, so what counts as a match is unchanged; only the
+        // number of resolutions is. Priority stays pattern-major, role-minor, as before.
+        if (pattern.ButtonTextPatterns is { Count: > 0 })
         {
+            var nameRegex = TextPatternRegexFor(pattern);
+
+            // Resolved on first use, not up front: computing the accessibility tree is the expensive
+            // part, and the overwhelmingly common case (a consent wall dismissed by a <button>) never
+            // needs the link role at all. Order is unchanged — the roles are still consulted in
+            // TextPatternRoles order within each pattern, exactly as the per-pattern loop did.
+            var resolved = new List<(ILocator Locator, IReadOnlyList<string> Texts)>();
+
+            async Task<IReadOnlyList<(ILocator Locator, IReadOnlyList<string> Texts)>> RoleCandidatesAsync(int upTo)
+            {
+                while (resolved.Count <= upTo && resolved.Count < TextPatternRoles.Length)
+                {
+                    var locator = page.GetByRole(
+                        TextPatternRoles[resolved.Count], new PageGetByRoleOptions { NameRegex = nameRegex });
+                    try
+                    {
+                        // TextContents, not InnerTexts: innerText forces a layout reflow for every
+                        // match, and these strings are only used to pick between candidates Playwright
+                        // has already matched by accessible name.
+                        resolved.Add((locator, await locator.AllTextContentsAsync()));
+                    }
+                    catch
+                    {
+                        // A role that cannot be resolved contributes no candidates.
+                        resolved.Add((locator, []));
+                    }
+                }
+
+                return resolved;
+            }
+
             foreach (var textPattern in pattern.ButtonTextPatterns)
             {
                 ct.ThrowIfCancellationRequested();
 
-                try
+                for (var roleIndex = 0; roleIndex < TextPatternRoles.Length; roleIndex++)
                 {
-                    // Try button with text
-                    var button = page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = textPattern }).First;
-                    if (!await IsCurrentlyVisibleAsync(button))
+                    var (locator, texts) = (await RoleCandidatesAsync(roleIndex))[roleIndex];
+                    var index = IndexOfTextMatch(texts, textPattern);
+                    if (index < 0)
                     {
                         continue;
                     }
 
-                    if (await WouldCauseNavigationAsync(button, urlBefore))
+                    try
                     {
-                        continue;
+                        var candidate = locator.Nth(index);
+                        if (!await IsCurrentlyVisibleAsync(candidate) ||
+                            await WouldCauseNavigationAsync(candidate, urlBefore))
+                        {
+                            continue;
+                        }
+
+                        await candidate.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+
+                        await Task.Delay(100, ct);
+                        if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
+                        {
+                            await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
+                            continue;
+                        }
+
+                        return new ModalDismissed(pattern.Type, $"text({textPattern})", textPattern);
                     }
-
-                    await button.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
-
-                    await Task.Delay(100, ct);
-                    if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
+                    catch
                     {
-                        await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
-                        continue;
+                        // Candidate went stale or refused the click, try the next one.
                     }
-
-                    return new ModalDismissed(pattern.Type, $"button:text({textPattern})", textPattern);
-                }
-                catch
-                {
-                    // Text pattern not found, try next
-                }
-
-                try
-                {
-                    // Try link with text - but only if it doesn't navigate
-                    var link = page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = textPattern }).First;
-                    if (!await IsCurrentlyVisibleAsync(link))
-                    {
-                        continue;
-                    }
-
-                    if (await WouldCauseNavigationAsync(link, urlBefore))
-                    {
-                        continue;
-                    }
-
-                    await link.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
-
-                    await Task.Delay(100, ct);
-                    if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
-                    {
-                        await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
-                        continue;
-                    }
-
-                    return new ModalDismissed(pattern.Type, $"link:text({textPattern})", textPattern);
-                }
-                catch
-                {
-                    // Text pattern not found, try next
                 }
             }
         }
@@ -317,39 +319,185 @@ public class ModalDismisser
         return null;
     }
 
-    // Returns whether the locator resolves to a visible, on-screen overlay (fixed/absolute/sticky,
-    // non-zero size, not transparent/hidden) — i.e. something that looks like a real modal rather
-    // than ordinary page content that merely matched a generic container selector.
-    private static async Task<bool> IsVisibleOverlayAsync(ILocator locator)
+    private static readonly AriaRole[] TextPatternRoles = [AriaRole.Button, AriaRole.Link];
+
+    // Playwright matches a role locator's Name case-insensitively as a substring, so an alternation
+    // of the escaped patterns selects exactly the union the per-pattern calls used to select.
+    private static readonly Dictionary<ModalType, Regex> TextPatternRegexes =
+        _defaultPatterns
+            .Where(p => p.ButtonTextPatterns is { Count: > 0 })
+            .ToDictionary(
+                p => p.Type,
+                p => new Regex(
+                    string.Join("|", p.ButtonTextPatterns!.Select(Regex.Escape)),
+                    RegexOptions.IgnoreCase | RegexOptions.Compiled));
+
+    private static Regex TextPatternRegexFor(ModalPattern pattern) =>
+        TextPatternRegexes.TryGetValue(pattern.Type, out var cached)
+            ? cached
+            : new Regex(
+                string.Join("|", pattern.ButtonTextPatterns!.Select(Regex.Escape)),
+                RegexOptions.IgnoreCase);
+
+    private static int IndexOfTextMatch(IReadOnlyList<string> texts, string textPattern)
+    {
+        for (var i = 0; i < texts.Count; i++)
+        {
+            if (texts[i].Contains(textPattern, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    // Guards against a pathological selector matching tens of thousands of nodes. Real consent
+    // walls sit far earlier than this; the bound only stops one page from stalling the scan.
+    private const int MaxContainersScanned = 5000;
+
+    private enum ButtonProbeOutcome
+    {
+        NotActionable,
+        Actionable,
+
+        // querySelector could not parse the selector — it uses a Playwright-only selector engine
+        // (e.g. :has()), so the decision has to be made through Playwright instead.
+        Unsupported
+    }
+
+    private readonly record struct ButtonProbe(ButtonProbeOutcome Outcome, string? Text);
+
+    // Decides, for a pattern's whole button-selector list in ONE round trip, which selectors resolve
+    // to a currently visible element that would not navigate away — and captures its text while it
+    // is there. Mirrors the checks the per-selector Playwright calls performed: Playwright treats an
+    // element as visible when it has a non-empty bounding box and is not visibility:hidden, and
+    // WouldCauseNavigationAsync only ever rejects anchors whose raw href points off the page.
+    private static async Task<IReadOnlyList<ButtonProbe>> ProbeButtonsAsync(
+        IPage page,
+        IReadOnlyList<string> buttonSelectors,
+        string urlBefore)
     {
         try
         {
-            return await locator.EvaluateAsync<bool>(
+            var raw = await page.EvaluateAsync<JsonElement>(
                 """
-                el => {
+                ([selectors, currentUrl]) => selectors.map(selector => {
+                    let el;
+                    try { el = document.querySelector(selector); }
+                    catch { return { outcome: 2, text: null }; }
+                    if (!el) return { outcome: 0, text: null };
+
                     const r = el.getBoundingClientRect();
-                    if (r.width <= 0 || r.height <= 0) return false;
-                    const s = getComputedStyle(el);
-                    if (s.visibility === 'hidden' || s.display === 'none' || parseFloat(s.opacity) === 0)
-                        return false;
-                    return s.position === 'fixed' || s.position === 'absolute' || s.position === 'sticky';
-                }
-                """);
+                    if (r.width <= 0 || r.height <= 0) return { outcome: 0, text: null };
+                    if (getComputedStyle(el).visibility === 'hidden') return { outcome: 0, text: null };
+
+                    if (el.tagName.toLowerCase() === 'a') {
+                        const href = el.getAttribute('href');
+                        if (href) {
+                            const lower = href.toLowerCase();
+                            if (!lower.startsWith('javascript:') && !href.startsWith('#')) {
+                                let absolute = null;
+                                try { absolute = new URL(href); } catch { absolute = null; }
+                                if (absolute) {
+                                    const current = new URL(currentUrl);
+                                    if (absolute.host !== current.host ||
+                                        absolute.pathname !== current.pathname) {
+                                        return { outcome: 0, text: null };
+                                    }
+                                } else {
+                                    return { outcome: 0, text: null };
+                                }
+                            }
+                        }
+                    }
+
+                    return { outcome: 1, text: el.textContent };
+                })
+                """,
+                new object[] { buttonSelectors.ToArray(), urlBefore });
+
+            return raw.EnumerateArray()
+                .Select(entry => new ButtonProbe(
+                    (ButtonProbeOutcome)entry.GetProperty("outcome").GetInt32(),
+                    entry.GetProperty("text").ValueKind == JsonValueKind.Null
+                        ? null
+                        : entry.GetProperty("text").GetString()))
+                .ToList();
         }
         catch
         {
-            return false;
+            // The page could not be evaluated at all — let every selector take the Playwright path
+            // rather than silently deciding there is nothing to dismiss.
+            return buttonSelectors
+                .Select(_ => new ButtonProbe(ButtonProbeOutcome.Unsupported, null))
+                .ToList();
+        }
+    }
+
+    // Decides, for every pattern in ONE round trip, whether the page currently shows a real visible
+    // OVERLAY (fixed/absolute/sticky, on-screen, non-transparent) rather than ordinary content that
+    // merely matched a generic container selector ([class*='age'], [class*='modal'], …).
+    //
+    // This used to be one CountAsync plus a Nth(i).EvaluateAsync per candidate, per pattern.
+    // Playwright re-resolves the locator on each of those calls, so a single poll cost up to 44
+    // WebSocket round trips AND 44 full-document querySelectorAll traversals — measured at 2.7s on
+    // bbc.com and 4.9s on a 1.8MB imdb.com page. Doing the whole scan inside the page collapses it
+    // to one round trip and one traversal per selector.
+    //
+    // Scanning stops at the first overlay per pattern, so the common no-overlay page is the only one
+    // that walks its full match set — and it does so in-page, where each element costs microseconds.
+    // The old code examined only the first 10 matches, which was a round-trip budget rather than a
+    // correctness rule: a genuine banner sitting behind more than 10 same-class content elements was
+    // silently never dismissed.
+    private static async Task<IReadOnlyList<bool>> DetectOverlayContainersAsync(
+        IPage page,
+        IReadOnlyList<ModalPattern> patterns)
+    {
+        var selectors = patterns.Select(p => p.ContainerSelector ?? string.Empty).ToArray();
+
+        try
+        {
+            return await page.EvaluateAsync<bool[]>(
+                """
+                ([selectors, maxScanned]) => selectors.map(selector => {
+                    if (!selector) return true;
+                    let elements;
+                    try { elements = document.querySelectorAll(selector); }
+                    catch { return false; }
+                    const limit = Math.min(elements.length, maxScanned);
+                    for (let i = 0; i < limit; i++) {
+                        const el = elements[i];
+                        const r = el.getBoundingClientRect();
+                        if (r.width <= 0 || r.height <= 0) continue;
+                        const s = getComputedStyle(el);
+                        if (s.visibility === 'hidden' || s.display === 'none' || parseFloat(s.opacity) === 0)
+                            continue;
+                        if (s.position === 'fixed' || s.position === 'absolute' || s.position === 'sticky')
+                            return true;
+                    }
+                    return false;
+                })
+                """,
+                new object[] { selectors, MaxContainersScanned });
+        }
+        catch
+        {
+            // Detection is best-effort; a page that cannot be evaluated (navigating, closed) simply
+            // has no dismissable overlay this pass.
+            return selectors.Select(_ => false).ToArray();
         }
     }
 
     // Returns whether the locator currently resolves to a visible element, without blocking.
-    // CountAsync()/IsVisibleAsync() report the present DOM state immediately, unlike WaitForAsync
-    // which polls up to its timeout when the element is absent.
+    // IsVisibleAsync reports the present DOM state immediately (unlike WaitForAsync, which polls up
+    // to its timeout when the element is absent) and is already false for a locator that matches
+    // nothing — so the CountAsync that used to precede it only doubled the round trips.
     private static async Task<bool> IsCurrentlyVisibleAsync(ILocator locator)
     {
         try
         {
-            return await locator.CountAsync() > 0 && await locator.IsVisibleAsync();
+            return await locator.IsVisibleAsync();
         }
         catch
         {

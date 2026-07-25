@@ -136,10 +136,14 @@ public class AccessibilitySnapshotService
                 return cs.display === 'none' || cs.visibility === 'hidden';
             }
 
+            // Must not be looser than Playwright's own definition of visible — a NON-EMPTY bounding
+            // box, i.e. both dimensions positive. A ref is a promise that web_action can act on the
+            // element, and it resolves one with WaitForAsync(Visible, 15s); advertising a 120x0
+            // wrapper or a zero-size fixed element therefore buys a guaranteed 15-second dead wait
+            // ending in "Operation timed out." rather than a usable action.
             function isVisible(el) {
                 const rect = el.getBoundingClientRect();
-                return rect.width > 0 || rect.height > 0 ||
-                       getComputedStyle(el).position === 'fixed';
+                return rect.width > 0 && rect.height > 0;
             }
 
             function inferClickable(el) {

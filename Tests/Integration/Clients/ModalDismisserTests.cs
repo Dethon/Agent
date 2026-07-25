@@ -166,4 +166,87 @@ public class ModalDismisserTests(PlaywrightWebBrowserFixture fixture) : IAsyncLi
         result.ShouldContain(r => r.Type == ModalType.CookieConsent);
         (await page.Locator("#late-banner").IsVisibleAsync()).ShouldBeFalse();
     }
+
+    // A large DOM is where overlay detection got expensive: the scan resolved its container locator
+    // once per candidate (CountAsync, then Nth(i).EvaluateAsync for i in 0..9, for each of 4
+    // patterns), and Playwright re-runs querySelectorAll for every one of those calls. That is ~44
+    // full-document traversals per poll and ~176 across the detection window — invisible on a toy
+    // page, but measured at 2.7s on bbc.com and 4.9s on a 1.8MB imdb.com page in production.
+    // Detection must cost a bounded number of round trips regardless of document size.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task DismissModalsAsync_LargeContentPage_StaysWithinDetectionWindow()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+
+        var bulk = string.Concat(Enumerable.Range(0, 3000).Select(i =>
+            $"<div class='card-{i} modal-body popup-inner overlay-tile cookie-note'>" +
+            $"<span class='close-icon'>row {i}</span></div>"));
+        var page = await _context!.NewPageAsync();
+        await page.SetContentAsync("<!doctype html><html><body>" + bulk + "</body></html>");
+
+        var dismisser = new ModalDismisser();
+        var sw = Stopwatch.StartNew();
+        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+        sw.Stop();
+
+        result.ShouldBeEmpty();
+        sw.ElapsedMilliseconds.ShouldBeLessThan(800);
+    }
+
+    // The text-pattern fallback, which runs only when no button SELECTOR matched. Here the dismiss
+    // control carries no close/dismiss-ish class or aria-label, so it is reachable by accessible
+    // name alone. Guards the path that resolves roles by name — the expensive one, since Playwright
+    // computes the accessibility tree to satisfy it.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task DismissModalsAsync_OverlayDismissibleOnlyByButtonText_IsStillDismissed()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+
+        var page = await _context!.NewPageAsync();
+        await page.SetContentAsync(
+            "<!doctype html><html><body>" +
+            "<div id='signup' class='newsletter-wall' " +
+            "style='position:fixed;top:0;left:0;right:0;height:200px;background:#eee;z-index:9999'>" +
+            "Subscribe to our newsletter " +
+            "<button class='signup-reject' " +
+            "onclick=\"document.getElementById('signup').style.display='none'\">No thanks</button>" +
+            "</div><p>Main content</p></body></html>");
+
+        var dismisser = new ModalDismisser();
+        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+
+        result.ShouldContain(r => r.Type == ModalType.Newsletter);
+        (await page.Locator("#signup").IsVisibleAsync()).ShouldBeFalse();
+    }
+
+    // The companion to the speed guard: the same large, noisy DOM with one genuine fixed-position
+    // consent overlay in it must still be found and dismissed. Proves the cheaper scan did not buy
+    // its speed by looking at fewer elements.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task DismissModalsAsync_RealBannerBuriedInLargeContentPage_IsStillDismissed()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+
+        var bulk = string.Concat(Enumerable.Range(0, 3000).Select(i =>
+            $"<div class='card-{i} modal-body popup-inner overlay-tile cookie-note'>" +
+            $"<span class='close-icon'>row {i}</span></div>"));
+        var page = await _context!.NewPageAsync();
+        await page.SetContentAsync(
+            "<!doctype html><html><body>" + bulk +
+            "<div id='cookie-banner' class='cookie-consent' " +
+            "style='position:fixed;top:0;left:0;right:0;background:#ddd;padding:20px;z-index:9999'>" +
+            "We use cookies. " +
+            "<button class='accept-cookies' " +
+            "onclick=\"document.getElementById('cookie-banner').style.display='none'\">Accept</button>" +
+            "</div></body></html>");
+
+        var dismisser = new ModalDismisser();
+        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+
+        result.ShouldContain(r => r.Type == ModalType.CookieConsent);
+        (await page.Locator("#cookie-banner").IsVisibleAsync()).ShouldBeFalse();
+    }
 }
