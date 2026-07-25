@@ -270,9 +270,11 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_StreamComplete_PublishesTtsLatencyFromPlaybackNotEnqueue()
     {
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        _session.MarkTurnStart(time.GetTimestamp());
-        time.Advance(TimeSpan.FromMilliseconds(1000)); // STT + agent thinking before the reply arrives
+        // One clock throughout: a second FakeTimeProvider here used to stamp EnqueuedAt while this
+        // one drained playback, so the queue-wait span was computed across two unrelated timelines.
+        _session.MarkTurnStart(_clock.GetTimestamp());
+        _session.MarkDispatched(_clock.GetTimestamp()); // turn-anchored spans need the dispatch proof
+        _clock.Advance(TimeSpan.FromMilliseconds(1000)); // STT + agent thinking before the reply arrives
 
         await SendReplyTool.McpRun(_conversationId, "hola mundo", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
@@ -283,10 +285,10 @@ public class SendReplyToolTests
 
         // Drain the playback loop: the first synthesized chunk triggers OnFirstAudio, which publishes
         // the latency metrics from where synthesis actually happens.
-        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
         _session.CompletePlayback();
         await Task.Delay(80);
-        time.Advance(TimeSpan.FromSeconds(1));
+        _clock.Advance(TimeSpan.FromSeconds(1));
         await pump.WaitAsync(TimeSpan.FromSeconds(2));
 
         _published.Count(e => e.Metric == VoiceMetric.TtsLatencyMs).ShouldBe(1);
@@ -301,6 +303,7 @@ public class SendReplyToolTests
         _session.ResetTurn();
         _session.MarkTurnStart(_clock.GetTimestamp());
         _session.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
+        _session.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
@@ -312,6 +315,33 @@ public class SendReplyToolTests
         var published = _published.Select(e => e.Metric).ToList();
         published.ShouldContain(VoiceMetric.SpeechEndToFirstAudioMs);
         published.ShouldContain(VoiceMetric.ReplyQueueWaitMs);
+    }
+
+    [Fact]
+    public async Task McpRun_ReplyWithNoDispatchStamp_PublishesNoTurnAnchoredSpans()
+    {
+        // "Recuérdame en dos minutos" fires into a voice-minted conversation whose mapping is still
+        // alive (ConversationLifetime is 5 minutes) and whose satellite session is live, so McpRun
+        // routes it down the utterance path — create_conversation no-ops in that state. The turn
+        // anchors from the earlier real turn are never invalidated, so without a gate this publishes
+        // SpeechEndToFirstAudioMs ≈ 120000: one sample that wrecks Avg/P95/Max on the headline metric.
+        _session.ResetTurn();
+        _session.MarkTurnStart(_clock.GetTimestamp());
+        _session.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
+        _clock.Advance(TimeSpan.FromMinutes(2));
+
+        await SendReplyTool.McpRun(_conversationId, "son las diez", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
+        _session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        _published.ShouldNotContain(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs);
+        _published.ShouldNotContain(e => e.Metric == VoiceMetric.WakeToFirstAudioMs);
+        // TtsLatencyMs and ReplyQueueWaitMs are anchored on this job alone, so they stay honest.
+        _published.ShouldContain(e => e.Metric == VoiceMetric.TtsLatencyMs);
+        _published.ShouldContain(e => e.Metric == VoiceMetric.ReplyQueueWaitMs);
     }
 
     [Fact]
