@@ -296,8 +296,11 @@ public sealed class WyomingSatelliteHost(
         // judging silence as an unknown voice, so the capture keeps running instead of being
         // rejected on a foregone conclusion. Once real speech (TV or otherwise) has latched, it
         // clears MinVerifySpeechMs on its own and this check still applies to it as before.
+        var sw = Stopwatch.StartNew();
         var verification = await speakerVerifier.VerifyAsync(
             capture.BufferedAudio, stats.SpeechMs, session.Config, ct, enforceMinSpeech: true);
+        sw.Stop();
+        await PublishVerifyLatencyAsync(session, sw.ElapsedMilliseconds, verification.Similarity, "early");
         if (verification.Decision != SpeakerDecision.Rejected)
         {
             return false;
@@ -309,6 +312,23 @@ public sealed class WyomingSatelliteHost(
         await PublishUnknownSpeakerAsync(session, stats, verification.Similarity, "unknown_speaker_early");
         return true;
     }
+
+    // Verification runs before the STT stopwatch starts, so without this the ONNX embedding is pure
+    // invisible latency. Diagnostic only: routed through SafePublishAsync because EarlyRejectAsync
+    // is awaited from the conversation loop with no catch above it.
+    private Task PublishVerifyLatencyAsync(
+        SatelliteSession session, long elapsedMs, double? similarity, string outcome) =>
+        SafePublishAsync(new VoiceEvent
+        {
+            Metric = VoiceMetric.SpeakerVerifyMs,
+            SatelliteId = session.SatelliteId,
+            Room = session.Config.Room,
+            Identity = session.Config.Identity,
+            Outcome = outcome,
+            DurationMs = elapsedMs,
+            Similarity = similarity,
+            ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
+        });
 
     // Rejection telemetry is diagnostic, not part of the turn contract: this is awaited from the
     // conversation loop (EarlyRejectAsync has no catch above it), so a metrics-backbone outage must
@@ -363,9 +383,13 @@ public sealed class WyomingSatelliteHost(
                 // reopens the mic wake-free beside a talking TV, so a short TV burst must be
                 // verified and rejected rather than passed through. First-turn captures keep the
                 // skip so a genuinely brief opening command stays safe.
+                var verifySw = Stopwatch.StartNew();
                 verification = await speakerVerifier.VerifyAsync(
                     capture.BufferedAudio, capture.Stats.SpeechMs, session.Config, ct,
                     enforceMinSpeech: !isFollowUp);
+                verifySw.Stop();
+                await PublishVerifyLatencyAsync(
+                    session, verifySw.ElapsedMilliseconds, verification.Value.Similarity, "final");
                 if (verification.Value.Decision == SpeakerDecision.Rejected)
                 {
                     logger.LogInformation(
