@@ -670,12 +670,15 @@ public class WyomingSatelliteHostTests
         rejection.Similarity.ShouldBe(0.12);
 
         // Verification runs before the STT stopwatch starts, so without its own metric the ONNX
-        // embedding is invisible latency. Either pass may fire depending on EarlyVerifyMs; both
-        // must be timed.
+        // embedding is invisible latency. The capture here ends long before EarlyVerifyMs (5 s), so
+        // only the final inline pass runs — and SpeakerVerifyMs means exactly that pass, the additive
+        // one. The early pass has its own member (SpeakerVerifyEarlyMs), asserted in the early-reject
+        // test below.
         var verify = publishedEvents.Where(e => e.Metric == VoiceMetric.SpeakerVerifyMs).ToList();
-        verify.ShouldNotBeEmpty();
+        verify.Count.ShouldBe(1);
         verify.ShouldAllBe(e => e.DurationMs != null && e.DurationMs >= 0);
-        verify.ShouldAllBe(e => new[] { "early", "final" }.Contains(e.Outcome));
+        verify.ShouldAllBe(e => e.Outcome == "final");
+        publishedEvents.ShouldNotContain(e => e.Metric == VoiceMetric.SpeakerVerifyEarlyMs);
 
         emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
 
@@ -978,13 +981,18 @@ public class WyomingSatelliteHostTests
         rejection!.Outcome.ShouldBe("unknown_speaker_early");
         (rejection.SpeechMs ?? 0).ShouldBeGreaterThanOrEqualTo(300L); // the "TV" DID latch as speech, unlike the zero-speech scenario above
 
-        // This is the only test that forces the early-close branch to reject, so it is the one
-        // place the "early" SpeakerVerifyMs pass (as opposed to "final") gets its own coverage.
-        var verify = publishedEvents.SingleOrDefault(e => e.Metric == VoiceMetric.SpeakerVerifyMs);
+        // This is the only test that forces the early-close branch to reject, so it is the one place
+        // the early pass gets its own coverage. It must publish SpeakerVerifyEarlyMs, NOT
+        // SpeakerVerifyMs: the early pass runs while the capture is still open, concurrent with the
+        // user speaking, so it overlaps the utterance and is not part of the additive decomposition.
+        // Sharing one member let any grouping not keyed on Outcome (the dashboard defaults to
+        // SatelliteId) silently average an overlapping span together with an additive one.
+        var verify = publishedEvents.SingleOrDefault(e => e.Metric == VoiceMetric.SpeakerVerifyEarlyMs);
         verify.ShouldNotBeNull();
         verify!.Outcome.ShouldBe("early");
         (verify.DurationMs ?? -1).ShouldBeGreaterThanOrEqualTo(0L);
         verify.Similarity.ShouldBe(0.213); // GatedToneVerifier's fixed Rejected similarity for an unknown tone
+        publishedEvents.ShouldNotContain(e => e.Metric == VoiceMetric.SpeakerVerifyMs);
 
         emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
 

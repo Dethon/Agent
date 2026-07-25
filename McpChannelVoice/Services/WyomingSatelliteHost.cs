@@ -309,7 +309,8 @@ public sealed class WyomingSatelliteHost(
         var verification = await speakerVerifier.VerifyAsync(
             capture.BufferedAudio, stats.SpeechMs, session.Config, ct, enforceMinSpeech: true);
         sw.Stop();
-        await PublishVerifyLatencyAsync(session, sw.ElapsedMilliseconds, verification.Similarity, "early");
+        await PublishVerifyLatencyAsync(
+            VoiceMetric.SpeakerVerifyEarlyMs, session, sw.ElapsedMilliseconds, verification.Similarity, "early");
         if (verification.Decision != SpeakerDecision.Rejected)
         {
             return false;
@@ -324,12 +325,16 @@ public sealed class WyomingSatelliteHost(
 
     // Verification runs before the STT stopwatch starts, so without this the ONNX embedding is pure
     // invisible latency. Diagnostic only: routed through SafePublishAsync because EarlyRejectAsync
-    // is awaited from the conversation loop with no catch above it.
+    // is awaited from the conversation loop with no catch above it. The two passes report under
+    // DIFFERENT metrics — the final inline pass (SpeakerVerifyMs) is additive within the turn
+    // decomposition, while the early pass (SpeakerVerifyEarlyMs) runs concurrently with the user
+    // still speaking and overlaps the utterance, so averaging them together is meaningless. Outcome
+    // still carries "early"/"final" for readers that want it in one place.
     private Task PublishVerifyLatencyAsync(
-        SatelliteSession session, long elapsedMs, double? similarity, string outcome) =>
+        VoiceMetric metric, SatelliteSession session, long elapsedMs, double? similarity, string outcome) =>
         SafePublishAsync(new VoiceEvent
         {
-            Metric = VoiceMetric.SpeakerVerifyMs,
+            Metric = metric,
             SatelliteId = session.SatelliteId,
             Room = session.Config.Room,
             Identity = session.Config.Identity,
@@ -398,7 +403,8 @@ public sealed class WyomingSatelliteHost(
                     enforceMinSpeech: !isFollowUp);
                 verifySw.Stop();
                 await PublishVerifyLatencyAsync(
-                    session, verifySw.ElapsedMilliseconds, verification.Value.Similarity, "final");
+                    VoiceMetric.SpeakerVerifyMs, session, verifySw.ElapsedMilliseconds,
+                    verification.Value.Similarity, "final");
                 if (verification.Value.Decision == SpeakerDecision.Rejected)
                 {
                     logger.LogInformation(
