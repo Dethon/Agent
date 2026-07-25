@@ -447,11 +447,17 @@ public sealed class WyomingSatelliteHost(
                 PublishVoiceMetric(VoiceMetric.FollowUpEngaged, session);
             }
 
+            // Taken BEFORE the dispatch: DispatchAsync does real work inside — GetOrCreateAsync is a
+            // full create_conversation MCP round trip on a conversation's first turn (the normal case
+            // for a one-shot command, given the 5-minute mapping expiry), plus the channel/message
+            // write and an awaited Redis publish. Stamped afterwards, all of that sat in no span at
+            // all; stamped here it lands inside AgentRoundTripMs, where it belongs.
+            var dispatchStartedAt = time.GetTimestamp();
             var dispatched = await dispatcher.DispatchAsync(
                 session, result, voiceSettings.AgentId, capture.Stats, similarity, identifiedSpeaker, ct);
             if (dispatched)
             {
-                session.MarkDispatched(time.GetTimestamp());
+                session.MarkDispatched(dispatchStartedAt);
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
                 // where a wake event was not observed. The registry makes a second Acknowledge a no-op.
                 // Runs AFTER this dispatch, so its snooze context lands on the NEXT transcript.
