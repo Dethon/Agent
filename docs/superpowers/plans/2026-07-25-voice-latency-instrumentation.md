@@ -38,11 +38,21 @@ The user speaks for ~1.5 s at the median but the residual is ~6.2 s, so roughly 
 
 | New metric | Span | Currently |
 |---|---|---|
-| `EndpointTailMs` | last speech frame → capture close | invisible; `TrailingSilenceMs` config is ~2 s of dead air per turn |
-| `SpeakerVerifyMs` | ONNX speaker verification (runs before the STT stopwatch starts) | invisible; live in prod (8 `UtteranceRejected` on 07-24) |
-| `AgentRoundTripMs` | transcript dispatched → reply text back at `send_reply` | invisible; the hub cannot see agent-side stages |
+| `EndpointTailMs` | last speech frame → the gate's end-of-utterance decision | invisible; `TrailingSilenceMs` config is ~2 s of dead air per turn |
+| `SpeakerVerifyMs` | the **final**, inline ONNX speaker verification (runs before the STT stopwatch starts) | invisible; live in prod (8 `UtteranceRejected` on 07-24) |
+| `SpeakerVerifyEarlyMs` | the **early** mid-capture ONNX pass — concurrent with the user still speaking, so *not* part of the decomposition | added post-review: it used to share `SpeakerVerifyMs`, silently blending an overlapping span into an additive one |
+| `AgentRoundTripMs` | transcript dispatch begins → reply text back at `send_reply` | invisible; the hub cannot see agent-side stages |
 | `ReplyQueueWaitMs` | reply job enqueued → synthesis starts | invisible; includes the preamble's full drain wait |
-| `SpeechEndToFirstAudioMs` | capture close → first reply audio chunk | **the number that matters and does not exist**; `WakeToFirstAudioMs` starts at mic-open so it contains the user's own speech |
+| `SpeechEndToFirstAudioMs` | the user's last speech frame → first reply audio chunk | **the number that matters and does not exist**; `WakeToFirstAudioMs` starts at mic-open so it contains the user's own speech |
+
+**Anchoring (post-review correction).** The hub can only observe the capture *close*, which `SilenceGate`
+reaches a whole `TrailingSilenceMs` run after the user stopped talking. Anchoring there made
+`SpeechEndToFirstAudioMs` omit ~2 s of machine wait and left `EndpointTailMs` adjacent to the span
+rather than nested inside it, so the acceptance sum below could never close.
+`SatelliteSession.MarkSpeechEnd` therefore rewinds the close timestamp by the endpoint tail (frozen at
+the gate's decision). This is sound because mic audio arrives in real time, so the tail's audio-domain
+length is also its wall-clock length; the residual error is only the gate-decision → capture-close
+handoff.
 
 ## File Structure
 
@@ -984,9 +994,22 @@ git commit -m "feat(observability): percentiles for voice duration metrics and t
 
 - [ ] `dotnet build agent.sln` — clean.
 - [ ] `dotnet test Tests/Tests.csproj --filter "Category!=E2E"` — no new failures (the McpAgent cleanup test fails pre-existing; judge by failure type, not count).
+- [ ] The additivity relationship is asserted in code by
+      `Tests/Unit/McpChannelVoice/VoiceTurnDecompositionTests.cs`, which walks one synthetic turn on a
+      single `FakeTimeProvider` and requires the sum to close **exactly**. Run it first — the field
+      check below only confirms production matches what that test already pins.
 - [ ] Rebuild and restart `mcp-channel-voice` and `observability`, speak one turn, then confirm the decomposition closes:
       `curl -s "http://192.168.5.45:5003/api/metrics/voice/by/Room?metric=SpeechEndToFirstAudioMs&agg=P50&from=<today>&to=<today>"`
       and check `EndpointTailMs + SpeakerVerifyMs + SttLatencyMs + AgentRoundTripMs + ReplyQueueWaitMs + TtsLatencyMs ≈ SpeechEndToFirstAudioMs` for that turn.
+      Notes when reading the field numbers:
+      - Use `SpeakerVerifyMs`, **not** `SpeakerVerifyEarlyMs`. Only the final inline pass is additive;
+        the early pass overlaps the user's speech.
+      - The residual should be a few tens of ms of awaited metric-publish round trips between the
+        stages (`EndpointTailMs`, `SpeakerVerifyMs` and `SttLatencyMs` are each awaited to Redis
+        before the next stage starts), plus the gate-decision → capture-close handoff. A residual near
+        `TrailingSilenceMs` means the speech-end anchor regressed to the capture close.
+      - Every span here is per-turn, but the endpoint is a per-dimension aggregate: compare
+        index-paired samples within one conversation, not aggregate against aggregate.
 
 ## Follow-on plans (deliberately out of scope here)
 

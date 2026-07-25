@@ -300,7 +300,7 @@ public class SendReplyToolTests
     {
         _session.ResetTurn();
         _session.MarkTurnStart(_clock.GetTimestamp());
-        _session.MarkSpeechEnd(_clock.GetTimestamp());
+        _session.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
 
         await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);

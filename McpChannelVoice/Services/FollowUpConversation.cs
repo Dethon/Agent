@@ -17,7 +17,10 @@ public sealed class FollowUpConversation(
 
     // Opens a capture on the session (returns it) — isFollowUp selects the no-speech window.
     public required Func<bool, UtteranceCapture> OpenCapture { get; init; }
-    public required Action CloseCapture { get; init; }
+
+    // Receives the capture being closed so the host can read its gate stats at exactly this point —
+    // the endpointing tail is what anchors speech end, and it must not be re-read later.
+    public required Action<UtteranceCapture> CloseCapture { get; init; }
 
     // Transcribe the captured audio and dispatch it to the agent. Receives the whole capture so
     // the dispatcher can read gate stats (peak RMS, speech ms) alongside the audio. Returns false
@@ -94,7 +97,7 @@ public sealed class FollowUpConversation(
             while (!ct.IsCancellationRequested)
             {
                 var outcome = await AwaitCaptureAsync(capture, ct);
-                CloseCapture();
+                CloseCapture(capture);
 
                 if (outcome is null)
                 {

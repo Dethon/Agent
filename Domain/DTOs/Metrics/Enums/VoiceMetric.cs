@@ -31,7 +31,10 @@ public enum VoiceMetric
     TseLatencyMs = 22,
     // Turn decomposition: EndpointTailMs..SpeechEndToFirstAudioMs split the wake→first-audio span
     // into the parts nothing measured before. SpeechEndToFirstAudioMs is the user-perceived one —
-    // WakeToFirstAudioMs starts at mic-open, so it also contains the user's own speech.
+    // WakeToFirstAudioMs starts at mic-open, so it also contains the user's own speech. The four
+    // others nest inside it and, with SttLatencyMs and TtsLatencyMs, tile it exactly:
+    // EndpointTail + SpeakerVerify + Stt + AgentRoundTrip + ReplyQueueWait + Tts = SpeechEndToFirstAudio
+    // (guarded by VoiceTurnDecompositionTests).
     EndpointTailMs = 23,
     SpeakerVerifyMs = 24,
     AgentRoundTripMs = 25,
