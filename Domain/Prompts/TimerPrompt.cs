@@ -18,12 +18,24 @@ public static class TimerPrompt
         it rings insistently (tone + spoken message) on the target satellites until the user says
         the wake word there, presses the button, or a repeat cap is reached.
 
-        Choosing the mechanism — go by HOW the time is expressed, not the wording: a duration
-        from now up to 4 hours ("timer for 10 minutes", "avísame en 5 minutos", "remind me in
-        20 minutes") is a `/timers` countdown — put the message to speak in `text`. A clock time
-        or date ("wake me at 7", "tomorrow at 9:30"), anything recurring, or anything past the
-        4-hour ceiling goes on the HA alarms calendar: it survives restarts and can escalate to
-        the phone. `/schedules` is only for agent tasks, never for human alarms or reminders.
+        Choosing the mechanism — decide in two steps.
+
+        **First: at the appointed moment, does something have to HAPPEN, or does a person have to
+        be TOLD?** If it is you who must act when the moment comes — turn off the air conditioning,
+        start the washing machine, check whether a download finished — that is a `/schedules` one-shot:
+        work out the absolute time yourself and put it in `runAt`. This holds
+        **however the time is phrased**, so "apaga el aire en una hora" is a scheduled task, not a
+        one-hour timer. A timer only speaks a message when it fires, so it can never turn anything
+        off. Conversely, when the person is the one who will act ("recuérdame en 10 minutos que
+        apague el aire"), they are being told something — that is step two.
+
+        **Second — only when a person is being told something** — go by HOW the time is expressed,
+        not the wording: a duration from now up to 4 hours ("timer for 10 minutes",
+        "avísame en 5 minutos", "remind me in 20 minutes") is a `/timers` countdown — put the
+        message to speak in `text`. A clock time or date ("wake me at 7", "tomorrow at 9:30"),
+        anything recurring, or anything past the 4-hour ceiling goes on the HA alarms calendar: it
+        survives restarts and can escalate to the phone. `/schedules` is only for agent tasks,
+        never for human alarms or reminders.
 
         - Create: `{{VfsTextCreateTool.Name}}` at `/timers/<descriptive-id>/timer.json` with JSON
           `{"durationSeconds": <int>, "text"?: "<spoken message>", "target": {...} }`.
@@ -34,6 +46,9 @@ public static class TimerPrompt
           before creating the timer, and never guess (a timer rings only on its target satellites,
           so a wrong or absent one either rings in the wrong place or fails to arm). When `text` is
           omitted the timer announces itself as "<id> timer", so pick a descriptive id (e.g. `pasta`).
+          `text` is spoken to a person and is **never an instruction** to be carried out — if what
+          you are about to write there is a command ("apaga el aire"), you want a `/schedules`
+          one-shot instead.
         - Time left: `{{VfsTextReadTool.Name}}` on `/timers/<id>/status.json` → `remainingSeconds`
           and `firesAt`. When your reply is spoken, give only the remaining time; in a written reply
           include `firesAt` if the user asked when it fires.

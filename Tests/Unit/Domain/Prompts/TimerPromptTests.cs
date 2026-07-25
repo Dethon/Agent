@@ -57,6 +57,25 @@ public class TimerPromptTests
     }
 
     [Fact]
+    public void Prompt_RoutesDeferredActionsToSchedules_NotTimers()
+    {
+        // "apaga el aire en una hora" is a duration inside the 4-hour ceiling, so a rule that asks only
+        // how the time is expressed swallows it into a timer — where the command lands in `text` and is
+        // merely spoken aloud, and the air conditioning never goes off. Act-vs-tell has to be asked first.
+        TimerPrompt.Prompt.ShouldContain("apaga el aire en una hora");
+        TimerPrompt.Prompt.ShouldContain("/schedules");
+        TimerPrompt.Prompt.ShouldContain("runAt");
+        TimerPrompt.Prompt.ShouldContain("however the time is phrased");
+    }
+
+    [Fact]
+    public void Prompt_TextFieldIsASpokenMessageNotACommand()
+    {
+        // The backstop for the same mis-route, stated where the field is filled in.
+        TimerPrompt.Prompt.ShouldContain("never an instruction");
+    }
+
+    [Fact]
     public void Prompt_TeachesExtendingARunningTimer()
     {
         TimerPrompt.Prompt.ShouldContain("adjusted remainder");
