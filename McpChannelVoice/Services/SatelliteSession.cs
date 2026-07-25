@@ -13,12 +13,19 @@ public sealed record PlaybackJob(
     Func<string, Task> OnPreempted,
     Func<Task>? OnDrained = null,
     Func<FirstAudioTiming, Task>? OnFirstAudio = null,
-    Func<Exception, Task>? OnFailed = null);
+    Func<Exception, Task>? OnFailed = null,
+    long EnqueuedAt = 0);
 
 // Timing captured the moment a job's first audio chunk is produced. SinceSynthesisStart is the
 // TTS time-to-first-audio (synthesis request -> first chunk); SinceTurnStart is the wake/turn-open
-// -> first audio latency, null when the job had no preceding user turn.
-public sealed record FirstAudioTiming(TimeSpan SinceSynthesisStart, TimeSpan? SinceTurnStart);
+// -> first audio latency, null when the job had no preceding user turn. SinceSpeechEnd is the same
+// span measured from capture close — the machine time the user actually waits through, with their
+// own speech excluded. QueueWait ends at synthesis start, so it never overlaps SinceSynthesisStart.
+public sealed record FirstAudioTiming(
+    TimeSpan SinceSynthesisStart,
+    TimeSpan? SinceTurnStart,
+    TimeSpan? SinceSpeechEnd = null,
+    TimeSpan? QueueWait = null);
 
 public sealed class SatelliteSession
 {
@@ -37,6 +44,8 @@ public sealed class SatelliteSession
     private TaskCompletionSource<bool> _turn = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private const long TurnNotStarted = long.MinValue;
     private long _turnStartedAt = TurnNotStarted;
+    private const long SpeechEndNotMarked = long.MinValue;
+    private long _speechEndedAt = SpeechEndNotMarked;
     private int _preambleClaimed;
     private static readonly TimeSpan _snoozeWindow = TimeSpan.FromSeconds(60);
     private readonly Lock _dismissGate = new();
@@ -124,6 +133,11 @@ public sealed class SatelliteSession
     // Records the timestamp (from the playback loop's TimeProvider) at which the current user turn
     // began, so the loop can report wake/turn -> first-audio latency. Set at capture-open each turn.
     public void MarkTurnStart(long timestamp) => Interlocked.Exchange(ref _turnStartedAt, timestamp);
+
+    // Records when the mic capture closed — the user has stopped talking, so everything after this
+    // is machine time. Stamped with the same TimeProvider the playback loop reads, exactly like
+    // MarkTurnStart, so the two spans are comparable.
+    public void MarkSpeechEnd(long timestamp) => Interlocked.Exchange(ref _speechEndedAt, timestamp);
 
     // Callers must ResetTurn before the reply path can SignalTurnSpoken/SignalTurnSilent for
     // the new turn; otherwise a signal lands on the discarded TCS and the awaiter blocks forever.
@@ -249,11 +263,18 @@ public sealed class SatelliteSession
                         if (job.OnFirstAudio is not null)
                         {
                             var turnStart = Interlocked.Read(ref _turnStartedAt);
+                            var speechEnd = Interlocked.Read(ref _speechEndedAt);
                             var timing = new FirstAudioTiming(
                                 time.GetElapsedTime(synthesisStart, firstChunkTimestamp),
                                 turnStart == TurnNotStarted
                                     ? null
-                                    : time.GetElapsedTime(turnStart, firstChunkTimestamp));
+                                    : time.GetElapsedTime(turnStart, firstChunkTimestamp),
+                                speechEnd == SpeechEndNotMarked
+                                    ? null
+                                    : time.GetElapsedTime(speechEnd, firstChunkTimestamp),
+                                job.EnqueuedAt == 0
+                                    ? null
+                                    : time.GetElapsedTime(job.EnqueuedAt, synthesisStart));
                             // A failing metrics publish must neither abort playback nor tear down the loop.
                             try
                             {

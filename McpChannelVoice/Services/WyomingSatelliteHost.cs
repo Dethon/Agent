@@ -246,7 +246,13 @@ public sealed class WyomingSatelliteHost(
                     TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(settings)),
                     noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
             },
-            CloseCapture = session.CloseCapture,
+            CloseCapture = () =>
+            {
+                session.CloseCapture();
+                // Stamped here rather than inside the session so it uses the host's TimeProvider —
+                // the same instance handed to RunPlaybackLoopAsync, which reads it back.
+                session.MarkSpeechEnd(time.GetTimestamp());
+            },
             TranscribeAndDispatch = (capture, isFollowUp, token) =>
                 TranscribeAndDispatchAsync(session, capture, isFollowUp, token),
             EnqueueChime = token => EnqueueChimeAsync(session, token),

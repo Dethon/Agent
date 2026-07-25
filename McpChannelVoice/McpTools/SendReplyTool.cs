@@ -44,7 +44,11 @@ public sealed class SendReplyTool
         var session = satelliteId is null ? null : sessions.Get(satelliteId);
         if (session is not null)
         {
-            return await HandleUtteranceReplyAsync(session, p, accumulator, tts, settings, metrics);
+            // Only the live-session (utterance reply) path stamps enqueue timing; the scheduled
+            // delivery path below goes through AnnouncementService instead, so TimeProvider is
+            // resolved here rather than unconditionally at the top of McpRun.
+            var time = services.GetRequiredService<TimeProvider>();
+            return await HandleUtteranceReplyAsync(session, p, accumulator, tts, settings, metrics, time);
         }
 
         var delivery = services.GetRequiredService<VoiceDeliveryRegistry>();
@@ -65,7 +69,8 @@ public sealed class SendReplyTool
         ReplyTextAccumulator accumulator,
         ITextToSpeech tts,
         VoiceSettings settings,
-        IMetricsPublisher metrics)
+        IMetricsPublisher metrics,
+        TimeProvider time)
     {
         switch (p.ContentType)
         {
@@ -82,7 +87,7 @@ public sealed class SendReplyTool
             case ReplyContentType.ToolCall:
                 if (session.TryClaimPreamble())
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, isReply: false);
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, isReply: false);
                 }
                 return "ok";
 
@@ -96,7 +101,7 @@ public sealed class SendReplyTool
                 accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
                 if (p.IsComplete)
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time);
                 }
                 return "ok";
 
@@ -104,7 +109,7 @@ public sealed class SendReplyTool
             // messageId). Text chunks are never flagged complete, so this is where we
             // speak the accumulated reply.
             case ReplyContentType.StreamComplete:
-                var spoke = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
+                var spoke = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time);
                 if (!spoke)
                 {
                     session.SignalTurnSilent();
@@ -116,7 +121,7 @@ public sealed class SendReplyTool
                 // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
                 if (p.IsComplete)
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time);
                 }
                 return "ok";
         }
@@ -190,6 +195,7 @@ public sealed class SendReplyTool
         ITextToSpeech tts,
         VoiceSettings settings,
         IMetricsPublisher metrics,
+        TimeProvider time,
         bool isReply = true)
     {
         var text = accumulator.Flush(conversationId);
@@ -197,7 +203,7 @@ public sealed class SendReplyTool
         {
             return false;
         }
-        await SpeakAsync(session, text, conversationId, tts, settings, metrics, isReply, default);
+        await SpeakAsync(session, text, conversationId, tts, settings, metrics, time, isReply, default);
         return true;
     }
 
@@ -208,11 +214,13 @@ public sealed class SendReplyTool
         ITextToSpeech tts,
         VoiceSettings settings,
         IMetricsPublisher metrics,
+        TimeProvider time,
         bool isReply,
         CancellationToken ct)
     {
         var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
         var options = new SynthesisOptions { Voice = voice };
+        var enqueuedAt = time.GetTimestamp();
 
         // Synthesis is lazy and runs inside the playback loop, so latency must be measured there.
         // The loop times synthesis -> first audio chunk (TtsLatencyMs) and turn-open -> first audio
@@ -244,6 +252,7 @@ public sealed class SendReplyTool
             // Spoken). Mirrors the chime and approval jobs, which also settle their handshake on failure.
             // A failed preamble settles nothing: the answer still owes the handshake a signal.
             OnFailed: _ => { if (isReply) { session.SignalTurnSilent(); } return Task.CompletedTask; },
+            EnqueuedAt: enqueuedAt,
             // Reply-latency metrics stay anchored to the ANSWER, not the preamble cue, so
             // WakeToFirstAudioMs keeps meaning the same thing before and after this change.
             OnFirstAudio: async timing =>
@@ -272,6 +281,32 @@ public sealed class SendReplyTool
                         Room = session.Config.Room,
                         Identity = session.Config.Identity,
                         DurationMs = (long)turn.TotalMilliseconds,
+                        ConversationId = conversationId
+                    }, ct);
+                }
+
+                if (timing.SinceSpeechEnd is { } sinceSpeech)
+                {
+                    await metrics.PublishAsync(new VoiceEvent
+                    {
+                        Metric = VoiceMetric.SpeechEndToFirstAudioMs,
+                        SatelliteId = session.SatelliteId,
+                        Room = session.Config.Room,
+                        Identity = session.Config.Identity,
+                        DurationMs = (long)sinceSpeech.TotalMilliseconds,
+                        ConversationId = conversationId
+                    }, ct);
+                }
+
+                if (timing.QueueWait is { } queueWait)
+                {
+                    await metrics.PublishAsync(new VoiceEvent
+                    {
+                        Metric = VoiceMetric.ReplyQueueWaitMs,
+                        SatelliteId = session.SatelliteId,
+                        Room = session.Config.Room,
+                        Identity = session.Config.Identity,
+                        DurationMs = (long)queueWait.TotalMilliseconds,
                         ConversationId = conversationId
                     }, ct);
                 }
