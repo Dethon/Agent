@@ -56,6 +56,11 @@ public class SendReplyToolTests
                 It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
             .Returns<string, SynthesisOptions, CancellationToken>((text, _, _) => EmptyAudio(text));
 
+        _services = BuildServices(new VoiceSettings());
+    }
+
+    private IServiceProvider BuildServices(VoiceSettings settings)
+    {
         var delivery = new VoiceDeliveryRegistry(
             new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5),
             _accumulator,
@@ -73,13 +78,13 @@ public class SendReplyToolTests
                 }
             });
 
-        _services = new ServiceCollection()
+        return new ServiceCollection()
             .AddSingleton(_sessions)
             .AddSingleton(_accumulator)
             .AddSingleton(_manager)
             .AddSingleton(_tts.Object)
             .AddSingleton(metrics.Object)
-            .AddSingleton(new VoiceSettings())
+            .AddSingleton(settings)
             .AddSingleton(delivery)
             .AddSingleton<ILogger<SendReplyTool>>(NullLogger<SendReplyTool>.Instance)
             .AddSingleton<TimeProvider>(_clock)
@@ -532,4 +537,128 @@ public class SendReplyToolTests
 
         spoke.ShouldBeTrue(); // the metrics blip did not prevent the reply job from being built and spoken
     }
+
+    [Fact]
+    public async Task McpRun_TextFormingACompleteSentence_SpeaksItBeforeStreamComplete()
+    {
+        // The whole point of streaming: the answer's opening is already synthesizing while the
+        // agent is still generating the rest, instead of waiting for the turn to end.
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+
+        await SendReplyTool.McpRun(_conversationId,
+            "Mañana por la tarde hará sol y unos veintidós grados. Por la noche ",
+            ReplyContentType.Text, false, "m-1", _services);
+
+        _tts.Verify(t => t.SynthesizeAsync(
+            "Mañana por la tarde hará sol y unos veintidós grados.",
+            It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task McpRun_PartialSentence_SpeaksNothingYet()
+    {
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+
+        await SendReplyTool.McpRun(_conversationId, "Mañana por la tarde hará sol y unos",
+            ReplyContentType.Text, false, "m-1", _services);
+
+        _tts.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task McpRun_StreamedAnswer_SettlesTheTurnOnceAfterEverySegmentDrains()
+    {
+        // The regression that streaming introduces if the handshake is left per-job: sentence one
+        // draining would end FollowUpConversation, chiming and reopening the mic over the rest.
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        var turn = _session.WaitForTurnSpokenAsync();
+
+        var written = new List<string>();
+        var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pump = _session.RunPlaybackLoopAsync((chunk, _) =>
+        {
+            lock (written)
+            { written.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span)); }
+            wrote.TrySetResult();
+            return Task.CompletedTask;
+        }, CancellationToken.None);
+
+        // Segment one, played to completion with the agent still generating. This is the moment the
+        // per-job handshake got wrong: the turn must NOT settle here.
+        await SendReplyTool.McpRun(_conversationId,
+            "Mañana por la tarde hará sol y unos veintidós grados. ",
+            ReplyContentType.Text, false, "m-1", _services);
+        await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(100); // let the loop finish the drain wait and run OnDrained
+
+        _session.ReplySegmentsStarted.ShouldBe(1);
+        turn.IsCompleted.ShouldBeFalse();
+
+        await SendReplyTool.McpRun(_conversationId,
+            "Por la noche bajará bastante y habrá algo de viento del norte. ",
+            ReplyContentType.Text, false, "m-2", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+
+        turn.IsCompleted.ShouldBeTrue();
+        (await turn).ShouldBeTrue();
+        _session.ReplySegmentsStarted.ShouldBeGreaterThan(1); // it really did stream in pieces
+        written.Count.ShouldBeGreaterThan(1);
+    }
+
+    [Fact]
+    public async Task McpRun_StreamedAnswer_PublishesTurnAnchoredSpansOnlyOnce()
+    {
+        // SpeechEndToFirstAudioMs/WakeToFirstAudioMs measure time-to-FIRST-audio, so N segments must
+        // not publish N samples. The single-use dispatch stamp is what enforces it.
+        _session.ResetTurn();
+        _session.MarkTurnStart(_clock.GetTimestamp());
+        _session.MarkSpeechEnd(_clock.GetTimestamp(), 0, _clock);
+        _session.MarkDispatched(_clock.GetTimestamp());
+
+        await SendReplyTool.McpRun(_conversationId,
+            "Mañana por la tarde hará sol y unos veintidós grados. ",
+            ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId,
+            "Por la noche bajará bastante y habrá algo de viento del norte. ",
+            ReplyContentType.Text, false, "m-2", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        _session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+
+        _published.Count(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs).ShouldBe(1);
+        _published.Count(e => e.Metric == VoiceMetric.WakeToFirstAudioMs).ShouldBe(1);
+        _published.Count(e => e.Metric == VoiceMetric.AgentRoundTripMs).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task McpRun_StreamingDisabled_BuffersUntilStreamComplete()
+    {
+        // The kill switch has to genuinely restore the old behaviour.
+        var services = BuildServices(new VoiceSettings
+        {
+            Tts = new TtsSettings { Streaming = new StreamingTtsConfig { Enabled = false } }
+        });
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+
+        await SendReplyTool.McpRun(_conversationId,
+            "Mañana por la tarde hará sol y unos veintidós grados. ",
+            ReplyContentType.Text, false, "m-1", services);
+
+        _tts.VerifyNoOtherCalls();
+
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, services);
+
+        _tts.Verify(t => t.SynthesizeAsync(
+            It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
 }

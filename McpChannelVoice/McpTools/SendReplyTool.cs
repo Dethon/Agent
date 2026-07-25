@@ -110,10 +110,17 @@ public sealed class SendReplyTool
             // messageId). Text chunks are never flagged complete, so this is where we
             // speak the accumulated reply.
             case ReplyContentType.StreamComplete:
-                var spoke = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
-                if (!spoke)
+                // Speak whatever tail is left after the streamed segments, then close the handshake.
+                // ReplySegmentsStarted is the authority on whether the turn produced audio at all:
+                // streaming may already have spoken everything, leaving this flush empty.
+                _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                if (session.ReplySegmentsStarted == 0)
                 {
                     session.SignalTurnSilent();
+                }
+                else
+                {
+                    session.MarkReplyStreamComplete();
                 }
                 return "ok";
 
@@ -123,7 +130,9 @@ public sealed class SendReplyTool
                 if (p.IsComplete)
                 {
                     _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                    return "ok";
                 }
+                await SpeakReadySegmentsAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 return "ok";
         }
     }
@@ -209,6 +218,42 @@ public sealed class SendReplyTool
         return true;
     }
 
+    // Drains every complete sentence run the buffer now holds into the playback queue, so the user
+    // hears the answer's opening while the agent is still generating its end. The first run clears a
+    // deliberately low bar (it is the wait everyone feels); later ones need more text, because each
+    // is its own TTS request and the audio already playing is covering them.
+    private static async Task SpeakReadySegmentsAsync(
+        SatelliteSession session,
+        ReplyTextAccumulator accumulator,
+        string conversationId,
+        ITextToSpeech tts,
+        VoiceSettings settings,
+        IMetricsPublisher metrics,
+        TimeProvider time,
+        ILogger<SendReplyTool> logger)
+    {
+        var streaming = settings.Tts.Streaming;
+        if (!streaming.Enabled)
+        {
+            return;
+        }
+
+        while (true)
+        {
+            var minChars = session.ReplySegmentsStarted == 0
+                ? streaming.FirstSegmentMinChars
+                : streaming.MinChars;
+            if (!accumulator.TryTakeSpeakable(conversationId, minChars, out var segment))
+            {
+                return;
+            }
+
+            await SpeakAsync(
+                session, segment, conversationId, tts, settings, metrics, time, logger,
+                isReply: true, default);
+        }
+    }
+
     private static async Task SpeakAsync(
         SatelliteSession session,
         string text,
@@ -285,13 +330,17 @@ public sealed class SendReplyTool
                     ConversationId = conversationId
                 }, ct);
             },
-            OnDrained: () => { if (isReply) { session.SignalTurnSpoken(); } return Task.CompletedTask; },
+            // The reply is several sentence jobs now, so a drain resolves this SEGMENT; the turn only
+            // settles once every started segment has drained and the agent's stream has ended.
+            // Signalling here directly would end the turn on sentence one and reopen the mic over the
+            // rest of the answer.
+            OnDrained: () => { if (isReply) { session.CompleteReplySegment(); } return Task.CompletedTask; },
             // If synthesis/playback fails (e.g. a Wyoming TTS error event throws), resolve the turn
             // as silent so FollowUpConversation ends and re-arms wake instead of blocking on the
             // handshake until the ~120s ReplyTimeoutMs. No audio actually played, hence Silent (not
             // Spoken). Mirrors the chime and approval jobs, which also settle their handshake on failure.
             // A failed preamble settles nothing: the answer still owes the handshake a signal.
-            OnFailed: _ => { if (isReply) { session.SignalTurnSilent(); } return Task.CompletedTask; },
+            OnFailed: _ => { if (isReply) { session.FailReplySegment(); } return Task.CompletedTask; },
             EnqueuedAt: enqueuedAt,
             // Reply-latency metrics stay anchored to the ANSWER, not the preamble cue, so
             // WakeToFirstAudioMs keeps meaning the same thing before and after this change.
@@ -366,6 +415,22 @@ public sealed class SendReplyTool
                 }
             });
 
-        await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
+        // Counted before the enqueue so the job cannot drain against a segment that was never
+        // registered. A refused enqueue (queue full, or the satellite disconnected and completed the
+        // writer) settles the segment immediately — otherwise the handshake would wait out the
+        // ~120s ReplyTimeoutMs for audio that will never play.
+        if (isReply)
+        {
+            session.BeginReplySegment();
+        }
+
+        var queued = await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
+        if (isReply && !queued)
+        {
+            logger.LogWarning(
+                "Reply segment for {Satellite} was refused by the playback queue (depth {Depth}); " +
+                "the answer will be truncated", session.SatelliteId, settings.Announce.QueueMaxDepth);
+            session.FailReplySegment();
+        }
     }
 }

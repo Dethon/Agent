@@ -51,6 +51,10 @@ public sealed class SatelliteSession
     private const long DispatchNotMarked = long.MinValue;
     private long _dispatchedAt = DispatchNotMarked;
     private int _preambleClaimed;
+    private int _replySegmentsStarted;
+    private int _replySegmentsOutstanding;
+    private int _replyStreamComplete;
+    private int _replyAudioPlayed;
     private static readonly TimeSpan _snoozeWindow = TimeSpan.FromSeconds(60);
     private readonly Lock _dismissGate = new();
     private string? _dismissedAlert;
@@ -170,9 +174,63 @@ public sealed class SatelliteSession
     public void ResetTurn()
     {
         Interlocked.Exchange(ref _preambleClaimed, 0);
+        Interlocked.Exchange(ref _replySegmentsStarted, 0);
+        Interlocked.Exchange(ref _replySegmentsOutstanding, 0);
+        Interlocked.Exchange(ref _replyStreamComplete, 0);
+        Interlocked.Exchange(ref _replyAudioPlayed, 0);
         lock (_turnGate)
         {
             _turn = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
+
+    // The reply is streamed as several sentence jobs, so "the answer finished" is no longer "a job
+    // drained" — it is "every started segment drained AND the agent's stream ended". Signalling on
+    // the first drain instead would end FollowUpConversation, which chimes and reopens the mic while
+    // the remaining sentences are still being spoken.
+    public int ReplySegmentsStarted => Volatile.Read(ref _replySegmentsStarted);
+
+    public void BeginReplySegment()
+    {
+        Interlocked.Increment(ref _replySegmentsStarted);
+        Interlocked.Increment(ref _replySegmentsOutstanding);
+    }
+
+    public void CompleteReplySegment()
+    {
+        Interlocked.Exchange(ref _replyAudioPlayed, 1);
+        if (Interlocked.Decrement(ref _replySegmentsOutstanding) == 0
+            && Volatile.Read(ref _replyStreamComplete) == 1)
+        {
+            SignalTurnSpoken();
+        }
+    }
+
+    // Settles only when segments have actually run: an empty answer starts none, and the caller
+    // signals Silent for it rather than having this report audio that never played.
+    public void MarkReplyStreamComplete()
+    {
+        Interlocked.Exchange(ref _replyStreamComplete, 1);
+        if (Volatile.Read(ref _replySegmentsOutstanding) == 0 && ReplySegmentsStarted > 0)
+        {
+            SignalTurnSpoken();
+        }
+    }
+
+    // A segment that never plays (synthesis threw, or the queue refused it) settles the turn now
+    // rather than leaving the handshake to the ~120s ReplyTimeoutMs. Spoken when earlier segments
+    // already reached the satellite — half an answer did play, and the user is still owed the
+    // follow-up window.
+    public void FailReplySegment()
+    {
+        Interlocked.Decrement(ref _replySegmentsOutstanding);
+        if (Volatile.Read(ref _replyAudioPlayed) == 1)
+        {
+            SignalTurnSpoken();
+        }
+        else
+        {
+            SignalTurnSilent();
         }
     }
 
