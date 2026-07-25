@@ -38,7 +38,7 @@ public class FollowUpConversationTests
                 Events.Add(isFollowUp ? "open-followup" : "open-first");
                 return c;
             },
-            CloseCapture = () => { },
+            CloseCapture = _ => { },
             TranscribeAndDispatch = (capture, isFollowUp, _) =>
             {
                 Dispatched.Add(capture);

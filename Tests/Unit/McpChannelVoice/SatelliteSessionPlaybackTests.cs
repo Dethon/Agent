@@ -529,7 +529,7 @@ public class SatelliteSessionPlaybackTests
 
         session.MarkTurnStart(time.GetTimestamp());
         time.Advance(TimeSpan.FromSeconds(3));            // the user talking
-        session.MarkSpeechEnd(time.GetTimestamp());
+        session.MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 0, time);
         time.Advance(TimeSpan.FromSeconds(2));            // verify + STT + agent
         var enqueuedAt = time.GetTimestamp();
         time.Advance(TimeSpan.FromMilliseconds(400));     // the reply waits behind the preamble
@@ -566,6 +566,41 @@ public class SatelliteSessionPlaybackTests
         session.CompletePlayback();
         await Task.Delay(80);                            // let the loop reach the playback-drain wait
         time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RunPlaybackLoop_FirstChunk_SpeechEndAnchorRewindsTheEndpointTail()
+    {
+        // The caller can only see the capture CLOSE, which SilenceGate reaches a whole
+        // trailingSilence run after the user stopped talking (2000 ms in production). The tail is
+        // machine time the user waits through, so it belongs inside this span: without the rewind
+        // SpeechEndToFirstAudioMs omits it and EndpointTailMs sits beside the span instead of nested
+        // inside it, which is ~40% of the wait at production settings.
+        var session = MakeSession();
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        time.Advance(TimeSpan.FromSeconds(3));            // the user talking
+        time.Advance(TimeSpan.FromMilliseconds(2000));    // the endpointing tail the gate waits out
+        session.MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 2000, time);
+        time.Advance(TimeSpan.FromMilliseconds(1000));    // verify + STT + agent
+
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("hi", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
+
+        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        session.CompletePlayback();
+
+        var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        timing.SinceSpeechEnd.ShouldBe(TimeSpan.FromMilliseconds(3000)); // 2000 tail + 1000 machine
+
         await pump.WaitAsync(TimeSpan.FromSeconds(2));
     }
 

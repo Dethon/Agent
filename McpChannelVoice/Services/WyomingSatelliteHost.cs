@@ -246,12 +246,15 @@ public sealed class WyomingSatelliteHost(
                     TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(settings)),
                     noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
             },
-            CloseCapture = () =>
+            CloseCapture = capture =>
             {
                 session.CloseCapture();
                 // Stamped here rather than inside the session so it uses the host's TimeProvider —
-                // the same instance handed to RunPlaybackLoopAsync, which reads it back.
-                session.MarkSpeechEnd(time.GetTimestamp());
+                // the same instance handed to RunPlaybackLoopAsync, which reads it back. The frozen
+                // endpointing tail rewinds the close to the instant the user actually stopped
+                // talking; read here, at the close, because it is the last point where the tail is
+                // known to be the one the gate ended on.
+                session.MarkSpeechEnd(time.GetTimestamp(), capture.Stats.TrailingSilenceMs, time);
             },
             TranscribeAndDispatch = (capture, isFollowUp, token) =>
                 TranscribeAndDispatchAsync(session, capture, isFollowUp, token),
