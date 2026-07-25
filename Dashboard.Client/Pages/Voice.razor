@@ -16,6 +16,8 @@
                           OnChanged="OnDimensionChanged" />
             <PillSelector Label="Metric" Options="MetricOptions" Value="@_state.Metric.ToString()"
                           OnChanged="OnMetricChanged" />
+            <PillSelector Label="Aggregate" Options="AggOptions" Value="@_state.Agg.ToString()"
+                          OnChanged="OnAggChanged" />
             <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
                           OnChanged="OnTimeChanged" />
         </div>
@@ -23,7 +25,7 @@
 
     <section class="kpi-row">
         <KpiCard Label="Utterances" Value="@_utterances.ToString("N0")" Color="var(--accent-blue)" />
-        <KpiCard Label="Median wake → audio" Value="@($"{_medianLatency:F0}ms")" Color="var(--accent-yellow)" />
+        <KpiCard Label="Median speech → audio" Value="@($"{_medianLatency:F0}ms")" Color="var(--accent-yellow)" />
         <KpiCard Label="STT errors" Value="@_sttErrors.ToString("N0")" Color="var(--accent-red)" />
         <KpiCard Label="TTS errors" Value="@_ttsErrors.ToString("N0")" Color="var(--accent-red)" />
     </section>
@@ -98,6 +100,11 @@
 
     private static readonly IReadOnlyList<PillOption> MetricOptions =
     [
+        new("Speech end → audio (ms)", nameof(VoiceMetric.SpeechEndToFirstAudioMs)),
+        new("Endpoint tail (ms)", nameof(VoiceMetric.EndpointTailMs)),
+        new("Speaker verify (ms)", nameof(VoiceMetric.SpeakerVerifyMs)),
+        new("Agent round trip (ms)", nameof(VoiceMetric.AgentRoundTripMs)),
+        new("Reply queue wait (ms)", nameof(VoiceMetric.ReplyQueueWaitMs)),
         new("Utterances", nameof(VoiceMetric.UtteranceTranscribed)),
         new("Wake → audio (ms)", nameof(VoiceMetric.WakeToFirstAudioMs)),
         new("STT latency (ms)", nameof(VoiceMetric.SttLatencyMs)),
@@ -117,21 +124,34 @@
         new("30d", "30"),
     ];
 
+    private static readonly IReadOnlyList<PillOption> AggOptions =
+    [
+        new("Avg", nameof(LatencyMetric.Avg)),
+        new("P50", nameof(LatencyMetric.P50)),
+        new("P95", nameof(LatencyMetric.P95)),
+        new("Max", nameof(LatencyMetric.Max)),
+    ];
+
     protected override async Task OnInitializedAsync()
     {
         var savedGroupBy = await Storage.GetAsync<VoiceDimension>("voice.groupBy");
         var savedMetric = await Storage.GetAsync<VoiceMetric>("voice.metric");
         var savedDays = await Storage.GetIntAsync("voice.days");
+        var savedAgg = await Storage.GetAsync<LatencyMetric>("voice.agg");
 
         if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
         if (savedMetric.HasValue) Store.SetMetric(savedMetric.Value);
         if (savedDays.HasValue) _selectedDays = savedDays.Value;
+        if (savedAgg.HasValue) Store.SetAgg(savedAgg.Value);
 
         _sub = Store.StateObservable.Subscribe(s =>
         {
             _state = s;
             _utterances = s.Events.Count(e => e.Metric == VoiceMetric.UtteranceTranscribed);
-            var lat = s.Events.Where(e => e.Metric == VoiceMetric.WakeToFirstAudioMs && e.DurationMs is not null)
+            // WakeToFirstAudioMs starts at mic-open, so its median is inflated by however long the
+            // user spoke. SpeechEndToFirstAudioMs is the wait. Wake → audio stays available in the
+            // chart's metric selector.
+            var lat = s.Events.Where(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs && e.DurationMs is not null)
                               .Select(e => e.DurationMs!.Value).OrderBy(x => x).ToList();
             _medianLatency = lat.Count > 0 ? lat[lat.Count / 2] : 0;
             _sttErrors = s.Events.Count(e => e.Metric == VoiceMetric.SttError);
@@ -154,7 +174,8 @@
 
     private async Task ReloadBreakdown()
     {
-        var breakdown = await Api.GetVoiceGroupedAsync(Store.State.GroupBy, Store.State.Metric, _from, _to);
+        var breakdown = await Api.GetVoiceGroupedAsync(
+            Store.State.GroupBy, Store.State.Metric, _from, _to, Store.State.Agg);
         Store.SetBreakdown(breakdown ?? []);
     }
 
@@ -172,6 +193,13 @@
         await ReloadBreakdown();
     }
 
+    private async Task OnAggChanged(string v)
+    {
+        Store.SetAgg(Enum.Parse<LatencyMetric>(v));
+        await Storage.SetAsync("voice.agg", v);
+        await ReloadBreakdown();
+    }
+
     private async Task OnTimeChanged(string v)
     {
         _selectedDays = int.Parse(v);
@@ -182,14 +210,9 @@
         await ReloadAll();
     }
 
-    private string GetMetricUnit() => _state.Metric switch
-    {
-        VoiceMetric.WakeToFirstAudioMs => "ms",
-        VoiceMetric.SttLatencyMs => "ms",
-        VoiceMetric.TtsLatencyMs => "ms",
-        VoiceMetric.TseLatencyMs => "ms",
-        _ => ""
-    };
+    // Mirrors the query service: any metric whose name ends in Ms is a duration.
+    private string GetMetricUnit() =>
+        _state.Metric.ToString().EndsWith("Ms", StringComparison.Ordinal) ? "ms" : "";
 
     private string _sortColumn = "Time";
     private bool _sortAsc;

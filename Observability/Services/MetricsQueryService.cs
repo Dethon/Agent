@@ -399,7 +399,8 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
         VoiceDimension dimension,
         VoiceMetric metric,
         DateOnly from,
-        DateOnly to)
+        DateOnly to,
+        LatencyMetric agg = LatencyMetric.Avg)
     {
         var events = await GetEventsAsync<VoiceEvent>("metrics:voice:", from, to);
         var scoped = events.Where(e => e.Metric == metric);
@@ -414,18 +415,17 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
             _ => e => e.SatelliteId
         };
 
+        // Duration metrics are identified by their name suffix rather than an explicit list: the
+        // list silently degraded every newly added ...Ms member to a count.
+        var isDuration = metric.ToString().EndsWith("Ms", StringComparison.Ordinal);
+
         return scoped
             .GroupBy(e => selector(e) ?? "(unknown)")
             .ToDictionary(
                 g => g.Key,
-                g => metric switch
-                {
-                    VoiceMetric.SttLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
-                    VoiceMetric.TtsLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
-                    VoiceMetric.WakeToFirstAudioMs => (decimal)g.Average(e => e.DurationMs ?? 0),
-                    VoiceMetric.TseLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
-                    _ => (decimal)g.Count()
-                });
+                g => isDuration
+                    ? AggregateLatency(g.Select(e => (decimal)(e.DurationMs ?? 0)), agg)
+                    : (decimal)g.Count());
     }
 
     public async Task<Dictionary<string, int>> GetScheduleGroupedAsync(
