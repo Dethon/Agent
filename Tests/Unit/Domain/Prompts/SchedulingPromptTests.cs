@@ -20,4 +20,16 @@ public class SchedulingPromptTests
     {
         SchedulingPrompt.Build("Europe/Madrid").ShouldNotContain("Remind me");
     }
+
+    [Fact]
+    public void Prompt_ClaimsDeferredActionsEvenWhenPhrasedAsADuration()
+    {
+        var prompt = SchedulingPrompt.Build("Europe/Madrid");
+
+        // The boundary paragraph only pushed work AWAY from /schedules, so a duration ("in an hour")
+        // pulled device actions into /timers — where a timer only speaks and nothing gets switched off.
+        prompt.ShouldContain("deferred action");
+        prompt.ShouldContain("does not make it a timer");
+        prompt.ShouldContain("runAt");
+    }
 }

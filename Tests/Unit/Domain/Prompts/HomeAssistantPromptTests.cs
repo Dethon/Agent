@@ -57,4 +57,15 @@ public class HomeAssistantPromptTests
         HomeAssistantPrompt.SystemPrompt.ShouldContain("agent tasks");
         HomeAssistantPrompt.SystemPrompt.ShouldContain("duration from now"); // those belong in /timers
     }
+
+    [Fact]
+    public void Prompt_RoutesDeferredHomeActionsToSchedules()
+    {
+        var prompt = HomeAssistantPrompt.SystemPrompt;
+
+        // The calendar and /timers both exist to TELL a person something. "apaga el aire en una hora"
+        // asks for something to HAPPEN, so it is a /schedules one-shot despite being a duration.
+        prompt.ShouldContain("apaga el aire en una hora");
+        prompt.ShouldContain("/schedules` one-shot");
+    }
 }

@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
 
@@ -14,7 +15,8 @@ namespace Domain.Tools.Timers.Vfs;
 // /dismiss.sh (exec) silences every alert currently ringing — alarms and timers alike — so "stop
 // the alarm" works from any room or channel, not just by waking a targeted satellite.
 public sealed class TimerFileSystem(
-    ITimerStore store, TimeProvider timeProvider, IAlertDismisser dismisser) : IFileSystemBackend
+    ITimerStore store, TimeProvider timeProvider, IAlertDismisser dismisser,
+    ISatelliteCatalog satellites) : IFileSystemBackend
 {
     public string FilesystemName => "timers";
 
@@ -170,7 +172,15 @@ public sealed class TimerFileSystem(
             return new FsResult<FsCreateResult>.Err(specError);
         }
 
-        var validation = ValidateSpec(spec!);
+        ToolErrorResult? validation;
+        try
+        {
+            validation = await ValidateSpec(spec!, ct);
+        }
+        catch (VoiceHubUnavailableException)
+        {
+            return HubUnavailable<FsCreateResult>("the timer was not armed");
+        }
         if (validation is not null)
         {
             return new FsResult<FsCreateResult>.Err(validation);
@@ -233,28 +243,36 @@ public sealed class TimerFileSystem(
     public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
         Task.FromResult(Unsupported<FsMoveResult>("The timers filesystem does not support move."));
 
-    public Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    public async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
         if (node.Kind is not (TimerNodeKind.Root or TimerNodeKind.DismissFile))
         {
-            return Task.FromResult(Unsupported<FsExecResult>(
-                $"exec is only supported at the timers root: exec {TimerPath.DismissFileName}"));
+            return Unsupported<FsExecResult>(
+                $"exec is only supported at the timers root: exec {TimerPath.DismissFileName}");
         }
 
         var trimmed = command.Trim();
         if (node.Kind == TimerNodeKind.Root && trimmed != TimerPath.DismissFileName)
         {
-            return Task.FromResult(Exec(
-                "", $"command not found: {trimmed}\navailable: {TimerPath.DismissFileName}", 127, path));
+            return Exec(
+                "", $"command not found: {trimmed}\navailable: {TimerPath.DismissFileName}", 127, path);
         }
 
-        var dismissed = dismisser.DismissAll();
+        IReadOnlyList<DismissedAlert> dismissed;
+        try
+        {
+            dismissed = await dismisser.DismissAllAsync(ct);
+        }
+        catch (VoiceHubUnavailableException)
+        {
+            return HubUnavailable<FsExecResult>("nothing was dismissed");
+        }
         var stdout = dismissed.Count == 0
             ? "nothing is ringing\n"
             : "dismissed " + string.Join(
                 " and ", dismissed.Select(d => $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\"")) + "\n";
-        return Task.FromResult(Exec(stdout, "", 0, path));
+        return Exec(stdout, "", 0, path);
     }
 
     public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
@@ -298,7 +316,7 @@ public sealed class TimerFileSystem(
     // HA alarms calendar, which survives restarts and escalates.
     public const int MaxDurationSeconds = 4 * 60 * 60;
 
-    private static ToolErrorResult? ValidateSpec(SpecDto spec)
+    private async Task<ToolErrorResult?> ValidateSpec(SpecDto spec, CancellationToken ct)
     {
         if (spec.DurationSeconds is not > 0)
         {
@@ -312,17 +330,49 @@ public sealed class TimerFileSystem(
                 + "alarms calendar for anything longer");
         }
 
+        // A blank (non-null) text bypasses the "<id> timer" fallback and the announcer rejects it at
+        // fire time, so the timer would never ring. Omitting text is fine — it auto-names.
+        if (spec.Text is not null && string.IsNullOrWhiteSpace(spec.Text))
+        {
+            return Error(ToolError.Codes.InvalidArgument,
+                "text must not be blank — omit it to auto-name the timer");
+        }
+
         var target = spec.Target;
-        var hasTarget = target is not null
-            && (target.SatelliteId is not null
-                || target.SatelliteIds is { Count: > 0 }
-                || target.Room is not null
-                || target.All == true);
-        return hasTarget
-            ? null
-            : Error(ToolError.Codes.InvalidArgument,
+        if (target is null
+            || (target.SatelliteId is null
+                && target.SatelliteIds is not { Count: > 0 }
+                && target.Room is null
+                && target.All != true))
+        {
+            return Error(ToolError.Codes.InvalidArgument,
                 "target is required: {satelliteId | satelliteIds | room | all}");
+        }
+
+        // A target the announcer can't resolve arms a timer that never rings: by fire time the
+        // timer has already been claimed out of the store and the failure is only logged. Reject
+        // it here instead, naming the satellites so the agent can retry with a real one. The roster
+        // is fetched once and reused for both the unknown-id check and the error message.
+        var roster = await satellites.GetAllAsync(ct);
+        var known = roster.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        IEnumerable<string> named = target.SatelliteIds is { Count: > 0 }
+            ? target.SatelliteIds.Where(id => id is not null)
+            : target.SatelliteId is not null ? [target.SatelliteId] : [];
+        var unknown = named.Where(id => !known.Contains(id)).ToList();
+        if (unknown.Count > 0)
+        {
+            return Error(ToolError.Codes.NotFound,
+                $"unknown satellite(s): {string.Join(", ", unknown)}. Known satellites: {Describe(roster)}");
+        }
+
+        return (await satellites.ResolveAsync(target, ct)).Count > 0
+            ? null
+            : Error(ToolError.Codes.NotFound,
+                $"target matches no satellite. Known satellites: {Describe(roster)}");
     }
+
+    private static string Describe(IReadOnlyList<SatelliteDescriptor> roster) =>
+        string.Join(", ", roster.Select(s => $"{s.Id} (room \"{s.Room}\")"));
 
     private string RenderSpec(ArmedTimer t) => JsonSerializer.Serialize(new
     {
@@ -401,6 +451,10 @@ public sealed class TimerFileSystem(
     private static FsResult<T> Unsupported<T>(string message) where T : class =>
         new FsResult<T>.Err(Error(ToolError.Codes.UnsupportedOperation, message));
 
-    private static ToolErrorResult Error(string code, string message) =>
-        new() { ErrorCode = code, Message = message, Retryable = false };
+    private static FsResult<T> HubUnavailable<T>(string consequence) where T : class =>
+        new FsResult<T>.Err(Error(ToolError.Codes.Unavailable,
+            $"The voice hub is unreachable, so {consequence} — try again shortly.", retryable: true));
+
+    private static ToolErrorResult Error(string code, string message, bool retryable = false) =>
+        new() { ErrorCode = code, Message = message, Retryable = retryable };
 }
