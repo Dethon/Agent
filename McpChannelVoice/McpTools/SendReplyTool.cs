@@ -226,11 +226,14 @@ public sealed class SendReplyTool
 
         // Reply text arriving here closes the hub-visible agent round trip: dispatch -> answer.
         // Compared against the agent's own MemoryRecall + LlmTotal, the difference is queue time.
-        // TryConsumeDispatchedAt is single-use and evaluated here regardless of whether the publish
+        // TryConsumeDispatchedAt is single-use and consumed here regardless of whether the publish
         // below succeeds, so a metrics blip can never leave the stamp behind for some later, unrelated
         // reply on this session (e.g. a schedule firing into a satellite that had a real turn earlier)
-        // to pick up and report as its own invented round trip.
-        if (isReply && session.TryConsumeDispatchedAt() is { } dispatchedAt)
+        // to pick up and report as its own invented round trip. The consumed value doubles as the
+        // proof that this reply answers a transcript this hub dispatched, which the turn-anchored
+        // spans below need — see the OnFirstAudio gate.
+        var dispatchedAtStamp = isReply ? session.TryConsumeDispatchedAt() : null;
+        if (dispatchedAtStamp is { } dispatchedAt)
         {
             try
             {
@@ -305,6 +308,33 @@ public sealed class SendReplyTool
                     ConversationId = conversationId
                 }, ct);
 
+                // Anchored on this job alone (its own enqueue stamp), so it is valid for every reply
+                // regardless of what preceded it.
+                if (timing.QueueWait is { } queueWait)
+                {
+                    await metrics.PublishAsync(new VoiceEvent
+                    {
+                        Metric = VoiceMetric.ReplyQueueWaitMs,
+                        SatelliteId = session.SatelliteId,
+                        Room = session.Config.Room,
+                        Identity = session.Config.Identity,
+                        DurationMs = (long)queueWait.TotalMilliseconds,
+                        ConversationId = conversationId
+                    }, ct);
+                }
+
+                // The two below are anchored on the TURN (MarkTurnStart / MarkSpeechEnd), which is
+                // never invalidated, while the voice conversation mapping outlives the turn by
+                // ConversationLifetime. A schedule fire or an agent-initiated message delivered into a
+                // live session comes down this same path, so without a gate it reports the AGE of the
+                // last real turn as its own latency — one "recuérdame en dos minutos" publishes
+                // ~120000 ms and wrecks Avg/P95/Max on the headline metric. The consumed dispatch
+                // stamp is the proof that what is being answered is a transcript this hub dispatched.
+                if (dispatchedAtStamp is null)
+                {
+                    return;
+                }
+
                 if (timing.SinceTurnStart is { } turn)
                 {
                     await metrics.PublishAsync(new VoiceEvent
@@ -327,19 +357,6 @@ public sealed class SendReplyTool
                         Room = session.Config.Room,
                         Identity = session.Config.Identity,
                         DurationMs = (long)sinceSpeech.TotalMilliseconds,
-                        ConversationId = conversationId
-                    }, ct);
-                }
-
-                if (timing.QueueWait is { } queueWait)
-                {
-                    await metrics.PublishAsync(new VoiceEvent
-                    {
-                        Metric = VoiceMetric.ReplyQueueWaitMs,
-                        SatelliteId = session.SatelliteId,
-                        Room = session.Config.Room,
-                        Identity = session.Config.Identity,
-                        DurationMs = (long)queueWait.TotalMilliseconds,
                         ConversationId = conversationId
                     }, ct);
                 }
