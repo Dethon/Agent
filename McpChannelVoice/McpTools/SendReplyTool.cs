@@ -269,6 +269,12 @@ public sealed class SendReplyTool
         var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
         var options = new SynthesisOptions { Voice = voice };
 
+        // Read before BeginReplySegment below: only the turn's FIRST reply segment may publish the
+        // time-to-first-audio spans, or a three-sentence answer reports three samples of a metric
+        // that means "how long until the user heard anything" and the decomposition stops summing.
+        var isFirstReplySegment = isReply && session.ReplySegmentsStarted == 0;
+        var epoch = session.CurrentTurnEpoch;
+
         // Reply text arriving here closes the hub-visible agent round trip: dispatch -> answer.
         // Compared against the agent's own MemoryRecall + LlmTotal, the difference is queue time.
         // TryConsumeDispatchedAt is single-use and consumed here regardless of whether the publish
@@ -317,7 +323,7 @@ public sealed class SendReplyTool
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: async _ =>
             {
-                if (!isReply)
+                if (!isFirstReplySegment)
                 {
                     return;
                 }
@@ -334,19 +340,19 @@ public sealed class SendReplyTool
             // settles once every started segment has drained and the agent's stream has ended.
             // Signalling here directly would end the turn on sentence one and reopen the mic over the
             // rest of the answer.
-            OnDrained: () => { if (isReply) { session.CompleteReplySegment(); } return Task.CompletedTask; },
+            OnDrained: () => { if (isReply) { session.CompleteReplySegment(epoch); } return Task.CompletedTask; },
             // If synthesis/playback fails (e.g. a Wyoming TTS error event throws), resolve the turn
             // as silent so FollowUpConversation ends and re-arms wake instead of blocking on the
             // handshake until the ~120s ReplyTimeoutMs. No audio actually played, hence Silent (not
             // Spoken). Mirrors the chime and approval jobs, which also settle their handshake on failure.
             // A failed preamble settles nothing: the answer still owes the handshake a signal.
-            OnFailed: _ => { if (isReply) { session.FailReplySegment(); } return Task.CompletedTask; },
+            OnFailed: _ => { if (isReply) { session.FailReplySegment(epoch); } return Task.CompletedTask; },
             EnqueuedAt: enqueuedAt,
             // Reply-latency metrics stay anchored to the ANSWER, not the preamble cue, so
             // WakeToFirstAudioMs keeps meaning the same thing before and after this change.
             OnFirstAudio: async timing =>
             {
-                if (!isReply)
+                if (!isFirstReplySegment)
                 {
                     return;
                 }
@@ -430,7 +436,7 @@ public sealed class SendReplyTool
             logger.LogWarning(
                 "Reply segment for {Satellite} was refused by the playback queue (depth {Depth}); " +
                 "the answer will be truncated", session.SatelliteId, settings.Announce.QueueMaxDepth);
-            session.FailReplySegment();
+            session.FailReplySegment(epoch);
         }
     }
 }

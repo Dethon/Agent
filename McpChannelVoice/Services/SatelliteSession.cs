@@ -55,6 +55,7 @@ public sealed class SatelliteSession
     private int _replySegmentsOutstanding;
     private int _replyStreamComplete;
     private int _replyAudioPlayed;
+    private long _turnEpoch;
     private static readonly TimeSpan _snoozeWindow = TimeSpan.FromSeconds(60);
     private readonly Lock _dismissGate = new();
     private string? _dismissedAlert;
@@ -144,7 +145,7 @@ public sealed class SatelliteSession
 
     // Records when the user stopped talking — everything after this is machine time they wait
     // through. The caller can only observe the CLOSE of the capture, which is a whole endpointing
-    // tail later: SilenceGate only concludes "speech ended" once trailingSilence (2 s in production)
+    // tail later: SilenceGate only concludes "speech ended" once trailingSilence (1.2 s in production)
     // of silence has run. Rewinding by that frozen tail is what makes this the instant the user
     // actually stopped, so EndpointTailMs nests INSIDE SpeechEndToFirstAudioMs instead of sitting
     // before it and the turn decomposition sums. Legitimate because mic audio arrives in real time,
@@ -178,6 +179,7 @@ public sealed class SatelliteSession
         Interlocked.Exchange(ref _replySegmentsOutstanding, 0);
         Interlocked.Exchange(ref _replyStreamComplete, 0);
         Interlocked.Exchange(ref _replyAudioPlayed, 0);
+        Interlocked.Increment(ref _turnEpoch);
         lock (_turnGate)
         {
             _turn = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -190,40 +192,63 @@ public sealed class SatelliteSession
     // the remaining sentences are still being spoken.
     public int ReplySegmentsStarted => Volatile.Read(ref _replySegmentsStarted);
 
+    // Playback callbacks outlive the turn that queued them (a preempted or slow job can drain after
+    // FollowUpConversation has moved on), and this handshake is now counter-based rather than the
+    // old idempotent "set the TCS" — so a stale decrement would drive the NEXT turn's outstanding
+    // count negative and it could then never reach zero, wedging the mic until ReplyTimeoutMs.
+    // Callbacks carry the epoch they were queued under and are ignored once it moves.
+    public long CurrentTurnEpoch => Interlocked.Read(ref _turnEpoch);
+
     public void BeginReplySegment()
     {
         Interlocked.Increment(ref _replySegmentsStarted);
         Interlocked.Increment(ref _replySegmentsOutstanding);
     }
 
-    public void CompleteReplySegment()
+    public void CompleteReplySegment(long epoch)
     {
-        Interlocked.Exchange(ref _replyAudioPlayed, 1);
-        if (Interlocked.Decrement(ref _replySegmentsOutstanding) == 0
-            && Volatile.Read(ref _replyStreamComplete) == 1)
+        if (epoch != CurrentTurnEpoch)
         {
-            SignalTurnSpoken();
+            return;
         }
+        Interlocked.Exchange(ref _replyAudioPlayed, 1);
+        Interlocked.Decrement(ref _replySegmentsOutstanding);
+        SettleIfComplete();
     }
 
-    // Settles only when segments have actually run: an empty answer starts none, and the caller
-    // signals Silent for it rather than having this report audio that never played.
+    // A segment that never plays (synthesis threw, or the queue refused it) must NOT settle the turn
+    // on its own: sentences behind it may still be queued, and settling here would end
+    // FollowUpConversation, whose chime is a High-priority job — it would preempt the sentence
+    // currently playing and the rest would then be spoken into an open capture.
+    public void FailReplySegment(long epoch)
+    {
+        if (epoch != CurrentTurnEpoch)
+        {
+            return;
+        }
+        Interlocked.Decrement(ref _replySegmentsOutstanding);
+        SettleIfComplete();
+    }
+
     public void MarkReplyStreamComplete()
     {
         Interlocked.Exchange(ref _replyStreamComplete, 1);
-        if (Volatile.Read(ref _replySegmentsOutstanding) == 0 && ReplySegmentsStarted > 0)
-        {
-            SignalTurnSpoken();
-        }
+        SettleIfComplete();
     }
 
-    // A segment that never plays (synthesis threw, or the queue refused it) settles the turn now
-    // rather than leaving the handshake to the ~120s ReplyTimeoutMs. Spoken when earlier segments
-    // already reached the satellite — half an answer did play, and the user is still owed the
-    // follow-up window.
-    public void FailReplySegment()
+    // The turn is over only once the agent has stopped sending AND every segment it produced has
+    // finished. Spoken when any segment reached the satellite — half an answer still played, and the
+    // user is owed the follow-up window; Silent when every one of them failed. An empty answer starts
+    // no segments and is left for the caller to settle explicitly.
+    private void SettleIfComplete()
     {
-        Interlocked.Decrement(ref _replySegmentsOutstanding);
+        if (Volatile.Read(ref _replyStreamComplete) != 1
+            || Volatile.Read(ref _replySegmentsOutstanding) != 0
+            || ReplySegmentsStarted == 0)
+        {
+            return;
+        }
+
         if (Volatile.Read(ref _replyAudioPlayed) == 1)
         {
             SignalTurnSpoken();
