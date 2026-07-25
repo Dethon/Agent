@@ -189,4 +189,26 @@ public class UtteranceCaptureTests
 
         capture.Stats.TrailingSilenceMs.ShouldBe(0);
     }
+
+    [Fact]
+    public async Task Stats_FedAfterTheCaptureEnded_KeepTheTailTheGateDecidedOn()
+    {
+        // Feed has no post-completion guard and the satellite keeps streaming until it receives the
+        // closing transcript, while the host reads Stats later still (after speaker verification).
+        // The tail must stay the gate's decision, or EndpointTailMs reports silence-until-close and
+        // the speech-end anchor rewinds too far.
+        var capture = new UtteranceCapture(Gate());
+
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent());
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+
+        capture.Feed(Silent());
+        capture.Feed(Silent());
+
+        capture.Stats.TrailingSilenceMs.ShouldBe(200);
+    }
 }
