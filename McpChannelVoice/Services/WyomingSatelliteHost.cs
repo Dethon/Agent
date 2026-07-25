@@ -448,6 +448,7 @@ public sealed class WyomingSatelliteHost(
                 session, result, voiceSettings.AgentId, capture.Stats, similarity, identifiedSpeaker, ct);
             if (dispatched)
             {
+                session.MarkDispatched(time.GetTimestamp());
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
                 // where a wake event was not observed. The registry makes a second Acknowledge a no-op.
                 // Runs AFTER this dispatch, so its snooze context lands on the NEXT transcript.

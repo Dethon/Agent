@@ -313,4 +313,32 @@ public class SendReplyToolTests
         published.ShouldContain(VoiceMetric.SpeechEndToFirstAudioMs);
         published.ShouldContain(VoiceMetric.ReplyQueueWaitMs);
     }
+
+    [Fact]
+    public async Task McpRun_StreamCompleteAfterDispatch_PublishesAgentRoundTrip()
+    {
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        _clock.Advance(TimeSpan.FromSeconds(4)); // the agent thinking
+
+        await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        var roundTrip = _published.SingleOrDefault(e => e.Metric == VoiceMetric.AgentRoundTripMs);
+        roundTrip.ShouldNotBeNull();
+        roundTrip!.DurationMs.ShouldBe(4000);
+    }
+
+    [Fact]
+    public async Task McpRun_StreamCompleteWithoutDispatch_PublishesNoAgentRoundTrip()
+    {
+        // An announce/scheduled delivery never went through a transcript dispatch, so there is no
+        // round trip to report — publishing one would invent a span.
+        _session.ResetTurn();
+
+        await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _published.ShouldNotContain(e => e.Metric == VoiceMetric.AgentRoundTripMs);
+    }
 }
