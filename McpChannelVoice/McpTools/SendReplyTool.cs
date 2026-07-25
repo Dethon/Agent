@@ -6,6 +6,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.Tts;
 using McpChannelVoice.Settings;
 using ModelContextProtocol.Server;
 
@@ -313,13 +314,23 @@ public sealed class SendReplyTool
             }
         }
 
-        // Synthesis is lazy and runs inside the playback loop, so latency must be measured there.
-        // The loop times synthesis -> first audio chunk (TtsLatencyMs) and turn-open -> first audio
-        // (WakeToFirstAudioMs); emitting from here would only ever record the ~0 ms enqueue.
+        // A reply segment's synthesis starts NOW rather than when the loop reaches it: the loop is
+        // sequential and will not touch this job's audio until the previous segment has finished its
+        // real-time drain, which would put a full TTS round trip into every sentence seam. Announce,
+        // chime and approval jobs are left lazy — they have no seam to hide.
+        var synthesis = tts.SynthesizeAsync(text, options, ct);
+        var prefetch = isReply && settings.Tts.Streaming.Prefetch
+            ? new PrefetchedAudio(synthesis, settings.Tts.Streaming.PrefetchBufferChunks)
+            : null;
+
+        // Latency is still measured in the loop, and still means the same thing: for the first reply
+        // segment the loop pulls immediately, so it observes the real synthesis time. Later segments
+        // find their audio already buffered — but they do not publish TtsLatencyMs, so the
+        // decomposition is unaffected.
         var job = new PlaybackJob(
             Label: $"{(isReply ? "reply" : "preamble")}:{session.SatelliteId}",
             Priority: AnnouncePriority.Normal,
-            Audio: tts.SynthesizeAsync(text, options, ct),
+            Audio: prefetch?.Chunks ?? synthesis,
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: async _ =>
             {
@@ -437,6 +448,13 @@ public sealed class SendReplyTool
                 "Reply segment for {Satellite} was refused by the playback queue (depth {Depth}); " +
                 "the answer will be truncated", session.SatelliteId, settings.Announce.QueueMaxDepth);
             session.FailReplySegment(epoch);
+        }
+
+        // Nothing will ever enumerate a refused job, so disposal is the only thing that releases its
+        // in-flight synthesis.
+        if (prefetch is not null && !queued)
+        {
+            await prefetch.DisposeAsync();
         }
     }
 }
