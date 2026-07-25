@@ -339,6 +339,21 @@ public sealed class WyomingSatelliteHost(
     {
         try
         {
+            // The endpointing tail is audio-domain time (derived from PCM frame durations), so it is
+            // exact and immune to scheduling jitter. Published unconditionally — including on the
+            // paths that go on to drop the transcript — because tuning TrailingSilenceMs needs the
+            // rejected captures too.
+            await SafePublishAsync(new VoiceEvent
+            {
+                Metric = VoiceMetric.EndpointTailMs,
+                SatelliteId = session.SatelliteId,
+                Room = session.Config.Room,
+                Identity = session.Config.Identity,
+                DurationMs = capture.Stats.TrailingSilenceMs,
+                EndReason = capture.Stats.EndReason,
+                ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
+            });
+
             double? similarity = null;
             string? identifiedSpeaker = null;
             SpeakerVerification? verification = null;

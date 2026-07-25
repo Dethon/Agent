@@ -14,7 +14,8 @@ public enum CaptureOutcome
 // RMS/min-speech entry bar and the adaptive-floor margins can be tuned from real data
 // instead of guesswork.
 public readonly record struct CaptureStats(
-    double PeakRms, double FloorRms, long SpeechMs, string? EndReason, double TrailingRms = 0);
+    double PeakRms, double FloorRms, long SpeechMs, string? EndReason, double TrailingRms = 0,
+    long TrailingSilenceMs = 0);
 
 // One bounded mic capture over the held-open Wyoming stream. The read loop pushes audio
 // via Feed (single-threaded); the gate decides when speech ends (Ended) or the no-speech
@@ -45,7 +46,8 @@ public sealed class UtteranceCapture(SilenceGate gate)
         gate.FloorRms,
         (long)gate.SpeechElapsed.TotalMilliseconds,
         _forced ? "forced" : gate.EndReason,
-        gate.TrailingRms);
+        gate.TrailingRms,
+        (long)gate.TrailingSilence.TotalMilliseconds);
 
     public void Feed(AudioChunk chunk)
     {

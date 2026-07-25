@@ -162,4 +162,31 @@ public class UtteranceCaptureTests
         capture.BufferedAudio.Count.ShouldBe(5);
         capture.BufferedAudio.ShouldAllBe(c => c.Data.Length == 3200);
     }
+
+    [Fact]
+    public async Task Stats_AfterTrailingSilenceEnd_CarryTheEndpointingTail()
+    {
+        var capture = new UtteranceCapture(Gate());
+
+        capture.Feed(Silent()); // pre-roll gap seeds the floor
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent());
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        capture.Stats.EndReason.ShouldBe("trailing_silence");
+        capture.Stats.TrailingSilenceMs.ShouldBe(200);
+    }
+
+    [Fact]
+    public async Task Stats_MidSpeech_ReportNoEndpointingTail()
+    {
+        var capture = new UtteranceCapture(Gate());
+
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+
+        capture.Stats.TrailingSilenceMs.ShouldBe(0);
+    }
 }
