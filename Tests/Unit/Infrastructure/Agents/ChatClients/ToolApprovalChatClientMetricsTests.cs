@@ -375,4 +375,60 @@ public class ToolApprovalChatClientMetricsTests
             await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options));
     }
 
+
+    [Fact]
+    public async Task InvokeFunction_TagsTheToolCallWithItsConversation()
+    {
+        // Without this every ToolCallEvent lands with a null conversationId, so tool calls cannot be
+        // grouped into turns — you can compute a mean tools-per-turn but never its distribution,
+        // which is the number that says whether the tail is exploration-heavy.
+        var publisher = new Mock<IMetricsPublisher>();
+        var handler = new TestApprovalHandler(ToolApprovalResult.AutoApproved);
+        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
+
+        ToolCallEvent? captured = null;
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
+            .Returns(Task.CompletedTask);
+
+        var client = new ToolApprovalChatClient(
+            fakeClient, handler, metricsPublisher: publisher.Object, conversationId: "conv-42");
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], new ChatOptions { Tools = [function] });
+
+        captured.ShouldNotBeNull();
+        captured.ConversationId.ShouldBe("conv-42");
+    }
+
+    [Fact]
+    public async Task InvokeFunction_WhenTheToolThrows_StillTagsTheConversation()
+    {
+        var publisher = new Mock<IMetricsPublisher>();
+        var handler = new TestApprovalHandler(ToolApprovalResult.AutoApproved);
+        var function = AIFunctionFactory.Create(
+            string () => throw new InvalidOperationException("boom"), "mcp__server__TestTool");
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
+
+        ToolCallEvent? captured = null;
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
+            .Returns(Task.CompletedTask);
+
+        var client = new ToolApprovalChatClient(
+            fakeClient, handler, metricsPublisher: publisher.Object, conversationId: "conv-42");
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], new ChatOptions { Tools = [function] });
+
+        captured.ShouldNotBeNull();
+        captured.Success.ShouldBeFalse();
+        captured.ConversationId.ShouldBe("conv-42");
+    }
+
 }

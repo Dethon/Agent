@@ -169,4 +169,67 @@ public class OpenRouterChatClientMetricsTests : IDisposable
         captured.ShouldNotBeNull();
         captured.Sender.ShouldBe("alice");
     }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_WithCachedPromptTokens_RecordsThem()
+    {
+        // Prompt caching is already active on the glm models, but nothing recorded the hit rate, so
+        // it could only be inferred from cost against list pricing. This makes it a measurement.
+        var usageDetails = new UsageDetails
+        {
+            InputTokenCount = 21639,
+            OutputTokenCount = 50,
+            AdditionalCounts = new AdditionalPropertiesDictionary<long>
+            {
+                ["InputTokenDetails.CachedTokenCount"] = 13800
+            }
+        };
+
+        _innerClient
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions?>(), It.IsAny<CancellationToken>()))
+            .Returns(new List<ChatResponseUpdate>
+            {
+                new() { Role = ChatRole.Assistant, Contents = [new UsageContent(usageDetails)] }
+            }.ToAsyncEnumerable());
+
+        TokenUsageEvent? captured = null;
+        _publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as TokenUsageEvent ?? captured)
+            .Returns(Task.CompletedTask);
+
+        await _sut.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "hi")]).ToListAsync();
+
+        captured.ShouldNotBeNull();
+        captured.InputTokens.ShouldBe(21639);
+        captured.CachedInputTokens.ShouldBe(13800);
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_WithoutCachedTokenDetail_RecordsNull()
+    {
+        // A provider reporting no cache detail must read as "unknown", not a confident zero —
+        // otherwise a missing field is indistinguishable from a 0% hit rate.
+        var usageDetails = new UsageDetails { InputTokenCount = 100, OutputTokenCount = 50 };
+
+        _innerClient
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions?>(), It.IsAny<CancellationToken>()))
+            .Returns(new List<ChatResponseUpdate>
+            {
+                new() { Role = ChatRole.Assistant, Contents = [new UsageContent(usageDetails)] }
+            }.ToAsyncEnumerable());
+
+        TokenUsageEvent? captured = null;
+        _publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as TokenUsageEvent ?? captured)
+            .Returns(Task.CompletedTask);
+
+        await _sut.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "hi")]).ToListAsync();
+
+        captured.ShouldNotBeNull();
+        captured.CachedInputTokens.ShouldBeNull();
+    }
 }

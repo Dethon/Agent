@@ -178,9 +178,32 @@ public sealed class OpenRouterChatClient : IChatClient
                 Model = _model,
                 InputTokens = (int)(usage.Details.InputTokenCount ?? 0),
                 OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),
+                CachedInputTokens = ReadCachedInputTokens(usage.Details),
                 Cost = cost
             }, ct);
         }
+    }
+
+    // Matched on the key name rather than a fixed constant: the provider/SDK spelling of this
+    // counter has moved between versions (prompt_tokens_details.cached_tokens ->
+    // InputTokenDetails.CachedTokenCount), and guessing wrong silently reports "no caching" for a
+    // model that is in fact caching most of its prompt.
+    private static long? ReadCachedInputTokens(UsageDetails details)
+    {
+        if (details.AdditionalCounts is null)
+        {
+            return null;
+        }
+
+        foreach (var (key, value) in details.AdditionalCounts)
+        {
+            if (key.Contains("cach", StringComparison.OrdinalIgnoreCase))
+            {
+                return value;
+            }
+        }
+
+        return null;
     }
 
     public object? GetService(Type serviceType, object? key = null)
