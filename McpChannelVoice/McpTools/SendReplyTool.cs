@@ -220,6 +220,22 @@ public sealed class SendReplyTool
     {
         var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
         var options = new SynthesisOptions { Voice = voice };
+
+        // Reply text arriving here closes the hub-visible agent round trip: dispatch -> answer.
+        // Compared against the agent's own MemoryRecall + LlmTotal, the difference is queue time.
+        if (isReply && session.DispatchedAt is { } dispatchedAt)
+        {
+            await metrics.PublishAsync(new VoiceEvent
+            {
+                Metric = VoiceMetric.AgentRoundTripMs,
+                SatelliteId = session.SatelliteId,
+                Room = session.Config.Room,
+                Identity = session.Config.Identity,
+                DurationMs = (long)time.GetElapsedTime(dispatchedAt).TotalMilliseconds,
+                ConversationId = conversationId
+            }, ct);
+        }
+
         var enqueuedAt = time.GetTimestamp();
 
         // Synthesis is lazy and runs inside the playback loop, so latency must be measured there.

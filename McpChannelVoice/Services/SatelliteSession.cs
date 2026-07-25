@@ -46,6 +46,8 @@ public sealed class SatelliteSession
     private long _turnStartedAt = TurnNotStarted;
     private const long SpeechEndNotMarked = long.MinValue;
     private long _speechEndedAt = SpeechEndNotMarked;
+    private const long DispatchNotMarked = long.MinValue;
+    private long _dispatchedAt = DispatchNotMarked;
     private int _preambleClaimed;
     private static readonly TimeSpan _snoozeWindow = TimeSpan.FromSeconds(60);
     private readonly Lock _dismissGate = new();
@@ -138,6 +140,20 @@ public sealed class SatelliteSession
     // is machine time. Stamped with the same TimeProvider the playback loop reads, exactly like
     // MarkTurnStart, so the two spans are comparable.
     public void MarkSpeechEnd(long timestamp) => Interlocked.Exchange(ref _speechEndedAt, timestamp);
+
+    // Stamped when a transcript actually reached the agent, so the hub can measure the agent round
+    // trip it cannot otherwise see into (the agent's own MemoryRecall/LlmTotal stages live in a
+    // different process). Null until the first dispatch of the connection.
+    public void MarkDispatched(long timestamp) => Interlocked.Exchange(ref _dispatchedAt, timestamp);
+
+    public long? DispatchedAt
+    {
+        get
+        {
+            var stamp = Interlocked.Read(ref _dispatchedAt);
+            return stamp == DispatchNotMarked ? null : stamp;
+        }
+    }
 
     // Callers must ResetTurn before the reply path can SignalTurnSpoken/SignalTurnSilent for
     // the new turn; otherwise a signal lands on the discarded TCS and the awaiter blocks forever.
