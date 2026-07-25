@@ -65,7 +65,7 @@ public sealed class DataLoadEffect(
 
             var voiceTask = api.GetVoiceEventsAsync(from, to);
             var voiceBreakdownTask = api.GetVoiceGroupedAsync(
-                voiceStore.State.GroupBy, voiceStore.State.Metric, from, to);
+                voiceStore.State.GroupBy, voiceStore.State.Metric, from, to, voiceStore.State.Agg);
 
             await Task.WhenAll(summaryTask, tokensTask, toolsTask, errorsTask,
                 schedulesTask, healthTask, tokenBreakdownTask, toolBreakdownTask,
