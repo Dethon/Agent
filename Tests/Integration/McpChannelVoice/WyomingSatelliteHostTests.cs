@@ -524,7 +524,7 @@ public class WyomingSatelliteHostTests
         var verify = publishedEvents.Where(e => e.Metric == VoiceMetric.SpeakerVerifyMs).ToList();
         verify.ShouldNotBeEmpty();
         verify.ShouldAllBe(e => e.DurationMs != null && e.DurationMs >= 0);
-        verify.ShouldAllBe(e => e.Outcome == "early" || e.Outcome == "final");
+        verify.ShouldAllBe(e => new[] { "early", "final" }.Contains(e.Outcome));
 
         emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
 
@@ -826,6 +826,14 @@ public class WyomingSatelliteHostTests
         rejection.ShouldNotBeNull();
         rejection!.Outcome.ShouldBe("unknown_speaker_early");
         (rejection.SpeechMs ?? 0).ShouldBeGreaterThanOrEqualTo(300L); // the "TV" DID latch as speech, unlike the zero-speech scenario above
+
+        // This is the only test that forces the early-close branch to reject, so it is the one
+        // place the "early" SpeakerVerifyMs pass (as opposed to "final") gets its own coverage.
+        var verify = publishedEvents.SingleOrDefault(e => e.Metric == VoiceMetric.SpeakerVerifyMs);
+        verify.ShouldNotBeNull();
+        verify!.Outcome.ShouldBe("early");
+        (verify.DurationMs ?? -1).ShouldBeGreaterThanOrEqualTo(0L);
+        verify.Similarity.ShouldBe(0.213); // GatedToneVerifier's fixed Rejected similarity for an unknown tone
 
         emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
 
