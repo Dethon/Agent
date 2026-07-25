@@ -8,6 +8,15 @@
 
 **Tech Stack:** .NET 10, xUnit + Shouldly, Redis Stack (metric events persist as JSON in sorted sets), Blazor WebAssembly (Dashboard).
 
+> **Post-execution note — read before trusting any per-task snippet below.** The task bodies record what
+> was *planned*; seven defects in them were found and fixed during execution, so where the shipped code
+> differs, the **Anchoring** block and the **Verification** section govern, not the snippets. The two
+> differences a reader is most likely to trip over:
+> - `SatelliteSession.MarkSpeechEnd` ships as `MarkSpeechEnd(long captureClosedAt, long endpointTailMs, TimeProvider time)` — it rewinds the close timestamp by the frozen endpointing tail. Task 4's snippet shows the abandoned one-argument form that stamped capture close directly, which is the Critical defect the final review caught.
+> - `VoiceMetric` ships **six** new members, not five: `SpeakerVerifyEarlyMs = 28` was appended after review, because the early mid-capture verification pass overlaps the user's speech and must not be blended into the additive decomposition with the final inline pass.
+>
+> `git log 790c3dc8..HEAD` is the authoritative record of what was built.
+
 ## Global Constraints
 
 - `.cs` files have **no trailing newline** (`.editorconfig` sets `insert_final_newline = false`).
