@@ -143,16 +143,16 @@ public sealed class SatelliteSession
 
     // Stamped when a transcript actually reached the agent, so the hub can measure the agent round
     // trip it cannot otherwise see into (the agent's own MemoryRecall/LlmTotal stages live in a
-    // different process). Null until the first dispatch of the connection.
+    // different process). Single-use, like NoteDismissedAlert/TryConsumeDismissedAlert below: a live
+    // session's conversation can also receive a schedule-fired or agent-initiated reply that never
+    // went through a transcript dispatch, so a stamp left over from an earlier real turn must not be
+    // readable by that later, unrelated reply — it would report an invented, stale round trip.
     public void MarkDispatched(long timestamp) => Interlocked.Exchange(ref _dispatchedAt, timestamp);
 
-    public long? DispatchedAt
+    public long? TryConsumeDispatchedAt()
     {
-        get
-        {
-            var stamp = Interlocked.Read(ref _dispatchedAt);
-            return stamp == DispatchNotMarked ? null : stamp;
-        }
+        var stamp = Interlocked.Exchange(ref _dispatchedAt, DispatchNotMarked);
+        return stamp == DispatchNotMarked ? null : stamp;
     }
 
     // Callers must ResetTurn before the reply path can SignalTurnSpoken/SignalTurnSilent for
