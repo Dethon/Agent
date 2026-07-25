@@ -3,6 +3,22 @@ namespace McpChannelVoice.Settings;
 public record TtsSettings
 {
     public OpenAiTtsConfig OpenAi { get; init; } = new();
+    public StreamingTtsConfig Streaming { get; init; } = new();
+}
+
+public record StreamingTtsConfig
+{
+    // Speak each complete sentence run as the agent produces it instead of waiting for the whole
+    // turn to finish. Disabling restores buffer-until-StreamComplete: the kill switch if streamed
+    // prosody or the segment handshake ever misbehave in the field.
+    public bool Enabled { get; init; } = true;
+
+    // The first flush is the one the user is waiting through, so it goes out at the first boundary
+    // past a deliberately low bar. Later flushes are covered by audio already playing, so they use a
+    // higher one — each flush is its own TTS request, and larger runs mean fewer requests, fewer
+    // inter-segment gaps, and better cross-sentence prosody.
+    public int FirstSegmentMinChars { get; init; } = 40;
+    public int MinChars { get; init; } = 140;
 }
 
 public record OpenAiTtsConfig
