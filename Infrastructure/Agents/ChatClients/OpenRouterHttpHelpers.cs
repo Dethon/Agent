@@ -39,6 +39,11 @@ internal static class OpenRouterHttpHelpers
             obj["session_id"] = sessionId;
         }
 
+        // Ask for the usage breakdown. `cost` arrives without this, but prompt_tokens_details —
+        // which carries cached_tokens — does not, and that counter is the only direct measure of
+        // whether the ~17k static prefix is actually being served from the provider's prompt cache.
+        obj["usage"] = new JsonObject { ["include"] = true };
+
         request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
     }
 
@@ -73,9 +78,38 @@ internal static class OpenRouterHttpHelpers
     }
 
     public static HttpContent WrapWithReasoningTee(
-        HttpContent inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue)
+        HttpContent inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
+        ConcurrentQueue<long> cachedQueue)
     {
-        return new TeeHttpContent(inner, reasoningQueue, costQueue);
+        return new TeeHttpContent(inner, reasoningQueue, costQueue, cachedQueue);
+    }
+
+    internal static long? ExtractCachedTokensFromSseData(string data)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(data);
+            if (!doc.RootElement.TryGetProperty("usage", out var usage) ||
+                usage.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            if (!usage.TryGetProperty("prompt_tokens_details", out var details) ||
+                details.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            return details.TryGetProperty("cached_tokens", out var cached) &&
+                   cached.ValueKind == JsonValueKind.Number
+                ? cached.GetInt64()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     internal static decimal? ExtractCostFromSseData(string data)
@@ -132,7 +166,8 @@ internal static class OpenRouterHttpHelpers
     }
 
     private sealed class TeeHttpContent(
-        HttpContent inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue) : HttpContent
+        HttpContent inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
+        ConcurrentQueue<long> cachedQueue) : HttpContent
     {
         protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
         {
@@ -142,7 +177,7 @@ internal static class OpenRouterHttpHelpers
 
         protected override async Task<Stream> CreateContentReadStreamAsync()
         {
-            return new ReasoningTeeStream(await inner.ReadAsStreamAsync(), reasoningQueue, costQueue);
+            return new ReasoningTeeStream(await inner.ReadAsStreamAsync(), reasoningQueue, costQueue, cachedQueue);
         }
 
         protected override bool TryComputeLength(out long length)
@@ -163,7 +198,8 @@ internal static class OpenRouterHttpHelpers
     }
 
     private sealed class ReasoningTeeStream(
-        Stream inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue) : Stream
+        Stream inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
+        ConcurrentQueue<long> cachedQueue) : Stream
     {
         private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
         private readonly StringBuilder _buffer = new();
@@ -238,6 +274,13 @@ internal static class OpenRouterHttpHelpers
                     .Where(c => c is not null))
                 {
                     costQueue.Enqueue(cost!.Value);
+                }
+
+                foreach (var cached in dataPayloads
+                    .Select(ExtractCachedTokensFromSseData)
+                    .Where(c => c is not null))
+                {
+                    cachedQueue.Enqueue(cached!.Value);
                 }
             }
             catch
