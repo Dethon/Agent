@@ -28,5 +28,13 @@ public enum VoiceMetric
     TseInvoked = 19,
     TseSkipped = 20,
     TseFailed = 21,
-    TseLatencyMs = 22
+    TseLatencyMs = 22,
+    // Turn decomposition: EndpointTailMs..SpeechEndToFirstAudioMs split the wake→first-audio span
+    // into the parts nothing measured before. SpeechEndToFirstAudioMs is the user-perceived one —
+    // WakeToFirstAudioMs starts at mic-open, so it also contains the user's own speech.
+    EndpointTailMs = 23,
+    SpeakerVerifyMs = 24,
+    AgentRoundTripMs = 25,
+    ReplyQueueWaitMs = 26,
+    SpeechEndToFirstAudioMs = 27
 }

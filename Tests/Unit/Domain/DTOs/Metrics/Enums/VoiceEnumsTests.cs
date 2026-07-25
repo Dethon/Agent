@@ -66,6 +66,19 @@ public class VoiceEnumsTests
     }
 
     [Theory]
+    [InlineData(VoiceMetric.EndpointTailMs, 23)]
+    [InlineData(VoiceMetric.SpeakerVerifyMs, 24)]
+    [InlineData(VoiceMetric.AgentRoundTripMs, 25)]
+    [InlineData(VoiceMetric.ReplyQueueWaitMs, 26)]
+    [InlineData(VoiceMetric.SpeechEndToFirstAudioMs, 27)]
+    public void VoiceMetric_TurnDecompositionValues_ArePinned(VoiceMetric metric, int expected)
+    {
+        // These five decompose wake→first-audio. Values persist as ints in Redis; a renumber
+        // silently re-labels historical data.
+        ((int)metric).ShouldBe(expected);
+    }
+
+    [Theory]
     [InlineData(VoiceDimension.SatelliteId, 0)]
     [InlineData(VoiceDimension.Room, 1)]
     [InlineData(VoiceDimension.Identity, 2)]
