@@ -79,4 +79,60 @@ public class HomeAssistantSetupSummaryTests
         var client = new FakeHaClient();
         (await Build(client).GetAsync(CancellationToken.None)).ShouldBeEmpty();
     }
+
+    [Fact]
+    public async Task GetAsync_ListsAvailableActionsPerEntityClass()
+    {
+        // The prompt used to tell the agent to `glob <entity-dir>/*.sh` to discover actions, which
+        // cost a round trip per turn — and its first guess, the CLASS directory, always returns
+        // nothing because action files live one level deeper. Naming the actions up front removes
+        // both turns for ~350 tokens, a trade worth roughly 100:1 against a ~1.15s round trip.
+        var client = new FakeHaClient
+        {
+            States =
+            {
+                Entity("light.kitchen", "off", ("friendly_name", JsonValue.Create("Kitchen"))),
+                Entity("light.desk", "on", ("friendly_name", JsonValue.Create("Desk"))),
+                Entity("sensor.salon_temp", "21", ("friendly_name", JsonValue.Create("Salon Temp"))),
+            },
+            Services =
+            {
+                Service("light", "turn_on", DomainTarget("light")),
+                Service("light", "turn_off", DomainTarget("light")),
+            }
+        };
+
+        var text = await Build(client).GetAsync(CancellationToken.None);
+
+        text.ShouldContain("## Actions by entity class");
+        text.ShouldContain("light: turn_off.sh, turn_on.sh");
+        // A read-only class must not appear at all rather than as an empty entry.
+        text.ShouldNotContain("sensor:");
+    }
+
+    [Fact]
+    public async Task GetAsync_ActionTableSaysWhereTheFilesLive()
+    {
+        // The wasted glob is structural: `*.sh` at the class level legitimately returns 0.
+        var client = new FakeHaClient
+        {
+            States = { Entity("light.kitchen", "off") },
+            Services = { Service("light", "turn_on", DomainTarget("light")) }
+        };
+
+        var text = await Build(client).GetAsync(CancellationToken.None);
+
+        text.ShouldContain("entity directory");
+    }
+
+    [Fact]
+    public async Task GetAsync_WithNoActionableEntities_OmitsTheActionTable()
+    {
+        var client = new FakeHaClient { States = { Entity("sensor.salon_temp", "21") } };
+
+        var text = await Build(client).GetAsync(CancellationToken.None);
+
+        text.ShouldNotContain("## Actions by entity class");
+    }
+
 }
