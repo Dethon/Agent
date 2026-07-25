@@ -50,15 +50,24 @@ public static class SentenceSplitter
             return false;
         }
 
-        // A terminator only ends a sentence at end-of-buffer or before whitespace. That one rule is
-        // also what excludes decimals ("1.234,56", "3.5") and the interior dots of an ellipsis: in
-        // every case the next character is not whitespace.
-        if (i + 1 < buffer.Length && !char.IsWhiteSpace(buffer[i + 1]))
+        // Whitespace must FOLLOW the terminator. End-of-buffer deliberately does not qualify: this
+        // runs on a partially-received answer, so the buffer routinely ends mid-number — trusting its
+        // edge turns "…fue de 1.234,56 euros" into "…fue de uno." plus a new sentence starting at the
+        // decimals. Nothing is lost by waiting, because StreamComplete flushes the whole buffer
+        // regardless of boundaries. The same rule excludes an ellipsis's interior dots.
+        if (i + 1 >= buffer.Length || !char.IsWhiteSpace(buffer[i + 1]))
         {
             return false;
         }
 
-        return buffer[i] != '.' || !EndsWithAbbreviation(buffer, i);
+        if (buffer[i] != '.')
+        {
+            return true;
+        }
+
+        // A digit before the dot is an enumeration or a split number ("1. Leche"), never a sentence
+        // end — and a lone letter or a known abbreviation is not one either.
+        return (i == 0 || !char.IsDigit(buffer[i - 1])) && !EndsWithAbbreviation(buffer, i);
     }
 
     private static bool EndsWithAbbreviation(string buffer, int dot)
