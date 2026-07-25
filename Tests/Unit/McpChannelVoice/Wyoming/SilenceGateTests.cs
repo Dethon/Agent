@@ -457,4 +457,67 @@ public class SilenceGateTests
         Feed(gate, Loud());
         gate.TrailingSilence.ShouldBe(TimeSpan.Zero);
     }
+
+    [Fact]
+    public void TrailingSilence_FedAfterEndUtterance_StaysFrozenAtTheDecision()
+    {
+        // The satellite streams continuously until it receives the closing transcript and
+        // UtteranceCapture.Feed has no post-completion guard, so late frames kept growing the run.
+        // The reported value must be silence-until-the-gate-decided, not silence-until-somebody-
+        // -got-around-to-reading-it: EndpointTailMs is what TrailingSilenceMs is tuned against, and
+        // the speech-end anchor is derived by rewinding exactly this value.
+        var gate = NewGate();
+
+        Feed(gate, Silent());
+        Feed(gate, Loud());
+        Feed(gate, Loud());
+        Feed(gate, Silent());
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.EndUtterance);
+
+        Feed(gate, Silent());
+        Feed(gate, Silent());
+
+        gate.TrailingSilence.ShouldBe(TimeSpan.FromMilliseconds(200));
+    }
+
+    [Fact]
+    public void TrailingRms_FedAfterEndUtterance_StaysFrozenAtTheDecision()
+    {
+        // Same drift, same fix: the prominence-margin reference must describe the run the gate
+        // judged, not that run plus whatever the room did afterwards.
+        var gate = BabbleGate();
+        foreach (var _ in Enumerable.Range(0, 8))
+        {
+            Feed(gate, Tone(2000));
+        }
+        Feed(gate, Tone(8000));
+        Feed(gate, Tone(8000));
+        Feed(gate, Tone(2000));
+        Feed(gate, Tone(2000)).ShouldBe(SilenceGate.Decision.EndUtterance);
+
+        Feed(gate, Tone(200)); // the room went quiet after the decision
+        Feed(gate, Tone(200));
+
+        gate.TrailingRms.ShouldBe(2000, 1.0);
+    }
+
+    [Fact]
+    public void Reset_AfterAFrozenEnd_ReportsTheNewSegmentsRun()
+    {
+        // SegmentedSpeechToText reuses one gate across phrase segments via Reset(), so the freeze
+        // must not outlive the segment that set it.
+        var gate = NewGate();
+
+        Feed(gate, Silent());
+        Feed(gate, Loud());
+        Feed(gate, Loud());
+        Feed(gate, Silent());
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.EndUtterance);
+
+        gate.Reset();
+        Feed(gate, Loud());
+        Feed(gate, Silent());
+
+        gate.TrailingSilence.ShouldBe(TimeSpan.FromMilliseconds(100));
+    }
 }

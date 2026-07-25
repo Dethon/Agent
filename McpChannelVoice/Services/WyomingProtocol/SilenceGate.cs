@@ -23,6 +23,12 @@ public sealed class SilenceGate(
     private double _trailingEnergyMs;
     private bool _speechStarted;
     private double _peakRms;
+    // The trailing run as it stood at the terminal decision. Everyone who reads the run reads it
+    // strictly after that decision (the host publishes EndpointTailMs once speaker verification has
+    // finished), and Feed keeps accepting frames until the satellite gets its closing transcript, so
+    // the live counters would otherwise report the tail plus an arbitrary read delay.
+    private TimeSpan? _endTrailingSilence;
+    private double _endTrailingRms;
 
     public enum Decision
     {
@@ -37,16 +43,21 @@ public sealed class SilenceGate(
 
     public double FloorRms => tracker.FloorRms;
 
-    // Mean RMS of the current trailing run — the demote check's background reference.
-    // Published with capture stats so the prominence margin can be tuned from field data.
-    public double TrailingRms => _trailingSilence > TimeSpan.Zero
+    // Mean RMS of the trailing run — the demote check's background reference. Published with capture
+    // stats so the prominence margin can be tuned from field data. Frozen at the terminal decision.
+    public double TrailingRms => _endTrailingSilence is null ? LiveTrailingRms : _endTrailingRms;
+
+    private double LiveTrailingRms => _trailingSilence > TimeSpan.Zero
         ? Math.Sqrt(_trailingEnergyMs / _trailingSilence.TotalMilliseconds)
         : 0;
 
-    // The silence run accumulated since the last speech frame. At EndUtterance this IS the
-    // endpointing tail — dead air the user waits through after they stop talking — so the host can
-    // publish it instead of leaving the largest unattributed span of the turn invisible.
-    public TimeSpan TrailingSilence => _trailingSilence;
+    // The silence run since the last speech frame, frozen once a terminal decision is reached. At
+    // EndUtterance this IS the endpointing tail — dead air the user waits through after they stop
+    // talking — so the host can publish it instead of leaving the largest unattributed span of the
+    // turn invisible, and can rewind the speech-end anchor by it. Audio-domain time (summed PCM frame
+    // durations), so it is exact and immune to scheduling jitter; the freeze is what keeps it that
+    // way, because frames keep arriving between the decision and anyone reading this.
+    public TimeSpan TrailingSilence => _endTrailingSilence ?? _trailingSilence;
 
     public string? EndReason { get; private set; }
 
@@ -79,6 +90,7 @@ public sealed class SilenceGate(
                 // background. Only gates with a no-speech window may emit NoSpeech (the
                 // segmenting gate inside SegmentedSpeechToText must keep slicing on
                 // EndUtterance).
+                FreezeTrailingRun();
                 if (noSpeechTimeout > TimeSpan.Zero && !tracker.SpeechProminent)
                 {
                     EndReason = "no_speech";
@@ -95,16 +107,29 @@ public sealed class SilenceGate(
         // the capture would hang open until the maxUtterance cap instead of timing out here.
         if (_speechElapsed <= minSpeech && noSpeechTimeout > TimeSpan.Zero && _elapsed >= noSpeechTimeout)
         {
+            FreezeTrailingRun();
             EndReason = "no_speech";
             return Decision.NoSpeech;
         }
 
         if (_elapsed >= maxUtterance)
         {
+            FreezeTrailingRun();
             EndReason = "max_utterance";
             return Decision.EndUtterance;
         }
         return Decision.Continue;
+    }
+
+    // Idempotent: the terminal conditions stay true for every later frame, so a second freeze would
+    // simply re-import the drift this exists to exclude.
+    private void FreezeTrailingRun()
+    {
+        if (_endTrailingSilence is null)
+        {
+            _endTrailingRms = LiveTrailingRms;
+            _endTrailingSilence = _trailingSilence;
+        }
     }
 
     // Deliberately does NOT reset the tracker: SegmentedSpeechToText resets the gate per
@@ -117,6 +142,8 @@ public sealed class SilenceGate(
         _trailingEnergyMs = 0;
         _speechStarted = false;
         _peakRms = 0;
+        _endTrailingSilence = null;
+        _endTrailingRms = 0;
         EndReason = null;
     }
 
