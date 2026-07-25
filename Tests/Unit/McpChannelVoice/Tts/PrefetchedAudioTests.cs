@@ -128,7 +128,7 @@ public class PrefetchedAudioTests
         await pulled.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await Task.Delay(200);
 
-        // capacity + the one the producer is parked on, with generous slack for scheduling
-        Volatile.Read(ref produced).ShouldBeLessThan(20);
+        // capacity (4) + the one the producer is parked on, with a little slack for scheduling
+        Volatile.Read(ref produced).ShouldBeLessThan(8);
     }
 }

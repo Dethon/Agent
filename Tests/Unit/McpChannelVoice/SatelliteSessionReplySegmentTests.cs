@@ -208,4 +208,26 @@ public class SatelliteSessionReplySegmentTests
         turn.IsCompleted.ShouldBeTrue();
         turn.Result.ShouldBeTrue();
     }
+
+    [Fact]
+    public void PreemptedSegment_ReleasesItsSlotSoTheTurnCanStillSettle()
+    {
+        // An alarm is High priority, so it cancels the reply mid-playback. A preempted job never
+        // reaches OnDrained, so if the segment is not released the turn waits out the ~120s
+        // ReplyTimeoutMs with the mic wedged — exactly the scenario an away-from-home stretch hits.
+        var session = MakeSession();
+        session.ResetTurn();
+        var epoch = session.CurrentTurnEpoch;
+        var turn = session.WaitForTurnSpokenAsync();
+
+        session.BeginReplySegment();
+        session.CompleteReplySegment(epoch);
+        session.BeginReplySegment();
+        session.FailReplySegment(epoch); // the preempted segment
+        session.MarkReplyStreamComplete();
+
+        turn.IsCompleted.ShouldBeTrue();
+        turn.Result.ShouldBeTrue(); // earlier audio did reach the satellite
+    }
+
 }

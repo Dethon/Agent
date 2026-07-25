@@ -334,18 +334,29 @@ public sealed class SendReplyTool
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: async _ =>
             {
-                if (!isFirstReplySegment)
+                if (!isReply)
                 {
                     return;
                 }
-                await metrics.PublishAsync(new VoiceEvent
+
+                // One sample per turn, like the other reply-anchored metrics.
+                if (isFirstReplySegment)
                 {
-                    Metric = VoiceMetric.AnnouncePreemptedReply,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
-                    ConversationId = conversationId
-                }, ct);
+                    await metrics.PublishAsync(new VoiceEvent
+                    {
+                        Metric = VoiceMetric.AnnouncePreemptedReply,
+                        SatelliteId = session.SatelliteId,
+                        Room = session.Config.Room,
+                        Identity = session.Config.Identity,
+                        ConversationId = conversationId
+                    }, ct);
+                }
+
+                // EVERY preempted segment must release its slot — a preempted job never reaches
+                // OnDrained, so without this the turn stays outstanding until the ~120s
+                // ReplyTimeoutMs. Settles Spoken when earlier audio reached the satellite, which is
+                // what an alarm cutting into a reply looks like.
+                session.FailReplySegment(epoch);
             },
             // The reply is several sentence jobs now, so a drain resolves this SEGMENT; the turn only
             // settles once every started segment has drained and the agent's stream has ended.
