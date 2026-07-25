@@ -43,6 +43,11 @@ public sealed class SilenceGate(
         ? Math.Sqrt(_trailingEnergyMs / _trailingSilence.TotalMilliseconds)
         : 0;
 
+    // The silence run accumulated since the last speech frame. At EndUtterance this IS the
+    // endpointing tail — dead air the user waits through after they stop talking — so the host can
+    // publish it instead of leaving the largest unattributed span of the turn invisible.
+    public TimeSpan TrailingSilence => _trailingSilence;
+
     public string? EndReason { get; private set; }
 
     public Decision Process(ReadOnlySpan<byte> pcm, int sampleRateHz, int sampleWidthBytes, int channels)

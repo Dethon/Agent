@@ -429,4 +429,32 @@ public class SilenceGateTests
             Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.Continue);
         }
     }
+
+    [Fact]
+    public void TrailingSilence_AtEndUtterance_IsTheSilenceRunThatEndedIt()
+    {
+        var gate = NewGate(); // trailingSilence: 200 ms, chunks are 100 ms
+
+        Feed(gate, Silent());
+        Feed(gate, Loud());
+        Feed(gate, Loud());
+        Feed(gate, Silent());
+        Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.EndUtterance);
+
+        gate.TrailingSilence.ShouldBe(TimeSpan.FromMilliseconds(200));
+    }
+
+    [Fact]
+    public void TrailingSilence_ResetsWhenSpeechResumes()
+    {
+        var gate = NewGate();
+
+        Feed(gate, Silent());
+        Feed(gate, Loud());
+        Feed(gate, Silent());
+        gate.TrailingSilence.ShouldBe(TimeSpan.FromMilliseconds(100));
+
+        Feed(gate, Loud());
+        gate.TrailingSilence.ShouldBe(TimeSpan.Zero);
+    }
 }
