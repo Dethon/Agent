@@ -518,6 +518,14 @@ public class WyomingSatelliteHostTests
         rejection!.Outcome.ShouldBe("unknown_speaker");
         rejection.Similarity.ShouldBe(0.12);
 
+        // Verification runs before the STT stopwatch starts, so without its own metric the ONNX
+        // embedding is invisible latency. Either pass may fire depending on EarlyVerifyMs; both
+        // must be timed.
+        var verify = publishedEvents.Where(e => e.Metric == VoiceMetric.SpeakerVerifyMs).ToList();
+        verify.ShouldNotBeEmpty();
+        verify.ShouldAllBe(e => e.DurationMs != null && e.DurationMs >= 0);
+        verify.ShouldAllBe(e => e.Outcome == "early" || e.Outcome == "final");
+
         emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);
