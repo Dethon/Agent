@@ -39,6 +39,7 @@ public sealed class SendReplyTool
         var tts = services.GetRequiredService<ITextToSpeech>();
         var settings = services.GetRequiredService<VoiceSettings>();
         var metrics = services.GetRequiredService<IMetricsPublisher>();
+        var logger = services.GetRequiredService<ILogger<SendReplyTool>>();
 
         var satelliteId = manager.ResolveSatelliteId(p.ConversationId);
         var session = satelliteId is null ? null : sessions.Get(satelliteId);
@@ -48,7 +49,7 @@ public sealed class SendReplyTool
             // delivery path below goes through AnnouncementService instead, so TimeProvider is
             // resolved here rather than unconditionally at the top of McpRun.
             var time = services.GetRequiredService<TimeProvider>();
-            return await HandleUtteranceReplyAsync(session, p, accumulator, tts, settings, metrics, time);
+            return await HandleUtteranceReplyAsync(session, p, accumulator, tts, settings, metrics, time, logger);
         }
 
         var delivery = services.GetRequiredService<VoiceDeliveryRegistry>();
@@ -56,7 +57,6 @@ public sealed class SendReplyTool
         if (target is not null)
         {
             var announcer = services.GetRequiredService<AnnouncementService>();
-            var logger = services.GetRequiredService<ILogger<SendReplyTool>>();
             return await HandleScheduledDeliveryAsync(p, target, delivery, accumulator, announcer, logger);
         }
 
@@ -70,7 +70,8 @@ public sealed class SendReplyTool
         ITextToSpeech tts,
         VoiceSettings settings,
         IMetricsPublisher metrics,
-        TimeProvider time)
+        TimeProvider time,
+        ILogger<SendReplyTool> logger)
     {
         switch (p.ContentType)
         {
@@ -87,7 +88,7 @@ public sealed class SendReplyTool
             case ReplyContentType.ToolCall:
                 if (session.TryClaimPreamble())
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, isReply: false);
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger, isReply: false);
                 }
                 return "ok";
 
@@ -101,7 +102,7 @@ public sealed class SendReplyTool
                 accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
                 if (p.IsComplete)
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time);
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 }
                 return "ok";
 
@@ -109,7 +110,7 @@ public sealed class SendReplyTool
             // messageId). Text chunks are never flagged complete, so this is where we
             // speak the accumulated reply.
             case ReplyContentType.StreamComplete:
-                var spoke = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time);
+                var spoke = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 if (!spoke)
                 {
                     session.SignalTurnSilent();
@@ -121,7 +122,7 @@ public sealed class SendReplyTool
                 // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
                 if (p.IsComplete)
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time);
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 }
                 return "ok";
         }
@@ -196,6 +197,7 @@ public sealed class SendReplyTool
         VoiceSettings settings,
         IMetricsPublisher metrics,
         TimeProvider time,
+        ILogger<SendReplyTool> logger,
         bool isReply = true)
     {
         var text = accumulator.Flush(conversationId);
@@ -203,7 +205,7 @@ public sealed class SendReplyTool
         {
             return false;
         }
-        await SpeakAsync(session, text, conversationId, tts, settings, metrics, time, isReply, default);
+        await SpeakAsync(session, text, conversationId, tts, settings, metrics, time, logger, isReply, default);
         return true;
     }
 
@@ -215,6 +217,7 @@ public sealed class SendReplyTool
         VoiceSettings settings,
         IMetricsPublisher metrics,
         TimeProvider time,
+        ILogger<SendReplyTool> logger,
         bool isReply,
         CancellationToken ct)
     {
@@ -223,17 +226,31 @@ public sealed class SendReplyTool
 
         // Reply text arriving here closes the hub-visible agent round trip: dispatch -> answer.
         // Compared against the agent's own MemoryRecall + LlmTotal, the difference is queue time.
-        if (isReply && session.DispatchedAt is { } dispatchedAt)
+        // TryConsumeDispatchedAt is single-use and evaluated here regardless of whether the publish
+        // below succeeds, so a metrics blip can never leave the stamp behind for some later, unrelated
+        // reply on this session (e.g. a schedule firing into a satellite that had a real turn earlier)
+        // to pick up and report as its own invented round trip.
+        if (isReply && session.TryConsumeDispatchedAt() is { } dispatchedAt)
         {
-            await metrics.PublishAsync(new VoiceEvent
+            try
             {
-                Metric = VoiceMetric.AgentRoundTripMs,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
-                DurationMs = (long)time.GetElapsedTime(dispatchedAt).TotalMilliseconds,
-                ConversationId = conversationId
-            }, ct);
+                await metrics.PublishAsync(new VoiceEvent
+                {
+                    Metric = VoiceMetric.AgentRoundTripMs,
+                    SatelliteId = session.SatelliteId,
+                    Room = session.Config.Room,
+                    Identity = session.Config.Identity,
+                    DurationMs = (long)time.GetElapsedTime(dispatchedAt).TotalMilliseconds,
+                    ConversationId = conversationId
+                }, ct);
+            }
+            catch (Exception ex)
+            {
+                // A metrics-publisher blip must not fault this call before the reply job below is
+                // even built — that would leave the user's answer unspoken and the turn handshake
+                // unsettled until the ~120s ReplyTimeoutMs.
+                logger.LogWarning(ex, "Failed to publish AgentRoundTripMs metric");
+            }
         }
 
         var enqueuedAt = time.GetTimestamp();

@@ -341,4 +341,106 @@ public class SendReplyToolTests
 
         _published.ShouldNotContain(e => e.Metric == VoiceMetric.AgentRoundTripMs);
     }
+
+    [Fact]
+    public async Task McpRun_SecondReplyAfterDispatchAlreadyConsumed_PublishesNoAgentRoundTrip()
+    {
+        // A live session's conversation can receive a schedule-fired or agent-initiated reply
+        // (CreateConversationTool routes it through this same session) with no fresh transcript
+        // dispatch behind it. The stamp from the earlier real turn must not still be sitting there
+        // for this second, unrelated reply to pick up and report as an invented round trip.
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+
+        await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _session.ResetTurn();
+        await SendReplyTool.McpRun(_conversationId, "otra vez", ReplyContentType.Text, false, "m-2", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _published.Count(e => e.Metric == VoiceMetric.AgentRoundTripMs).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task McpRun_PreambleBeforeDispatchedAnswer_DoesNotConsumeTheStampForTheAnswer()
+    {
+        // The preamble ("Buscando") is spoken with isReply:false. If it consumed the dispatch
+        // stamp, the real answer that follows would lose its AgentRoundTripMs metric entirely.
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        _clock.Advance(TimeSpan.FromSeconds(2));
+
+        await SendReplyTool.McpRun(_conversationId, "Buscando.", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.ToolCall, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "Veintiún grados.", ReplyContentType.Text, false, "m-2", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        var roundTrip = _published.SingleOrDefault(e => e.Metric == VoiceMetric.AgentRoundTripMs);
+        roundTrip.ShouldNotBeNull();
+        roundTrip!.DurationMs.ShouldBe(2000);
+    }
+
+    [Fact]
+    public async Task McpRun_TwoDispatchedTurnsInSequence_PublishesAgentRoundTripBothTimes()
+    {
+        // A follow-up turn re-arms the stamp: each dispatch stands on its own, independent of the
+        // previous turn's already-consumed one.
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        _clock.Advance(TimeSpan.FromSeconds(2));
+        await SendReplyTool.McpRun(_conversationId, "primero", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        _clock.Advance(TimeSpan.FromSeconds(3));
+        await SendReplyTool.McpRun(_conversationId, "segundo", ReplyContentType.Text, false, "m-2", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        var roundTrips = _published.Where(e => e.Metric == VoiceMetric.AgentRoundTripMs).ToList();
+        roundTrips.Count.ShouldBe(2);
+        roundTrips[0].DurationMs.ShouldBe(2000);
+        roundTrips[1].DurationMs.ShouldBe(3000);
+    }
+
+    [Fact]
+    public async Task McpRun_AgentRoundTripPublishThrows_StillSpeaksTheReplyAndResolvesTheTurn()
+    {
+        // A metrics-publisher blip on AgentRoundTripMs must not fault this call before the reply
+        // job is even built — that would leave the answer unspoken and the turn handshake
+        // unsettled until the ~120s ReplyTimeoutMs.
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        var turn = _session.WaitForTurnSpokenAsync();
+
+        var throwingMetrics = new Mock<IMetricsPublisher>();
+        throwingMetrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        throwingMetrics.Setup(m => m.PublishAsync(
+                It.Is<MetricEvent>(e => (e as VoiceEvent)!.Metric == VoiceMetric.AgentRoundTripMs),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("redis blip"));
+
+        var services = new ServiceCollection()
+            .AddSingleton(_sessions)
+            .AddSingleton(_accumulator)
+            .AddSingleton(_manager)
+            .AddSingleton(_tts.Object)
+            .AddSingleton(throwingMetrics.Object)
+            .AddSingleton(new VoiceSettings())
+            .AddSingleton<ILogger<SendReplyTool>>(NullLogger<SendReplyTool>.Instance)
+            .AddSingleton<TimeProvider>(_clock)
+            .BuildServiceProvider();
+
+        await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, services);
+
+        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
+        _session.CompletePlayback();
+        var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        spoke.ShouldBeTrue(); // the metrics blip did not prevent the reply job from being built and spoken
+    }
 }
