@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Dashboard.Client.Effects;
 using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
@@ -205,6 +206,24 @@ public class MetricsHubEffectTests : IAsyncDisposable
 
         store.State.Agg.ShouldBe(LatencyMetric.P95);
     }
+
+    [Fact]
+    public async Task LoadAsync_RequestsVoiceBreakdownUsingStoreAgg()
+    {
+        // DataLoadEffect is a third, independent call site for GetVoiceGroupedAsync (the page-load
+        // path, distinct from MetricsHubEffect's live-refresh path) that can silently omit `agg`
+        // and fall back to Avg. No response staging is needed: we only assert on the outbound
+        // request, and DataLoadEffect swallows the resulting 404s from the unstaffed FakeApiHandler.
+        _voiceStore.SetAgg(LatencyMetric.P95);
+        var http = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
+        var dataLoadEffect = new DataLoadEffect(
+            new MetricsApiService(http), _metricsStore, _healthStore, _tokensStore, _toolsStore,
+            _errorsStore, _schedulesStore, _connectionStore, _memoryStore, _latencyStore, _voiceStore);
+
+        await dataLoadEffect.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 24));
+
+        _handler.Requests.ShouldContain(u => u != null && u.Contains("voice/by") && u.Contains("agg=P95"));
+    }
 }
 
 public sealed class FakeMetricsHub : MetricsHubService
@@ -337,6 +356,10 @@ public sealed class FakeApiHandler : HttpMessageHandler
 
     public string? LastRequestUri { get; private set; }
 
+    // Concurrent bag, not a List<T>: DataLoadEffect fires ~19 requests via Task.WhenAll, so
+    // multiple SendAsync calls can race on this collection.
+    public ConcurrentBag<string?> Requests { get; } = [];
+
     public void EnqueueResponse<T>(T data, TimeSpan delay)
     {
         _responses.Enqueue((data!, delay));
@@ -346,6 +369,7 @@ public sealed class FakeApiHandler : HttpMessageHandler
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
         LastRequestUri = request.RequestUri?.ToString();
+        Requests.Add(LastRequestUri);
 
         if (_responses.TryDequeue(out var entry))
         {
