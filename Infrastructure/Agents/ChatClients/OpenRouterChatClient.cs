@@ -20,6 +20,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly HttpClientPipelineTransport? _transport;
     private readonly ConcurrentQueue<string> _reasoningQueue = new();
     private readonly ConcurrentQueue<decimal> _costQueue = new();
+    private readonly ConcurrentQueue<long> _cachedTokenQueue = new();
     private readonly IMetricsPublisher? _metricsPublisher;
     private readonly int? _maxContextTokens;
     private readonly string _model;
@@ -38,7 +39,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _httpClient = CreateHttpClient(_reasoningQueue, _costQueue, sessionId);
+        _httpClient = CreateHttpClient(_reasoningQueue, _costQueue, _cachedTokenQueue, sessionId);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
     }
@@ -178,7 +179,7 @@ public sealed class OpenRouterChatClient : IChatClient
                 Model = _model,
                 InputTokens = (int)(usage.Details.InputTokenCount ?? 0),
                 OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),
-                CachedInputTokens = ReadCachedInputTokens(usage.Details),
+                CachedInputTokens = DrainCachedTokenQueue() ?? ReadCachedInputTokens(usage.Details),
                 Cost = cost
             }, ct);
         }
@@ -259,6 +260,17 @@ public sealed class OpenRouterChatClient : IChatClient
             .AsIChatClient();
     }
 
+    // Mirrors DrainCostQueue: the provider reports this once per response, in the same usage block.
+    internal long? DrainCachedTokenQueue()
+    {
+        long? last = null;
+        while (_cachedTokenQueue.TryDequeue(out var cached))
+        {
+            last = cached;
+        }
+        return last;
+    }
+
     internal decimal? DrainCostQueue()
     {
         decimal? last = null;
@@ -299,14 +311,16 @@ public sealed class OpenRouterChatClient : IChatClient
     internal static SocketsHttpHandler SharedHandler => _sharedHandler;
 
     private static HttpClient CreateHttpClient(
-        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue, string? sessionId)
+        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
+        ConcurrentQueue<long> cachedQueue, string? sessionId)
     {
-        var handler = new ReasoningHandler(reasoningQueue, costQueue, sessionId) { InnerHandler = _sharedHandler };
+        var handler = new ReasoningHandler(reasoningQueue, costQueue, cachedQueue, sessionId) { InnerHandler = _sharedHandler };
         return new HttpClient(handler, disposeHandler: false);
     }
 
     private sealed class ReasoningHandler(
-        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue, string? sessionId) : DelegatingHandler
+        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
+        ConcurrentQueue<long> cachedQueue, string? sessionId) : DelegatingHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -319,7 +333,7 @@ public sealed class OpenRouterChatClient : IChatClient
                     StringComparison.OrdinalIgnoreCase) == true)
             {
                 response.Content = OpenRouterHttpHelpers.WrapWithReasoningTee(
-                    response.Content, reasoningQueue, costQueue);
+                    response.Content, reasoningQueue, costQueue, cachedQueue);
             }
 
             return response;
