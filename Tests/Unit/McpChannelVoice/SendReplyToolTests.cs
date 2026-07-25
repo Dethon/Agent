@@ -435,6 +435,65 @@ public class SendReplyToolTests
     }
 
     [Fact]
+    public async Task McpRun_AgentRoundTripPublishCost_LandsInTheQueueWaitRatherThanNoSpan()
+    {
+        // The AgentRoundTripMs publish is itself an awaited Redis round trip. EnqueuedAt used to be
+        // stamped AFTER it, so that time belonged to no span and the decomposition silently lost a
+        // slice on every turn. EnqueuedAt is now taken first and the round trip measured TO it, making
+        // the two spans exactly adjacent. Modelled by a publisher that costs fake time.
+        const int publishMs = 50;
+        var metrics = new Mock<IMetricsPublisher>();
+        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .Callback<MetricEvent, CancellationToken>((e, _) =>
+            {
+                if (e is VoiceEvent v)
+                {
+                    lock (_published)
+                    { _published.Add(v); }
+                }
+                _clock.Advance(TimeSpan.FromMilliseconds(publishMs));
+            });
+
+        var services = new ServiceCollection()
+            .AddSingleton(_sessions)
+            .AddSingleton(_accumulator)
+            .AddSingleton(_manager)
+            .AddSingleton(_tts.Object)
+            .AddSingleton(metrics.Object)
+            .AddSingleton(new VoiceSettings())
+            .AddSingleton<ILogger<SendReplyTool>>(NullLogger<SendReplyTool>.Instance)
+            .AddSingleton<TimeProvider>(_clock)
+            .BuildServiceProvider();
+
+        // All three anchors coincide, so SpeechEndToFirstAudioMs is the whole dispatch -> first-audio
+        // span and the three sub-spans must tile it exactly.
+        _session.ResetTurn();
+        _session.MarkTurnStart(_clock.GetTimestamp());
+        _session.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
+        _session.MarkDispatched(_clock.GetTimestamp());
+        _clock.Advance(TimeSpan.FromSeconds(2)); // the agent thinking
+
+        await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, services);
+
+        _clock.Advance(TimeSpan.FromMilliseconds(400)); // the reply waits behind another job
+
+        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
+        _session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var roundTrip = _published.Single(e => e.Metric == VoiceMetric.AgentRoundTripMs).DurationMs;
+        var queueWait = _published.Single(e => e.Metric == VoiceMetric.ReplyQueueWaitMs).DurationMs;
+        var tts = _published.Single(e => e.Metric == VoiceMetric.TtsLatencyMs).DurationMs;
+        var whole = _published.Single(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs).DurationMs;
+
+        roundTrip.ShouldBe(2000);
+        queueWait.ShouldBe(400 + publishMs); // the publish's own cost is inside the queue wait
+        (roundTrip + queueWait + tts).ShouldBe(whole);
+    }
+
+    [Fact]
     public async Task McpRun_AgentRoundTripPublishThrows_StillSpeaksTheReplyAndResolvesTheTurn()
     {
         // A metrics-publisher blip on AgentRoundTripMs must not fault this call before the reply
