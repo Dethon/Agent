@@ -71,10 +71,14 @@ public class VoiceEnumsTests
     [InlineData(VoiceMetric.AgentRoundTripMs, 25)]
     [InlineData(VoiceMetric.ReplyQueueWaitMs, 26)]
     [InlineData(VoiceMetric.SpeechEndToFirstAudioMs, 27)]
+    [InlineData(VoiceMetric.SpeakerVerifyEarlyMs, 28)]
     public void VoiceMetric_TurnDecompositionValues_ArePinned(VoiceMetric metric, int expected)
     {
-        // These five decompose wake→first-audio. Values persist as ints in Redis; a renumber
-        // silently re-labels historical data.
+        // These decompose wake→first-audio. Values persist as ints in Redis; a renumber silently
+        // re-labels historical data. SpeakerVerifyEarlyMs is the odd one out: the early mid-capture
+        // pass runs WHILE the user is still speaking, so it overlaps the utterance and is deliberately
+        // not part of the additive decomposition — it has its own member precisely so it can never be
+        // blended into SpeakerVerifyMs by a grouping that isn't keyed on Outcome.
         ((int)metric).ShouldBe(expected);
     }
 

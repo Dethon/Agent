@@ -39,5 +39,10 @@ public enum VoiceMetric
     SpeakerVerifyMs = 24,
     AgentRoundTripMs = 25,
     ReplyQueueWaitMs = 26,
-    SpeechEndToFirstAudioMs = 27
+    SpeechEndToFirstAudioMs = 27,
+    // SpeakerVerifyMs is the FINAL, inline verification pass (capture close -> STT), which is part of
+    // the tiling above. The early mid-capture pass runs while the capture is still open, concurrent
+    // with the user speaking, so it overlaps the utterance and is NOT part of it — separate member so
+    // a grouping that isn't keyed on Outcome cannot blend an overlapping span into an additive one.
+    SpeakerVerifyEarlyMs = 28
 }
