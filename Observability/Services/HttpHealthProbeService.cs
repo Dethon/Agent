@@ -28,45 +28,55 @@ public sealed class HttpHealthProbeService(
         var http = httpClientFactory.CreateClient();
         var db = redis.GetDatabase();
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            foreach (var (service, url) in targets)
+            while (!stoppingToken.IsCancellationRequested)
             {
-                try
+                foreach (var (service, url) in targets)
                 {
-                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                    cts.CancelAfter(TimeSpan.FromSeconds(5));
-                    // Any HTTP response (even non-2xx) means the container is up and listening.
-                    using var _ = await http.GetAsync(url, cts.Token);
-                    await MarkHealthyAsync(db, service, stoppingToken);
+                    await ProbeAsync(http, db, service, url, stoppingToken);
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "health probe for {Service} at {Url} failed", service, url);
-                }
-            }
 
-            try
-            {
                 await Task.Delay(_interval, stoppingToken);
             }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Graceful shutdown
         }
     }
 
-    private async Task MarkHealthyAsync(IDatabase db, string service, CancellationToken ct)
+    internal async Task ProbeAsync(
+        HttpClient http, IDatabase db, string service, string url, CancellationToken stoppingToken)
     {
         var now = DateTimeOffset.UtcNow;
-        await Task.WhenAll(
-            db.StringSetAsync($"metrics:health:{service}", now.ToString("o"), _keyTtl),
-            db.SetAddAsync("metrics:health:known", service));
+
+        try
+        {
+            // Roster registration is unconditional: a configured target keeps its dashboard tile
+            // while it is unreachable, so a service that is down reads as red rather than vanishing.
+            // It stays inside the try because an escaping exception would stop the whole host.
+            await ServiceHealthRegistry.MarkSeenAsync(db, service, now);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            // Any HTTP response (even non-2xx) means the container is up and listening.
+            using var _ = await http.GetAsync(url, cts.Token);
+            await MarkHealthyAsync(db, service, now, stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "health probe for {Service} at {Url} failed", service, url);
+        }
+    }
+
+    private async Task MarkHealthyAsync(IDatabase db, string service, DateTimeOffset now, CancellationToken ct)
+    {
+        await db.StringSetAsync($"metrics:health:{service}", now.ToString("o"), _keyTtl);
         await hubContext.Clients.All.SendAsync(
             "OnHealthUpdate", new ServiceHealthUpdate(service, true, now), ct);
     }

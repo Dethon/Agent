@@ -23,12 +23,14 @@ public record MetricsSummary(
     long MemoriesMerged = 0,
     long MemoriesDecayed = 0);
 
-public sealed class MetricsQueryService(IConnectionMultiplexer redis)
+public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvider? timeProvider = null)
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
     public async Task<MetricsSummary> GetSummaryAsync(DateOnly from, DateOnly to)
     {
@@ -130,11 +132,10 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
     public async Task<IReadOnlyList<ServiceHealthResult>> GetHealthAsync()
     {
         var db = redis.GetDatabase();
-        var knownServices = await db.SetMembersAsync("metrics:health:known");
+        var knownServices = await ServiceHealthRegistry.ListAsync(db, _time.GetUtcNow());
 
-        var tasks = knownServices.Select(async member =>
+        var tasks = knownServices.Select(async service =>
         {
-            var service = member.ToString();
             var value = await db.StringGetAsync($"metrics:health:{service}");
             var isHealthy = value.HasValue;
             return new ServiceHealthResult(service, isHealthy, isHealthy ? value.ToString() : "N/A");

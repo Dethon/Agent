@@ -11,7 +11,8 @@ public record ServiceHealthUpdate(string Service, bool IsHealthy, DateTimeOffset
 public sealed class MetricsCollectorService(
     IConnectionMultiplexer redis,
     IHubContext<MetricsHub> hubContext,
-    ILogger<MetricsCollectorService> logger) : BackgroundService
+    ILogger<MetricsCollectorService> logger,
+    TimeProvider? timeProvider = null) : BackgroundService
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -21,8 +22,12 @@ public sealed class MetricsCollectorService(
     private static readonly TimeSpan _dailyKeyTtl = TimeSpan.FromDays(30);
     private static readonly TimeSpan _healthCheckInterval = TimeSpan.FromSeconds(15);
 
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await DropLegacyRosterAsync(redis.GetDatabase());
+
         var subscriber = redis.GetSubscriber();
 
         await subscriber.SubscribeAsync(
@@ -63,21 +68,27 @@ public sealed class MetricsCollectorService(
         await subscriber.UnsubscribeAsync(RedisChannel.Literal("metrics:events"));
     }
 
-    private async Task CheckHealthAsync()
+    // The predecessor roster (a plain set) was only ever added to, so a service that was retired
+    // outright kept a permanently-offline tile. Dropped once at startup; the sorted-set roster in
+    // ServiceHealthRegistry replaces it and ages its own entries out.
+    internal Task DropLegacyRosterAsync(IDatabase db) =>
+        db.KeyDeleteAsync(ServiceHealthRegistry.LegacyKey);
+
+    internal async Task CheckHealthAsync()
     {
         try
         {
             var db = redis.GetDatabase();
-            var knownServices = await db.SetMembersAsync("metrics:health:known");
+            var now = _time.GetUtcNow();
+            var knownServices = await ServiceHealthRegistry.ListAsync(db, now);
 
-            foreach (var member in knownServices)
+            foreach (var service in knownServices)
             {
-                var service = member.ToString();
                 var isHealthy = await db.KeyExistsAsync($"metrics:health:{service}");
                 if (!isHealthy)
                 {
                     await hubContext.Clients.All.SendAsync("OnHealthUpdate",
-                        new ServiceHealthUpdate(service, false, DateTimeOffset.UtcNow));
+                        new ServiceHealthUpdate(service, false, now));
                 }
             }
         }
@@ -228,7 +239,7 @@ public sealed class MetricsCollectorService(
 
         await Task.WhenAll(
             db.StringSetAsync(key, json, TimeSpan.FromSeconds(60)),
-            db.SetAddAsync("metrics:health:known", evt.Service));
+            ServiceHealthRegistry.MarkSeenAsync(db, evt.Service, evt.Timestamp));
 
         await hubContext.Clients.All.SendAsync("OnHealthUpdate",
             new ServiceHealthUpdate(evt.Service, true, evt.Timestamp));
