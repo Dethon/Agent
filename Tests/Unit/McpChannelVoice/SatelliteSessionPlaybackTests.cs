@@ -12,6 +12,98 @@ public class SatelliteSessionPlaybackTests
         new("kitchen-01", new SatelliteConfig { Identity = "household", Room = "Kitchen" });
 
     [Fact]
+    public async Task EnqueuePlayback_High_PreemptsSegmentsAlreadyQueuedBehindTheCurrentOne()
+    {
+        // A reply is several sentence jobs now, so cancelling only _currentPlaybackCts left an alarm
+        // queued behind the REST of the answer: it cut sentence 1 and was then heard after sentences
+        // 2..N had played in full. Every job queued when the High job arrives must be preempted.
+        var session = MakeSession();
+        var played = new List<string>();
+        var preempted = new List<string>();
+        var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async IAsyncEnumerable<AudioChunk> gated(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token = default)
+        {
+            yield return new AudioChunk
+            { Data = System.Text.Encoding.UTF8.GetBytes("s1"), Format = AudioFormat.WyomingStandard };
+            firstChunkWritten.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+            yield break;
+        }
+
+        var segment1 = new PlaybackJob(
+            Label: "reply-1",
+            Priority: AnnouncePriority.Normal,
+            Audio: gated(),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: l => { lock (preempted) { preempted.Add(l); } return Task.CompletedTask; });
+        var segment2 = segment1 with { Label = "reply-2", Audio = GenerateAudio("s2", count: 1) };
+        var segment3 = segment1 with { Label = "reply-3", Audio = GenerateAudio("s3", count: 1) };
+        var alarm = segment1 with
+        {
+            Label = "alarm",
+            Priority = AnnouncePriority.High,
+            Audio = GenerateAudio("alarm", count: 1)
+        };
+
+        var pumpTask = session.RunPlaybackLoopAsync(
+            async (chunk, _) =>
+            {
+                lock (played)
+                { played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span)); }
+                await Task.Yield();
+            },
+            CancellationToken.None);
+
+        await session.EnqueuePlaybackAsync(segment1, queueMaxDepth: 8);
+        await session.EnqueuePlaybackAsync(segment2, queueMaxDepth: 8);
+        await session.EnqueuePlaybackAsync(segment3, queueMaxDepth: 8);
+        await firstChunkWritten.Task;
+
+        await session.EnqueuePlaybackAsync(alarm, queueMaxDepth: 8);
+        session.CompletePlayback();
+        await pumpTask;
+
+        // The alarm is heard next, not after the rest of the answer.
+        played.ShouldBe(["s1", "alarm"]);
+        preempted.ShouldBe(["reply-1", "reply-2", "reply-3"]);
+    }
+
+    [Fact]
+    public async Task EnqueuePlayback_SecondHighStackedBehindAHigh_StillPlays()
+    {
+        // The preempt mark must not swallow a second alarm that stacks in the gap — the High
+        // exemption in the loop is what keeps insistent announcements ringing.
+        var session = MakeSession();
+        var played = new List<string>();
+
+        var first = new PlaybackJob(
+            Label: "alarm-1",
+            Priority: AnnouncePriority.High,
+            Audio: GenerateAudio("alarm-1", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask);
+        var second = first with { Label = "alarm-2", Audio = GenerateAudio("alarm-2", count: 1) };
+
+        var pumpTask = session.RunPlaybackLoopAsync(
+            async (chunk, _) =>
+            {
+                lock (played)
+                { played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span)); }
+                await Task.Yield();
+            },
+            CancellationToken.None);
+
+        await session.EnqueuePlaybackAsync(first, queueMaxDepth: 8);
+        await session.EnqueuePlaybackAsync(second, queueMaxDepth: 8);
+        session.CompletePlayback();
+        await pumpTask;
+
+        played.ShouldBe(["alarm-1", "alarm-2"]);
+    }
+
+    [Fact]
     public async Task EnqueuePlayback_Normal_RunsAfterCurrent()
     {
         var session = MakeSession();

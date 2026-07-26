@@ -13,7 +13,7 @@ public class SatelliteSessionReplySegmentTests
         new("kitchen-01", new SatelliteConfig { Identity = "household", Room = "Kitchen" });
 
     [Fact]
-    public void SingleSegment_DrainThenStreamComplete_SettlesSpoken()
+    public async Task SingleSegment_DrainThenStreamComplete_SettlesSpoken()
     {
         var session = MakeSession();
         session.ResetTurn();
@@ -26,7 +26,7 @@ public class SatelliteSessionReplySegmentTests
 
         session.MarkReplyStreamComplete();
         turn.IsCompleted.ShouldBeTrue();
-        turn.Result.ShouldBeTrue();
+        (await turn).ShouldBeTrue();
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public class SatelliteSessionReplySegmentTests
     }
 
     [Fact]
-    public void MultipleSegments_FirstDrain_DoesNotSettleTheTurn()
+    public async Task MultipleSegments_FirstDrain_DoesNotSettleTheTurn()
     {
         // Signalling on the first segment's drain ends FollowUpConversation, which plays the chime
         // and reopens the mic while sentences 2..N are still being spoken.
@@ -66,11 +66,11 @@ public class SatelliteSessionReplySegmentTests
 
         session.CompleteReplySegment(epoch);
         turn.IsCompleted.ShouldBeTrue();
-        turn.Result.ShouldBeTrue();
+        (await turn).ShouldBeTrue();
     }
 
     [Fact]
-    public void FailReplySegment_WithAnotherSegmentOutstanding_DoesNotSettleTheTurn()
+    public async Task FailReplySegment_WithAnotherSegmentOutstanding_DoesNotSettleTheTurn()
     {
         // A synthesis error on sentence 3 of 4 must not end the turn: the chime that follows is a
         // High-priority job, so it would preempt whatever is playing and the remaining sentence
@@ -93,11 +93,11 @@ public class SatelliteSessionReplySegmentTests
 
         session.CompleteReplySegment(epoch);
         turn.IsCompleted.ShouldBeTrue();
-        turn.Result.ShouldBeTrue();
+        (await turn).ShouldBeTrue();
     }
 
     [Fact]
-    public void CompleteReplySegment_FromAPreviousTurn_IsIgnored()
+    public async Task CompleteReplySegment_FromAPreviousTurn_IsIgnored()
     {
         // Playback callbacks outlive their turn (a preempted job drains late). With a counter-based
         // handshake a stale decrement would drive the new turn negative, so it could never reach
@@ -119,7 +119,7 @@ public class SatelliteSessionReplySegmentTests
         session.CompleteReplySegment(epoch);
 
         turn.IsCompleted.ShouldBeTrue();
-        turn.Result.ShouldBeTrue();
+        (await turn).ShouldBeTrue();
     }
 
     [Fact]
@@ -174,7 +174,7 @@ public class SatelliteSessionReplySegmentTests
     }
 
     [Fact]
-    public void EverySegmentFailed_SettlesSilent()
+    public async Task EverySegmentFailed_SettlesSilent()
     {
         var session = MakeSession();
         session.ResetTurn();
@@ -186,11 +186,11 @@ public class SatelliteSessionReplySegmentTests
         session.MarkReplyStreamComplete();
 
         turn.IsCompleted.ShouldBeTrue();
-        turn.Result.ShouldBeFalse();
+        (await turn).ShouldBeFalse();
     }
 
     [Fact]
-    public void FailAfterSomeAudioPlayed_SettlesSpoken()
+    public async Task FailAfterSomeAudioPlayed_SettlesSpoken()
     {
         // Half an answer reached the satellite, so the turn did speak; ending it Silent would be a
         // lie and would also skip the follow-up window the user is owed.
@@ -206,28 +206,40 @@ public class SatelliteSessionReplySegmentTests
         session.MarkReplyStreamComplete();
 
         turn.IsCompleted.ShouldBeTrue();
-        turn.Result.ShouldBeTrue();
+        (await turn).ShouldBeTrue();
     }
 
     [Fact]
-    public void PreemptedSegment_ReleasesItsSlotSoTheTurnCanStillSettle()
+    public void BeginReplySegment_ReturnsTheEpochItRegisteredUnder()
     {
-        // An alarm is High priority, so it cancels the reply mid-playback. A preempted job never
-        // reaches OnDrained, so if the segment is not released the turn waits out the ~120s
-        // ReplyTimeoutMs with the mic wedged — exactly the scenario an away-from-home stretch hits.
+        // Registration and release must agree on one epoch. Reading CurrentTurnEpoch separately
+        // leaves a window where ResetTurn lands between the read and the increment: the segment is
+        // then registered on the NEW turn while all of its callbacks are rejected as stale, and the
+        // new turn can never reach zero outstanding.
         var session = MakeSession();
         session.ResetTurn();
-        var epoch = session.CurrentTurnEpoch;
         var turn = session.WaitForTurnSpokenAsync();
 
-        session.BeginReplySegment();
-        session.CompleteReplySegment(epoch);
-        session.BeginReplySegment();
-        session.FailReplySegment(epoch); // the preempted segment
-        session.MarkReplyStreamComplete();
+        var epoch = session.BeginReplySegment();
+        epoch.ShouldBe(session.CurrentTurnEpoch);
 
+        session.CompleteReplySegment(epoch);
+        session.MarkReplyStreamComplete();
         turn.IsCompleted.ShouldBeTrue();
-        turn.Result.ShouldBeTrue(); // earlier audio did reach the satellite
+    }
+
+    [Fact]
+    public void BeginReplySegment_AfterResetTurn_RegistersOnTheNewTurn()
+    {
+        var session = MakeSession();
+        session.ResetTurn();
+        var stale = session.BeginReplySegment();
+
+        session.ResetTurn();
+        var epoch = session.BeginReplySegment();
+
+        epoch.ShouldNotBe(stale);
+        session.ReplySegmentsStarted.ShouldBe(1);
     }
 
 }

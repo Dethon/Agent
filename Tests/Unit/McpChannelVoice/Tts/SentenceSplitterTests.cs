@@ -74,9 +74,31 @@ public class SentenceSplitterTests
         SentenceSplitter.TryTake(buffer, 5, out _, out _).ShouldBeFalse();
     }
 
-    [Fact]
-    public void TryTake_Abbreviation_IsNotABoundary()
+    [Theory]
+    [InlineData("Viene el Sr. ")]
+    [InlineData("Lo trae la Sra. ")]
+    [InlineData("Pregunta por el Dr. ")]
+    [InlineData("Llegan a las cinco, etc. ")]
+    public void TryTake_AbbreviationIsTheLastBoundary_DoesNotFlush(string buffer)
     {
+        // The abbreviation rule is only reachable when the abbreviation's dot IS the last boundary
+        // in a partially-received buffer — which is exactly what streaming produces. Flushing here
+        // would send "…viene el Sr." to TTS on its own and speak the surname in a separate
+        // utterance, with an audible seam through the middle of a name.
+        SentenceSplitter.TryTake(buffer, 5, out _, out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void TryTake_InitialIsTheLastBoundary_DoesNotFlush()
+    {
+        SentenceSplitter.TryTake("Te llama J. ", 5, out _, out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void TryTake_AbbreviationBeforeARealBoundary_FlushesThroughTheSentenceEnd()
+    {
+        // Pins the greedy last-boundary selection: the abbreviation is passed over rather than
+        // splitting there.
         SentenceSplitter.TryTake("Viene el Sr. García a las cinco. ", 5, out var speakable, out var remainder)
             .ShouldBeTrue();
 
@@ -85,7 +107,7 @@ public class SentenceSplitterTests
     }
 
     [Fact]
-    public void TryTake_Initial_IsNotABoundary()
+    public void TryTake_InitialBeforeARealBoundary_FlushesThroughTheSentenceEnd()
     {
         SentenceSplitter.TryTake("Te llama J. Crespo desde el salón. ", 5, out var speakable, out _)
             .ShouldBeTrue();

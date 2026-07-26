@@ -70,6 +70,10 @@ public sealed class SatelliteSession
     public string SatelliteId { get; }
     public SatelliteConfig Config { get; }
 
+    // Lets a caller decide whether a segment can be queued BEFORE it consumes the text and starts
+    // its synthesis, rather than finding out after both are already spent.
+    public int PlaybackQueueDepth => _playback.Reader.Count;
+
     public ValueTask<bool> EnqueuePlaybackAsync(PlaybackJob job, int queueMaxDepth)
     {
         if (job.Priority == AnnouncePriority.High)
@@ -77,17 +81,16 @@ public sealed class SatelliteSession
             long seq;
             lock (_gate)
             {
-                // Cancel the in-flight job if one is marked current; otherwise record a preempt
-                // high-water mark the loop honors when it next assigns a job, closing the race
-                // where _currentPlaybackCts is momentarily null during the dequeue->assign gap.
-                if (_currentPlaybackCts is not null)
-                {
-                    _currentPlaybackCts.Cancel();
-                }
-                else
-                {
-                    _preemptPendingSeq = _enqueueSeq;
-                }
+                // Mark EVERY job queued so far, then cancel the in-flight one. Cancelling only the
+                // current job was enough when a reply was a single job; now that it is several
+                // sentence jobs, an alarm cut sentence one and was then heard only after sentences
+                // 2..N had played in full — and a queued alarm the user had already acknowledged
+                // still rang, because dismissal preempts the current job. The mark is taken before
+                // this job's seq is issued, so its own seq exceeds it and the loop's High exemption
+                // keeps a stacked second High playing. It also closes the original race, where
+                // _currentPlaybackCts is momentarily null during the dequeue->assign gap.
+                _preemptPendingSeq = _enqueueSeq;
+                _currentPlaybackCts?.Cancel();
                 seq = ++_enqueueSeq;
             }
             // TryWrite (unbounded channel) returns false only once the writer is completed — i.e. the
@@ -174,14 +177,19 @@ public sealed class SatelliteSession
     // the new turn; otherwise a signal lands on the discarded TCS and the awaiter blocks forever.
     public void ResetTurn()
     {
-        Interlocked.Exchange(ref _preambleClaimed, 0);
-        Interlocked.Exchange(ref _replySegmentsStarted, 0);
-        Interlocked.Exchange(ref _replySegmentsOutstanding, 0);
-        Interlocked.Exchange(ref _replyStreamComplete, 0);
-        Interlocked.Exchange(ref _replyAudioPlayed, 0);
-        Interlocked.Increment(ref _turnEpoch);
+        // All under _turnGate, which BeginReplySegment also takes: registering a segment and
+        // starting a turn must not interleave, or a segment lands on the new turn's counter while
+        // its callbacks still carry the old epoch and are rejected — leaving the new turn
+        // permanently outstanding.
         lock (_turnGate)
         {
+            Interlocked.Exchange(ref _preambleClaimed, 0);
+            Interlocked.Exchange(ref _replySegmentsStarted, 0);
+            Interlocked.Exchange(ref _replySegmentsOutstanding, 0);
+            Interlocked.Exchange(ref _replyStreamComplete, 0);
+            Interlocked.Exchange(ref _replyAudioPlayed, 0);
+            Interlocked.Exchange(ref _dispatchedAt, DispatchNotMarked);
+            Interlocked.Increment(ref _turnEpoch);
             _turn = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
     }
@@ -199,10 +207,17 @@ public sealed class SatelliteSession
     // Callbacks carry the epoch they were queued under and are ignored once it moves.
     public long CurrentTurnEpoch => Interlocked.Read(ref _turnEpoch);
 
-    public void BeginReplySegment()
+    // Returns the epoch the segment was registered under, so its callbacks release the same turn
+    // that counted it. Reading CurrentTurnEpoch separately leaves a window for ResetTurn to land in
+    // between, which registers on one turn and releases against another.
+    public long BeginReplySegment()
     {
-        Interlocked.Increment(ref _replySegmentsStarted);
-        Interlocked.Increment(ref _replySegmentsOutstanding);
+        lock (_turnGate)
+        {
+            Interlocked.Increment(ref _replySegmentsStarted);
+            Interlocked.Increment(ref _replySegmentsOutstanding);
+            return Interlocked.Read(ref _turnEpoch);
+        }
     }
 
     public void CompleteReplySegment(long epoch)
@@ -332,7 +347,13 @@ public sealed class SatelliteSession
                 // High request; a second High stacking in the gap must still play, not be preempted.
                 preemptOnStart = _preemptPendingSeq >= 0 && seq <= _preemptPendingSeq
                     && job.Priority != AnnouncePriority.High;
-                _preemptPendingSeq = -1;
+                // Cleared only once the queue has drained PAST the mark, so every job that was
+                // already queued when the High job arrived is preempted — not just the first one
+                // dequeued after it.
+                if (seq > _preemptPendingSeq)
+                {
+                    _preemptPendingSeq = -1;
+                }
             }
             if (preemptOnStart)
             {
@@ -345,6 +366,13 @@ public sealed class SatelliteSession
             var totalAudio = TimeSpan.Zero;
             try
             {
+                // A job marked preempt-on-start must not play a single chunk, and that cannot be left
+                // to the audio source: WithCancellation only HANDS the token to the enumerable, so a
+                // source that does not observe it (a buffered or synthetic stream) would drain
+                // normally and the alarm would still wait behind it. Throwing here makes the decision
+                // the loop's, and lands it on the OnPreempted path below.
+                jobCts.Token.ThrowIfCancellationRequested();
+
                 // OnStarted side effects (e.g. a metrics publish) must neither abort this job's
                 // playback nor tear down the loop, so swallow their failures here. Keeping it inside
                 // the try also guarantees the finally cleanup runs no matter what.

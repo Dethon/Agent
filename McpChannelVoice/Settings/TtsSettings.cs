@@ -28,6 +28,13 @@ public record StreamingTtsConfig
     // How far ahead the prefetch may run before parking, in chunks. Bounded so a long utterance
     // cannot buffer its entire synthesis into memory.
     public int PrefetchBufferChunks { get; init; } = 64;
+
+    // Reply segments get their own queue allowance instead of sharing Announce.QueueMaxDepth, which
+    // was sized when a reply was a single job. One turn's answer is a single logical unit: refusing
+    // part of it leaves a hole in the middle of what the user hears, which is worse than a deep
+    // queue. Sized far above any real answer (64 segments is ~9,000 characters of speech) so it
+    // bounds a runaway rather than shaping normal replies.
+    public int MaxQueuedSegments { get; init; } = 64;
 }
 
 public record OpenAiTtsConfig

@@ -49,6 +49,34 @@ public class PrefetchedAudioTests
     }
 
     [Fact]
+    public async Task Chunks_ForeignCancellation_SurfacesInsteadOfCompletingCleanly()
+    {
+        // Only OUR cancellation is a clean stop. A cancellation from somewhere else — an HTTP client
+        // timeout on the Kokoro call, or a token threaded into SynthesizeAsync — must surface, or
+        // the pump completes the channel with no error and the playback loop sees a zero-chunk job:
+        // drained, no failure, no metric. A dropped sentence reported as spoken.
+        using var foreign = new CancellationTokenSource();
+        await foreign.CancelAsync();
+
+        async IAsyncEnumerable<AudioChunk> ForeignCancelled()
+        {
+            await Task.Yield();
+            yield return Chunk(0);
+            throw new OperationCanceledException(foreign.Token);
+        }
+
+        await using var prefetch = new PrefetchedAudio(ForeignCancelled(), capacity: 8);
+
+        await Should.ThrowAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in prefetch.Chunks)
+            {
+                // drain until the foreign cancellation surfaces
+            }
+        });
+    }
+
+    [Fact]
     public async Task Chunks_SurfaceTheSourceFailure()
     {
         // A Wyoming/Kokoro error event throws mid-synthesis; the playback loop relies on that
