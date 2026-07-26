@@ -21,6 +21,7 @@ namespace Infrastructure.Agents;
 public sealed class McpAgent : DisposableAgent
 {
     private readonly string? _customInstructions;
+    private readonly string? _language;
     private readonly string _description;
     private readonly IReadOnlyList<AIFunction> _domainTools;
     private readonly IReadOnlyList<string> _domainPrompts;
@@ -52,6 +53,7 @@ public sealed class McpAgent : DisposableAgent
         IThreadStateStore stateStore,
         string userId,
         string? customInstructions = null,
+        string? language = null,
         IReadOnlyList<AIFunction>? domainTools = null,
         IReadOnlyList<string>? domainPrompts = null,
         IReadOnlySet<string>? filesystemEnabledTools = null, // null treated as empty (disabled)
@@ -70,6 +72,7 @@ public sealed class McpAgent : DisposableAgent
         _description = description;
         _userId = userId;
         _customInstructions = customInstructions;
+        _language = language;
         _domainTools = domainTools ?? [];
         _domainPrompts = domainPrompts ?? [];
         _reasoningEffort = ParseEffort(reasoningEffort);
@@ -269,6 +272,7 @@ public sealed class McpAgent : DisposableAgent
                 _name,
                 _description,
                 _customInstructions,
+                _language,
                 _domainPrompts,
                 session.FileSystemPrompts,
                 session.ClientManager.Prompts,
@@ -286,6 +290,7 @@ public sealed class McpAgent : DisposableAgent
         string name,
         string? description,
         string? customInstructions,
+        string? language,
         IEnumerable<string> domainPrompts,
         IEnumerable<string> fileSystemPrompts,
         IEnumerable<string> clientPrompts,
@@ -313,6 +318,14 @@ public sealed class McpAgent : DisposableAgent
         if (!string.IsNullOrEmpty(customInstructions))
         {
             prompts = prompts.Append(customInstructions);
+        }
+
+        // The reply language outranks even the custom instructions: it is a hard output
+        // constraint, and every other section -- plus the tool results the model reads right
+        // before answering -- is English, so it goes last, closest to the conversation.
+        if (LanguagePrompt.Build(language) is { } languagePrompt)
+        {
+            prompts = prompts.Append(languagePrompt);
         }
 
         return string.Join("\n\n", prompts);

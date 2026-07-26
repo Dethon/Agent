@@ -80,7 +80,7 @@ public class SubAgentTests(RedisFixture redisFixture)
             stateStore,
             "test-user",
             "You have access to a subagent tool. Use the echo-agent subagent to echo back: 'Hello from subagent'",
-            toolFeature.GetTools(featureConfig).ToList());
+            domainTools: toolFeature.GetTools(featureConfig).ToList());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 

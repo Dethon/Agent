@@ -12,6 +12,9 @@ public record AgentDefinition
     public required string[] McpServerEndpoints { get; init; }
     public string[] WhitelistPatterns { get; init; } = [];
     public string? CustomInstructions { get; init; }
+
+    // Absolute reply language. Null leaves the agent free to follow the conversation.
+    public string? Language { get; init; }
     public string? TelegramBotToken { get; init; }
     public string[] EnabledFeatures { get; init; } = [];
     public int? MaxContextTokens { get; init; }

@@ -15,6 +15,7 @@ public class McpAgentInstructionsTests
             name: "TestAgent",
             description: null,
             customInstructions: null,
+            language: null,
             domainPrompts: [],
             fileSystemPrompts: [],
             clientPrompts: [],
@@ -32,6 +33,7 @@ public class McpAgentInstructionsTests
             name: "TestAgent",
             description: null,
             customInstructions: null,
+            language: null,
             domainPrompts: [],
             fileSystemPrompts: [],
             clientPrompts: [],
@@ -50,6 +52,7 @@ public class McpAgentInstructionsTests
             name: "TestAgent",
             description: null,
             customInstructions: "CUSTOM",
+            language: null,
             domainPrompts: ["DOMAIN"],
             fileSystemPrompts: ["FS"],
             clientPrompts: ["CLIENT"],
@@ -71,6 +74,7 @@ public class McpAgentInstructionsTests
             name: "TestAgent",
             description: null,
             customInstructions: "CUSTOM",
+            language: null,
             domainPrompts: ["DOMAIN"],
             fileSystemPrompts: ["FS"],
             clientPrompts: ["CLIENT"],
@@ -92,6 +96,7 @@ public class McpAgentInstructionsTests
             name: "Mycroft",
             description: "Voice assistant.",
             customInstructions: null,
+            language: null,
             domainPrompts: [],
             fileSystemPrompts: [],
             clientPrompts: [],
@@ -110,6 +115,7 @@ public class McpAgentInstructionsTests
             name: "Mycroft",
             description: "Voice assistant.",
             customInstructions: null,
+            language: null,
             domainPrompts: ["DOMAIN"],
             fileSystemPrompts: [],
             clientPrompts: [],
@@ -130,11 +136,54 @@ public class McpAgentInstructionsTests
             name: "  ",
             description: "Voice assistant.",
             customInstructions: null,
+            language: null,
             domainPrompts: [],
             fileSystemPrompts: [],
             clientPrompts: [],
             now: fixedTime);
 
         result.ShouldNotContain("## Identity");
+    }
+
+    // The reply language is a hard output constraint, so it outranks even the custom
+    // instructions: it is the last thing in the system prompt, closest to the conversation.
+    [Fact]
+    public void BuildInstructions_WithLanguage_PlacesLanguageSectionAfterCustomInstructions()
+    {
+        var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
+
+        var result = McpAgent.BuildInstructions(
+            name: "Nabu",
+            description: null,
+            customInstructions: "CUSTOM",
+            language: "es",
+            domainPrompts: ["DOMAIN"],
+            fileSystemPrompts: [],
+            clientPrompts: ["CLIENT"],
+            now: fixedTime);
+
+        result.ShouldEndWith(LanguagePrompt.Build("es")!);
+        result.IndexOf("## Idioma", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BuildInstructions_NoLanguage_OmitsLanguageSection()
+    {
+        var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
+
+        var result = McpAgent.BuildInstructions(
+            name: "Nabu",
+            description: null,
+            customInstructions: "CUSTOM",
+            language: "   ",
+            domainPrompts: [],
+            fileSystemPrompts: [],
+            clientPrompts: [],
+            now: fixedTime);
+
+        result.ShouldEndWith("CUSTOM");
+        result.ShouldNotContain("## Idioma");
+        result.ShouldNotContain("## Language");
     }
 }
