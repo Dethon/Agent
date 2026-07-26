@@ -43,6 +43,21 @@ public class HomeAssistantPromptTests
         prompt.ShouldContain("500");              // 500 = unresolved item, not MA down
     }
 
+    // The never-guess rule used to be phrased around how the user worded the request, which left the
+    // model to judge whether "música favorita" counted as "my playlist" — it decided it was a free-text
+    // name, invented "Mi música favorita", and ate a bare HA 500. Anchor the rule to the flag instead:
+    // passing --media_type playlist is itself the trigger to browse first.
+    [Fact]
+    public void SystemPrompt_AnchorsPlaylistNeverGuessRuleToTheMediaTypeFlag()
+    {
+        var prompt = HomeAssistantPrompt.SystemPrompt;
+
+        prompt.ShouldContain("--media_type playlist");        // the flag that triggers the rule
+        prompt.ShouldContain("in this same turn");            // the title must come from a listing just read
+        prompt.ShouldContain("almost never its stored title"); // how the user described it != the title
+        prompt.ShouldContain("Mi música favorita");           // the concrete anti-example that failed
+    }
+
     [Fact]
     public void Prompt_TeachesSnoozeAfterDismissal()
     {
