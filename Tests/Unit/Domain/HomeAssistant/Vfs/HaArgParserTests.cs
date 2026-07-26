@@ -111,4 +111,20 @@ public class HaArgParserTests
         ((JsonArray)HaArgParser.Parse(["--advanced", """["a","b"]"""], Svc())["advanced"]!)
             .Count.ShouldBe(2);
     }
+
+    // Media titles that happen to be valid JSON scalars ("1979", "22", "true", "null") must stay
+    // strings: Music Assistant resolves media_id by name, and a JSON number/bool/null reaches it as
+    // a non-string it cannot look up, which HA surfaces as a 500.
+    [Theory]
+    [InlineData("1979")]
+    [InlineData("22")]
+    [InlineData("1901")]
+    [InlineData("true")]
+    [InlineData("null")]
+    [InlineData("1.20")]
+    public void Parse_ObjectSelector_JsonScalarLookalikeTitle_StaysString(string title)
+    {
+        HaArgParser.Parse(["--advanced", title], Svc())["advanced"]!
+            .GetValue<string>().ShouldBe(title);
+    }
 }

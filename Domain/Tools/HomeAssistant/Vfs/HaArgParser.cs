@@ -89,17 +89,23 @@ public static class HaArgParser
         }
         if (selector?["object"] is not null)
         {
-            try
+            // HA `object` selectors accept any JSON, but for fields like MA's `media_id` the common
+            // value is a plain name. Only structured JSON (`{...}`, `[...]`) and an explicitly quoted
+            // string are parsed; everything else stays a string. Parsing bare scalars too would turn
+            // media titles that happen to be valid JSON — "1979", "22", "true", "null" — into a
+            // number/bool/null that Music Assistant cannot resolve, which HA reports as a 500.
+            if (raw.AsSpan().TrimStart() is ['{' or '[' or '"', ..])
             {
-                return JsonNode.Parse(raw);
+                try
+                {
+                    return JsonNode.Parse(raw);
+                }
+                catch (JsonException)
+                {
+                    return JsonValue.Create(raw);
+                }
             }
-            catch (JsonException)
-            {
-                // HA `object` selectors accept any JSON, and for fields like MA's `media_id` the
-                // common value is a plain name. Non-JSON text becomes a JSON string so callers
-                // aren't forced into '"..."' double-quoting.
-                return JsonValue.Create(raw);
-            }
+            return JsonValue.Create(raw);
         }
         if (TryGetSelectOptions(selector, out var options) && !options.Contains(raw, StringComparer.Ordinal))
         {
