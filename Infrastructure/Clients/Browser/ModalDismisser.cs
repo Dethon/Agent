@@ -353,17 +353,19 @@ public class ModalDismisser
 
     // Playwright matches a role locator's Name case-insensitively as a substring, so an alternation
     // of the escaped patterns selects exactly the union the per-pattern calls used to select.
-    private static readonly Dictionary<ModalType, Regex> _textPatternRegexes =
-        _defaultPatterns
-            .Where(p => p.ButtonTextPatterns is { Count: > 0 })
-            .ToDictionary(
-                p => p.Type,
-                p => new Regex(
+    // Keyed by pattern INSTANCE, not ModalType: a pattern constructed elsewhere that reuses a
+    // default Type must build a regex from its own text list, not silently inherit the default's.
+    private static readonly Dictionary<ModalPattern, Regex> _textPatternRegexes =
+        new(
+            _defaultPatterns
+                .Where(p => p.ButtonTextPatterns is { Count: > 0 })
+                .Select(p => new KeyValuePair<ModalPattern, Regex>(p, new Regex(
                     string.Join("|", p.ButtonTextPatterns!.Select(Regex.Escape)),
-                    RegexOptions.IgnoreCase | RegexOptions.Compiled));
+                    RegexOptions.IgnoreCase | RegexOptions.Compiled))),
+            ReferenceEqualityComparer.Instance);
 
-    private static Regex TextPatternRegexFor(ModalPattern pattern) =>
-        _textPatternRegexes.TryGetValue(pattern.Type, out var cached)
+    internal static Regex TextPatternRegexFor(ModalPattern pattern) =>
+        _textPatternRegexes.TryGetValue(pattern, out var cached)
             ? cached
             : new Regex(
                 string.Join("|", pattern.ButtonTextPatterns!.Select(Regex.Escape)),
