@@ -838,7 +838,7 @@ public class PlaywrightWebBrowser(
     // 1200ms ceiling as before on purpose: a longer tail was measured costing 2.4s on pages that
     // never settle at all (elmundo.es, github.com), where extra patience buys nothing because the
     // churn is ads and carousels rather than content still arriving.
-    private static readonly int[] StabilityIntervalsMs = [100, 300, 400, 400];
+    private static readonly int[] _stabilityIntervalsMs = [100, 300, 400, 400];
 
     // Element count plus text length, rather than the serialised document the loop used to compare.
     // Two reasons. It is far cheaper — a ~20-byte reply instead of up to 2MB per check, measured at
@@ -869,7 +869,7 @@ public class PlaywrightWebBrowser(
         int stableCountRequired = 2,
         IReadOnlyList<int>? intervalsMs = null)
     {
-        var intervals = intervalsMs ?? StabilityIntervalsMs;
+        var intervals = intervalsMs ?? _stabilityIntervalsMs;
         var previousHtml = await page.EvaluateAsync<string>(DomFingerprintScript);
         var stableCount = 0;
 
@@ -960,7 +960,7 @@ public class PlaywrightWebBrowser(
     // marketing-navigation-ece1017251744ddd.js — which reported CaptchaRequired and returned no
     // content for the whole site. Anchoring on a path or attribute boundary keeps the detection and
     // drops the collision. ("geo.captcha-delivery.com" is subsumed by "captcha-delivery.com".)
-    private static readonly Regex DataDomeLoaderPattern =
+    private static readonly Regex _dataDomeLoaderPattern =
         new("""[/"'=]dd\.js\b""", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     internal static bool ContainsCaptcha(string html)
@@ -968,7 +968,7 @@ public class PlaywrightWebBrowser(
         // DataDome CAPTCHA patterns
         return html.Contains("captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
                html.Contains("datadome", StringComparison.OrdinalIgnoreCase) ||
-               DataDomeLoaderPattern.IsMatch(html);
+               _dataDomeLoaderPattern.IsMatch(html);
     }
 
     private async Task<(bool Solved, string? Message)> TrySolveCaptchaAsync(

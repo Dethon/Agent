@@ -249,4 +249,126 @@ public class ModalDismisserTests(PlaywrightWebBrowserFixture fixture) : IAsyncLi
         result.ShouldContain(r => r.Type == ModalType.CookieConsent);
         (await page.Locator("#cookie-banner").IsVisibleAsync()).ShouldBeFalse();
     }
+
+    // The text fallback narrows Playwright's accessible-name matches using textContent, which is
+    // empty for a control named by value/aria-label/title/alt. Those are exactly the controls the
+    // fallback exists for — a selector-matched one would never have reached it.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task DismissModalsAsync_ConsentButtonNamedByValue_IsStillDismissed()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+
+        var page = await _context!.NewPageAsync();
+        await page.SetContentAsync(
+            "<!doctype html><html><body>" +
+            "<div id='cmp-wall' class='cookie-consent' " +
+            "style='position:fixed;top:0;left:0;right:0;height:200px;background:#ddd;z-index:9999'>" +
+            "Usamos cookies. " +
+            // input[type=submit], so its accessible name comes from value and its textContent is "".
+            // The class carries no accept-ish token, so no ButtonSelector matches it either.
+            "<input type='submit' class='cmp-btn-primary' value='Aceptar todo' " +
+            "onclick=\"document.getElementById('cmp-wall').style.display='none';return false;\">" +
+            "</div><p>Main content</p></body></html>");
+
+        var dismisser = new ModalDismisser();
+        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+
+        result.ShouldContain(r => r.Type == ModalType.CookieConsent);
+        (await page.Locator("#cmp-wall").IsVisibleAsync()).ShouldBeFalse();
+    }
+
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task DismissModalsAsync_ConsentButtonNamedByAriaLabel_IsStillDismissed()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+
+        var page = await _context!.NewPageAsync();
+        await page.SetContentAsync(
+            "<!doctype html><html><body>" +
+            "<div id='signup' class='newsletter-wall' " +
+            "style='position:fixed;top:0;left:0;right:0;height:200px;background:#eee;z-index:9999'>" +
+            "Subscribe " +
+            // Icon-only control: named by aria-label, textContent empty, and the label is "No thanks"
+            // rather than a close/dismiss token, so the ButtonSelectors miss it too.
+            "<button class='sg-icon' aria-label='No thanks' " +
+            "onclick=\"document.getElementById('signup').style.display='none'\"><svg></svg></button>" +
+            "</div><p>Main content</p></body></html>");
+
+        var dismisser = new ModalDismisser();
+        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+
+        result.ShouldContain(r => r.Type == ModalType.Newsletter);
+        (await page.Locator("#signup").IsVisibleAsync()).ShouldBeFalse();
+    }
+
+    // The in-page scan replaced Playwright locators with document.querySelectorAll, which does not
+    // pierce open shadow roots. A CMP rendered as a web component (Usercentrics and friends) then
+    // fails the overlay gate, and because the gate drops the whole pattern the text fallback — which
+    // WOULD have pierced — never runs either.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task DismissModalsAsync_ConsentWallInsideOpenShadowRoot_IsStillDismissed()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+
+        var page = await _context!.NewPageAsync();
+        await page.SetContentAsync(
+            "<!doctype html><html><body><div id='cmp-host'></div><p>Main content</p></body></html>");
+        await page.EvaluateAsync(
+            """
+            () => {
+                const host = document.getElementById('cmp-host');
+                const root = host.attachShadow({ mode: 'open' });
+                const wall = document.createElement('div');
+                wall.id = 'shadow-wall';
+                wall.className = 'cookie-consent';
+                wall.style.cssText =
+                    'position:fixed;top:0;left:0;right:0;height:200px;background:#ddd;z-index:9999';
+                const btn = document.createElement('button');
+                btn.className = 'cmp-accept-all';
+                btn.textContent = 'Accept all';
+                btn.onclick = () => wall.remove();
+                wall.appendChild(btn);
+                root.appendChild(wall);
+            }
+            """);
+
+        var dismisser = new ModalDismisser();
+        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+
+        result.ShouldContain(r => r.Type == ModalType.CookieConsent);
+        var stillThere = await page.EvaluateAsync<bool>(
+            "() => !!document.getElementById('cmp-host').shadowRoot.getElementById('shadow-wall')");
+        stillThere.ShouldBeFalse();
+    }
+
+    // Dropping the 10-container cap was right — a real banner can sit behind more than ten
+    // same-class elements — but it also means the gate now sees every incidental absolutely
+    // positioned element on the page. With the overlay predicate unchanged, one lazy-loaded image
+    // placeholder opens the AgeGate pattern, whose text list contains "si" — which substring-matches
+    // the page's own "Sign in" button. The scan stays unbounded; what counts as an overlay tightens.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task DismissModalsAsync_IncidentalAbsoluteElement_DoesNotClickPageControls()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+
+        var bulk = string.Concat(Enumerable.Range(0, 40).Select(i =>
+            $"<div class='page-body image-{i}'>row {i}</div>"));
+        var page = await _context!.NewPageAsync();
+        await page.SetContentAsync(
+            "<!doctype html><html><body>" + bulk +
+            // Small, absolutely positioned, and only incidentally matching [class*='age'].
+            "<div class='image-placeholder' style='position:absolute;width:300px;height:200px'></div>" +
+            "<button id='signin' onclick=\"document.title='CLICKED'\">Sign in</button>" +
+            "</body></html>");
+
+        var dismisser = new ModalDismisser();
+        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+
+        result.ShouldBeEmpty();
+        (await page.TitleAsync()).ShouldNotBe("CLICKED");
+    }
 }
