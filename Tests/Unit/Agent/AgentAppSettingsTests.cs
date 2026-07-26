@@ -1,4 +1,8 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs;
+using Domain.Prompts;
+using Infrastructure.Agents;
+using Microsoft.Extensions.Configuration;
 using Shouldly;
 
 namespace Tests.Unit.Agent;
@@ -45,16 +49,64 @@ public class AgentAppSettingsTests
         }
     }
 
-    private static string[] Endpoints(string agentId)
+    // Nabu speaks through a Spanish TTS voice and reads a transcript from an STT pinned to
+    // Spanish, while everything else in its request -- prompts, tool results, memory block --
+    // is English. Declaring the language makes the reply language an absolute contract instead
+    // of a relative rule the English context can outvote.
+    [Fact]
+    public void Language_Nabu_DeclaresSpanish()
+    {
+        Agent("nabu")["language"]!.GetValue<string>().ShouldBe("es");
+    }
+
+    // Two contracts for the same thing is how the drift got in: a relative rule sitting beside
+    // the absolute one lets a short transcript surrounded by English resolve to English.
+    [Fact]
+    public void CustomInstructions_Nabu_CarryNoCompetingRelativeLanguageRule()
+    {
+        Agent("nabu")["customInstructions"]!.GetValue<string>()
+            .ShouldNotContain("the language the user spoke");
+    }
+
+    // The rest of the chain: appsettings -> AgentDefinition -> system prompt. Every hop binds by
+    // convention, so a renamed or dropped key fails nothing at build time -- the agent just
+    // quietly goes back to inferring its language from an all-English request.
+    [Fact]
+    public void Language_Nabu_ReachesTheSystemPromptAsItsLastSection()
+    {
+        var agents = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(RepoRoot(), "Agent", "appsettings.json"))
+            .Build()
+            .GetSection("agents")
+            .Get<AgentDefinition[]>()!;
+
+        var nabu = agents.Single(a => a.Id == "nabu");
+        nabu.Language.ShouldBe("es");
+
+        McpAgent.BuildInstructions(
+                name: nabu.Name,
+                description: nabu.Description,
+                customInstructions: nabu.CustomInstructions,
+                language: nabu.Language,
+                domainPrompts: [],
+                fileSystemPrompts: [],
+                clientPrompts: [],
+                now: DateTimeOffset.UnixEpoch)
+            .ShouldEndWith(LanguagePrompt.Build("es")!);
+    }
+
+    private static string[] Endpoints(string agentId) =>
+        [.. Agent(agentId)["mcpServerEndpoints"]!.AsArray().Select(e => e!.GetValue<string>())];
+
+    private static JsonNode Agent(string agentId)
     {
         // Read the working tree, never AppContext.BaseDirectory: many referenced projects copy
         // their own appsettings.json to the test output, so Tests/bin/.../appsettings.json is
         // whichever one won the copy race -- not the Agent's. File.ReadAllText also strips the
         // UTF-8 BOM this file carries, which would otherwise fail JSON parsing.
         var json = File.ReadAllText(Path.Combine(RepoRoot(), "Agent", "appsettings.json"));
-        var agent = JsonNode.Parse(json)!["agents"]!.AsArray()
+        return JsonNode.Parse(json)!["agents"]!.AsArray()
             .Single(a => a!["id"]!.GetValue<string>() == agentId)!;
-        return [.. agent["mcpServerEndpoints"]!.AsArray().Select(e => e!.GetValue<string>())];
     }
 
     private static string RepoRoot()
