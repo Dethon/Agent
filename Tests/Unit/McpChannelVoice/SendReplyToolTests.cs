@@ -59,7 +59,7 @@ public class SendReplyToolTests
         _services = BuildServices(new VoiceSettings());
     }
 
-    private IServiceProvider BuildServices(VoiceSettings settings)
+    private IServiceProvider BuildServices(VoiceSettings settings, VoiceMetric? failOn = null)
     {
         var delivery = new VoiceDeliveryRegistry(
             new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5),
@@ -68,14 +68,20 @@ public class SendReplyToolTests
 
         var metrics = new Mock<IMetricsPublisher>();
         metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask)
-            .Callback<MetricEvent, CancellationToken>((e, _) =>
+            .Returns<MetricEvent, CancellationToken>((e, _) =>
             {
                 if (e is VoiceEvent v)
                 {
+                    // Redis is reachable or it is not; RedisMetricsPublisher has no internal catch,
+                    // so a blip surfaces to whatever awaited the publish.
+                    if (failOn is { } metric && v.Metric == metric)
+                    {
+                        return Task.FromException(new InvalidOperationException("redis unreachable"));
+                    }
                     lock (_published)
                     { _published.Add(v); }
                 }
+                return Task.CompletedTask;
             });
 
         return new ServiceCollection()
@@ -712,6 +718,175 @@ public class SendReplyToolTests
         await Task.Delay(200);
         lock (synthesized)
         { synthesized.ShouldBeEmpty(); }
+    }
+
+    [Fact]
+    public async Task McpRun_ReplySegmentPreemptedMidPlayback_SettlesTheTurnThroughTheRealPlaybackLoop()
+    {
+        // Drives a real reply job through RunPlaybackLoopAsync and preempts it, which is the only
+        // way to reach the OnPreempted -> FailReplySegment release. A preempted job never sees
+        // OnDrained, so without that release the turn waits out the ~120s ReplyTimeoutMs with the
+        // mic wedged.
+        // Signalled from the WRITER, not the audio source: the prefetch pump starts synthesising at
+        // enqueue, so a source-side signal fires before the playback loop owns the job and the
+        // preempt would land on nothing.
+        var playing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _tts.Setup(t => t.SynthesizeAsync(
+                It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
+            .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) => Gated());
+
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        var turn = _session.WaitForTurnSpokenAsync();
+        var pump = _session.RunPlaybackLoopAsync(
+            async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
+            CancellationToken.None, _clock);
+
+        await SendReplyTool.McpRun(_conversationId, "Hola mundo", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        await playing.Task.WaitAsync(TimeSpan.FromSeconds(10));   // the segment is mid-drain
+        _session.PreemptCurrent();
+        _session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Settles promptly instead of wedging. Silent, not Spoken: no segment ever drained, so the
+        // conversation ends and wake re-arms rather than opening a follow-up window over the alarm
+        // that cut in.
+        (await turn.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task McpRun_PreemptedSegmentAndMetricsPublishThrows_StillSettlesTheTurn()
+    {
+        // The AnnouncePreemptedReply publish sits ahead of the segment release, and the playback
+        // loop swallows a throwing OnPreempted — so a Redis blip during a preemption used to leak
+        // the slot permanently and wedge the mic for the full ReplyTimeoutMs.
+        var playing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _tts.Setup(t => t.SynthesizeAsync(
+                It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
+            .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) => Gated());
+
+        var services = BuildServices(new VoiceSettings(),
+            failOn: VoiceMetric.AnnouncePreemptedReply);
+
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        var turn = _session.WaitForTurnSpokenAsync();
+        var pump = _session.RunPlaybackLoopAsync(
+            async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
+            CancellationToken.None, _clock);
+
+        await SendReplyTool.McpRun(_conversationId, "Hola mundo", ReplyContentType.Text, false, "m-1", services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, services);
+
+        await playing.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        _session.PreemptCurrent();
+        _session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(10));
+
+        await Should.NotThrowAsync(async () => await turn.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public async Task McpRun_PlaybackQueueRefusesTheSegment_SettlesTheTurnAndReleasesTheSynthesis()
+    {
+        // A satellite that disconnects mid-answer completes the playback writer, so every further
+        // enqueue is refused. The slot must still be released, and the prefetched synthesis — which
+        // nothing will ever enumerate — must be disposed rather than left parked on a full buffer
+        // holding an open TTS response.
+        var disposed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _tts.Setup(t => t.SynthesizeAsync(
+                It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
+            .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) => DisposeTracking(disposed));
+
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        var turn = _session.WaitForTurnSpokenAsync();
+        _session.CompletePlayback();    // the writer is completed: every enqueue now returns false
+
+        await SendReplyTool.McpRun(_conversationId, "Hola mundo", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        (await turn.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBeFalse();  // nothing ever played
+        await disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task McpRun_StreamingWithNoRoomInThePlaybackQueue_LeavesTheTextBufferedInsteadOfDroppingIt()
+    {
+        // TryTakeSpeakable removes a sentence run from the accumulator BEFORE the enqueue is
+        // accepted, so a queue with no room silently swallowed whole sentences: the user heard an
+        // answer with a hole in it and the turn still settled Spoken. Text that cannot be queued
+        // must stay buffered for the next flush.
+        var services = BuildServices(new VoiceSettings
+        {
+            Tts = new TtsSettings
+            {
+                Streaming = new StreamingTtsConfig
+                {
+                    FirstSegmentMinChars = 10,
+                    MinChars = 10,
+                    MaxQueuedSegments = 1
+                }
+            }
+        });
+
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        // No playback loop is running, so nothing drains and the queue stays at its cap.
+
+        await SendReplyTool.McpRun(_conversationId, "Primera frase completa. ",
+            ReplyContentType.Text, false, "m-1", services);
+        await SendReplyTool.McpRun(_conversationId, "Segunda frase completa. ",
+            ReplyContentType.Text, false, "m-1", services);
+        await SendReplyTool.McpRun(_conversationId, "Tercera frase completa. ",
+            ReplyContentType.Text, false, "m-1", services);
+
+        // Whatever could not be queued is still there for StreamComplete to flush.
+        var leftover = _accumulator.Flush(_conversationId);
+        leftover.ShouldContain("Segunda frase completa.");
+        leftover.ShouldContain("Tercera frase completa.");
+    }
+
+    [Fact]
+    public async Task McpRun_TurnEndsWithNoAudio_DoesNotLeaveTheDispatchStampForALaterReply()
+    {
+        // A tool-only turn never reaches SpeakAsync, so TryConsumeDispatchedAt never runs and the
+        // stamp outlives the turn. A schedule firing into the same live session then consumes it and
+        // publishes AgentRoundTripMs/WakeToFirstAudioMs anchored to the old turn — minutes of
+        // staleness on the headline metrics, which is what the stamp gate exists to prevent.
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+
+        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _session.TryConsumeDispatchedAt().ShouldBeNull();
+    }
+
+    // One chunk, then parks: the job stays mid-drain until something cancels it, which is what makes
+    // the preempt path reachable at all.
+    private static async IAsyncEnumerable<AudioChunk> Gated(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token = default)
+    {
+        yield return new AudioChunk { Data = new byte[16], Format = AudioFormat.WyomingStandard };
+        await Task.Delay(Timeout.Infinite, token);
+    }
+
+    // Parks on the prefetch's own token so DisposeAsync can actually unwind it, which is the
+    // behaviour under test: disposal is what releases an in-flight synthesis nobody will enumerate.
+    private static async IAsyncEnumerable<AudioChunk> DisposeTracking(TaskCompletionSource disposed,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token = default)
+    {
+        try
+        {
+            yield return new AudioChunk { Data = new byte[16], Format = AudioFormat.WyomingStandard };
+            await Task.Delay(Timeout.Infinite, token);
+        }
+        finally
+        {
+            disposed.TrySetResult();
+        }
     }
 
     private static async IAsyncEnumerable<AudioChunk> Recording(string text, List<string> sink)
