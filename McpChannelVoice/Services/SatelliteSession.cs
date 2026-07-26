@@ -222,12 +222,19 @@ public sealed class SatelliteSession
 
     public void CompleteReplySegment(long epoch)
     {
-        if (epoch != CurrentTurnEpoch)
+        // Epoch check and decrement under the gate ResetTurn takes: checked then decremented
+        // without it, a reset landing between the two puts the stale decrement on the NEW turn's
+        // counter, which then can never reach zero. SettleIfComplete stays outside — after a reset
+        // it reads the zeroed flags and no-ops, and it re-enters _turnGate to signal.
+        lock (_turnGate)
         {
-            return;
+            if (epoch != CurrentTurnEpoch)
+            {
+                return;
+            }
+            Interlocked.Exchange(ref _replyAudioPlayed, 1);
+            Interlocked.Decrement(ref _replySegmentsOutstanding);
         }
-        Interlocked.Exchange(ref _replyAudioPlayed, 1);
-        Interlocked.Decrement(ref _replySegmentsOutstanding);
         SettleIfComplete();
     }
 
@@ -237,11 +244,15 @@ public sealed class SatelliteSession
     // currently playing and the rest would then be spoken into an open capture.
     public void FailReplySegment(long epoch)
     {
-        if (epoch != CurrentTurnEpoch)
+        // Same gate discipline as CompleteReplySegment, for the same reason.
+        lock (_turnGate)
         {
-            return;
+            if (epoch != CurrentTurnEpoch)
+            {
+                return;
+            }
+            Interlocked.Decrement(ref _replySegmentsOutstanding);
         }
-        Interlocked.Decrement(ref _replySegmentsOutstanding);
         SettleIfComplete();
     }
 
