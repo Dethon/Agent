@@ -27,7 +27,7 @@ namespace Tests.Unit.McpChannelVoice;
 public class VoiceTurnDecompositionTests
 {
     private const int ChunkBytes = 3200; // 100 ms at 16 kHz / 16-bit / mono
-    private static readonly TimeSpan ChunkDuration = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan _chunkDuration = TimeSpan.FromMilliseconds(100);
 
     // One synthetic turn's stage lengths. Speech and tail are audio-domain (the gate derives them
     // from PCM frame durations); the rest are wall-clock.
@@ -184,7 +184,7 @@ public class VoiceTurnDecompositionTests
     private void FeedPacedAudio(UtteranceCapture capture, AudioChunk chunk)
     {
         capture.Feed(chunk);
-        _clock.Advance(ChunkDuration);
+        _clock.Advance(_chunkDuration);
     }
 
     private long Duration(VoiceMetric metric)

@@ -58,14 +58,14 @@ public class PrefetchedAudioTests
         using var foreign = new CancellationTokenSource();
         await foreign.CancelAsync();
 
-        async IAsyncEnumerable<AudioChunk> ForeignCancelled()
+        async IAsyncEnumerable<AudioChunk> foreignCancelled()
         {
             await Task.Yield();
             yield return Chunk(0);
             throw new OperationCanceledException(foreign.Token);
         }
 
-        await using var prefetch = new PrefetchedAudio(ForeignCancelled(), capacity: 8);
+        await using var prefetch = new PrefetchedAudio(foreignCancelled(), capacity: 8);
 
         await Should.ThrowAsync<OperationCanceledException>(async () =>
         {
@@ -81,7 +81,7 @@ public class PrefetchedAudioTests
     {
         // A Wyoming/Kokoro error event throws mid-synthesis; the playback loop relies on that
         // surfacing so OnFailed settles the turn instead of hanging the handshake.
-        static async IAsyncEnumerable<AudioChunk> Throwing()
+        static async IAsyncEnumerable<AudioChunk> throwing()
         {
             await Task.Yield();
             throw new InvalidOperationException("kokoro exploded");
@@ -90,7 +90,7 @@ public class PrefetchedAudioTests
 #pragma warning restore CS0162
         }
 
-        await using var prefetch = new PrefetchedAudio(Throwing(), capacity: 8);
+        await using var prefetch = new PrefetchedAudio(throwing(), capacity: 8);
 
         await Should.ThrowAsync<InvalidOperationException>(async () =>
         {
@@ -107,7 +107,7 @@ public class PrefetchedAudioTests
         var pulled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async IAsyncEnumerable<AudioChunk> Endless([EnumeratorCancellation] CancellationToken ct = default)
+        async IAsyncEnumerable<AudioChunk> endless([EnumeratorCancellation] CancellationToken ct = default)
         {
             pulled.TrySetResult();
             try
@@ -124,7 +124,7 @@ public class PrefetchedAudioTests
             }
         }
 
-        var prefetch = new PrefetchedAudio(Endless(), capacity: 4);
+        var prefetch = new PrefetchedAudio(endless(), capacity: 4);
         await pulled.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         await prefetch.DisposeAsync();
@@ -140,7 +140,7 @@ public class PrefetchedAudioTests
         var produced = 0;
         var pulled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async IAsyncEnumerable<AudioChunk> Counting([EnumeratorCancellation] CancellationToken ct = default)
+        async IAsyncEnumerable<AudioChunk> counting([EnumeratorCancellation] CancellationToken ct = default)
         {
             pulled.TrySetResult();
             foreach (var i in Enumerable.Range(0, 100))
@@ -152,7 +152,7 @@ public class PrefetchedAudioTests
             }
         }
 
-        await using var prefetch = new PrefetchedAudio(Counting(), capacity: 4);
+        await using var prefetch = new PrefetchedAudio(counting(), capacity: 4);
         await pulled.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await Task.Delay(200);
 
