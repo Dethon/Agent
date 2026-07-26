@@ -23,12 +23,14 @@ public record MetricsSummary(
     long MemoriesMerged = 0,
     long MemoriesDecayed = 0);
 
-public sealed class MetricsQueryService(IConnectionMultiplexer redis)
+public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvider? timeProvider = null)
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
     public async Task<MetricsSummary> GetSummaryAsync(DateOnly from, DateOnly to)
     {
@@ -130,11 +132,10 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
     public async Task<IReadOnlyList<ServiceHealthResult>> GetHealthAsync()
     {
         var db = redis.GetDatabase();
-        var knownServices = await db.SetMembersAsync("metrics:health:known");
+        var knownServices = await ServiceHealthRegistry.ListAsync(db, _time.GetUtcNow());
 
-        var tasks = knownServices.Select(async member =>
+        var tasks = knownServices.Select(async service =>
         {
-            var service = member.ToString();
             var value = await db.StringGetAsync($"metrics:health:{service}");
             var isHealthy = value.HasValue;
             return new ServiceHealthResult(service, isHealthy, isHealthy ? value.ToString() : "N/A");
@@ -399,7 +400,8 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
         VoiceDimension dimension,
         VoiceMetric metric,
         DateOnly from,
-        DateOnly to)
+        DateOnly to,
+        LatencyMetric agg = LatencyMetric.Avg)
     {
         var events = await GetEventsAsync<VoiceEvent>("metrics:voice:", from, to);
         var scoped = events.Where(e => e.Metric == metric);
@@ -414,18 +416,17 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
             _ => e => e.SatelliteId
         };
 
+        // Duration metrics are identified by their name suffix rather than an explicit list: the
+        // list silently degraded every newly added ...Ms member to a count.
+        var isDuration = metric.ToString().EndsWith("Ms", StringComparison.Ordinal);
+
         return scoped
             .GroupBy(e => selector(e) ?? "(unknown)")
             .ToDictionary(
                 g => g.Key,
-                g => metric switch
-                {
-                    VoiceMetric.SttLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
-                    VoiceMetric.TtsLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
-                    VoiceMetric.WakeToFirstAudioMs => (decimal)g.Average(e => e.DurationMs ?? 0),
-                    VoiceMetric.TseLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
-                    _ => (decimal)g.Count()
-                });
+                g => isDuration
+                    ? AggregateLatency(g.Select(e => (decimal)(e.DurationMs ?? 0)), agg)
+                    : (decimal)g.Count());
     }
 
     public async Task<Dictionary<string, int>> GetScheduleGroupedAsync(

@@ -13,12 +13,21 @@ public sealed record PlaybackJob(
     Func<string, Task> OnPreempted,
     Func<Task>? OnDrained = null,
     Func<FirstAudioTiming, Task>? OnFirstAudio = null,
-    Func<Exception, Task>? OnFailed = null);
+    Func<Exception, Task>? OnFailed = null,
+    long EnqueuedAt = 0);
 
 // Timing captured the moment a job's first audio chunk is produced. SinceSynthesisStart is the
 // TTS time-to-first-audio (synthesis request -> first chunk); SinceTurnStart is the wake/turn-open
-// -> first audio latency, null when the job had no preceding user turn.
-public sealed record FirstAudioTiming(TimeSpan SinceSynthesisStart, TimeSpan? SinceTurnStart);
+// -> first audio latency, null when the job had no preceding user turn. SinceSpeechEnd is the same
+// span measured from the instant the user stopped talking (see MarkSpeechEnd: capture close rewound
+// by the endpointing tail) — the machine time the user actually waits through, with their own speech
+// excluded and the endpointing tail included. QueueWait ends at synthesis start, so it never
+// overlaps SinceSynthesisStart.
+public sealed record FirstAudioTiming(
+    TimeSpan SinceSynthesisStart,
+    TimeSpan? SinceTurnStart,
+    TimeSpan? SinceSpeechEnd = null,
+    TimeSpan? QueueWait = null);
 
 public sealed class SatelliteSession
 {
@@ -37,7 +46,16 @@ public sealed class SatelliteSession
     private TaskCompletionSource<bool> _turn = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private const long TurnNotStarted = long.MinValue;
     private long _turnStartedAt = TurnNotStarted;
+    private const long SpeechEndNotMarked = long.MinValue;
+    private long _speechEndedAt = SpeechEndNotMarked;
+    private const long DispatchNotMarked = long.MinValue;
+    private long _dispatchedAt = DispatchNotMarked;
     private int _preambleClaimed;
+    private int _replySegmentsStarted;
+    private int _replySegmentsOutstanding;
+    private int _replyStreamComplete;
+    private int _replyAudioPlayed;
+    private long _turnEpoch;
     private static readonly TimeSpan _snoozeWindow = TimeSpan.FromSeconds(60);
     private readonly Lock _dismissGate = new();
     private string? _dismissedAlert;
@@ -52,6 +70,10 @@ public sealed class SatelliteSession
     public string SatelliteId { get; }
     public SatelliteConfig Config { get; }
 
+    // Lets a caller decide whether a segment can be queued BEFORE it consumes the text and starts
+    // its synthesis, rather than finding out after both are already spent.
+    public int PlaybackQueueDepth => _playback.Reader.Count;
+
     public ValueTask<bool> EnqueuePlaybackAsync(PlaybackJob job, int queueMaxDepth)
     {
         if (job.Priority == AnnouncePriority.High)
@@ -59,17 +81,16 @@ public sealed class SatelliteSession
             long seq;
             lock (_gate)
             {
-                // Cancel the in-flight job if one is marked current; otherwise record a preempt
-                // high-water mark the loop honors when it next assigns a job, closing the race
-                // where _currentPlaybackCts is momentarily null during the dequeue->assign gap.
-                if (_currentPlaybackCts is not null)
-                {
-                    _currentPlaybackCts.Cancel();
-                }
-                else
-                {
-                    _preemptPendingSeq = _enqueueSeq;
-                }
+                // Mark EVERY job queued so far, then cancel the in-flight one. Cancelling only the
+                // current job was enough when a reply was a single job; now that it is several
+                // sentence jobs, an alarm cut sentence one and was then heard only after sentences
+                // 2..N had played in full — and a queued alarm the user had already acknowledged
+                // still rang, because dismissal preempts the current job. The mark is taken before
+                // this job's seq is issued, so its own seq exceeds it and the loop's High exemption
+                // keeps a stacked second High playing. It also closes the original race, where
+                // _currentPlaybackCts is momentarily null during the dequeue->assign gap.
+                _preemptPendingSeq = _enqueueSeq;
+                _currentPlaybackCts?.Cancel();
                 seq = ++_enqueueSeq;
             }
             // TryWrite (unbounded channel) returns false only once the writer is completed — i.e. the
@@ -125,14 +146,142 @@ public sealed class SatelliteSession
     // began, so the loop can report wake/turn -> first-audio latency. Set at capture-open each turn.
     public void MarkTurnStart(long timestamp) => Interlocked.Exchange(ref _turnStartedAt, timestamp);
 
+    // Records when the user stopped talking — everything after this is machine time they wait
+    // through. The caller can only observe the CLOSE of the capture, which is a whole endpointing
+    // tail later: SilenceGate only concludes "speech ended" once trailingSilence (1.2 s in production)
+    // of silence has run. Rewinding by that frozen tail is what makes this the instant the user
+    // actually stopped, so EndpointTailMs nests INSIDE SpeechEndToFirstAudioMs instead of sitting
+    // before it and the turn decomposition sums. Legitimate because mic audio arrives in real time,
+    // so the tail's audio-domain length is also its wall-clock length; the only residual error is
+    // the gate-decision -> capture-close handoff. Stamped with the same TimeProvider the playback
+    // loop reads, exactly like MarkTurnStart, so the two spans are comparable.
+    public void MarkSpeechEnd(long captureClosedAt, long endpointTailMs, TimeProvider time) =>
+        Interlocked.Exchange(
+            ref _speechEndedAt, captureClosedAt - (endpointTailMs * time.TimestampFrequency / 1000));
+
+    // Stamped when a transcript actually reached the agent, so the hub can measure the agent round
+    // trip it cannot otherwise see into (the agent's own MemoryRecall/LlmTotal stages live in a
+    // different process). Single-use, like NoteDismissedAlert/TryConsumeDismissedAlert below: a live
+    // session's conversation can also receive a schedule-fired or agent-initiated reply that never
+    // went through a transcript dispatch, so a stamp left over from an earlier real turn must not be
+    // readable by that later, unrelated reply — it would report an invented, stale round trip.
+    public void MarkDispatched(long timestamp) => Interlocked.Exchange(ref _dispatchedAt, timestamp);
+
+    public long? TryConsumeDispatchedAt()
+    {
+        var stamp = Interlocked.Exchange(ref _dispatchedAt, DispatchNotMarked);
+        return stamp == DispatchNotMarked ? null : stamp;
+    }
+
     // Callers must ResetTurn before the reply path can SignalTurnSpoken/SignalTurnSilent for
     // the new turn; otherwise a signal lands on the discarded TCS and the awaiter blocks forever.
     public void ResetTurn()
     {
-        Interlocked.Exchange(ref _preambleClaimed, 0);
+        // All under _turnGate, which BeginReplySegment also takes: registering a segment and
+        // starting a turn must not interleave, or a segment lands on the new turn's counter while
+        // its callbacks still carry the old epoch and are rejected — leaving the new turn
+        // permanently outstanding.
         lock (_turnGate)
         {
+            Interlocked.Exchange(ref _preambleClaimed, 0);
+            Interlocked.Exchange(ref _replySegmentsStarted, 0);
+            Interlocked.Exchange(ref _replySegmentsOutstanding, 0);
+            Interlocked.Exchange(ref _replyStreamComplete, 0);
+            Interlocked.Exchange(ref _replyAudioPlayed, 0);
+            Interlocked.Exchange(ref _dispatchedAt, DispatchNotMarked);
+            Interlocked.Increment(ref _turnEpoch);
             _turn = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
+
+    // The reply is streamed as several sentence jobs, so "the answer finished" is no longer "a job
+    // drained" — it is "every started segment drained AND the agent's stream ended". Signalling on
+    // the first drain instead would end FollowUpConversation, which chimes and reopens the mic while
+    // the remaining sentences are still being spoken.
+    public int ReplySegmentsStarted => Volatile.Read(ref _replySegmentsStarted);
+
+    // Playback callbacks outlive the turn that queued them (a preempted or slow job can drain after
+    // FollowUpConversation has moved on), and this handshake is now counter-based rather than the
+    // old idempotent "set the TCS" — so a stale decrement would drive the NEXT turn's outstanding
+    // count negative and it could then never reach zero, wedging the mic until ReplyTimeoutMs.
+    // Callbacks carry the epoch they were queued under and are ignored once it moves.
+    public long CurrentTurnEpoch => Interlocked.Read(ref _turnEpoch);
+
+    // Returns the epoch the segment was registered under, so its callbacks release the same turn
+    // that counted it. Reading CurrentTurnEpoch separately leaves a window for ResetTurn to land in
+    // between, which registers on one turn and releases against another.
+    public long BeginReplySegment()
+    {
+        lock (_turnGate)
+        {
+            Interlocked.Increment(ref _replySegmentsStarted);
+            Interlocked.Increment(ref _replySegmentsOutstanding);
+            return Interlocked.Read(ref _turnEpoch);
+        }
+    }
+
+    public void CompleteReplySegment(long epoch)
+    {
+        // Epoch check and decrement under the gate ResetTurn takes: checked then decremented
+        // without it, a reset landing between the two puts the stale decrement on the NEW turn's
+        // counter, which then can never reach zero. SettleIfComplete stays outside — after a reset
+        // it reads the zeroed flags and no-ops, and it re-enters _turnGate to signal.
+        lock (_turnGate)
+        {
+            if (epoch != CurrentTurnEpoch)
+            {
+                return;
+            }
+            Interlocked.Exchange(ref _replyAudioPlayed, 1);
+            Interlocked.Decrement(ref _replySegmentsOutstanding);
+        }
+        SettleIfComplete();
+    }
+
+    // A segment that never plays (synthesis threw, or the queue refused it) must NOT settle the turn
+    // on its own: sentences behind it may still be queued, and settling here would end
+    // FollowUpConversation, whose chime is a High-priority job — it would preempt the sentence
+    // currently playing and the rest would then be spoken into an open capture.
+    public void FailReplySegment(long epoch)
+    {
+        // Same gate discipline as CompleteReplySegment, for the same reason.
+        lock (_turnGate)
+        {
+            if (epoch != CurrentTurnEpoch)
+            {
+                return;
+            }
+            Interlocked.Decrement(ref _replySegmentsOutstanding);
+        }
+        SettleIfComplete();
+    }
+
+    public void MarkReplyStreamComplete()
+    {
+        Interlocked.Exchange(ref _replyStreamComplete, 1);
+        SettleIfComplete();
+    }
+
+    // The turn is over only once the agent has stopped sending AND every segment it produced has
+    // finished. Spoken when any segment reached the satellite — half an answer still played, and the
+    // user is owed the follow-up window; Silent when every one of them failed. An empty answer starts
+    // no segments and is left for the caller to settle explicitly.
+    private void SettleIfComplete()
+    {
+        if (Volatile.Read(ref _replyStreamComplete) != 1
+            || Volatile.Read(ref _replySegmentsOutstanding) != 0
+            || ReplySegmentsStarted == 0)
+        {
+            return;
+        }
+
+        if (Volatile.Read(ref _replyAudioPlayed) == 1)
+        {
+            SignalTurnSpoken();
+        }
+        else
+        {
+            SignalTurnSilent();
         }
     }
 
@@ -209,7 +358,13 @@ public sealed class SatelliteSession
                 // High request; a second High stacking in the gap must still play, not be preempted.
                 preemptOnStart = _preemptPendingSeq >= 0 && seq <= _preemptPendingSeq
                     && job.Priority != AnnouncePriority.High;
-                _preemptPendingSeq = -1;
+                // Cleared only once the queue has drained PAST the mark, so every job that was
+                // already queued when the High job arrived is preempted — not just the first one
+                // dequeued after it.
+                if (seq > _preemptPendingSeq)
+                {
+                    _preemptPendingSeq = -1;
+                }
             }
             if (preemptOnStart)
             {
@@ -222,6 +377,13 @@ public sealed class SatelliteSession
             var totalAudio = TimeSpan.Zero;
             try
             {
+                // A job marked preempt-on-start must not play a single chunk, and that cannot be left
+                // to the audio source: WithCancellation only HANDS the token to the enumerable, so a
+                // source that does not observe it (a buffered or synthetic stream) would drain
+                // normally and the alarm would still wait behind it. Throwing here makes the decision
+                // the loop's, and lands it on the OnPreempted path below.
+                jobCts.Token.ThrowIfCancellationRequested();
+
                 // OnStarted side effects (e.g. a metrics publish) must neither abort this job's
                 // playback nor tear down the loop, so swallow their failures here. Keeping it inside
                 // the try also guarantees the finally cleanup runs no matter what.
@@ -239,6 +401,7 @@ public sealed class SatelliteSession
                 var synthesisStart = time.GetTimestamp();
                 await foreach (var chunk in job.Audio.WithCancellation(jobCts.Token))
                 {
+                    FirstAudioTiming? firstAudio = null;
                     if (chunks == 0)
                     {
                         firstChunkTimestamp = time.GetTimestamp();
@@ -249,25 +412,39 @@ public sealed class SatelliteSession
                         if (job.OnFirstAudio is not null)
                         {
                             var turnStart = Interlocked.Read(ref _turnStartedAt);
-                            var timing = new FirstAudioTiming(
+                            var speechEnd = Interlocked.Read(ref _speechEndedAt);
+                            firstAudio = new FirstAudioTiming(
                                 time.GetElapsedTime(synthesisStart, firstChunkTimestamp),
                                 turnStart == TurnNotStarted
                                     ? null
-                                    : time.GetElapsedTime(turnStart, firstChunkTimestamp));
-                            // A failing metrics publish must neither abort playback nor tear down the loop.
-                            try
-                            {
-                                await job.OnFirstAudio(timing);
-                            }
-                            catch (Exception ex)
-                            {
-                                logger?.LogWarning(ex, "Playback OnFirstAudio callback failed for {Label}", job.Label);
-                            }
+                                    : time.GetElapsedTime(turnStart, firstChunkTimestamp),
+                                speechEnd == SpeechEndNotMarked
+                                    ? null
+                                    : time.GetElapsedTime(speechEnd, firstChunkTimestamp),
+                                job.EnqueuedAt == 0
+                                    ? null
+                                    : time.GetElapsedTime(job.EnqueuedAt, synthesisStart));
                         }
                     }
                     totalAudio += DurationOf(chunk);
                     chunks++;
                     await writer(chunk, jobCts.Token);
+                    // Deliberately after the write: OnFirstAudio carries several awaited metric
+                    // publishes, and running them first would delay the first audio byte reaching the
+                    // satellite by however long the metrics backbone takes — the observer changing what
+                    // it observes. Every timestamp above is already captured, so accuracy is unaffected.
+                    // A failing metrics publish must neither abort playback nor tear down the loop.
+                    if (firstAudio is { } timing)
+                    {
+                        try
+                        {
+                            await job.OnFirstAudio!(timing);
+                        }
+                        catch (Exception ex)
+                        {
+                            logger?.LogWarning(ex, "Playback OnFirstAudio callback failed for {Label}", job.Label);
+                        }
+                    }
                 }
                 logger?.LogInformation("Playback job {Label} drained {Chunks} chunk(s)", job.Label, chunks);
                 drained = true;

@@ -11,6 +11,9 @@ public record SubAgentDefinition
     public required string Model { get; init; }
     public required string[] McpServerEndpoints { get; init; }
     public string? CustomInstructions { get; init; }
+
+    // Absolute reply language. Null leaves the subagent free to follow the conversation.
+    public string? Language { get; init; }
     public string[] EnabledFeatures { get; init; } = [];
     public int MaxExecutionSeconds { get; init; } = 120;
     public int? MaxContextTokens { get; init; }

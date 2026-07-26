@@ -96,7 +96,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                     ToolName = toolName,
                     DurationMs = sw.ElapsedMilliseconds,
                     Success = !isError,
-                    Error = errorMessage
+                    Error = errorMessage,
+                    ConversationId = _conversationId
                 }, cancellationToken);
                 try
                 {
@@ -124,7 +125,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                     ToolName = toolName,
                     DurationMs = sw.ElapsedMilliseconds,
                     Success = false,
-                    Error = ex.Message
+                    Error = ex.Message,
+                    ConversationId = _conversationId
                 }, cancellationToken);
                 try
                 {

@@ -12,6 +12,98 @@ public class SatelliteSessionPlaybackTests
         new("kitchen-01", new SatelliteConfig { Identity = "household", Room = "Kitchen" });
 
     [Fact]
+    public async Task EnqueuePlayback_High_PreemptsSegmentsAlreadyQueuedBehindTheCurrentOne()
+    {
+        // A reply is several sentence jobs now, so cancelling only _currentPlaybackCts left an alarm
+        // queued behind the REST of the answer: it cut sentence 1 and was then heard after sentences
+        // 2..N had played in full. Every job queued when the High job arrives must be preempted.
+        var session = MakeSession();
+        var played = new List<string>();
+        var preempted = new List<string>();
+        var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async IAsyncEnumerable<AudioChunk> gated(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token = default)
+        {
+            yield return new AudioChunk
+            { Data = System.Text.Encoding.UTF8.GetBytes("s1"), Format = AudioFormat.WyomingStandard };
+            firstChunkWritten.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+            yield break;
+        }
+
+        var segment1 = new PlaybackJob(
+            Label: "reply-1",
+            Priority: AnnouncePriority.Normal,
+            Audio: gated(),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: l => { lock (preempted) { preempted.Add(l); } return Task.CompletedTask; });
+        var segment2 = segment1 with { Label = "reply-2", Audio = GenerateAudio("s2", count: 1) };
+        var segment3 = segment1 with { Label = "reply-3", Audio = GenerateAudio("s3", count: 1) };
+        var alarm = segment1 with
+        {
+            Label = "alarm",
+            Priority = AnnouncePriority.High,
+            Audio = GenerateAudio("alarm", count: 1)
+        };
+
+        var pumpTask = session.RunPlaybackLoopAsync(
+            async (chunk, _) =>
+            {
+                lock (played)
+                { played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span)); }
+                await Task.Yield();
+            },
+            CancellationToken.None);
+
+        await session.EnqueuePlaybackAsync(segment1, queueMaxDepth: 8);
+        await session.EnqueuePlaybackAsync(segment2, queueMaxDepth: 8);
+        await session.EnqueuePlaybackAsync(segment3, queueMaxDepth: 8);
+        await firstChunkWritten.Task;
+
+        await session.EnqueuePlaybackAsync(alarm, queueMaxDepth: 8);
+        session.CompletePlayback();
+        await pumpTask;
+
+        // The alarm is heard next, not after the rest of the answer.
+        played.ShouldBe(["s1", "alarm"]);
+        preempted.ShouldBe(["reply-1", "reply-2", "reply-3"]);
+    }
+
+    [Fact]
+    public async Task EnqueuePlayback_SecondHighStackedBehindAHigh_StillPlays()
+    {
+        // The preempt mark must not swallow a second alarm that stacks in the gap — the High
+        // exemption in the loop is what keeps insistent announcements ringing.
+        var session = MakeSession();
+        var played = new List<string>();
+
+        var first = new PlaybackJob(
+            Label: "alarm-1",
+            Priority: AnnouncePriority.High,
+            Audio: GenerateAudio("alarm-1", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask);
+        var second = first with { Label = "alarm-2", Audio = GenerateAudio("alarm-2", count: 1) };
+
+        var pumpTask = session.RunPlaybackLoopAsync(
+            async (chunk, _) =>
+            {
+                lock (played)
+                { played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span)); }
+                await Task.Yield();
+            },
+            CancellationToken.None);
+
+        await session.EnqueuePlaybackAsync(first, queueMaxDepth: 8);
+        await session.EnqueuePlaybackAsync(second, queueMaxDepth: 8);
+        session.CompletePlayback();
+        await pumpTask;
+
+        played.ShouldBe(["alarm-1", "alarm-2"]);
+    }
+
+    [Fact]
     public async Task EnqueuePlayback_Normal_RunsAfterCurrent()
     {
         var session = MakeSession();
@@ -518,6 +610,144 @@ public class SatelliteSessionPlaybackTests
         var accepted = await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
 
         accepted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RunPlaybackLoop_FirstChunk_PublishesSpeechEndAndQueueWaitTiming()
+    {
+        var session = MakeSession();
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        session.MarkTurnStart(time.GetTimestamp());
+        time.Advance(TimeSpan.FromSeconds(3));            // the user talking
+        session.MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 0, time);
+        time.Advance(TimeSpan.FromSeconds(2));            // verify + STT + agent
+        var enqueuedAt = time.GetTimestamp();
+        time.Advance(TimeSpan.FromMilliseconds(400));     // the reply waits behind the preamble
+
+        // Synthesis takes 300 ms to produce its first chunk; 16000 bytes = 500 ms of audio.
+        async IAsyncEnumerable<AudioChunk> audio()
+        {
+            time.Advance(TimeSpan.FromMilliseconds(300));
+            yield return new AudioChunk { Data = new byte[16000], Format = AudioFormat.WyomingStandard };
+            await Task.CompletedTask;
+        }
+
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: audio(),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; },
+            EnqueuedAt: enqueuedAt);
+
+        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+
+        var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        // Speech end -> first audio excludes the 3 s the user spent talking: 2000 + 400 + 300.
+        timing.SinceSpeechEnd.ShouldBe(TimeSpan.FromMilliseconds(2700));
+        // Queue wait ends at synthesis start, so it is the 400 ms behind the preamble — NOT the
+        // 300 ms of synthesis, which SinceSynthesisStart already owns.
+        timing.QueueWait.ShouldBe(TimeSpan.FromMilliseconds(400));
+        timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
+
+        session.CompletePlayback();
+        await Task.Delay(80);                            // let the loop reach the playback-drain wait
+        time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RunPlaybackLoop_FirstChunk_WritesTheAudioBeforeInvokingOnFirstAudio()
+    {
+        // Four awaited metric publishes now hang off OnFirstAudio, so invoking it before the first
+        // writer call delays the first audio byte reaching the satellite by however long Redis takes:
+        // the observer changing what it observes. Every timestamp the callback reports is captured
+        // before the write, so ordering the write first costs no accuracy at all.
+        var session = MakeSession();
+        var order = new List<string>();
+
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("hi", count: 2),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: _ => { order.Add("metrics"); return Task.CompletedTask; });
+
+        var pump = session.RunPlaybackLoopAsync(
+            (_, _) => { order.Add("write"); return Task.CompletedTask; }, CancellationToken.None);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        order.ShouldBe(["write", "metrics", "write"]);
+    }
+
+    [Fact]
+    public async Task RunPlaybackLoop_FirstChunk_SpeechEndAnchorRewindsTheEndpointTail()
+    {
+        // The caller can only see the capture CLOSE, which SilenceGate reaches a whole
+        // trailingSilence run after the user stopped talking (2000 ms in production). The tail is
+        // machine time the user waits through, so it belongs inside this span: without the rewind
+        // SpeechEndToFirstAudioMs omits it and EndpointTailMs sits beside the span instead of nested
+        // inside it, which is ~40% of the wait at production settings.
+        var session = MakeSession();
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        time.Advance(TimeSpan.FromSeconds(3));            // the user talking
+        time.Advance(TimeSpan.FromMilliseconds(2000));    // the endpointing tail the gate waits out
+        session.MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 2000, time);
+        time.Advance(TimeSpan.FromMilliseconds(1000));    // verify + STT + agent
+
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("hi", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
+
+        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        session.CompletePlayback();
+
+        var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        timing.SinceSpeechEnd.ShouldBe(TimeSpan.FromMilliseconds(3000)); // 2000 tail + 1000 machine
+
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RunPlaybackLoop_FirstChunk_NoSpeechEndOrEnqueueStamp_TimingsAreNull()
+    {
+        var session = MakeSession();
+        var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // A job with no preceding capture (chime, announce) must report nulls rather than a garbage
+        // value, so the hub simply publishes nothing for those spans.
+        var job = new PlaybackJob(
+            Label: "chime:kitchen-01",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("hi", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
+
+        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        session.CompletePlayback();
+
+        var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        timing.SinceSpeechEnd.ShouldBeNull();
+        timing.QueueWait.ShouldBeNull();
+
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
     private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)

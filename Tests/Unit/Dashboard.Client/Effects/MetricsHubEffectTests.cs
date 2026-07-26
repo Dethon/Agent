@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Dashboard.Client.Effects;
 using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
@@ -151,6 +152,21 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
     }
 
+    [Fact]
+    public async Task OnVoice_RequestsBreakdownUsingStoreAgg()
+    {
+        // Regression guard for the P95-pill-but-Avg-chart bug: a live voice event must refetch
+        // the breakdown using whatever aggregation the user picked, not silently fall back to Avg.
+        _voiceStore.SetAgg(LatencyMetric.P95);
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+        await _effect.StartAsync();
+
+        await _hub.FireVoice(new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
+
+        _handler.LastRequestUri.ShouldNotBeNull();
+        _handler.LastRequestUri!.ShouldContain("agg=P95");
+    }
+
     public static TheoryData<string, Func<IDisposable>, Action<object, DateOnly, DateOnly>, Func<object, DateOnly>, Func<object, DateOnly>> StoreFactories =>
         new()
         {
@@ -179,6 +195,34 @@ public class MetricsHubEffectTests : IAsyncDisposable
 
         getFrom(store).ShouldBe(from);
         getTo(store).ShouldBe(to);
+    }
+
+    [Fact]
+    public void VoiceStore_SetAgg_UpdatesState()
+    {
+        using var store = new VoiceStore();
+
+        store.SetAgg(LatencyMetric.P95);
+
+        store.State.Agg.ShouldBe(LatencyMetric.P95);
+    }
+
+    [Fact]
+    public async Task LoadAsync_RequestsVoiceBreakdownUsingStoreAgg()
+    {
+        // DataLoadEffect is a third, independent call site for GetVoiceGroupedAsync (the page-load
+        // path, distinct from MetricsHubEffect's live-refresh path) that can silently omit `agg`
+        // and fall back to Avg. No response staging is needed: we only assert on the outbound
+        // request, and DataLoadEffect swallows the resulting 404s from the unstaffed FakeApiHandler.
+        _voiceStore.SetAgg(LatencyMetric.P95);
+        var http = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
+        var dataLoadEffect = new DataLoadEffect(
+            new MetricsApiService(http), _metricsStore, _healthStore, _tokensStore, _toolsStore,
+            _errorsStore, _schedulesStore, _connectionStore, _memoryStore, _latencyStore, _voiceStore);
+
+        await dataLoadEffect.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 24));
+
+        _handler.Requests.ShouldContain(u => u != null && u.Contains("voice/by") && u.Contains("agg=P95"));
     }
 }
 
@@ -310,6 +354,12 @@ public sealed class FakeApiHandler : HttpMessageHandler
 {
     private readonly Queue<(object Data, TimeSpan Delay)> _responses = new();
 
+    public string? LastRequestUri { get; private set; }
+
+    // Concurrent bag, not a List<T>: DataLoadEffect fires ~19 requests via Task.WhenAll, so
+    // multiple SendAsync calls can race on this collection.
+    public ConcurrentBag<string?> Requests { get; } = [];
+
     public void EnqueueResponse<T>(T data, TimeSpan delay)
     {
         _responses.Enqueue((data!, delay));
@@ -318,6 +368,9 @@ public sealed class FakeApiHandler : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        LastRequestUri = request.RequestUri?.ToString();
+        Requests.Add(LastRequestUri);
+
         if (_responses.TryDequeue(out var entry))
         {
             var json = System.Text.Json.JsonSerializer.Serialize(entry.Data);

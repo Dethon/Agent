@@ -6,6 +6,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.Tts;
 using McpChannelVoice.Settings;
 using ModelContextProtocol.Server;
 
@@ -39,12 +40,17 @@ public sealed class SendReplyTool
         var tts = services.GetRequiredService<ITextToSpeech>();
         var settings = services.GetRequiredService<VoiceSettings>();
         var metrics = services.GetRequiredService<IMetricsPublisher>();
+        var logger = services.GetRequiredService<ILogger<SendReplyTool>>();
 
         var satelliteId = manager.ResolveSatelliteId(p.ConversationId);
         var session = satelliteId is null ? null : sessions.Get(satelliteId);
         if (session is not null)
         {
-            return await HandleUtteranceReplyAsync(session, p, accumulator, tts, settings, metrics);
+            // Only the live-session (utterance reply) path stamps enqueue timing; the scheduled
+            // delivery path below goes through AnnouncementService instead, so TimeProvider is
+            // resolved here rather than unconditionally at the top of McpRun.
+            var time = services.GetRequiredService<TimeProvider>();
+            return await HandleUtteranceReplyAsync(session, p, accumulator, tts, settings, metrics, time, logger);
         }
 
         var delivery = services.GetRequiredService<VoiceDeliveryRegistry>();
@@ -52,7 +58,6 @@ public sealed class SendReplyTool
         if (target is not null)
         {
             var announcer = services.GetRequiredService<AnnouncementService>();
-            var logger = services.GetRequiredService<ILogger<SendReplyTool>>();
             return await HandleScheduledDeliveryAsync(p, target, delivery, accumulator, announcer, logger);
         }
 
@@ -65,7 +70,9 @@ public sealed class SendReplyTool
         ReplyTextAccumulator accumulator,
         ITextToSpeech tts,
         VoiceSettings settings,
-        IMetricsPublisher metrics)
+        IMetricsPublisher metrics,
+        TimeProvider time,
+        ILogger<SendReplyTool> logger)
     {
         switch (p.ContentType)
         {
@@ -82,7 +89,7 @@ public sealed class SendReplyTool
             case ReplyContentType.ToolCall:
                 if (session.TryClaimPreamble())
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, isReply: false);
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger, isReply: false);
                 }
                 return "ok";
 
@@ -96,7 +103,7 @@ public sealed class SendReplyTool
                 accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
                 if (p.IsComplete)
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 }
                 return "ok";
 
@@ -104,10 +111,21 @@ public sealed class SendReplyTool
             // messageId). Text chunks are never flagged complete, so this is where we
             // speak the accumulated reply.
             case ReplyContentType.StreamComplete:
-                var spoke = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
-                if (!spoke)
+                // Speak whatever tail is left after the streamed segments, then close the handshake.
+                // ReplySegmentsStarted is the authority on whether the turn produced audio at all:
+                // streaming may already have spoken everything, leaving this flush empty.
+                _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                if (session.ReplySegmentsStarted == 0)
                 {
+                    // Nothing reached SpeakAsync, so nothing consumed the dispatch stamp. Left
+                    // behind it outlives the turn, and a schedule firing into this same live session
+                    // would consume it and report the old turn's age as its own round trip.
+                    _ = session.TryConsumeDispatchedAt();
                     session.SignalTurnSilent();
+                }
+                else
+                {
+                    session.MarkReplyStreamComplete();
                 }
                 return "ok";
 
@@ -116,8 +134,10 @@ public sealed class SendReplyTool
                 // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
                 if (p.IsComplete)
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
+                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                    return "ok";
                 }
+                await SpeakReadySegmentsAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 return "ok";
         }
     }
@@ -190,6 +210,8 @@ public sealed class SendReplyTool
         ITextToSpeech tts,
         VoiceSettings settings,
         IMetricsPublisher metrics,
+        TimeProvider time,
+        ILogger<SendReplyTool> logger,
         bool isReply = true)
     {
         var text = accumulator.Flush(conversationId);
@@ -197,8 +219,53 @@ public sealed class SendReplyTool
         {
             return false;
         }
-        await SpeakAsync(session, text, conversationId, tts, settings, metrics, isReply, default);
+        await SpeakAsync(session, text, conversationId, tts, settings, metrics, time, logger, isReply, default);
         return true;
+    }
+
+    // Drains every complete sentence run the buffer now holds into the playback queue, so the user
+    // hears the answer's opening while the agent is still generating its end. The first run clears a
+    // deliberately low bar (it is the wait everyone feels); later ones need more text, because each
+    // is its own TTS request and the audio already playing is covering them.
+    private static async Task SpeakReadySegmentsAsync(
+        SatelliteSession session,
+        ReplyTextAccumulator accumulator,
+        string conversationId,
+        ITextToSpeech tts,
+        VoiceSettings settings,
+        IMetricsPublisher metrics,
+        TimeProvider time,
+        ILogger<SendReplyTool> logger)
+    {
+        var streaming = settings.Tts.Streaming;
+        if (!streaming.Enabled)
+        {
+            return;
+        }
+
+        while (true)
+        {
+            // Checked BEFORE taking the text, not after: TryTakeSpeakable removes the run from the
+            // buffer, so a refused enqueue used to discard it outright — the user heard an answer
+            // with a hole in the middle while the turn still settled Spoken. Leaving it buffered
+            // means the next chunk, or the StreamComplete flush, still speaks it.
+            if (session.PlaybackQueueDepth >= streaming.MaxQueuedSegments)
+            {
+                return;
+            }
+
+            var minChars = session.ReplySegmentsStarted == 0
+                ? streaming.FirstSegmentMinChars
+                : streaming.MinChars;
+            if (!accumulator.TryTakeSpeakable(conversationId, minChars, out var segment))
+            {
+                return;
+            }
+
+            await SpeakAsync(
+                session, segment, conversationId, tts, settings, metrics, time, logger,
+                isReply: true, default);
+        }
     }
 
     private static async Task SpeakAsync(
@@ -208,19 +275,79 @@ public sealed class SendReplyTool
         ITextToSpeech tts,
         VoiceSettings settings,
         IMetricsPublisher metrics,
+        TimeProvider time,
+        ILogger<SendReplyTool> logger,
         bool isReply,
         CancellationToken ct)
     {
         var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
         var options = new SynthesisOptions { Voice = voice };
 
-        // Synthesis is lazy and runs inside the playback loop, so latency must be measured there.
-        // The loop times synthesis -> first audio chunk (TtsLatencyMs) and turn-open -> first audio
-        // (WakeToFirstAudioMs); emitting from here would only ever record the ~0 ms enqueue.
+        // Read before BeginReplySegment below: only the turn's FIRST reply segment may publish the
+        // time-to-first-audio spans, or a three-sentence answer reports three samples of a metric
+        // that means "how long until the user heard anything" and the decomposition stops summing.
+        var isFirstReplySegment = isReply && session.ReplySegmentsStarted == 0;
+
+        // Assigned by BeginReplySegment below, before the enqueue and therefore before any callback
+        // can run. Taking it from registration rather than reading CurrentTurnEpoch separately is
+        // what keeps the count and its release on the same turn.
+        var segmentEpoch = 0L;
+
+        // Reply text arriving here closes the hub-visible agent round trip: dispatch -> answer.
+        // Compared against the agent's own MemoryRecall + LlmTotal, the difference is queue time.
+        // TryConsumeDispatchedAt is single-use and consumed here regardless of whether the publish
+        // below succeeds, so a metrics blip can never leave the stamp behind for some later, unrelated
+        // reply on this session (e.g. a schedule firing into a satellite that had a real turn earlier)
+        // to pick up and report as its own invented round trip. The consumed value doubles as the
+        // proof that this reply answers a transcript this hub dispatched, which the turn-anchored
+        // spans below need — see the OnFirstAudio gate.
+        var dispatchedAtStamp = isReply ? session.TryConsumeDispatchedAt() : null;
+
+        // Taken before the publish below and used as its end bound, so the round trip ends exactly
+        // where the queue wait begins: the publish is itself an awaited Redis round trip, and stamping
+        // afterwards left its cost in no span at all on every turn.
+        var enqueuedAt = time.GetTimestamp();
+
+        if (dispatchedAtStamp is { } dispatchedAt)
+        {
+            try
+            {
+                await metrics.PublishAsync(new VoiceEvent
+                {
+                    Metric = VoiceMetric.AgentRoundTripMs,
+                    SatelliteId = session.SatelliteId,
+                    Room = session.Config.Room,
+                    Identity = session.Config.Identity,
+                    DurationMs = (long)time.GetElapsedTime(dispatchedAt, enqueuedAt).TotalMilliseconds,
+                    ConversationId = conversationId
+                }, ct);
+            }
+            catch (Exception ex)
+            {
+                // A metrics-publisher blip must not fault this call before the reply job below is
+                // even built — that would leave the user's answer unspoken and the turn handshake
+                // unsettled until the ~120s ReplyTimeoutMs.
+                logger.LogWarning(ex, "Failed to publish AgentRoundTripMs metric");
+            }
+        }
+
+        // A reply segment's synthesis starts NOW rather than when the loop reaches it: the loop is
+        // sequential and will not touch this job's audio until the previous segment has finished its
+        // real-time drain, which would put a full TTS round trip into every sentence seam. Announce,
+        // chime and approval jobs are left lazy — they have no seam to hide.
+        var synthesis = tts.SynthesizeAsync(text, options, ct);
+        var prefetch = isReply && settings.Tts.Streaming.Prefetch
+            ? new PrefetchedAudio(synthesis, settings.Tts.Streaming.PrefetchBufferChunks)
+            : null;
+
+        // Latency is still measured in the loop, and still means the same thing: for the first reply
+        // segment the loop pulls immediately, so it observes the real synthesis time. Later segments
+        // find their audio already buffered — but they do not publish TtsLatencyMs, so the
+        // decomposition is unaffected.
         var job = new PlaybackJob(
             Label: $"{(isReply ? "reply" : "preamble")}:{session.SatelliteId}",
             Priority: AnnouncePriority.Normal,
-            Audio: tts.SynthesizeAsync(text, options, ct),
+            Audio: prefetch?.Chunks ?? synthesis,
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: async _ =>
             {
@@ -228,27 +355,86 @@ public sealed class SendReplyTool
                 {
                     return;
                 }
-                await metrics.PublishAsync(new VoiceEvent
+
+                // EVERY preempted segment must release its slot — a preempted job never reaches
+                // OnDrained, so without this the turn stays outstanding until the ~120s
+                // ReplyTimeoutMs. Settles Spoken when earlier audio reached the satellite, which is
+                // what an alarm cutting into a reply looks like.
+                //
+                // Released BEFORE the publish, and the publish is guarded: the playback loop swallows
+                // a throwing OnPreempted, so a metrics blip here used to leak the slot for good and
+                // wedge the mic for the full timeout.
+                session.FailReplySegment(segmentEpoch);
+
+                // A job the loop cancels BEFORE its first pull never touches its audio, so the
+                // consumer-side release (the reader's teardown) never runs — an alarm preempting the
+                // queued tail of a streamed reply would leave one pump per sentence parked on a full
+                // buffer holding an open TTS response. Disposal is safe after partial playback too:
+                // cancelling an already-cancelled pump is a no-op.
+                if (prefetch is not null)
                 {
-                    Metric = VoiceMetric.AnnouncePreemptedReply,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
-                    ConversationId = conversationId
-                }, ct);
+                    await prefetch.DisposeAsync();
+                }
+
+                // One sample per turn, like the other reply-anchored metrics.
+                if (!isFirstReplySegment)
+                {
+                    return;
+                }
+
+                try
+                {
+                    await metrics.PublishAsync(new VoiceEvent
+                    {
+                        Metric = VoiceMetric.AnnouncePreemptedReply,
+                        SatelliteId = session.SatelliteId,
+                        Room = session.Config.Room,
+                        Identity = session.Config.Identity,
+                        ConversationId = conversationId
+                    }, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to publish AnnouncePreemptedReply metric");
+                }
             },
-            OnDrained: () => { if (isReply) { session.SignalTurnSpoken(); } return Task.CompletedTask; },
+            // The reply is several sentence jobs now, so a drain resolves this SEGMENT; the turn only
+            // settles once every started segment has drained and the agent's stream has ended.
+            // Signalling here directly would end the turn on sentence one and reopen the mic over the
+            // rest of the answer.
+            OnDrained: () => { if (isReply) { session.CompleteReplySegment(segmentEpoch); } return Task.CompletedTask; },
             // If synthesis/playback fails (e.g. a Wyoming TTS error event throws), resolve the turn
             // as silent so FollowUpConversation ends and re-arms wake instead of blocking on the
             // handshake until the ~120s ReplyTimeoutMs. No audio actually played, hence Silent (not
             // Spoken). Mirrors the chime and approval jobs, which also settle their handshake on failure.
             // A failed preamble settles nothing: the answer still owes the handshake a signal.
-            OnFailed: _ => { if (isReply) { session.SignalTurnSilent(); } return Task.CompletedTask; },
-            // Reply-latency metrics stay anchored to the ANSWER, not the preamble cue, so
-            // WakeToFirstAudioMs keeps meaning the same thing before and after this change.
-            OnFirstAudio: async timing =>
+            OnFailed: async _ =>
             {
                 if (!isReply)
+                {
+                    return;
+                }
+                session.FailReplySegment(segmentEpoch);
+                // Defensive twin of the OnPreempted dispose above: every known failure reaches here
+                // after the reader's teardown has already released the pump, but a failed segment's
+                // synthesis must never be able to outlive its job.
+                if (prefetch is not null)
+                {
+                    await prefetch.DisposeAsync();
+                }
+            },
+            EnqueuedAt: enqueuedAt,
+            // Anchored to the turn's FIRST reply segment — never the preamble flush, which runs
+            // with isReply: false and publishes nothing. Under streaming that segment is the first
+            // flushable sentence the model produced: normally the answer's opening, but a model
+            // that narrates a complete sentence before its first tool call anchors here too. That
+            // is deliberate — these spans measure how long the user waited to hear a reply, and
+            // narration the user hears IS the reply starting; anchoring at the later answer would
+            // also leave the queue-wait and TTS spans measured against a different job than the
+            // turn spans, and the decomposition would stop summing.
+            OnFirstAudio: async timing =>
+            {
+                if (!isFirstReplySegment)
                 {
                     return;
                 }
@@ -263,6 +449,33 @@ public sealed class SendReplyTool
                     ConversationId = conversationId
                 }, ct);
 
+                // Anchored on this job alone (its own enqueue stamp), so it is valid for every reply
+                // regardless of what preceded it.
+                if (timing.QueueWait is { } queueWait)
+                {
+                    await metrics.PublishAsync(new VoiceEvent
+                    {
+                        Metric = VoiceMetric.ReplyQueueWaitMs,
+                        SatelliteId = session.SatelliteId,
+                        Room = session.Config.Room,
+                        Identity = session.Config.Identity,
+                        DurationMs = (long)queueWait.TotalMilliseconds,
+                        ConversationId = conversationId
+                    }, ct);
+                }
+
+                // The two below are anchored on the TURN (MarkTurnStart / MarkSpeechEnd), which is
+                // never invalidated, while the voice conversation mapping outlives the turn by
+                // ConversationLifetime. A schedule fire or an agent-initiated message delivered into a
+                // live session comes down this same path, so without a gate it reports the AGE of the
+                // last real turn as its own latency — one "recuérdame en dos minutos" publishes
+                // ~120000 ms and wrecks Avg/P95/Max on the headline metric. The consumed dispatch
+                // stamp is the proof that what is being answered is a transcript this hub dispatched.
+                if (dispatchedAtStamp is null)
+                {
+                    return;
+                }
+
                 if (timing.SinceTurnStart is { } turn)
                 {
                     await metrics.PublishAsync(new VoiceEvent
@@ -275,8 +488,47 @@ public sealed class SendReplyTool
                         ConversationId = conversationId
                     }, ct);
                 }
+
+                if (timing.SinceSpeechEnd is { } sinceSpeech)
+                {
+                    await metrics.PublishAsync(new VoiceEvent
+                    {
+                        Metric = VoiceMetric.SpeechEndToFirstAudioMs,
+                        SatelliteId = session.SatelliteId,
+                        Room = session.Config.Room,
+                        Identity = session.Config.Identity,
+                        DurationMs = (long)sinceSpeech.TotalMilliseconds,
+                        ConversationId = conversationId
+                    }, ct);
+                }
             });
 
-        await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
+        // Counted before the enqueue so the job cannot drain against a segment that was never
+        // registered. A refused enqueue (queue full, or the satellite disconnected and completed the
+        // writer) settles the segment immediately — otherwise the handshake would wait out the
+        // ~120s ReplyTimeoutMs for audio that will never play.
+        if (isReply)
+        {
+            segmentEpoch = session.BeginReplySegment();
+        }
+
+        // A reply's segments get their own allowance: sharing the announce depth meant one turn's
+        // answer competed with itself and lost sentences out of its middle.
+        var depth = isReply ? settings.Tts.Streaming.MaxQueuedSegments : settings.Announce.QueueMaxDepth;
+        var queued = await session.EnqueuePlaybackAsync(job, depth);
+        if (isReply && !queued)
+        {
+            logger.LogWarning(
+                "Reply segment for {Satellite} was refused by the playback queue (depth {Depth}); " +
+                "this part of the answer will not be spoken", session.SatelliteId, depth);
+            session.FailReplySegment(segmentEpoch);
+        }
+
+        // Nothing will ever enumerate a refused job, so disposal is the only thing that releases its
+        // in-flight synthesis.
+        if (prefetch is not null && !queued)
+        {
+            await prefetch.DisposeAsync();
+        }
     }
 }

@@ -43,8 +43,9 @@ public static class HomeAssistantPrompt
         ### Workflow
 
         1. Find the entity: `glob` under `/ha/entities/<class>` or
-           `/ha/areas/<room>`, or read the setup index. To list an entity's available
-           actions, `glob` `<entity-dir>/*.sh`.
+           `/ha/areas/<room>`, or read the setup index. Do NOT glob to discover actions:
+           the setup index lists them per class, and action files live in the entity
+           directory, so `glob` `/ha/entities/<class>/*.sh` returns nothing.
         2. Inspect when you need an attribute as input: `text_read`
            `/ha/.../state.json`.
         3. Learn an action's arguments: `exec` `<service>.sh --help`. The `.sh` files are
@@ -127,11 +128,18 @@ public static class HomeAssistantPrompt
           `exec music_assistant.play_media.sh --media_id "miles davis"` — add
           `--media_type artist|album|track|radio` to disambiguate. Free-text names resolve
           through the streaming providers.
-        - Playlists ("my playlist", "songs I like", any saved list): NEVER guess the name —
-          playlist names only resolve against the user's MA library. List it first:
+        - Playlists ("my playlist", "songs I like", "música favorita", any saved list): NEVER guess
+          the name. Playlist titles only resolve against the user's MA library, and the words the
+          user used to describe the list are almost never its stored title — a request for
+          "música favorita" resolves to a title like "Liked Songs dethonv". The rule is mechanical,
+          not a judgement call about the phrasing: whenever you pass `--media_type playlist`, the
+          `--media_id` value MUST be a title you read from a `browse_media.sh` listing
+          in this same turn. List first:
           `exec browse_media.sh --media_content_id playlists --media_content_type music_assistant`
           then play the exact title it returned:
           `exec music_assistant.play_media.sh --media_id "<exact title>" --media_type playlist`.
+          Inventing or translating a title (e.g. "Mi música favorita") does not fail cleanly — it
+          comes back as a bare HA 500 that says nothing about what went wrong.
         - A 500 from `music_assistant.play_media.sh` means the item could not be resolved (the
           name isn't in the library) — NOT that MA is down. Browse the library and use an exact
           title instead of retrying name variants.

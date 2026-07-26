@@ -246,7 +246,16 @@ public sealed class WyomingSatelliteHost(
                     TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(settings)),
                     noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
             },
-            CloseCapture = session.CloseCapture,
+            CloseCapture = capture =>
+            {
+                session.CloseCapture();
+                // Stamped here rather than inside the session so it uses the host's TimeProvider —
+                // the same instance handed to RunPlaybackLoopAsync, which reads it back. The frozen
+                // endpointing tail rewinds the close to the instant the user actually stopped
+                // talking; read here, at the close, because it is the last point where the tail is
+                // known to be the one the gate ended on.
+                session.MarkSpeechEnd(time.GetTimestamp(), capture.Stats.TrailingSilenceMs, time);
+            },
             TranscribeAndDispatch = (capture, isFollowUp, token) =>
                 TranscribeAndDispatchAsync(session, capture, isFollowUp, token),
             EnqueueChime = token => EnqueueChimeAsync(session, token),
@@ -296,8 +305,12 @@ public sealed class WyomingSatelliteHost(
         // judging silence as an unknown voice, so the capture keeps running instead of being
         // rejected on a foregone conclusion. Once real speech (TV or otherwise) has latched, it
         // clears MinVerifySpeechMs on its own and this check still applies to it as before.
+        var sw = Stopwatch.StartNew();
         var verification = await speakerVerifier.VerifyAsync(
             capture.BufferedAudio, stats.SpeechMs, session.Config, ct, enforceMinSpeech: true);
+        sw.Stop();
+        await PublishVerifyLatencyAsync(
+            VoiceMetric.SpeakerVerifyEarlyMs, session, sw.ElapsedMilliseconds, verification.Similarity, "early");
         if (verification.Decision != SpeakerDecision.Rejected)
         {
             return false;
@@ -309,6 +322,27 @@ public sealed class WyomingSatelliteHost(
         await PublishUnknownSpeakerAsync(session, stats, verification.Similarity, "unknown_speaker_early");
         return true;
     }
+
+    // Verification runs before the STT stopwatch starts, so without this the ONNX embedding is pure
+    // invisible latency. Diagnostic only: routed through SafePublishAsync because EarlyRejectAsync
+    // is awaited from the conversation loop with no catch above it. The two passes report under
+    // DIFFERENT metrics — the final inline pass (SpeakerVerifyMs) is additive within the turn
+    // decomposition, while the early pass (SpeakerVerifyEarlyMs) runs concurrently with the user
+    // still speaking and overlaps the utterance, so averaging them together is meaningless. Outcome
+    // still carries "early"/"final" for readers that want it in one place.
+    private Task PublishVerifyLatencyAsync(
+        VoiceMetric metric, SatelliteSession session, long elapsedMs, double? similarity, string outcome) =>
+        SafePublishAsync(new VoiceEvent
+        {
+            Metric = metric,
+            SatelliteId = session.SatelliteId,
+            Room = session.Config.Room,
+            Identity = session.Config.Identity,
+            Outcome = outcome,
+            DurationMs = elapsedMs,
+            Similarity = similarity,
+            ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
+        });
 
     // Rejection telemetry is diagnostic, not part of the turn contract: this is awaited from the
     // conversation loop (EarlyRejectAsync has no catch above it), so a metrics-backbone outage must
@@ -339,6 +373,21 @@ public sealed class WyomingSatelliteHost(
     {
         try
         {
+            // The endpointing tail is audio-domain time (derived from PCM frame durations), so it is
+            // exact and immune to scheduling jitter. Published unconditionally — including on the
+            // paths that go on to drop the transcript — because tuning TrailingSilenceMs needs the
+            // rejected captures too.
+            await SafePublishAsync(new VoiceEvent
+            {
+                Metric = VoiceMetric.EndpointTailMs,
+                SatelliteId = session.SatelliteId,
+                Room = session.Config.Room,
+                Identity = session.Config.Identity,
+                DurationMs = capture.Stats.TrailingSilenceMs,
+                EndReason = capture.Stats.EndReason,
+                ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
+            });
+
             double? similarity = null;
             string? identifiedSpeaker = null;
             SpeakerVerification? verification = null;
@@ -348,9 +397,14 @@ public sealed class WyomingSatelliteHost(
                 // reopens the mic wake-free beside a talking TV, so a short TV burst must be
                 // verified and rejected rather than passed through. First-turn captures keep the
                 // skip so a genuinely brief opening command stays safe.
+                var verifySw = Stopwatch.StartNew();
                 verification = await speakerVerifier.VerifyAsync(
                     capture.BufferedAudio, capture.Stats.SpeechMs, session.Config, ct,
                     enforceMinSpeech: !isFollowUp);
+                verifySw.Stop();
+                await PublishVerifyLatencyAsync(
+                    VoiceMetric.SpeakerVerifyMs, session, verifySw.ElapsedMilliseconds,
+                    verification.Value.Similarity, "final");
                 if (verification.Value.Decision == SpeakerDecision.Rejected)
                 {
                     logger.LogInformation(
@@ -399,10 +453,17 @@ public sealed class WyomingSatelliteHost(
                 PublishVoiceMetric(VoiceMetric.FollowUpEngaged, session);
             }
 
+            // Taken BEFORE the dispatch: DispatchAsync does real work inside — GetOrCreateAsync is a
+            // full create_conversation MCP round trip on a conversation's first turn (the normal case
+            // for a one-shot command, given the 5-minute mapping expiry), plus the channel/message
+            // write and an awaited Redis publish. Stamped afterwards, all of that sat in no span at
+            // all; stamped here it lands inside AgentRoundTripMs, where it belongs.
+            var dispatchStartedAt = time.GetTimestamp();
             var dispatched = await dispatcher.DispatchAsync(
                 session, result, voiceSettings.AgentId, capture.Stats, similarity, identifiedSpeaker, ct);
             if (dispatched)
             {
+                session.MarkDispatched(dispatchStartedAt);
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
                 // where a wake event was not observed. The registry makes a second Acknowledge a no-op.
                 // Runs AFTER this dispatch, so its snooze context lands on the NEXT transcript.

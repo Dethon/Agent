@@ -13,18 +13,18 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | `Agent` | Composition root, DI, connects to channel and tool MCP servers |
 | `Domain` | Contracts, DTOs, business logic |
 | `Infrastructure` | External clients, agent implementations, push notifications |
-| `McpServer*` | MCP tool servers (Library, Vault, Sandbox, WebSearch, Idealista, HomeAssistant, Printer, Scheduling) |
+| `McpServer*` | MCP tool servers (Library, Vault, Sandbox, WebSearch, Idealista, HomeAssistant, Printer, Scheduling, Timers) |
 | `McpChannel*` | MCP channel servers — each bridges a transport to the agent |
 | `McpChannelSignalR` | WebChat/SignalR channel — hosts SignalR hub, streams, approvals, push notifications |
 | `McpChannelTelegram` | Telegram channel — multi-bot polling (one bot per agent), inline keyboard approvals |
 | `McpChannelServiceBus` | Azure Service Bus channel — queue processor, auto-approval |
-| `McpChannelVoice` | Voice channel — Wyoming hub that dials hardware satellites, Lemonade STT/TTS (OpenAI-compatible), follow-up windows, announcements; also exposes token-gated HTTP endpoints (`/api/voice/announce`, `/dismiss`, `/satellites`) that `McpServerTimers` calls |
+| `McpChannelVoice` | Voice channel — Wyoming hub that dials hardware satellites, speaker-verification gate + optional TSE cleanup pre-STT, Lemonade STT/TTS (OpenAI-compatible), follow-up windows, announcements; also exposes token-gated HTTP endpoints (`/api/voice/announce`, `/dismiss`, `/satellites`) that `McpServerTimers` calls |
 | `McpServerScheduling` | Scheduling server — dual-role: `filesystem://schedules` VFS + channel that fires due schedules as `channel/message` |
 | `McpServerPrinter` | Printer server — `filesystem://print-queue` VFS that submits copied/created files to a configured IPP/CUPS printer |
 | `McpServerTimers` | Timers server — `filesystem://timers` VFS for hub-local countdown timers; a pure tool server (mounted via `mcpServerEndpoints`, not a channel) whose fire loop rings, dismisses and resolves targets by calling the voice hub's HTTP endpoints |
 | `WebChat`/`.Client` | Blazor WebAssembly chat interface, Redux-like state (Stores + Effects + HubEventDispatcher) |
 | `Observability` | Metrics collector, REST API, SignalR hub — serves the Dashboard PWA |
-| `Dashboard.Client` | Blazor WebAssembly observability dashboard (token costs, tool analytics, errors, schedules, memory, health) |
+| `Dashboard.Client` | Blazor WebAssembly observability dashboard (token costs, tool analytics, errors, latency, voice, schedules, memory, health) |
 | `satellite` | `nabu-satellite` — standalone Rust crate (NOT in the .NET solution); see `satellite/CLAUDE.md` |
 | `Tests` | Unit, integration, and E2E tests |
 
@@ -50,10 +50,11 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | Filesystem (VFS) tools | `Domain/Tools/FileSystem/*.cs` (incl. `GlobBraceExpander.cs`, `GlobRegex.cs`) |
 | Filesystem contracts & DTOs | `Domain/Contracts/IFileSystem*.cs`, `Domain/Contracts/IVirtualFileSystemRegistry.cs`, `Domain/DTOs/FileSystemMount.cs`, `Domain/DTOs/FileSystem/*.cs` |
 | VFS registry & backends | `Infrastructure/Agents/VirtualFileSystemRegistry.cs`, `Infrastructure/Agents/Mcp/McpFileSystemBackend.cs` + `McpFileSystemDiscovery.cs`, `Infrastructure/Clients/LocalFileSystemClient.cs` |
-| Filesystem MCP resources | `McpServer{Vault,Library,Sandbox,HomeAssistant,Printer,Scheduling}/McpResources/FileSystemResource.cs` |
+| Filesystem MCP resources | `McpServer{Vault,Library,Sandbox,HomeAssistant,Printer,Scheduling,Timers}/McpResources/FileSystemResource.cs` |
 | Home Assistant VFS engine | `Domain/Tools/HomeAssistant/Vfs/*.cs` |
 | Scheduling | `McpServerScheduling/**/*.cs`, VFS engine `Domain/Tools/Scheduling/Vfs/*.cs`, `Domain/Prompts/SchedulingPrompt.cs`, `Domain/DTOs/Schedule.cs` |
 | Printing | `McpServerPrinter/**/*.cs`, engine `Domain/Tools/Printing/{,Vfs/}*.cs`, `Domain/Prompts/PrintingPrompt.cs`, contracts `Domain/Contracts/IPrinterClient.cs` + `IPrintSpool.cs`, DTOs `Domain/DTOs/Printing/*.cs`, IPP client `Infrastructure/Clients/Printer/*.cs`, spool `Infrastructure/Printing/PrintSpool.cs` |
+| Timers | `McpServerTimers/**/*.cs`, engine `Domain/Tools/Timers/Vfs/*.cs`, `Domain/Prompts/TimerPrompt.cs`, contracts `Domain/Contracts/{IInsistentAnnouncer,IAlertDismisser,ISatelliteCatalog}.cs` |
 | Web browsing | `Domain/Tools/Web/*.cs`, `Domain/Prompts/WebBrowsingPrompt.cs`, `Domain/Contracts/IWebBrowser.cs`, `Infrastructure/Clients/Browser/*.cs` |
 | Satellite (Rust) | `satellite/src/**/*.rs` — key files, invariants, build & WSL scripts in `satellite/CLAUDE.md` |
 | Tests | `Tests/{Unit,Integration}/**/*Tests.cs`, E2E `Tests/E2E/{Dashboard,WebChat}/*E2ETests.cs`, fixtures `Tests/E2E/Fixtures/*.cs` |
@@ -136,7 +137,7 @@ Caddy (port 443, Let's Encrypt TLS) is the entry point. It routes `/hubs/*` to t
 
 ### Accessing the Dashboard
 
-The observability dashboard is available at `https://assistants.herfluffness.com/dashboard/` (via Caddy) or `http://localhost:5003/dashboard/` (direct). It's a PWA that can be installed as a standalone app. The dashboard shows token costs, tool analytics, error rates, schedule history, memory analytics, and live service health. Data flows via Redis Pub/Sub: services emit metric events → the Observability collector aggregates them → the dashboard reads via REST API and receives live updates via SignalR.
+The observability dashboard is available at `https://assistants.herfluffness.com/dashboard/` (via Caddy) or `http://localhost:5003/dashboard/` (direct). It's a PWA that can be installed as a standalone app. The dashboard shows token costs, tool analytics, error rates, per-turn latency and voice-turn breakdowns (percentiles over the turn-decomposition spans), schedule history, memory analytics, and live service health. Data flows via Redis Pub/Sub: services emit metric events → the Observability collector aggregates them → the dashboard reads via REST API and receives live updates via SignalR.
 
 ### Accessing Home Assistant
 
@@ -148,14 +149,18 @@ Home Assistant runs at `http://<host>:8123` (port published on all interfaces so
 4. To control the Roborock S8: Settings → Devices & Services → Add Integration → **Roborock**, log in with the Roborock account; the vacuum appears as `vacuum.<name>` once the integration finishes.
 
 For voice alarms/reminders, the agent creates events on a dedicated `calendar.assistant_alarms`
-calendar that an HA automation bridges to the voice announce endpoint — see
-`docs/home-assistant-alarms.md` for the one-time `rest_command` + automation provisioning.
+calendar that an HA automation bridges to the voice announce endpoint. The `home_assistant_guide`
+prompt (`Domain/Prompts/HomeAssistantPrompt.cs`) teaches the LLM the calendar idiom; the one-time
+`rest_command` + automation provisioning lives in the HA instance itself (the old
+`docs/home-assistant-alarms.md` write-up was removed).
 
 The agent reaches HA inside the compose network at `http://homeassistant:8123` via the `McpServerHomeAssistant` MCP server.
 
 ### Observability Architecture
 
 Services publish `MetricEvent` DTOs via `IMetricsPublisher` → Redis Pub/Sub channel `metrics:events`. The `MetricsCollectorService` subscribes, aggregates into Redis (sorted sets for time-series, hashes for totals, TTL keys for health), and forwards live events to the SignalR hub (`/hubs/metrics`). `MetricsQueryService` provides grouped aggregation queries over the stored metrics (breakdowns by dimension/metric enums). The dashboard uses a hybrid approach: REST API for historical data on page load, SignalR for real-time updates. Dashboard components (`DynamicChart`, `PillSelector`) use `LocalStorageService` to persist UI state across sessions.
+
+Health tiles are driven by `ServiceHealthRegistry`, a sorted-set roster (`metrics:health:seen`) scored by *last registration*, not last health — reachability is the separate TTL'd `metrics:health:<service>` key. Services that publish `HeartbeatEvent`s register themselves; third-party containers are registered by `HttpHealthProbeService`, which polls whatever URLs `HttpProbes` lists in `Observability/appsettings.json` (`lemonade`, `tse-extractor`, `music-assistant`) and treats any HTTP response, even non-2xx, as up. A probe target re-registers every cycle whether or not it answers, so a service that is down stays on the dashboard as a red tile; a service that is retired outright stops registering and ages off the roster after `Retention` (7 days), instead of showing offline forever the way the deleted Wyoming STT/TTS pair did.
 
 ### Memory Architecture
 
@@ -181,7 +186,7 @@ New transports can be added by deploying a new channel MCP server — zero agent
 
 ### Voice Satellite Architecture
 
-Voice is an MCP channel server (`McpChannelVoice`, channelId `voice`, container `mcp-channel-voice`, port 6015) plus hardware satellites. The hub is the Wyoming-protocol **client**: `WyomingSatelliteHost` dials out to every satellite that has an `Address` in `VoiceSettings.Satellites` (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) and reconnects forever; address-less satellites stay in the catalog as announce targets but are never dialed (announcements to them report offline). Pipeline: satellite wakes locally → streams mic `audio-chunk`s → `SatelliteSession`/`SilenceGate` segment the utterance → Lemonade STT (`lemonade`, OpenAI `/v1/audio/transcriptions`, Whisper-Medium on whisper.cpp; device via `STT_BACKEND` ∈ cpu|gpu — or optionally the experimental NPU tier through Lemonade's `flm` recipe, enabled by `docker-compose.override.npu.yml` + `STT_MODEL`; decode quality via `STT_VAD_THRESHOLD`/`STT_INITIAL_PROMPT`/`STT_BEAM_SIZE` — entrypoint defaults Silero VAD 0.6 + Castilian initial prompt + beam 5, empty disables, NPU/flm tier ignores them) → transcript dispatched as `channel/message` → agent reply synthesized by Lemonade Kokoro (`/v1/audio/speech`, streamed 24 kHz PCM resampled in-hub to 22 050 Hz) → streamed back as `audio-start`/`audio-chunk`/`audio-stop`. Sending a `transcript` event to the satellite ends its turn and re-arms wake; `FollowUpConversation` can reopen the mic wake-free, announced by the `ListeningChime` earcon.
+Voice is an MCP channel server (`McpChannelVoice`, channelId `voice`, container `mcp-channel-voice`, port 6015) plus hardware satellites. The hub is the Wyoming-protocol **client**: `WyomingSatelliteHost` dials out to every satellite that has an `Address` in `VoiceSettings.Satellites` (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) and reconnects forever; address-less satellites stay in the catalog as announce targets but are never dialed (announcements to them report offline). Pipeline: satellite wakes locally → streams mic `audio-chunk`s → `SatelliteSession`/`SilenceGate` segment the utterance → speaker-verification gate (`Services/Verification`, ONNX speaker embeddings scored against profiles enrolled under `/voices` via `scripts/enroll-voice.sh`; non-enrolled audio is dropped pre-STT, a conclusive match routes the speaker's folder name into the message sender for per-person memory) → optional target-speech extraction (`Services/Tse`, an STT decorator calling the `tse-extractor` container; `Tse__Mode` ∈ Off|Auto|Always, Auto gated by `NoiseFloorThreshold`) → Lemonade STT (`lemonade`, OpenAI `/v1/audio/transcriptions`, Whisper-Medium on whisper.cpp; device via `STT_BACKEND` ∈ cpu|gpu — or optionally the experimental NPU tier through Lemonade's `flm` recipe, enabled by `docker-compose.override.npu.yml` + `STT_MODEL`; decode quality via `STT_VAD_THRESHOLD`/`STT_INITIAL_PROMPT`/`STT_BEAM_SIZE` — entrypoint defaults Silero VAD 0.6 + Castilian initial prompt + beam 5, empty disables, NPU/flm tier ignores them) → transcript dispatched as `channel/message` → agent reply spoken as it streams, segment-by-segment with prefetch, via Lemonade Kokoro (`/v1/audio/speech`, streamed 24 kHz PCM resampled in-hub to 22 050 Hz) → streamed back as `audio-start`/`audio-chunk`/`audio-stop`. Sending a `transcript` event to the satellite ends its turn and re-arms wake; `FollowUpConversation` can reopen the mic wake-free, announced by the `ListeningChime` earcon.
 
 The satellite is `nabu-satellite` (`satellite/` — a standalone Rust crate, not in the .NET solution). **Its invariants, build/deploy, and the WSL dev-satellite scripts (`scripts/wsl-satellite.sh`, `scripts/wsl-satellite-winaudio.sh`) are documented in `satellite/CLAUDE.md`** — read it before touching either side of the wire. What the hub side must respect: the satellite is the Wyoming **server** (the hub dials in); its playback sink is FIXED 22 050 Hz mono S16LE and ignores announced rates, so all hub-emitted audio (TTS, `ListeningChime`) must be 22 050 Hz; the dockerized hub dials the dev satellite addresses only under `ASPNETCORE_ENVIRONMENT=Development` (`McpChannelVoice/appsettings.Development.json` overrides exactly the `Satellites` addresses; production config points at the Pi IPs).
 

@@ -249,6 +249,157 @@ public class WyomingSatelliteHostTests
     }
 
     [Fact]
+    public async Task Hub_DispatchStamp_IsTakenBeforeTheDispatchSoItsOwnWorkIsMeasured()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var ct = cts.Token;
+
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var sawRunSatellite = new TaskCompletionSource();
+        var sawTranscript = new TaskCompletionSource<string>();
+
+        var fakeSatellite = Task.Run(async () =>
+        {
+            using var conn = await listener.AcceptTcpClientAsync(ct);
+            await using var stream = conn.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+
+            var readLoop = Task.Run(async () =>
+            {
+                await foreach (var evt in reader.ReadAllAsync(ct))
+                {
+                    if (evt.Type == "run-satellite")
+                    {
+                        sawRunSatellite.TrySetResult();
+                    }
+                    else if (evt.Type == "transcript")
+                    {
+                        sawTranscript.TrySetResult(evt.Data["text"]?.GetValue<string>() ?? "");
+                    }
+                }
+            }, ct);
+
+            await sawRunSatellite.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+            await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject()), ct);
+
+            var data = new JsonObject { ["rate"] = 16_000, ["width"] = 2, ["channels"] = 1 };
+            await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
+            foreach (var _ in Enumerable.Range(0, 4))
+            {
+                await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(8000)), ct);
+            }
+            foreach (var _ in Enumerable.Range(0, 6))
+            {
+                await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
+            }
+
+            await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(20), ct);
+        }, ct);
+
+        long sttFinishedAt = 0;
+        var stt = new Mock<ISpeechToText>();
+        stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
+                                         It.IsAny<TranscriptionOptions>(),
+                                         It.IsAny<CancellationToken>()))
+            .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
+                async (audio, opts, token) =>
+                {
+                    await foreach (var _ in audio.WithCancellation(token))
+                    { }
+                    sttFinishedAt = TimeProvider.System.GetTimestamp();
+                    return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
+                });
+
+        var emitter = new CapturingEmitter();
+        var publisher = new Mock<IMetricsPublisher>();
+        var factory = new Mock<IConversationFactory>();
+        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                // A conversation's FIRST turn — the normal case for a one-shot command, given the
+                // 5-minute mapping expiry — makes GetOrCreateAsync a full create_conversation MCP
+                // round trip to the agent process. Exaggerated here so the gap is unambiguous.
+                await Task.Delay(TimeSpan.FromSeconds(1), ct);
+                var identity = ConversationIdGenerator.CreateFor("topic-x");
+                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
+                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
+                return new ConversationCreation(identity, topic);
+            });
+        var manager = new VoiceConversationManager(
+            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+        var dispatcher = new TranscriptDispatcher(
+            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var sessions = new SatelliteSessionRegistry();
+        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
+        {
+            ["kitchen-01"] = new()
+            {
+                Identity = "household",
+                Room = "Kitchen",
+                WakeWord = "hey_jarvis",
+                Address = $"tcp://127.0.0.1:{port}"
+            }
+        });
+
+        var host = new WyomingSatelliteHost(
+            new WyomingClientSettings
+            {
+                ReconnectDelaySeconds = 1,
+                SilenceRmsThreshold = 500,
+                TrailingSilenceMs = 200,
+                MaxUtteranceMs = 3000,
+                MinSpeechMs = 100
+            },
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
+            TimeProvider.System,
+            NullLogger<WyomingSatelliteHost>.Instance);
+
+        await host.StartAsync(ct);
+
+        // Held so the eventual disconnect/unregister cannot race the stamp read below.
+        SatelliteSession? session = null;
+        while (session is null && !ct.IsCancellationRequested)
+        {
+            session = sessions.Get("kitchen-01");
+            if (session is null)
+            { await Task.Delay(20, ct); }
+        }
+
+        (await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(20), ct)).Content.ShouldBe("hola");
+        await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        long? stamp = null;
+        for (var i = 0; i < 200 && stamp is null && !ct.IsCancellationRequested; i++)
+        {
+            stamp = session!.TryConsumeDispatchedAt();
+            if (stamp is null)
+            { await Task.Delay(20, ct); }
+        }
+        stamp.ShouldNotBeNull();
+
+        // TranscriptDispatcher.DispatchAsync does real work inside: the create_conversation round
+        // trip above, the channel/message write, and an awaited Redis publish. Stamping after it
+        // returned left all of that in no span at all, on the common path. The stamp must sit
+        // immediately after STT so that work is inside AgentRoundTripMs.
+        var afterStt = TimeProvider.System.GetElapsedTime(sttFinishedAt, stamp!.Value);
+        afterStt.ShouldBeGreaterThanOrEqualTo(TimeSpan.Zero);
+        afterStt.ShouldBeLessThan(TimeSpan.FromMilliseconds(500));
+
+        await host.StopAsync(CancellationToken.None);
+        listener.Stop();
+        await cts.CancelAsync();
+        try
+        { await fakeSatellite; }
+        catch { /* cancellation / disposal */ }
+    }
+
+    [Fact]
     public async Task Hub_ConclusiveSpeaker_EmitsIdentifiedPersonAsSender()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -517,6 +668,27 @@ public class WyomingSatelliteHostTests
         rejection.ShouldNotBeNull();
         rejection!.Outcome.ShouldBe("unknown_speaker");
         rejection.Similarity.ShouldBe(0.12);
+
+        // Verification runs before the STT stopwatch starts, so without its own metric the ONNX
+        // embedding is invisible latency. The capture here ends long before EarlyVerifyMs (5 s), so
+        // only the final inline pass runs — and SpeakerVerifyMs means exactly that pass, the additive
+        // one. The early pass has its own member (SpeakerVerifyEarlyMs), asserted in the early-reject
+        // test below.
+        var verify = publishedEvents.Where(e => e.Metric == VoiceMetric.SpeakerVerifyMs).ToList();
+        verify.Count.ShouldBe(1);
+        verify.ShouldAllBe(e => e.DurationMs != null && e.DurationMs >= 0);
+        verify.ShouldAllBe(e => e.Outcome == "final");
+        publishedEvents.ShouldNotContain(e => e.Metric == VoiceMetric.SpeakerVerifyEarlyMs);
+
+        // The EndpointTailMs PUBLISH SITE, not just the gate underneath it: the satellite streams
+        // 6 silent 100 ms frames after 4 loud ones and TrailingSilenceMs is 200, so the gate ends on
+        // the second silent frame and the reported tail must be that 200 — not the 600 ms of silence
+        // that kept arriving afterwards. Published even though this capture is rejected, because
+        // tuning TrailingSilenceMs needs the rejected captures too.
+        var tail = publishedEvents.SingleOrDefault(e => e.Metric == VoiceMetric.EndpointTailMs);
+        tail.ShouldNotBeNull();
+        tail!.DurationMs.ShouldBe(200);
+        tail.EndReason.ShouldBe("trailing_silence");
 
         emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
 
@@ -818,6 +990,19 @@ public class WyomingSatelliteHostTests
         rejection.ShouldNotBeNull();
         rejection!.Outcome.ShouldBe("unknown_speaker_early");
         (rejection.SpeechMs ?? 0).ShouldBeGreaterThanOrEqualTo(300L); // the "TV" DID latch as speech, unlike the zero-speech scenario above
+
+        // This is the only test that forces the early-close branch to reject, so it is the one place
+        // the early pass gets its own coverage. It must publish SpeakerVerifyEarlyMs, NOT
+        // SpeakerVerifyMs: the early pass runs while the capture is still open, concurrent with the
+        // user speaking, so it overlaps the utterance and is not part of the additive decomposition.
+        // Sharing one member let any grouping not keyed on Outcome (the dashboard defaults to
+        // SatelliteId) silently average an overlapping span together with an additive one.
+        var verify = publishedEvents.SingleOrDefault(e => e.Metric == VoiceMetric.SpeakerVerifyEarlyMs);
+        verify.ShouldNotBeNull();
+        verify!.Outcome.ShouldBe("early");
+        (verify.DurationMs ?? -1).ShouldBeGreaterThanOrEqualTo(0L);
+        verify.Similarity.ShouldBe(0.213); // GatedToneVerifier's fixed Rejected similarity for an unknown tone
+        publishedEvents.ShouldNotContain(e => e.Metric == VoiceMetric.SpeakerVerifyMs);
 
         emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
 

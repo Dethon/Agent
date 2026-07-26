@@ -94,9 +94,13 @@ public class OpenRouterHttpHelpersTests
         await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, CancellationToken.None);
 
         // Assert
+        // The messages array is untouched; the request now also carries usage:{include:true},
+        // which is what makes OpenRouter report prompt_tokens_details.cached_tokens.
         var resultJson = await request.Content!.ReadAsStringAsync();
-        // Should be unchanged
-        resultJson.ShouldBe(json);
+        var obj = System.Text.Json.Nodes.JsonNode.Parse(resultJson)!.AsObject();
+        obj["messages"]!.ToJsonString().ShouldBe(
+            System.Text.Json.Nodes.JsonNode.Parse(json)!["messages"]!.ToJsonString());
+        obj["usage"]!["include"]!.GetValue<bool>().ShouldBeTrue();
     }
 
     [Fact]

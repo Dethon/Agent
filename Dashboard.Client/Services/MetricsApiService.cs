@@ -97,9 +97,12 @@ public sealed class MetricsApiService(HttpClient http)
     public Task<List<VoiceEvent>?> GetVoiceEventsAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<VoiceEvent>>($"api/metrics/voice?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
+    // agg has no default on purpose: the aggregation is user-selected state (VoiceState.Agg), and a
+    // default here is how a call site silently reverts the user's P95 pick to Avg. The query service
+    // and the HTTP endpoint keep their defaults for wire compatibility.
     public Task<Dictionary<string, decimal>?> GetVoiceGroupedAsync(
         VoiceDimension dimension, VoiceMetric metric, DateOnly from, DateOnly to,
-        CancellationToken ct = default) =>
+        LatencyMetric agg, CancellationToken ct = default) =>
         http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/voice/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+            $"api/metrics/voice/by/{dimension}?metric={metric}&agg={agg}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 }

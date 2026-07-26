@@ -145,4 +145,23 @@ public class MetricsQueryServiceTests
         result.MemoriesMerged.ShouldBe(7);
         result.MemoriesDecayed.ShouldBe(4);
     }
+
+    [Fact]
+    public async Task GetHealthAsync_ReadsTheRosterFromTheSeenSortedSet()
+    {
+        _db.Setup(d => d.SortedSetRangeByRankAsync(
+                "metrics:health:seen", 0, -1, Order.Ascending, CommandFlags.None))
+            .ReturnsAsync([(RedisValue)"lemonade", (RedisValue)"tse-extractor"]);
+        _db.Setup(d => d.StringGetAsync("metrics:health:lemonade", It.IsAny<CommandFlags>()))
+            .ReturnsAsync("2026-03-15T10:00:00+00:00");
+        _db.Setup(d => d.StringGetAsync("metrics:health:tse-extractor", It.IsAny<CommandFlags>()))
+            .ReturnsAsync(RedisValue.Null);
+
+        var result = await _sut.GetHealthAsync();
+
+        result.Select(r => r.Service).ShouldBe(["lemonade", "tse-extractor"], ignoreOrder: true);
+        result.Single(r => r.Service == "lemonade").IsHealthy.ShouldBeTrue();
+        result.Single(r => r.Service == "tse-extractor").IsHealthy.ShouldBeFalse();
+        _db.Invocations.ShouldNotContain(i => i.Method.Name == "SetMembersAsync");
+    }
 }
