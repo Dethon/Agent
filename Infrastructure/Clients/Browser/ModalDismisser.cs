@@ -249,21 +249,18 @@ public class ModalDismisser
             // Resolved on first use, not up front: computing the accessibility tree is the expensive
             // part, and the overwhelmingly common case (a consent wall dismissed by a <button>) never
             // needs the link role at all. Order is unchanged — the roles are still consulted in
-            // TextPatternRoles order within each pattern, exactly as the per-pattern loop did.
+            // _textPatternRoles order within each pattern, exactly as the per-pattern loop did.
             var resolved = new List<(ILocator Locator, IReadOnlyList<string> Texts)>();
 
-            async Task<IReadOnlyList<(ILocator Locator, IReadOnlyList<string> Texts)>> RoleCandidatesAsync(int upTo)
+            async Task<IReadOnlyList<(ILocator Locator, IReadOnlyList<string> Texts)>> roleCandidatesAsync(int upTo)
             {
-                while (resolved.Count <= upTo && resolved.Count < TextPatternRoles.Length)
+                while (resolved.Count <= upTo && resolved.Count < _textPatternRoles.Length)
                 {
                     var locator = page.GetByRole(
-                        TextPatternRoles[resolved.Count], new PageGetByRoleOptions { NameRegex = nameRegex });
+                        _textPatternRoles[resolved.Count], new PageGetByRoleOptions { NameRegex = nameRegex });
                     try
                     {
-                        // TextContents, not InnerTexts: innerText forces a layout reflow for every
-                        // match, and these strings are only used to pick between candidates Playwright
-                        // has already matched by accessible name.
-                        resolved.Add((locator, await locator.AllTextContentsAsync()));
+                        resolved.Add((locator, await AccessibleNamesAsync(locator)));
                     }
                     catch
                     {
@@ -279,9 +276,9 @@ public class ModalDismisser
             {
                 ct.ThrowIfCancellationRequested();
 
-                for (var roleIndex = 0; roleIndex < TextPatternRoles.Length; roleIndex++)
+                for (var roleIndex = 0; roleIndex < _textPatternRoles.Length; roleIndex++)
                 {
-                    var (locator, texts) = (await RoleCandidatesAsync(roleIndex))[roleIndex];
+                    var (locator, texts) = (await roleCandidatesAsync(roleIndex))[roleIndex];
                     var index = IndexOfTextMatch(texts, textPattern);
                     if (index < 0)
                     {
@@ -319,11 +316,44 @@ public class ModalDismisser
         return null;
     }
 
-    private static readonly AriaRole[] TextPatternRoles = [AriaRole.Button, AriaRole.Link];
+    // Approximates each candidate's ACCESSIBLE NAME, which is what Playwright matched the role
+    // locator on — not textContent, which is empty for exactly the controls this fallback exists to
+    // reach: an <input type="submit"> named by its value, or an icon-only button named by
+    // aria-label. Narrowing on textContent filtered those back out, so a consent wall whose only
+    // control was named that way survived every browse. Still one round trip, like AllTextContents.
+    //
+    // Order follows the accessible-name computation closely enough for a substring match:
+    // aria-label wins, then visible text, then the attribute-supplied names.
+    private static async Task<IReadOnlyList<string>> AccessibleNamesAsync(ILocator locator)
+    {
+        try
+        {
+            return await locator.EvaluateAllAsync<string[]>(
+                """
+                els => els.map(el => {
+                    const clean = v => String(v).replace(/\s+/g, ' ').trim();
+                    const label = el.getAttribute('aria-label');
+                    if (label && label.trim()) return clean(label);
+                    const text = clean(el.textContent || '');
+                    if (text) return text;
+                    for (const c of [el.value, el.getAttribute('title'), el.getAttribute('alt')]) {
+                        if (c && String(c).trim()) return clean(c);
+                    }
+                    return '';
+                })
+                """);
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static readonly AriaRole[] _textPatternRoles = [AriaRole.Button, AriaRole.Link];
 
     // Playwright matches a role locator's Name case-insensitively as a substring, so an alternation
     // of the escaped patterns selects exactly the union the per-pattern calls used to select.
-    private static readonly Dictionary<ModalType, Regex> TextPatternRegexes =
+    private static readonly Dictionary<ModalType, Regex> _textPatternRegexes =
         _defaultPatterns
             .Where(p => p.ButtonTextPatterns is { Count: > 0 })
             .ToDictionary(
@@ -333,7 +363,7 @@ public class ModalDismisser
                     RegexOptions.IgnoreCase | RegexOptions.Compiled));
 
     private static Regex TextPatternRegexFor(ModalPattern pattern) =>
-        TextPatternRegexes.TryGetValue(pattern.Type, out var cached)
+        _textPatternRegexes.TryGetValue(pattern.Type, out var cached)
             ? cached
             : new Regex(
                 string.Join("|", pattern.ButtonTextPatterns!.Select(Regex.Escape)),
@@ -382,9 +412,23 @@ public class ModalDismisser
         {
             var raw = await page.EvaluateAsync<JsonElement>(
                 """
-                ([selectors, currentUrl]) => selectors.map(selector => {
+                ([selectors, currentUrl]) => {
+                    // querySelectorAll does not cross a shadow boundary, but the page.Locator calls
+                    // this replaced did. A CMP rendered as a web component was invisible to the scan,
+                    // and because a pattern that fails the gate is dropped entirely, the text
+                    // fallback that WOULD have pierced never ran either. Roots are collected once per
+                    // call rather than per selector, so the extra '*' traversal is paid once.
+                    const roots = [document];
+                    (function collect(root) {
+                        root.querySelectorAll('*').forEach(e => {
+                            if (e.shadowRoot) { roots.push(e.shadowRoot); collect(e.shadowRoot); }
+                        });
+                    })(document);
+                    const queryAllDeep = sel => roots.flatMap(r => Array.from(r.querySelectorAll(sel)));
+
+                    return selectors.map(selector => {
                     let el;
-                    try { el = document.querySelector(selector); }
+                    try { el = queryAllDeep(selector)[0]; }
                     catch { return { outcome: 2, text: null }; }
                     if (!el) return { outcome: 0, text: null };
 
@@ -413,7 +457,8 @@ public class ModalDismisser
                     }
 
                     return { outcome: 1, text: el.textContent };
-                })
+                    });
+                }
                 """,
                 new object[] { buttonSelectors.ToArray(), urlBefore });
 
@@ -460,10 +505,24 @@ public class ModalDismisser
         {
             return await page.EvaluateAsync<bool[]>(
                 """
-                ([selectors, maxScanned]) => selectors.map(selector => {
+                ([selectors, maxScanned]) => {
+                    // querySelectorAll does not cross a shadow boundary, but the page.Locator calls
+                    // this replaced did. A CMP rendered as a web component was invisible to the scan,
+                    // and because a pattern that fails the gate is dropped entirely, the text
+                    // fallback that WOULD have pierced never ran either. Roots are collected once per
+                    // call rather than per selector, so the extra '*' traversal is paid once.
+                    const roots = [document];
+                    (function collect(root) {
+                        root.querySelectorAll('*').forEach(e => {
+                            if (e.shadowRoot) { roots.push(e.shadowRoot); collect(e.shadowRoot); }
+                        });
+                    })(document);
+                    const queryAllDeep = sel => roots.flatMap(r => Array.from(r.querySelectorAll(sel)));
+
+                    return selectors.map(selector => {
                     if (!selector) return true;
                     let elements;
-                    try { elements = document.querySelectorAll(selector); }
+                    try { elements = queryAllDeep(selector); }
                     catch { return false; }
                     const limit = Math.min(elements.length, maxScanned);
                     for (let i = 0; i < limit; i++) {
@@ -477,7 +536,8 @@ public class ModalDismisser
                             return true;
                     }
                     return false;
-                })
+                    });
+                }
                 """,
                 new object[] { selectors, MaxContainersScanned });
         }
