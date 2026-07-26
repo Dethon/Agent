@@ -366,6 +366,16 @@ public sealed class SendReplyTool
                 // wedge the mic for the full timeout.
                 session.FailReplySegment(segmentEpoch);
 
+                // A job the loop cancels BEFORE its first pull never touches its audio, so the
+                // consumer-side release (the reader's teardown) never runs — an alarm preempting the
+                // queued tail of a streamed reply would leave one pump per sentence parked on a full
+                // buffer holding an open TTS response. Disposal is safe after partial playback too:
+                // cancelling an already-cancelled pump is a no-op.
+                if (prefetch is not null)
+                {
+                    await prefetch.DisposeAsync();
+                }
+
                 // One sample per turn, like the other reply-anchored metrics.
                 if (!isFirstReplySegment)
                 {
@@ -398,7 +408,21 @@ public sealed class SendReplyTool
             // handshake until the ~120s ReplyTimeoutMs. No audio actually played, hence Silent (not
             // Spoken). Mirrors the chime and approval jobs, which also settle their handshake on failure.
             // A failed preamble settles nothing: the answer still owes the handshake a signal.
-            OnFailed: _ => { if (isReply) { session.FailReplySegment(segmentEpoch); } return Task.CompletedTask; },
+            OnFailed: async _ =>
+            {
+                if (!isReply)
+                {
+                    return;
+                }
+                session.FailReplySegment(segmentEpoch);
+                // Defensive twin of the OnPreempted dispose above: every known failure reaches here
+                // after the reader's teardown has already released the pump, but a failed segment's
+                // synthesis must never be able to outlive its job.
+                if (prefetch is not null)
+                {
+                    await prefetch.DisposeAsync();
+                }
+            },
             EnqueuedAt: enqueuedAt,
             // Reply-latency metrics stay anchored to the ANSWER, not the preamble cue, so
             // WakeToFirstAudioMs keeps meaning the same thing before and after this change.

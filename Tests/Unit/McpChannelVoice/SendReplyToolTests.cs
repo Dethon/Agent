@@ -813,6 +813,51 @@ public class SendReplyToolTests
     }
 
     [Fact]
+    public async Task McpRun_QueuedSegmentPreemptedBeforeItStarts_ReleasesItsPrefetchedSynthesis()
+    {
+        // An alarm marks every queued job for preemption, and the loop cancels a marked job BEFORE
+        // touching its audio — so the release that normally runs when the consumer's enumerator is
+        // torn down never happens. Without an explicit dispose on the preempt path the prefetch pump
+        // stays parked on a full buffer holding an open TTS response: one leaked synthesis per
+        // queued sentence, on every alarm that cuts into a streamed reply.
+        var disposed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var synthesisCalls = 0;
+        _tts.Setup(t => t.SynthesizeAsync(
+                It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
+            .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) =>
+                Interlocked.Increment(ref synthesisCalls) == 1 ? Gated() : DisposeTracking(disposed));
+
+        var services = BuildServices(new VoiceSettings
+        {
+            Tts = new TtsSettings
+            { Streaming = new StreamingTtsConfig { FirstSegmentMinChars = 10, MinChars = 10 } }
+        });
+
+        var playing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _session.ResetTurn();
+        _session.MarkDispatched(_clock.GetTimestamp());
+        var pump = _session.RunPlaybackLoopAsync(
+            async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
+            CancellationToken.None, _clock);
+
+        await SendReplyTool.McpRun(_conversationId, "Primera frase completa. ",
+            ReplyContentType.Text, false, "m-1", services);
+        await playing.Task.WaitAsync(TimeSpan.FromSeconds(10));   // segment one is mid-drain
+        await SendReplyTool.McpRun(_conversationId, "Segunda frase completa. ",
+            ReplyContentType.Text, false, "m-1", services);       // segment two sits queued
+
+        await _session.EnqueuePlaybackAsync(new PlaybackJob(
+            Label: "alarm", Priority: AnnouncePriority.High,
+            Audio: NoAudio(), OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask), 4);
+
+        await disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        _session.CompletePlayback();
+        await pump.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
     public async Task McpRun_StreamingWithNoRoomInThePlaybackQueue_LeavesTheTextBufferedInsteadOfDroppingIt()
     {
         // TryTakeSpeakable removes a sentence run from the accumulator BEFORE the enqueue is
@@ -887,6 +932,14 @@ public class SendReplyToolTests
         {
             disposed.TrySetResult();
         }
+    }
+
+    // Zero chunks: the alarm must drain instantly under the frozen test clock, so it never reaches
+    // the real-time drain wait that only a clock advance would release.
+    private static async IAsyncEnumerable<AudioChunk> NoAudio()
+    {
+        await Task.Yield();
+        yield break;
     }
 
     private static async IAsyncEnumerable<AudioChunk> Recording(string text, List<string> sink)
