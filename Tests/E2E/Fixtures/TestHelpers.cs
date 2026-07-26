@@ -24,12 +24,10 @@ internal static class TestHelpers
     }
 
     internal static Task EnsureBaseSdkImageAsync(string solutionRoot, CancellationToken ct) =>
-        EnsureImageAsync(
-            solutionRoot,
-            "Dockerfile.base-sdk",
-            "base-sdk:latest",
-            ["Domain", "Infrastructure"],
-            ct);
+        EnsureImageAsync(solutionRoot, E2EImages.BaseSdk, ct);
+
+    internal static Task EnsureImageAsync(string solutionRoot, E2EImageSpec spec, CancellationToken ct) =>
+        EnsureImageAsync(solutionRoot, spec.Dockerfile, spec.ImageName, spec.WatchedDirs, ct);
 
     /// <summary>
     /// Builds a Docker image under a stable tag, replacing any prior image with the same name.

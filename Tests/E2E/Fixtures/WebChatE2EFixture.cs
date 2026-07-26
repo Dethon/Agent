@@ -46,10 +46,10 @@ public class WebChatE2EFixture : E2EFixtureBase
         // 2. Build all leaf images in parallel and start Redis (no build) concurrently.
         //    Leaf images are mutually independent; EnsureImageAsync serialises per-tag
         //    internally, so distinct tags building at once is safe.
-        const string mcpVaultImageName = "mcp-vault:latest";
-        const string signalRImageName = "mcp-channel-signalr:latest";
-        const string agentImageName = "agent:latest";
-        const string webuiImageName = "webui:latest";
+        var mcpVaultImageName = E2EImages.McpVault.ImageName;
+        var signalRImageName = E2EImages.ChannelSignalR.ImageName;
+        var agentImageName = E2EImages.Agent.ImageName;
+        var webuiImageName = E2EImages.WebUi.ImageName;
 
         _redis = new ContainerBuilder("redis/redis-stack-server:latest")
             .WithName($"redis-{Guid.NewGuid():N}")
@@ -61,18 +61,10 @@ public class WebChatE2EFixture : E2EFixtureBase
 
         await Task.WhenAll(
             _redis.StartAsync(ct),
-            TestHelpers.EnsureImageAsync(
-                solutionRoot, "McpServerVault/Dockerfile", mcpVaultImageName,
-                ["Domain", "Infrastructure", "McpServerVault"], ct),
-            TestHelpers.EnsureImageAsync(
-                solutionRoot, "McpChannelSignalR/Dockerfile", signalRImageName,
-                ["Domain", "Infrastructure", "McpChannelSignalR"], ct),
-            TestHelpers.EnsureImageAsync(
-                solutionRoot, "Agent/Dockerfile", agentImageName,
-                ["Domain", "Infrastructure", "Agent"], ct),
-            TestHelpers.EnsureImageAsync(
-                solutionRoot, "WebChat/Dockerfile", webuiImageName,
-                ["Domain", "WebChat", "WebChat.Client"], ct));
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpVault, ct),
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.ChannelSignalR, ct),
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Agent, ct),
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.WebUi, ct));
 
         // 3. Start containers in dependency order (images already built).
         _mcpVault = new ContainerBuilder(mcpVaultImageName)
