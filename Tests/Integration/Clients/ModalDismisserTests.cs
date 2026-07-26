@@ -355,13 +355,18 @@ public class ModalDismisserTests(PlaywrightWebBrowserFixture fixture) : IAsyncLi
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var bulk = string.Concat(Enumerable.Range(0, 40).Select(i =>
+        // More than ten rows, so the placeholder sits past the index the old 10-container cap
+        // stopped at — the cap is what used to hide this, and removing it was still right.
+        var bulk = string.Concat(Enumerable.Range(0, 15).Select(i =>
             $"<div class='page-body image-{i}'>row {i}</div>"));
         var page = await _context!.NewPageAsync();
         await page.SetContentAsync(
             "<!doctype html><html><body>" + bulk +
-            // Small, absolutely positioned, and only incidentally matching [class*='age'].
-            "<div class='image-placeholder' style='position:absolute;width:300px;height:200px'></div>" +
+            // Small, absolutely positioned, no stacking context, and only incidentally matching
+            // [class*='age'] (via "im-age-"). Pinned away from the button so it cannot shield it:
+            // an overlapping placeholder makes the click time out and hides the very bug under test.
+            "<div class='image-placeholder' " +
+            "style='position:absolute;top:0;left:600px;width:300px;height:200px'></div>" +
             "<button id='signin' onclick=\"document.title='CLICKED'\">Sign in</button>" +
             "</body></html>");
 

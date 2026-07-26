@@ -532,8 +532,20 @@ public class ModalDismisser
                         const s = getComputedStyle(el);
                         if (s.visibility === 'hidden' || s.display === 'none' || parseFloat(s.opacity) === 0)
                             continue;
-                        if (s.position === 'fixed' || s.position === 'absolute' || s.position === 'sticky')
-                            return true;
+                        if (s.position === 'fixed' || s.position === 'sticky') return true;
+                        // 'absolute' alone is not an overlay. Dropping the old 10-container cap was
+                        // right — a real banner can sit behind more than ten same-class elements —
+                        // but it also exposed every incidental absolutely positioned box on the
+                        // page, and one of those opening a pattern hands the loose text fallbacks a
+                        // licence to click. AgeGate's list contains "si", which substring-matches a
+                        // site's own "Sign in". A real absolute overlay declares itself: it stacks
+                        // above the content, or it covers a serious part of the viewport.
+                        if (s.position === 'absolute') {
+                            const z = parseInt(s.zIndex, 10);
+                            if (Number.isFinite(z) && z >= 1) return true;
+                            const viewport = window.innerWidth * window.innerHeight;
+                            if (viewport > 0 && (r.width * r.height) / viewport >= 0.15) return true;
+                        }
                     }
                     return false;
                     });
