@@ -2,6 +2,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Observability.Hubs;
 using Observability.Services;
@@ -350,6 +351,65 @@ public class MetricsCollectorServiceTests
             "OnHealthUpdate",
             It.Is<object[]>(args => args.Length == 1),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessEvent_Heartbeat_ScoresServiceOnTheSeenRosterAndSkipsTheLegacySet()
+    {
+        var evt = new HeartbeatEvent
+        {
+            Service = "agent-1",
+            Timestamp = _fixedTimestamp
+        };
+
+        await _sut.ProcessEventAsync(evt, _db.Object);
+
+        _db.Invocations
+            .Count(i => i.Method.Name == "SortedSetAddAsync"
+                && i.Arguments[0].ToString() == "metrics:health:seen"
+                && i.Arguments[1].ToString() == "agent-1"
+                && Math.Abs((double)i.Arguments[2] - _fixedTimestamp.ToUnixTimeSeconds()) < 1)
+            .ShouldBe(1);
+
+        _db.Invocations.ShouldNotContain(i => i.Method.Name == "SetAddAsync");
+    }
+
+    [Fact]
+    public async Task CheckHealthAsync_DropsServicesNotSeenWithinRetention()
+    {
+        var now = _fixedTimestamp;
+        var sut = new MetricsCollectorService(
+            _redis.Object,
+            _hubContext.Object,
+            NullLogger<MetricsCollectorService>.Instance,
+            new FakeTimeProvider(now));
+
+        _db.Setup(d => d.SortedSetRangeByRankAsync(
+                "metrics:health:seen", 0, -1, Order.Ascending, CommandFlags.None))
+            .ReturnsAsync([(RedisValue)"lemonade"]);
+
+        await sut.CheckHealthAsync();
+
+        var cutoff = now.Subtract(TimeSpan.FromDays(7)).ToUnixTimeSeconds();
+        _db.Invocations
+            .Count(i => i.Method.Name == "SortedSetRemoveRangeByScoreAsync"
+                && i.Arguments[0].ToString() == "metrics:health:seen"
+                && double.IsNegativeInfinity((double)i.Arguments[1])
+                && Math.Abs((double)i.Arguments[2] - cutoff) < 1)
+            .ShouldBe(1);
+
+        _db.Invocations.ShouldNotContain(i => i.Method.Name == "SetMembersAsync");
+    }
+
+    [Fact]
+    public async Task DropLegacyRosterAsync_DeletesTheNeverPrunedKnownSet()
+    {
+        await _sut.DropLegacyRosterAsync(_db.Object);
+
+        _db.Invocations
+            .Count(i => i.Method.Name == "KeyDeleteAsync"
+                && i.Arguments[0].ToString() == "metrics:health:known")
+            .ShouldBe(1);
     }
 
     [Fact]

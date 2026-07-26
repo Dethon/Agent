@@ -157,6 +157,8 @@ The agent reaches HA inside the compose network at `http://homeassistant:8123` v
 
 Services publish `MetricEvent` DTOs via `IMetricsPublisher` → Redis Pub/Sub channel `metrics:events`. The `MetricsCollectorService` subscribes, aggregates into Redis (sorted sets for time-series, hashes for totals, TTL keys for health), and forwards live events to the SignalR hub (`/hubs/metrics`). `MetricsQueryService` provides grouped aggregation queries over the stored metrics (breakdowns by dimension/metric enums). The dashboard uses a hybrid approach: REST API for historical data on page load, SignalR for real-time updates. Dashboard components (`DynamicChart`, `PillSelector`) use `LocalStorageService` to persist UI state across sessions.
 
+Health tiles are driven by `ServiceHealthRegistry`, a sorted-set roster (`metrics:health:seen`) scored by *last registration*, not last health — reachability is the separate TTL'd `metrics:health:<service>` key. Services that publish `HeartbeatEvent`s register themselves; third-party containers are registered by `HttpHealthProbeService`, which polls whatever URLs `HttpProbes` lists in `Observability/appsettings.json` (`lemonade`, `tse-extractor`, `music-assistant`) and treats any HTTP response, even non-2xx, as up. A probe target re-registers every cycle whether or not it answers, so a service that is down stays on the dashboard as a red tile; a service that is retired outright stops registering and ages off the roster after `Retention` (7 days), instead of showing offline forever the way the deleted Wyoming STT/TTS pair did.
+
 ### Memory Architecture
 
 Memory is a built-in agent feature (not a separate MCP server). It runs as services inside the Agent process:
