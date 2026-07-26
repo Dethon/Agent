@@ -221,6 +221,34 @@ public class ModalDismisserTests(PlaywrightWebBrowserFixture fixture) : IAsyncLi
         (await page.Locator("#signup").IsVisibleAsync()).ShouldBeFalse();
     }
 
+    // A control named ONLY by aria-labelledby: its textContent is empty and it carries no
+    // aria-label/value/title/alt, so Playwright's role locator finds it by its accessible name
+    // while a narrowing that approximates the name from the element's own attributes filters it
+    // back out — and the wall survives every browse. The approximation must resolve the reference
+    // the way the accessible-name computation does.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task DismissModalsAsync_ButtonNamedOnlyByAriaLabelledby_IsStillDismissed()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+
+        var page = await _context!.NewPageAsync();
+        await page.SetContentAsync(
+            "<!doctype html><html><body>" +
+            "<div id='signup' class='newsletter-wall' " +
+            "style='position:fixed;top:0;left:0;right:0;height:200px;background:#eee;z-index:9999'>" +
+            "<span id='signup-reject-label'>No thanks</span>" +
+            "<button class='signup-reject' aria-labelledby='signup-reject-label' " +
+            "onclick=\"document.getElementById('signup').style.display='none'\"></button>" +
+            "</div><p>Main content</p></body></html>");
+
+        var dismisser = new ModalDismisser();
+        var result = await dismisser.DismissModalsAsync(page, CancellationToken.None);
+
+        result.ShouldContain(r => r.Type == ModalType.Newsletter);
+        (await page.Locator("#signup").IsVisibleAsync()).ShouldBeFalse();
+    }
+
     // The companion to the speed guard: the same large, noisy DOM with one genuine fixed-position
     // consent overlay in it must still be found and dismissed. Proves the cheaper scan did not buy
     // its speed by looking at fewer elements.
