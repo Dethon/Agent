@@ -424,8 +424,14 @@ public sealed class SendReplyTool
                 }
             },
             EnqueuedAt: enqueuedAt,
-            // Reply-latency metrics stay anchored to the ANSWER, not the preamble cue, so
-            // WakeToFirstAudioMs keeps meaning the same thing before and after this change.
+            // Anchored to the turn's FIRST reply segment — never the preamble flush, which runs
+            // with isReply: false and publishes nothing. Under streaming that segment is the first
+            // flushable sentence the model produced: normally the answer's opening, but a model
+            // that narrates a complete sentence before its first tool call anchors here too. That
+            // is deliberate — these spans measure how long the user waited to hear a reply, and
+            // narration the user hears IS the reply starting; anchoring at the later answer would
+            // also leave the queue-wait and TTS spans measured against a different job than the
+            // turn spans, and the decomposition would stop summing.
             OnFirstAudio: async timing =>
             {
                 if (!isFirstReplySegment)
