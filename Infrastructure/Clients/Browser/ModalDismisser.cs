@@ -323,7 +323,8 @@ public class ModalDismisser
     // control was named that way survived every browse. Still one round trip, like AllTextContents.
     //
     // Order follows the accessible-name computation closely enough for a substring match:
-    // aria-label wins, then visible text, then the attribute-supplied names.
+    // aria-labelledby wins (resolved in the element's own tree, so it works inside a shadow root),
+    // then aria-label, then visible text, then the attribute-supplied names.
     private static async Task<IReadOnlyList<string>> AccessibleNamesAsync(ILocator locator)
     {
         try
@@ -332,6 +333,15 @@ public class ModalDismisser
                 """
                 els => els.map(el => {
                     const clean = v => String(v).replace(/\s+/g, ' ').trim();
+                    const byIds = el.getAttribute('aria-labelledby');
+                    if (byIds) {
+                        const name = clean(byIds.split(/\s+/)
+                            .map(id => el.getRootNode().getElementById(id))
+                            .filter(Boolean)
+                            .map(ref => ref.textContent || '')
+                            .join(' '));
+                        if (name) return name;
+                    }
                     const label = el.getAttribute('aria-label');
                     if (label && label.trim()) return clean(label);
                     const text = clean(el.textContent || '');
