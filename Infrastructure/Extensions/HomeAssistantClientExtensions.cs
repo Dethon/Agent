@@ -18,8 +18,17 @@ public static class HomeAssistantClientExtensions
         .AddRetryWithExponentialWaitPolicy(
             attempts: 2,
             waitTime: TimeSpan.FromSeconds(1),
-            attemptTimeout: TimeSpan.FromSeconds(15));
+            attemptTimeout: TimeSpan.FromSeconds(15),
+            retryable: request => !IsServiceCall(request));
 
         return services;
     }
+
+    // POST /api/services/<domain>/<service> runs a service handler; HA reports ANY exception it
+    // raises as a 500, so a 5xx there is a deterministic failure (an unresolvable media name, a
+    // device that refused) rather than a transient one. Retrying only adds latency to the reply and
+    // risks re-applying a partial effect. GET reads and POST /api/template stay retryable.
+    private static bool IsServiceCall(HttpRequestMessage request) =>
+        request.Method == HttpMethod.Post
+        && request.RequestUri?.AbsolutePath.Contains("/api/services/", StringComparison.Ordinal) == true;
 }
