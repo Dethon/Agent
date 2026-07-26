@@ -10,7 +10,7 @@ Azure Service Bus, using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **WebChat** - Browser-based chat with real-time streaming, topic management, and multi-agent selection
 - **Telegram Multi-Bot** - Each agent gets its own Telegram bot with inline keyboard tool approvals
 - **Azure Service Bus** - Queue-based integration for external systems
-- **Voice Satellites** - Hands-free voice assistant on real hardware: `nabu-satellite` is a single static Rust binary for Raspberry Pi with on-device "ok nabu" wake-word detection (openWakeWord via tract, no Python), zero-lag pre-roll, audio cues, button support, and an optional activity LED; the voice channel dials each satellite over the Wyoming protocol, transcribes with Whisper, runs the agent, and streams Kokoro TTS back (via Lemonade)
+- **Voice Satellites** - Hands-free voice assistant on real hardware: `nabu-satellite` is a single static Rust binary for Raspberry Pi with on-device "ok nabu" wake-word detection (openWakeWord via tract, no Python), zero-lag pre-roll, audio cues, button support, and an optional activity LED; the voice channel dials each satellite over the Wyoming protocol, transcribes with Whisper, runs the agent, and streams Kokoro TTS back (via Lemonade). A speaker-verification gate drops non-enrolled voices (TV, guests) before STT and routes recognized speakers' identities into the message, and noisy captures can be cleaned by a target-speech-extraction sidecar before transcription
 - **Conversation Persistence** - Redis-backed chat history survives application restarts
 - **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
 - **Download Completion Alerts** - The library server is dual-role (tool/filesystem server and channel): a background watcher polls qBittorrent and pushes a `channel/message` to the originating conversation when a download finishes — no client-side tracking or resubscription needed, and alerts survive restarts because routing snapshots live in Redis
@@ -18,16 +18,17 @@ Azure Service Bus, using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **Web Search & Browsing** - Search the web via Brave Search API; browse pages with persistent sessions using accessibility tree snapshots and element-ref interactions via Camoufox (anti-detect browser)
 - **Home Assistant Control** - Drive a Home Assistant instance as a virtual filesystem (`filesystem://ha`, mounted at `/ha`) — entities and areas are directories, `state.json` is the live state, and each available service is a `<service>.sh` action file invoked via `fs_exec`. A directory-listing setup index is injected into the system prompt so the LLM can pick devices without exploring
 - **Sandbox Execution** - Isolated Linux container with bash + Python execution via `fs_exec` (60s default / 30min max timeout, 64 KB output cap), persistent `/home/sandbox_user` for installed packages, ephemeral system dirs, outbound network only
-- **Virtual Filesystem** - Unified filesystem across MCP servers via `filesystem://` resource discovery, with domain tools for read, create, edit, glob, search, move, copy, and delete. Each mount lives in a separate MCP server (its own container, host, or even a different machine reachable over HTTP), and the agent can move or copy files **across mounts** — between containers or hosts — using chunked blob streaming under the hood
+- **Virtual Filesystem** - Unified filesystem across MCP servers via `filesystem://` resource discovery, with domain tools for read, create, edit, glob, search, move, copy, delete, exec, and file info. Each mount lives in a separate MCP server (its own container, host, or even a different machine reachable over HTTP), and the agent can move or copy files **across mounts** — between containers or hosts — using chunked blob streaming under the hood
 - **Memory System** - Built-in proactive memory with LLM-based extraction from windowed conversation context, vector recall, and periodic consolidation (dreaming)
 - **Scheduled Tasks** - Cron and one-shot agent prompts managed as a virtual filesystem (`filesystem://schedules`); a dedicated scheduling channel server fires due schedules and fans the result out to chosen delivery channels
 - **Printing** - Print to a real IPP/CUPS printer as a virtual filesystem (`filesystem://print-queue`, mounted at `/print-queue`) — copying or creating a file into the mount immediately submits it to the configured printer, removing a still-pending file cancels the job, and finished jobs auto-disappear from the listing. The accepted formats are configurable (`SupportedFormats`, default plain text, JPEG, and the printer-native raster/page formats); anything else is rejected on copy-in. Text is CRLF-normalized and images are scaled to fit the page
-- **OpenRouter LLMs** - Supports multiple models (Gemini, GPT-4, etc.) via OpenRouter API
+- **Timers & Alarms** - Countdown timers as a virtual filesystem (`filesystem://timers`) that ring on the voice satellites through the voice hub's HTTP endpoints; clock-time alarms and reminders ride a dedicated Home Assistant calendar bridged to the voice announce endpoint, with insistent repeat-until-acknowledged announcements
+- **OpenRouter LLMs** - Supports multiple models (GLM, GPT, Gemini, Claude, etc.) via OpenRouter API
 - **MCP Architecture** - Modular tool servers and channel servers for extensibility
 - **Streaming Pipeline** - Concurrent message processing with GroupByStreaming and Merge operators
-- **Observability Dashboard** - PWA dashboard showing token costs, tool analytics, error rates, schedule history, memory analytics, and live service health
+- **Observability Dashboard** - PWA dashboard showing token costs, tool analytics, error rates, per-turn latency, voice-turn breakdowns, schedule history, memory analytics, and live service health
 - **Subagent Delegation** - Parent agents can spawn ephemeral subagents for parallel or heavy tasks
-- **Docker Compose Stack** - Full media server setup with qBittorrent, Jackett, FileBrowser, and Camoufox
+- **Docker Compose Stack** - Full self-hosted stack: qBittorrent, Jackett, Plex, FileBrowser, Home Assistant, Music Assistant, Lemonade (STT/TTS), Camoufox, Redis, and Caddy
 
 ## Architecture
 
@@ -54,18 +55,18 @@ Azure Service Bus, using OpenRouter LLMs and the Model Context Protocol (MCP).
               │ (MCP Client)  │
               └───────┬───────┘
                       │
-      ┌───────────────┬───────────────┬───────────────┬───────────────┬───────────────┬───────────────┐
-      ▼               ▼               ▼               ▼               ▼               ▼               ▼
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│ MCP Library │ │  MCP Vault  │ │ MCP Sandbox │ │MCP WebSearch│ │MCP Idealista│ │MCP HomeAsst.│ │MCP Schedules│
-│ filesystem: │ │ filesystem: │ │ filesystem: │ │             │ │             │ │ filesystem: │ │ filesystem: │
-│   //media   │ │   //vault   │ │  //sandbox  │ │             │ │             │ │    //ha     │ │ //schedules │
-└──────┬──────┘ └─────────────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └─────────────┘
-       │                               │               │               │               │
-┌──────┴──────┐                 ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐
-│ qBittorrent │                 │Linux sandbox│ │  Camoufox   │ │  Idealista  │ │HomeAssistant│
-│   Jackett   │                 │bash + python│ │ (anti-det.  │ │     API     │ │ (REST API)  │
-│ FileBrowser │                 │   fs_exec   │ │   browser)  │ └─────────────┘ └─────────────┘
+      ┌───────────────┬───────────────┬───────────────┬───────────────┬───────────────┬───────────────┬───────────────┬───────────────┐
+      ▼               ▼               ▼               ▼               ▼               ▼               ▼               ▼               ▼
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│ MCP Library │ │  MCP Vault  │ │ MCP Sandbox │ │MCP WebSearch│ │MCP Idealista│ │MCP HomeAsst.│ │MCP Schedules│ │ MCP Printer │ │ MCP Timers  │
+│ filesystem: │ │ filesystem: │ │ filesystem: │ │             │ │             │ │ filesystem: │ │ filesystem: │ │ filesystem: │ │ filesystem: │
+│   //media   │ │   //vault   │ │  //sandbox  │ │             │ │             │ │    //ha     │ │ //schedules │ │//print-queue│ │  //timers   │
+└──────┬──────┘ └─────────────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └─────────────┘ └──────┬──────┘ └──────┬──────┘
+       │                               │               │               │               │                               │               │
+┌──────┴──────┐                 ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐                 ┌──────┴──────┐ ┌──────┴──────┐
+│ qBittorrent │                 │Linux sandbox│ │  Camoufox   │ │  Idealista  │ │HomeAssistant│                 │  IPP/CUPS   │ │  voice hub  │
+│   Jackett   │                 │bash + python│ │ (anti-det.  │ │     API     │ │ (REST API)  │                 │   printer   │ │ (announce)  │
+│ FileBrowser │                 │   fs_exec   │ │   browser)  │ └─────────────┘ └─────────────┘                 └─────────────┘ └─────────────┘
 └─────────────┘                 └─────────────┘ └─────────────┘
 
               ┌────────────────────────────────────┐
@@ -96,7 +97,7 @@ Each channel MCP server exposes a standard protocol. Wire serialization is centr
 - **Outbound**: `create_conversation` tool — agent-initiated conversations
 - **Outbound**: `register_agents` tool — agent publishes its agent catalog to the channel on connect/reconnect
 
-Channels use the registered catalog as the single source of truth for available agents (SignalR rebroadcasts it as `OnAgentsUpdated`, so the WebChat agent list updates live) instead of maintaining a duplicated `Agents` config. A server can be **dual-role** — both a channel and a tool/filesystem server (`mcp-scheduling` is both); for those, the channel-protocol tools are hidden from the LLM.
+Channels use the registered catalog as the single source of truth for available agents (SignalR rebroadcasts it as `OnAgentsUpdated`, so the WebChat agent list updates live) instead of maintaining a duplicated `Agents` config. A server can be **dual-role** — both a channel and a tool/filesystem server (`mcp-scheduling` is both, and so is `mcp-library`, whose channel role pushes download-completion alerts); for those, the channel-protocol tools are hidden from the LLM.
 
 New transports can be added by deploying a new channel MCP server — zero agent code changes needed.
 
@@ -110,7 +111,7 @@ Because each mount is just an MCP endpoint over HTTP, filesystems can be deploye
 - **Different containers on the same host**: the default Docker Compose layout. Each MCP server is its own container with its own volume mount, and the agent reaches them over the compose network (e.g. `http://mcp-vault:8080/mcp`).
 - **Different machines**: point `mcpServerEndpoints` at any reachable URL. A NAS, a remote workstation, or a cloud VM that runs the same MCP server image becomes a first-class mount with no agent code changes — it's just another HTTP endpoint speaking the MCP `fs_*` protocol.
 
-The agent exposes 8 unified domain tools — `VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsRemove`, `VfsExec` — that dispatch through the registry, so the LLM works with absolute paths like `/media/movies/...` or `/vault/notes/...` and never has to know which backend hosts which mount. `VfsGlobFiles` supports brace-expansion patterns (`**/*.{jpg,png}` expands to the union of `**/*.jpg` and `**/*.png`), and every backend returns glob matches as full virtual paths.
+The agent exposes 10 unified domain tools — `VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsCopy`, `VfsRemove`, `VfsExec`, `VfsFileInfo` — that dispatch through the registry, so the LLM works with absolute paths like `/media/movies/...` or `/vault/notes/...` and never has to know which backend hosts which mount. `VfsGlobFiles` supports brace-expansion patterns (`**/*.{jpg,png}` expands to the union of `**/*.jpg` and `**/*.png`), and every backend returns glob matches as full virtual paths.
 
 **Cross-filesystem operations.** `VfsMove` and `VfsCopy` detect when source and destination live on different mounts and fall back to a streaming pipeline: the source MCP server's `fs_blob_read` streams chunks, which are written to the destination via `fs_blob_write`, then the source is removed (for move). This works regardless of where the two backends are deployed — moving a file from a sandbox container on one host to a vault directory on another host is the same operation as moving it between two paths in the same container. Best-effort per-entry results are reported for directory recursion so partial failures are visible.
 
@@ -150,9 +151,19 @@ Printing is another non-disk MCP filesystem server (`mcp-printer`) exposing `fil
 
 The IPP transport is `IppPrinterClient` (`Infrastructure/Clients/Printer/`), a `SharpIppNext` + `HttpClient` adapter against the configured `PRINTERURI` (a CUPS server or a direct-IPP printer — same protocol), mapping the `Print-Job`, `Get-Jobs`, and `Cancel-Job` IPP operations.
 
+### Timers & Alarms
+
+Countdown timers are another non-disk MCP filesystem server (`mcp-timers`) exposing `filesystem://timers` (mounted at `/timers`). Creating `/timers/<id>/timer.json` arms a countdown, reading the read-only `status.json` reports the remaining seconds, removing the directory cancels it, and running `dismiss.sh` silences everything currently ringing. Timers are deliberately in-memory and hub-local — a timer just *rings*, it never messages the agent, which is why this is a pure tool server rather than a channel.
+
+The timers server has no audio path of its own. When a timer fires it calls the voice hub's token-gated HTTP endpoints (`/api/voice/announce`, `/api/voice/dismiss`, `/api/voice/satellites`), so ringing, dismissal (wake word or button on the satellite, or `dismiss.sh` from any channel), and satellite/room resolution all stay in one place — the hub. The `timers_prompt` MCP prompt teaches the `/timers` idiom and embeds the live satellite roster.
+
+Clock-time alarms and reminders ride Home Assistant instead: the agent creates events on a dedicated `calendar.assistant_alarms` calendar and an HA automation bridges each firing to the same voice announce endpoint, with optional insistent repetition until acknowledged.
+
 ### Voice Satellites
 
-Voice runs as another MCP channel server (`mcp-channel-voice`) plus dedicated hardware satellites. The hub is the Wyoming-protocol **client**: for every satellite configured with an address (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) it dials out and keeps a persistent reconnecting connection. The satellite detects the wake word locally and streams mic audio to the hub; the hub segments the utterance (silence gating), transcribes it via Lemonade STT (`lemonade`, OpenAI-compatible `/v1/audio/transcriptions`, Whisper on whisper.cpp), dispatches the transcript to the agent as a `channel/message`, and streams the reply back as Lemonade Kokoro TTS audio (24 kHz PCM resampled in-hub to 22 050 Hz). After each reply an optional wake-free follow-up window opens (announced by a listening chime) so the conversation continues without repeating the wake word.
+Voice runs as another MCP channel server (`mcp-channel-voice`) plus dedicated hardware satellites. The hub is the Wyoming-protocol **client**: for every satellite configured with an address (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) it dials out and keeps a persistent reconnecting connection. The satellite detects the wake word locally and streams mic audio to the hub; the hub segments the utterance (silence gating), gates it through speaker verification (an ONNX speaker-embedding model scored against profiles enrolled via `scripts/enroll-voice.sh` — non-enrolled audio like TV or guests is dropped before STT, and a conclusive match routes the speaker's identity into the message for per-person memory), optionally cleans noisy captures through the `tse-extractor` target-speech-extraction sidecar, transcribes via Lemonade STT (`lemonade`, OpenAI-compatible `/v1/audio/transcriptions`, Whisper on whisper.cpp), dispatches the transcript to the agent as a `channel/message`, and speaks the reply as it streams — segment-by-segment Lemonade Kokoro TTS audio (24 kHz PCM resampled in-hub to 22 050 Hz). After each reply an optional wake-free follow-up window opens (announced by a listening chime) so the conversation continues without repeating the wake word.
+
+The hub also exposes token-gated HTTP endpoints (`/api/voice/announce`, `/api/voice/dismiss`, `/api/voice/satellites`) that `mcp-timers` and the Home Assistant alarm bridge call to ring announcements — including insistent repeat-until-acknowledged alarms — on any satellite (see [Timers & Alarms](#timers--alarms)).
 
 ```
 ┌─ Raspberry Pi / WSL dev host ──┐                     ┌─ mcp-channel-voice (hub) ──┐
@@ -185,7 +196,7 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 | Server            | Tools                                                                                                                   | Resources             | Purpose                                                                                 |
 |-------------------|-------------------------------------------------------------------------------------------------------------------------|-----------------------|-----------------------------------------------------------------------------------------|
 | **mcp-library**   | file_search, download_file, content_recommend, fs_glob, fs_read, fs_info, fs_move, fs_copy, fs_delete, fs_blob_read, fs_blob_write | `filesystem://media` | Search and download content via Jackett/qBittorrent, organize media files; dual-role — also a channel that pushes download-completion alerts to the originating conversation |
-| **mcp-vault**     | FsGlob, FsRead, FsSearch, FsCreate, FsEdit, FsMove, FsDelete                                                          | `filesystem://vault`  | Manage a knowledge vault of markdown notes and text files                                |
+| **mcp-vault**     | fs_glob, fs_read, fs_search, fs_create, fs_edit, fs_move, fs_copy, fs_delete, fs_info, fs_blob_read, fs_blob_write    | `filesystem://vault`  | Manage a knowledge vault of markdown notes and text files                                |
 | **mcp-sandbox**   | fs_glob, fs_read, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_copy, fs_info, fs_blob_read, fs_blob_write, fs_exec | `filesystem://sandbox` | Linux container for arbitrary bash/Python execution with a scratch + persistent home filesystem |
 | **mcp-websearch** | web_search, web_browse, web_snapshot, web_action                                                                        |                       | Search the web and browse pages via Camoufox with accessibility tree snapshots            |
 | **mcp-idealista** | property_search                                                                                                         |                       | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
@@ -201,7 +212,7 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 | **mcp-channel-signalr**   | WebChat transport — hosts SignalR hub, manages streams/sessions/approvals, push notifications |
 | **mcp-channel-telegram**  | Telegram transport — multi-bot polling (one per agent), inline keyboard approvals            |
 | **mcp-channel-servicebus**| Azure Service Bus transport — queue processor, auto-approval, response sender                |
-| **mcp-channel-voice**     | Voice transport — Wyoming hub that dials hardware satellites, segments utterances, Lemonade STT/TTS (OpenAI-compatible, `lemonade`), manages follow-up windows and announcements (see [Voice Satellites](#voice-satellites)) |
+| **mcp-channel-voice**     | Voice transport — Wyoming hub that dials hardware satellites, segments utterances, gates speakers (verification + optional TSE cleanup), Lemonade STT/TTS (OpenAI-compatible, `lemonade`), manages follow-up windows and announcements (see [Voice Satellites](#voice-satellites)) |
 | **mcp-scheduling**        | Scheduling transport — fires due cron/one-shot schedules as channel messages; also exposes `filesystem://schedules` for managing them |
 
 ### Agents
@@ -256,7 +267,7 @@ Agent routing:
 | `Observability`          | Metrics collector, REST API, SignalR hub — serves the Dashboard |
 | `Dashboard.Client`       | Blazor WebAssembly observability dashboard (PWA)                |
 | `DockerCompose`          | Docker Compose configuration for the full stack                 |
-| `Tests`                  | Unit and integration tests                                      |
+| `Tests`                  | Unit, integration, and E2E tests                                |
 
 ## Prerequisites
 
@@ -304,7 +315,7 @@ QBITTORRENT__PASSWORD=your_password
 # Agent definitions (array)
 AGENTS__0__ID=jack
 AGENTS__0__NAME=Jack
-AGENTS__0__MODEL=z-ai/glm-5.1
+AGENTS__0__MODEL=z-ai/glm-5.2
 AGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-library:8080/mcp
 AGENTS__0__MCPSERVERENDPOINTS__1=http://mcp-websearch:8080/mcp
 AGENTS__0__ENABLEDFEATURES__0=filesystem.glob
@@ -318,7 +329,7 @@ AGENTS__0__CUSTOMINSTRUCTIONS=You are Jack, a media library assistant...
 SUBAGENTS__0__ID=jonas-worker
 SUBAGENTS__0__NAME=Jonas Worker
 SUBAGENTS__0__DESCRIPTION=A worker subagent with the same toolset as Jonas
-SUBAGENTS__0__MODEL=z-ai/glm-5.1
+SUBAGENTS__0__MODEL=z-ai/glm-5.2
 SUBAGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-vault:8080/mcp
 SUBAGENTS__0__MAXEXECUTIONSECONDS=600
 
@@ -331,6 +342,11 @@ CHANNELENDPOINTS__2__CHANNELID=servicebus
 CHANNELENDPOINTS__2__ENDPOINT=http://mcp-channel-servicebus:8080/mcp
 CHANNELENDPOINTS__3__CHANNELID=scheduling
 CHANNELENDPOINTS__3__ENDPOINT=http://mcp-scheduling:8080/mcp
+CHANNELENDPOINTS__4__CHANNELID=voice
+CHANNELENDPOINTS__4__ENDPOINT=http://mcp-channel-voice:8080/mcp
+CHANNELENDPOINTS__4__ATTACHONLY=true
+CHANNELENDPOINTS__5__CHANNELID=library
+CHANNELENDPOINTS__5__ENDPOINT=http://mcp-library:8080/mcp
 
 # Telegram channel (one bot per agent)
 BOTS__0__AGENTID=jack
@@ -381,7 +397,11 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | MCP Scheduling           | 6013 | Scheduling channel + filesystem server |
 | MCP Printer              | 6014 | Print queue MCP server         |
 | MCP Channel Voice        | 6015 | Voice channel server (Wyoming satellite hub) |
+| MCP Timers               | 6016 | Countdown timers MCP server    |
+| Lemonade                 | 13305| STT/TTS server (OpenAI-compatible) |
+| TSE Extractor            | 9098 | Target-speech-extraction service |
 | Camoufox                 | 9377 | Anti-detect browser (WebSocket)|
+| Caddy                    | 443  | TLS entry point (WebChat, SignalR hubs, dashboard) |
 
 ## Usage
 
@@ -431,6 +451,8 @@ The dashboard provides operational visibility into agent behavior:
 - **Tokens** — Token usage time-series, cost breakdown, per-user and per-model tables
 - **Tools** — Tool call frequency, success/failure rates, average duration
 - **Errors** — Error list with type, service, and message details
+- **Latency** — Per-turn latency trends with percentile breakdowns and a recent-turns table
+- **Voice** — Voice pipeline analytics (turn-span decomposition, STT/TTS latency percentiles) and recent voice events
 - **Schedules** — Schedule execution history with duration and success/failure status
 - **Memory** — Memory extraction, recall, and dreaming analytics
 
