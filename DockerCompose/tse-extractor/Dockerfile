@@ -44,10 +44,18 @@ ENV PIP_DEFAULT_TIMEOUT=60 \
 # Confirmed empirically (2026-07-22, not just by reading the chain): removing either package
 # from a running sidecar and starting app.py raises ModuleNotFoundError before Flask even
 # binds -- the app cannot boot without them, so both stay.
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.1.2" "torchaudio==2.1.2" \
-    && pip install --no-cache-dir "numpy<2" soundfile pyyaml scipy silero-vad tqdm \
-        kaldiio hdbscan umap-learn scikit-learn "onnxruntime==1.27.0" requests flask \
-    && pip install --no-cache-dir --no-deps \
+#
+# Three separate layers rather than one chained RUN, for the same reason the onnx and gunicorn
+# layers below are separate: a failed RUN discards everything it did, and with --no-cache-dir
+# there is nothing to resume from. Chained, a stall in the PyPI leg or the git clone threw away
+# the ~200 MB torch download too and the retry paid for it again. Split, each retry restarts at
+# the first leg that actually failed.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.1.2" "torchaudio==2.1.2"
+
+RUN pip install --no-cache-dir "numpy<2" soundfile pyyaml scipy silero-vad tqdm \
+        kaldiio hdbscan umap-learn scikit-learn "onnxruntime==1.27.0" requests flask
+
+RUN pip install --no-cache-dir --no-deps \
         "wespeaker @ git+https://github.com/wenet-e2e/wespeaker.git@e9bbf73d0fd13db6cf42a6cb2eafb0d7dd0f8e0e"
 
 # torch.onnx.export requires the onnx package at runtime (export happens at container
