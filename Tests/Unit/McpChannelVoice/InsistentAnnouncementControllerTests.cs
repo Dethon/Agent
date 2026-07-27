@@ -85,6 +85,25 @@ public class InsistentAnnouncementControllerTests
         }
     }
 
+    // The playback loop waits out each job's nominal audio duration on the injected clock
+    // (SatelliteSession: OnDrained must mean "the satellite finished PLAYING", not "we finished
+    // writing"), so a test on a FakeTimeProvider has to push the clock past that wait or the loop
+    // never returns. Advance in a loop rather than once: the delay is registered asynchronously
+    // after the job's last chunk, so a single Advance can land before the timer even exists.
+    private static async Task DrainPumpAsync(Task pump, FakeTimeProvider time, SatelliteSession session)
+    {
+        session.CompletePlayback();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (!pump.IsCompleted)
+        {
+            if (sw.Elapsed > TimeSpan.FromSeconds(10))
+            { throw new TimeoutException("playback pump did not complete"); }
+            time.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(20);
+        }
+        await pump;
+    }
+
     // Runs each online session's playback loop so enqueued jobs actually play; the writer counts
     // one invocation per round (the mock TTS yields exactly one chunk).
     private static (Task Pump, Func<int> Count) PumpPlays(SatelliteSession session, FakeTimeProvider time)
@@ -94,6 +113,77 @@ public class InsistentAnnouncementControllerTests
             (_, _) => { Interlocked.Increment(ref count); return Task.CompletedTask; },
             CancellationToken.None, time);
         return (pump, () => Volatile.Read(ref count));
+    }
+
+    // Like PumpPlays, but records the alert flag the playback loop reports for each job — the bit
+    // the Wyoming host puts on audio-start for the satellite's sink selection.
+    private static (Task Pump, Func<IReadOnlyList<bool>> Flags) PumpRecordsAlertFlags(
+        SatelliteSession session, FakeTimeProvider time)
+    {
+        var flags = new List<bool>();
+        var pump = session.RunPlaybackLoopAsync(
+            (_, _) => Task.CompletedTask,
+            CancellationToken.None,
+            time,
+            onAudioStart: (_, alert, _) =>
+            {
+                lock (flags)
+                { flags.Add(alert); }
+                return Task.CompletedTask;
+            });
+        return (pump, () => { lock (flags) { return flags.ToList(); } }
+        );
+    }
+
+    // A timer must ring on the satellite's non-attenuated alert route, not at the calibrated
+    // conversational voice level — that per-satellite level is exactly what makes a kitchen
+    // countdown inaudible.
+    [Fact]
+    public async Task Start_Timer_MarksThePlaybackJobAsAnAlert()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
+        var (pump, flags) = PumpRecordsAlertFlags(h.Sessions.Get("kitchen-01")!, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "eggs",
+                Kind = AnnounceKind.Timer,
+                Insistent = new() { MaxRepeats = 1 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(() => flags().Count >= 1, TimeSpan.FromSeconds(5));
+        flags()[0].ShouldBeTrue();
+
+        await DrainPumpAsync(pump, time, h.Sessions.Get("kitchen-01")!);
+    }
+
+    // Alarms take the same route. Their wake-up ramp is a separate, within-alert gain and is
+    // deliberately unaffected — the routing change lifts the ceiling the ramp climbs toward.
+    [Fact]
+    public async Task Start_Alarm_MarksThePlaybackJobAsAnAlert()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: true, satelliteIds: "bedroom-01");
+        var (pump, flags) = PumpRecordsAlertFlags(h.Sessions.Get("bedroom-01")!, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "bedroom-01" },
+                Text = "wake up",
+                Kind = AnnounceKind.Alarm,
+                Insistent = new() { MaxRepeats = 1 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(() => flags().Count >= 1, TimeSpan.FromSeconds(5));
+        flags()[0].ShouldBeTrue();
+
+        await DrainPumpAsync(pump, time, h.Sessions.Get("bedroom-01")!);
     }
 
     [Fact]
