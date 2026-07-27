@@ -143,7 +143,7 @@ pub async fn run_connection(
                             let fired = d.push_chunk(&samples);
                             // on-device budget check: must stay well under the 80 ms chunk cadence
                             tracing::debug!(us = t0.elapsed().as_micros() as u64, "wake inference");
-                            if fired {
+                            if fired.is_some() {
                                 info!("wake word detected");
                                 trim_preroll(&mut preroll, cfg.wake_preroll_chunks());
                                 start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback).await?;
