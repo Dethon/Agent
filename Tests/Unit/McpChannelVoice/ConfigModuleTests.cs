@@ -108,6 +108,26 @@ public class ConfigModuleTests
             "agent-1", null, null, null, default)).ShouldBeFalse();
     }
 
+    // The arbiter is only reachable from the host through DI, so an unregistered ArbitrationSettings
+    // or WakeArbiter fails at container build in production and nowhere else. A non-default WindowMs
+    // proves the configured instance flows through rather than a coincidental `new ArbitrationSettings()`.
+    [Fact]
+    public void ConfigureVoiceChannel_ResolvesWakeArbiter()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.ConfigureVoiceChannel(new VoiceSettings
+        {
+            Arbitration = new ArbitrationSettings { WindowMs = 375 }
+        });
+        services.AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>());
+        services.AddSingleton(StubConversationFactory());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<WakeArbiter>().ShouldNotBeNull();
+        provider.GetRequiredService<ArbitrationSettings>().WindowMs.ShouldBe(375);
+    }
+
     private static IConversationFactory StubConversationFactory()
     {
         var factory = new Mock<IConversationFactory>();

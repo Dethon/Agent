@@ -126,6 +126,7 @@ public static class ConfigModule
 
         services.AddHostedService<WyomingSatelliteHost>();
         services.AddSingleton(settings.WyomingClient);
+        services.AddSingleton(settings.Arbitration);
 
         services.AddSingleton<ReplyTextAccumulator>();
 
@@ -140,6 +141,7 @@ public static class ConfigModule
         services.AddSingleton(settings.Announce);
         services.AddSingleton<AnnouncementService>();
         services.AddSingleton<ActiveAlertRegistry>();
+        services.AddSingleton<WakeArbiter>();
         services.AddHttpClient();
         services.AddSingleton<InsistentAnnouncementController>();
 

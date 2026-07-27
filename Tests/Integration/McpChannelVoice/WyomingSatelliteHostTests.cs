@@ -20,6 +20,13 @@ namespace Tests.Integration.McpChannelVoice;
 
 public class WyomingSatelliteHostTests
 {
+    // Every test here dials a single satellite, and the arbiter no-ops below two registered
+    // handles — so a default instance keeps these constructions real without changing what they
+    // exercise. Multi-satellite arbitration has its own coverage.
+    private static WakeArbiter Arbiter(VoiceConversationManager conversations) =>
+        new(new ArbitrationSettings(), conversations, Mock.Of<IMetricsPublisher>(),
+            TimeProvider.System, NullLogger<WakeArbiter>.Instance);
+
     private sealed class CapturingEmitter : ChannelNotificationEmitter
     {
         public TaskCompletionSource<ChannelMessageNotification> Tcs { get; } = new();
@@ -225,6 +232,7 @@ public class WyomingSatelliteHostTests
             new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
+            Arbiter(manager),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -239,6 +247,172 @@ public class WyomingSatelliteHostTests
 
         var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
         transcriptText.ShouldBe(""); // legacy path re-arms with an (ignored) empty transcript
+
+        await host.StopAsync(CancellationToken.None);
+        listener.Stop();
+        await cts.CancelAsync();
+        try
+        { await fakeSatellite; }
+        catch { /* cancellation / disposal */ }
+    }
+
+    // Only run-pipeline carries the wake metadata; a satellite that also announces its mic stream
+    // sends a metadata-free audio-start for the SAME turn. WakeTriggered must report exactly what
+    // opened the turn — that field is what RmsOffsetDb is calibrated from, and a wrong value is
+    // worse than a missing one because nothing ever fails. Both frame orders are exercised: the
+    // canonical one must keep the signal, and the reversed one must not leave it stashed for the
+    // next wake to claim as its own.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Hub_WakeMetadataOnRunPipelineWithAudioStart_AttributesSignalToTheTurnThatOpened(
+        bool runPipelineFirst)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = cts.Token;
+
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var sawRunSatellite = new TaskCompletionSource();
+        var sawTranscript = new TaskCompletionSource<string>();
+
+        var fakeSatellite = Task.Run(async () =>
+        {
+            using var conn = await listener.AcceptTcpClientAsync(ct);
+            await using var stream = conn.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+
+            var readLoop = Task.Run(async () =>
+            {
+                await foreach (var evt in reader.ReadAllAsync(ct))
+                {
+                    if (evt.Type == "run-satellite")
+                    {
+                        sawRunSatellite.TrySetResult();
+                    }
+                    else if (evt.Type == "transcript")
+                    {
+                        sawTranscript.TrySetResult(evt.Data["text"]?.GetValue<string>() ?? "");
+                    }
+                }
+            }, ct);
+
+            await sawRunSatellite.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+
+            var data = new JsonObject { ["rate"] = 16_000, ["width"] = 2, ["channels"] = 1 };
+            var runPipeline = WyomingEvent.Header("run-pipeline", new JsonObject
+            {
+                ["source"] = "wake",
+                ["wake_rms"] = 1234.5,
+                ["wake_score"] = 0.87
+            });
+            // The other announcement of the same turn: a mic-stream open, carrying no wake metadata.
+            var audioStart = WyomingEvent.Header("audio-start", data.DeepClone().AsObject());
+
+            await writer.WriteAsync(runPipelineFirst ? runPipeline : audioStart, ct);
+            await writer.WriteAsync(runPipelineFirst ? audioStart : runPipeline, ct);
+
+            await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
+            foreach (var _ in Enumerable.Range(0, 4))
+            {
+                await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(8000)), ct);
+            }
+            foreach (var _ in Enumerable.Range(0, 6))
+            {
+                await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
+            }
+
+            await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        }, ct);
+
+        var stt = new Mock<ISpeechToText>();
+        stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
+                                         It.IsAny<TranscriptionOptions>(),
+                                         It.IsAny<CancellationToken>()))
+            .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
+                async (audio, opts, token) =>
+                {
+                    await foreach (var _ in audio.WithCancellation(token))
+                    { }
+                    return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
+                });
+
+        var emitter = new CapturingEmitter();
+        var publishedEvents = new List<VoiceEvent>();
+        var publisher = new Mock<IMetricsPublisher>();
+        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((evt, _) =>
+            {
+                if (evt is VoiceEvent voiceEvent)
+                {
+                    lock (publishedEvents)
+                    { publishedEvents.Add(voiceEvent); }
+                }
+            })
+            .Returns(Task.CompletedTask);
+        var factory = new Mock<IConversationFactory>();
+        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var identity = ConversationIdGenerator.CreateFor("topic-x");
+                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
+                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
+                return new ConversationCreation(identity, topic);
+            });
+        var manager = new VoiceConversationManager(
+            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+        var dispatcher = new TranscriptDispatcher(
+            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System,
+            NullLogger<TranscriptDispatcher>.Instance);
+        var sessions = new SatelliteSessionRegistry();
+        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
+        {
+            ["kitchen-01"] = new()
+            {
+                Identity = "household",
+                Room = "Kitchen",
+                WakeWord = "hey_jarvis",
+                Address = $"tcp://127.0.0.1:{port}"
+            }
+        });
+
+        var host = new WyomingSatelliteHost(
+            new WyomingClientSettings
+            {
+                ReconnectDelaySeconds = 1,
+                SilenceRmsThreshold = 500,
+                TrailingSilenceMs = 200,
+                MaxUtteranceMs = 3000,
+                MinSpeechMs = 100
+            },
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
+            TimeProvider.System,
+            Arbiter(manager),
+            NullLogger<WyomingSatelliteHost>.Instance);
+
+        await host.StartAsync(ct);
+
+        await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        VoiceEvent[] wakes;
+        lock (publishedEvents)
+        { wakes = publishedEvents.Where(e => e.Metric == VoiceMetric.WakeTriggered).ToArray(); }
+        // One wake for one turn — the second frame must not open another.
+        wakes.Length.ShouldBe(1);
+        // Canonical order: the metadata reached the stash before the turn opened, so it is reported.
+        // Reversed: audio-start already opened the turn, and a signal that arrived afterwards
+        // belongs to nothing this turn measured — "unknown" is the only honest answer.
+        wakes[0].WakeRms.ShouldBe(runPipelineFirst ? 1234.5 : null);
+        wakes[0].WakeScore.ShouldBe(runPipelineFirst ? 0.87 : null);
+        // Nothing left over either way: a stash surviving the turn is read by the NEXT wake, which
+        // would then report a loudness measured in a different utterance.
+        sessions.Get("kitchen-01")?.TryConsumeWakeSignal().ShouldBeNull();
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -358,6 +532,7 @@ public class WyomingSatelliteHostTests
             new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
+            Arbiter(manager),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -508,6 +683,7 @@ public class WyomingSatelliteHostTests
             },
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
+            Arbiter(manager),
             NullLogger<WyomingSatelliteHost>.Instance,
             new IdentifyingVerifier("fran"));
 
@@ -653,6 +829,7 @@ public class WyomingSatelliteHostTests
             new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
+            Arbiter(manager),
             NullLogger<WyomingSatelliteHost>.Instance,
             new RejectingVerifier());
 
@@ -825,7 +1002,7 @@ public class WyomingSatelliteHostTests
                 FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 },
                 SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = earlyVerifyMs }
             },
-            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, NullLogger<WyomingSatelliteHost>.Instance,
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager), NullLogger<WyomingSatelliteHost>.Instance,
             new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000));
 
         await host.StartAsync(ct);
@@ -975,6 +1152,7 @@ public class WyomingSatelliteHostTests
             },
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
+            Arbiter(manager),
             NullLogger<WyomingSatelliteHost>.Instance,
             new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000));
 
@@ -1124,6 +1302,7 @@ public class WyomingSatelliteHostTests
             },
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
+            Arbiter(manager),
             NullLogger<WyomingSatelliteHost>.Instance,
             new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000));
 
@@ -1247,6 +1426,7 @@ public class WyomingSatelliteHostTests
             new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
+            Arbiter(manager),
             NullLogger<WyomingSatelliteHost>.Instance,
             new RejectingVerifier());
 
@@ -1370,7 +1550,7 @@ public class WyomingSatelliteHostTests
         var host = new WyomingSatelliteHost(
             new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 },
             new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 } },
-            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, NullLogger<WyomingSatelliteHost>.Instance);
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -1491,7 +1671,7 @@ public class WyomingSatelliteHostTests
         var host = new WyomingSatelliteHost(
             new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 },
             new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 } },
-            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, NullLogger<WyomingSatelliteHost>.Instance);
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -1594,7 +1774,7 @@ public class WyomingSatelliteHostTests
         var host = new WyomingSatelliteHost(
             new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 },
             new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 } },
-            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, NullLogger<WyomingSatelliteHost>.Instance);
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -1724,6 +1904,7 @@ public class WyomingSatelliteHostTests
             new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
             registry, sessions, manager, stt.Object, dispatcher, alerts, publisher.Object,
             TimeProvider.System,
+            Arbiter(manager),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -1838,6 +2019,7 @@ public class WyomingSatelliteHostTests
             new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
             registry, sessions, manager, stt.Object, dispatcher, alerts, publisher.Object,
             TimeProvider.System,
+            Arbiter(manager),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);

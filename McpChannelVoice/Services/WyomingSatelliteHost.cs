@@ -28,6 +28,7 @@ public sealed class WyomingSatelliteHost(
     ActiveAlertRegistry alerts,
     IMetricsPublisher metrics,
     TimeProvider time,
+    WakeArbiter arbiter,
     ILogger<WyomingSatelliteHost> logger,
     ISpeakerVerifier? speakerVerifier = null) : IHostedService
 {
@@ -130,6 +131,14 @@ public sealed class WyomingSatelliteHost(
 
         var session = new SatelliteSession(id, config);
         sessionRegistry.Register(session);
+        // Both re-arm writes share the connection's single WyomingWriter with the playback loop and
+        // the coordinator's EndConversation, which already write to it concurrently today — the
+        // arbiter is a third caller under the same guarantees, not a new sharing model.
+        arbiter.Register(id, new WakeArbiterHandle(
+            session,
+            ct2 => client.WriteAsync(WyomingEvent.Header("pause-satellite", new JsonObject()), ct2),
+            ct2 => client.WriteAsync(
+                WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), ct2)));
         logger.LogInformation("Connected to satellite {Id} at {Host}:{Port}", id, host, port);
 
         var playbackTask = Task.Run(() => session.RunPlaybackLoopAsync(
@@ -172,6 +181,11 @@ public sealed class WyomingSatelliteHost(
         var coordinator = BuildCoordinator(id, config, client, session, followUp);
         var conversationTask = Task.Run(() => coordinator.RunAsync(ct), ct);
 
+        // Per-turn, and only ever touched from this single read loop: did run-pipeline already
+        // announce this turn? Cleared at audio-stop, which is exactly where the satellite ends the
+        // mic stream (transcript or pause-satellite both route through its end_capture).
+        var wakeAnnounced = false;
+
         try
         {
             await client.WriteAsync(WyomingEvent.Header("run-satellite", new JsonObject()), ct);
@@ -180,11 +194,45 @@ public sealed class WyomingSatelliteHost(
             {
                 switch (evt.Type)
                 {
+                    // The only frame that carries wake metadata. nabu-satellite sends exactly this
+                    // one per turn; other Wyoming satellites may follow it with audio-start.
                     case "run-pipeline":
-                    case "audio-start":
                         // Waking the satellite during an active alert dismisses it — no spoken command
                         // needed (the satellite mics only on local wake).
                         NoteDismissals(session, alerts.Acknowledge(id));
+                        var wake = ReadWakeAnnouncement(evt.Data);
+                        if (wake.Rms is not null)
+                        {
+                            session.MarkSupportsPause();
+                        }
+                        wakeAnnounced = true;
+                        // Stashed before OnWake, which opens the capture synchronously on this thread
+                        // and consumes the stash onto WakeTriggered.
+                        session.NoteWakeSignal(wake.Rms, wake.Score);
+                        arbiter.Claim(id, wake.Rms, wake.Score, wake.Source);
+                        coordinator.OnWake();
+                        // OnWake opens the capture on this thread and consumes the stash — unless a
+                        // turn was already open, in which case it no-ops and nothing consumes it.
+                        // Anything still stashed here therefore belongs to a turn that never used
+                        // it, and the next wake would report it as its own loudness. Drop it: a
+                        // missing WakeRms reads as "unknown", a wrong one silently skews the
+                        // RmsOffsetDb calibration it feeds.
+                        session.TryConsumeWakeSignal();
+                        break;
+
+                    // Legacy/foreign satellites announce the mic stream with audio-start, so it still
+                    // has to open a turn. It carries no wake metadata, and deliberately neither
+                    // stashes nor claims once run-pipeline has announced this turn: noting (null,
+                    // null) would erase the loudness WakeTriggered reports for RmsOffsetDb
+                    // calibration, and a null-rms claim only survives the arbiter's first-wins
+                    // in-window dedupe if run-pipeline happens to arrive first — a satellite that
+                    // reordered the two would silently lose every steal.
+                    case "audio-start":
+                        NoteDismissals(session, alerts.Acknowledge(id));
+                        if (!wakeAnnounced)
+                        {
+                            arbiter.Claim(id, null, null, "wake");
+                        }
                         coordinator.OnWake();
                         break;
 
@@ -194,6 +242,7 @@ public sealed class WyomingSatelliteHost(
                         break;
 
                     case "audio-stop":
+                        wakeAnnounced = false;
                         session.EndCapture();
                         break;
 
@@ -214,6 +263,10 @@ public sealed class WyomingSatelliteHost(
             try
             { await conversationTask; }
             catch { /* unwinds on cancellation / disconnect */ }
+            // Before the session registry: a dropped connection must stop being an arbitration
+            // candidate immediately, or a decision still inside its window would try to suppress a
+            // satellite whose socket is gone.
+            arbiter.Unregister(id);
             sessionRegistry.Unregister(id);
         }
     }
@@ -228,7 +281,13 @@ public sealed class WyomingSatelliteHost(
                 session.MarkTurnStart(time.GetTimestamp()); // turn opens here; loop reports turn -> first-audio
                 if (!isFollowUp)
                 {
-                    PublishVoiceMetric(VoiceMetric.WakeTriggered, session); // on-device wake started this conversation
+                    // on-device wake started this conversation; the read loop stashed what the
+                    // satellite reported about it, and this is the single-use consumer. Only the
+                    // wake turn: a follow-up has no wake of its own, so consuming there would either
+                    // report nothing or, worse, attribute the wake turn's loudness to it.
+                    var wake = session.TryConsumeWakeSignal();
+                    PublishVoiceMetric(VoiceMetric.WakeTriggered, session,
+                        wakeRms: wake?.Rms, wakeScore: wake?.Score);
                 }
                 // Same no-speech window on the wake turn as on follow-ups: a wake with no speech
                 // (false trigger, user changes their mind) must re-arm after WindowMs instead of
@@ -244,7 +303,10 @@ public sealed class WyomingSatelliteHost(
                     TimeSpan.FromMilliseconds(settings.TrailingSilenceMs),
                     TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
                     TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(settings)),
-                    noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
+                    noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)),
+                    // Rule B asks an already-open capture, retrospectively, what it heard during
+                    // another satellite's wake-word span — so every capture has to remember.
+                    new ChunkHistory(time, voiceSettings.Arbitration.HistorySpan));
             },
             CloseCapture = capture =>
             {
@@ -519,7 +581,9 @@ public sealed class WyomingSatelliteHost(
         session.NoteDismissedAlert(description, time.GetUtcNow());
     }
 
-    private void PublishVoiceMetric(VoiceMetric metric, SatelliteSession session, CaptureStats? stats = null) =>
+    private void PublishVoiceMetric(
+        VoiceMetric metric, SatelliteSession session, CaptureStats? stats = null,
+        double? wakeRms = null, double? wakeScore = null) =>
         _ = SafePublishAsync(new VoiceEvent
         {
             Metric = metric,
@@ -531,6 +595,8 @@ public sealed class WyomingSatelliteHost(
             FloorRms = stats?.FloorRms,
             TrailingRms = stats?.TrailingRms,
             EndReason = stats?.EndReason,
+            WakeRms = wakeRms,
+            WakeScore = wakeScore,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
         });
 
@@ -563,6 +629,21 @@ public sealed class WyomingSatelliteHost(
         Format = new AudioFormat { SampleRateHz = rate, SampleWidthBytes = width, Channels = channels },
         Timestamp = TimeSpan.Zero
     };
+
+    internal readonly record struct WakeAnnouncement(double? Rms, double? Score, string Source);
+
+    // Wake metadata is peer-supplied and optional: pre-arbitration firmware sends run-pipeline with
+    // no data object at all, and Wyoming has no schema to stop a peer sending the wrong types. Every
+    // read here has to survive absent, null and wrong-typed values, because an exception on the read
+    // loop tears down the satellite connection mid-utterance.
+    internal static WakeAnnouncement ReadWakeAnnouncement(JsonObject data) => new(
+        JsonNumber.ReadDouble(data, "wake_rms"),
+        JsonNumber.ReadDouble(data, "wake_score"),
+        data["source"] is JsonValue value
+        && value.TryGetValue<string>(out var source)
+        && !string.IsNullOrWhiteSpace(source)
+            ? source
+            : "wake");
 
     private static (int Rate, int Width, int Channels) FormatOf(JsonObject data) =>
     (
