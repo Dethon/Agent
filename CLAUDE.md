@@ -83,7 +83,7 @@ Follow Red-Green-Refactor for all features and bug fixes: write a failing test f
 - **Secrets** — API keys, connection strings, credentials — get a placeholder entry in `DockerCompose/.env` (never a real value) and are wired into `docker-compose.yml` as `${VAR_NAME}`.
 - **Non-generic parameters** — values that are inherently per-deployment rather than a tunable with one sensible checked-in default (a satellite's host IP, a topology-dependent URL) — get a `docker-compose.yml` environment entry (placeholder like `changeme` where there's no safe default) so each deployment can override them without editing checked-in JSON.
 
-A new generic tunable (a threshold, a window, a feature flag) belongs in `appsettings.json` alone, with **no** corresponding compose entry — this plan added `Arbitration` (`McpChannelVoice/appsettings.json`) exactly that way, deliberately with no compose entry, because none of its knobs are secrets or deployment-specific. When adding code that reads a new environment variable or configuration value, update whichever of the two categories above actually applies, in the same change — do not defer it to a later step, and do not add a compose/`.env` entry just because a new setting exists.
+A new generic tunable (a threshold, a window, a feature flag) belongs in `appsettings.json` alone, with **no** corresponding compose entry. When adding code that reads a new environment variable or configuration value, update whichever of the two categories above actually applies, in the same change — do not defer it to a later step, and do not add a compose/`.env` entry just because a new setting exists.
 
 ## Multi-Agent Patterns
 
