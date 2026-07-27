@@ -198,17 +198,31 @@ public sealed class WakeArbiter(
             // silent re-arm, not the user's conversation continuity. Written the other way round, a
             // dead holder socket left the capture abandoned, the conversation stranded on the
             // holder until idle expiry, and no WakeHandoff recorded at all.
-            conversations.TransferBinding(holderId, winner.Claim.SatelliteId);
-            await PublishAsync(new VoiceEvent
-            {
-                Metric = VoiceMetric.WakeHandoff,
-                SatelliteId = winner.Claim.SatelliteId,
-                Room = handles[winner.Claim.SatelliteId].Session.Config.Room,
-                Identity = handles[winner.Claim.SatelliteId].Session.Config.Identity,
-                Outcome = holderId,
-                WakeRms = winner.Claim.WakeRms,
-                WakeScore = winner.Claim.WakeScore
-            });
+            // TransferBinding declines a stale handoff (the winner bound its own conversation
+            // after the claim — its turn already ran while this decision was delayed): the
+            // holder still lost its leaked capture and gets re-armed, but nothing moved, so the
+            // record is a holder suppression, not a handoff.
+            var moved = conversations.TransferBinding(
+                holderId, winner.Claim.SatelliteId, winner.Claim.ReceivedAt);
+            await PublishAsync(moved
+                ? new VoiceEvent
+                {
+                    Metric = VoiceMetric.WakeHandoff,
+                    SatelliteId = winner.Claim.SatelliteId,
+                    Room = handles[winner.Claim.SatelliteId].Session.Config.Room,
+                    Identity = handles[winner.Claim.SatelliteId].Session.Config.Identity,
+                    Outcome = holderId,
+                    WakeRms = winner.Claim.WakeRms,
+                    WakeScore = winner.Claim.WakeScore
+                }
+                : new VoiceEvent
+                {
+                    Metric = VoiceMetric.WakeSuppressed,
+                    SatelliteId = holderId,
+                    Room = holderHandle.Session.Config.Room,
+                    Identity = holderHandle.Session.Config.Identity,
+                    Outcome = "stale_steal"
+                });
             await SendReArmAsync(holderHandle);
             return;
         }

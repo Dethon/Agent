@@ -333,6 +333,54 @@ public class WakeArbiterTests
     }
 
     [Fact]
+    public async Task Claim_StealDelayedPastWinnersOwnDispatch_KeepsWinnersConversation()
+    {
+        var (arbiter, time, metrics, conversations) = Create();
+        var settings = new ArbitrationSettings();
+        var holder = new SatelliteHarness("holder", "A");
+        var waker = new SatelliteHarness("waker", "B");
+        arbiter.Register("holder", holder.Handle);
+        arbiter.Register("waker", waker.Handle);
+        holder.Session.MarkSupportsPause();
+        waker.Session.MarkSupportsPause();
+        var holderConversation = await conversations.GetOrCreateAsync(
+            holder.Session, "agent", "hola", CancellationToken.None);
+
+        holder.OpenCapture(time, settings);
+        holder.Capture!.Feed(SilentChunk());
+        time.Advance(TimeSpan.FromMilliseconds(500));
+        holder.Capture.Feed(LoudChunk(600));    // faint leak of the wake word said far from A
+        time.Advance(TimeSpan.FromMilliseconds(settings.DetectionLatencyMs + 700));
+
+        waker.OpenCapture(time, settings);
+        arbiter.Claim("waker", 5000, null, "wake"); // loud enough to steal
+        await Task.Delay(50); // let the decision task park on its window delay
+
+        // The decision can be delayed past the winner's whole turn (each wedged loser's re-arm
+        // costs up to 2 s): by the time the steal runs, the winner has already dispatched and
+        // bound its own conversation — with the agent's reply to it still in flight.
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        var wakerConversation = await conversations.GetOrCreateAsync(
+            waker.Session, "agent", "enciende la luz", CancellationToken.None);
+        await SettleAsync(time, settings.WindowMs);
+
+        // The stale handoff is skipped so the in-flight reply still routes to the winner,
+        // instead of being silently dropped with the winner wedged until the reply timeout.
+        conversations.ResolveSatelliteId(wakerConversation).ShouldBe("waker");
+        conversations.GetActiveConversationId("waker").ShouldBe(wakerConversation);
+        conversations.GetActiveConversationId("holder").ShouldBe(holderConversation);
+        // The holder still lost its leaked capture and is silently re-armed.
+        holder.Paused.ShouldBe(1);
+        (await holder.Capture.Completed).ShouldBe(CaptureOutcome.Abandoned);
+        metrics.Events.OfType<VoiceEvent>().Any(e => e.Metric == VoiceMetric.WakeHandoff)
+            .ShouldBeFalse("nothing was handed off");
+        var stale = metrics.Events.OfType<VoiceEvent>()
+            .Single(e => e.Metric == VoiceMetric.WakeSuppressed);
+        stale.SatelliteId.ShouldBe("holder");
+        stale.Outcome.ShouldBe("stale_steal");
+    }
+
+    [Fact]
     public async Task Claim_DuplicateFromSameSatelliteInWindow_KeepsTheFirstClaim()
     {
         var (arbiter, time, metrics, _) = Create();

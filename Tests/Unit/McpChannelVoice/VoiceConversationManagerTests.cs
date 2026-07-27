@@ -113,7 +113,7 @@ public class VoiceConversationManagerTests
         var conversationId = await sut.GetOrCreateAsync(sessionA, "agent-1", "hola", default);
 
         clock.Advance(TimeSpan.FromMinutes(2));
-        sut.TransferBinding("sat-a", "sat-b").ShouldBeTrue();
+        sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBeTrue();
 
         sut.GetActiveConversationId("sat-b").ShouldBe(conversationId);
         sut.GetActiveConversationId("sat-a").ShouldBeNull();
@@ -132,7 +132,7 @@ public class VoiceConversationManagerTests
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var (sut, _) = Build(clock);
 
-        sut.TransferBinding("sat-a", "sat-b").ShouldBeFalse();
+        sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBeFalse();
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public class VoiceConversationManagerTests
         var conversationB = await sut.GetOrCreateAsync(sessionB, "agent-1", "hey", default);
 
         clock.Advance(TimeSpan.FromMinutes(2));
-        sut.TransferBinding("sat-a", "sat-b").ShouldBeTrue();
+        sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBeTrue();
 
         sut.GetActiveConversationId("sat-b").ShouldBe(conversationA);
         sut.ResolveSatelliteId(conversationB).ShouldBeNull();
@@ -157,5 +157,28 @@ public class VoiceConversationManagerTests
         clock.Advance(TimeSpan.FromMinutes(3) + TimeSpan.FromSeconds(1));
         sut.GetActiveConversationId("sat-b").ShouldBe(conversationA);
         sut.ResolveSatelliteId(conversationB).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task TransferBinding_TargetBoundAfterClaim_SkipsTheStaleHandoff()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var (sut, _) = Build(clock);
+        var sessionA = new SatelliteSession("sat-a", new SatelliteConfig { Identity = "household", Room = "Office A" });
+        var sessionB = new SatelliteSession("sat-b", new SatelliteConfig { Identity = "household", Room = "Office B" });
+        var conversationA = await sut.GetOrCreateAsync(sessionA, "agent-1", "hola", default);
+
+        clock.Advance(TimeSpan.FromMinutes(1));
+        var claimedAt = clock.GetTimestamp(); // sat-b's wake claim arrives
+        clock.Advance(TimeSpan.FromSeconds(2)); // decision delayed (e.g. a wedged loser's re-arm)
+        var conversationB = await sut.GetOrCreateAsync(sessionB, "agent-1", "enciende la luz", default);
+
+        // sat-b's own turn already ran and bound its own conversation after the claim: the
+        // handoff is stale, and displacing conversationB would silently drop its in-flight reply.
+        sut.TransferBinding("sat-a", "sat-b", claimedAt).ShouldBeFalse();
+
+        sut.ResolveSatelliteId(conversationB).ShouldBe("sat-b");
+        sut.GetActiveConversationId("sat-b").ShouldBe(conversationB);
+        sut.GetActiveConversationId("sat-a").ShouldBe(conversationA);
     }
 }

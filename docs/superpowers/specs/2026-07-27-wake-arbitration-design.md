@@ -144,6 +144,15 @@ not just conversation turns. An approval capture that loses a steal resolves the
 as rejected without transcribing the partial audio and without re-prompting — the arbiter
 already re-armed that satellite via `pause-satellite`, so no one is listening there.
 
+A handoff can go stale: loser re-arms run before Rule B and a wedged socket costs up to 2 s
+each, so with 3+ satellites the steal can land after the winner's short turn already
+dispatched and bound its own conversation — with the agent's reply to it still in flight.
+`TransferBinding` therefore declines to displace a winner binding newer than the wake
+claim: the reply still routes, the holder (whose capture was already aborted as a leak)
+gets its silent re-arm and its conversation just idle-expires, and the event is recorded
+as `WakeSuppressed`/`stale_steal` on the holder instead of a `WakeHandoff` that never
+happened.
+
 Rule-A claimants and Rule-B holders are disjoint by construction: a satellite with an open
 capture is in `Mode::Streaming`, where its wake detector is not fed, so it cannot also emit
 a fresh `run-pipeline` claim.
