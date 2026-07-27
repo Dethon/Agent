@@ -220,6 +220,19 @@ struct WakeSignal {
     score: f32,
 }
 
+/// End an active capture: send audio-stop to the hub, transition to Idle, reset the wake detector.
+/// Both transcript (normal end-of-turn) and pause-satellite (arbitration loss) use this common path.
+async fn end_capture<W: AsyncWrite + Unpin>(
+    wr: &mut W,
+    mode: &mut Mode,
+    detector: Option<&mut WakeDetector>,
+) -> anyhow::Result<()> {
+    write_event(wr, &WyomingEvent::with_data("audio-stop", json!({"timestamp":0}))).await?;
+    *mode = Mode::Idle;
+    if let Some(d) = detector { d.reset(); }
+    Ok(())
+}
+
 /// On trigger: announce the pipeline, play the awake cue, then FLUSH the pre-roll to the hub
 /// before going live. This is the zero-lag guarantee — buffered audio reaches the hub regardless
 /// of how fast the user starts speaking or how long the hub takes to open its capture.
@@ -260,9 +273,7 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
         "run-satellite" => info!("run-satellite: armed"),
         "transcript" => {
             if *mode == Mode::Streaming {
-                write_event(wr, &WyomingEvent::with_data("audio-stop", json!({"timestamp":0}))).await?;
-                *mode = Mode::Idle;
-                if let Some(d) = detector { d.reset(); }
+                end_capture(wr, mode, detector).await?;
                 if let Some(pcm) = ctx.cues.done() { playback.cue(pcm); }
                 let _ = ctx.led.send(LedState::Thinking);
             }
@@ -272,9 +283,7 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
         // user's perspective this satellite was never part of the conversation.
         "pause-satellite" => {
             if *mode == Mode::Streaming {
-                write_event(wr, &WyomingEvent::with_data("audio-stop", json!({"timestamp":0}))).await?;
-                *mode = Mode::Idle;
-                if let Some(d) = detector { d.reset(); }
+                end_capture(wr, mode, detector).await?;
                 let _ = ctx.led.send(LedState::Idle);
             }
         }
