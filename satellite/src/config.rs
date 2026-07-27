@@ -12,14 +12,13 @@ pub enum ButtonConfig {
     Evdev { device: PathBuf, key: u16 },
 }
 
-/// Where the activity LED lives. Optional hardware: init failure degrades to LED-less.
+/// Whether this process drives the satellite's LED. The only backend is the reSpeaker
+/// XVF3800's 12-LED WS2812 ring, discovered on USB — so unlike the old GPIO/SPI pins there
+/// is nothing to configure: Auto uses the ring when the device is present, --no-led opts out.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LedConfig {
+    Auto,
     None,
-    /// The reSpeaker 2-Mic HAT's 3 onboard APA102 LEDs on SPI0 (/dev/spidev0.1).
-    Spi,
-    /// Single indicator LED on a free GPIO pin (BCM numbering), active-high.
-    Gpio(u8),
 }
 
 #[derive(Clone)]
@@ -30,7 +29,7 @@ pub struct Config {
     pub detector: DetectorConfig,
     pub wake_enabled: bool,     // --no-wake disables on-device wake (button-only operation)
     pub button: ButtonConfig,
-    pub led: LedConfig,         // activity LED; default = none, --led-spi / --led-gpio opt in
+    pub led: LedConfig,         // activity LED; the XVF3800 ring when present, --no-led opts out
     pub preroll_ms: u32,        // zero-lag: how much recent audio to flush to the hub on trigger
     pub wake_preroll_ms: u32,   // wake-path flush: detection-latency gap only, NOT the wake word
     pub awake_cue: bool,
@@ -55,7 +54,7 @@ impl Default for Config {
             // (no resampling; the XVF3800's 2 capture channels carry the same processed signal, so
             // plughw's stereo->mono averaging is fine); plughw resamples only the 22050 Hz
             // playback. For a reSpeaker 2-Mic HAT pass --mic-command/--snd-command with
-            // plughw:CARD=seeed2micvoicec,DEV=0 plus --button-gpio 17 and --led-spi; see provisioning.
+            // plughw:CARD=seeed2micvoicec,DEV=0 plus --button-gpio 17; see provisioning.
             // -F 20000 (20 ms period): without it arecord defaults to buffer/4 = 125 ms periods
             // and every mic sample reaches stdout up to 125 ms late — paid on the wake AND the
             // speech->STT path. The 500 ms capture buffer default is independent of -F.
@@ -69,7 +68,7 @@ impl Default for Config {
             detector: DetectorConfig::default(),
             wake_enabled: true,
             button: ButtonConfig::None, // no button by default; --button-gpio / --button-evdev opt in
-            led: LedConfig::None, // no LED by default; --led-spi (HAT APA102s) or --led-gpio opt in
+            led: LedConfig::Auto, // XVF3800 ring when the device is on USB; absent hardware = LED-less
             preroll_ms: 1000,
             wake_preroll_ms: 240, // covers the ~181 ms measured detection latency with margin
             awake_cue: true,
@@ -85,7 +84,7 @@ impl Default for Config {
 impl Config {
     /// Flags: --listen --mic-command --snd-command --threshold --trigger-level --no-wake
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
-    ///        --led-spi | --led-gpio <pin> | --no-led
+    ///        --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
     ///        --music-mixer <control> --music-card <card> --duck-percent <pct> --music-restore-grace-ms <ms>
     pub fn from_args() -> anyhow::Result<Self> {
@@ -113,13 +112,7 @@ impl Config {
                 .ok_or_else(|| anyhow::anyhow!("--button-evdev needs <device>:<keycode>, e.g. /dev/input/event3:28"))?;
             c.button = ButtonConfig::Evdev { device: dev.into(), key: key.parse()? };
         }
-        if pa.contains("--no-led") {
-            c.led = LedConfig::None;
-        } else if pa.contains("--led-spi") {
-            c.led = LedConfig::Spi;
-        } else if let Some(pin) = pa.opt_value_from_str::<_, u8>("--led-gpio")? {
-            c.led = LedConfig::Gpio(pin);
-        }
+        if pa.contains("--no-led") { c.led = LedConfig::None; }
         if let Some(v) = pa.opt_value_from_str::<_, String>("--music-mixer")? { c.music_mixer = Some(v); }
         if let Some(v) = pa.opt_value_from_str::<_, String>("--music-card")? { c.music_card = Some(v); }
         if let Some(v) = pa.opt_value_from_str::<_, u8>("--duck-percent")? { c.duck_percent = v; }
@@ -151,20 +144,16 @@ mod tests {
     }
 
     #[test]
-    fn led_defaults_to_none() {
-        assert_eq!(Config::default().led, LedConfig::None);
+    fn led_defaults_to_auto() {
+        assert_eq!(Config::default().led, LedConfig::Auto);
     }
 
+    // The old --led-spi / --led-gpio flags are gone; passing them must fail loudly rather
+    // than being silently ignored, so a stale provisioning ExecStart is caught immediately.
     #[test]
-    fn led_spi_flag_parses() {
-        let c = Config::parse(args(&["--led-spi"])).unwrap();
-        assert_eq!(c.led, LedConfig::Spi);
-    }
-
-    #[test]
-    fn led_gpio_flag_parses() {
-        let c = Config::parse(args(&["--led-gpio", "22"])).unwrap();
-        assert_eq!(c.led, LedConfig::Gpio(22));
+    fn removed_led_flags_are_rejected() {
+        assert!(Config::parse(args(&["--led-spi"])).is_err());
+        assert!(Config::parse(args(&["--led-gpio", "22"])).is_err());
     }
 
     #[test]
@@ -220,6 +209,7 @@ mod tests {
         assert_eq!(c.detector.threshold, 0.5);
         assert!(c.wake_enabled);
         assert_eq!(c.button, ButtonConfig::None);
+        assert_eq!(c.led, LedConfig::Auto);
         assert_eq!(c.preroll_ms, 1000);
         assert_eq!(c.preroll_chunks(), 13); // ceil(1000 / 80)
         assert_eq!(c.wake_preroll_ms, 240);
