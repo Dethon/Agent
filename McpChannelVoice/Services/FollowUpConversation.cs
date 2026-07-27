@@ -193,7 +193,13 @@ public sealed class FollowUpConversation(
         {
             if (await EarlyReject(capture, ct))
             {
-                return null;
+                // The arbiter may have abandoned this capture while the check was in flight;
+                // it already re-armed the satellite via pause-satellite, so route to the
+                // Abandoned exit — a transcript would audibly done-cue a lost turn.
+                return capture.Completed.IsCompletedSuccessfully &&
+                    capture.Completed.Result == CaptureOutcome.Abandoned
+                    ? CaptureOutcome.Abandoned
+                    : null;
             }
             return await capture.Completed.WaitAsync(ct);
         }

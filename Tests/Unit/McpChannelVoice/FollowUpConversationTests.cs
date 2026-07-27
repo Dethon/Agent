@@ -25,6 +25,7 @@ public class FollowUpConversationTests
         public bool DispatchResult = true;
         public int EarlyVerify;
         public bool EarlyRejectResult;
+        public TaskCompletionSource<bool>? EarlyRejectGate;
         private TaskCompletionSource<bool> _reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public FollowUpConversation Build(FollowUpSettings followUp) => new(
@@ -58,7 +59,11 @@ public class FollowUpConversationTests
             },
             OnReplyTimeout = _ => { Events.Add("reply-timeout"); return Task.CompletedTask; },
             EarlyVerifyMs = EarlyVerify,
-            EarlyReject = (_, _) => { Events.Add("early-check"); return Task.FromResult(EarlyRejectResult); }
+            EarlyReject = async (_, _) =>
+            {
+                Events.Add("early-check");
+                return EarlyRejectGate is { } gate ? await gate.Task : EarlyRejectResult;
+            }
         };
 
         public void Reply(bool spoke) => _reply.TrySetResult(spoke);
@@ -323,6 +328,35 @@ public class FollowUpConversationTests
 
         await Task.Delay(50);
         h.Dispatched.ShouldBe([h.Opened[0]]);
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task EarlyReject_AbortedByArbiterDuringVerify_ExitsWithoutEnd()
+    {
+        var h = new Harness
+        {
+            EarlyVerify = 5000,
+            EarlyRejectGate = new(TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var sut = h.Build(new FollowUpSettings { Enabled = true, WindowMs = 500 });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        await Task.Delay(50);
+        h.Time.Advance(TimeSpan.FromMilliseconds(5000)); // early-verify mark: the check is now in flight
+        await Task.Delay(50);
+
+        h.Opened[0].Abort().ShouldBeTrue(); // arbiter suppresses this satellite mid-verify
+        h.EarlyRejectGate.SetResult(true);  // ...then the verifier rejects the audio so far
+        await Task.Delay(50);
+
+        h.Events.ShouldContain("early-check");
+        // The arbiter's pause-satellite already re-armed the satellite; a transcript here
+        // would audibly done-cue a lost turn.
+        h.Events.ShouldNotContain("end");
+        h.Dispatched.ShouldBeEmpty();
 
         await StopAsync(sut, run);
     }
