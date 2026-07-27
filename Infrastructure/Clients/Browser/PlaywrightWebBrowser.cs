@@ -133,7 +133,6 @@ public class PlaywrightWebBrowser(
 
         _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
 
-        // Check for CAPTCHA and attempt to solve
         var html = await page.ContentAsync();
         var captchaRetries = 0;
         while (ContainsCaptcha(html) && captchaRetries < MaxCaptchaRetries)
@@ -163,7 +162,6 @@ public class PlaywrightWebBrowser(
             captchaRetries++;
         }
 
-        // Always dismiss modals
         var dismissedModals = await _modalDismisser.DismissModalsAsync(page, ct);
 
         // Extract structured data before stripping DOM noise,
@@ -174,16 +172,13 @@ public class PlaywrightWebBrowser(
         // to prevent them from consuming the content budget during HTML processing
         await StripDomNoiseAsync(page);
 
-        // Scroll-to-load for lazy-loaded content
         if (request.ScrollToLoad)
         {
             await ScrollToLoadAsync(page, request.ScrollSteps, ct);
         }
 
-        // Always wait for DOM stability
         await WaitForDomStabilityAsync(page, ct: ct);
 
-        // Re-fetch HTML after all waiting
         html = await page.ContentAsync();
         var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
 
@@ -754,7 +749,6 @@ public class PlaywrightWebBrowser(
 
         _playwright ??= await Playwright.CreateAsync();
 
-        // Connect to Camoufox sidecar with retry
         for (var attempt = 1; attempt <= ConnectionRetryAttempts; attempt++)
         {
             try
@@ -965,7 +959,6 @@ public class PlaywrightWebBrowser(
 
     internal static bool ContainsCaptcha(string html)
     {
-        // DataDome CAPTCHA patterns
         return html.Contains("captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
                html.Contains("datadome", StringComparison.OrdinalIgnoreCase) ||
                _dataDomeLoaderPattern.IsMatch(html);
@@ -1004,14 +997,12 @@ public class PlaywrightWebBrowser(
             return (false, solution.ErrorMessage ?? "CAPTCHA solving failed");
         }
 
-        // Set the DataDome cookie
         await SetDataDomeCookieAsync(websiteUrl, solution.Cookie);
         return (true, "CAPTCHA solved successfully");
     }
 
     private static string? ExtractCaptchaUrl(string html)
     {
-        // Look for captcha-delivery.com URL in iframe src or script
         var patterns = new[]
         {
             "src=\"(https://geo\\.captcha-delivery\\.com/[^\"]+)\"",

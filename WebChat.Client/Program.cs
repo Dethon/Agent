@@ -15,7 +15,6 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 
-// Hub event dispatching (Phase 4)
 builder.Services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
 builder.Services.AddScoped<ConnectionEventDispatcher>();
 
@@ -23,27 +22,22 @@ builder.Services.AddScoped<ConnectionEventDispatcher>();
 builder.Services.AddScoped<ChatConnectionService>();
 builder.Services.AddScoped<IChatConnectionService>(sp => sp.GetRequiredService<ChatConnectionService>());
 
-// Core services
 builder.Services.AddScoped<IChatSessionService, ChatSessionService>();
 builder.Services.AddScoped<IChatMessagingService, ChatMessagingService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddScoped<IApprovalService, ApprovalService>();
 
-// State management
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
 
-// State stores and effects (Phase 1-5)
 builder.Services.AddWebChatStores();
 builder.Services.AddWebChatEffects();
 
-// Streaming services
 builder.Services.AddScoped<IStreamingService, StreamingService>();
 builder.Services.AddScoped<StreamResumeService>();
 builder.Services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<StreamResumeService>());
 builder.Services.AddScoped<IMessagePipeline, MessagePipeline>();
 
-// Notification handling
 builder.Services.AddScoped<ISignalREventSubscriber, SignalREventSubscriber>();
 builder.Services.AddScoped<PushNotificationService>();
 

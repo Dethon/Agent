@@ -1520,7 +1520,6 @@ public class WyomingSatelliteHostTests
             await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
         }, ct);
 
-        // Two dispatched utterances expected: capture both.
         var dispatched = new List<string>();
         var bothDispatched = new TaskCompletionSource();
         var emitter = new CollectingEmitter(dispatched, bothDispatched, expected: 2);

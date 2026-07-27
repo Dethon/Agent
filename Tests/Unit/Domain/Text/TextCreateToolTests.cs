@@ -91,12 +91,10 @@ public class TextCreateToolTests : IDisposable
     [Fact]
     public void Run_PathFormats_ResolveCorrectly()
     {
-        // Relative path with nested directories
         var result1 = _tool.TestRun("notes/2024/january.md", "January notes");
         result1["filePath"]!.ToString().ShouldBe("notes/2024/january.md");
         File.Exists(Path.Combine(_testDir, "notes", "2024", "january.md")).ShouldBeTrue();
 
-        // Another relative path format
         var result2 = _tool.TestRun("docs/readme.md", "Documentation");
         result2["filePath"]!.ToString().ShouldBe("docs/readme.md");
         File.Exists(Path.Combine(_testDir, "docs", "readme.md")).ShouldBeTrue();

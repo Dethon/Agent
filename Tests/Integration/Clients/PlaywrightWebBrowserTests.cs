@@ -78,7 +78,6 @@ public class PlaywrightWebBrowserTests(
             result.SessionId.ShouldBe(sessionId);
             result.Title.ShouldNotBeNullOrEmpty();
             result.Content.ShouldNotBeNullOrEmpty();
-            // Content should contain something about examples/documentation
             result.Content.ShouldContain("example");
         }
         finally
@@ -150,7 +149,6 @@ public class PlaywrightWebBrowserTests(
         var sessionId = GetUniqueSessionId();
         try
         {
-            // Navigate to first page
             var request1 = new BrowseRequest(
                 SessionId: sessionId,
                 Url: "https://example.com",
@@ -158,7 +156,6 @@ public class PlaywrightWebBrowserTests(
             var result1 = await fixture.Browser.NavigateAsync(request1);
             result1.Status.ShouldBe(BrowseStatus.Success);
 
-            // Navigate to second page with same session
             var request2 = new BrowseRequest(
                 SessionId: sessionId,
                 Url: "https://httpbin.org/html",
@@ -170,7 +167,6 @@ public class PlaywrightWebBrowserTests(
             result2.SessionId.ShouldBe(sessionId);
             result2.Url.ShouldContain("httpbin.org");
 
-            // Get current page should return the second page content
             var currentPage = await fixture.Browser.GetCurrentPageAsync(sessionId);
             currentPage.Status.ShouldBe(BrowseStatus.Success);
             currentPage.Url.ShouldContain("httpbin.org");
@@ -190,14 +186,12 @@ public class PlaywrightWebBrowserTests(
         var sessionId = GetUniqueSessionId();
         try
         {
-            // Navigate first
             var browseRequest = new BrowseRequest(
                 SessionId: sessionId,
                 Url: "https://example.com",
                 MaxLength: 2000);
             await fixture.Browser.NavigateAsync(browseRequest);
 
-            // Get current page
             var result = await fixture.Browser.GetCurrentPageAsync(sessionId);
 
             // Assert
@@ -231,17 +225,14 @@ public class PlaywrightWebBrowserTests(
 
         var sessionId = GetUniqueSessionId();
 
-        // Navigate first
         var browseRequest = new BrowseRequest(
             SessionId: sessionId,
             Url: "https://example.com",
             MaxLength: 1000);
         await fixture.Browser.NavigateAsync(browseRequest);
 
-        // Close session
         await fixture.Browser.CloseSessionAsync(sessionId);
 
-        // Try to get the page - should fail
         var result = await fixture.Browser.GetCurrentPageAsync(sessionId);
         result.Status.ShouldBe(BrowseStatus.SessionNotFound);
     }
@@ -299,7 +290,6 @@ public class PlaywrightWebBrowserTests(
 
         try
         {
-            // Navigate session 1 to example.com
             var request1 = new BrowseRequest(
                 SessionId: sessionId1,
                 Url: "https://example.com",
@@ -307,7 +297,6 @@ public class PlaywrightWebBrowserTests(
             var result1 = await fixture.Browser.NavigateAsync(request1);
             result1.Status.ShouldBe(BrowseStatus.Success);
 
-            // Navigate session 2 to httpbin
             var request2 = new BrowseRequest(
                 SessionId: sessionId2,
                 Url: "https://httpbin.org/html",
@@ -315,7 +304,6 @@ public class PlaywrightWebBrowserTests(
             var result2 = await fixture.Browser.NavigateAsync(request2);
             result2.Status.ShouldBe(BrowseStatus.Success);
 
-            // Verify each session has its own content
             var page1 = await fixture.Browser.GetCurrentPageAsync(sessionId1);
             var page2 = await fixture.Browser.GetCurrentPageAsync(sessionId2);
 
@@ -346,7 +334,6 @@ public class PlaywrightWebBrowserTests(
 
         try
         {
-            // Navigate all sessions in parallel
             var navigateTasks = sessions.Select((sid, i) =>
                 fixture.Browser.NavigateAsync(new BrowseRequest(
                     SessionId: sid,
@@ -355,10 +342,8 @@ public class PlaywrightWebBrowserTests(
 
             var results = await Task.WhenAll(navigateTasks);
 
-            // All should succeed
             results.ShouldAllBe(r => r.Status == BrowseStatus.Success || r.Status == BrowseStatus.Partial);
 
-            // Each session should have its own URL
             for (var i = 0; i < sessions.Count; i++)
             {
                 results[i].SessionId.ShouldBe(sessions[i]);
@@ -408,13 +393,11 @@ public class PlaywrightWebBrowserTests(
                     MaxLength: 1000))));
             setupResults.ShouldAllBe(r => r.Status == BrowseStatus.Success || r.Status == BrowseStatus.Partial);
 
-            // Take snapshots in parallel
             var snapshotTasks = sessions.Select(sid =>
                 fixture.Browser.SnapshotAsync(new SnapshotRequest(SessionId: sid))).ToList();
 
             var snapshots = await Task.WhenAll(snapshotTasks);
 
-            // Each snapshot should have content and correct session ID
             for (var i = 0; i < sessions.Count; i++)
             {
                 snapshots[i].SessionId.ShouldBe(sessions[i]);
@@ -475,7 +458,6 @@ public class PlaywrightWebBrowserTests(
 
             var actionResults = await Task.WhenAll(actionTasks);
 
-            // All actions should succeed with their own snapshot diffs
             for (var i = 0; i < sessions.Count; i++)
             {
                 actionResults[i].SessionId.ShouldBe(sessions[i]);
@@ -519,7 +501,6 @@ public class PlaywrightWebBrowserTests(
                 MaxLength: 15000);
             var result = await fixture.Browser.NavigateAsync(request);
 
-            // Output for debugging
             testOutputHelper.WriteLine($"Requested URL: {requestedUrl}");
             testOutputHelper.WriteLine($"Final URL: {result.Url}");
             testOutputHelper.WriteLine($"Status: {result.Status}");

@@ -71,7 +71,6 @@ public class PrefetchedAudioTests
         {
             await foreach (var _ in prefetch.Chunks)
             {
-                // drain until the foreign cancellation surfaces
             }
         });
     }

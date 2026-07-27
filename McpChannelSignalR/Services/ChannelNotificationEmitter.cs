@@ -36,7 +36,6 @@ public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitte
             Timestamp = DateTimeOffset.UtcNow
         };
 
-        // Send to all active MCP sessions - typically there is one agent connected
         var tasks = _activeSessions.Values.Select(async server =>
         {
             try

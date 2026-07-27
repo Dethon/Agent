@@ -107,7 +107,7 @@ public class SegmentedSpeechToTextTests
             Stream(Silence(1), Speech(6)), new TranscriptionOptions(), CancellationToken.None);
 
         inner.Calls.ShouldBe(1);
-        result.Text.ShouldBe("7"); // single segment of 7 chunks
+        result.Text.ShouldBe("7");
     }
 
     [Fact]

@@ -54,7 +54,6 @@ public class QBittorrentDownloadClientTests(QBittorrentFixture fixture) : IClass
         }
         finally
         {
-            // Cleanup
             await client.Cleanup(id, CancellationToken.None);
         }
     }
@@ -73,7 +72,6 @@ public class QBittorrentDownloadClientTests(QBittorrentFixture fixture) : IClass
         // Act - Add torrent
         await client.Download(magnetLink, savePath, id, CancellationToken.None);
 
-        // Verify it exists
         var downloadItem = await client.GetDownloadItem(id, CancellationToken.None);
         downloadItem.ShouldNotBeNull();
 

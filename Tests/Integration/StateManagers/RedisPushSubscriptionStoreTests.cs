@@ -205,8 +205,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         otherSpace.ShouldNotContain(x => x.Subscription.Endpoint == sub.Endpoint);
     }
 
-    // --- Adversarial tests ---
-
     [Fact]
     public async Task SaveAsync_EndpointWithQueryParameters_PreservesFullUrl()
     {
@@ -296,13 +294,11 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
 
         await _store.SaveAsync(userId, sub);
 
-        // Verify index key exists
         var db = fixture.Connection.GetDatabase();
         var indexValue = await db.StringGetAsync($"push:ep:{endpoint}");
         indexValue.HasValue.ShouldBeTrue();
         indexValue.ToString().ShouldBe(userId);
 
-        // Remove by endpoint and verify index is cleaned up
         await _store.RemoveByEndpointAsync(endpoint);
 
         var indexAfter = await db.StringGetAsync($"push:ep:{endpoint}");
@@ -322,13 +318,10 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var endpoint = "https://fcm.googleapis.com/fcm/send/transfer-space";
         var sub = new PushSubscriptionDto(endpoint, "k1", "a1");
 
-        // userA subscribes in "space-old"
         await _store.SaveAsync(userA, sub, "space-old");
 
-        // Endpoint transfers to userB in "space-new"
         await _store.SaveAsync(userB, sub, "space-new");
 
-        // It should appear in the new space under userB
         var newSpaceSubs = await _store.GetBySpaceAsync("space-new");
         newSpaceSubs.ShouldContain(x => x.Subscription.Endpoint == endpoint);
         newSpaceSubs.First(x => x.Subscription.Endpoint == endpoint).UserId.ShouldBe(userB);
@@ -342,11 +335,9 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var endpoint = "https://fcm.googleapis.com/fcm/send/multi-space";
         var sub = new PushSubscriptionDto(endpoint, "k1", "a1");
 
-        // User visits space-a then space-b
         await _store.SaveAsync(userId, sub, "space-a");
         await _store.SaveAsync(userId, sub, "space-b");
 
-        // Endpoint should be retrievable from BOTH spaces
         var spaceASubs = await _store.GetBySpaceAsync("space-a");
         spaceASubs.ShouldContain(x => x.Subscription.Endpoint == endpoint,
             "Endpoint should remain in space-a after saving to space-b");
@@ -370,10 +361,8 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         await _store.SaveAsync(userId, oldSub);
         await _store.SaveAsync(userId, oldSub, "x");
 
-        // Endpoint rotates — new endpoint replaces old, saved under "x" (current space)
         await _store.SaveAsync(userId, newSub, "x", replacingEndpoint: oldEndpoint);
 
-        // New endpoint should be in BOTH spaces (transferred from old)
         var defaultSubs = await _store.GetBySpaceAsync("default");
         defaultSubs.ShouldContain(x => x.Subscription.Endpoint == newEndpoint,
             "New endpoint should inherit default space membership from old endpoint");
@@ -381,7 +370,6 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var xSubs = await _store.GetBySpaceAsync("x");
         xSubs.ShouldContain(x => x.Subscription.Endpoint == newEndpoint);
 
-        // Old endpoint should be fully cleaned up
         defaultSubs.ShouldNotContain(x => x.Subscription.Endpoint == oldEndpoint);
         xSubs.ShouldNotContain(x => x.Subscription.Endpoint == oldEndpoint);
     }
@@ -399,17 +387,14 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         await _store.SaveAsync(userId, oldSub);
         await _store.SaveAsync(userId, newSub, replacingEndpoint: oldEndpoint);
 
-        // Old endpoint should not appear in any query
         var all = await _store.GetAllAsync();
         all.ShouldNotContain(x => x.Subscription.Endpoint == oldEndpoint);
 
-        // New endpoint should exist with correct keys
         var match = all.First(x => x.UserId == userId);
         match.Subscription.Endpoint.ShouldBe(newEndpoint);
         match.Subscription.P256dh.ShouldBe("k2");
         match.Subscription.Auth.ShouldBe("a2");
 
-        // Endpoint index should point to new endpoint, not old
         var db = fixture.Connection.GetDatabase();
         var oldIndex = await db.StringGetAsync($"push:ep:{oldEndpoint}");
         oldIndex.HasValue.ShouldBeFalse("Old endpoint index should be cleaned up");

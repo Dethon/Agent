@@ -8,7 +8,7 @@ namespace Tests.Unit.McpChannelVoice;
 public class WakeArbitrationRulesTests
 {
     private const long Freq = 1000; // 1 tick == 1 ms in these tests
-    private static readonly ArbitrationSettings Settings = new();
+    private static readonly ArbitrationSettings _settings = new();
 
     private static ArbitrationCandidate Candidate(
         string id, double? rms, string source = "wake", long receivedAt = 10_000) =>
@@ -49,7 +49,7 @@ public class WakeArbitrationRulesTests
     [Fact]
     public void WakeWordSpan_RewindsDetectionLatencyAndWordDuration()
     {
-        var (start, end) = WakeArbitrationRules.WakeWordSpan(10_000, Freq, Settings);
+        var (start, end) = WakeArbitrationRules.WakeWordSpan(10_000, Freq, _settings);
         end.ShouldBe(10_000 - 181);
         start.ShouldBe(10_000 - 181 - 700);
     }
@@ -69,7 +69,7 @@ public class WakeArbitrationRulesTests
         WakeArbitrationRules.CanSteal(200, 100, 6).ShouldBeTrue();
     }
 
-    // ---- Rule B onset alignment. Span here: word start 9_119, word end 9_819 (from
+    // Rule B onset alignment. Span here: word start 9_119, word end 9_819 (from
     // WakeWordSpan(10_000)); slack 250, quiet gap 400.
 
     private static CaptureActivity Activity(long openedAt, params (long T, double Rms, bool Speech)[] samples) =>
@@ -82,8 +82,8 @@ public class WakeArbitrationRulesTests
         var activity = Activity(5_000,
             (8_000, 40, false), (8_500, 42, false), (9_000, 45, false),
             (9_200, 800, true), (9_300, 900, true));
-        var (start, end) = WakeArbitrationRules.WakeWordSpan(10_000, Freq, Settings);
-        WakeArbitrationRules.HasAlignedOnset(activity, start, end, Freq, Settings).ShouldBeTrue();
+        var (start, end) = WakeArbitrationRules.WakeWordSpan(10_000, Freq, _settings);
+        WakeArbitrationRules.HasAlignedOnset(activity, start, end, Freq, _settings).ShouldBeTrue();
     }
 
     [Fact]
@@ -93,8 +93,8 @@ public class WakeArbitrationRulesTests
         var activity = Activity(5_000,
             (8_600, 850, true), (8_700, 900, true), (8_800, 870, true), (8_900, 860, true),
             (9_000, 880, true), (9_200, 800, true), (9_300, 900, true));
-        var (start, end) = WakeArbitrationRules.WakeWordSpan(10_000, Freq, Settings);
-        WakeArbitrationRules.HasAlignedOnset(activity, start, end, Freq, Settings).ShouldBeFalse();
+        var (start, end) = WakeArbitrationRules.WakeWordSpan(10_000, Freq, _settings);
+        WakeArbitrationRules.HasAlignedOnset(activity, start, end, Freq, _settings).ShouldBeFalse();
     }
 
     [Fact]
@@ -102,8 +102,8 @@ public class WakeArbitrationRulesTests
     {
         var activity = Activity(5_000,
             (9_000, 40, false), (9_200, 45, false), (9_500, 42, false));
-        var (start, end) = WakeArbitrationRules.WakeWordSpan(10_000, Freq, Settings);
-        WakeArbitrationRules.HasAlignedOnset(activity, start, end, Freq, Settings).ShouldBeFalse();
+        var (start, end) = WakeArbitrationRules.WakeWordSpan(10_000, Freq, _settings);
+        WakeArbitrationRules.HasAlignedOnset(activity, start, end, Freq, _settings).ShouldBeFalse();
     }
 
     [Fact]
@@ -111,8 +111,8 @@ public class WakeArbitrationRulesTests
     {
         // follow-up window opened mid-span: no pre-span history exists to disprove an onset
         var activity = Activity(9_200, (9_250, 800, true), (9_330, 850, true));
-        var (start, end) = WakeArbitrationRules.WakeWordSpan(10_000, Freq, Settings);
-        WakeArbitrationRules.HasAlignedOnset(activity, start, end, Freq, Settings).ShouldBeTrue();
+        var (start, end) = WakeArbitrationRules.WakeWordSpan(10_000, Freq, _settings);
+        WakeArbitrationRules.HasAlignedOnset(activity, start, end, Freq, _settings).ShouldBeTrue();
     }
 
     [Fact]

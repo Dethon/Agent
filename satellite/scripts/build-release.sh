@@ -8,6 +8,9 @@ command -v cargo-zigbuild >/dev/null 2>&1 || {
     exit 1
 }
 export CC_aarch64_unknown_linux_musl="$(pwd)/scripts/zigcc-fp16-shim.sh"
-cargo zigbuild --target aarch64-unknown-linux-musl --release
+# --locked: the committed Cargo.lock is the mitigation for two pinned-by-necessity deps
+# (archived rppal's musl ioctl typing, and tract's unreleased fp16 build.rs fix), so a silent
+# lockfile rewrite must fail the release build loudly rather than change what ships.
+cargo zigbuild --locked --target aarch64-unknown-linux-musl --release
 ls -lh target/aarch64-unknown-linux-musl/release/nabu-satellite
 file target/aarch64-unknown-linux-musl/release/nabu-satellite

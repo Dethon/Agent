@@ -10,8 +10,7 @@ public sealed record WakeArbiterHandle(
     Func<CancellationToken, Task> PauseAsync,
     Func<CancellationToken, Task> EndLegacyAsync);
 
-// Cross-satellite wake arbitration seat (spec: docs/superpowers/specs/
-// 2026-07-27-wake-arbitration-design.md). Claims arrive synchronously on each connection's
+// Cross-satellite wake arbitration seat. Claims arrive synchronously on each connection's
 // Wyoming read loop; the decision runs later on its own task, so the read loops never wait.
 // Every claimant has already opened its capture — losing costs a discarded capture, never audio.
 public sealed class WakeArbiter(

@@ -152,7 +152,6 @@ public sealed class MessagePipeline(
             return;
         }
 
-        // Enrich existing history message or dispatch as streaming chunk
         var existingMessages = messagesStore.State.MessagesByTopic
             .GetValueOrDefault(topicId) ?? [];
         var historyMsg = !string.IsNullOrEmpty(currentMessageId)

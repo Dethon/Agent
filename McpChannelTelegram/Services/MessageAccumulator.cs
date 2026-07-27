@@ -44,7 +44,6 @@ public sealed class MessageAccumulator
                 break;
             }
 
-            // Try to split at a newline boundary within the limit
             var slice = remaining[..TelegramMessageLimit];
             var splitIndex = slice.LastIndexOf('\n');
 

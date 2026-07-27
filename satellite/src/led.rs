@@ -2,8 +2,7 @@
 //! a per-connection render task owns the hardware backend and maps states to light.
 //! The backend is the reSpeaker XVF3800's 12-LED WS2812 ring, driven over USB vendor
 //! control transfers against device-control resource 0x14. The protocol was captured from
-//! the vendor's xvf_host tool with usbmon — see
-//! docs/superpowers/specs/2026-07-27-xvf3800-led-ring-design.md.
+//! the vendor's xvf_host tool with usbmon.
 
 use crate::config::LedConfig;
 use nusb::transfer::{ControlIn, ControlOut, ControlType, Recipient};

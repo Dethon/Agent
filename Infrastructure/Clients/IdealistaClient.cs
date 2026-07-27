@@ -103,7 +103,6 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
         AddIfNotNull(parameters, "sort", query.Sort is { } s ? ToWire(s) : null);
         AddIfNotNull(parameters, "hasMultimedia", query.HasMultimedia?.ToString().ToLowerInvariant());
 
-        // Size filters
         AddIfNotNull(parameters, "minSize", query.MinSize?.ToString());
         AddIfNotNull(parameters, "maxSize", query.MaxSize?.ToString());
 
@@ -154,7 +153,6 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
         AddIfTrue(parameters, "gayPartners", query.GayPartners);
         AddIfNotNull(parameters, "newGender", query.NewGender);
 
-        // Bank offer and virtual tour
         AddIfTrue(parameters, "bankOffer", query.BankOffer);
         AddIfTrue(parameters, "virtualTour", query.VirtualTour);
 

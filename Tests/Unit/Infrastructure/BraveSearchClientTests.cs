@@ -93,7 +93,7 @@ public class BraveSearchClientTests : IDisposable
         var query = new WebSearchQuery("test", Site: "imdb.com");
         await _client.SearchAsync(query);
 
-        // Assert - check the request was made with site prefix
+        // Assert
         var requests = _server.LogEntries;
         requests.ShouldNotBeEmpty();
         var firstRequest = requests[0];

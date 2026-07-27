@@ -80,7 +80,6 @@ public static class ConfigModule
                     return ToolResponse.Create(ex);
                 }
             }))
-            // Download tools
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
             .WithTools<McpContentRecommendationTool>()
@@ -88,7 +87,6 @@ public static class ConfigModule
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
-            // Filesystem backend tools
             .WithTools<FsGlobTool>()
             .WithTools<FsReadTool>()
             .WithTools<FsDeleteTool>()
@@ -97,9 +95,7 @@ public static class ConfigModule
             .WithTools<FsCopyTool>()
             .WithTools<FsBlobReadTool>()
             .WithTools<FsBlobWriteTool>()
-            // Prompts
             .WithPrompts<McpSystemPrompt>()
-            // Resources
             .WithResources<FileSystemResource>();
 
         return services;

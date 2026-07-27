@@ -111,7 +111,6 @@ public class AnnouncementServiceTests
     public async Task Announce_HighPriority_PreemptsCurrentReply()
     {
         var (sut, sessions) = BuildSut(("kitchen-01", "Kitchen"));
-        // Pre-load a long-running playback to be preempted.
         var session = sessions.Get("kitchen-01")!;
         var started = new TaskCompletionSource();
         var preempted = new TaskCompletionSource();
@@ -132,7 +131,6 @@ public class AnnouncementServiceTests
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "alert", Priority = AnnouncePriority.High },
             CancellationToken.None);
 
-        // Verify the 'ongoing' job's OnPreempted callback fired within a reasonable window.
         (await Task.WhenAny(preempted.Task, Task.Delay(2_000))).ShouldBe(preempted.Task);
     }
 

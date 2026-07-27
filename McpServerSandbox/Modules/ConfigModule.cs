@@ -56,7 +56,6 @@ public static class ConfigModule
                     return ToolResponse.Create(ex);
                 }
             }))
-            // Filesystem backend tools
             .WithTools<FsReadTool>()
             .WithTools<FsCreateTool>()
             .WithTools<FsEditTool>()
@@ -69,9 +68,7 @@ public static class ConfigModule
             .WithTools<FsCopyTool>()
             .WithTools<FsBlobReadTool>()
             .WithTools<FsBlobWriteTool>()
-            // Filesystem resource
             .WithResources<FileSystemResource>()
-            // Prompts
             .WithPrompts<McpSystemPrompt>();
 
         return services;

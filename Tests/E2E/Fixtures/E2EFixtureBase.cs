@@ -29,7 +29,6 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             throw new InvalidOperationException("Browser not initialized. Call InitializeAsync first.");
         }
 
-        // Close all existing contexts to free resources.
         foreach (var ctx in _browser.Contexts.ToList())
         {
             await ctx.CloseAsync();

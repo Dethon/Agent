@@ -51,7 +51,6 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
 
         var relHome = Path.GetRelativePath("/", fixture.HomeDir);
 
-        // Write hello.py via fs_create
         await client.CallToolAsync("fs_create", new Dictionary<string, object?>
         {
             ["path"] = Path.Combine(relHome, "hello.py"),
@@ -60,7 +59,6 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
             ["createDirectories"] = true
         }, cancellationToken: cts.Token);
 
-        // Run it via fs_exec
         var result = await client.CallToolAsync("fs_exec", new Dictionary<string, object?>
         {
             ["path"] = relHome,

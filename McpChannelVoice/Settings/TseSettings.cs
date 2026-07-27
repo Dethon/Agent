@@ -7,10 +7,9 @@ public enum TseMode
     Always
 }
 
-// Target-speaker extraction (spec: docs/superpowers/specs/2026-07-22-tse-live-integration-design.md).
-// Mode is the kill switch: Off = decorator not even wrapped (restart to change). Auto extracts only
-// when the gate produced a target AND the capture's pre-speech floor is at/above
-// NoiseFloorThreshold; Always extracts whenever a target exists (diagnostic).
+// Target-speaker extraction. Mode is the kill switch: Off = decorator not even wrapped (restart to
+// change). Auto extracts only when the gate produced a target AND the capture's pre-speech floor is
+// at/above NoiseFloorThreshold; Always extracts whenever a target exists (diagnostic).
 public record TseSettings
 {
     public TseMode Mode { get; init; } = TseMode.Off;

@@ -88,7 +88,6 @@ public sealed class ModernWebPushSender(HttpClient httpClient, string publicKey,
         var keyInfo = BuildKeyInfo(subscriberPub, ephemeralPub);
         var ikm = HKDF.DeriveKey(HashAlgorithmName.SHA256, sharedSecret, 32, authBytes, keyInfo);
 
-        // CEK and nonce from IKM + salt
         var cek = HKDF.DeriveKey(HashAlgorithmName.SHA256, ikm, 16, salt,
             "Content-Encoding: aes128gcm\0"u8.ToArray());
         var nonce = HKDF.DeriveKey(HashAlgorithmName.SHA256, ikm, 12, salt,
@@ -99,7 +98,6 @@ public sealed class ModernWebPushSender(HttpClient httpClient, string publicKey,
         plaintext.CopyTo(padded, 0);
         padded[^1] = 0x02;
 
-        // AES-128-GCM
         var ciphertext = new byte[padded.Length];
         var tag = new byte[16];
         using var aes = new AesGcm(cek, 16);

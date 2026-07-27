@@ -1,4 +1,3 @@
-// McpServerHomeAssistant/Program.cs
 using McpServerHomeAssistant.Modules;
 using Microsoft.AspNetCore.Builder;
 

@@ -316,7 +316,7 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
 
 #[cfg(test)]
 mod tests {
-    use super::*; // brings Mode, start_turn, handle_hub_event, and the types they use
+    use super::*;
     use crate::led::LedState;
     use crate::wyoming::codec::read_event;
     use serde_json::json;

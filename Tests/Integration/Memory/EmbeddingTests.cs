@@ -118,8 +118,8 @@ public class OpenRouterEmbeddingServiceTests : IAsyncLifetime
 
         // Assert - Similar texts should have higher similarity than different topics
         similaritySimilar.ShouldBeGreaterThan(similarityDifferent);
-        similaritySimilar.ShouldBeGreaterThan(0.75f); // Similar texts should be quite similar
-        similarityDifferent.ShouldBeLessThan(0.7f); // Different topics should be less similar
+        similaritySimilar.ShouldBeGreaterThan(0.75f);
+        similarityDifferent.ShouldBeLessThan(0.7f);
     }
 
     [SkippableFact]
@@ -230,7 +230,6 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
         var embeddingService = CreateEmbeddingService();
         var userId = $"user_{Guid.NewGuid():N}";
 
-        // Store memories with embeddings
         var memory1 = await CreateMemoryWithEmbedding(embeddingService, userId,
             "User is a senior backend developer specializing in Go and microservices");
         var memory2 = await CreateMemoryWithEmbedding(embeddingService, userId,
@@ -254,11 +253,9 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
         // Assert
         results.Count.ShouldBe(2);
 
-        // Programming-related memories should rank higher than coffee preference
         var contents = results.Select(r => r.Memory.Content).ToList();
         contents.ShouldNotContain(c => c.Contains("coffee"));
 
-        // At least one of the top results should be about programming/systems
         contents.Any(c => c.Contains("backend") || c.Contains("microservices") || c.Contains("distributed"))
             .ShouldBeTrue();
     }
@@ -273,7 +270,6 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
         var embeddingService = CreateEmbeddingService();
         var userId = $"user_{Guid.NewGuid():N}";
 
-        // Store mixed category memories
         var pref1 = await CreateMemoryWithEmbedding(embeddingService, userId,
             "User prefers TypeScript over JavaScript", MemoryCategory.Preference);
         var pref2 = await CreateMemoryWithEmbedding(embeddingService, userId,
@@ -298,7 +294,6 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
         results.ShouldNotBeEmpty();
         results.ShouldAllBe(r => r.Memory.Category == MemoryCategory.Preference);
 
-        // TypeScript preference should rank higher due to semantic similarity
         results[0].Memory.Content.ShouldContain("TypeScript");
     }
 
@@ -345,7 +340,6 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
         var embeddingService = CreateEmbeddingService();
         var userId = $"user_{Guid.NewGuid():N}";
 
-        // Create two similar memories with different importance
         var embedding = await embeddingService.GenerateEmbeddingAsync("User works with databases");
 
         var lowImportance = new MemoryEntry

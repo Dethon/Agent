@@ -102,7 +102,7 @@ public class ActiveAlertRegistryTests
         dismissed.ShouldContain(new DismissedAlert("pasta", AnnounceKind.Timer));
         alarm.IsAcknowledged.ShouldBeTrue();
         timer.IsAcknowledged.ShouldBeTrue();
-        registry.DismissAll().ShouldBeEmpty(); // registry cleared
+        registry.DismissAll().ShouldBeEmpty();
     }
 
     [Fact]

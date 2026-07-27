@@ -20,7 +20,6 @@ public sealed class StreamResumeService(
 {
     public async Task TryResumeStreamAsync(StoredTopic topic)
     {
-        // Check if already resuming via store state
         if (streamingStore.State.ResumingTopics.Contains(topic.TopicId))
         {
             return;
@@ -48,7 +47,6 @@ public sealed class StreamResumeService(
                 return;
             }
 
-            // Load history if not already in store
             if (!messagesStore.State.MessagesByTopic.ContainsKey(topic.TopicId))
             {
                 var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);

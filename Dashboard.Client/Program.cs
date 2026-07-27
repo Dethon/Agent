@@ -21,7 +21,6 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Services.AddScoped(_ =>
     new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 
-// Stores
 builder.Services.AddSingleton<MetricsStore>();
 builder.Services.AddSingleton<HealthStore>();
 builder.Services.AddSingleton<TokensStore>();
@@ -33,7 +32,6 @@ builder.Services.AddSingleton<MemoryStore>();
 builder.Services.AddSingleton<LatencyStore>();
 builder.Services.AddSingleton<VoiceStore>();
 
-// Services
 builder.Services.AddScoped<MetricsApiService>();
 builder.Services.AddScoped<LocalStorageService>();
 builder.Services.AddSingleton(sp =>
@@ -43,7 +41,6 @@ builder.Services.AddSingleton(sp =>
     return new MetricsHubService(hubUrl);
 });
 
-// Effects
 builder.Services.AddScoped<DataLoadEffect>();
 builder.Services.AddScoped<MetricsHubEffect>();
 

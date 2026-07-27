@@ -19,10 +19,8 @@ public static class MemoryModule
         {
             var memoryConfig = config.GetSection("Memory");
 
-            // Extraction queue
             services.AddSingleton<MemoryExtractionQueue>();
 
-            // Infrastructure — store and embeddings
             services.AddSingleton<IMemoryStore, RedisStackMemoryStore>();
             services.AddHttpClient<IEmbeddingService, OpenRouterEmbeddingService>((httpClient, sp) =>
             {
@@ -36,7 +34,6 @@ public static class MemoryModule
                 return new OpenRouterEmbeddingService(httpClient, embeddingModel);
             });
 
-            // LLM-based services — extractor and consolidator
             services.AddSingleton<IMemoryExtractor>(sp =>
             {
                 var openRouterConfig = config.GetSection("openRouter");
@@ -68,7 +65,6 @@ public static class MemoryModule
                     sp.GetRequiredService<ILogger<OpenRouterMemoryConsolidator>>());
             });
 
-            // Options
             var recallOptions = new MemoryRecallOptions
             {
                 DefaultLimit = memoryConfig.GetValue("Recall:DefaultLimit", 10),
@@ -94,13 +90,10 @@ public static class MemoryModule
             };
             services.AddSingleton(dreamingOptions);
 
-            // Hook
             services.AddSingleton<IMemoryRecallHook, MemoryRecallHook>();
 
-            // Domain tool feature
             services.AddTransient<IDomainToolFeature, MemoryToolFeature>();
 
-            // Background workers
             services.AddSingleton<ICronValidator, CronValidator>();
             services.AddHostedService<MemoryExtractionWorker>();
             services.AddHostedService<MemoryDreamingService>();

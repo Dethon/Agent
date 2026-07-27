@@ -25,7 +25,6 @@ public sealed class ToastStore : IDisposable
     {
         var message = TruncateMessage(action.Message);
 
-        // Deduplicate: don't add if same message already visible
         if (state.Toasts.Any(t => t.Message == message))
         {
             return state;
@@ -34,7 +33,6 @@ public sealed class ToastStore : IDisposable
         var toast = new ToastItem(Guid.NewGuid(), message, DateTime.UtcNow);
         var toasts = state.Toasts.Add(toast);
 
-        // Enforce max limit by removing oldest
         if (toasts.Count > MaxToasts)
         {
             toasts = toasts.RemoveAt(0);

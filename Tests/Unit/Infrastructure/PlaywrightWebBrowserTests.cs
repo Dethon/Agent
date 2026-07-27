@@ -54,7 +54,7 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
     [Fact]
     public async Task CloseSessionAsync_WithNoSession_DoesNotThrow()
     {
-        // Act & Assert - should not throw
+        // Act & Assert
         await _browser.CloseSessionAsync("non-existent-session");
     }
 
@@ -123,7 +123,6 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         gotoCallCount.ShouldBe(1);
         secondStarted.ShouldBeFalse();
 
-        // Releasing the first lets the second proceed and navigate.
         releaseFirstGoto.TrySetResult();
         await nav1;
         await nav2;
@@ -150,7 +149,6 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await using var browser = new PlaywrightWebBrowser(
             wsEndpoint: "ws://dummy:9377/browser", browserFactory: factory);
 
-        // First use connects once.
         await browser.EnsureInitializedAsync();
         connections.Count.ShouldBe(1);
 

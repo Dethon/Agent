@@ -10,7 +10,7 @@ public sealed record ArbitrationCandidate(WakeClaim Claim, double? CalibratedRms
 
 // The pure decision core of multi-satellite wake arbitration: no clocks, no I/O, no state —
 // timestamps come in as TimeProvider ticks with an explicit frequency so every rule is testable
-// with plain numbers. Policy source: docs/superpowers/specs/2026-07-27-wake-arbitration-design.md.
+// with plain numbers.
 public static class WakeArbitrationRules
 {
     // The Source a satellite reports for a physical button press (anything else is a wake word).

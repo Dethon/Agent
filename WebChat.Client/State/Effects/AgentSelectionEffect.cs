@@ -38,7 +38,6 @@ public sealed class AgentSelectionEffect : IDisposable
         _streamingStore = streamingStore;
         _spaceStore = spaceStore;
 
-        // Subscribe to store to detect agent changes
         _subscription = topicsStore.StateObservable.Subscribe(HandleStateChange);
     }
 
@@ -46,7 +45,6 @@ public sealed class AgentSelectionEffect : IDisposable
     {
         if (state.SelectedAgentId != _previousAgentId && _previousAgentId is not null)
         {
-            // Agent changed - clear session, save selection, and reload topics
             _sessionService.ClearSession();
             _ = _localStorage.SetAsync("selectedAgentId", state.SelectedAgentId ?? "");
             _ = LoadTopicsForAgentAsync(state.SelectedAgentId);
@@ -68,7 +66,6 @@ public sealed class AgentSelectionEffect : IDisposable
         var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 
-        // Load history for each topic (fire-and-forget)
         foreach (var topic in topics)
         {
             _ = LoadTopicHistoryAsync(topic);

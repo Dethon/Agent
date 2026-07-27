@@ -9,7 +9,6 @@ namespace Domain.Tools.FileSystem;
 // capping with truncation, context lines, and Content vs FilesOnly output shape.
 internal static class VfsContentSearch
 {
-    // Returns up to `limit` matches and whether the file held more than that (per-file truncation).
     public static (List<FsSearchMatch> Matches, bool More) FindMatches(
         string[] lines, Regex matcher, int contextLines, int limit)
     {

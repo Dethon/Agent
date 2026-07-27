@@ -170,14 +170,12 @@ public class StreamServiceTests : IDisposable
         // Assert: stream should still be alive for second agent
         _sut.IsStreaming("topic1").ShouldBeTrue();
 
-        // Second agent should be able to write
         await _sut.WriteReplyAsync(new SendReplyParams
         {
             ConversationId = "100:200", Content = "starting download 2",
             ContentType = ReplyContentType.Text, IsComplete = false, MessageId = "msg-2"
         });
 
-        // Read all messages: content from agent 1, IsComplete from agent 1, then content from agent 2
         var msg1 = await reader.ReadAsync();
         msg1.Content.ShouldBe("done with download 1");
 

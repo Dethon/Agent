@@ -31,7 +31,6 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture)
         await page.SetViewportSizeAsync(390, 844);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        // Peek bar present; rail segmented strip hidden on mobile.
         await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
 
         // Tapping the handle cycles to half/full and reveals the search field.

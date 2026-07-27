@@ -51,7 +51,6 @@ public sealed class MetricsCollectorService(
                 }
             });
 
-        // Periodically check for services that stopped sending heartbeats
         try
         {
             while (!stoppingToken.IsCancellationRequested)

@@ -155,7 +155,6 @@ public sealed class ChatHub(
 
         var userId = GetRegisteredUserId() ?? "Anonymous";
 
-        // Create or join stream for this topic
         var (broadcastChannel, linkedToken) =
             streamService.GetOrCreateStream(topicId, message, userId, cancellationToken);
         streamService.TryIncrementPending(topicId);
@@ -172,7 +171,6 @@ public sealed class ChatHub(
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
 
-        // Emit MCP notification to agent so it processes the message
         await notificationEmitter.EmitMessageNotificationAsync(
             $"{session.ChatId}:{session.ThreadId}",
             userId,

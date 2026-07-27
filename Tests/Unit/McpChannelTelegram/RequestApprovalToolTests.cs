@@ -71,13 +71,12 @@ public class RequestApprovalToolTests
         // Give time for the approval to be registered
         await Task.Delay(200);
 
-        // Verify keyboard message was sent
         _botClient.Verify(b => b.SendRequest(
             It.IsAny<SendMessageRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);
 
         // The tool is now waiting for approval — we won't resolve it in this test
-        // (it would timeout after 2 min). Just verify the message was sent.
+        // (it would timeout after 2 min).
         approvalTask.IsCompleted.ShouldBeFalse();
     }
 
@@ -91,7 +90,6 @@ public class RequestApprovalToolTests
 
         await Task.Delay(200);
 
-        // Find the registered approval and approve it via callback
         var callbackQuery = new Telegram.Bot.Types.CallbackQuery
         {
             Id = "cb-1",
@@ -118,7 +116,6 @@ public class RequestApprovalToolTests
 
         await Task.Delay(300);
 
-        // Extract approvalId from keyboard callback data
         if (capturedRequest?.ReplyMarkup is InlineKeyboardMarkup keyboard)
         {
             var approveButton = keyboard.InlineKeyboard.First().First();

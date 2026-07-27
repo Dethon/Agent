@@ -22,7 +22,6 @@ public class HaFileSystemJourneyTests
         };
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
 
-        // 1. discover
         var globResult = await fs.GlobAsync("entities", "*/", CancellationToken.None);
         globResult.ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries.ShouldContain("entities/light/");
 
@@ -30,11 +29,9 @@ public class HaFileSystemJourneyTests
         var state = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
         state.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("\"state\": \"off\"");
 
-        // 3. learn the action
         var help = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh --help", null, CancellationToken.None);
         help.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.Stdout.ShouldContain("--brightness_pct");
 
-        // 4. act
         var act = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
         act.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.Data!["brightness_pct"]!.GetValue<int>().ShouldBe(60);

@@ -29,11 +29,6 @@ internal static class TestHelpers
     internal static Task EnsureImageAsync(string solutionRoot, E2EImageSpec spec, CancellationToken ct) =>
         EnsureImageAsync(solutionRoot, spec.Dockerfile, spec.ImageName, spec.WatchedDirs, ct);
 
-    /// <summary>
-    /// Builds a Docker image under a stable tag, replacing any prior image with the same name.
-    /// Uses a per-image semaphore so concurrent fixtures sharing a tag serialise their builds,
-    /// and a source-timestamp check to skip rebuilds when nothing in the watched dirs has changed.
-    /// </summary>
     internal static async Task EnsureImageAsync(
         string solutionRoot,
         string dockerfile,
@@ -77,9 +72,9 @@ internal static class TestHelpers
         }
     }
 
-    // A cross-process exclusive lock keyed by image name. An OS file handle opened with
-    // FileShare.None is released automatically if the process dies, so no stale-lock
-    // cleanup is needed. Bounded by the caller's CancellationToken (the fixture timeout).
+    // An OS file handle opened with FileShare.None is released automatically if the process
+    // dies, so no stale-lock cleanup is needed. Bounded by the caller's CancellationToken
+    // (the fixture timeout).
     private static async Task<FileStream> AcquireImageFileLockAsync(string imageName, CancellationToken ct)
     {
         var safeName = string.Concat(imageName.Select(c => char.IsLetterOrDigit(c) ? c : '_'));

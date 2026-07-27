@@ -29,7 +29,6 @@ public sealed class FakePrinterClient : IPrinterClient
         return Task.CompletedTask;
     }
 
-    // Test helpers:
     public void CompleteJob(int jobId) => _active.Remove(jobId);
 
     public void SetActive(int jobId, string jobName) =>

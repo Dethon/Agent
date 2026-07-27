@@ -14,7 +14,7 @@ public static class TopicsReducers
         {
             Topics = a.Topics,
             IsLoading = false,
-            Error = null // Auto-clear on success
+            Error = null
         },
 
         SelectTopic a => state with
@@ -23,11 +23,11 @@ public static class TopicsReducers
         },
 
         AddTopic a => state.Topics.Any(t => t.TopicId == a.Topic.TopicId)
-            ? state // Topic already exists, ignore duplicate
+            ? state
             : state with
             {
                 Topics = state.Topics.Append(a.Topic).ToList(),
-                Error = null // Auto-clear on success
+                Error = null
             },
 
         UpdateTopic a => state with
@@ -35,7 +35,7 @@ public static class TopicsReducers
             Topics = state.Topics
                 .Select(t => t.TopicId == a.Topic.TopicId ? a.Topic : t)
                 .ToList(),
-            Error = null // Auto-clear on success
+            Error = null
         },
 
         RemoveTopic a => state with
@@ -43,9 +43,8 @@ public static class TopicsReducers
             Topics = state.Topics
                 .Where(t => t.TopicId != a.TopicId)
                 .ToList(),
-            // Clear selection if the removed topic was selected
             SelectedTopicId = state.SelectedTopicId == a.TopicId ? null : state.SelectedTopicId,
-            Error = null // Auto-clear on success
+            Error = null
         },
 
         SetAgents a => state with
@@ -56,13 +55,13 @@ public static class TopicsReducers
             SelectedAgentId = state.SelectedAgentId is not null && a.Agents.All(ag => ag.Id != state.SelectedAgentId)
                 ? a.Agents.FirstOrDefault()?.Id
                 : state.SelectedAgentId,
-            Error = null // Auto-clear on success
+            Error = null
         },
 
         SelectAgent a => state with
         {
             SelectedAgentId = a.AgentId,
-            SelectedTopicId = null // Clear topic selection when switching agents
+            SelectedTopicId = null
         },
 
         TopicsError a => state with

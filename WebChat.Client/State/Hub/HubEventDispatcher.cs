@@ -43,7 +43,6 @@ public sealed class HubEventDispatcher(
         switch (notification.ChangeType)
         {
             case StreamChangeType.Started:
-                // Try to resume stream for this topic if we have it
                 // Don't dispatch StreamStarted here - TryResumeStreamAsync will do it
                 var topic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == notification.TopicId);
                 if (topic is not null && !streamingStore.State.ResumingTopics.Contains(notification.TopicId))
@@ -52,7 +51,6 @@ public sealed class HubEventDispatcher(
                 }
                 else
                 {
-                    // Topic not found or already resuming - just update store state
                     dispatcher.Dispatch(new StreamStarted(notification.TopicId));
                 }
 
@@ -103,7 +101,6 @@ public sealed class HubEventDispatcher(
 
     public void HandleUserMessage(UserMessageNotification notification)
     {
-        // Only add if we're watching this topic
         var currentTopic = topicsStore.State.SelectedTopicId;
         if (currentTopic != notification.TopicId)
         {
@@ -117,7 +114,6 @@ public sealed class HubEventDispatcher(
             return;
         }
 
-        // If streaming is active, finalize current assistant content before adding user message
         // This is the authoritative place to add OTHER users' messages because:
         // 1. We have correlationId to check if this client sent it (stream chunks don't have this)
         // 2. We can finalize streaming content with proper message ID for deduplication
@@ -127,12 +123,10 @@ public sealed class HubEventDispatcher(
             var currentContent = streamingState.StreamingByTopic.GetValueOrDefault(notification.TopicId);
             if (currentContent?.HasContent == true)
             {
-                // Finalize current streaming content via pipeline
                 pipeline.FinalizeMessage(notification.TopicId, currentContent.CurrentMessageId);
             }
         }
 
-        // Add the user message
         dispatcher.Dispatch(new AddMessage(notification.TopicId, new ChatMessageModel
         {
             Role = "user",

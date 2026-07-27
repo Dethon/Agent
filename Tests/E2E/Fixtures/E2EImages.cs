@@ -1,10 +1,7 @@
 namespace Tests.E2E.Fixtures;
 
-/// <summary>
-/// A Docker image an E2E fixture builds. <paramref name="WatchedDirs"/> drives the staleness
-/// check in <see cref="TestHelpers.EnsureImageAsync"/>: a source file newer than the image
-/// forces a rebuild, so the list must cover every directory the Dockerfile copies in.
-/// </summary>
+// WatchedDirs drives the staleness check in TestHelpers.EnsureImageAsync: a source file newer
+// than the image forces a rebuild, so the list must cover every directory the Dockerfile copies in.
 internal sealed record E2EImageSpec(string Dockerfile, string ImageName, IReadOnlyList<string> WatchedDirs);
 
 internal static class E2EImages

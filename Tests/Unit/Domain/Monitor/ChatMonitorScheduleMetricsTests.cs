@@ -77,11 +77,8 @@ public class ChatMonitorScheduleMetricsTests
         var monitor = BuildMonitor([scheduling, bad.Object, good], metricsPublisher);
         await monitor.Monitor(CancellationToken.None);
 
-        // The healthy target still receives the stream-complete reply.
         good.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
-        // The failed delivery is surfaced rather than swallowed.
         published.OfType<ErrorEvent>().ShouldNotBeEmpty();
-        // The schedule execution metric is still emitted exactly once, as a success.
         var evt = published.OfType<ScheduleExecutionEvent>().ShouldHaveSingleItem();
         evt.Success.ShouldBeTrue();
     }

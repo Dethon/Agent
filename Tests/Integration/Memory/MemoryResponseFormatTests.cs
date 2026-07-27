@@ -87,7 +87,6 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
             [new ChatMessage(ChatRole.User, "Hello, how are you?")],
             "test_user", cts.Token);
 
-        // A trivial greeting should produce few or no memory candidates
         result.Count.ShouldBeLessThanOrEqualTo(1);
     }
 }
@@ -192,7 +191,6 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
 
         var result = await consolidator.ConsolidateAsync(memories, cts.Token);
 
-        // Distinct memories should not be merged
         result.ShouldAllBe(d => d.Action != MergeAction.Merge,
             "Distinct, unrelated memories should not be merged");
     }

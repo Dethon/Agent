@@ -37,14 +37,11 @@ public class ChannelConnectionHostTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _ = sut.StartAsync(cts.Token);
 
-        // Wait for initial connect
         await fake.WaitForConnectAsync(cts.Token);
         fake.ConnectCount.ShouldBe(1);
 
-        // Simulate connection drop
         fake.SetHealthy(false);
 
-        // Wait for reconnect
         await fake.WaitForConnectCountAsync(2, cts.Token);
         fake.ConnectCount.ShouldBeGreaterThanOrEqualTo(2);
     }

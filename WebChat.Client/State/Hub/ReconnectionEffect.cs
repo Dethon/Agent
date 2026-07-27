@@ -31,7 +31,6 @@ public sealed class ReconnectionEffect : IDisposable
         _subscription = connectionStore.StateObservable
             .Subscribe(state =>
             {
-                // Track if we entered a disconnected state
                 if (state.Status is ConnectionStatus.Reconnecting or ConnectionStatus.Disconnected)
                 {
                     _wasDisconnectedSinceLastConnect = true;
@@ -80,7 +79,6 @@ public sealed class ReconnectionEffect : IDisposable
 
         var currentState = topicsStore.State;
 
-        // Reload history, restart session, and resume streams all in parallel
         var tasks = new List<Task>();
 
         if (currentState.SelectedTopicId is not null)

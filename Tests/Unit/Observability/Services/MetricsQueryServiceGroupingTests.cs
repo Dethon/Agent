@@ -37,10 +37,6 @@ public class MetricsQueryServiceGroupingTests
             .ReturnsAsync(entries);
     }
 
-    // =====================================================================
-    // Token Grouped Aggregation
-    // =====================================================================
-
     [Theory]
     [InlineData(TokenDimension.User, TokenMetric.Tokens, "alice", 450.0, "bob", 75.0)]
     [InlineData(TokenDimension.Model, TokenMetric.Cost, "gpt-4", 0.3, "claude-3", 0.05)]
@@ -62,10 +58,6 @@ public class MetricsQueryServiceGroupingTests
         result[keyA].ShouldBe((decimal)expectedA);
         result[keyB].ShouldBe((decimal)expectedB);
     }
-
-    // =====================================================================
-    // Tools Grouped Aggregation
-    // =====================================================================
 
     [Theory]
     [InlineData(ToolDimension.ToolName, ToolMetric.CallCount)]
@@ -107,10 +99,6 @@ public class MetricsQueryServiceGroupingTests
         }
     }
 
-    // =====================================================================
-    // Errors Grouped Aggregation
-    // =====================================================================
-
     [Theory]
     [InlineData(ErrorDimension.Service, "Agent", 2, "Observability", 1)]
     [InlineData(ErrorDimension.ErrorType, "NullReference", 2, "Timeout", 1)]
@@ -131,10 +119,6 @@ public class MetricsQueryServiceGroupingTests
         result[keyB].ShouldBe(expectedB);
     }
 
-    // =====================================================================
-    // Schedules Grouped Aggregation
-    // =====================================================================
-
     [Theory]
     [InlineData(ScheduleDimension.Schedule, "daily-report", 2, "weekly-summary", 1)]
     [InlineData(ScheduleDimension.Status, "Success", 2, "Failure", 1)]
@@ -154,10 +138,6 @@ public class MetricsQueryServiceGroupingTests
         result[keyA].ShouldBe(expectedA);
         result[keyB].ShouldBe(expectedB);
     }
-
-    // =====================================================================
-    // Memory Grouped Aggregation
-    // =====================================================================
 
     [Theory]
     [InlineData(MemoryDimension.User, MemoryMetric.Count)]
@@ -217,10 +197,6 @@ public class MetricsQueryServiceGroupingTests
         }
     }
 
-    // =====================================================================
-    // Percentile Helper
-    // =====================================================================
-
     [Theory]
     [InlineData(new[] { 10, 20, 30, 40, 100 }, 50, 30)]
     [InlineData(new[] { 10, 20, 30, 40, 100 }, 95, 100)]
@@ -232,10 +208,6 @@ public class MetricsQueryServiceGroupingTests
         var decimalValues = values.Select(v => (decimal)v).ToArray();
         MetricsQueryService.ComputePercentile(decimalValues, q).ShouldBe(expected);
     }
-
-    // =====================================================================
-    // Latency Grouped Aggregation
-    // =====================================================================
 
     [Theory]
     [InlineData(LatencyDimension.Stage, LatencyMetric.P95, "LlmTotal", 5000.0, "MemoryRecall", 40.0)]
@@ -259,10 +231,6 @@ public class MetricsQueryServiceGroupingTests
         result[keyA].ShouldBe((decimal)expectedA);
         result[keyB].ShouldBe((decimal)expectedB);
     }
-
-    // =====================================================================
-    // Voice Grouped Aggregation
-    // =====================================================================
 
     [Theory]
     [InlineData(VoiceDimension.SatelliteId, VoiceMetric.UtteranceTranscribed)]
@@ -375,11 +343,6 @@ public class MetricsQueryServiceGroupingTests
         result["(unknown)"].ShouldBe(1m);
     }
 
-    // =====================================================================
-    // Empty-data behavior (every grouped query returns an empty dictionary
-    // when no events exist for the date range)
-    // =====================================================================
-
     [Theory]
     [InlineData("tokens")]
     [InlineData("memory")]
@@ -406,10 +369,6 @@ public class MetricsQueryServiceGroupingTests
 
         result.ShouldBeEmpty();
     }
-
-    // =====================================================================
-    // Latency Trend (hourly vs. daily bucketing)
-    // =====================================================================
 
     [Fact]
     public async Task GetLatencyTrendAsync_ShortRange_BucketsHourlyPerStage()

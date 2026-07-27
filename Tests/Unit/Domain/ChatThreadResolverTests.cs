@@ -12,15 +12,12 @@ public class ChatThreadResolverTests
         var key1 = new AgentKey("1:1");
         var key2 = new AgentKey("2:2");
 
-        // New key returns a non-null context
         var context1 = resolver.Resolve(key1);
         context1.ShouldNotBeNull();
 
-        // Same key returns the same context instance
         var context1Again = resolver.Resolve(key1);
         context1Again.ShouldBeSameAs(context1);
 
-        // Different key returns a different context instance
         var context2 = resolver.Resolve(key2);
         context2.ShouldNotBeSameAs(context1);
     }

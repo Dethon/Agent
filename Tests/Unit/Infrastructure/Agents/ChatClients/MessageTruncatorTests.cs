@@ -81,7 +81,7 @@ public class MessageTruncatorTests
     {
         var msgs = new List<ChatMessage>
         {
-            new(ChatRole.User, "hi") // tiny
+            new(ChatRole.User, "hi")
         };
 
         var result = MessageTruncator.Truncate(
@@ -222,8 +222,8 @@ public class MessageTruncatorTests
         // If bigAssistant is dropped, smallToolResult MUST also be dropped.
         var hasAssistant = result.Contains(bigAssistant);
         var hasResult = result.Contains(smallToolResult);
-        hasAssistant.ShouldBe(hasResult); // both present or both absent
-        dropped.ShouldBeGreaterThanOrEqualTo(2); // they go together
+        hasAssistant.ShouldBe(hasResult);
+        dropped.ShouldBeGreaterThanOrEqualTo(2);
     }
 
     [Fact]
@@ -239,7 +239,7 @@ public class MessageTruncatorTests
             out var dropped, out var before, out var after, out var overflow);
 
         dropped.ShouldBe(0);
-        before.ShouldBe(after); // nothing dropped
+        before.ShouldBe(after);
         overflow.ShouldBeTrue();
         result.Count.ShouldBe(2);
     }

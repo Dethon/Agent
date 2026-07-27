@@ -6,16 +6,13 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 public class HaVfsPathTests
 {
     [Theory]
-    // Roots
     [InlineData("", HaVfsKind.Root, null, null, null, null)]
     [InlineData("entities", HaVfsKind.EntitiesRoot, null, null, null, null)]
     [InlineData("areas", HaVfsKind.AreasRoot, null, null, null, null)]
-    // Class / area / entity directories
     [InlineData("entities/light", HaVfsKind.ClassDir, "light", null, null, null)]
     [InlineData("entities/light/kitchen", HaVfsKind.EntityDir, "light", null, "kitchen", null)]
     [InlineData("areas/salon", HaVfsKind.AreaDir, null, "salon", null, null)]
     [InlineData("areas/salon/light.salon", HaVfsKind.EntityDir, null, "salon", "light.salon", null)]
-    // State + action files
     [InlineData("entities/light/kitchen/state.json", HaVfsKind.StateFile, "light", null, "kitchen", null)]
     [InlineData("entities/light/kitchen/turn_on.sh", HaVfsKind.ActionFile, "light", null, "kitchen", "turn_on")]
     [InlineData("areas/salon/light.salon/toggle.sh", HaVfsKind.ActionFile, null, "salon", "light.salon", "toggle")]

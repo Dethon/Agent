@@ -324,7 +324,6 @@ public sealed class StreamResumeServiceTests : IDisposable
             null,
             null));
 
-        // Stream continues from buffer
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = " more content", MessageId = "msg-1" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
@@ -383,7 +382,6 @@ public sealed class StreamResumeServiceTests : IDisposable
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
 
-        // Check streaming starts via store subscription
         var streamingStarted = false;
         using var subscription = _streamingStore.StateObservable.Subscribe(state =>
         {
@@ -435,12 +433,10 @@ public sealed class StreamResumeServiceTests : IDisposable
             null,
             null));
 
-        // Enqueue an error to trigger exception handling
         _messagingService.EnqueueError("Stream error");
 
         await _resumeService.TryResumeStreamAsync(topic);
 
-        // Even with error, resuming flag should be cleared
         _streamingStore.State.ResumingTopics.Contains("topic-1").ShouldBeFalse();
     }
 

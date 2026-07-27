@@ -87,7 +87,6 @@ public sealed class HubEventDispatcherTests : IDisposable
     [Fact]
     public void HandleStreamChanged_Started_TopicNotFound_DispatchesStreamStarted()
     {
-        // Topic not in store, so StreamStarted should be dispatched
         var notification = new StreamChangedNotification(StreamChangeType.Started, "topic-1");
 
         _sut.HandleStreamChanged(notification);

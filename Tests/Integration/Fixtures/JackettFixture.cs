@@ -17,7 +17,6 @@ public class JackettFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Create config directory with pre-configured settings
         _configDir = Path.Combine(Path.GetTempPath(), $"jackett-test-{Guid.NewGuid()}");
         Directory.CreateDirectory(_configDir);
 
@@ -50,7 +49,6 @@ public class JackettFixture : IAsyncLifetime
         var port = _container.GetMappedPublicPort(JackettPort);
         ApiUrl = $"http://{host}:{port}/api/v2.0/";
 
-        // Wait for API to be ready
         await WaitForApiReady();
     }
 

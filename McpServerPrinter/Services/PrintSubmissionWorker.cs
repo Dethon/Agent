@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace McpServerPrinter.Services;
 
-// Periodically submits documents whose writes have gone quiet and prunes finished jobs.
 public sealed class PrintSubmissionWorker(
     PrintQueueCoordinator coordinator,
     PrinterSettings settings,

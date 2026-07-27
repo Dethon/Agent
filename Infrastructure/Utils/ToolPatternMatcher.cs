@@ -22,7 +22,6 @@ public sealed class ToolPatternMatcher
 
     private static Regex ConvertToRegex(string pattern)
     {
-        // Escape regex special chars except *
         var escaped = Regex.Escape(pattern).Replace("\\*", ".*");
         return new Regex($"^{escaped}$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     }

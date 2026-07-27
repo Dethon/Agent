@@ -259,7 +259,6 @@ public class DeliveryTargetResolverTests
         var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
 
         targets.Count.ShouldBe(2);
-        // signalr (owning) anchors and is targets[0]; voice attaches to the same id.
         targets[0].Channel.ChannelId.ShouldBe("signalr");
         targets[0].ConversationId.ShouldBe("minted-signalr");
         targets.ShouldAllBe(t => t.ConversationId == "minted-signalr");

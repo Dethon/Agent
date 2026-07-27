@@ -1,4 +1,3 @@
-// McpServerHomeAssistant/Settings/McpSettings.cs
 namespace McpServerHomeAssistant.Settings;
 
 public record McpSettings

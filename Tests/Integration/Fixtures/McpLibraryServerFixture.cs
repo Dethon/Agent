@@ -32,7 +32,6 @@ public class McpLibraryServerFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Start Docker containers
         await Task.WhenAll(Jackett.InitializeAsync(), QBittorrent.InitializeAsync());
 
         LibraryPath = Path.Combine(Path.GetTempPath(), $"mcp-library-{Guid.NewGuid()}");

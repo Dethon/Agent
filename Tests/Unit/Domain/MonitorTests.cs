@@ -424,12 +424,10 @@ public class ChatMonitorTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = monitor.Monitor(cts.Token);
 
-        // User speaks: voice opens conversation "7:42".
         voice.WriteMessage(MonitorTestMocks.CreateChannelMessage(
             conversationId: "7:42", channelId: "voice", agentId: "jonas"));
         await firstSpoken.Task.WaitAsync(cts.Token);
 
-        // User then types in the SAME conversation from WebChat.
         webchat.WriteMessage(MonitorTestMocks.CreateChannelMessage(
             conversationId: "7:42", channelId: "webchat", agentId: "jonas"));
         await secondDelivered.Task.WaitAsync(cts.Token);

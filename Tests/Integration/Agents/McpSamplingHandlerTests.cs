@@ -75,7 +75,6 @@ public class McpSamplingHandlerTests
         var trackerValue = "test-conversation-tracker";
         var metadata = new JsonObject { ["tracker"] = trackerValue };
 
-        // First message in conversation
         var firstParams = new CreateMessageRequestParams
         {
             Messages = [CreateUserMessage("Remember: my favorite color is blue")],
@@ -142,7 +141,6 @@ public class McpSamplingHandlerTests
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "ToolsAgent" });
 
-        // Create a simple test tool
         var testTool = AIFunctionFactory.Create(() => "test result", "TestTool", "A test tool");
         var tools = new[] { testTool };
 

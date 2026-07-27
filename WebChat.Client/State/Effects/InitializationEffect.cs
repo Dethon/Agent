@@ -74,11 +74,9 @@ public sealed class InitializationEffect : IDisposable
 
     private async Task HandleInitializeAsync()
     {
-        // Connect to SignalR
         await _connectionService.ConnectAsync();
         _eventSubscriber.Subscribe();
 
-        // Register user after initial connection
         await RegisterUserAsync();
 
         // Validate and join space (must happen before push subscribe so space context is set)
@@ -118,7 +116,6 @@ public sealed class InitializationEffect : IDisposable
             return Task.WhenAll(registerTask, joinTask, pushTask);
         };
 
-        // Load agents
         var agents = await _agentService.GetAgentsAsync();
         _dispatcher.Dispatch(new SetAgents(agents));
 
@@ -137,12 +134,10 @@ public sealed class InitializationEffect : IDisposable
             await _localStorage.SetAsync("selectedAgentId", agentToSelect.Id);
         }
 
-        // Load topics for selected agent
         var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id, spaceSlug);
         var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 
-        // Load history for each topic (fire-and-forget)
         foreach (var topic in topics)
         {
             _ = LoadTopicHistoryAsync(topic);

@@ -299,7 +299,6 @@ public static partial class HtmlConverter
                 sb.Append("*\n");
                 break;
             default:
-                // For unknown elements, just process children
                 ConvertToMarkdownRecursive(elem, sb, listDepth);
                 break;
         }
@@ -329,7 +328,6 @@ public static partial class HtmlConverter
 
             sb.AppendLine();
 
-            // Add header separator after first row
             if (isFirstRow)
             {
                 sb.Append('|');

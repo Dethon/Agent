@@ -140,7 +140,6 @@ public static partial class HtmlProcessor
     {
         var totalLength = content.Length;
 
-        // Apply offset first
         if (offset > 0 && offset < content.Length)
         {
             content = content[offset..];
@@ -150,7 +149,6 @@ public static partial class HtmlProcessor
             content = "";
         }
 
-        // Then apply max length truncation
         var truncated = content.Length > maxLength;
         if (truncated)
         {
