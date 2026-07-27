@@ -11,7 +11,7 @@ dependencies on the target device.
 ### Prerequisites
 
 - **Rust** via [rustup](https://rustup.rs) — no manual toolchain setup needed:
-  `rust-toolchain.toml` auto-installs the pinned 1.91 toolchain and the
+  `rust-toolchain.toml` auto-installs the pinned 1.97.1 toolchain and the
   `aarch64-unknown-linux-musl` target on the first cargo invocation.
 - **Python 3** (for the zig toolchain used by cross-builds):
   `python3 -m pip install --user cargo-zigbuild` — the `ziglang` package (which bundles
@@ -36,7 +36,7 @@ Verified working toolchain:
 
 | Component | Version |
 |---|---|
-| rustc | 1.91.1 (`rust-toolchain.toml` pins 1.91 + the `aarch64-unknown-linux-musl` target) |
+| rustc | 1.97.1 (`rust-toolchain.toml` pins the exact patch — 1.97.0 carries a P-critical LLVM miscompile, [rust#159035](https://github.com/rust-lang/rust/issues/159035) — plus the `aarch64-unknown-linux-musl` target) |
 | cargo-zigbuild | 0.22.3 (`python3 -m pip install --user cargo-zigbuild`) |
 | zig | 0.16.0, provided by the `ziglang` pip package (`python3 -m ziglang version`) |
 
@@ -52,11 +52,17 @@ go through cargo-zigbuild's own wrappers).
 
 Output: `target/aarch64-unknown-linux-musl/release/nabu-satellite` —
 `ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped`,
-**19,674,944 bytes (18.8 MiB)** (fat LTO, `strip = true`, `-C target-cpu=cortex-a53` with
+**20,816,880 bytes (19.9 MiB)** (fat LTO, `strip = true`, `-C target-cpu=cortex-a53` with
 `-aes,-sha2` subtracted — the Pi's BCM2837/RP3A0 lacks the crypto extensions; the binary is
 objdump-verified to contain no AES/SHA instructions. The full tract-onnx inference stack plus
 the three `include_bytes!`-embedded wake models — ~2.6 MB of ONNX — account for the growth
 over the 1.2 MiB pre-tract skeleton).
+The 1.91 → 1.97.1 toolchain bump added 1,028,272 bytes (+5.2%) on top of that, from two
+independent causes measured section-by-section: `.text` +799,728 (LLVM 22's AArch64 backend
+raised optimization effort — unrolling/inlining — for small in-order cores, which is exactly
+what `target-cpu=cortex-a53` selects) and `.eh_frame` +319,672 (Rust 1.92 emits unwind tables
+by default under `panic="abort"` on Linux). Only the latter is opt-out-able, via
+`-C force-unwind-tables=no` — worth ~1.5% of the binary, not the whole 5.2%.
 Execution verified on arm64 via Docker binfmt emulation (no Pi needed):
 
 ```sh

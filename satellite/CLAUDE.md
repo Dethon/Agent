@@ -1,6 +1,6 @@
 # nabu-satellite
 
-Standalone Rust crate (NOT in the .NET solution): a fully static aarch64-musl Wyoming satellite binary (~18.8 MiB) for Raspberry Pi, embedding the openWakeWord "ok nabu" pipeline (melspectrogram → embedding → classifier ONNX, run in-process via tract) and the cue WAVs. `README.md` covers build prerequisites, hardware defaults, the LED, and model licenses; this file holds the invariants that must not be broken.
+Standalone Rust crate (NOT in the .NET solution): a fully static aarch64-musl Wyoming satellite binary (~19.9 MiB) for Raspberry Pi, embedding the openWakeWord "ok nabu" pipeline (melspectrogram → embedding → classifier ONNX, run in-process via tract) and the cue WAVs. `README.md` covers build prerequisites, hardware defaults, the LED, and model licenses; this file holds the invariants that must not be broken.
 
 ## Key Files
 
