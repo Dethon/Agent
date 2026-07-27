@@ -129,7 +129,19 @@ public sealed class FollowUpConversation(
 
                 var isFollowUp = turns > 0;
                 ResetTurn();
-                await SpeechStopped(ct);
+                try
+                {
+                    await SpeechStopped(ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    // SpeechStopped only drives the satellite's Thinking indicator — a failure
+                    // there must never drop the utterance that would otherwise still transcribe.
+                }
                 var dispatched = await TranscribeAndDispatch(capture, isFollowUp, ct);
 
                 // Nothing reached the agent (or follow-up is off): no reply will resolve the turn,

@@ -103,6 +103,7 @@ public class FollowUpConversationTests
         h.Events.ShouldContain("end");
         h.Dispatched.ShouldBeEmpty();                    // unknown speaker -> never reaches the agent
         h.Events.ShouldNotContain("dispatch-first");
+        h.Events.ShouldNotContain("speech-stopped");
 
         await StopAsync(sut, run);
     }

@@ -339,3 +339,26 @@ preserves the live values:
 MUSIC_HUB=192.168.5.45 MUSIC_ROOM=fran_s_office THRESHOLD=0.6 TRIGGER_LEVEL=2 TTS_VOLUME=75 \
   ./scripts/provision-satellite-rs.sh dethon@192.168.5.11
 ```
+
+### On-device tuning outcome (2026-07-27)
+
+The "Phase mapping" section above ships `LED_BRIGHTNESS 127`, `LED_SPEED 8`, and Thinking
+colour `0x002040` — the device's own stock values, explicitly labelled "starting points to be
+tuned on-device, not final values". Tuning by eye against the deployed unit changed all three:
+
+| Constant | Starting point | Shipped |
+|---|---|---|
+| `LED_BRIGHTNESS` (breath) | `127` | `255` |
+| `LED_SPEED` (breath) | `8` | `1` |
+| Thinking colour | `0x002040` | `0x0000FF` |
+
+The key finding is **why**, not just the new numbers: breath mode **multiplies** its colour by
+`LED_BRIGHTNESS` rather than using it as an independent cap, so a pre-dimmed Thinking colour
+(`0x002040`, the same dim blue used for the DoA base) renders as no visible pulse at all at
+`LED_BRIGHTNESS 127` — the multiplied result was too dark to see. Fixing this needed both a
+saturated colour (`0x0000FF`) and full brightness (`255`) together; either alone still looked
+off. Separately, `LED_SPEED 8` (the stock rainbow-mode rate) read as too brisk for a "thinking"
+pulse — `1` is the slowest value that still animates (`0` stops the animation outright, i.e.
+freezes the breath at a fixed level rather than pulsing).
+
+Shipped in `satellite/src/led.rs` as `BREATH_BRIGHTNESS`, `BREATH_SPEED`, and `THINKING_COLOR`.

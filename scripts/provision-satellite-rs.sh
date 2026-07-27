@@ -166,10 +166,16 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
     # for any USB-audio device.
     usbid=$(cat /proc/asound/card${cardidx}/usbid 2>/dev/null || true)
     if [ -n "$usbid" ]; then
-      # MODE/GROUP are what let the non-root satellite drive the XVF3800's LED ring over USB
-      # control transfers; without them nusb's open() fails and the ring stays dark.
-      printf 'ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="%s", ATTR{idProduct}=="%s", ATTR{power/control}="on", MODE="0660", GROUP="plugdev"\n' \
+      # A second, XVF3800-specific rule grants plugdev write access to drive the LED ring over
+      # USB control transfers (without it nusb's open() fails and the ring stays dark). It is
+      # keyed on the XVF3800's own vendor:product, NOT on $usbid — $usbid is whatever card
+      # arecord -l detected, which could be a different mic entirely, and even on the XVF3800
+      # itself MODE/GROUP would also widen access to its runtime DFU interface (firmware
+      # reflashing) if applied generically.
+      printf 'ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="%s", ATTR{idProduct}=="%s", ATTR{power/control}="on"\n' \
         "${usbid%%:*}" "${usbid##*:}" | sudo tee /etc/udev/rules.d/99-nabu-usb-audio.rules >/dev/null
+      printf 'ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="2886", ATTR{idProduct}=="001a", MODE="0660", GROUP="plugdev"\n' \
+        | sudo tee -a /etc/udev/rules.d/99-nabu-usb-audio.rules >/dev/null
       sudo udevadm control --reload
       sudo udevadm trigger --action=add
     fi

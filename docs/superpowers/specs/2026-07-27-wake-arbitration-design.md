@@ -65,9 +65,13 @@ first cannot wedge them **only if** the hub detects old firmware: a claim withou
 identifies a pre-arbitration satellite, and losers on old firmware get the empty
 `transcript` abort instead (done-cue plays — degraded but correct; the satellite never
 streams forever). The same legacy abort hits a new-firmware satellite whose first turn on a
-connection was a button press (no `wake_rms` seen yet). Either way the transcript arm also
+connection was a button press (no `wake_rms` seen yet). ~~Either way the transcript arm also
 lights the Thinking LED, and since no reply ever follows an abort, the LED sits there until
-the satellite's own 120 s Thinking fallback clears it.
+the satellite's own 120 s Thinking fallback clears it.~~ **Retired** — the
+2026-07-27 XVF3800 LED ring work (see
+`docs/superpowers/specs/2026-07-27-xvf3800-led-ring-design.md`'s Addendum) corrected the
+phase mapping so `transcript` darkens the ring immediately instead of lighting Thinking;
+this legacy abort now darkens the ring right away, same as the normal turn-end path.
 
 `PROTOCOL_VERSION` bumps `1.2` → `1.3` (documentation; the codec ignores it). The
 data-once-as-body wire format pin is untouched.
