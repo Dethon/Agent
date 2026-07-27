@@ -104,10 +104,7 @@ public sealed class VoiceConversationManager(
                 _conversationToSatellite.Remove(displaced.ConversationId);
             }
 
-            entry.Timer.Dispose();
-            var generation = ++_generation;
-            var timer = time.CreateTimer(_ => Expire(toSatelliteId, generation), null, lifetime, Timeout.InfiniteTimeSpan);
-            _bySatellite[toSatelliteId] = entry with { Timer = timer, Generation = generation };
+            Renew(toSatelliteId, entry);
             _conversationToSatellite[entry.ConversationId] = toSatelliteId;
             logger.LogInformation(
                 "Voice conversation {ConversationId} handed off {From} -> {To}",
