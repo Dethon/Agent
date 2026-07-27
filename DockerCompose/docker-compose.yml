@@ -182,10 +182,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Dockerfile.base-sdk
-      cache_from:
-        - base-sdk:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
       labels:
         keep: "true"
     entrypoint: ["true"]
@@ -207,10 +203,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerLibrary/Dockerfile
-      cache_from:
-        - mcp-library:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${DATA_PATH:-./volumes/data}:/media
@@ -243,10 +235,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerVault/Dockerfile
-      cache_from:
-        - mcp-vault:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${VAULT_PATH:-./volumes/vault}:/vault
@@ -272,10 +260,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSandbox/Dockerfile
-      cache_from:
-        - mcp-sandbox:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     user: ${PUID:-1654}:${PGID:-1654}
     devices:
       - /dev/dri:/dev/dri
@@ -334,10 +318,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerWebSearch/Dockerfile
-      cache_from:
-        - mcp-websearch:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
@@ -363,10 +343,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerIdealista/Dockerfile
-      cache_from:
-        - mcp-idealista:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
@@ -389,10 +365,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerHomeAssistant/Dockerfile
-      cache_from:
-        - mcp-homeassistant:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
@@ -418,10 +390,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelSignalR/Dockerfile
-      cache_from:
-        - mcp-channel-signalr:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
@@ -447,10 +415,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelTelegram/Dockerfile
-      cache_from:
-        - mcp-channel-telegram:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
@@ -476,10 +440,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelServiceBus/Dockerfile
-      cache_from:
-        - mcp-channel-servicebus:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
@@ -502,10 +462,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerScheduling/Dockerfile
-      cache_from:
-        - mcp-scheduling:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
@@ -531,10 +487,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerPrinter/Dockerfile
-      cache_from:
-        - mcp-printer:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     volumes:
       - printer-spool:/spool
     restart: unless-stopped
@@ -560,10 +512,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerTimers/Dockerfile
-      cache_from:
-        - mcp-timers:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
@@ -590,10 +538,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelVoice/Dockerfile
-      cache_from:
-        - mcp-channel-voice:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     # The hub writes the bind mounts below (profile.json cache, audit ring). PUID/PGID in
     # .env — the same pair the other volume-writing services use — must own ./volumes/voices
@@ -724,10 +668,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Agent/Dockerfile
-      cache_from:
-        - agent:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     command: [ "--chat", "Web", "--reasoning" ]
     restart: unless-stopped
     env_file:
@@ -778,10 +718,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: WebChat/Dockerfile
-      cache_from:
-        - webui:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     env_file:
       - .env
     environment:
@@ -808,10 +744,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Observability/Dockerfile
-      cache_from:
-        - observability:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
     ports:
       - "5003:8080"
     env_file:

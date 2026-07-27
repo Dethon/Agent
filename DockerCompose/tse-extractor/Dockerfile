@@ -1,3 +1,7 @@
+# Floating `3.11-slim` on purpose: the tag moves on every Python/Debian refresh and each move
+# re-runs the ~2 GB torch install below with nothing changed here. Pinning the patch buys back
+# that rebuild but freezes base CVE fixes behind a manual bump -- deliberately not worth it.
+# 3.11 itself is load-bearing, not incidental: torch 2.1.2 ships cp38-cp311 wheels only.
 FROM python:3.11-slim
 
 # build-essential: hdbscan (pulled in transitively -- see below) publishes no linux-aarch64
