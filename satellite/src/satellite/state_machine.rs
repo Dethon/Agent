@@ -109,7 +109,8 @@ pub async fn run_connection(
     // re-arm and mic forwarding stay live during the drain. Completions come back on an
     // unbounded channel (a bounded send from the pump could AB-deadlock against a main loop
     // blocked sending a command) and are raced below like the other pumps.
-    let (mut playback, mut playback_done, pump_task) = spawn_pump(&cfg.snd_command);
+    let (mut playback, mut playback_done, pump_task) =
+        spawn_pump(&cfg.snd_command, &cfg.alert_snd_command);
     let _playback_pump = AbortOnDrop(pump_task);
 
     // Pre-roll ring: keep the last `preroll_chunks()` mic chunks while Idle, so a request spoken
@@ -300,7 +301,7 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
         // (see apply_drain_done). The pump owns the player; commands here never block on the
         // device, only on the bounded command channel (flow control).
         "audio-start" => {
-            playback.start().await?;
+            playback.start(false).await?;
             let _ = ctx.led.send(LedState::Speaking); // replies AND standalone announcements
         }
         "audio-chunk" => playback.pcm(e.payload).await?,
@@ -327,7 +328,7 @@ mod tests {
     }
 
     fn pump() -> (PlaybackHandle, tokio::sync::mpsc::UnboundedReceiver<DrainDone>, AbortOnDrop) {
-        let (handle, done_rx, task) = spawn_pump("cat >/dev/null");
+        let (handle, done_rx, task) = spawn_pump("cat >/dev/null", "cat >/dev/null");
         (handle, done_rx, AbortOnDrop(task))
     }
 
@@ -530,7 +531,7 @@ mod tests {
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
         let ctx = Ctx { cues: &c, led: &led_tx };
         let mut mode = Mode::Idle;
-        let (handle, mut done_rx, task) = spawn_pump("cat >/dev/null; sleep 1");
+        let (handle, mut done_rx, task) = spawn_pump("cat >/dev/null; sleep 1", "cat >/dev/null; sleep 1");
         let mut playback = handle;
         let _pump = AbortOnDrop(task);
 
