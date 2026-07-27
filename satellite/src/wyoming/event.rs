@@ -1,6 +1,6 @@
 use serde_json::{json, Map, Value};
 
-pub const PROTOCOL_VERSION: &str = "1.3"; // matches the hub's WyomingWriter
+pub const PROTOCOL_VERSION: &str = "1.4"; // matches the hub's WyomingWriter
 
 #[derive(Debug, Clone)]
 pub struct WyomingEvent {

@@ -275,6 +275,15 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
             if *mode == Mode::Streaming {
                 end_capture(wr, mode, detector).await?;
                 if let Some(pcm) = ctx.cues.done() { playback.cue(pcm); }
+                // Turn over (this event IS the hub's EndConversation, text always empty) —
+                // the ring goes dark. Thinking is driven by voice-stopped, not by this.
+                let _ = ctx.led.send(LedState::Idle);
+            }
+        }
+        // The hub endpointed the user's speech and is now processing it. Capture stays open —
+        // only the indicator changes — because the hub, not the satellite, closes the stream.
+        "voice-stopped" => {
+            if *mode == Mode::Streaming {
                 let _ = ctx.led.send(LedState::Thinking);
             }
         }
@@ -615,9 +624,13 @@ mod tests {
         start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback, None).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
 
+        let voice_stopped = WyomingEvent::new("voice-stopped");
+        handle_hub_event(voice_stopped, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Thinking);
+
         let transcript = WyomingEvent::with_data("transcript", json!({"text":"hi"}));
         handle_hub_event(transcript, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
-        assert_eq!(*led_rx.borrow_and_update(), LedState::Thinking);
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Idle, "transcript ends the turn -> ring goes dark");
 
         let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
         handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
@@ -719,5 +732,42 @@ mod tests {
         let stale = WyomingEvent::with_data("transcript", json!({"text":"stale"}));
         handle_hub_event(stale, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         assert!(!led_rx.has_changed().unwrap(), "stale transcript must not touch the LED");
+    }
+
+    // The hub endpointed the user's speech and is now processing it. This is now the sole
+    // source of the Thinking indicator; the capture must stay open (mode unchanged) because
+    // the hub, not the satellite, decides when the stream ends (via transcript).
+    #[tokio::test]
+    async fn voice_stopped_during_streaming_publishes_thinking() {
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+
+        let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Streaming;
+        let (mut playback, _done_rx, _pump) = pump();
+
+        let e = WyomingEvent::new("voice-stopped");
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+
+        assert_eq!(mode, Mode::Streaming, "voice-stopped must not close the capture");
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Thinking);
+    }
+
+    #[tokio::test]
+    async fn voice_stopped_while_idle_is_a_noop() {
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+
+        let (led_tx, led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle; // not Streaming -> stale, must not touch the LED
+        let (mut playback, _done_rx, _pump) = pump();
+
+        let e = WyomingEvent::new("voice-stopped");
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+
+        assert_eq!(mode, Mode::Idle);
+        assert!(!led_rx.has_changed().unwrap(), "stale voice-stopped must not touch the LED");
     }
 }
