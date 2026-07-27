@@ -3,11 +3,11 @@
 # `arecord -l` (immune to ALSA index churn) and the speaker is the I2S DAC/amp HAT when one is
 # present (`sndrpihifiberry*` card), else the mic card itself. The mic is 16 kHz mono native (no
 # resampling; the XVF3800's 2 capture channels carry the same processed signal, so plughw's
-# stereo->mono averaging is fine); plughw resamples only the 22050 Hz playback. The XVF3800's
-# capture engine only runs while its OWN playback stream is active — provisioning detects this
-# (capture-alone probe; sticky across re-provisions since the probe is only valid on a cold
-# engine) and installs nabu-micclock.service, an endless zero-stream into its unconnected speaker
-# out. The MiniAmp needs its overlay declared at provision time (DAC_OVERLAY=hifiberry-dac —
+# stereo->mono averaging is fine); plughw resamples only the 22050 Hz playback. On XVF3800 firmware
+# <=2.0.6 the capture engine only ran while its OWN playback stream was active, so provisioning's
+# capture-alone probe installed nabu-micclock.service (an endless zero-stream into the unconnected
+# speaker out); firmware 2.0.10 fixed that and the deployed unit runs with no feeder — see
+# satellite/CLAUDE.md. The MiniAmp needs its overlay declared at provision time (DAC_OVERLAY=hifiberry-dac —
 # one-shot config.txt write + reboot). No button, no LED by default.
 # reSpeaker 2-Mic HAT variant: provision with the device arg plughw:CARD=seeed2micvoicec,DEV=0
 # (16 kHz-native, used verbatim) and add --button-gpio 17 --led-spi (APA102s need dtparam=spi=on).

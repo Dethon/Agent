@@ -36,11 +36,14 @@ set -euo pipefail
 #     DEV=0 (also add --button-gpio 17 --led-spi to ExecStart and dtparam=spi=on for the HAT).
 #
 # One mic quirk is handled automatically:
-#   - reSpeaker XVF3800: its capture engine only runs while its OWN playback stream is active
-#     (both UAC endpoints are Synchronous off one internal clock) — capture-alone opens EIO and
-#     a live capture dies the instant playback stops. A probe below detects this and installs
+#   - Some USB mics only run capture while their OWN playback stream is active (both UAC
+#     endpoints Synchronous off one internal clock) — capture-alone opens EIO and a live capture
+#     dies the instant playback stops. A probe below detects this and installs
 #     nabu-micclock.service, an endless zero-stream into the mic card's (unconnected) output
 #     that keeps capture clocked 24/7.
+#     This was the reSpeaker XVF3800 on firmware <=2.0.6; its 2.0.10 fixed it (see
+#     satellite/CLAUDE.md for the version check + DFU flash), so a unit on current firmware
+#     probes clean and gets no feeder. The probe stays for other UAC hardware.
 #     The probe is only valid on a COLD engine (warm engines pass capture-alone for minutes), so
 #     the verdict is sticky across re-provisions — and a FIRST provision should run against a
 #     cold-booted Pi, not one whose mic was just in use.
@@ -172,13 +175,16 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
     dev="${MIC}"   # explicit device, used verbatim (e.g. reSpeaker 2-Mic HAT)
   fi
 
-  # --- implicit-clock mic probe (reSpeaker XVF3800 class) ---
-  # Some UAC mics only run capture while their OWN playback stream is active: the XVF3800's
-  # endpoints are both Synchronous off one internal clock and its firmware gates the capture
-  # engine on the output stream — capture-alone opens EIO on read, and a live capture dies the
-  # instant playback stops (verified on-device). Probe capture-alone; if it fails but works
-  # with a playback stream running, install nabu-micclock.service: an endless zero-stream into
-  # the mic card's (unconnected) speaker output that keeps capture clocked 24/7.
+  # --- implicit-clock mic probe (XVF3800-on-old-firmware class) ---
+  # Some UAC mics only run capture while their OWN playback stream is active: both endpoints are
+  # Synchronous off one internal clock and the firmware gates the capture engine on the output
+  # stream — capture-alone opens EIO on read, and a live capture dies the instant playback stops
+  # (verified on-device). Probe capture-alone; if it fails but works with a playback stream
+  # running, install nabu-micclock.service: an endless zero-stream into the mic card's
+  # (unconnected) speaker output that keeps capture clocked 24/7.
+  # The reSpeaker XVF3800 behaved this way on firmware <=2.0.6 only; 2.0.10 fixed it (2026-07-27,
+  # verified cold-boot + 17-min-idle + feeder-stopped-under-live-capture), so such a unit now
+  # probes clean and the else-branch below removes any feeder a previous provision installed.
   # Stop the consumers first: a running satellite/feeder holds the device and would fake
   # the probe result.
   # The verdict is STICKY: the probe is only valid on a COLD engine. After the feeder has been
