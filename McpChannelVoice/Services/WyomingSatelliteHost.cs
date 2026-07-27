@@ -144,14 +144,8 @@ public sealed class WyomingSatelliteHost(
         var playbackTask = Task.Run(() => session.RunPlaybackLoopAsync(
             (chunk, jct) => WritePlaybackFrameAsync(client, chunk, jct),
             ct, time, logger,
-            onAudioStart: (format, alert, sct) => client.WriteAsync(WyomingEvent.Header("audio-start", new JsonObject
-            {
-                ["rate"] = format.SampleRateHz,
-                ["width"] = format.SampleWidthBytes,
-                ["channels"] = format.Channels,
-                ["timestamp"] = 0,
-                ["alert"] = alert
-            }), sct),
+            onAudioStart: (format, alert, sct) => client.WriteAsync(
+                WyomingEvent.Header("audio-start", BuildAudioStart(format, alert)), sct),
             onAudioStop: sct => client.WriteAsync(
                 WyomingEvent.Header("audio-stop", new JsonObject { ["timestamp"] = 0 }), sct),
             onError: async (job, ex) =>
@@ -635,6 +629,18 @@ public sealed class WyomingSatelliteHost(
         Data = payload,
         Format = new AudioFormat { SampleRateHz = rate, SampleWidthBytes = width, Channels = channels },
         Timestamp = TimeSpan.Zero
+    };
+
+    // `alert` tells the satellite to play this stream on its non-attenuated alert route, bypassing
+    // the per-satellite voice level. Emitted on every stream, not only alerts, so a wire trace
+    // shows the routing explicitly; a pre-1.5 satellite ignores the unknown field.
+    public static JsonObject BuildAudioStart(AudioFormat format, bool alert) => new()
+    {
+        ["rate"] = format.SampleRateHz,
+        ["width"] = format.SampleWidthBytes,
+        ["channels"] = format.Channels,
+        ["timestamp"] = 0,
+        ["alert"] = alert
     };
 
     internal readonly record struct WakeAnnouncement(double? Rms, double? Score, string Source);

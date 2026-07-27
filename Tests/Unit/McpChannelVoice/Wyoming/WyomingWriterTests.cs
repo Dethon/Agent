@@ -20,7 +20,7 @@ public class WyomingWriterTests
         var output = Encoding.UTF8.GetString(ms.ToArray());
         output.ShouldEndWith("\n");
         output.ShouldContain("\"type\":\"describe\"");
-        output.ShouldContain("\"version\":\"1.4\"");
+        output.ShouldContain("\"version\":\"1.5\"");
     }
 
     [Fact]
