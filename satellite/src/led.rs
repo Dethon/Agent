@@ -183,8 +183,9 @@ fn build_backend(cfg: &LedConfig) -> anyhow::Result<Option<LedBackend>> {
     }
 }
 
-/// Display fallback: if a reply never arrives after a transcript (hub error/timeout — a
-/// known deferred race), stop glowing after the hub's own 120 s reply timeout.
+/// Display fallback: if a reply never arrives after voice-stopped (hub error/timeout — a
+/// known deferred race), stop glowing after the hub's own 120 s reply timeout. Keyed on the
+/// state being Thinking, not on which event set it, so it covers any future trigger too.
 /// The window restarts on any send (watch notifies per send); the state machine publishes
 /// only on real transitions.
 const THINKING_FALLBACK: std::time::Duration = std::time::Duration::from_secs(120);
