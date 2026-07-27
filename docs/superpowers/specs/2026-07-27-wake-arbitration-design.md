@@ -139,6 +139,11 @@ Examine H's chunks over the wake-word span ± `AlignSlackMs`:
 
 Multiple open-capture holders: evaluate S against the loudest aligned holder.
 
+Every open mic is a holder, including the approval-answer capture (`RequestApprovalTool`),
+not just conversation turns. An approval capture that loses a steal resolves the approval
+as rejected without transcribing the partial audio and without re-prompting — the arbiter
+already re-armed that satellite via `pause-satellite`, so no one is listening there.
+
 Rule-A claimants and Rule-B holders are disjoint by construction: a satellite with an open
 capture is in `Mode::Streaming`, where its wake detector is not fed, so it cannot also emit
 a fresh `run-pipeline` claim.

@@ -75,6 +75,7 @@ public class RequestApprovalToolTests : IDisposable
             })
             .AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>())
             .AddSingleton<ILogger<RequestApprovalTool>>(NullLogger<RequestApprovalTool>.Instance)
+            .AddSingleton(TimeProvider.System)
             .BuildServiceProvider();
     }
 
@@ -217,6 +218,56 @@ public class RequestApprovalToolTests : IDisposable
 
         await feed.CancelAsync();
         result.ShouldBe("rejected");
+    }
+
+    [Fact]
+    public async Task RequestMode_OpenAnswerCapture_IsVisibleAsArbitrationHolder()
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
+
+        var run = RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+
+        while (!_session.HasActiveCapture)
+        { await Task.Delay(10); }
+
+        // The approval mic is an open capture like any wake turn's: Rule B must be able to ask
+        // it, retrospectively, what it heard during another satellite's wake-word span —
+        // otherwise a leaked "ok nabu" during an approval wakes the other room unarbitrated.
+        _session.GetCaptureActivity().ShouldNotBeNull();
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswersAsync(feed.Token);
+        (await run).ShouldBe("approved");
+        await feed.CancelAsync();
+    }
+
+    [Fact]
+    public async Task RequestMode_AnswerCaptureAbortedByArbiter_RejectsWithoutSttOrReprompt()
+    {
+        // If the partial audio were transcribed anyway, this setup would wrongly approve.
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
+
+        var run = RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
+
+        while (!_session.HasActiveCapture)
+        { await Task.Delay(10); }
+
+        // The arbiter stole the turn mid-answer (and already re-armed this satellite via
+        // pause-satellite): the partial audio is not an answer, and there is no one left
+        // here to re-prompt.
+        _session.TryAbortCapture().ShouldBeTrue();
+
+        (await run).ShouldBe("rejected");
+        _stt.Verify(
+            s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _tts.Verify(
+            t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
