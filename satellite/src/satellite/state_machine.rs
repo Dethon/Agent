@@ -301,7 +301,12 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
         // (see apply_drain_done). The pump owns the player; commands here never block on the
         // device, only on the bounded command channel (flow control).
         "audio-start" => {
-            playback.start(false).await?;
+            // A hub-marked alert (timer/alarm) plays on the non-attenuated alert route, bypassing
+            // the per-satellite voice level. Read defensively: the field is peer-supplied and a
+            // pre-1.5 hub omits it entirely, and this runs on the connection's event path where a
+            // panic would drop the satellite mid-turn.
+            let alert = e.data_obj().get("alert").and_then(|v| v.as_bool()).unwrap_or(false);
+            playback.start(alert).await?;
             let _ = ctx.led.send(LedState::Speaking); // replies AND standalone announcements
         }
         "audio-chunk" => playback.pcm(e.payload).await?,
@@ -330,6 +335,115 @@ mod tests {
     fn pump() -> (PlaybackHandle, tokio::sync::mpsc::UnboundedReceiver<DrainDone>, AbortOnDrop) {
         let (handle, done_rx, task) = spawn_pump("cat >/dev/null", "cat >/dev/null");
         (handle, done_rx, AbortOnDrop(task))
+    }
+
+    // Like pump(), but with distinguishable sinks so a test can prove which one a stream opened.
+    fn pump_with(
+        normal: &std::path::Path,
+        alert: &std::path::Path,
+    ) -> (PlaybackHandle, tokio::sync::mpsc::UnboundedReceiver<DrainDone>, AbortOnDrop) {
+        let (handle, done_rx, task) = spawn_pump(
+            &format!("cat >> {}", normal.display()),
+            &format!("cat >> {}", alert.display()),
+        );
+        (handle, done_rx, AbortOnDrop(task))
+    }
+
+    fn frame_paths(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = std::env::temp_dir();
+        let pid = std::process::id();
+        let normal = dir.join(format!("nabu-sm-{tag}-normal-{pid}.raw"));
+        let alert = dir.join(format!("nabu-sm-{tag}-alert-{pid}.raw"));
+        let _ = std::fs::remove_file(&normal);
+        let _ = std::fs::remove_file(&alert);
+        (normal, alert)
+    }
+
+    // A hub-marked alert (timer/alarm) must open the non-attenuated alert sink so it rings at
+    // full scale instead of the calibrated conversational voice level.
+    #[tokio::test]
+    async fn audio_start_marked_alert_routes_to_the_alert_sink() {
+        let (normal, alert) = frame_paths("marked");
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let (mut playback, mut done_rx, _pump) = pump_with(&normal, &alert);
+
+        let start = WyomingEvent::with_data(
+            "audio-start",
+            json!({"rate":22050,"width":2,"channels":1,"timestamp":0,"alert":true}),
+        );
+        handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let chunk = WyomingEvent { event_type: "audio-chunk".into(), data: None, payload: vec![9u8; 48] };
+        handle_hub_event(chunk, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
+        handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        done_rx.recv().await.unwrap();
+
+        assert_eq!(std::fs::metadata(&alert).map(|m| m.len()).unwrap_or(0), 48);
+        assert!(!normal.exists(), "an alert must not reach the voice sink");
+        let _ = std::fs::remove_file(&normal);
+        let _ = std::fs::remove_file(&alert);
+    }
+
+    // Back-compat: a pre-1.5 hub sends audio-start with no `alert` field, and every ordinary
+    // reply omits it too. Both must keep the calibrated voice sink.
+    #[tokio::test]
+    async fn audio_start_without_the_alert_field_routes_to_the_normal_sink() {
+        let (normal, alert) = frame_paths("unmarked");
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let (mut playback, mut done_rx, _pump) = pump_with(&normal, &alert);
+
+        let start = WyomingEvent::with_data(
+            "audio-start",
+            json!({"rate":22050,"width":2,"channels":1,"timestamp":0}),
+        );
+        handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let chunk = WyomingEvent { event_type: "audio-chunk".into(), data: None, payload: vec![9u8; 48] };
+        handle_hub_event(chunk, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
+        handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        done_rx.recv().await.unwrap();
+
+        assert_eq!(std::fs::metadata(&normal).map(|m| m.len()).unwrap_or(0), 48);
+        assert!(!alert.exists(), "a reply must not reach the alert sink");
+        let _ = std::fs::remove_file(&normal);
+        let _ = std::fs::remove_file(&alert);
+    }
+
+    // A non-boolean `alert` is peer-supplied garbage read on the connection's event path: it must
+    // degrade to "not an alert", never panic and drop the satellite mid-turn.
+    #[tokio::test]
+    async fn audio_start_with_a_non_boolean_alert_routes_to_the_normal_sink() {
+        let (normal, alert) = frame_paths("garbage");
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let (mut playback, mut done_rx, _pump) = pump_with(&normal, &alert);
+
+        let start = WyomingEvent::with_data(
+            "audio-start",
+            json!({"rate":22050,"width":2,"channels":1,"timestamp":0,"alert":"yes"}),
+        );
+        handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let chunk = WyomingEvent { event_type: "audio-chunk".into(), data: None, payload: vec![9u8; 48] };
+        handle_hub_event(chunk, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        let stop = WyomingEvent::with_data("audio-stop", json!({"timestamp":0}));
+        handle_hub_event(stop, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        done_rx.recv().await.unwrap();
+
+        assert_eq!(std::fs::metadata(&normal).map(|m| m.len()).unwrap_or(0), 48);
+        assert!(!alert.exists());
+        let _ = std::fs::remove_file(&normal);
+        let _ = std::fs::remove_file(&alert);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use serde_json::{json, Map, Value};
 
-pub const PROTOCOL_VERSION: &str = "1.4"; // matches the hub's WyomingWriter
+pub const PROTOCOL_VERSION: &str = "1.5"; // matches the hub's WyomingWriter
 
 #[derive(Debug, Clone)]
 pub struct WyomingEvent {
@@ -28,7 +28,6 @@ impl WyomingEvent {
     }
     /// The event's `data` as a JSON object map (cloned).
     /// Returns an empty map when `data` is `None` or not a JSON object.
-    #[allow(dead_code)] // no production callers yet; kept for hub-event field access
     pub fn data_obj(&self) -> Map<String, Value> {
         match &self.data {
             Some(Value::Object(m)) => m.clone(),
@@ -53,5 +52,11 @@ mod tests {
         assert_eq!(e.event_type, "audio-chunk");
         assert_eq!(e.data.as_ref().unwrap()["rate"], serde_json::json!(16000));
         assert_eq!(e.payload, vec![1, 2, 3, 4]);
+    }
+    // The alert routing field on audio-start landed in 1.5; the constant is documented as ONE
+    // number shared with the hub's WyomingWriter.ProtocolVersion, so it moves with the wire.
+    #[test]
+    fn protocol_version_is_1_5() {
+        assert_eq!(PROTOCOL_VERSION, "1.5");
     }
 }

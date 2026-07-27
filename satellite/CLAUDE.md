@@ -20,17 +20,25 @@ Standalone Rust crate (NOT in the .NET solution): a fully static aarch64-musl Wy
 - **Cancellation safety**: hub/mic reads AND playback writes/drains are multi-await compound I/O, NOT `select!`-safe. They run in dedicated pump tasks (hub, mic, playback) feeding bounded mpsc channels; the main `select!` only races `recv()` futures.
 - **Playback pump** — the single owner of the playback device. `audio-stop`'s drain (~0.5-2 s of buffered TTS) happens inside the pump, so wake/button/mic stay live during the reply tail. Drain completions return on an unbounded channel (bounded would AB-deadlock) carrying a generation that gates the LED Idle/Listening transition, so a stale completion can't blank a newer stream. Playback errors stay connection-fatal. Cues route through the pump too (and are dropped while a stream is active), so a cue can never EBUSY-race a reply for the exclusive device.
 - **Audio contract**: mic = 16 kHz mono S16LE in 1280-sample/80 ms chunks (arecord subprocess; bytes end-to-end internally, decoded to i16 only at the detector). Playback sink = FIXED 22 050 Hz mono S16LE (aplay) that ignores announced rates — hub-side TTS, the chime and the embedded cue WAVs must all be 22 050 Hz.
-- **ALSA latency flags**: defaults carry `arecord … -F 20000` (20 ms periods; the alsa-utils default of buffer/4 = 125 ms delayed every mic sample on the wake and STT paths) and `aplay … --start-delay=100000 -F 50000` (start at ~100 ms queued instead of the full 500 ms buffer, which stays for underrun headroom). Keep them when overriding devices. Plain-argv audio commands exec directly (no `sh -c`) so kill/supersede SIGKILLs aplay/arecord themselves; shell-shaped commands (WSL gain pipe) still go through sh.
+- **ALSA latency flags**: defaults carry `arecord … -F 20000` (20 ms periods; the alsa-utils default of buffer/4 = 125 ms delayed every mic sample on the wake and STT paths) and `aplay … --start-delay=100000 -F 50000` (start at ~100 ms queued instead of the full 500 ms buffer, which stays for underrun headroom). Keep them when overriding devices — on **both** `--snd-command` and `--alert-snd-command`. Plain-argv audio commands exec directly (no `sh -c`) so kill/supersede SIGKILLs aplay/arecord themselves; shell-shaped commands (WSL gain pipe) still go through sh.
 - **Zero-lag pre-roll**: while idle, mic chunks fill a pre-roll ring (`--preroll-ms`, default 1000); a wake trigger flushes only the detection gap (3 chunks ≈ 240 ms), never the wake word itself; a button press flushes the full ring.
 - **Wire format**: frames are one contiguous buffer with event `data` sent once as the `data_length` body (the hub's reader prefers the body; its writer emits the same shape) — pinned by a codec test.
 
-## Wake Metadata & Arbitration (PROTOCOL_VERSION 1.4)
+## Wake Metadata & Arbitration (PROTOCOL_VERSION 1.5)
 
 `run-pipeline` carries `{"source":"wake"|"button","wake_rms":f32,"wake_score":f32}` — rms over the pre-roll ring minus the detection gap, BEFORE trim, in i16-amplitude units matching the hub's SilenceGate. The hub may reply `pause-satellite` (arbitration loss): Streaming → audio-stop back, Idle, detector reset, NO cue, LED Idle; Idle → no-op.
 
 A button-triggered `run-pipeline` carries only `{"source":"button"}` with no `wake_rms`, and the hub marks a connection pause-capable only after seeing a non-null `wake_rms` — so a satellite whose first turn on a connection is a button press still gets the legacy audible `transcript` abort if that turn loses arbitration.
 
 The hub also sends `voice-stopped` (header-only) once it has endpointed the user's speech and is about to transcribe — deliberately NOT sent for captures abandoned to arbitration or ending in silence. The satellite uses it purely as the Thinking indicator and does **not** close its capture on it; only `transcript`, the actual turn-end signal, does that.
+
+`audio-start` carries `alert: bool` (1.5). `true` routes the stream to `--alert-snd-command`
+instead of `--snd-command` — on music units a non-attenuated `alert` softvol, so a timer or alarm
+rings at full scale rather than the calibrated conversational `TTS` level. The hub sets it only for
+insistent announces (timers and alarms). Read defensively and defaulted to `false`, so a pre-1.5
+hub, an ordinary reply and a garbage value all keep the normal sink. If the alert device cannot be
+opened the pump falls back to the normal sink and warns — never connection-fatal, because a quiet
+alarm beats a dropped connection.
 
 ## LED
 
