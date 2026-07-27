@@ -12,10 +12,94 @@ use tracing::warn;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LedState { Idle, Listening, Thinking, Speaking }
 
+/// reSpeaker XVF3800 USB ids, and the device-control resource that owns the LED ring.
+const XVF3800_VID: u16 = 0x2886;
+const XVF3800_PID: u16 = 0x001a;
+const RESID_LED: u16 = 0x14;
+
+/// Device-control command ids on RESID_LED. Captured from the vendor's xvf_host with usbmon
+/// and verified on the deployed unit; see the design spec.
+const LED_EFFECT: u16 = 0x0c;
+const LED_BRIGHTNESS: u16 = 0x0d;
+const LED_SPEED: u16 = 0x0f;
+const LED_COLOR: u16 = 0x10;
+const LED_DOA_COLOR: u16 = 0x11;
+
+/// LED_EFFECT modes (2 = rainbow, unused: it is the device's power-on animation).
+const EFFECT_OFF: u8 = 0;
+const EFFECT_BREATH: u8 = 1;
+const EFFECT_SINGLE: u8 = 3;
+const EFFECT_DOA: u8 = 4;
+
+/// The look. Brightness is baked into the colour value in single-colour mode, which is why
+/// these are pre-dimmed rather than saturated; LED_BRIGHTNESS/LED_SPEED apply to breath only.
+const DOA_BASE_COLOR: u32 = 0x00_2040;     // dim blue ring
+const DOA_POINTER_COLOR: u32 = 0x00_C066;  // green direction-of-arrival pointer
+const THINKING_COLOR: u32 = 0x00_2040;     // breathing blue
+const SPEAKING_COLOR: u32 = 0x00_40A0;     // solid blue
+const BREATH_BRIGHTNESS: u8 = 127;
+const BREATH_SPEED: u8 = 8;
+
+/// Transfers to this device complete in ~250 µs; the timeout only bounds a wedged device.
+const CTRL_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// One device-control write: a command id plus its little-endian payload. 8 bytes is the
+/// widest payload (LED_DOA_COLOR's two u32s), so it lives inline — no allocation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LedCmd { cmd: u16, len: usize, buf: [u8; 8] }
+
+impl LedCmd {
+    const fn u8v(cmd: u16, v: u8) -> Self {
+        Self { cmd, len: 1, buf: [v, 0, 0, 0, 0, 0, 0, 0] }
+    }
+    const fn u32v(cmd: u16, v: u32) -> Self {
+        let b = v.to_le_bytes();
+        Self { cmd, len: 4, buf: [b[0], b[1], b[2], b[3], 0, 0, 0, 0] }
+    }
+    const fn u32x2(cmd: u16, a: u32, b: u32) -> Self {
+        let (x, y) = (a.to_le_bytes(), b.to_le_bytes());
+        Self { cmd, len: 8, buf: [x[0], x[1], x[2], x[3], y[0], y[1], y[2], y[3]] }
+    }
+    fn payload(&self) -> &[u8] { &self.buf[..self.len] }
+    /// The u32 a LED_COLOR write carries — the render loop's redundant-write cache compares it.
+    fn as_u32(&self) -> u32 {
+        u32::from_le_bytes([self.buf[0], self.buf[1], self.buf[2], self.buf[3]])
+    }
+}
+
+/// Run once when the backend is built: pin the breath and DoA look so it can't drift from a
+/// firmware reflash or another tool, then clear the ring's power-on rainbow/DoA state.
+const INIT: [LedCmd; 4] = [
+    LedCmd::u8v(LED_BRIGHTNESS, BREATH_BRIGHTNESS),
+    LedCmd::u8v(LED_SPEED, BREATH_SPEED),
+    LedCmd::u32x2(LED_DOA_COLOR, DOA_BASE_COLOR, DOA_POINTER_COLOR),
+    LedCmd::u8v(LED_EFFECT, EFFECT_OFF),
+];
+
+const IDLE: [LedCmd; 1] = [LedCmd::u8v(LED_EFFECT, EFFECT_OFF)];
+const LISTENING: [LedCmd; 1] = [LedCmd::u8v(LED_EFFECT, EFFECT_DOA)];
+// Colour before effect, so the previous colour never flashes in the new mode.
+const THINKING: [LedCmd; 2] = [
+    LedCmd::u32v(LED_COLOR, THINKING_COLOR),
+    LedCmd::u8v(LED_EFFECT, EFFECT_BREATH),
+];
+const SPEAKING: [LedCmd; 2] = [
+    LedCmd::u32v(LED_COLOR, SPEAKING_COLOR),
+    LedCmd::u8v(LED_EFFECT, EFFECT_SINGLE),
+];
+
+/// What each semantic phase looks like. The render task — never the state machine — decides.
+fn commands_for(state: LedState) -> &'static [LedCmd] {
+    match state {
+        LedState::Idle => &IDLE,
+        LedState::Listening => &LISTENING,
+        LedState::Thinking => &THINKING,
+        LedState::Speaking => &SPEAKING,
+    }
+}
+
 /// V1 render constants: one fixed look, change here only. (--led-color is deferred.)
 const LED_COUNT: usize = 3;                  // the HAT has exactly 3 APA102-2020s
-const LED_COLOR: (u8, u8, u8) = (0, 0, 255); // RGB: blue
-const LED_BRIGHTNESS: u8 = 8;                // APA102 global brightness, of 31
 
 /// Full APA102 update for `n` daisy-chained LEDs, all set to the same color.
 /// Layout: 32-bit zero start frame; per LED `0xE0|brightness(5-bit), B, G, R`;
@@ -47,7 +131,7 @@ impl LedBackend {
                 Ok(())
             }
             LedBackend::Spi(spi) => {
-                let (color, brightness) = if on { (LED_COLOR, LED_BRIGHTNESS) } else { ((0, 0, 0), 0) };
+                let (color, brightness) = if on { ((0, 0, 255), 8) } else { ((0, 0, 0), 0) };
                 spi.write(&apa102_frame(color, brightness, LED_COUNT))?;
                 Ok(())
             }
@@ -263,5 +347,55 @@ mod tests {
     async fn none_config_spawns_no_task() {
         let (_tx, rx) = watch::channel(LedState::Idle);
         assert!(spawn_led(&LedConfig::None, rx).is_none());
+    }
+
+    // Golden bytes, pinned against a usbmon capture of the vendor's xvf_host: a LED_COLOR
+    // write of 0x2040 puts 40 20 00 00 on the wire (little-endian u32).
+    #[test]
+    fn led_cmd_encodes_little_endian_payloads() {
+        assert_eq!(LedCmd::u8v(LED_EFFECT, 4).payload(), &[0x04]);
+        assert_eq!(LedCmd::u32v(LED_COLOR, 0x2040).payload(), &[0x40, 0x20, 0x00, 0x00]);
+        assert_eq!(
+            LedCmd::u32x2(LED_DOA_COLOR, 0x002040, 0x00C066).payload(),
+            &[0x40, 0x20, 0x00, 0x00, 0x66, 0xC0, 0x00, 0x00]
+        );
+    }
+
+    #[test]
+    fn led_cmd_as_u32_round_trips() {
+        assert_eq!(LedCmd::u32v(LED_COLOR, 0x0040A0).as_u32(), 0x0040A0);
+    }
+
+    // Idle is dark; Listening is the device's DoA mode (blue ring, green pointer).
+    #[test]
+    fn idle_and_listening_are_single_effect_writes() {
+        assert_eq!(commands_for(LedState::Idle), &[LedCmd::u8v(LED_EFFECT, EFFECT_OFF)]);
+        assert_eq!(commands_for(LedState::Listening), &[LedCmd::u8v(LED_EFFECT, EFFECT_DOA)]);
+    }
+
+    // Colour MUST precede effect: writing the effect first would flash the previous colour
+    // in the new mode for one transfer.
+    #[test]
+    fn thinking_and_speaking_write_colour_before_effect() {
+        assert_eq!(commands_for(LedState::Thinking), &[
+            LedCmd::u32v(LED_COLOR, THINKING_COLOR),
+            LedCmd::u8v(LED_EFFECT, EFFECT_BREATH),
+        ]);
+        assert_eq!(commands_for(LedState::Speaking), &[
+            LedCmd::u32v(LED_COLOR, SPEAKING_COLOR),
+            LedCmd::u8v(LED_EFFECT, EFFECT_SINGLE),
+        ]);
+    }
+
+    // Init pins the look so it can't drift from a reflash or another tool, then clears the
+    // device's power-on rainbow/DoA state — the blank must be LAST.
+    #[test]
+    fn init_pins_the_look_then_blanks() {
+        assert_eq!(INIT, [
+            LedCmd::u8v(LED_BRIGHTNESS, BREATH_BRIGHTNESS),
+            LedCmd::u8v(LED_SPEED, BREATH_SPEED),
+            LedCmd::u32x2(LED_DOA_COLOR, DOA_BASE_COLOR, DOA_POINTER_COLOR),
+            LedCmd::u8v(LED_EFFECT, EFFECT_OFF),
+        ]);
     }
 }
