@@ -34,7 +34,6 @@ public class RenderCoordinatorTests : IDisposable
         // Wait for multiple sample intervals to ensure capture
         Thread.Sleep(120);
 
-        // Should emit null since topic-1 is not streaming
         received.ShouldBeNull();
     }
 
@@ -107,7 +106,6 @@ public class RenderCoordinatorTests : IDisposable
         _dispatcher.Dispatch(new StreamCompleted("topic-1"));
         Thread.Sleep(250);
 
-        // Should have both true and false
         received.ShouldContain(true);
         received.ShouldContain(false);
     }

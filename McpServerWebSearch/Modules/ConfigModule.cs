@@ -84,7 +84,6 @@ public static class ConfigModule
                     waitTime: TimeSpan.FromSeconds(1),
                     attemptTimeout: TimeSpan.FromSeconds(15));
 
-            // Register CapSolver if configured
             if (!string.IsNullOrEmpty(settings.CapSolver?.ApiKey))
             {
                 services.AddHttpClient<ICaptchaSolver, CapSolverClient>((httpClient, _) =>
@@ -94,7 +93,6 @@ public static class ConfigModule
                 });
             }
 
-            // Register browser for session-based browsing with modal dismissal and captcha solving
             services.AddSingleton<IWebBrowser>(sp =>
             {
                 var captchaSolver = sp.GetService<ICaptchaSolver>();

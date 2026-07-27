@@ -17,7 +17,6 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
         var db = redis.GetDatabase();
         var endpointIndexKey = $"{EndpointPrefix}{subscription.Endpoint}";
 
-        // Transfer space memberships from the old endpoint to the new one
         if (replacingEndpoint is not null && replacingEndpoint != subscription.Endpoint)
         {
             await TransferSpaceMembershipsAsync(db, replacingEndpoint, subscription.Endpoint);
@@ -25,11 +24,9 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
             await db.KeyDeleteAsync($"{EndpointPrefix}{replacingEndpoint}");
         }
 
-        // Clean up old indices before writing new data
         var previousOwner = await db.StringGetAsync(endpointIndexKey);
         if (previousOwner.HasValue)
         {
-            // Remove from previous owner's hash if transferring to a different user
             if (previousOwner.ToString() != userId)
             {
                 await db.HashDeleteAsync($"{KeyPrefix}{previousOwner}", subscription.Endpoint);
@@ -38,7 +35,6 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
 
         var value = JsonSerializer.Serialize(new { subscription.P256dh, subscription.Auth, SpaceSlug = spaceSlug });
 
-        // Write primary hash + endpoint index + space set
         await db.HashSetAsync($"{KeyPrefix}{userId}", subscription.Endpoint, value);
         await db.StringSetAsync(endpointIndexKey, userId);
         await db.SetAddAsync($"{SpacePrefix}{spaceSlug}", subscription.Endpoint);
@@ -85,7 +81,6 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
         var db = redis.GetDatabase();
         var endpointIndexKey = $"{EndpointPrefix}{endpoint}";
 
-        // O(1) lookup via endpoint index
         var userId = await db.StringGetAsync(endpointIndexKey);
         if (!userId.HasValue)
         {

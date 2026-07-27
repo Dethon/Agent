@@ -7,7 +7,6 @@ namespace McpChannelVoice.Services;
 
 // Shared gate for the voice hub's out-of-band HTTP endpoints (announce, dismiss, satellites):
 // 503 when disabled, 404 when a non-loopback caller hits a loopback-only hub, 401 on token mismatch.
-// Returns null when the request may proceed.
 public static class VoiceHubAuth
 {
     public static IResult? Reject(HttpContext ctx, AnnounceSettings settings)

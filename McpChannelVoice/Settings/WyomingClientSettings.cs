@@ -2,7 +2,6 @@ namespace McpChannelVoice.Settings;
 
 public record WyomingClientSettings
 {
-    // Delay before re-dialing a satellite after its connection drops.
     public int ReconnectDelaySeconds { get; init; } = 5;
 
     // End-of-utterance detection (see SilenceGate + AdaptiveLevelTracker). Tuned for

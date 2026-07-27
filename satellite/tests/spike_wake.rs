@@ -1,4 +1,3 @@
-// satellite/tests/spike_wake.rs
 // Proves the openWakeWord 3-model ONNX pipeline runs on tract and fires on "ok nabu".
 // Pipeline constants (validated 2026-06-09 against openwakeword 0.6.0's own AudioFeatures
 // (utils.py) — the algorithm below reproduces its scores to 4 decimals under onnxruntime):

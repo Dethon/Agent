@@ -142,7 +142,6 @@ async fn run_pump(
             },
             PlaybackCmd::Stop { generation: g } => {
                 streaming = false;
-                // Close the sink, let the player drain, report exact completion.
                 let result = match sink.take() {
                     Some(p) => p.finish().await,
                     None => Ok(()),

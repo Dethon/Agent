@@ -33,7 +33,6 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
             return;
         }
 
-        // Fall back to containerized Camoufox
         if (await TryInitializeContainerAsync())
         {
             return;
@@ -177,12 +176,9 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
 
     public Task ClearContextStateAsync() => Browser.ClearCookiesAsync();
 
-    /// <summary>
-    /// Polls <see cref="IWebBrowser.SnapshotAsync"/> until <paramref name="predicate"/> matches the
-    /// captured snapshot, then returns it. JS-heavy live pages render form elements client-side after
-    /// navigation, so asserting on a single snapshot taken right after <c>NavigateAsync</c> is a race.
-    /// Waits for the actual condition instead of guessing at a fixed delay.
-    /// </summary>
+    // JS-heavy live pages render form elements client-side after
+    // navigation, so asserting on a single snapshot taken right after NavigateAsync is a race.
+    // Waits for the actual condition instead of guessing at a fixed delay.
     public async Task<string> WaitForSnapshotAsync(
         string sessionId,
         Func<string, bool> predicate,

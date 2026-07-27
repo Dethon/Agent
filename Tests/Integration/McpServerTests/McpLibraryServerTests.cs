@@ -35,11 +35,9 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         tools.ShouldNotBeEmpty();
         var toolNames = tools.Select(t => t.Name).ToList();
 
-        // Download tools
         toolNames.ShouldContain("file_search");
         toolNames.ShouldContain("download_file");
 
-        // Filesystem backend tools
         toolNames.ShouldContain("fs_glob");
         toolNames.ShouldContain("fs_move");
 

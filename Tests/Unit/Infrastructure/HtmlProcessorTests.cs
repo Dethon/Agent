@@ -194,7 +194,7 @@ public class HtmlProcessorTests
 
         // Assert
         result.Truncated.ShouldBeTrue();
-        result.Content!.Length.ShouldBeLessThanOrEqualTo(520); // Actual returned content should be truncated
+        result.Content!.Length.ShouldBeLessThanOrEqualTo(520);
         result.ContentLength.ShouldBeGreaterThan(500); // ContentLength is total length (for pagination)
         result.Content!.ShouldContain("[Content truncated...]");
     }
@@ -202,7 +202,7 @@ public class HtmlProcessorTests
     [Fact]
     public async Task ProcessAsync_WithClassSelector_ReturnsAllMatches()
     {
-        // Arrange - Multiple elements with same class
+        // Arrange
         var html = """
                    <!DOCTYPE html>
                    <html>
@@ -225,7 +225,7 @@ public class HtmlProcessorTests
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
-        // Assert - Should return ALL matches, separated by ---
+        // Assert
         result.IsPartial.ShouldBeFalse();
         result.Content.ShouldNotBeNull();
         result.Content.ShouldContain("Product 1");
@@ -257,7 +257,7 @@ public class HtmlProcessorTests
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
-        // Assert - Links from all matches are rendered as markdown
+        // Assert
         result.Content.ShouldNotBeNull();
         result.Content.ShouldContain("https://example.com/1");
         result.Content.ShouldContain("https://example.com/2");
@@ -290,8 +290,8 @@ public class HtmlProcessorTests
         // Assert
         result1.Truncated.ShouldBeTrue();
         result2.Content.ShouldNotBeNull();
-        result1.Content.ShouldNotBe(result2.Content); // Different chunks
-        result1.ContentLength.ShouldBe(result2.ContentLength); // Same total length
+        result1.Content.ShouldNotBe(result2.Content);
+        result1.ContentLength.ShouldBe(result2.ContentLength);
     }
 
     [Fact]
@@ -317,7 +317,7 @@ public class HtmlProcessorTests
     [Fact]
     public async Task ProcessAsync_WithMultiClassSelector_ReturnsMatchedElements()
     {
-        // Arrange - selector with multiple classes
+        // Arrange
         var html = """
                    <!DOCTYPE html>
                    <html>
@@ -340,7 +340,7 @@ public class HtmlProcessorTests
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
-        // Assert - Should match li elements with BOTH item AND active classes
+        // Assert
         result.IsPartial.ShouldBeFalse();
         result.Content.ShouldNotBeNull();
         result.Content.ShouldContain("Item 1");

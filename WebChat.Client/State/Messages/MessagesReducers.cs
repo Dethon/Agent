@@ -73,7 +73,6 @@ public static class MessagesReducers
             .Select(m => m.MessageId == messageId ? updatedMessage : m)
             .ToList();
 
-        // If no message was updated, return unchanged
         if (updated.SequenceEqual(messages))
         {
             return messagesByTopic;
@@ -119,7 +118,6 @@ public static class MessagesReducers
             return state;
         }
 
-        // Update finalized IDs if we have a stream message ID
         var newFinalizedIds = finalizedIds;
         if (!string.IsNullOrEmpty(streamMessageId))
         {

@@ -20,11 +20,9 @@ public static class ServiceCollectionExtensions
     {
         public IServiceCollection AddWebChatStores()
         {
-            // State infrastructure
             services.AddScoped<Dispatcher>();
             services.AddScoped<IDispatcher>(sp => sp.GetRequiredService<Dispatcher>());
 
-            // Feature stores
             services.AddScoped<TopicsStore>();
             services.AddScoped<MessagesStore>();
             services.AddScoped<StreamingStore>();
@@ -35,10 +33,8 @@ public static class ServiceCollectionExtensions
             services.AddScoped<SpaceStore>();
             services.AddScoped<AgentActivityStore>();
 
-            // State coordination
             services.AddScoped<RenderCoordinator>();
 
-            // Services
             services.AddScoped<ConfigService>();
 
             return services;

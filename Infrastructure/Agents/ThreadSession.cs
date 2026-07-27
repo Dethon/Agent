@@ -91,14 +91,11 @@ internal sealed class ThreadSessionBuilder(
 
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
     {
-        // Step 1: Create sampling handler with deferred tool access
         var samplingHandler = new McpSamplingHandler(agent, () => _tools);
         var handlers = new McpClientHandlers { SamplingHandler = samplingHandler.HandleAsync };
 
-        // Step 2: Create MCP clients and load tools/prompts
         var clientManager = await McpClientManager.CreateAsync(name, userId, description, endpoints, handlers, promptCache, ct);
 
-        // Step 3: Discover filesystem backends from connected MCP clients
         IVirtualFileSystemRegistry? registry = null;
         IReadOnlyList<AIFunction> fileSystemTools = [];
         IReadOnlyList<string> fileSystemPrompts = [];
@@ -127,7 +124,6 @@ internal sealed class ThreadSessionBuilder(
             }
         }
 
-        // Step 4: Combine MCP tools with domain tools and filesystem tools.
         // Channel-protocol tools are always stripped; raw fs_* tools are stripped when their
         // domain filesystem wrappers are active, to avoid exposing duplicate functionality to the LLM.
         var mcpTools = FilterMcpTools(clientManager.Tools, fileSystemTools.Count > 0);

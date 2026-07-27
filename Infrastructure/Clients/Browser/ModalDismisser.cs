@@ -10,24 +10,19 @@ public class ModalDismisser
 {
     private static readonly IReadOnlyList<ModalPattern> _defaultPatterns =
     [
-        // Cookie Consent
         new(
             Type: ModalType.CookieConsent,
             ContainerSelector:
             "[class*='cookie'], [id*='cookie'], [class*='consent'], [id*='consent'], [class*='gdpr'], [id*='gdpr'], [class*='onetrust'], [id*='onetrust']",
             ButtonSelectors:
             [
-                // Common accept buttons
                 "button[class*='accept'], button[id*='accept']",
                 "button[class*='agree'], button[id*='agree']",
                 "button[class*='allow'], button[id*='allow']",
                 "a[class*='accept'], a[id*='accept']",
-                // OneTrust specific
                 "#onetrust-accept-btn-handler",
                 ".onetrust-close-btn-handler",
-                // CookieBot specific
                 "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
-                // Generic patterns
                 "[data-testid*='accept']",
                 "[data-action*='accept']"
             ],
@@ -35,7 +30,6 @@ public class ModalDismisser
             ["accept", "agree", "allow", "ok", "got it", "aceptar", "acepto", "entendido", "permitir"]
         ),
 
-        // Age Gate / Age Verification
         new(
             Type: ModalType.AgeGate,
             ContainerSelector:
@@ -56,7 +50,6 @@ public class ModalDismisser
             ["yes", "enter", "confirm", "i am", "soy mayor", "si", "entrar", "over 18", "over 21", "i'm over"]
         ),
 
-        // Newsletter / Subscription Popups
         new(
             Type: ModalType.Newsletter,
             ContainerSelector:
@@ -69,14 +62,12 @@ public class ModalDismisser
                 ".modal-close, .popup-close, .close-button",
                 "[data-dismiss='modal']",
                 "button.close",
-                // X button patterns
                 "button:has(svg[class*='close'])",
                 "[class*='icon-close']"
             ],
             ButtonTextPatterns: ["close", "no thanks", "dismiss", "not now", "maybe later", "cerrar", "no gracias"]
         ),
 
-        // Notification Permission Prompts
         new(
             Type: ModalType.Notification,
             ContainerSelector:
@@ -101,7 +92,6 @@ public class ModalDismisser
     // strips overlays), so the window stays short to keep the common no-modal browse fast.
     private const int ModalDetectionWindowMs = 300;
 
-    // How often to re-check for a modal within the detection window.
     private const int ModalPollIntervalMs = 75;
 
     public async Task<IReadOnlyList<ModalDismissed>> DismissModalsAsync(
@@ -185,7 +175,6 @@ public class ModalDismisser
         // large pages once a container actually matched.
         var probes = await ProbeButtonsAsync(page, pattern.ButtonSelectors, urlBefore);
 
-        // Try each button selector
         for (var index = 0; index < pattern.ButtonSelectors.Count; index++)
         {
             ct.ThrowIfCancellationRequested();
@@ -221,7 +210,6 @@ public class ModalDismisser
                 await Task.Delay(100, ct);
                 if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
                 {
-                    // Navigation occurred - go back and continue trying other patterns
                     await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
                     continue;
                 }
@@ -234,8 +222,6 @@ public class ModalDismisser
             }
         }
 
-        // If button selectors didn't work, try text patterns.
-        //
         // Resolving GetByRole(..., Name: pattern) once per text pattern meant Playwright computed
         // the accessibility tree 18 times (9 patterns x button+link). Each of those measured
         // 250-480ms on a 1.8MB page, which is where dismissal spent 4.5-4.9s of every imdb.com
@@ -595,13 +581,11 @@ public class ModalDismisser
         {
             var tagName = await element.EvaluateAsync<string>("el => el.tagName.toLowerCase()");
 
-            // Check for anchor tags with href that would navigate away
             if (tagName == "a")
             {
                 var href = await element.GetAttributeAsync("href");
                 if (!string.IsNullOrEmpty(href))
                 {
-                    // Allow javascript:void(0), #anchors, and empty hrefs
                     if (href.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase) ||
                         href == "#" ||
                         href.StartsWith("#"))
@@ -609,11 +593,9 @@ public class ModalDismisser
                         return false;
                     }
 
-                    // If it's an absolute URL to a different page, it would navigate
                     if (Uri.TryCreate(href, UriKind.Absolute, out var absoluteUri))
                     {
                         var currentUri = new Uri(currentUrl);
-                        // Different host or different path = navigation
                         if (absoluteUri.Host != currentUri.Host ||
                             absoluteUri.AbsolutePath != currentUri.AbsolutePath)
                         {
@@ -622,7 +604,6 @@ public class ModalDismisser
                     }
                     else if (!href.StartsWith("#"))
                     {
-                        // Relative URL that's not an anchor - likely navigation
                         return true;
                     }
                 }

@@ -164,7 +164,6 @@ public class MemoryDreamingServiceTests
 
         await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
-        // Should store a new merged memory
         _store.Verify(s => s.StoreAsync(
             It.Is<MemoryEntry>(m =>
                 m.Content == "Combined fact about user" &&
@@ -172,7 +171,6 @@ public class MemoryDreamingServiceTests
                 m.Importance == 0.85),
             It.IsAny<CancellationToken>()), Times.Once);
 
-        // Should delete both source memories after merge
         _store.Verify(s => s.DeleteAsync("user1", "m1", It.IsAny<CancellationToken>()), Times.Once);
         _store.Verify(s => s.DeleteAsync("user1", "m2", It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -198,10 +196,8 @@ public class MemoryDreamingServiceTests
 
         await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
-        // Should delete the old (superseded) memory
         _store.Verify(s => s.DeleteAsync("user1", "old", It.IsAny<CancellationToken>()), Times.Once);
 
-        // Should NOT delete the new (surviving) memory
         _store.Verify(s => s.DeleteAsync("user1", "new", It.IsAny<CancellationToken>()), Times.Never);
     }
 

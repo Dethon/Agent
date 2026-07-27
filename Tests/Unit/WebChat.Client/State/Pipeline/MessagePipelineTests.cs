@@ -57,7 +57,6 @@ public sealed class MessagePipelineTests
         _pipeline.AccumulateChunk("topic-1", "msg-1", "Hello", null, null);
         _pipeline.FinalizeMessage("topic-1", "msg-1");
 
-        // This should be skipped
         _pipeline.AccumulateChunk("topic-1", "msg-1", " duplicate", null, null);
 
         var snapshot = _pipeline.GetSnapshot("topic-1");
@@ -67,16 +66,13 @@ public sealed class MessagePipelineTests
     [Fact]
     public void FinalizeMessage_SkipsSecondFinalize()
     {
-        // Start streaming
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _pipeline.AccumulateChunk("topic-1", "msg-1", "Content", null, null);
 
-        // First finalize
         _pipeline.FinalizeMessage("topic-1", "msg-1");
         var countAfterFirst = _messagesStore.State.MessagesByTopic
             .GetValueOrDefault("topic-1")?.Count ?? 0;
 
-        // Second finalize should skip
         _pipeline.FinalizeMessage("topic-1", "msg-1");
         var countAfterSecond = _messagesStore.State.MessagesByTopic
             .GetValueOrDefault("topic-1")?.Count ?? 0;
@@ -157,7 +153,6 @@ public sealed class MessagePipelineTests
         _pipeline.AccumulateChunk("topic-1", "msg-1", "Content", null, null);
         _pipeline.FinalizeMessage("topic-1", "msg-1");
 
-        // Clear topic
         _pipeline.ClearTopic("topic-1");
 
         // Act - same message ID should now be processable again

@@ -94,9 +94,9 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
 
         // Assert
         result.Length.ShouldBe(3);
-        result[0].ShouldBe([0.1f, 0.2f]); // Index 0
-        result[1].ShouldBe([0.4f, 0.5f]); // Index 1
-        result[2].ShouldBe([0.7f, 0.8f]); // Index 2
+        result[0].ShouldBe([0.1f, 0.2f]);
+        result[1].ShouldBe([0.4f, 0.5f]);
+        result[2].ShouldBe([0.7f, 0.8f]);
     }
 
     [Fact]
@@ -173,7 +173,7 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
         // Act
         await _service.GenerateEmbeddingsAsync(["text1", "text2"]);
 
-        // Assert - Should be a single request with array input
+        // Assert
         _server.LogEntries.Count.ShouldBe(1);
         var body = _server.LogEntries[0].RequestMessage?.Body!;
         body.ShouldContain("\"input\":[\"text1\",\"text2\"]");

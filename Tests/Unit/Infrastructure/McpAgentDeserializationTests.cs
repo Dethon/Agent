@@ -46,7 +46,6 @@ public class McpAgentDeserializationTests : IAsyncDisposable
     [Fact]
     public async Task DeserializeSession_WithProperlySerializedSession_PreservesStateBag()
     {
-        // First, create and serialize a session to get the proper format
         var agentKey = new AgentKey("789:101", "test-agent");
         var serialized = JsonSerializer.SerializeToElement(agentKey.ToString());
         var session = await _agent.DeserializeSessionAsync(serialized);
@@ -54,7 +53,6 @@ public class McpAgentDeserializationTests : IAsyncDisposable
         // Serialize the session (this produces the new format with stateBag)
         var reSerialized = await _agent.SerializeSessionAsync(session);
 
-        // Deserialize from the new format
         var restored = await _agent.DeserializeSessionAsync(reSerialized);
 
         restored.StateBag.TryGetValue<string>(RedisChatMessageStore.StateKey, out var key).ShouldBeTrue();

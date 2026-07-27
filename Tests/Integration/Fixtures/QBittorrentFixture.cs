@@ -36,7 +36,6 @@ public class QBittorrentFixture : IAsyncLifetime
         var port = _container.GetMappedPublicPort(WebUiPort);
         ApiUrl = $"http://{host}:{port}/api/v2/";
 
-        // Wait for container to be ready and configure credentials
         await WaitForContainerAndConfigure();
     }
 
@@ -79,7 +78,6 @@ public class QBittorrentFixture : IAsyncLifetime
         // Give qBittorrent extra time to initialize its WebUI
         await Task.Delay(3000);
 
-        // Login with temp password and set new password
         var cookieContainer = new CookieContainer();
         var handler = new HttpClientHandler
         {
@@ -93,7 +91,6 @@ public class QBittorrentFixture : IAsyncLifetime
         httpClient.DefaultRequestHeaders.Add("Origin", $"http://localhost:{WebUiPort}");
         httpClient.DefaultRequestHeaders.Add("Referer", $"http://localhost:{WebUiPort}/");
 
-        // Retry login a few times
         for (var attempt = 0; attempt < 10; attempt++)
         {
             var loginContent = new FormUrlEncodedContent([
@@ -117,7 +114,6 @@ public class QBittorrentFixture : IAsyncLifetime
             await Task.Delay(1000);
         }
 
-        // Set new password
         var setPasswordContent = new FormUrlEncodedContent([
             new KeyValuePair<string, string>("json", $$"""{"web_ui_password":"{{DefaultPassword}}"}""")
         ]);

@@ -119,8 +119,6 @@ public class AgentDefinitionProviderTests
         result[0].Id.ShouldBe("built-in");
     }
 
-    // --- RegisterCustomAgent ---
-
     [Fact]
     public void RegisterCustomAgent_ReturnsDefinitionWithCustomPrefixedId()
     {
@@ -201,8 +199,6 @@ public class AgentDefinitionProviderTests
         result.Description.ShouldBeNull();
     }
 
-    // --- UnregisterCustomAgent ---
-
     [Fact]
     public void UnregisterCustomAgent_ExistingAgent_ReturnsTrue()
     {
@@ -242,8 +238,6 @@ public class AgentDefinitionProviderTests
         all.Count.ShouldBe(1); // only built-in
         all.Select(a => a.Id).ShouldNotContain(def.Id);
     }
-
-    // --- GetAll (updated) ---
 
     [Fact]
     public void GetAll_WithUserId_MergesBuiltInAndCustom()

@@ -3,7 +3,6 @@ using System.Text.Json.Nodes;
 namespace Domain.Tools;
 
 // Typed counterpart to ToolError.Create's JsonObject envelope: { ok:false, errorCode, message, retryable, hint? }.
-// Single home for the error-envelope shape and the ok:false discriminator.
 public sealed record ToolErrorResult
 {
     public required string ErrorCode { get; init; }

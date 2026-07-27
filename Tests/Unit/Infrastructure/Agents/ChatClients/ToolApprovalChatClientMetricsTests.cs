@@ -108,8 +108,7 @@ public class ToolApprovalChatClientMetricsTests
         // Act
         await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
 
-        // Assert — FunctionInvokingChatClient catches exceptions from tool invocations
-        // and returns them as error results, so the call succeeds but the tool "failed"
+        // Assert
         captured.ShouldNotBeNull();
         captured.ToolName.ShouldBe("mcp__server__FailTool");
         captured.Success.ShouldBeFalse();
@@ -130,7 +129,7 @@ public class ToolApprovalChatClientMetricsTests
         var client = new ToolApprovalChatClient(fakeClient, handler);
         var options = new ChatOptions { Tools = [function] };
 
-        // Act & Assert — should not throw
+        // Act & Assert
         var response = await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
         response.ShouldNotBeNull();
     }
@@ -241,7 +240,6 @@ public class ToolApprovalChatClientMetricsTests
         var publisher = new Mock<IMetricsPublisher>();
         var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
 
-        // MCP tool returning isError: false should be treated as success
         var successResult = JsonSerializer.SerializeToElement(new
         {
             content = new[] { new { type = "text", text = "All good" } },

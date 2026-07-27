@@ -41,7 +41,6 @@ public sealed class TopicDeleteEffect : IDisposable
 
     private async Task HandleRemoveTopicAsync(RemoveTopic action)
     {
-        // Cancel any active streaming
         if (_streamingStore.State.StreamingByTopic.ContainsKey(action.TopicId))
         {
             await _messagingService.CancelTopicAsync(action.TopicId);
@@ -60,7 +59,6 @@ public sealed class TopicDeleteEffect : IDisposable
         _dispatcher.Dispatch(new ClearMessages(action.TopicId));
         _pipeline.ClearTopic(action.TopicId);
 
-        // Clear approval if this was the selected topic
         if (_topicsStore.State.SelectedTopicId == action.TopicId)
         {
             _dispatcher.Dispatch(new ClearApproval());

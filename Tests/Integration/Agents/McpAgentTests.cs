@@ -152,14 +152,11 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
                 cancellationToken: cts.Token)
             .ToListAsync(cts.Token);
 
-        // Serialize the thread
         var serialized = await agent.SerializeSessionAsync(thread, cancellationToken: cts.Token);
         var serializedJson = serialized.GetRawText();
 
-        // Deserialize into a new thread
         var deserializedThread = await agent.DeserializeSessionAsync(serialized, cancellationToken: cts.Token);
 
-        // Continue conversation with deserialized thread
         var updates2 = await agent.RunStreamingAsync(
                 "What is my favorite color?",
                 deserializedThread,
@@ -189,7 +186,6 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
         var agentKeyJson = JsonSerializer.SerializeToElement(agentKey.ToString());
         var thread = await agent.DeserializeSessionAsync(agentKeyJson, cancellationToken: cts.Token);
 
-        // First interaction
         var updates1 = await agent.RunStreamingAsync(
                 "Remember: my name is TestUser.",
                 thread,
@@ -200,10 +196,8 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
         await agent.DisposeAsync();
         var agent2 = CreateAgent(llmClient);
 
-        // Restore thread from same AgentKey
         var thread2 = await agent2.DeserializeSessionAsync(agentKeyJson, cancellationToken: cts.Token);
 
-        // Continue conversation
         var updates2 = await agent2.RunStreamingAsync(
                 "What is my name?",
                 thread2,

@@ -77,7 +77,6 @@ public sealed class SendMessageEffect : IDisposable
 
         if (string.IsNullOrEmpty(action.TopicId))
         {
-            // Create new topic
             var topicName = action.Message.Length > 50 ? action.Message[..50] + "..." : action.Message;
             var identity = ConversationIdGenerator.Create();
             topic = new StoredTopic

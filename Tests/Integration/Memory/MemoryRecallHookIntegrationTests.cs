@@ -27,7 +27,6 @@ public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClas
         var userId = $"user_{Guid.NewGuid():N}";
         var embedding = CreateTestEmbedding();
 
-        // Store a memory
         await store.StoreAsync(new MemoryEntry
         {
             Id = $"mem_{Guid.NewGuid():N}",

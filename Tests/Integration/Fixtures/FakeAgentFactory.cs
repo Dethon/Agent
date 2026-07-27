@@ -137,7 +137,7 @@ public sealed class FakeAgentFactory : IAgentFactory
                     throw new InvalidOperationException(response.Error);
                 }
 
-                await Task.Delay(responseDelayMs, cancellationToken); // Simulate streaming delay
+                await Task.Delay(responseDelayMs, cancellationToken);
 
                 if (response.Content is not null)
                 {

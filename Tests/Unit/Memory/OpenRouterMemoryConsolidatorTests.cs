@@ -167,7 +167,6 @@ public class OpenRouterMemoryConsolidatorTests
         // Two clusters → two LLM calls
         capturedPrompts.Count.ShouldBe(2);
 
-        // Each cluster prompt contains only its own ids
         var promptA = capturedPrompts.Single(p => p.Contains("a1"));
         promptA.ShouldContain("a2");
         promptA.ShouldContain("a3");

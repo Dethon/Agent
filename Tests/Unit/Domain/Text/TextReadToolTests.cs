@@ -49,15 +49,12 @@ public class TextReadToolTests : IDisposable
     {
         var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
 
-        // Offset only — starts from specified line
         var offsetResult = _tool.TestRun(filePath, offset: 3);
         offsetResult["content"]!.ToString().ShouldBe("3: Line 3\n4: Line 4\n5: Line 5");
 
-        // Limit only — returns limited lines from start
         var limitResult = _tool.TestRun(filePath, limit: 2);
         limitResult["content"]!.ToString().ShouldBe("1: Line 1\n2: Line 2");
 
-        // Both offset and limit — returns paginated window
         var paginatedResult = _tool.TestRun(filePath, offset: 2, limit: 3);
         paginatedResult["content"]!.ToString().ShouldBe("2: Line 2\n3: Line 3\n4: Line 4");
     }

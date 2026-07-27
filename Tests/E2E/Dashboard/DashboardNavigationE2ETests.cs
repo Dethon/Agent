@@ -17,14 +17,11 @@ public class DashboardNavigationE2ETests(DashboardE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        // Click the sidebar nav link
         var navLink = page.Locator($"nav.sidebar a[href='{href}']");
         await navLink.ClickAsync();
 
-        // Wait for navigation
         await page.WaitForURLAsync($"**{href}");
 
-        // Verify the page header contains the expected title
         var header = page.Locator("h2");
         await Assertions.Expect(header).ToContainTextAsync(expectedTitle);
     }

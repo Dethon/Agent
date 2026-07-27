@@ -70,7 +70,6 @@ public class MemoryDreamingService(
     {
         var activeMemories = await GetActiveMemoriesAsync(userId, ct);
 
-        // Step 1: Merge — loop until consolidation stabilizes or the bound is hit
         var mergedCount = 0;
         for (var pass = 0; pass < options.MaxMergePasses; pass++)
         {
@@ -84,10 +83,8 @@ public class MemoryDreamingService(
             activeMemories = await GetActiveMemoriesAsync(userId, ct);
         }
 
-        // Step 2: Decay
         var decayedCount = await DecayAsync(userId, activeMemories, now, ct);
 
-        // Step 3: Reflect
         var profile = await consolidator.SynthesizeProfileAsync(userId, activeMemories, ct);
         await store.SaveProfileAsync(profile, ct);
 

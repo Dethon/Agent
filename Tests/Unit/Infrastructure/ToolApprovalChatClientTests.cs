@@ -91,7 +91,6 @@ public class ToolApprovalChatClientTests
         handler.RequestedApprovals.ShouldNotBeEmpty();
         invoked.ShouldBeFalse("Rejected tool should not be invoked");
 
-        // The rejection message is returned as function result
         var resultContent = response.Messages
             .SelectMany(m => m.Contents)
             .OfType<FunctionResultContent>()
@@ -121,12 +120,10 @@ public class ToolApprovalChatClientTests
         }, "mcp__untrusted-server__NonWhitelistedTool");
 
         var fakeClient = new FakeChatClient();
-        // Return tool calls for both tools
         fakeClient.SetNextResponse(CreateMultiToolCallResponse(
             ("mcp__trusted-server__WhitelistedTool", "call1"),
             ("mcp__untrusted-server__NonWhitelistedTool", "call2")));
 
-        // Whitelist all tools from trusted-server
         var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: ["mcp__trusted-server__*"]);
         var options = new ChatOptions { Tools = [whitelistedFunc, nonWhitelistedFunc] };
 

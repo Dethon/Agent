@@ -22,10 +22,8 @@ public class DashboardE2EFixture : E2EFixtureBase
             .Build();
         await _network.CreateAsync(ct);
 
-        // 1. Build base-sdk image (shared; serialised via TestHelpers to avoid race conditions)
         await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
 
-        // 2. Start Redis
         _redis = new ContainerBuilder("redis/redis-stack-server:latest")
             .WithName($"redis-{Guid.NewGuid():N}")
             .WithNetwork(_network)
@@ -35,11 +33,9 @@ public class DashboardE2EFixture : E2EFixtureBase
             .Build();
         await _redis.StartAsync(ct);
 
-        // 3. Build Observability image
         var observabilityImageName = E2EImages.Observability.ImageName;
         await TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Observability, ct);
 
-        // 4. Start Observability
         _observability = new ContainerBuilder(observabilityImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("observability")

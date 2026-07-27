@@ -103,8 +103,6 @@ public class ServiceBusProcessorServiceTests : IDisposable
     [Fact]
     public async Task ProcessMessage_NoActiveSessions_AbandonsMessage()
     {
-        // Don't register any sessions
-
         var receiver = new Mock<ServiceBusReceiver>();
         receiver
             .Setup(r => r.AbandonMessageAsync(

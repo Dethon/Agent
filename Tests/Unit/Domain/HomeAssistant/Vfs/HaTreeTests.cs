@@ -19,7 +19,6 @@ public class HaTreeTests
         var dirs = HaTree.Directories(cat);
         var files = HaTree.Files(cat);
 
-        // Directory tree: root + class + entity + areas (assigned and "unassigned" bucket).
         dirs.ShouldContain("entities");
         dirs.ShouldContain("entities/light");
         dirs.ShouldContain("entities/light/kitchen");
@@ -28,7 +27,6 @@ public class HaTreeTests
         dirs.ShouldContain("areas/salon/sensor.salon_temp");
         dirs.ShouldContain("areas/unassigned/light.kitchen");
 
-        // Files: state.json always, action .sh only for entities whose class has services.
         files.ShouldContain("entities/light/kitchen/state.json");
         files.ShouldContain("entities/light/kitchen/turn_on.sh");
         files.ShouldContain("entities/sensor/salon_temp/state.json");
@@ -112,7 +110,6 @@ public class HaTreeTests
         recursive.ShouldContain("entities/light/kitchen/state.json");
         recursive.ShouldContain("entities/sensor/salon_temp/state.json");
 
-        // File-pattern variant must only yield files of the requested extension.
         var shFiles = HaTree.Glob(cat, "entities", "**/*.sh");
         shFiles.ShouldNotBeEmpty();
         shFiles.ShouldAllBe(h => h.EndsWith(".sh"));

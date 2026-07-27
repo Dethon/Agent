@@ -153,12 +153,9 @@ public class TextSearchToolTests : IDisposable
         file.ShouldNotContain("\\");
     }
 
-    // --- Single-file search tests ---
-
     [Fact]
     public void Run_WithFilePath_SearchesSingleFileCorrectly()
     {
-        // Searches only the targeted file, ignoring others
         CreateTestFile("target.md", "Find this line\nAnd this one too");
         CreateTestFile("other.md", "Find this also");
 
@@ -169,7 +166,6 @@ public class TextSearchToolTests : IDisposable
         result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
         result["totalMatches"]!.GetValue<int>().ShouldBe(1);
 
-        // Ignores directoryPath and filePattern when filePath is set
         Directory.CreateDirectory(Path.Combine(_testDir, "subdir"));
         CreateTestFile("subdir/target.md", "Find this line");
 
@@ -179,13 +175,11 @@ public class TextSearchToolTests : IDisposable
         result2["filesSearched"]!.GetValue<int>().ShouldBe(1);
         result2["totalMatches"]!.GetValue<int>().ShouldBe(1);
 
-        // No matches returns empty
         var result3 = _tool.TestRun("nonexistent", filePath: filePath);
 
         result3["filesWithMatches"]!.GetValue<int>().ShouldBe(0);
         result3["totalMatches"]!.GetValue<int>().ShouldBe(0);
 
-        // Regex works on single file
         CreateTestFile("todos.md", "TODO: Fix bug\nFIXME: Later\nTODO: Add test");
         var todosPath = Path.Combine(_testDir, "todos.md");
         var result4 = _tool.TestRun("TODO:.*", regex: true, filePath: todosPath);
@@ -196,7 +190,6 @@ public class TextSearchToolTests : IDisposable
     [Fact]
     public void Run_OutputModes_ReturnCorrectFormat()
     {
-        // FilesOnly mode returns paths and counts without match details
         CreateTestFile("doc1.md", "Hello World\nHello again");
         CreateTestFile("doc2.md", "Hello there");
 
@@ -207,7 +200,6 @@ public class TextSearchToolTests : IDisposable
         firstResult["matchCount"]!.GetValue<int>().ShouldBeGreaterThan(0);
         firstResult.AsObject().ContainsKey("matches").ShouldBeFalse();
 
-        // Content mode returns full match details
         var contentResult = _tool.TestRun("Hello", outputMode: SearchOutputMode.Content);
 
         var contentFirstResult = contentResult["results"]!.AsArray()[0]!;

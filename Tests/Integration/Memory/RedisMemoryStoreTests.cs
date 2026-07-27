@@ -16,7 +16,6 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
 
     private static float[] CreateTestEmbedding(float primaryValue = 1.0f, int primaryIndex = 0)
     {
-        // Create a 1536-dim embedding with most values near zero, one primary value
         var embedding = new float[EmbeddingDimension];
         embedding[primaryIndex % EmbeddingDimension] = primaryValue;
         // Add some variation to avoid degenerate vectors
@@ -298,7 +297,6 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
         var store = CreateStore();
         var userId = $"user_{Guid.NewGuid():N}";
 
-        // Create memories with different 1536-dim embeddings
         var similar = CreateMemory(userId, "Similar content",
             embedding: CreateTestEmbedding(0.9f)); // Primary value at index 0
         var different = CreateMemory(userId, "Different content",

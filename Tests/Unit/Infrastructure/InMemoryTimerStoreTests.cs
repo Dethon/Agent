@@ -29,7 +29,7 @@ public class InMemoryTimerStoreTests
         due[0].Id.ShouldBe("due");
         (await store.GetAsync("due")).ShouldBeNull();          // removed — fires once
         (await store.GetAsync("later")).ShouldNotBeNull();
-        (await store.TakeDueAsync(now)).ShouldBeEmpty();       // second take is empty
+        (await store.TakeDueAsync(now)).ShouldBeEmpty();
     }
 
     [Fact]

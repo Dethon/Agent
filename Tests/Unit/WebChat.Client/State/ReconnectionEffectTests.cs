@@ -59,7 +59,6 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         CreateEffect();
 
-        // Simulate reconnection sequence
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
@@ -84,7 +83,6 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         CreateEffect();
 
-        // Simulate reconnection sequence: Connected -> Reconnecting -> Connected
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
@@ -109,7 +107,6 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         CreateEffect();
 
-        // Simulate initial connection then reconnection
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
@@ -134,13 +131,11 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         CreateEffect();
 
-        // Initial connection
         _dispatcher.Dispatch(new ConnectionConnected());
 
         // Connection drops completely (goes to Disconnected, not Reconnecting)
         _dispatcher.Dispatch(new ConnectionClosed(null));
 
-        // Reconnects (goes through Connecting state first)
         _dispatcher.Dispatch(new ConnectionConnecting());
         _dispatcher.Dispatch(new ConnectionConnected());
 
@@ -233,7 +228,6 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         CreateEffect();
 
-        // Simulate reconnection
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());

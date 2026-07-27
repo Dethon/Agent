@@ -21,7 +21,6 @@ public static class BufferRebuildUtility
 
         var (completedTurns, rawStreamingMessage) = RebuildFromBuffer(buffer);
 
-        // Strip streaming message against history content
         var historyContent = existingHistory
             .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
             .Select(m => m.Content)

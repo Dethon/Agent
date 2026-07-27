@@ -11,7 +11,6 @@ public record SatelliteConfig
     // the channel-wide default (VoiceSettings.Locality) at settings load.
     public string? Locality { get; init; }
 
-    // The location string shown to the agent: the room, enriched with the locality when present.
     public string DisplayLocation =>
         string.IsNullOrWhiteSpace(Locality) ? Room : $"{Room} ({Locality})";
 
@@ -70,7 +69,6 @@ public record SatelliteConfig
     public double? ResolveDemoteMarginDb(WyomingClientSettings global) =>
         Gate?.DemoteMarginDb ?? global.DemoteMarginDb;
 
-    // Per-satellite overrides of the speaker-identity gate. Null inherits the global value.
     public VerificationOverrides? Verification { get; init; }
 
     public bool ResolveVerificationEnabled(SpeakerVerificationSettings global) =>

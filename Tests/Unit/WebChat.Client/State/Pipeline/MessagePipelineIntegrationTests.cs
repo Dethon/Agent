@@ -29,20 +29,16 @@ public sealed class MessagePipelineIntegrationTests
     [Fact]
     public void FullConversationFlow_UserSendsMessage_AssistantResponds()
     {
-        // User sends message
         _pipeline.SubmitUserMessage("topic-1", "Hello", "user-1");
 
-        // Streaming starts
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
 
         // Chunks arrive (each chunk contains FULL accumulated content, not delta)
         _pipeline.AccumulateChunk("topic-1", "msg-1", "Hi ", null, null);
         _pipeline.AccumulateChunk("topic-1", "msg-1", "Hi there!", null, null);
 
-        // Stream completes
         _pipeline.FinalizeMessage("topic-1", "msg-1");
 
-        // Verify final state
         var messages = _messagesStore.State.MessagesByTopic["topic-1"];
         messages.Count.ShouldBe(2);
         messages[0].Role.ShouldBe("user");
@@ -54,19 +50,16 @@ public sealed class MessagePipelineIntegrationTests
     [Fact]
     public void LoadHistory_ThenStream_NoDoubleMessages()
     {
-        // Load history with existing message
         var history = new List<ChatHistoryMessage>
         {
             new("msg-1", "assistant", "Previous response", null, null)
         };
         _pipeline.LoadHistory("topic-1", history);
 
-        // Start new stream
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _pipeline.AccumulateChunk("topic-1", "msg-2", "New response", null, null);
         _pipeline.FinalizeMessage("topic-1", "msg-2");
 
-        // Should have both messages
         var messages = _messagesStore.State.MessagesByTopic["topic-1"];
         messages.Count.ShouldBe(2);
     }

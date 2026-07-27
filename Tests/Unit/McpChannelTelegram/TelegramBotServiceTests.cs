@@ -156,7 +156,6 @@ public class TelegramBotServiceTests : IDisposable
                 Message = CreateTextMessage("/hello", 100, "alice")
             }
         ]);
-        // No sessions registered
 
         await RunServiceBriefly();
 

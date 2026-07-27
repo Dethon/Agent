@@ -8,7 +8,6 @@ public sealed class TopicsStore : IDisposable
     {
         _store = new Store<TopicsState>(TopicsState.Initial);
 
-        // Register handlers for all topic actions
         dispatcher.RegisterHandler<LoadTopics>(action =>
             _store.Dispatch(action, TopicsReducers.Reduce));
 

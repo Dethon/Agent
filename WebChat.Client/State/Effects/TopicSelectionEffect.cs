@@ -54,7 +54,6 @@ public sealed class TopicSelectionEffect : IDisposable
             return;
         }
 
-        // Check if messages already loaded
         var hasMessages = _messagesStore.State.MessagesByTopic.ContainsKey(topicId);
         if (!hasMessages)
         {
@@ -69,10 +68,8 @@ public sealed class TopicSelectionEffect : IDisposable
             }
         }
 
-        // Mark messages as read by updating LastReadMessageId
         await MarkTopicAsReadAsync(topic);
 
-        // Try to resume any active streaming
         _ = _streamResumeService.TryResumeStreamAsync(topic);
     }
 
@@ -83,7 +80,6 @@ public sealed class TopicSelectionEffect : IDisposable
 
         if (lastMessageId is not null && lastMessageId != topic.LastReadMessageId)
         {
-            // Update local state
             var updatedTopic = new StoredTopic
             {
                 TopicId = topic.TopicId,
@@ -98,7 +94,6 @@ public sealed class TopicSelectionEffect : IDisposable
             };
             _dispatcher.Dispatch(new UpdateTopic(updatedTopic));
 
-            // Persist to server
             await _topicService.SaveTopicAsync(updatedTopic.ToMetadata());
         }
     }

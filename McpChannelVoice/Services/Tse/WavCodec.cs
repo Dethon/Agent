@@ -2,8 +2,7 @@ using Domain.DTOs.Voice;
 
 namespace McpChannelVoice.Services.Tse;
 
-// Minimal RIFF codec for the hub's fixed interchange format (16 kHz mono S16LE). Encode is used
-// to ship a capture to the tse-extractor sidecar; Decode wraps its reply for the inner STT.
+// Minimal RIFF codec for the hub's fixed interchange format (16 kHz mono S16LE).
 public static class WavCodec
 {
     public static byte[] Encode(IReadOnlyList<AudioChunk> chunks)

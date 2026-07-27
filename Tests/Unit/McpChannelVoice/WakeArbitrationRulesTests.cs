@@ -69,7 +69,7 @@ public class WakeArbitrationRulesTests
         WakeArbitrationRules.CanSteal(200, 100, 6).ShouldBeTrue();
     }
 
-    // ---- Rule B onset alignment. Span here: word start 9_119, word end 9_819 (from
+    // Rule B onset alignment. Span here: word start 9_119, word end 9_819 (from
     // WakeWordSpan(10_000)); slack 250, quiet gap 400.
 
     private static CaptureActivity Activity(long openedAt, params (long T, double Rms, bool Speech)[] samples) =>

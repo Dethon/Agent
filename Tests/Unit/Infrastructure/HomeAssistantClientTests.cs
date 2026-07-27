@@ -375,7 +375,6 @@ public class HomeAssistantClientTests : IDisposable
         result.ChangedEntities[0].EntityId.ShouldBe("light.kitchen");
         result.Response.ShouldBeNull();
 
-        // Two posts: first with the query, second without.
         var posts = _server.LogEntries
             .Where(e => e.RequestMessage?.Method == "POST")
             .ToList();
@@ -398,7 +397,6 @@ public class HomeAssistantClientTests : IDisposable
             () => _client.CallServiceAsync("light", "turn_on", "light.kitchen", null));
         ex.StatusCode.ShouldBe(400);
 
-        // Exactly one POST — no retry.
         _server.LogEntries.Count(e => e.RequestMessage?.Method == "POST").ShouldBe(1);
     }
 

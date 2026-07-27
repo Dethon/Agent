@@ -18,8 +18,8 @@ public class WebChatE2EFixture : E2EFixtureBase
     public string WebChatUrl { get; private set; } = "";
     private int _userIndex;
 
-    /// <summary>Returns the next user dropdown index (0-9) so each test uses a unique user identity,
-    /// avoiding server-side state pollution (stream resume, pending approvals) between tests.</summary>
+    // Returns the next user dropdown index (0-9) so each test uses a unique user identity,
+    // avoiding server-side state pollution (stream resume, pending approvals) between tests.
     public int NextUserIndex() => _userIndex++ % 10;
 
     protected override TimeSpan ContainerStartupTimeout => TimeSpan.FromMinutes(15);
@@ -39,13 +39,11 @@ public class WebChatE2EFixture : E2EFixtureBase
             .Build();
         await _network.CreateAsync(ct);
 
-        // 1. Build base-sdk image (shared; serialised via TestHelpers to avoid race conditions).
-        //    Every leaf image is FROM base-sdk:latest, so this must complete first.
+        // Every leaf image is FROM base-sdk:latest, so this must complete first.
         await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
 
-        // 2. Build all leaf images in parallel and start Redis (no build) concurrently.
-        //    Leaf images are mutually independent; EnsureImageAsync serialises per-tag
-        //    internally, so distinct tags building at once is safe.
+        // Leaf images are mutually independent; EnsureImageAsync serialises per-tag
+        // internally, so distinct tags building at once is safe.
         var mcpVaultImageName = E2EImages.McpVault.ImageName;
         var signalRImageName = E2EImages.ChannelSignalR.ImageName;
         var agentImageName = E2EImages.Agent.ImageName;
@@ -66,7 +64,6 @@ public class WebChatE2EFixture : E2EFixtureBase
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Agent, ct),
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.WebUi, ct));
 
-        // 3. Start containers in dependency order (images already built).
         _mcpVault = new ContainerBuilder(mcpVaultImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-vault")
@@ -160,7 +157,6 @@ public class WebChatE2EFixture : E2EFixtureBase
             .Build();
         await _webui.StartAsync(ct);
 
-        // 4. Start Caddy with test-specific Caddyfile
         var testCaddyfile =
             ":80 {\n" +
             "    handle /hubs/* {\n" +
@@ -191,8 +187,7 @@ public class WebChatE2EFixture : E2EFixtureBase
         var baseUrl = $"http://{host}:{port}";
 
         // Wait for the full stack to be reachable through Caddy:
-        // 1. WebUI serves the Blazor app
-        // 2. SignalR negotiate endpoint is reachable (proves Caddy → mcp-channel-signalr routing works)
+        // SignalR negotiate endpoint is reachable (proves Caddy → mcp-channel-signalr routing works)
         using var httpClient = new HttpClient();
         httpClient.Timeout = TimeSpan.FromSeconds(5);
         var deadline = DateTime.UtcNow.Add(TimeSpan.FromMinutes(2));
@@ -218,14 +213,12 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     private static string? GetOpenRouterApiKey()
     {
-        // 1. Environment variable (CI)
         var envKey = Environment.GetEnvironmentVariable("OPENROUTER__APIKEY");
         if (!string.IsNullOrEmpty(envKey))
         {
             return envKey;
         }
 
-        // 2. .NET User Secrets
         try
         {
             var config = new ConfigurationBuilder()

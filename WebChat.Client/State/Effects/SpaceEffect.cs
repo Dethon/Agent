@@ -59,21 +59,17 @@ public sealed class SpaceEffect : IDisposable
                 return;
             }
 
-            // Space is invalid — redirect to default
             _dispatcher.Dispatch(new InvalidSpace());
             _navigationManager.NavigateTo("/", replace: true);
             return;
         }
 
-        // Join SignalR group for the space
         await _topicService.JoinSpaceAsync(slug);
 
-        // Re-register push subscription for the new space (best-effort)
         try
         { await _pushNotificationService.ResubscribeAsync(); }
         catch { /* best-effort — don't block space transition */ }
 
-        // Clear topics and messages for space transition
         _dispatcher.Dispatch(new TopicsLoaded([]));
         _dispatcher.Dispatch(new ClearAllMessages());
         _dispatcher.Dispatch(new SpaceValidated(slug, space.Name, space.AccentColor));

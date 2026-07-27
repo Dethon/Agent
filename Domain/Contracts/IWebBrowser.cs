@@ -55,8 +55,6 @@ public enum BrowseStatus
 
 public record ModalDismissed(ModalType Type, string Selector, string? ButtonText);
 
-// --- Snapshot types ---
-
 public record SnapshotRequest(
     string SessionId,
     string? Selector = null);
@@ -67,8 +65,6 @@ public record SnapshotResult(
     string? Snapshot,
     int RefCount,
     string? ErrorMessage);
-
-// --- Action types ---
 
 public enum WebActionType
 {
