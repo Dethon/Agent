@@ -1010,6 +1010,33 @@ In `Tests/Unit/McpChannelVoice/InsistentAnnouncementControllerTests.cs`, add a h
     }
 ```
 
+and a second helper, because the playback loop waits out each job's nominal audio duration on the
+**injected** clock (`SatelliteSession.cs:551-567` — `OnDrained` must mean "the satellite finished
+playing", not "we finished writing"). On a `FakeTimeProvider` that wait never completes unless the
+clock is pushed past it, so `await pump` would block forever. Every pre-existing test in this file
+advances the clock generously before completing the channel:
+
+```csharp
+    // The playback loop waits out each job's nominal audio duration on the injected clock
+    // (SatelliteSession: OnDrained must mean "the satellite finished PLAYING", not "we finished
+    // writing"), so a test on a FakeTimeProvider has to push the clock past that wait or the loop
+    // never returns. Advance in a loop rather than once: the delay is registered asynchronously
+    // after the job's last chunk, so a single Advance can land before the timer even exists.
+    private static async Task DrainPumpAsync(Task pump, FakeTimeProvider time, SatelliteSession session)
+    {
+        session.CompletePlayback();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (!pump.IsCompleted)
+        {
+            if (sw.Elapsed > TimeSpan.FromSeconds(10))
+            { throw new TimeoutException("playback pump did not complete"); }
+            time.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(20);
+        }
+        await pump;
+    }
+```
+
 and the tests:
 
 ```csharp
@@ -1036,8 +1063,7 @@ and the tests:
         await WaitUntilAsync(() => flags().Count >= 1, TimeSpan.FromSeconds(5));
         flags()[0].ShouldBeTrue();
 
-        h.Sessions.Get("kitchen-01")!.CompletePlayback();
-        await pump;
+        await DrainPumpAsync(pump, time, h.Sessions.Get("kitchen-01")!);
     }
 
     // Alarms take the same route. Their wake-up ramp is a separate, within-alert gain and is
@@ -1062,14 +1088,18 @@ and the tests:
         await WaitUntilAsync(() => flags().Count >= 1, TimeSpan.FromSeconds(5));
         flags()[0].ShouldBeTrue();
 
-        h.Sessions.Get("bedroom-01")!.CompletePlayback();
-        await pump;
+        await DrainPumpAsync(pump, time, h.Sessions.Get("bedroom-01")!);
     }
 ```
 
-> Both tests end with `CompletePlayback(); await pump;` — that is how every existing test in this file
-> ends the loop, and awaiting the pump matters: an unobserved faulted playback task leaks across
-> xUnit's parallel test classes.
+> Both tests end by awaiting the pump (via `DrainPumpAsync`), which matters: an unobserved faulted
+> playback task leaks across xUnit's parallel test classes. They cannot end with a bare
+> `CompletePlayback(); await pump;` the way the real-clock tests elsewhere do — see the
+> `DrainPumpAsync` rationale above.
+
+**Verify with narrow filters only.** `--filter "FullyQualifiedName~McpChannelVoice"` is broad enough
+to wedge the runner on this host; run `~InsistentAnnouncementControllerTests` and
+`~AnnouncementServiceTests` separately, each prefixed with `timeout 300`.
 
 In `Tests/Unit/McpChannelVoice/AnnouncementServiceTests.cs`, add:
 
@@ -1140,10 +1170,12 @@ In `McpChannelVoice/Services/InsistentAnnouncementController.cs`, `BuildJob`:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-dotnet test /home/dethon/repos/agent/Tests/Tests.csproj --filter "FullyQualifiedName~McpChannelVoice"
+timeout 300 dotnet test /home/dethon/repos/agent/Tests/Tests.csproj --filter "FullyQualifiedName~InsistentAnnouncementControllerTests" --nologo
+timeout 300 dotnet test /home/dethon/repos/agent/Tests/Tests.csproj --filter "FullyQualifiedName~AnnouncementServiceTests" --nologo
 ```
 
-Expected: PASS — every `McpChannelVoice` unit test green.
+Expected: PASS on both. Run them as two narrow filters, not one broad `~McpChannelVoice` — the broad
+filter wedged the runner twice on this host (>10 min elapsed, ~11 s CPU, no progress).
 
 - [ ] **Step 5: Commit**
 
