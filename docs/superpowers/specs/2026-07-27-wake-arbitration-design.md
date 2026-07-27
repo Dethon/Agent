@@ -64,7 +64,10 @@ Old satellites warn-ignore unknown event types (`state_machine.rs:253`), so ship
 first cannot wedge them **only if** the hub detects old firmware: a claim without `wake_rms`
 identifies a pre-arbitration satellite, and losers on old firmware get the empty
 `transcript` abort instead (done-cue plays — degraded but correct; the satellite never
-streams forever).
+streams forever). The same legacy abort hits a new-firmware satellite whose first turn on a
+connection was a button press (no `wake_rms` seen yet). Either way the transcript arm also
+lights the Thinking LED, and since no reply ever follows an abort, the LED sits there until
+the satellite's own 120 s Thinking fallback clears it.
 
 `PROTOCOL_VERSION` bumps `1.2` → `1.3` (documentation; the codec ignores it). The
 data-once-as-body wire format pin is untouched.
