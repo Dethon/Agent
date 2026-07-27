@@ -1,7 +1,7 @@
 # XVF3800 LED Ring as the Satellite's Activity Indicator
 
 **Date:** 2026-07-27
-**Status:** Implemented (Tasks 1-4); phase-semantics addendum pending (Tasks 6-8)
+**Status:** Implemented and validated on hardware (Tasks 1-8, including the phase-semantics addendum)
 
 ## Problem
 
