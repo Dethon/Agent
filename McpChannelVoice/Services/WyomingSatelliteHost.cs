@@ -255,6 +255,14 @@ public sealed class WyomingSatelliteHost(
         }
         finally
         {
+            // First, before anything that can await: a dropped connection must stop being an
+            // arbitration candidate at once. Everything below is unbounded — the playback loop can
+            // be parked writing to the very socket that just died — and until this runs the dying
+            // session is still a Rule B holder candidate whose capture history is still populated
+            // (on the cancellation path FollowUpConversation never reaches CloseCapture). A live
+            // satellite waking in that window would be suppressed as a leak in favour of a
+            // satellite that is already gone.
+            arbiter.Unregister(id);
             coordinator.Dispose();
             session.CompletePlayback();
             try
@@ -263,10 +271,6 @@ public sealed class WyomingSatelliteHost(
             try
             { await conversationTask; }
             catch { /* unwinds on cancellation / disconnect */ }
-            // Before the session registry: a dropped connection must stop being an arbitration
-            // candidate immediately, or a decision still inside its window would try to suppress a
-            // satellite whose socket is gone.
-            arbiter.Unregister(id);
             sessionRegistry.Unregister(id);
         }
     }

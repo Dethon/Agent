@@ -36,6 +36,12 @@ public class WakeArbiterTests
         public UtteranceCapture? Capture;
         // Stands in for a half-open satellite socket: WyomingWriter.WriteAsync throws IOException.
         public bool FailPause;
+        // Stands in for the worse half-open socket: the write neither completes nor throws, which
+        // is what a TCP send into a black hole actually does. PauseEntered lets a test wait for the
+        // arbiter to actually be parked on it before advancing the clock onto the re-arm deadline.
+        public bool HangPause;
+        public readonly TaskCompletionSource PauseEntered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public SatelliteHarness(string id, string room, double offsetDb = 0)
         {
@@ -52,6 +58,11 @@ public class WakeArbiterTests
                 if (FailPause)
                 {
                     return Task.FromException(new IOException("satellite socket is dead"));
+                }
+                if (HangPause)
+                {
+                    PauseEntered.TrySetResult();
+                    return new TaskCompletionSource().Task;
                 }
                 Interlocked.Increment(ref Paused);
                 return Task.CompletedTask;
@@ -101,6 +112,18 @@ public class WakeArbiterTests
             NullLogger<VoiceConversationManager>.Instance);
     }
 
+    // The decision runs on its own task, so anything observed after a clock advance has to be
+    // polled for rather than assumed to have happened within a fixed real-time sleep.
+    private static async Task WaitUntilAsync(Func<bool> condition, string because)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+        condition().ShouldBeTrue(because);
+    }
+
     private static async Task SettleAsync(FakeTimeProvider time, int windowMs)
     {
         // let DecideAfterWindowAsync reach its Task.Delay, then fire it, then let it run
@@ -129,10 +152,40 @@ public class WakeArbiterTests
         far.Paused.ShouldBe(1);
         near.Paused.ShouldBe(0);
         far.Capture!.Completed.IsCompleted.ShouldBeTrue();
-        far.Capture.Completed.Result.ShouldBe(CaptureOutcome.Abandoned);
+        (await far.Capture.Completed).ShouldBe(CaptureOutcome.Abandoned);
         near.Capture!.Completed.IsCompleted.ShouldBeFalse();
         metrics.Events.OfType<VoiceEvent>()
             .Single(e => e.Metric == VoiceMetric.WakeSuppressed).SatelliteId.ShouldBe("far");
+    }
+
+    [Fact]
+    public async Task Claim_ArbitrationDisabled_LeavesBothSatellitesUntouched()
+    {
+        // Arbitration__Enabled=false is the documented rollback lever for every stage of the
+        // rollout: with it off, two coincident wakes must behave exactly as they did before the
+        // feature existed — both captures live, both satellites answering, nothing recorded.
+        var settings = new ArbitrationSettings { Enabled = false };
+        var (arbiter, time, metrics, _) = Create(settings);
+        var near = new SatelliteHarness("near", "Office A");
+        var far = new SatelliteHarness("far", "Office B");
+        arbiter.Register("near", near.Handle);
+        arbiter.Register("far", far.Handle);
+        near.Session.MarkSupportsPause();
+        far.Session.MarkSupportsPause();
+        near.OpenCapture(time, settings);
+        far.OpenCapture(time, settings);
+
+        arbiter.Claim("far", 200, 0.8, "wake");
+        arbiter.Claim("near", 900, 0.9, "wake");
+        await SettleAsync(time, settings.WindowMs);
+
+        near.Paused.ShouldBe(0);
+        far.Paused.ShouldBe(0);
+        near.LegacyEnded.ShouldBe(0);
+        far.LegacyEnded.ShouldBe(0);
+        near.Capture!.Completed.IsCompleted.ShouldBeFalse();
+        far.Capture!.Completed.IsCompleted.ShouldBeFalse();
+        metrics.Events.ShouldBeEmpty();
     }
 
     [Fact]
@@ -271,7 +324,7 @@ public class WakeArbiterTests
         await SettleAsync(time, settings.WindowMs);
 
         holder.Paused.ShouldBe(1);
-        holder.Capture.Completed.Result.ShouldBe(CaptureOutcome.Abandoned);
+        (await holder.Capture.Completed).ShouldBe(CaptureOutcome.Abandoned);
         waker.Paused.ShouldBe(0);
         conversations.GetActiveConversationId("waker").ShouldBe(conversationId);
         conversations.GetActiveConversationId("holder").ShouldBeNull();
@@ -333,7 +386,7 @@ public class WakeArbiterTests
         arbiter.Claim("waker", 5000, null, "wake"); // loud enough to steal, had there been a capture
         await SettleAsync(time, settings.WindowMs);
 
-        holder.Capture.Completed.Result.ShouldBe(CaptureOutcome.Ended);
+        (await holder.Capture.Completed).ShouldBe(CaptureOutcome.Ended);
         holder.Paused.ShouldBe(0);
         waker.Paused.ShouldBe(0);
         conversations.GetActiveConversationId("holder").ShouldBe(conversationId);
@@ -364,13 +417,53 @@ public class WakeArbiterTests
         dead.Paused.ShouldBe(0);
         // Both losers are settled and metered regardless: the abort is local and irreversible, so
         // only the courtesy pause depends on the peer being reachable.
-        dead.Capture!.Completed.Result.ShouldBe(CaptureOutcome.Abandoned);
-        alive.Capture!.Completed.Result.ShouldBe(CaptureOutcome.Abandoned);
+        (await dead.Capture!.Completed).ShouldBe(CaptureOutcome.Abandoned);
+        (await alive.Capture!.Completed).ShouldBe(CaptureOutcome.Abandoned);
         winner.Capture!.Completed.IsCompleted.ShouldBeFalse();
         metrics.Events.OfType<VoiceEvent>()
             .Where(e => e.Metric == VoiceMetric.WakeSuppressed)
             .Select(e => e.SatelliteId)
             .ShouldBe(["dead", "alive"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task Claim_LoserPauseWriteHangs_IsAbandonedSoTheRestOfTheDecisionStillRuns()
+    {
+        var (arbiter, time, metrics, _) = Create();
+        var winner = new SatelliteHarness("winner", "A");
+        var wedged = new SatelliteHarness("wedged", "B") { HangPause = true };
+        var alive = new SatelliteHarness("alive", "C");
+        foreach (var harness in new[] { winner, wedged, alive })
+        {
+            arbiter.Register(harness.Session.SatelliteId, harness.Handle);
+            harness.Session.MarkSupportsPause();
+            harness.OpenCapture(time, new ArbitrationSettings());
+        }
+
+        arbiter.Claim("wedged", 300, null, "wake"); // suppressed first, and its wire write never returns
+        arbiter.Claim("alive", 200, null, "wake");
+        arbiter.Claim("winner", 900, null, "wake");
+        await SettleAsync(time, 500);
+        await wedged.PauseEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Both losers were settled locally before either write; only the courtesy pause is pending.
+        (await wedged.Capture!.Completed).ShouldBe(CaptureOutcome.Abandoned);
+        alive.Paused.ShouldBe(0, "the decision is parked on the wedged satellite's write");
+
+        time.Advance(TimeSpan.FromMilliseconds(2001)); // the re-arm deadline
+        await WaitUntilAsync(() => alive.Paused == 1,
+            "the abandoned write must not stop the next loser being suppressed");
+
+        // The write is abandoned rather than followed, so the remaining loser is still suppressed.
+        alive.Paused.ShouldBe(1);
+        wedged.Paused.ShouldBe(0);
+        winner.Capture!.Completed.IsCompleted.ShouldBeFalse();
+        // A timed-out re-arm leaves that satellite streaming with no wake detection until it
+        // reconnects, so it is reported as its own event rather than only a swallowed log line.
+        metrics.Events.OfType<VoiceEvent>()
+            .Where(e => e.Metric == VoiceMetric.WakeSuppressed && e.SatelliteId == "wedged")
+            .Select(e => e.Outcome)
+            .ShouldBe(["lost_loudness", "rearm_failed"]);
     }
 
     private static AudioChunk SilentChunk() => PcmChunk(0);

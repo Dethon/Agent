@@ -13,11 +13,15 @@ public sealed record ArbitrationCandidate(WakeClaim Claim, double? CalibratedRms
 // with plain numbers. Policy source: docs/superpowers/specs/2026-07-27-wake-arbitration-design.md.
 public static class WakeArbitrationRules
 {
+    // The Source a satellite reports for a physical button press (anything else is a wake word).
+    // One const so the rule that ranks it and the rule that exempts it can never drift apart.
+    public const string ButtonSource = "button";
+
     // Rule A: button (deliberate physical intent) beats any wake; then loudest calibrated mic;
     // missing rms (legacy firmware) ranks below every reported value; final tie -> first heard.
     public static ArbitrationCandidate PickWinner(IReadOnlyList<ArbitrationCandidate> candidates) =>
         candidates
-            .OrderByDescending(c => c.Claim.Source == "button" ? 1 : 0)
+            .OrderByDescending(c => c.Claim.Source == ButtonSource ? 1 : 0)
             .ThenByDescending(c => c.CalibratedRms ?? double.NegativeInfinity)
             .ThenBy(c => c.Claim.ReceivedAt)
             .First();
