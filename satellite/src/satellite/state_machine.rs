@@ -267,6 +267,17 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
                 let _ = ctx.led.send(LedState::Thinking);
             }
         }
+        // Arbitration loss: another satellite won this utterance. End the capture like
+        // transcript does, but silently — no done cue and straight to Idle, because from the
+        // user's perspective this satellite was never part of the conversation.
+        "pause-satellite" => {
+            if *mode == Mode::Streaming {
+                write_event(wr, &WyomingEvent::with_data("audio-stop", json!({"timestamp":0}))).await?;
+                *mode = Mode::Idle;
+                if let Some(d) = detector { d.reset(); }
+                let _ = ctx.led.send(LedState::Idle);
+            }
+        }
         // Playback errors surface as fatal through the pump's DrainDone/closed-channel paths
         // (see apply_drain_done). The pump owns the player; commands here never block on the
         // device, only on the bounded command channel (flow control).
@@ -538,6 +549,44 @@ mod tests {
         handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         assert_eq!(mode, Mode::Idle);
         // nothing must have been written to the hub
+        drop(a);
+        let mut buf = tokio::io::BufReader::new(b);
+        assert!(crate::wyoming::codec::read_event_buffered(&mut buf).await.unwrap().is_none());
+    }
+
+    // Arbitration loss: like transcript it stops streaming and re-arms wake, but SILENTLY —
+    // no done cue (the user is talking to another satellite) and the LED goes straight to Idle.
+    #[tokio::test]
+    async fn pause_satellite_ends_streaming_silently_and_rearms() {
+        let (mut a, mut b) = tokio::io::duplex(4096);
+        let c = cues();
+        let (led_tx, mut led_rx) = watch::channel(LedState::Listening);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Streaming;
+        let (mut playback, _done_rx, _pump) = pump();
+
+        let e = WyomingEvent::new("pause-satellite");
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+
+        assert_eq!(mode, Mode::Idle);
+        assert_eq!(read_event(&mut b).await.unwrap().unwrap().event_type, "audio-stop");
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Idle, "silent abort goes dark, not Thinking");
+    }
+
+    #[tokio::test]
+    async fn pause_satellite_while_idle_is_a_noop() {
+        let (mut a, b) = tokio::io::duplex(4096);
+        let c = cues();
+        let (led_tx, led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let (mut playback, _done_rx, _pump) = pump();
+
+        let e = WyomingEvent::new("pause-satellite");
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+
+        assert_eq!(mode, Mode::Idle);
+        assert!(!led_rx.has_changed().unwrap());
         drop(a);
         let mut buf = tokio::io::BufReader::new(b);
         assert!(crate::wyoming::codec::read_event_buffered(&mut buf).await.unwrap().is_none());
