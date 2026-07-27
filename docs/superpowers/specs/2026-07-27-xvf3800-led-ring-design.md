@@ -109,8 +109,13 @@ ones it replaces.
 Failure policy, unchanged from today: **LED problems never take the satellite down.**
 
 - Device absent → no LED, **no warning**. Unlike GPIO/SPI pins, USB is discoverable, so "not
-  plugged in" is not an error worth logging. The WSL dev satellite simply runs LED-less.
-- Open failure → one warning, then LED-less.
+  plugged in" is not an error worth logging.
+- **USB enumeration failing outright** → also no LED, no warning. The WSL dev host has no
+  `/sys/bus/usb/devices/`, so `nusb::list_devices()` returns `Err` rather than an empty
+  iterator; "no USB subsystem" is the same class of absent as "empty bus", and warning on it
+  would mean a spurious line on every dev-satellite start.
+- Open failure on a device that **is** present → one warning. This is the actionable case
+  (missing udev rule / permissions), so unlike the two above it must be visible.
 - Write failure → one warning, LED disabled for the rest of the connection; the next
   connection re-initializes.
 
@@ -162,9 +167,11 @@ Two additions, because the ring's power-on default is lit and the per-connection
 cover the gaps around it:
 
 - **Blank at process start** in `main.rs`, closing the boot → first-hub-connect window.
-- **Blank on graceful shutdown**, alongside the existing signal handling, so stopping the
-  service does not leave the ring lit — which is precisely the 24/7-lit behaviour this work
-  removes.
+- **Blank on graceful shutdown**, so stopping the service does not leave the ring lit — which
+  is precisely the 24/7-lit behaviour this work removes. `main.rs` currently has **no signal
+  handling at all** — its accept loop runs forever and the process dies on SIGTERM — so this
+  adds a `tokio::signal` SIGTERM/SIGINT race against the accept loop. The `signal` feature is
+  already enabled in `Cargo.toml` and unused, so no dependency change is needed.
 
 Both are best-effort: a failure is logged at debug and ignored. Both are **skipped entirely
 under `--no-led`** — that flag means "this process does not touch the ring", so a satellite
@@ -223,12 +230,18 @@ TDD throughout — failing test first, watched to fail, then implementation.
 
 ## Risks
 
-**`nusb` must cross-compile for `aarch64-unknown-linux-musl`** under `scripts/build-release.sh`
-(cargo-zigbuild + the fp16 CC shim). It is pure Rust on `rustix`, and `Cargo.toml` already
-curates for exactly this property — there is an explicit note steering away from C-linking
-crates like `evdev-sys`. This is unproven, so it is step one of the plan. If it fails, the
-fallback is a raw `USBDEVFS_CONTROL` ioctl against `/dev/bus/usb/BBB/DDD`, which changes only
-the ~40 lines inside the backend and nothing else in this design.
+~~**`nusb` must cross-compile for `aarch64-unknown-linux-musl`.**~~ **Retired** — verified
+before planning. `nusb` 0.2.5 builds clean under `cargo zigbuild --target
+aarch64-unknown-linux-musl --release`, producing a **statically linked** binary, and pulls
+only pure-Rust dependencies (`rustix`, `linux-raw-sys`, `libc`, `log`, `slab`, `futures-core`,
+`bitflags`, `once_cell`) — no C toolchain involvement, exactly the property `Cargo.toml`
+curates for. The `Device::control_out` / `Device::control_in` signatures used throughout this
+spec were compiled against the real crate, not inferred from documentation. The raw
+`USBDEVFS_CONTROL` ioctl fallback is therefore not needed.
+
+Note that nusb's blocking API is `MaybeFuture`-based: calls take a timeout and are driven to
+completion with `.wait()`, e.g.
+`dev.control_out(ControlOut { .. }, Duration::from_millis(200)).wait()?`.
 
 **Command IDs are hardcoded.** They are the vendor tool's own ABI and stable across the 2.0.6
 → 2.0.10 upgrade this unit already survived, but a future firmware could in principle
