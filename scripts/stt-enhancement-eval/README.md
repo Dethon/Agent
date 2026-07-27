@@ -1,8 +1,7 @@
 # stt-enhancement-eval
 
 Offline harness that measures whether speech enhancement (denoising or target-speaker
-extraction) lowers Whisper WER on noisy Spanish voice commands — the phase-1 question of the
-[STT enhancement design spec](../../docs/superpowers/specs/2026-07-22-stt-enhancement-eval-design.md).
+extraction) lowers Whisper WER on noisy Spanish voice commands.
 It builds a synthetic corpus (enrollment voices × {clean, competing-speech, music} × an SNR grid),
 runs each utterance through candidate enhancers, transcribes with two Whisper backends, and scores
 WER against a fixed decision rule. No hub/production code is touched.

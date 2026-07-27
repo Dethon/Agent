@@ -1,7 +1,7 @@
 [project]
 name = "stt-eval"
 version = "0.1.0"
-description = "Offline STT enhancement eval harness (see docs/superpowers/specs/2026-07-22-stt-enhancement-eval-design.md)"
+description = "Offline STT enhancement eval harness"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "numpy>=1.26",

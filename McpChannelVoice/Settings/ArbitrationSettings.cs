@@ -1,9 +1,9 @@
 namespace McpChannelVoice.Settings;
 
-// Multi-satellite wake arbitration (docs/superpowers/specs/2026-07-27-wake-arbitration-design.md):
-// several satellites hearing one utterance are resolved to a single winner by calibrated
-// wake-word loudness. All timing knobs are hub receive-time; the wake-word span is
-// reconstructed as [T_rx - DetectionLatencyMs - WakeWordDurationMs, T_rx - DetectionLatencyMs].
+// Multi-satellite wake arbitration: several satellites hearing one utterance are resolved to a
+// single winner by calibrated wake-word loudness. All timing knobs are hub receive-time; the
+// wake-word span is reconstructed as
+// [T_rx - DetectionLatencyMs - WakeWordDurationMs, T_rx - DetectionLatencyMs].
 public record ArbitrationSettings
 {
     public bool Enabled { get; init; } = true;
