@@ -218,25 +218,25 @@ public class UtteranceCaptureTests
         TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(5000), TimeSpan.FromMilliseconds(100));
 
     [Fact]
-    public void Abort_OpenCapture_SettlesAbandonedAndReturnsTrue()
+    public async Task Abort_OpenCapture_SettlesAbandonedAndReturnsTrue()
     {
         var capture = new UtteranceCapture(LenientGate());
 
         capture.Abort().ShouldBeTrue();
 
         capture.Completed.IsCompletedSuccessfully.ShouldBeTrue();
-        capture.Completed.Result.ShouldBe(CaptureOutcome.Abandoned);
+        (await capture.Completed).ShouldBe(CaptureOutcome.Abandoned);
     }
 
     [Fact]
-    public void Abort_AlreadyEndedCapture_ReturnsFalseAndKeepsOutcome()
+    public async Task Abort_AlreadyEndedCapture_ReturnsFalseAndKeepsOutcome()
     {
         var capture = new UtteranceCapture(LenientGate());
         capture.ForceEnd();
 
         capture.Abort().ShouldBeFalse();
 
-        capture.Completed.Result.ShouldBe(CaptureOutcome.Ended);
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
     }
 
     [Fact]

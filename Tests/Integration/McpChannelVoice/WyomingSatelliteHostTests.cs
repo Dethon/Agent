@@ -326,6 +326,10 @@ public class WyomingSatelliteHostTests
             }
 
             await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            // Hold the socket open until the hub closes it at StopAsync. The last assertion below
+            // reads the LIVE session, and returning here drops the connection, whose teardown
+            // unregisters it — that race is what made the assertion a null-conditional no-op.
+            await readLoop;
         }, ct);
 
         var stt = new Mock<ISpeechToText>();
@@ -412,7 +416,7 @@ public class WyomingSatelliteHostTests
         wakes[0].WakeScore.ShouldBe(runPipelineFirst ? 0.87 : null);
         // Nothing left over either way: a stash surviving the turn is read by the NEXT wake, which
         // would then report a loudness measured in a different utterance.
-        sessions.Get("kitchen-01")?.TryConsumeWakeSignal().ShouldBeNull();
+        sessions.Get("kitchen-01").ShouldNotBeNull().TryConsumeWakeSignal().ShouldBeNull();
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
