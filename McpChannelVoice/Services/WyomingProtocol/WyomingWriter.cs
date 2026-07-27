@@ -9,7 +9,7 @@ public sealed class WyomingWriter(Stream stream)
     // Must match satellite/src/wyoming/event.rs PROTOCOL_VERSION. Neither side validates the value
     // today, so the only cost of drift is a misleading wire trace — but the two are documented as
     // one number (satellite/CLAUDE.md), so they move together.
-    private const string ProtocolVersion = "1.3";
+    private const string ProtocolVersion = "1.4";
     private static readonly byte[] _newline = "\n"u8.ToArray();
     private static readonly JsonSerializerOptions _serializerOptions = new(JsonSerializerDefaults.Web);
     // Not disposed by design: SemaphoreSlim only needs disposal when its AvailableWaitHandle is

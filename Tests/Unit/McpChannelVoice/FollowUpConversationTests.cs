@@ -58,6 +58,7 @@ public class FollowUpConversationTests
                 return Task.CompletedTask;
             },
             OnReplyTimeout = _ => { Events.Add("reply-timeout"); return Task.CompletedTask; },
+            SpeechStopped = _ => { Events.Add("speech-stopped"); return Task.CompletedTask; },
             EarlyVerifyMs = EarlyVerify,
             EarlyReject = async (_, _) =>
             {
@@ -80,7 +81,7 @@ public class FollowUpConversationTests
         h.Opened[0].ForceEnd(); // utterance ended (speech)
 
         await Task.Delay(50);
-        h.Events.ShouldBe(["open-first", "dispatch-first", "end"]);
+        h.Events.ShouldBe(["open-first", "speech-stopped", "dispatch-first", "end"]);
         h.Events.ShouldNotContain("timed-out");
 
         await StopAsync(sut, run);
@@ -378,6 +379,67 @@ public class FollowUpConversationTests
         // the coordinator must be re-armed: a later wake starts a fresh conversation
         sut.OnWake();
         h.Opened.Count.ShouldBe(2);
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task SpeechStopped_AcceptedCapture_FiresOnceBeforeDispatch()
+    {
+        var h = new Harness();
+        var sut = h.Build(new FollowUpSettings { Enabled = false });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        h.Opened[0].ForceEnd(); // utterance ended (speech)
+
+        await Task.Delay(50);
+        h.Events.Count(e => e == "speech-stopped").ShouldBe(1);
+        h.Events.IndexOf("speech-stopped").ShouldBeLessThan(h.Events.IndexOf("dispatch-first"));
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task SpeechStopped_AbandonedByArbitration_NeverFires()
+    {
+        var h = new Harness();
+        var sut = h.Build(new FollowUpSettings { Enabled = true });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        h.Opened[0].Abort().ShouldBeTrue(); // arbiter suppressed this satellite
+
+        await Task.Delay(50);
+        h.Events.ShouldNotContain("speech-stopped");
+
+        await StopAsync(sut, run);
+    }
+
+    [Fact]
+    public async Task SpeechStopped_NoSpeechFollowUp_NeverFiresForThatCapture()
+    {
+        var h = new Harness();
+        var sut = h.Build(new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 500 });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        h.Opened[0].ForceEnd(); // first utterance accepted -> one speech-stopped
+        await Task.Delay(50);
+        h.Reply(spoke: true);
+        h.Time.Advance(TimeSpan.FromMilliseconds(1));
+        await Task.Delay(50);
+
+        // Second capture is the follow-up window; feeding only silence => NoSpeech => end.
+        var followUp = h.Opened[1];
+        var silent = new AudioChunk { Data = new byte[3200], Format = AudioFormat.WyomingStandard };
+        for (var i = 0; i < 6; i++)
+        { followUp.Feed(silent); }
+
+        await Task.Delay(50);
+        h.Events.ShouldContain("timed-out");
+        // Only the accepted first capture fired it; the silent follow-up must not add another.
+        h.Events.Count(e => e == "speech-stopped").ShouldBe(1);
 
         await StopAsync(sut, run);
     }

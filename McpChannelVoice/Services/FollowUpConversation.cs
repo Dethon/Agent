@@ -35,6 +35,11 @@ public sealed class FollowUpConversation(
     // Write the closing transcript to the satellite (stops streaming, re-arms wake).
     public required Func<CancellationToken, Task> EndConversation { get; init; }
 
+    // Tell the satellite the user has stopped speaking and processing has begun — this drives
+    // its Thinking indicator. Emitted only once the capture has survived the outcome checks, so
+    // an arbitration-abandoned or speechless capture never lights it.
+    public required Func<CancellationToken, Task> SpeechStopped { get; init; }
+
     // Reset / await the per-turn "did the agent speak?" handshake.
     public required Action ResetTurn { get; init; }
     public required Func<Task<bool>> AwaitReply { get; init; }
@@ -124,6 +129,7 @@ public sealed class FollowUpConversation(
 
                 var isFollowUp = turns > 0;
                 ResetTurn();
+                await SpeechStopped(ct);
                 var dispatched = await TranscribeAndDispatch(capture, isFollowUp, ct);
 
                 // Nothing reached the agent (or follow-up is off): no reply will resolve the turn,
