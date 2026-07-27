@@ -83,6 +83,15 @@ public class VoiceEnumsTests
     }
 
     [Theory]
+    [InlineData(VoiceMetric.WakeSuppressed, 29)]
+    [InlineData(VoiceMetric.WakeHandoff, 30)]
+    public void VoiceMetric_ArbitrationValues_ArePinned(VoiceMetric metric, int expected)
+    {
+        // Values persist as ints in Redis; a renumber silently re-labels historical data.
+        ((int)metric).ShouldBe(expected);
+    }
+
+    [Theory]
     [InlineData(VoiceDimension.SatelliteId, 0)]
     [InlineData(VoiceDimension.Room, 1)]
     [InlineData(VoiceDimension.Identity, 2)]
