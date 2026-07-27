@@ -21,11 +21,22 @@ pub enum LedConfig {
     None,
 }
 
+// --start-delay=100000 (µs): aplay's default start threshold is the FULL 500 ms buffer, so a
+// streamed reply isn't audible until 500 ms of audio has been synthesized+delivered; start at
+// 100 ms queued instead (buffer stays 500 ms for underrun headroom). -F 50000 reads stdin in
+// 50 ms periods so the first write into the ALSA buffer happens sooner.
+const DEFAULT_SND_COMMAND: &str =
+    "aplay -D plughw:CARD=sndrpihifiberry,DEV=0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000";
+
 #[derive(Clone)]
 pub struct Config {
     pub listen: String,         // matches Satellites:<id>:Address port (default 10700)
     pub mic_command: String,
     pub snd_command: String,
+    // Sink for hub-marked ALERT streams (timers/alarms). Defaults to snd_command, so a unit
+    // without a dedicated non-attenuated route behaves exactly as before; music units point it
+    // at the `alert` softvol so an alarm bypasses the calibrated `TTS` voice level.
+    pub alert_snd_command: String,
     pub detector: DetectorConfig,
     pub wake_enabled: bool,     // --no-wake disables on-device wake (button-only operation)
     pub button: ButtonConfig,
@@ -59,12 +70,8 @@ impl Default for Config {
             // and every mic sample reaches stdout up to 125 ms late — paid on the wake AND the
             // speech->STT path. The 500 ms capture buffer default is independent of -F.
             mic_command: "arecord -D plughw:CARD=Array,DEV=0 -r 16000 -c 1 -f S16_LE -t raw -F 20000".into(),
-            // --start-delay=100000 (µs): aplay's default start threshold is the FULL 500 ms
-            // buffer, so a streamed reply isn't audible until 500 ms of audio has been
-            // synthesized+delivered; start at 100 ms queued instead (buffer stays 500 ms for
-            // underrun headroom). -F 50000 reads stdin in 50 ms periods so the first write
-            // into the ALSA buffer happens sooner.
-            snd_command: "aplay -D plughw:CARD=sndrpihifiberry,DEV=0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000".into(),
+            snd_command: DEFAULT_SND_COMMAND.into(),
+            alert_snd_command: DEFAULT_SND_COMMAND.into(),
             detector: DetectorConfig::default(),
             wake_enabled: true,
             button: ButtonConfig::None, // no button by default; --button-gpio / --button-evdev opt in
@@ -82,7 +89,7 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Flags: --listen --mic-command --snd-command --threshold --trigger-level --no-wake
+    /// Flags: --listen --mic-command --snd-command --alert-snd-command --threshold --trigger-level --no-wake
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
     ///        --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
@@ -96,6 +103,11 @@ impl Config {
         if let Some(v) = pa.opt_value_from_str::<_, String>("--listen")? { c.listen = v; }
         if let Some(v) = pa.opt_value_from_str::<_, String>("--mic-command")? { c.mic_command = v; }
         if let Some(v) = pa.opt_value_from_str::<_, String>("--snd-command")? { c.snd_command = v; }
+        // Read AFTER --snd-command so the fallback sees the final value: a unit that overrides
+        // only the normal sink gets its alerts on that same sink, not on the compiled-in default.
+        c.alert_snd_command = pa
+            .opt_value_from_str::<_, String>("--alert-snd-command")?
+            .unwrap_or_else(|| c.snd_command.clone());
         if let Some(v) = pa.opt_value_from_str::<_, f32>("--threshold")? { c.detector.threshold = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--trigger-level")? { c.detector.trigger_level = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--preroll-ms")? { c.preroll_ms = v; }
@@ -193,6 +205,30 @@ mod tests {
         let off = Config::parse(pico_args::Arguments::from_vec(vec![])).unwrap();
         assert_eq!(off.music_mixer, None);
         assert_eq!(off.duck_percent, 20); // default
+    }
+
+    // A unit that overrides only --snd-command (all of provisioning does) must not end up with
+    // alerts pointed at the compiled-in default device. Alerts follow the normal sink unless
+    // explicitly given their own, so a voice-only satellite needs no new provisioning at all.
+    #[test]
+    fn alert_snd_command_defaults_to_the_snd_command() {
+        let c = Config::default();
+        assert_eq!(c.alert_snd_command, c.snd_command);
+
+        let c = Config::parse(args(&["--snd-command", "aplay -D tts -r 22050"])).unwrap();
+        assert_eq!(c.snd_command, "aplay -D tts -r 22050");
+        assert_eq!(c.alert_snd_command, "aplay -D tts -r 22050");
+    }
+
+    #[test]
+    fn alert_snd_command_flag_overrides_only_the_alert_sink() {
+        let c = Config::parse(args(&[
+            "--snd-command", "aplay -D tts -r 22050",
+            "--alert-snd-command", "aplay -D alert -r 22050",
+        ]))
+        .unwrap();
+        assert_eq!(c.snd_command, "aplay -D tts -r 22050");
+        assert_eq!(c.alert_snd_command, "aplay -D alert -r 22050");
     }
 
     #[test]
