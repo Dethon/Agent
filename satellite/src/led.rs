@@ -36,14 +36,18 @@ const EFFECT_BREATH: u8 = 1;
 const EFFECT_SINGLE: u8 = 3;
 const EFFECT_DOA: u8 = 4;
 
-/// The look. Brightness is baked into the colour value in single-colour mode, which is why
-/// these are pre-dimmed rather than saturated; LED_BRIGHTNESS/LED_SPEED apply to breath only.
+/// The look, tuned by eye against the deployed unit. Brightness is baked into the colour value
+/// in single-colour and DoA modes, which is why those are pre-dimmed; breath instead MULTIPLIES
+/// its colour by LED_BRIGHTNESS, so THINKING_COLOR must stay saturated — a pre-dimmed value
+/// there renders as no visible pulse at all (measured: 0x002040 at brightness 127 is invisible).
 const DOA_BASE_COLOR: u32 = 0x00_2040;     // dim blue ring
 const DOA_POINTER_COLOR: u32 = 0x00_C066;  // green direction-of-arrival pointer
-const THINKING_COLOR: u32 = 0x00_2040;     // breathing blue
+const THINKING_COLOR: u32 = 0x00_00FF;     // breathing blue, saturated (see above)
 const SPEAKING_COLOR: u32 = 0x00_40A0;     // solid blue
-const BREATH_BRIGHTNESS: u8 = 127;
-const BREATH_SPEED: u8 = 8;
+const BREATH_BRIGHTNESS: u8 = 255;
+// Slowest animating value: LED_SPEED is a rate, and 0 stops the animation outright. Even 2
+// read as too brisk for a "thinking" pulse on the device.
+const BREATH_SPEED: u8 = 1;
 
 /// Transfers to this device complete in ~250 µs; the timeout only bounds a wedged device.
 const CTRL_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(200);
