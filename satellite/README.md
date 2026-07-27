@@ -80,8 +80,8 @@ auto-detects the USB capture card by *name* from `arecord -l` (confirm yours wit
 and picks the I2S DAC/amp HAT (`sndrpihifiberry*`) as the speaker when one is present, else the
 mic card itself. By-name addressing is immune to ALSA index churn — the old `snd_usb_audio
 index=0` pinning collided with the Pi's built-in vc4-hdmi/headphone cards and was removed. No
-button by default (`--button-gpio 17` and `--led-spi` are the reSpeaker 2-Mic HAT's opt-in path;
-`--button-evdev` and `--led-gpio` are the other options). The mic is 16 kHz mono native (no
+button by default (`--button-gpio 17` is the reSpeaker 2-Mic HAT's opt-in path; `--button-evdev`
+is the other option). The mic is 16 kHz mono native (no
 resampling); `plughw` resamples only the 22050 Hz playback.
 
 The default audio commands carry latency-tuned ALSA flags — keep them when overriding devices:
@@ -95,13 +95,21 @@ The default audio commands carry latency-tuned ALSA flags — keep them when ove
 
 ## Status LED
 
-The satellite lights an LED while a voice interaction is active (turn start → end of TTS
-playback; announcements too). Default: none. `--led-spi` drives the reSpeaker 2-Mic HAT's
-3 onboard APA102 LEDs via `/dev/spidev0.1` — requires
-`dtparam=spi=on` in `/boot/firmware/config.txt` and the `spi` group (the
-[systemd unit](deploy/nabu-satellite.service) already adds it). `--led-gpio <pin>` drives a single wired
-LED (BCM numbering, pin → ~330 Ω → LED → GND). Missing LED hardware is not an
-error — the satellite logs one warning and runs without it.
+The satellite drives the reSpeaker XVF3800's 12-LED WS2812 ring, showing a distinct look for
+each phase of a voice interaction:
+
+| Phase | Ring |
+|---|---|
+| Idle | dark |
+| Listening | blue ring with a green direction-of-arrival pointer |
+| Thinking | breathing blue |
+| Speaking | solid blue |
+
+It is enabled automatically when the array is on USB; `--no-led` opts out. The service needs
+write access to the USB device node — provisioning installs a udev rule
+(`MODE="0660", GROUP="plugdev"`) and the [systemd unit](deploy/nabu-satellite.service) lists
+`plugdev`. Missing hardware is not an error: an absent array, or a host with no USB subsystem
+at all, simply runs without an LED.
 
 ## Testing on the WSL dev host
 

@@ -33,7 +33,7 @@ set -euo pipefail
 #     resampling); `plughw` resamples only the 22050 Hz playback to a rate the device supports.
 #   - With a [mic-device] arg: used verbatim on both commands. Use this for a device that is
 #     already 16 kHz/22050-friendly, e.g. the reSpeaker 2-Mic HAT plughw:CARD=seeed2micvoicec,
-#     DEV=0 (also add --button-gpio 17 --led-spi to ExecStart and dtparam=spi=on for the HAT).
+#     DEV=0 (also add --button-gpio 17 to ExecStart).
 #
 # One mic quirk is handled automatically:
 #   - Some USB mics only run capture while their OWN playback stream is active (both UAC
@@ -166,7 +166,9 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
     # for any USB-audio device.
     usbid=$(cat /proc/asound/card${cardidx}/usbid 2>/dev/null || true)
     if [ -n "$usbid" ]; then
-      printf 'ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="%s", ATTR{idProduct}=="%s", ATTR{power/control}="on"\n' \
+      # MODE/GROUP are what let the non-root satellite drive the XVF3800's LED ring over USB
+      # control transfers; without them nusb's open() fails and the ring stays dark.
+      printf 'ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="%s", ATTR{idProduct}=="%s", ATTR{power/control}="on", MODE="0660", GROUP="plugdev"\n' \
         "${usbid%%:*}" "${usbid##*:}" | sudo tee /etc/udev/rules.d/99-nabu-usb-audio.rules >/dev/null
       sudo udevadm control --reload
       sudo udevadm trigger --action=add

@@ -8,11 +8,12 @@
 # capture-alone probe installed nabu-micclock.service (an endless zero-stream into the unconnected
 # speaker out); firmware 2.0.10 fixed that and the deployed unit runs with no feeder — see
 # satellite/CLAUDE.md. The MiniAmp needs its overlay declared at provision time (DAC_OVERLAY=hifiberry-dac —
-# one-shot config.txt write + reboot). No button, no LED by default.
+# one-shot config.txt write + reboot). No button by default. The XVF3800's 12-LED ring is driven automatically when the device is
+# present — no flag needed; --no-led opts out.
 # reSpeaker 2-Mic HAT variant: provision with the device arg plughw:CARD=seeed2micvoicec,DEV=0
-# (16 kHz-native, used verbatim) and add --button-gpio 17 --led-spi (APA102s need dtparam=spi=on).
-# Other hardware: a USB foot-switch is --button-evdev /dev/input/eventX:<keycode>; a wired
-# indicator is --led-gpio <pin>.
+# (16 kHz-native, used verbatim) and add --button-gpio 17. The HAT's 3 APA102 LEDs are no
+# longer driven — the XVF3800 ring replaced that backend.
+# Other hardware: a USB foot-switch is --button-evdev /dev/input/eventX:<keycode>.
 # Music satellites (provision with MUSIC_HUB=<hub-host> MUSIC_ROOM=<room>) route ALL output —
 # music (snapclient), TTS, and cues — to the speaker, mixed by PipeWire (neither the bcm2835 jack
 # nor an I2S DAC can ALSA-dmix, so a userspace sound server does the mixing). Provisioning adds
@@ -49,9 +50,10 @@ Environment=RUST_LOG=info
 Restart=always
 RestartSec=2
 User=%i
-# GPIO button/LED need the `gpio` group; a USB/evdev foot-switch needs `input`;
-# the HAT's APA102 LEDs need `spi` (spidev nodes are root:spi on Raspberry Pi OS).
-SupplementaryGroups=gpio input spi
+# GPIO button needs the `gpio` group; a USB/evdev foot-switch needs `input`; the XVF3800's
+# LED ring needs write access to its USB device node, granted to `plugdev` by the udev rule
+# provisioning installs. (`spi` is gone with the APA102 backend.)
+SupplementaryGroups=gpio input plugdev
 
 [Install]
 WantedBy=multi-user.target

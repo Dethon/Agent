@@ -457,7 +457,7 @@ mod tests {
             snd_command: "cat >/dev/null".into(),
             wake_enabled: false, // detector off: keeps the loop hot on raw I/O
             button: crate::config::ButtonConfig::None,
-            led: crate::config::LedConfig::None, // no /dev/spidev in CI; keep the log clean
+            led: crate::config::LedConfig::None, // no XVF3800 on USB in CI; keep the log clean
             ..Config::default()
         };
         let sat = tokio::spawn(async move {
