@@ -34,6 +34,8 @@ public class WakeArbiterTests
         public int Paused;
         public int LegacyEnded;
         public UtteranceCapture? Capture;
+        // Stands in for a half-open satellite socket: WyomingWriter.WriteAsync throws IOException.
+        public bool FailPause;
 
         public SatelliteHarness(string id, string room, double offsetDb = 0)
         {
@@ -45,7 +47,15 @@ public class WakeArbiterTests
 
         public WakeArbiterHandle Handle => new(
             Session,
-            _ => { Interlocked.Increment(ref Paused); return Task.CompletedTask; },
+            _ =>
+            {
+                if (FailPause)
+                {
+                    return Task.FromException(new IOException("satellite socket is dead"));
+                }
+                Interlocked.Increment(ref Paused);
+                return Task.CompletedTask;
+            },
             _ => { Interlocked.Increment(ref LegacyEnded); return Task.CompletedTask; });
 
         public void OpenCapture(FakeTimeProvider time, ArbitrationSettings settings)
@@ -267,6 +277,100 @@ public class WakeArbiterTests
         conversations.GetActiveConversationId("holder").ShouldBeNull();
         metrics.Events.OfType<VoiceEvent>()
             .Single(e => e.Metric == VoiceMetric.WakeHandoff).SatelliteId.ShouldBe("waker");
+    }
+
+    [Fact]
+    public async Task Claim_DuplicateFromSameSatelliteInWindow_KeepsTheFirstClaim()
+    {
+        var (arbiter, time, metrics, _) = Create();
+        var near = new SatelliteHarness("near", "A");
+        var far = new SatelliteHarness("far", "B");
+        arbiter.Register("near", near.Handle);
+        arbiter.Register("far", far.Handle);
+        near.Session.MarkSupportsPause();
+        far.Session.MarkSupportsPause();
+        near.OpenCapture(time, new ArbitrationSettings());
+        far.OpenCapture(time, new ArbitrationSettings());
+
+        arbiter.Claim("near", 900, 0.9, "wake"); // detection carries the loudness
+        arbiter.Claim("near", null, null, "wake"); // second claim for the same wake: must be ignored
+        arbiter.Claim("far", 200, 0.8, "wake");
+        await SettleAsync(time, 500);
+
+        // Had the null-rms duplicate replaced it, near would rank below every reported value and lose.
+        far.Paused.ShouldBe(1);
+        near.Paused.ShouldBe(0);
+        var suppressed = metrics.Events.OfType<VoiceEvent>()
+            .Single(e => e.Metric == VoiceMetric.WakeSuppressed);
+        suppressed.SatelliteId.ShouldBe("far");
+        suppressed.WakeRms.ShouldBe(200);
+    }
+
+    [Fact]
+    public async Task Claim_HolderCaptureAlreadyEndedNaturally_StealIsAbandoned()
+    {
+        var (arbiter, time, metrics, conversations) = Create();
+        var settings = new ArbitrationSettings();
+        var holder = new SatelliteHarness("holder", "A");
+        var waker = new SatelliteHarness("waker", "B");
+        arbiter.Register("holder", holder.Handle);
+        arbiter.Register("waker", waker.Handle);
+        holder.Session.MarkSupportsPause();
+        waker.Session.MarkSupportsPause();
+        var conversationId = await conversations.GetOrCreateAsync(
+            holder.Session, "agent", "hola", CancellationToken.None);
+
+        holder.OpenCapture(time, settings);
+        holder.Capture!.Feed(SilentChunk());
+        time.Advance(TimeSpan.FromMilliseconds(500));
+        holder.Capture.Feed(LoudChunk(600));
+        time.Advance(TimeSpan.FromMilliseconds(settings.DetectionLatencyMs + 700));
+        // The holder's utterance ended on its own, so its transcript dispatch is already in flight:
+        // these were two independent turns and there is nothing left to steal.
+        holder.Capture.ForceEnd();
+
+        waker.OpenCapture(time, settings);
+        arbiter.Claim("waker", 5000, null, "wake"); // loud enough to steal, had there been a capture
+        await SettleAsync(time, settings.WindowMs);
+
+        holder.Capture.Completed.Result.ShouldBe(CaptureOutcome.Ended);
+        holder.Paused.ShouldBe(0);
+        waker.Paused.ShouldBe(0);
+        conversations.GetActiveConversationId("holder").ShouldBe(conversationId);
+        conversations.GetActiveConversationId("waker").ShouldBeNull();
+        metrics.Events.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Claim_LoserPauseWriteThrows_OtherLosersAreStillSuppressed()
+    {
+        var (arbiter, time, metrics, _) = Create();
+        var winner = new SatelliteHarness("winner", "A");
+        var dead = new SatelliteHarness("dead", "B") { FailPause = true };
+        var alive = new SatelliteHarness("alive", "C");
+        foreach (var harness in new[] { winner, dead, alive })
+        {
+            arbiter.Register(harness.Session.SatelliteId, harness.Handle);
+            harness.Session.MarkSupportsPause();
+            harness.OpenCapture(time, new ArbitrationSettings());
+        }
+
+        arbiter.Claim("dead", 300, null, "wake"); // suppressed first, and its wire write throws
+        arbiter.Claim("alive", 200, null, "wake");
+        arbiter.Claim("winner", 900, null, "wake");
+        await SettleAsync(time, 500);
+
+        alive.Paused.ShouldBe(1);
+        dead.Paused.ShouldBe(0);
+        // Both losers are settled and metered regardless: the abort is local and irreversible, so
+        // only the courtesy pause depends on the peer being reachable.
+        dead.Capture!.Completed.Result.ShouldBe(CaptureOutcome.Abandoned);
+        alive.Capture!.Completed.Result.ShouldBe(CaptureOutcome.Abandoned);
+        winner.Capture!.Completed.IsCompleted.ShouldBeFalse();
+        metrics.Events.OfType<VoiceEvent>()
+            .Where(e => e.Metric == VoiceMetric.WakeSuppressed)
+            .Select(e => e.SatelliteId)
+            .ShouldBe(["dead", "alive"], ignoreOrder: true);
     }
 
     private static AudioChunk SilentChunk() => PcmChunk(0);

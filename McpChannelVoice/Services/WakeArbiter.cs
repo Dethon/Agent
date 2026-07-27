@@ -25,6 +25,15 @@ public sealed class WakeArbiter(
     private readonly Lock _gate = new();
     private List<WakeClaim>? _window;
 
+    // Bound every re-arm write. WyomingWriter.WriteAsync on a half-open TCP socket BLOCKS rather
+    // than throwing, so an unbounded write would stall the decision task with the remaining losers
+    // still live and answering — the exact failure this feature exists to prevent, reached without
+    // any exception for the catch to see. A re-arm is a few bytes to a LAN satellite, so anything
+    // slower is a dead peer, and abandoning the write costs nothing: a reconnecting satellite
+    // re-arms itself. Deliberately a constant, not a config knob — a liveness backstop is not a
+    // tuning parameter.
+    private const int ReArmWriteTimeoutMs = 2000;
+
     public void Register(string satelliteId, WakeArbiterHandle handle)
     {
         lock (_gate)
@@ -89,9 +98,15 @@ public sealed class WakeArbiter(
         {
             logger.LogError(ex, "Wake arbitration decision failed for {Claims}",
                 string.Join(", ", (claims ?? []).Select(c => c.SatelliteId)));
-            lock (_gate)
+            // Only clear a window we never took. Once claims is non-null the slot is already ours-
+            // cleared, so any window there now belongs to a claim that arrived during this decision
+            // and has its own decision task pending — nulling it would silently drop that wake.
+            if (claims is null)
             {
-                _window = null;
+                lock (_gate)
+                {
+                    _window = null;
+                }
             }
         }
     }
@@ -113,7 +128,18 @@ public sealed class WakeArbiter(
         var winner = WakeArbitrationRules.PickWinner(candidates);
         foreach (var loser in candidates.Where(c => !ReferenceEquals(c, winner)))
         {
-            await SuppressAsync(handles[loser.Claim.SatelliteId], loser.Claim, "lost_loudness");
+            // Isolate each loser: one satellite failing to be suppressed must never cost the
+            // others theirs, because every un-suppressed loser is a satellite that answers.
+            // Rule B still has to run afterwards, so nothing here may escape this loop.
+            try
+            {
+                await SuppressAsync(handles[loser.Claim.SatelliteId], loser.Claim, "lost_loudness");
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to suppress arbitration loser {Id}",
+                    loser.Claim.SatelliteId);
+            }
         }
 
         if (winner.Claim.Source == "button")
@@ -151,7 +177,12 @@ public sealed class WakeArbiter(
             {
                 return;
             }
-            await SendReArmAsync(holderHandle);
+            // Commit the recoverable half BEFORE the wire write. The abort above is irreversible and
+            // TransferBinding is a lock-guarded dictionary swap with no I/O, so pairing them keeps
+            // the handoff atomic: a re-arm that fails or times out then costs the holder only a
+            // silent re-arm, not the user's conversation continuity. Written the other way round, a
+            // dead holder socket left the capture abandoned, the conversation stranded on the
+            // holder until idle expiry, and no WakeHandoff recorded at all.
             conversations.TransferBinding(holderId, winner.Claim.SatelliteId);
             await PublishAsync(new VoiceEvent
             {
@@ -163,6 +194,7 @@ public sealed class WakeArbiter(
                 WakeRms = winner.Claim.WakeRms,
                 WakeScore = winner.Claim.WakeScore
             });
+            await SendReArmAsync(holderHandle);
             return;
         }
 
@@ -180,7 +212,8 @@ public sealed class WakeArbiter(
                 claim.SatelliteId);
             return;
         }
-        await SendReArmAsync(handle);
+        // Metric before the wire write, for the same reason the steal transfers first: the abort is
+        // already irreversible, so the record of what happened must not hinge on reaching the peer.
         await PublishAsync(new VoiceEvent
         {
             Metric = VoiceMetric.WakeSuppressed,
@@ -191,12 +224,28 @@ public sealed class WakeArbiter(
             WakeRms = claim.WakeRms,
             WakeScore = claim.WakeScore
         });
+        await SendReArmAsync(handle);
     }
 
-    private static Task SendReArmAsync(WakeArbiterHandle handle) =>
-        handle.Session.SupportsPause
-            ? handle.PauseAsync(CancellationToken.None)
-            : handle.EndLegacyAsync(CancellationToken.None);
+    // Best-effort by design: the satellite's capture is already settled locally, so the pause is
+    // only what stops it streaming into a turn it lost. Failing to deliver it degrades that
+    // satellite to its own timeout, which is survivable — losing the whole decision to it is not.
+    private async Task SendReArmAsync(WakeArbiterHandle handle)
+    {
+        using var cts = new CancellationTokenSource(
+            TimeSpan.FromMilliseconds(ReArmWriteTimeoutMs), time);
+        try
+        {
+            await (handle.Session.SupportsPause
+                ? handle.PauseAsync(cts.Token)
+                : handle.EndLegacyAsync(cts.Token));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Re-arm write to satellite {Id} failed or timed out",
+                handle.Session.SatelliteId);
+        }
+    }
 
     private async Task PublishAsync(VoiceEvent evt)
     {
