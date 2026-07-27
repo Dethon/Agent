@@ -143,10 +143,14 @@ pub async fn run_connection(
                             let fired = d.push_chunk(&samples);
                             // on-device budget check: must stay well under the 80 ms chunk cadence
                             tracing::debug!(us = t0.elapsed().as_micros() as u64, "wake inference");
-                            if fired {
+                            if let Some(score) = fired {
                                 info!("wake word detected");
+                                // ring_rms BEFORE trim_preroll: the trim drops exactly the
+                                // wake-word audio this measures.
+                                let rms = ring_rms(&preroll, cfg.wake_preroll_chunks());
                                 trim_preroll(&mut preroll, cfg.wake_preroll_chunks());
-                                start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback).await?;
+                                start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback,
+                                    Some(WakeSignal { rms, score })).await?;
                             }
                         }
                     }
@@ -159,7 +163,7 @@ pub async fn run_connection(
                 if mode == Mode::Idle {
                     info!("button pressed -> start turn");
                     if let Some(d) = detector.as_mut() { d.reset(); }
-                    start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback).await?;
+                    start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback, None).await?;
                 }
             }
         }
@@ -196,14 +200,53 @@ fn trim_preroll(buf: &mut VecDeque<Vec<u8>>, keep: usize) {
     while buf.len() > keep { buf.pop_front(); }
 }
 
+/// Loudness of the wake word as this satellite's mic heard it, for hub-side arbitration:
+/// combined RMS (i16-amplitude units, hub-comparable) over the pre-roll ring EXCLUDING the
+/// newest `exclude_newest` chunks — those are the detection-latency gap after the word ends.
+/// Must run before trim_preroll, which drops exactly the audio this measures.
+fn ring_rms(buf: &VecDeque<Vec<u8>>, exclude_newest: usize) -> f32 {
+    let take = buf.len().saturating_sub(exclude_newest);
+    let (sum_sq, n) = buf.iter().take(take).fold((0f64, 0usize), |(s, n), bytes| {
+        let samples = bytes_to_samples(bytes);
+        (s + samples.iter().map(|&v| v as f64 * v as f64).sum::<f64>(), n + samples.len())
+    });
+    if n == 0 { 0.0 } else { (sum_sq / n as f64).sqrt() as f32 }
+}
+
+/// Wake-trigger metadata reported to the hub on `run-pipeline` so it can arbitrate between
+/// multiple satellites that heard the same wake word (louder/higher-confidence mic wins).
+struct WakeSignal {
+    rms: f32,
+    score: f32,
+}
+
+/// End an active capture: send audio-stop to the hub, transition to Idle, reset the wake detector.
+/// Both transcript (normal end-of-turn) and pause-satellite (arbitration loss) use this common path.
+async fn end_capture<W: AsyncWrite + Unpin>(
+    wr: &mut W,
+    mode: &mut Mode,
+    detector: Option<&mut WakeDetector>,
+) -> anyhow::Result<()> {
+    write_event(wr, &WyomingEvent::with_data("audio-stop", json!({"timestamp":0}))).await?;
+    *mode = Mode::Idle;
+    if let Some(d) = detector { d.reset(); }
+    Ok(())
+}
+
 /// On trigger: announce the pipeline, play the awake cue, then FLUSH the pre-roll to the hub
 /// before going live. This is the zero-lag guarantee — buffered audio reaches the hub regardless
 /// of how fast the user starts speaking or how long the hub takes to open its capture.
+/// `wake` is `Some` for a wake-word trigger (carrying the mic-side RMS/score for hub
+/// arbitration) or `None` for a button trigger (no wake signal to report).
 async fn start_turn<W: AsyncWrite + Unpin>(
     wr: &mut W, mode: &mut Mode, ctx: &Ctx<'_>, preroll: &mut VecDeque<Vec<u8>>,
-    playback: &PlaybackHandle,
+    playback: &PlaybackHandle, wake: Option<WakeSignal>,
 ) -> anyhow::Result<()> {
-    write_event(wr, &WyomingEvent::new("run-pipeline")).await?;
+    let data = match &wake {
+        Some(w) => json!({ "source": "wake", "wake_rms": w.rms, "wake_score": w.score }),
+        None => json!({ "source": "button" }),
+    };
+    write_event(wr, &WyomingEvent::with_data("run-pipeline", data)).await?;
     if let Some(pcm) = ctx.cues.awake() { playback.cue(pcm); }
     let _ = ctx.led.send(LedState::Listening);
     for chunk in preroll.drain(..) {
@@ -230,11 +273,27 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
         "run-satellite" => info!("run-satellite: armed"),
         "transcript" => {
             if *mode == Mode::Streaming {
-                write_event(wr, &WyomingEvent::with_data("audio-stop", json!({"timestamp":0}))).await?;
-                *mode = Mode::Idle;
-                if let Some(d) = detector { d.reset(); }
+                end_capture(wr, mode, detector).await?;
                 if let Some(pcm) = ctx.cues.done() { playback.cue(pcm); }
+                // Turn over (this event IS the hub's EndConversation, text always empty) —
+                // the ring goes dark. Thinking is driven by voice-stopped, not by this.
+                let _ = ctx.led.send(LedState::Idle);
+            }
+        }
+        // The hub endpointed the user's speech and is now processing it. Capture stays open —
+        // only the indicator changes — because the hub, not the satellite, closes the stream.
+        "voice-stopped" => {
+            if *mode == Mode::Streaming {
                 let _ = ctx.led.send(LedState::Thinking);
+            }
+        }
+        // Arbitration loss: another satellite won this utterance. End the capture like
+        // transcript does, but silently — no done cue and straight to Idle, because from the
+        // user's perspective this satellite was never part of the conversation.
+        "pause-satellite" => {
+            if *mode == Mode::Streaming {
+                end_capture(wr, mode, detector).await?;
+                let _ = ctx.led.send(LedState::Idle);
             }
         }
         // Playback errors surface as fatal through the pump's DrainDone/closed-channel paths
@@ -272,6 +331,67 @@ mod tests {
         (handle, done_rx, AbortOnDrop(task))
     }
 
+    #[test]
+    fn ring_rms_excludes_the_detection_gap_chunks() {
+        // 3 old chunks at constant amplitude 100 (the wake word), 3 newest silent (the gap):
+        // excluding the newest 3 must measure only the wake word.
+        let loud: Vec<u8> = (0..1280).flat_map(|_| 100i16.to_le_bytes()).collect();
+        let quiet: Vec<u8> = (0..1280).flat_map(|_| 0i16.to_le_bytes()).collect();
+        let mut ring: VecDeque<Vec<u8>> = VecDeque::new();
+        for _ in 0..3 { ring.push_back(loud.clone()); }
+        for _ in 0..3 { ring.push_back(quiet.clone()); }
+        let rms = ring_rms(&ring, 3);
+        assert!((rms - 100.0).abs() < 0.01, "expected 100.0, got {rms}");
+    }
+
+    #[test]
+    fn ring_rms_on_short_ring_is_zero() {
+        let ring: VecDeque<Vec<u8>> = VecDeque::from(vec![vec![0u8; 2560]; 2]);
+        assert_eq!(ring_rms(&ring, 3), 0.0);
+    }
+
+    #[tokio::test]
+    async fn wake_turn_sends_run_pipeline_with_wake_metadata() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        let c = cues();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
+        let (playback, _done_rx, _pump) = pump();
+
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback,
+            Some(WakeSignal { rms: 123.5, score: 0.87 })).await.unwrap();
+
+        let mut buf = BufReader::new(b);
+        let e = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        assert_eq!(e.event_type, "run-pipeline");
+        let data = e.data_obj();
+        assert_eq!(data["source"], serde_json::json!("wake"));
+        assert!((data["wake_rms"].as_f64().unwrap() - 123.5).abs() < 0.01);
+        assert!((data["wake_score"].as_f64().unwrap() - 0.87).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn button_turn_sends_run_pipeline_with_button_source() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        let c = cues();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
+        let (playback, _done_rx, _pump) = pump();
+
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback, None).await.unwrap();
+
+        let mut buf = BufReader::new(b);
+        let e = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        assert_eq!(e.event_type, "run-pipeline");
+        let data = e.data_obj();
+        assert_eq!(data["source"], serde_json::json!("button"));
+        assert!(!data.contains_key("wake_rms"));
+    }
+
     // THE zero-lag guarantee: a turn flushes the entire pre-roll buffer to the hub (after
     // run-pipeline) before any live audio, so speech right after the wake word isn't clipped.
     #[tokio::test]
@@ -286,7 +406,7 @@ mod tests {
         for _ in 0..5 { preroll.push_back(vec![0u8; 2560]); }
         let (playback, _done_rx, _pump) = pump();
 
-        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback, None).await.unwrap();
 
         assert_eq!(mode, Mode::Streaming);
         assert!(preroll.is_empty(), "pre-roll must be drained on trigger");
@@ -346,7 +466,7 @@ mod tests {
             snd_command: "cat >/dev/null".into(),
             wake_enabled: false, // detector off: keeps the loop hot on raw I/O
             button: crate::config::ButtonConfig::None,
-            led: crate::config::LedConfig::None, // no /dev/spidev in CI; keep the log clean
+            led: crate::config::LedConfig::None, // no XVF3800 on USB in CI; keep the log clean
             ..Config::default()
         };
         let sat = tokio::spawn(async move {
@@ -452,6 +572,44 @@ mod tests {
         assert!(crate::wyoming::codec::read_event_buffered(&mut buf).await.unwrap().is_none());
     }
 
+    // Arbitration loss: like transcript it stops streaming and re-arms wake, but SILENTLY —
+    // no done cue (the user is talking to another satellite) and the LED goes straight to Idle.
+    #[tokio::test]
+    async fn pause_satellite_ends_streaming_silently_and_rearms() {
+        let (mut a, mut b) = tokio::io::duplex(4096);
+        let c = cues();
+        let (led_tx, mut led_rx) = watch::channel(LedState::Listening);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Streaming;
+        let (mut playback, _done_rx, _pump) = pump();
+
+        let e = WyomingEvent::new("pause-satellite");
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+
+        assert_eq!(mode, Mode::Idle);
+        assert_eq!(read_event(&mut b).await.unwrap().unwrap().event_type, "audio-stop");
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Idle, "silent abort goes dark, not Thinking");
+    }
+
+    #[tokio::test]
+    async fn pause_satellite_while_idle_is_a_noop() {
+        let (mut a, b) = tokio::io::duplex(4096);
+        let c = cues();
+        let (led_tx, led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let (mut playback, _done_rx, _pump) = pump();
+
+        let e = WyomingEvent::new("pause-satellite");
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+
+        assert_eq!(mode, Mode::Idle);
+        assert!(!led_rx.has_changed().unwrap());
+        drop(a);
+        let mut buf = tokio::io::BufReader::new(b);
+        assert!(crate::wyoming::codec::read_event_buffered(&mut buf).await.unwrap().is_none());
+    }
+
     #[tokio::test]
     async fn turn_lifecycle_publishes_led_states() {
         let (mut a, _b) = tokio::io::duplex(1 << 16);
@@ -463,12 +621,16 @@ mod tests {
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
         let (mut playback, mut done_rx, _pump) = pump();
 
-        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback, None).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
+
+        let voice_stopped = WyomingEvent::new("voice-stopped");
+        handle_hub_event(voice_stopped, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Thinking);
 
         let transcript = WyomingEvent::with_data("transcript", json!({"text":"hi"}));
         handle_hub_event(transcript, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
-        assert_eq!(*led_rx.borrow_and_update(), LedState::Thinking);
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Idle, "transcript ends the turn -> ring goes dark");
 
         let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
         handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
@@ -520,7 +682,7 @@ mod tests {
         let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
         handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
-        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback, None).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
 
         // the announcement's audio-stop drains while we are mid-turn
@@ -570,5 +732,42 @@ mod tests {
         let stale = WyomingEvent::with_data("transcript", json!({"text":"stale"}));
         handle_hub_event(stale, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         assert!(!led_rx.has_changed().unwrap(), "stale transcript must not touch the LED");
+    }
+
+    // The hub endpointed the user's speech and is now processing it. This is now the sole
+    // source of the Thinking indicator; the capture must stay open (mode unchanged) because
+    // the hub, not the satellite, decides when the stream ends (via transcript).
+    #[tokio::test]
+    async fn voice_stopped_during_streaming_publishes_thinking() {
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+
+        let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Streaming;
+        let (mut playback, _done_rx, _pump) = pump();
+
+        let e = WyomingEvent::new("voice-stopped");
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+
+        assert_eq!(mode, Mode::Streaming, "voice-stopped must not close the capture");
+        assert_eq!(*led_rx.borrow_and_update(), LedState::Thinking);
+    }
+
+    #[tokio::test]
+    async fn voice_stopped_while_idle_is_a_noop() {
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let c = cues();
+
+        let (led_tx, led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle; // not Streaming -> stale, must not touch the LED
+        let (mut playback, _done_rx, _pump) = pump();
+
+        let e = WyomingEvent::new("voice-stopped");
+        handle_hub_event(e, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
+
+        assert_eq!(mode, Mode::Idle);
+        assert!(!led_rx.has_changed().unwrap(), "stale voice-stopped must not touch the LED");
     }
 }

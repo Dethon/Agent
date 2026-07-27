@@ -1,6 +1,7 @@
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.WyomingProtocol;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
@@ -210,5 +211,68 @@ public class UtteranceCaptureTests
         capture.Feed(Silent());
 
         capture.Stats.TrailingSilenceMs.ShouldBe(200);
+    }
+
+    private static SilenceGate LenientGate() => new(
+        new AdaptiveLevelTracker(500, 9, 4, 15, TimeSpan.FromSeconds(3)),
+        TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(5000), TimeSpan.FromMilliseconds(100));
+
+    [Fact]
+    public async Task Abort_OpenCapture_SettlesAbandonedAndReturnsTrue()
+    {
+        var capture = new UtteranceCapture(LenientGate());
+
+        capture.Abort().ShouldBeTrue();
+
+        capture.Completed.IsCompletedSuccessfully.ShouldBeTrue();
+        (await capture.Completed).ShouldBe(CaptureOutcome.Abandoned);
+    }
+
+    [Fact]
+    public async Task Abort_AlreadyEndedCapture_ReturnsFalseAndKeepsOutcome()
+    {
+        var capture = new UtteranceCapture(LenientGate());
+        capture.ForceEnd();
+
+        capture.Abort().ShouldBeFalse();
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+    }
+
+    [Fact]
+    public void Feed_WithHistory_RecordsGateVerdictPerChunk()
+    {
+        var time = new FakeTimeProvider();
+        var history = new ChunkHistory(time, TimeSpan.FromSeconds(5));
+        var capture = new UtteranceCapture(LenientGate(), history);
+
+        // AdaptiveLevelTracker seeds its floor from the very first frame it sees (see
+        // AdaptiveLevelTrackerTests.IsSpeech_LoudTransientBeforeSpeech_DoesNotPoisonPeakBackstop):
+        // a loud opening frame with no pre-roll seeds the floor at its own level and reads as
+        // silence. A silent pre-roll first (as every other test in this file does) lets the
+        // loud chunk that follows actually cross the entry bar.
+        capture.Feed(Chunk(0));    // pre-roll: seeds the floor near silence
+        capture.Feed(Chunk(3000)); // loud chunk: now classified speech
+
+        var samples = history.Snapshot();
+        samples.Count.ShouldBe(2);
+        samples[0].IsSpeech.ShouldBeFalse();
+        samples[1].IsSpeech.ShouldBeTrue();
+        samples[1].Rms.ShouldBe(3000, tolerance: 1);
+    }
+
+    private static AudioChunk Chunk(short amplitude, int samples = 1280)
+    {
+        var bytes = new byte[samples * 2];
+        foreach (var i in Enumerable.Range(0, samples))
+        {
+            BitConverter.TryWriteBytes(bytes.AsSpan(i * 2), amplitude);
+        }
+        return new AudioChunk
+        {
+            Data = bytes,
+            Format = new AudioFormat { SampleRateHz = 16000, SampleWidthBytes = 2, Channels = 1 },
+            Timestamp = TimeSpan.Zero
+        };
     }
 }

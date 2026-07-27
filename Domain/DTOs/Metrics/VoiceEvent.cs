@@ -22,4 +22,6 @@ public record VoiceEvent : MetricEvent
     public double? AvgLogProb { get; init; }
     public double? NoSpeechProb { get; init; }
     public double? CompressionRatio { get; init; }
+    public double? WakeRms { get; init; }
+    public double? WakeScore { get; init; }
 }

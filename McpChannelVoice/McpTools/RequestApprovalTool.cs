@@ -61,7 +61,7 @@ public sealed class RequestApprovalTool
 
         var stt = services.GetRequiredService<ISpeechToText>();
         var wyoming = services.GetRequiredService<WyomingClientSettings>();
-        var followUp = settings.FollowUp;
+        var time = services.GetRequiredService<TimeProvider>();
 
         var toolList = string.Join(", ", p.Requests.Select(r => r.ToolName.Split("__").Last()));
         var prompt = $"¿Apruebas {toolList}? Di sí o no.";
@@ -75,7 +75,13 @@ public sealed class RequestApprovalTool
                 return "rejected";
             }
 
-            var answer = await CaptureAnswerAsync(session, stt, wyoming, followUp, cancellationToken);
+            var answer = await CaptureAnswerAsync(session, stt, wyoming, settings, time, cancellationToken);
+            if (answer is null)
+            {
+                // Arbitration stole the turn mid-answer: the arbiter already re-armed this
+                // satellite via pause-satellite, so there is no one left here to re-prompt.
+                return "rejected";
+            }
             var parsed = ApprovalGrammarParser.Parse(answer);
 
             try
@@ -153,10 +159,13 @@ public sealed class RequestApprovalTool
         return true;
     }
 
-    private static async Task<string> CaptureAnswerAsync(
+    // Returns null when arbitration abandoned the capture — distinct from an empty answer,
+    // which re-prompts.
+    private static async Task<string?> CaptureAnswerAsync(
         SatelliteSession session, ISpeechToText stt, WyomingClientSettings wyoming,
-        FollowUpSettings followUp, CancellationToken ct)
+        VoiceSettings settings, TimeProvider time, CancellationToken ct)
     {
+        var followUp = settings.FollowUp;
         if (followUp.PlaybackTailMs > 0)
         {
             await Task.Delay(followUp.PlaybackTailMs, ct); // echo guard after the prompt finishes
@@ -174,7 +183,10 @@ public sealed class RequestApprovalTool
             TimeSpan.FromMilliseconds(wyoming.TrailingSilenceMs),
             TimeSpan.FromMilliseconds(wyoming.MaxUtteranceMs),
             TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(wyoming)),
-            noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
+            noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)),
+            // The approval mic is an open capture like any wake turn's: Rule B must be able
+            // to ask it what it heard during another satellite's wake-word span.
+            new ChunkHistory(time, settings.Arbitration.HistorySpan));
 
         CaptureOutcome outcome;
         try
@@ -186,6 +198,11 @@ public sealed class RequestApprovalTool
             // Always close the capture, even if the wait is cancelled, so a cancelled approval
             // doesn't leave a dangling mic capture routing audio into a dead turn.
             session.CloseCapture();
+        }
+
+        if (outcome == CaptureOutcome.Abandoned)
+        {
+            return null;
         }
 
         if (outcome == CaptureOutcome.NoSpeech)

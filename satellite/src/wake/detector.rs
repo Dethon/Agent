@@ -48,7 +48,12 @@ pub struct WakeModels {
 }
 
 impl WakeModels {
-    pub fn load() -> anyhow::Result<Self> {
+    pub fn load() -> anyhow::Result<Self> { Self::load_with_classifier(CLF_MODEL) }
+
+    /// Classifier bytes are a parameter so tests can pair the stock fixture wav with the
+    /// stock classifier it was validated against, independent of whichever classifier
+    /// (custom-trained or otherwise) `load()` ships in production.
+    pub fn load_with_classifier(classifier: &[u8]) -> anyhow::Result<Self> {
         let load = |b: &[u8], shape: &[usize]| -> anyhow::Result<Model> {
             tract_onnx::onnx()
                 .model_for_read(&mut std::io::Cursor::new(b))?
@@ -59,7 +64,7 @@ impl WakeModels {
         Ok(Self {
             mel: load(MEL_MODEL, &[1, LOOKBACK + CHUNK])?,
             emb: load(EMB_MODEL, &[1, MEL_FRAMES, 32, 1])?,
-            clf: load(CLF_MODEL, &[1, CLF_FRAMES, EMB_DIM])?,
+            clf: load(classifier, &[1, CLF_FRAMES, EMB_DIM])?,
         })
     }
 }
@@ -95,11 +100,11 @@ impl WakeDetector {
         })
     }
 
-    /// Feed exactly 1280 samples (80 ms). Returns true on a wake event.
+    /// Feed exactly 1280 samples (80 ms). Returns the classifier score when a wake fires.
     /// The streaming algorithm mirrors openwakeword's AudioFeatures (validated to 4 decimals
     /// against the Python package): mel over lookback+chunk, ones-seeded mel buffer, one
     /// embedding per chunk from the last 76 frames, classify the last 16 embeddings.
-    pub fn push_chunk(&mut self, chunk: &[i16]) -> bool {
+    pub fn push_chunk(&mut self, chunk: &[i16]) -> Option<f32> {
         assert_eq!(chunk.len(), CHUNK, "push_chunk requires exactly {CHUNK} samples");
         // Stage 1: mel over lookback + chunk -> 8 new frames (x/10 + 2)
         let mut input = vec![0f32; LOOKBACK + CHUNK];
@@ -145,9 +150,9 @@ impl WakeDetector {
             // score floor so even at debug idle silence doesn't flood, and rms (and the macro
             // fields) are only evaluated when the level is enabled — the steady path pays nothing.
             if score >= 0.05 { tracing::debug!(score, rms = chunk_rms(chunk), "wake score"); }
-            if self.evaluate(score) { return true; }
+            if self.evaluate(score) { return Some(score); }
         }
-        false
+        None
     }
 
     fn evaluate(&mut self, score: f32) -> bool {
@@ -181,17 +186,22 @@ impl WakeDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The shipped models/ok_nabu.onnx is a custom-trained classifier; tests/fixtures/ok_nabu.wav
+    // is the stock recording validated against the stock classifier (77db1daa). Detector
+    // plumbing — refractory, shared bundle, score surfacing — is what these tests cover, so
+    // they pair the stock model with the stock wav.
+    const STOCK_CLF_MODEL: &[u8] = include_bytes!("../../tests/fixtures/ok_nabu_stock.onnx");
     fn wav(path: &str) -> Vec<i16> {
         let mut r = hound::WavReader::open(path).unwrap();
         r.samples::<i16>().map(|s| s.unwrap()).collect()
     }
     #[test]
     fn fires_once_on_ok_nabu_then_respects_refractory() {
-        let models = WakeModels::load().unwrap();
+        let models = WakeModels::load_with_classifier(STOCK_CLF_MODEL).unwrap();
         let mut d = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
         let mut fires = 0;
         for chunk in wav("tests/fixtures/ok_nabu.wav").chunks_exact(1280) {
-            if d.push_chunk(chunk) { fires += 1; }
+            if d.push_chunk(chunk).is_some() { fires += 1; }
         }
         assert_eq!(fires, 1, "exactly one wake from one utterance");
     }
@@ -201,7 +211,7 @@ mod tests {
         let mut d = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
         let mut fires = 0;
         for chunk in wav("tests/fixtures/silence.wav").chunks_exact(1280) {
-            if d.push_chunk(chunk) { fires += 1; }
+            if d.push_chunk(chunk).is_some() { fires += 1; }
         }
         assert_eq!(fires, 0);
     }
@@ -209,9 +219,9 @@ mod tests {
     // shared optimized models, per-detector streaming state.
     #[test]
     fn detectors_share_one_model_bundle() {
-        let models = WakeModels::load().unwrap();
+        let models = WakeModels::load_with_classifier(STOCK_CLF_MODEL).unwrap();
         let samples = wav("tests/fixtures/ok_nabu.wav");
-        let fires = |d: &mut WakeDetector| samples.chunks_exact(1280).filter(|c| d.push_chunk(c)).count();
+        let fires = |d: &mut WakeDetector| samples.chunks_exact(1280).filter(|c| d.push_chunk(c).is_some()).count();
         let mut first = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
         let mut second = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
         assert_eq!(fires(&mut first), 1);
@@ -224,5 +234,17 @@ mod tests {
         assert_eq!(chunk_rms(&[100, -100, 100, -100]), 100.0); // constant magnitude -> rms == magnitude
         let r = chunk_rms(&[3, 4]);
         assert!((r - 12.5f32.sqrt()).abs() < 1e-3, "rms([3,4]) = sqrt((9+16)/2) = sqrt(12.5), got {r}");
+    }
+
+    #[test]
+    fn push_chunk_reports_score_on_wake() {
+        let models = WakeModels::load_with_classifier(STOCK_CLF_MODEL).unwrap();
+        let mut d = WakeDetector::new(&models, DetectorConfig::default()).unwrap();
+        let scores: Vec<f32> = wav("tests/fixtures/ok_nabu.wav")
+            .chunks_exact(1280)
+            .filter_map(|c| d.push_chunk(c))
+            .collect();
+        assert_eq!(scores.len(), 1, "exactly one wake from one utterance");
+        assert!(scores[0] >= 0.5, "winning score is at least the threshold, got {}", scores[0]);
     }
 }

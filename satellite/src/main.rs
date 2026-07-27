@@ -20,6 +20,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cfg = Config::from_args()?;
+    // The ring's power-on default is lit (rainbow, then direction-of-arrival), and the
+    // render task only exists while a hub is connected — so blank it here to cover
+    // boot -> first connect.
+    led::blank_once(&cfg.led);
+
     // Parse + graph-optimize the wake models ONCE: per-connection loading would re-pay seconds
     // of optimization (= wake deafness) on every hub reconnect, and a bad model now fails fast
     // at boot instead of on the first connection.
@@ -37,8 +42,15 @@ async fn main() -> anyhow::Result<()> {
     // (plughw:), starving the hub's reconnect. Aborting the stale task drops MicCapture /
     // PlaybackSink (kill_on_drop) and the button guard, so the new connection gets the devices.
     let mut active: Option<tokio::task::JoinHandle<()>> = None;
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     loop {
-        let (sock, peer) = listener.accept().await?;
+        let accepted = tokio::select! {
+            r = listener.accept() => Some(r?),
+            _ = sigterm.recv() => None,
+            _ = sigint.recv() => None,
+        };
+        let Some((sock, peer)) = accepted else { break };
         sock.set_nodelay(true).ok();
         info!("hub connected from {peer}");
         if let Some(prev) = active.take() {
@@ -55,4 +67,14 @@ async fn main() -> anyhow::Result<()> {
             }
         }));
     }
+
+    // Graceful shutdown: drop the live connection so its audio devices and LED guard release,
+    // then blank the ring — a stopped service must not leave it lit.
+    if let Some(prev) = active.take() {
+        prev.abort();
+        let _ = prev.await;
+    }
+    led::blank_once(&cfg.led);
+    info!("nabu-satellite stopped");
+    Ok(())
 }

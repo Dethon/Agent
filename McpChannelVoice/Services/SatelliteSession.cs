@@ -127,9 +127,9 @@ public sealed class SatelliteSession
         }
     }
 
-    public UtteranceCapture OpenCapture(SilenceGate gate)
+    public UtteranceCapture OpenCapture(SilenceGate gate, ChunkHistory? history = null)
     {
-        var capture = new UtteranceCapture(gate);
+        var capture = new UtteranceCapture(gate, history);
         Volatile.Write(ref _capture, capture);
         return capture;
     }
@@ -141,6 +141,44 @@ public sealed class SatelliteSession
     public void RouteAudio(AudioChunk chunk) => Volatile.Read(ref _capture)?.Feed(chunk);
 
     public void EndCapture() => Volatile.Read(ref _capture)?.ForceEnd();
+
+    public CaptureActivity? GetCaptureActivity()
+    {
+        var capture = Volatile.Read(ref _capture);
+        return capture?.History is { } history
+            ? new CaptureActivity(history.OpenedAt, history.Snapshot())
+            : null;
+    }
+
+    public bool TryAbortCapture() => Volatile.Read(ref _capture)?.Abort() ?? false;
+
+    // Wake metadata stash: the read loop notes the claim's rms/score; the capture-open path
+    // consumes it single-use onto the WakeTriggered event (same pattern as the dismissal stash).
+    private readonly Lock _wakeSignalGate = new();
+    private (double? Rms, double? Score)? _wakeSignal;
+
+    public void NoteWakeSignal(double? rms, double? score)
+    {
+        lock (_wakeSignalGate)
+        {
+            _wakeSignal = (rms, score);
+        }
+    }
+
+    public (double? Rms, double? Score)? TryConsumeWakeSignal()
+    {
+        lock (_wakeSignalGate)
+        {
+            var value = _wakeSignal;
+            _wakeSignal = null;
+            return value;
+        }
+    }
+
+    // A connection that has ever reported wake_rms runs post-arbitration firmware and understands
+    // pause-satellite; anything else gets the legacy transcript abort (audible done cue).
+    public bool SupportsPause { get; private set; }
+    public void MarkSupportsPause() => SupportsPause = true;
 
     // Records the timestamp (from the playback loop's TimeProvider) at which the current user turn
     // began, so the loop can report wake/turn -> first-audio latency. Set at capture-open each turn.

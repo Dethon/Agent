@@ -14,7 +14,7 @@ public sealed class VoiceConversationManager(
     TimeSpan lifetime,
     ILogger<VoiceConversationManager> logger)
 {
-    private sealed record Entry(string ConversationId, ITimer Timer, long Generation);
+    private sealed record Entry(string ConversationId, ITimer Timer, long Generation, long BoundAt);
 
     private readonly Dictionary<string, Entry> _bySatellite = new();
     private readonly Dictionary<string, string> _conversationToSatellite = new();
@@ -61,7 +61,7 @@ public sealed class VoiceConversationManager(
             var satelliteId = session.SatelliteId;
             var generation = ++_generation;
             var timer = time.CreateTimer(_ => Expire(satelliteId, generation), null, lifetime, Timeout.InfiniteTimeSpan);
-            _bySatellite[satelliteId] = new Entry(creation.Identity.ConversationId, timer, generation);
+            _bySatellite[satelliteId] = new Entry(creation.Identity.ConversationId, timer, generation, time.GetTimestamp());
             _conversationToSatellite[creation.Identity.ConversationId] = satelliteId;
             logger.LogInformation(
                 "Voice conversation {ConversationId} opened for satellite {Satellite}",
@@ -86,6 +86,42 @@ public sealed class VoiceConversationManager(
         }
     }
 
+    // Attention handoff: the user re-woke on another satellite mid-conversation, so the
+    // conversation (and its idle timer) follows them. The displaced target entry — if the winner
+    // had its own idle conversation — is simply dropped; it would have idle-expired anyway.
+    // claimedAt (the wake claim's arrival timestamp) guards that displacement: a target binding
+    // newer than the claim means the winner's turn already ran independently while the decision
+    // was delayed, and the agent's reply to that binding may still be in flight — displacing it
+    // would silently drop the reply, so the stale handoff is skipped instead.
+    public bool TransferBinding(string fromSatelliteId, string toSatelliteId, long claimedAt)
+    {
+        lock (_gate)
+        {
+            if (_bySatellite.TryGetValue(toSatelliteId, out var target) && target.BoundAt >= claimedAt)
+            {
+                return false;
+            }
+
+            if (!_bySatellite.Remove(fromSatelliteId, out var entry))
+            {
+                return false;
+            }
+
+            if (_bySatellite.Remove(toSatelliteId, out var displaced))
+            {
+                displaced.Timer.Dispose();
+                _conversationToSatellite.Remove(displaced.ConversationId);
+            }
+
+            Renew(toSatelliteId, entry);
+            _conversationToSatellite[entry.ConversationId] = toSatelliteId;
+            logger.LogInformation(
+                "Voice conversation {ConversationId} handed off {From} -> {To}",
+                entry.ConversationId, fromSatelliteId, toSatelliteId);
+            return true;
+        }
+    }
+
     // Re-create the idle timer on each renewal so the firing callback carries the generation it was
     // armed with; a stale fire that lost the race to a renewal sees a newer generation and no-ops.
     private void Renew(string satelliteId, Entry existing)
@@ -93,7 +129,7 @@ public sealed class VoiceConversationManager(
         existing.Timer.Dispose();
         var generation = ++_generation;
         var timer = time.CreateTimer(_ => Expire(satelliteId, generation), null, lifetime, Timeout.InfiniteTimeSpan);
-        _bySatellite[satelliteId] = existing with { Timer = timer, Generation = generation };
+        _bySatellite[satelliteId] = existing with { Timer = timer, Generation = generation, BoundAt = time.GetTimestamp() };
     }
 
     private void Expire(string satelliteId, long generation)

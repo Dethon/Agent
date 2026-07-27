@@ -12,6 +12,20 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git curl libsndfile1 build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# pip's stock network policy is 5 retries at a 15s read timeout -- a ~99s window in total --
+# and it treats an index it could not read as an EMPTY one. Observed on ai370 (2026-07-27):
+# five consecutive ReadTimeouts on /whl/cpu/torch/ -- the 376 KB index *listing*, not the
+# 200 MB wheel; it serves in ~0.3s from that host when the link is idle -- reported as the
+# thoroughly misleading "Could not find a version that satisfies the requirement torch==2.1.2
+# (from versions: none)". The trigger is contention rather than a broken path: the documented
+# launch command runs `compose up --build` over ~20 services, and BuildKit saturates the
+# uplink for longer than pip is willing to wait. Widening the window to 10 x 60s lets the
+# build ride out a multi-minute stall instead of dying inside 99 seconds. Set as environment,
+# not flags, because pip reads PIP_<OPTION> for every option (verified: a poison value fails
+# config parsing) -- so this covers the onnx and gunicorn layers below without repetition.
+ENV PIP_DEFAULT_TIMEOUT=60 \
+    PIP_RETRIES=10
+
 # torch first (CPU wheels; index serves x86_64 and aarch64), then the wesep/wespeaker
 # import tree. torch/torchaudio pinned to 2.1.2 -- the version proven against
 # wespeaker@e9bbf73 by the round-1 eval harness (tse_env_setup.sh). This is load-bearing,
@@ -30,10 +44,18 @@ RUN apt-get update \
 # Confirmed empirically (2026-07-22, not just by reading the chain): removing either package
 # from a running sidecar and starting app.py raises ModuleNotFoundError before Flask even
 # binds -- the app cannot boot without them, so both stay.
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.1.2" "torchaudio==2.1.2" \
-    && pip install --no-cache-dir "numpy<2" soundfile pyyaml scipy silero-vad tqdm \
-        kaldiio hdbscan umap-learn scikit-learn "onnxruntime==1.27.0" requests flask \
-    && pip install --no-cache-dir --no-deps \
+#
+# Three separate layers rather than one chained RUN, for the same reason the onnx and gunicorn
+# layers below are separate: a failed RUN discards everything it did, and with --no-cache-dir
+# there is nothing to resume from. Chained, a stall in the PyPI leg or the git clone threw away
+# the ~200 MB torch download too and the retry paid for it again. Split, each retry restarts at
+# the first leg that actually failed.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.1.2" "torchaudio==2.1.2"
+
+RUN pip install --no-cache-dir "numpy<2" soundfile pyyaml scipy silero-vad tqdm \
+        kaldiio hdbscan umap-learn scikit-learn "onnxruntime==1.27.0" requests flask
+
+RUN pip install --no-cache-dir --no-deps \
         "wespeaker @ git+https://github.com/wenet-e2e/wespeaker.git@e9bbf73d0fd13db6cf42a6cb2eafb0d7dd0f8e0e"
 
 # torch.onnx.export requires the onnx package at runtime (export happens at container

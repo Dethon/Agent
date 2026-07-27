@@ -35,6 +35,11 @@ public sealed class FollowUpConversation(
     // Write the closing transcript to the satellite (stops streaming, re-arms wake).
     public required Func<CancellationToken, Task> EndConversation { get; init; }
 
+    // Tell the satellite the user has stopped speaking and processing has begun — this drives
+    // its Thinking indicator. Emitted only once the capture has survived the outcome checks, so
+    // an arbitration-abandoned or speechless capture never lights it.
+    public required Func<CancellationToken, Task> SpeechStopped { get; init; }
+
     // Reset / await the per-turn "did the agent speak?" handshake.
     public required Action ResetTurn { get; init; }
     public required Func<Task<bool>> AwaitReply { get; init; }
@@ -107,6 +112,14 @@ public sealed class FollowUpConversation(
                     return;
                 }
 
+                if (outcome == CaptureOutcome.Abandoned)
+                {
+                    // Wake arbitration suppressed this turn (or handed it to another satellite).
+                    // The arbiter already re-armed the satellite via pause-satellite, so no
+                    // EndConversation here — writing a transcript would double-end the stream.
+                    return;
+                }
+
                 if (outcome == CaptureOutcome.NoSpeech)
                 {
                     await OnSilenceTimeout(capture.Stats, ct);
@@ -116,6 +129,19 @@ public sealed class FollowUpConversation(
 
                 var isFollowUp = turns > 0;
                 ResetTurn();
+                try
+                {
+                    await SpeechStopped(ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    // SpeechStopped only drives the satellite's Thinking indicator — a failure
+                    // there must never drop the utterance that would otherwise still transcribe.
+                }
                 var dispatched = await TranscribeAndDispatch(capture, isFollowUp, ct);
 
                 // Nothing reached the agent (or follow-up is off): no reply will resolve the turn,
@@ -185,7 +211,13 @@ public sealed class FollowUpConversation(
         {
             if (await EarlyReject(capture, ct))
             {
-                return null;
+                // The arbiter may have abandoned this capture while the check was in flight;
+                // it already re-armed the satellite via pause-satellite, so route to the
+                // Abandoned exit — a transcript would audibly done-cue a lost turn.
+                return capture.Completed.IsCompletedSuccessfully &&
+                    capture.Completed.Result == CaptureOutcome.Abandoned
+                    ? CaptureOutcome.Abandoned
+                    : null;
             }
             return await capture.Completed.WaitAsync(ct);
         }

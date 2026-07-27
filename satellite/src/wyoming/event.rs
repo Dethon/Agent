@@ -1,6 +1,6 @@
 use serde_json::{json, Map, Value};
 
-pub const PROTOCOL_VERSION: &str = "1.2"; // matches the hub's WyomingWriter
+pub const PROTOCOL_VERSION: &str = "1.4"; // matches the hub's WyomingWriter
 
 #[derive(Debug, Clone)]
 pub struct WyomingEvent {
@@ -10,6 +10,9 @@ pub struct WyomingEvent {
 }
 
 impl WyomingEvent {
+    /// A no-data event (e.g. "run-satellite"). run-pipeline no longer uses this constructor
+    /// now that it always carries a `source`/wake-metadata payload (see start_turn).
+    #[allow(dead_code)] // test-only convenience; production events all carry data now
     pub fn new(event_type: &str) -> Self {
         Self { event_type: event_type.to_string(), data: None, payload: Vec::new() }
     }
