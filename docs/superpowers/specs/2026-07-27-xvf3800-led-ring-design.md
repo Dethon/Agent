@@ -1,7 +1,7 @@
 # XVF3800 LED Ring as the Satellite's Activity Indicator
 
 **Date:** 2026-07-27
-**Status:** Approved, not yet implemented
+**Status:** Implemented (Tasks 1-4); phase-semantics addendum pending (Tasks 6-8)
 
 ## Problem
 
@@ -251,3 +251,91 @@ validation pass is what catches it.
 **Deleting the GPIO/SPI backends removes the 2-Mic HAT's LED.** No deployed unit uses it, and
 the HAT override path keeps its button (`--button-gpio 17`); only its 3 APA102s go dark. This
 is the accepted cost of the smaller, single-purpose render loop.
+
+---
+
+## Addendum: phase semantics correction (2026-07-27, post-deployment)
+
+On-device validation of the deployed build found the ring **never returns to dark** after the
+first wake. The permission fix and the ring driving itself both worked; the defect is in what
+the satellite's four `LedState` values have always *meant*.
+
+### Evidence
+
+A 0.4 s sampler on the live unit, correlated against the journal (only two wakes fired, at
+19:02:00 and 19:02:48):
+
+```
+19:02:00  wake         -> effect 4   listening
+19:02:12               -> effect 3   speaking   (the reply)
+19:02:14               -> effect 4   listening  (drain, mode still Streaming)
+19:02:17  transcript   -> effect 1   "thinking" (breathes 31 s, AFTER the reply)
+19:02:48  wake         -> effect 4   (next turn)
+```
+
+`effect 0` never recurs. Across 400 further samples the ring stayed lit.
+
+### Root cause
+
+`transcript` is not an STT result — the hub emits it with permanently empty text from exactly
+two places (`WyomingSatelliteHost.cs:141` arbitration re-arm, and `:329` `EndConversation`).
+It is the **turn-end** signal, as `satellite/CLAUDE.md` already documented ("ends its turn and
+re-arms wake"). But `state_machine.rs:278` maps it to `LedState::Thinking`, so the ring starts
+breathing when the turn *finishes* and only clears via the 120 s `THINKING_FALLBACK`.
+
+Under the old binary on/off policy this mislabel was invisible — `Thinking` and `Listening`
+both meant "lit". Giving each phase a distinct look exposed it. No deployed unit had an LED
+before, so it was never observed.
+
+### The missing signal
+
+The hub→satellite vocabulary is exactly five events: `run-satellite`, `transcript`,
+`pause-satellite`, `audio-start`, `audio-stop`. **None marks the end of the user's speech.**
+The hub endpoints internally (`CloseCapture` → `MarkSpeechEnd`) and tells the satellite
+nothing, so "Listening" necessarily runs until the reply starts and Thinking is unreachable.
+
+### Decision (user-approved)
+
+Thinking means: **from the moment the user stops speaking until the turn ends, excluding the
+stretches where the agent is talking.** Implementing it needs a new event.
+
+- The hub emits **`voice-stopped`** (the standard Wyoming VAD event name, not an invented one)
+  when a capture closes and will actually be transcribed.
+- **It is emitted after the outcome checks, not at `CloseCapture` itself.** An
+  arbitration-abandoned or unknown-voice capture must not flash Thinking — arbitration losers
+  are specified to stand down silently with the LED going to Idle.
+- The satellite maps `voice-stopped` → `Thinking` and, correcting the defect, `transcript` →
+  `Idle`.
+
+Corrected mapping:
+
+```
+wake / run-pipeline   -> Listening  (effect 4, blue ring + green pointer)
+voice-stopped         -> Thinking   (effect 1, breathing blue)
+audio-start           -> Speaking   (effect 3, solid blue)
+drain, mode Streaming -> Listening  (follow-up window: the mic is live again)
+transcript            -> Idle       (effect 0, dark)
+```
+
+The `drain → Listening` rule stays: after a reply drains with the capture still open, the
+follow-up window genuinely has the mic live, so the blue+green pointer is correct there.
+
+`PROTOCOL_VERSION` goes 1.3 → 1.4 on both sides (`satellite/src/wyoming/event.rs:3`,
+`McpChannelVoice/Services/WyomingProtocol/WyomingWriter.cs:12`). The change is compatible in
+both directions: the satellite already answers unknown events with
+`other => warn!("ignoring event {other}")`, and a new satellite against an old hub simply
+never sees `voice-stopped`, degrading to no breathing phase rather than breaking.
+
+### Also corrected here
+
+The plan's Task 5 Step 2 gave the deploy as a bare
+`./scripts/provision-satellite-rs.sh dethon@192.168.5.11`. That is wrong for this unit:
+provisioning **unconditionally deletes** the music drop-in
+(`scripts/provision-satellite-rs.sh:239`) and only recreates it when `MUSIC_HUB` is set, and
+its `THRESHOLD` default of 0.7 would overwrite the unit's tuned 0.6. The correct invocation
+preserves the live values:
+
+```bash
+MUSIC_HUB=192.168.5.45 MUSIC_ROOM=fran_s_office THRESHOLD=0.6 TRIGGER_LEVEL=2 TTS_VOLUME=75 \
+  ./scripts/provision-satellite-rs.sh dethon@192.168.5.11
+```
