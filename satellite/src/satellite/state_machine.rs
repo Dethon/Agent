@@ -143,10 +143,14 @@ pub async fn run_connection(
                             let fired = d.push_chunk(&samples);
                             // on-device budget check: must stay well under the 80 ms chunk cadence
                             tracing::debug!(us = t0.elapsed().as_micros() as u64, "wake inference");
-                            if fired.is_some() {
+                            if let Some(score) = fired {
                                 info!("wake word detected");
+                                // ring_rms BEFORE trim_preroll: the trim drops exactly the
+                                // wake-word audio this measures.
+                                let rms = ring_rms(&preroll, cfg.wake_preroll_chunks());
                                 trim_preroll(&mut preroll, cfg.wake_preroll_chunks());
-                                start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback).await?;
+                                start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback,
+                                    Some(WakeSignal { rms, score })).await?;
                             }
                         }
                     }
@@ -159,7 +163,7 @@ pub async fn run_connection(
                 if mode == Mode::Idle {
                     info!("button pressed -> start turn");
                     if let Some(d) = detector.as_mut() { d.reset(); }
-                    start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback).await?;
+                    start_turn(&mut wr, &mut mode, &ctx, &mut preroll, &playback, None).await?;
                 }
             }
         }
@@ -196,14 +200,40 @@ fn trim_preroll(buf: &mut VecDeque<Vec<u8>>, keep: usize) {
     while buf.len() > keep { buf.pop_front(); }
 }
 
+/// Loudness of the wake word as this satellite's mic heard it, for hub-side arbitration:
+/// combined RMS (i16-amplitude units, hub-comparable) over the pre-roll ring EXCLUDING the
+/// newest `exclude_newest` chunks — those are the detection-latency gap after the word ends.
+/// Must run before trim_preroll, which drops exactly the audio this measures.
+fn ring_rms(buf: &VecDeque<Vec<u8>>, exclude_newest: usize) -> f32 {
+    let take = buf.len().saturating_sub(exclude_newest);
+    let (sum_sq, n) = buf.iter().take(take).fold((0f64, 0usize), |(s, n), bytes| {
+        let samples = bytes_to_samples(bytes);
+        (s + samples.iter().map(|&v| v as f64 * v as f64).sum::<f64>(), n + samples.len())
+    });
+    if n == 0 { 0.0 } else { (sum_sq / n as f64).sqrt() as f32 }
+}
+
+/// Wake-trigger metadata reported to the hub on `run-pipeline` so it can arbitrate between
+/// multiple satellites that heard the same wake word (louder/higher-confidence mic wins).
+struct WakeSignal {
+    rms: f32,
+    score: f32,
+}
+
 /// On trigger: announce the pipeline, play the awake cue, then FLUSH the pre-roll to the hub
 /// before going live. This is the zero-lag guarantee — buffered audio reaches the hub regardless
 /// of how fast the user starts speaking or how long the hub takes to open its capture.
+/// `wake` is `Some` for a wake-word trigger (carrying the mic-side RMS/score for hub
+/// arbitration) or `None` for a button trigger (no wake signal to report).
 async fn start_turn<W: AsyncWrite + Unpin>(
     wr: &mut W, mode: &mut Mode, ctx: &Ctx<'_>, preroll: &mut VecDeque<Vec<u8>>,
-    playback: &PlaybackHandle,
+    playback: &PlaybackHandle, wake: Option<WakeSignal>,
 ) -> anyhow::Result<()> {
-    write_event(wr, &WyomingEvent::new("run-pipeline")).await?;
+    let data = match &wake {
+        Some(w) => json!({ "source": "wake", "wake_rms": w.rms, "wake_score": w.score }),
+        None => json!({ "source": "button" }),
+    };
+    write_event(wr, &WyomingEvent::with_data("run-pipeline", data)).await?;
     if let Some(pcm) = ctx.cues.awake() { playback.cue(pcm); }
     let _ = ctx.led.send(LedState::Listening);
     for chunk in preroll.drain(..) {
@@ -272,6 +302,67 @@ mod tests {
         (handle, done_rx, AbortOnDrop(task))
     }
 
+    #[test]
+    fn ring_rms_excludes_the_detection_gap_chunks() {
+        // 3 old chunks at constant amplitude 100 (the wake word), 3 newest silent (the gap):
+        // excluding the newest 3 must measure only the wake word.
+        let loud: Vec<u8> = (0..1280).flat_map(|_| 100i16.to_le_bytes()).collect();
+        let quiet: Vec<u8> = (0..1280).flat_map(|_| 0i16.to_le_bytes()).collect();
+        let mut ring: VecDeque<Vec<u8>> = VecDeque::new();
+        for _ in 0..3 { ring.push_back(loud.clone()); }
+        for _ in 0..3 { ring.push_back(quiet.clone()); }
+        let rms = ring_rms(&ring, 3);
+        assert!((rms - 100.0).abs() < 0.01, "expected 100.0, got {rms}");
+    }
+
+    #[test]
+    fn ring_rms_on_short_ring_is_zero() {
+        let ring: VecDeque<Vec<u8>> = VecDeque::from(vec![vec![0u8; 2560]; 2]);
+        assert_eq!(ring_rms(&ring, 3), 0.0);
+    }
+
+    #[tokio::test]
+    async fn wake_turn_sends_run_pipeline_with_wake_metadata() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        let c = cues();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
+        let (playback, _done_rx, _pump) = pump();
+
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback,
+            Some(WakeSignal { rms: 123.5, score: 0.87 })).await.unwrap();
+
+        let mut buf = BufReader::new(b);
+        let e = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        assert_eq!(e.event_type, "run-pipeline");
+        let data = e.data_obj();
+        assert_eq!(data["source"], serde_json::json!("wake"));
+        assert!((data["wake_rms"].as_f64().unwrap() - 123.5).abs() < 0.01);
+        assert!((data["wake_score"].as_f64().unwrap() - 0.87).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn button_turn_sends_run_pipeline_with_button_source() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        let c = cues();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
+        let (playback, _done_rx, _pump) = pump();
+
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback, None).await.unwrap();
+
+        let mut buf = BufReader::new(b);
+        let e = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        assert_eq!(e.event_type, "run-pipeline");
+        let data = e.data_obj();
+        assert_eq!(data["source"], serde_json::json!("button"));
+        assert!(!data.contains_key("wake_rms"));
+    }
+
     // THE zero-lag guarantee: a turn flushes the entire pre-roll buffer to the hub (after
     // run-pipeline) before any live audio, so speech right after the wake word isn't clipped.
     #[tokio::test]
@@ -286,7 +377,7 @@ mod tests {
         for _ in 0..5 { preroll.push_back(vec![0u8; 2560]); }
         let (playback, _done_rx, _pump) = pump();
 
-        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback, None).await.unwrap();
 
         assert_eq!(mode, Mode::Streaming);
         assert!(preroll.is_empty(), "pre-roll must be drained on trigger");
@@ -463,7 +554,7 @@ mod tests {
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
         let (mut playback, mut done_rx, _pump) = pump();
 
-        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback, None).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
 
         let transcript = WyomingEvent::with_data("transcript", json!({"text":"hi"}));
@@ -520,7 +611,7 @@ mod tests {
         let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
         handle_hub_event(start, &mut mode, None, &mut a, &mut playback, &ctx).await.unwrap();
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
-        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback).await.unwrap();
+        start_turn(&mut a, &mut mode, &ctx, &mut preroll, &playback, None).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
 
         // the announcement's audio-stop drains while we are mid-turn
