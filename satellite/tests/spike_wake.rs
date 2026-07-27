@@ -41,7 +41,11 @@ fn read_wav_i16(path: &str) -> Vec<i16> {
 fn max_score(samples: &[i16]) -> f32 {
     let mel = load(include_bytes!("../models/melspectrogram.onnx"), &[1, LOOKBACK + CHUNK]);
     let emb = load(include_bytes!("../models/embedding_model.onnx"), &[1, 76, 32, 1]);
-    let clf = load(include_bytes!("../models/ok_nabu.onnx"), &[1, 16, 96]);
+    // This spike proves the tract pipeline reproduces openwakeword's own scores (the ~0.86
+    // referenced above) on the stock fixture, so it must use the stock classifier those scores
+    // were measured with — models/ok_nabu.onnx is a custom-trained model swapped in later
+    // (2026-07-20); its scores on this wav mean nothing.
+    let clf = load(include_bytes!("fixtures/ok_nabu_stock.onnx"), &[1, 16, 96]);
 
     let mut tail = vec![0f32; LOOKBACK]; // lookback carried across chunks, zero-seeded
     let mut mel_buf: VecDeque<[f32; 32]> = (0..76).map(|_| [1f32; 32]).collect(); // ones-init
