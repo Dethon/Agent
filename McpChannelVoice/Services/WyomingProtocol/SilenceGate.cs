@@ -61,6 +61,9 @@ public sealed class SilenceGate(
 
     public string? EndReason { get; private set; }
 
+    public double LastChunkRms { get; private set; }
+    public bool LastChunkWasSpeech { get; private set; }
+
     public Decision Process(ReadOnlySpan<byte> pcm, int sampleRateHz, int sampleWidthBytes, int channels)
     {
         var duration = DurationOf(pcm.Length, sampleRateHz, sampleWidthBytes, channels);
@@ -69,7 +72,11 @@ public sealed class SilenceGate(
         var rms = Rms(pcm, sampleWidthBytes);
         _peakRms = Math.Max(_peakRms, rms);
 
-        if (tracker.IsSpeech(rms, duration.TotalMilliseconds))
+        var isSpeech = tracker.IsSpeech(rms, duration.TotalMilliseconds);
+        LastChunkRms = rms;
+        LastChunkWasSpeech = isSpeech;
+
+        if (isSpeech)
         {
             _speechStarted = true;
             _speechElapsed += duration;

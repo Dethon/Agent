@@ -7,7 +7,8 @@ namespace McpChannelVoice.Services;
 public enum CaptureOutcome
 {
     Ended,
-    NoSpeech
+    NoSpeech,
+    Abandoned
 }
 
 // Audio-level facts about one capture, published on UtteranceTranscribed metrics so the
@@ -20,7 +21,7 @@ public readonly record struct CaptureStats(
 // One bounded mic capture over the held-open Wyoming stream. The read loop pushes audio
 // via Feed (single-threaded); the gate decides when speech ends (Ended) or the no-speech
 // window expires (NoSpeech). Completed settles exactly once; Audio replays the buffered chunks.
-public sealed class UtteranceCapture(SilenceGate gate)
+public sealed class UtteranceCapture(SilenceGate gate, ChunkHistory? history = null)
 {
     private readonly Channel<AudioChunk> _chunks = Channel.CreateUnbounded<AudioChunk>();
     private readonly TaskCompletionSource<CaptureOutcome> _done =
@@ -31,6 +32,8 @@ public sealed class UtteranceCapture(SilenceGate gate)
     public Task<CaptureOutcome> Completed => _done.Task;
 
     public IAsyncEnumerable<AudioChunk> Audio => _chunks.Reader.ReadAllAsync();
+
+    public ChunkHistory? History => history;
 
     // The full continuous capture — every fed chunk, buffered so the speaker verifier embeds
     // enrollment-matching continuous audio (silence-cut speech-only fragments collapse CAM++
@@ -53,6 +56,7 @@ public sealed class UtteranceCapture(SilenceGate gate)
     {
         var decision = gate.Process(
             chunk.Data.Span, chunk.Format.SampleRateHz, chunk.Format.SampleWidthBytes, chunk.Format.Channels);
+        history?.Record(gate.LastChunkRms, gate.LastChunkWasSpeech);
         lock (_audio)
         {
             _audio.Add(chunk);
@@ -70,6 +74,19 @@ public sealed class UtteranceCapture(SilenceGate gate)
                 _done.TrySetResult(CaptureOutcome.NoSpeech);
                 break;
         }
+    }
+
+    // Arbitration loss/steal: settle as Abandoned so the conversation loop exits without
+    // dispatching and without its own wire write (the arbiter owns the pause). Returns false
+    // when the capture already ended naturally — the caller must then leave the turn alone.
+    public bool Abort()
+    {
+        if (!_done.TrySetResult(CaptureOutcome.Abandoned))
+        {
+            return false;
+        }
+        _chunks.Writer.TryComplete();
+        return true;
     }
 
     public void ForceEnd()
