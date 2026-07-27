@@ -1,7 +1,7 @@
 # Multi-Satellite Wake Arbitration ("satellite attention")
 
 **Date:** 2026-07-27
-**Status:** Approved design, pending implementation plan
+**Status:** Implemented (see docs/superpowers/plans/2026-07-27-wake-arbitration.md)
 
 ## Problem
 
