@@ -107,6 +107,14 @@ public sealed class FollowUpConversation(
                     return;
                 }
 
+                if (outcome == CaptureOutcome.Abandoned)
+                {
+                    // Wake arbitration suppressed this turn (or handed it to another satellite).
+                    // The arbiter already re-armed the satellite via pause-satellite, so no
+                    // EndConversation here — writing a transcript would double-end the stream.
+                    return;
+                }
+
                 if (outcome == CaptureOutcome.NoSpeech)
                 {
                     await OnSilenceTimeout(capture.Stats, ct);

@@ -327,6 +327,27 @@ public class FollowUpConversationTests
         await StopAsync(sut, run);
     }
 
+    [Fact]
+    public async Task Abandoned_ArbitrationLoss_ExitsWithoutDispatchOrEnd()
+    {
+        var h = new Harness();
+        var sut = h.Build(new FollowUpSettings { Enabled = true });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        h.Opened[0].Abort().ShouldBeTrue(); // arbiter suppressed this satellite
+
+        await Task.Delay(50);
+        h.Dispatched.ShouldBeEmpty();
+        h.Events.ShouldNotContain("end"); // the arbiter sends pause-satellite; no transcript here
+
+        // the coordinator must be re-armed: a later wake starts a fresh conversation
+        sut.OnWake();
+        h.Opened.Count.ShouldBe(2);
+
+        await StopAsync(sut, run);
+    }
+
     private static async Task StopAsync(FollowUpConversation sut, Task run)
     {
         sut.Dispose();
