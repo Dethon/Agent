@@ -14,7 +14,10 @@ public sealed record PlaybackJob(
     Func<Task>? OnDrained = null,
     Func<FirstAudioTiming, Task>? OnFirstAudio = null,
     Func<Exception, Task>? OnFailed = null,
-    long EnqueuedAt = 0);
+    long EnqueuedAt = 0,
+    // Timer/alarm audio. Carried to the satellite on audio-start so it plays on the
+    // non-attenuated alert route instead of the calibrated per-satellite voice level.
+    bool Alert = false);
 
 // Timing captured the moment a job's first audio chunk is produced. SinceSynthesisStart is the
 // TTS time-to-first-audio (synthesis request -> first chunk); SinceTurnStart is the wake/turn-open
@@ -380,7 +383,7 @@ public sealed class SatelliteSession
         CancellationToken ct,
         TimeProvider? time = null,
         ILogger? logger = null,
-        Func<AudioFormat, CancellationToken, Task>? onAudioStart = null,
+        Func<AudioFormat, bool, CancellationToken, Task>? onAudioStart = null,
         Func<CancellationToken, Task>? onAudioStop = null,
         Func<PlaybackJob, Exception, Task>? onError = null)
     {
@@ -445,7 +448,7 @@ public sealed class SatelliteSession
                         firstChunkTimestamp = time.GetTimestamp();
                         if (onAudioStart is not null)
                         {
-                            await onAudioStart(chunk.Format, jobCts.Token);
+                            await onAudioStart(chunk.Format, job.Alert, jobCts.Token);
                         }
                         if (job.OnFirstAudio is not null)
                         {
