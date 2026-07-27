@@ -22,6 +22,11 @@ public record SatelliteConfig
 
     public string? WakeWord { get; init; }
 
+    // Wake-arbitration loudness calibration in dB (env Satellites__<id>__RmsOffsetDb): added to
+    // this satellite's reported wake_rms before cross-satellite comparison, so a hot mic doesn't
+    // win every contest on gain alone. 0 = trust the hardware as-is.
+    public double RmsOffsetDb { get; init; }
+
     // Per-satellite override of FollowUpSettings.Enabled. Null inherits the global value.
     public bool? FollowUpEnabled { get; init; }
 
