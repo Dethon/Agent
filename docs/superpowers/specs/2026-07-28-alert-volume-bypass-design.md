@@ -69,9 +69,10 @@ pcm.alert {
   1 s of silence through `pcm.alert`, then `amixer -c <card> sset Alert ${ALERT_VOLUME}%`,
   then `alsactl store` — the same three steps `TTS` already gets.
 - Master: `wpctl set-volume @DEFAULT_AUDIO_SINK@` **`1.0`** (was `0.8`).
-- The music drop-in passes `--alert-snd-command "aplay -D alert -r 22050 -c 1 -f S16_LE -t raw"`
-  — deliberately mirroring the existing `--snd-command` line verbatim apart from the device,
-  including its omission of the latency flags (see *Observation* below).
+- The music drop-in passes
+  `--alert-snd-command "aplay -D alert -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000"`,
+  carrying the latency flags that `satellite/CLAUDE.md` requires when overriding devices
+  (see *Companion fix* below).
 
 Live-tunable per unit exactly like the other two knobs.
 
@@ -180,10 +181,32 @@ the unit.
 
 Protocol back-compat makes steps 1–3 order-independent.
 
-## Observation, out of scope
+## Companion fix — playback latency flags on the music drop-in
 
-The music drop-in's `--snd-command` is `aplay -D tts -r 22050 -c 1 -f S16_LE -t raw`,
-omitting the `--start-delay=100000 -F 50000` latency flags that `config.rs`'s default
-carries and that `satellite/CLAUDE.md` says to keep when overriding devices. That looks like
-a pre-existing latency regression on music units, unrelated to this change. Flagged, not
-fixed here.
+Unrelated to volume, fixed here because it touches the same drop-in line. **Its own commit.**
+
+`92b9e9fa` (2026-06-11 perf pass) added `--start-delay=100000 -F 50000` to the playback
+command: aplay's default start threshold is the *whole* 500 ms buffer, so streamed TTS isn't
+audible until 500 ms has been synthesized and delivered — up to ~400 ms of dead air when the
+first sentence is short. That commit touched only `satellite/src/config.rs` and
+`satellite/deploy/nabu-satellite.service`, never `scripts/provision-satellite-rs.sh`.
+
+Music units get a drop-in that **overrides the base ExecStart wholesale**, and its line is
+`--snd-command "aplay -D tts -r 22050 -c 1 -f S16_LE -t raw"` — so the fix is not active on
+the deployed office satellite, against the `satellite/CLAUDE.md` invariant "keep them when
+overriding devices". The mic half of the same perf pass *did* reach the drop-in (`f18b01c0`
+inlined `-F 20000`), so this is an oversight rather than a decision. Nothing catches it:
+`config.rs`'s `defaults_are_sane` asserts on the default string, which the drop-in replaces.
+
+**Fix:** append `--start-delay=100000 -F 50000` to the drop-in's `--snd-command`.
+
+**Expected effect is uncertain and that is accepted.** The base unit plays to `plughw`, where
+the 500 ms-buffer reasoning holds directly. The drop-in plays into `pcm.tts` → softvol →
+`pipewire`, and the PipeWire ALSA plugin negotiates buffering from the graph quantum, so it
+may already be short and may not honour `start_threshold` identically. The change is harmless
+either way and restores the documented invariant. Worth reading once on the unit —
+`aplay -D tts -v` prints the negotiated `buffer_size` / `period_size` / `start_threshold` —
+but the fix does not depend on the result.
+
+Note this delay is invisible to hub metrics (`WakeToFirstAudioMs`,
+`SpeechEndToFirstAudioMs`): it sits entirely downstream of the hub's last write.
