@@ -95,6 +95,10 @@ public class TimerRingE2ETests
         builder.Services.AddSingleton<AnnouncementService>();
         builder.Services.AddHttpClient();
         builder.Services.AddSingleton<InsistentAnnouncementController>();
+        // The host takes the arbiter as a constructor dependency; without these the container fails
+        // to activate it and the whole test dies at StartAsync before reaching any assertion.
+        builder.Services.AddSingleton(settings.Arbitration);
+        builder.Services.AddSingleton<WakeArbiter>();
         builder.Services.AddHostedService<WyomingSatelliteHost>();
 
         var app = builder.Build();
