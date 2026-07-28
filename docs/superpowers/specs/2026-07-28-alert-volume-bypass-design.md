@@ -181,6 +181,11 @@ the unit.
 
 Protocol back-compat makes steps 1–3 order-independent.
 
+**Rollback couples the binary and the drop-in.** That back-compat note covers only the wire
+protocol. `satellite/src/config.rs` hard-rejects unknown arguments, so the drop-in step 2
+writes — which passes `--alert-snd-command` — refuses to start any pre-1.5 binary: reverting
+the binary alone bricks the satellite. Roll both back together, or neither.
+
 ## Companion fix — playback latency flags on the music drop-in
 
 Unrelated to volume, fixed here because it touches the same drop-in line. **Its own commit.**
