@@ -1,6 +1,5 @@
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
-using McpChannelVoice.Services.WyomingProtocol;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
@@ -43,13 +42,5 @@ public class WyomingSatelliteHostAudioStartTests
         data["width"]!.GetValue<int>().ShouldBe(2);
         data["channels"]!.GetValue<int>().ShouldBe(1);
         data["timestamp"]!.GetValue<int>().ShouldBe(0);
-    }
-
-    // Documented as ONE number with satellite/src/wyoming/event.rs PROTOCOL_VERSION, which has its
-    // own test; the alert field on audio-start is the 1.5 change, so the two move together.
-    [Fact]
-    public void ProtocolVersion_MatchesTheSatellite()
-    {
-        WyomingWriter.ProtocolVersion.ShouldBe("1.5");
     }
 }

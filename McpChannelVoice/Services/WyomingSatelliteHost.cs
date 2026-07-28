@@ -634,7 +634,7 @@ public sealed class WyomingSatelliteHost(
     // `alert` tells the satellite to play this stream on its non-attenuated alert route, bypassing
     // the per-satellite voice level. Emitted on every stream, not only alerts, so a wire trace
     // shows the routing explicitly; a pre-1.5 satellite ignores the unknown field.
-    public static JsonObject BuildAudioStart(AudioFormat format, bool alert) => new()
+    internal static JsonObject BuildAudioStart(AudioFormat format, bool alert) => new()
     {
         ["rate"] = format.SampleRateHz,
         ["width"] = format.SampleWidthBytes,
