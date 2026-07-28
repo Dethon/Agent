@@ -29,6 +29,8 @@ public class AnnounceEndToEndTests
         var satPort = ((IPEndPoint)satListener.LocalEndpoint).Port;
 
         var audioEvents = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        // Each entry is one audio-start frame's `alert` flag as it arrived on the wire.
+        var audioStartAlerts = new System.Collections.Concurrent.ConcurrentQueue<bool>();
         var sawAudioStop = new TaskCompletionSource();
         var fakeSatellite = Task.Run(async () =>
         {
@@ -40,6 +42,10 @@ public class AnnounceEndToEndTests
                 if (evt.Type is "audio-start" or "audio-chunk" or "audio-stop")
                 {
                     audioEvents.Enqueue(evt.Type);
+                }
+                if (evt.Type == "audio-start")
+                {
+                    audioStartAlerts.Enqueue(evt.Data["alert"]?.GetValue<bool>() ?? false);
                 }
                 if (evt.Type == "audio-stop")
                 {
@@ -96,6 +102,10 @@ public class AnnounceEndToEndTests
         builder.Services.AddSingleton<ActiveAlertRegistry>();
         builder.Services.AddHttpClient();
         builder.Services.AddSingleton<InsistentAnnouncementController>();
+        // The host takes the arbiter as a constructor dependency; without these the container fails
+        // to activate it and the whole test dies at StartAsync before reaching any assertion.
+        builder.Services.AddSingleton(settings.Arbitration);
+        builder.Services.AddSingleton<WakeArbiter>();
         builder.Services.AddHostedService<WyomingSatelliteHost>();
 
         var app = builder.Build();
@@ -130,6 +140,12 @@ public class AnnounceEndToEndTests
         seq.ShouldContain("audio-stop");
         Array.IndexOf(seq, "audio-start").ShouldBeLessThan(Array.IndexOf(seq, "audio-chunk"));
         Array.IndexOf(seq, "audio-chunk").ShouldBeLessThan(Array.LastIndexOf(seq, "audio-stop"));
+
+        // The mirror image of the insistent case: a plain announce must NOT be marked, or it would
+        // ring on the satellite's non-attenuated alert route instead of the conversational level.
+        var alerts = audioStartAlerts.ToArray();
+        alerts.ShouldNotBeEmpty();
+        alerts.ShouldAllBe(alert => !alert);
 
         await app.StopAsync(CancellationToken.None);
         satListener.Stop();
