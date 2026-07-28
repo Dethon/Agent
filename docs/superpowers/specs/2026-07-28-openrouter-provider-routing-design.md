@@ -191,7 +191,7 @@ AgentDefinition.ProviderRouting
 ```
 
 `PrepareRequestBodyAsync` gains a `ProviderRouting?` parameter and one more stamp beside
-the existing `session_id` and `usage` lines. Its eleven existing call sites in
+the existing `session_id` and `usage` lines. Its nine existing call sites in
 `Tests/Unit/Infrastructure/OpenRouterHttpHelpersTests.cs` are updated to pass the new
 argument.
 
