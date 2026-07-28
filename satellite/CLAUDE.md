@@ -63,6 +63,28 @@ The state machine publishes `LedState` (Idle/Listening/Thinking/Speaking) on a t
 - **A stream draining mid-turn returns the ring to the turn's phase, not to a fixed state.** `run_connection` carries `phase` (Listening/Thinking) alongside `mode`, and `apply_drain_done` publishes it whenever `mode` is still `Streaming` — Idle otherwise. This is what makes the seams of a segmented answer (say something → call a tool → say the rest) read as Thinking: they are one hub turn, so no `transcript` arrives between them, and hard-coding Listening there put the ring on the DoA look, which with no sound in the room renders as good as dark. Listening is still correct **before** `voice-stopped` — an announcement draining while a fresh capture is open — which is the case that mapping was originally added for.
 - Enabled by default when 2886:001a is on USB (`--no-led` opts out); an absent device or USB subsystem is silent, a failed open warns. **The service needs write access to the USB node** — provisioning's `99-nabu-usb-audio.rules` sets `MODE="0660", GROUP="plugdev"` and the unit lists `plugdev`; without it the ring stays dark. `main.rs` blanks the ring at startup and on SIGTERM/SIGINT, because the ring's power-on default is lit and the render task only exists while a hub is connected.
 
+## Music ducking
+
+`music.rs` rides the same `LedState` watch channel as the ring (`--music-mixer`, an ALSA softvol
+set with `amixer`; absent = feature off). **Every in-turn phase ducks — Listening, Thinking and
+Speaking — and only Idle restores**, because a turn is one continuous thing from the user's side:
+the wait between their sentence and the answer is an LLM round trip plus any tool calls, routinely
+far longer than the restore grace, and restoring across it brought the music up for a few seconds
+under a user waiting for a reply, then dropped it again the instant the reply spoke. Ducking
+through Thinking is therefore deliberate — don't "fix" it back to restore-on-Thinking.
+
+The satellite reaches Idle only when the hub ends the turn (`transcript`, or `pause-satellite` on
+arbitration loss); a stream draining mid-turn returns to the turn's `phase`, so the seams of a
+segmented answer never touch Idle. Two guards survive on top of that:
+
+- **Restore grace** (`--music-restore-grace-ms`, default 3000) debounces the un-duck on Idle, so a
+  turn that ends and immediately restarts doesn't flap.
+- **Per-state duck caps** (`max_duck`) force-restore a ducked state the hub never ends: 30 s for
+  Listening (a mic window left open), 120 s for Thinking — the hub's own `FollowUp.ReplyTimeoutMs`,
+  the same deadline `led.rs` blanks the ring on, so a wedged turn gets its light and its music back
+  together. Speaking is **uncapped**: it is bounded by drain-completion (and by connection teardown
+  via `DuckGuard`), and a cap there flapped the music up ~0.5 s before a ~30 s reply finished.
+
 ## Hardware: reSpeaker XVF3800 + MiniAmp (deployed fran-office unit)
 
 - **Format**: 16 kHz-native S16LE both directions, 2ch (both capture channels carry the same processed signal, so `plughw` stereo→mono averaging is fine). Defaults target this hardware: provisioning auto-detects the USB capture card by NAME (`arecord -l`) and addresses it as `plughw:CARD=<name>,DEV=0`; capture needs no resampling, and `plughw` resamples only the 22 050 Hz playback to a rate the speaker lists (44100/48000 on the MiniAmp; a mic-card speaker output lists its own set). Override path for the ReSpeaker 2-Mic HAT: `plughw:CARD=seeed2micvoicec,DEV=0` on both audio commands plus `--button-gpio 17`.
@@ -80,7 +102,7 @@ The state machine publishes `LedState` (Idle/Listening/Thinking/Speaking) on a t
 Repo-root `scripts/provision-satellite-rs.sh <user@host> [mic-device]` installs the binary plus the templated `deploy/nabu-satellite.service` unit (only dependency: `alsa-utils`; the unit pins the `performance` governor and `Nice=-10`) and, without an explicit mic device, auto-detects the USB card by name plus a USB-autosuspend-off udev rule keyed on vendor:product.
 
 - **I2S DAC/amp HATs** (MiniAmp) declare `DAC_OVERLAY=hifiberry-dac` — I2S is electrically undiscoverable, so the script writes the dtoverlay to config.txt, reboots, waits for the card and continues (one-shot on a fresh Pi).
-- **Music units** carry **three** per-source ALSA softvols on the speaker card under a master (the PipeWire sink) held at **100 %** — the MiniAmp has no hardware volume, so every level is software and all calibration lives in the source knobs. `Music` is what the satellite ducks while listening/speaking; `TTS` (`TTS_VOLUME`%, default 65) carries replies + cues, so agent-voice loudness is calibrated independently of music — the volume knob for amp HATs that have none; `Alert` (`ALERT_VOLUME`%, default 100) carries only hub-marked timer/alarm streams via `--alert-snd-command`, so a ring is not capped by the conversational level. All three are re-asserted per provision, and both env vars are validated locally before the build. Tune live with `amixer -c <card> sset TTS <pct>%` / `sset Alert <pct>%` + `sudo alsactl store`. **The master used to sit at 0.8**, so re-provisioning an already-calibrated unit makes music *and* agent speech louder, not just alerts; the `TTS` default dropped 75 → 65 (−5.1 dB on the −51 dB taper) to absorb that on the voice side, but an explicit `TTS_VOLUME` bypasses the default — lower that value too.
+- **Music units** carry **three** per-source ALSA softvols on the speaker card under a master (the PipeWire sink) held at **100 %** — the MiniAmp has no hardware volume, so every level is software and all calibration lives in the source knobs. `Music` is what the satellite ducks for the whole turn (see **Music ducking** below); `TTS` (`TTS_VOLUME`%, default 65) carries replies + cues, so agent-voice loudness is calibrated independently of music — the volume knob for amp HATs that have none; `Alert` (`ALERT_VOLUME`%, default 100) carries only hub-marked timer/alarm streams via `--alert-snd-command`, so a ring is not capped by the conversational level. All three are re-asserted per provision, and both env vars are validated locally before the build. Tune live with `amixer -c <card> sset TTS <pct>%` / `sset Alert <pct>%` + `sudo alsactl store`. **The master used to sit at 0.8**, so re-provisioning an already-calibrated unit makes music *and* agent speech louder, not just alerts; the `TTS` default dropped 75 → 65 (−5.1 dB on the −51 dB taper) to absorb that on the voice side, but an explicit `TTS_VOLUME` bypasses the default — lower that value too.
 - **Wake sensitivity** comes from `THRESHOLD` (default 0.7) and `TRIGGER_LEVEL` (default 2), validated locally before the build and applied to **both** unit paths (the voice-only `ExecStart` and the music drop-in that overrides it). Lowering either makes wake easier but noisier — `TRIGGER_LEVEL=1` is what let music itself trigger the wake word on the office satellite, so retune one knob at a time.
 - **qemu smoke tests need `--no-wake`** (qemu's fp16 hwcaps activate tract f16 kernels that crash under emulation; a real A53 selects f32). On-device E2E validation is still open, blocked on hardware — it should also read the `RUST_LOG=debug` per-chunk "wake inference" timing line.
 

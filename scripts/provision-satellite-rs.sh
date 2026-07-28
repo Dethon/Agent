@@ -23,7 +23,7 @@ set -euo pipefail
 # card, under a master (the PipeWire sink) held at 100% — all calibration lives in the source knobs:
 #   TTS   (TTS_VOLUME%, default 65)  agent voice + cues; the volume knob for amp HATs that have none
 #   Alert (ALERT_VOLUME%, default 100) timers/alarms, so an alert bypasses the conversational level
-#   Music (ducked live by the satellite while it is listening or speaking)
+#   Music (ducked live by the satellite for the whole turn: listening, thinking AND speaking)
 # Tune live: amixer -c <card> sset TTS <pct>% / sset Alert <pct>% ; persist: sudo alsactl store.
 # NOTE: the master used to sit at 0.8 and now sits at 1.0, so re-provisioning an already-calibrated
 # unit makes music AND the agent voice louder, not just alerts. The TTS default dropped 75 -> 65
