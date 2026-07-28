@@ -1351,7 +1351,12 @@ Change line 121's comment and line 124:
 
 ```bash
 # Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/ALERT_VOLUME/THRESHOLD/TRIGGER_LEVEL env
+# vars: nothing is expanded locally; the remote bash evaluates everything (and reads vars from the
+# command-prefix assignments). THRESHOLD/TRIGGER_LEVEL arrive already defaulted and validated above.
 ```
+
+(Only the first line gains `ALERT_VOLUME/`; the two continuation lines are unchanged and are shown
+here so the edit does not truncate them — dropping `vars: nothing is` inverts the comment's meaning.)
 
 ```bash
 ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${TTS_VOLUME:-75}" ALERT_VOLUME="${ALERT_VOLUME:-100}" THRESHOLD="${threshold}" TRIGGER_LEVEL="${trigger_level}" bash -se <<'EOF'
@@ -1499,11 +1504,19 @@ cd /home/dethon/repos/agent/satellite && cargo test
 
 Expected: 85 lib tests + 2 `spike_wake` tests pass, 0 failed.
 
+Then the C# classes this branch touched, as **separate narrow filters** — never one broad filter
+(`~Unit` and `~McpChannelVoice` both wedge the runner on this host: >10 min elapsed, ~11 s CPU, zero
+progress, requiring a kill). One dotnet process at a time:
+
 ```bash
-dotnet test /home/dethon/repos/agent/Tests/Tests.csproj --filter "FullyQualifiedName~Unit"
+for f in AlarmToneTests SatelliteSessionPlaybackTests WyomingSatelliteHost WyomingWriterTests \
+         InsistentAnnouncementControllerTests AnnouncementServiceTests; do
+  timeout 300 dotnet test /home/dethon/repos/agent/Tests/Tests.csproj --filter "FullyQualifiedName~$f" --nologo || echo "FAILED: $f"
+done
 ```
 
-Expected: all unit tests pass. Judge failures by **type**, not count — see the known-baseline note in *Deployment* below.
+Expected: every filter passes. Judge failures by **type**, not count — see the known-baseline note in
+*Deployment* below.
 
 - [ ] **Step 3: Commit**
 
