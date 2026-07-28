@@ -123,8 +123,8 @@ scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/snapclient.service" "$h
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-micclock.service" "$host:/tmp/"
 
 # Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/ALERT_VOLUME/THRESHOLD/TRIGGER_LEVEL env
-# expanded locally; the remote bash evaluates everything (and reads vars from the command-prefix
-# assignments). THRESHOLD/TRIGGER_LEVEL arrive already defaulted and validated above.
+# vars: nothing is expanded locally; the remote bash evaluates everything (and reads vars from the
+# command-prefix assignments). THRESHOLD/TRIGGER_LEVEL arrive already defaulted and validated above.
 ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${TTS_VOLUME:-75}" ALERT_VOLUME="${ALERT_VOLUME:-100}" THRESHOLD="${threshold}" TRIGGER_LEVEL="${trigger_level}" bash -se <<'EOF'
   set -euo pipefail
 
