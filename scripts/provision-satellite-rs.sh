@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Usage: scripts/provision-satellite-rs.sh <user@host> [mic-device]
 #   Music satellite: MUSIC_HUB=<snapserver-host> MUSIC_ROOM=<player-name> [TTS_VOLUME=<pct>] \
-#                    scripts/provision-satellite-rs.sh <user@host>
+#                    [ALERT_VOLUME=<pct>] scripts/provision-satellite-rs.sh <user@host>
 #   Wake tuning:     THRESHOLD=<0..1> TRIGGER_LEVEL=<n> scripts/provision-satellite-rs.sh <user@host>
 #                    Defaults 0.7 / 2 — applied to BOTH unit paths (the voice-only ExecStart and
 #                    the music drop-in that overrides it), so a music unit is tuned by the same
@@ -19,10 +19,14 @@ set -euo pipefail
 # the bcm2835 jack nor an I2S DAC can ALSA-dmix). The output is auto-detected: an I2S DAC/amp
 # HAT (HiFiBerry-class `sndrpihifiberry*` card, e.g. the MiniAmp driving a wired speaker) when
 # present, else the 3.5mm jack. The mic card stays OUT of PipeWire, owned raw by the satellite.
-# On music units the satellite's own playback (TTS + cues) additionally flows through a `tts`
-# ALSA softvol (control "TTS" on the speaker card, set to TTS_VOLUME%, default 75) so the agent
-# voice is calibrated independently of music — the volume knob for amp HATs that have none
-# (e.g. the MiniAmp). Tune live: amixer -c <card> sset TTS <pct>% ; persist: sudo alsactl store.
+# On music units the satellite's own playback flows through per-source ALSA softvols on the speaker
+# card, under a master (the PipeWire sink) held at 100% — all calibration lives in the source knobs:
+#   TTS   (TTS_VOLUME%, default 75)  agent voice + cues; the volume knob for amp HATs that have none
+#   Alert (ALERT_VOLUME%, default 100) timers/alarms, so an alert bypasses the conversational level
+#   Music (ducked live by the satellite while it is listening or speaking)
+# Tune live: amixer -c <card> sset TTS <pct>% ; persist: sudo alsactl store.
+# NOTE: the master used to sit at 0.8 and now sits at 1.0, so re-provisioning an already-calibrated
+# unit makes music AND the agent voice louder, not just alerts — retune TTS_VOLUME to compensate.
 #
 # Audio addressing:
 #   - No [mic-device] arg (the usual case): the USB audio card is auto-detected by NAME from
@@ -118,10 +122,10 @@ scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-satellite.service"
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/snapclient.service" "$host:/tmp/"
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-micclock.service" "$host:/tmp/"
 
-# Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/THRESHOLD/TRIGGER_LEVEL env vars: nothing is
+# Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/ALERT_VOLUME/THRESHOLD/TRIGGER_LEVEL env
 # expanded locally; the remote bash evaluates everything (and reads vars from the command-prefix
 # assignments). THRESHOLD/TRIGGER_LEVEL arrive already defaulted and validated above.
-ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${TTS_VOLUME:-75}" THRESHOLD="${threshold}" TRIGGER_LEVEL="${trigger_level}" bash -se <<'EOF'
+ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${TTS_VOLUME:-75}" ALERT_VOLUME="${ALERT_VOLUME:-100}" THRESHOLD="${threshold}" TRIGGER_LEVEL="${trigger_level}" bash -se <<'EOF'
   set -euo pipefail
 
   if [ -n "${MUSIC_HUB:-}" ] && [ -n "${MIC}" ]; then
@@ -282,12 +286,13 @@ monitor.alsa.rules = [
 WPEOF
 
     # `music` PCM: snapclient -> a softvol the satellite ducks (amixer -c <card> sset Music <pct>%)
-    # -> PipeWire -> speaker. `tts` PCM: the satellite's own playback (TTS + cues) -> a softvol
+    # -> PipeWire -> speaker. `tts` PCM: the satellite's own playback (replies + cues) -> a softvol
     # holding the calibrated agent-voice level (TTS_VOLUME) -> PipeWire -> speaker, independent
-    # of music — the volume knob for amp HATs that have none (e.g. the MiniAmp). Both CONTROLs
-    # are stored on the speaker card (HAT when present, else the jack); the audio itself flows
-    # through PipeWire either way. NO pcm.!default (PipeWire's own default stands); capture
-    # stays direct plughw.
+    # of music — the volume knob for amp HATs that have none (e.g. the MiniAmp). `alert` PCM: the
+    # same shape at ALERT_VOLUME (default 100), used ONLY for hub-marked timer/alarm streams, so
+    # an alert is not capped by the conversational voice level. All three CONTROLs are stored on
+    # the speaker card (HAT when present, else the jack); the audio itself flows through PipeWire
+    # either way. NO pcm.!default (PipeWire's own default stands); capture stays direct plughw.
     outctl="${outcard:-Headphones}"
     sudo tee /etc/asound.conf >/dev/null <<ASOUND
 pcm.music {
@@ -307,21 +312,34 @@ pcm.tts {
     max_dB 0.0
     resolution 256
 }
+
+pcm.alert {
+    type softvol
+    slave.pcm "pipewire"
+    control { name "Alert" card ${outctl} }
+    min_dB -51.0
+    max_dB 0.0
+    resolution 256
+}
 ASOUND
 
     # Apply the rules (the speaker becomes the only/default sink) and set a sane output volume.
     XDG_RUNTIME_DIR=/run/user/$uid systemctl --user restart wireplumber 2>/dev/null || true
     sleep 3
-    XDG_RUNTIME_DIR=/run/user/$uid wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.8 2>/dev/null || true
+    # Master at FULL: every level lives in the per-source softvols below (Music / TTS / Alert), so
+    # a second attenuation here would only cap how loud an alert can get.
+    XDG_RUNTIME_DIR=/run/user/$uid wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null || true
 
-    # Calibrate the agent voice: a softvol CONTROL only materializes on first open of its PCM,
-    # so play 1 s of silence through pcm.tts, then set the level (re-asserted on every provision,
-    # like the 0.8 sink volume above) and store ALSA state so it survives a power cut, not just
-    # a clean shutdown. Runs as the login user: on Raspberry Pi OS the default user is in the
-    # `audio` group at login (needed to create the control); a first-ever provision under a user
-    # only just added to `audio` above would fail here — re-login (rerun the script) fixes it.
+    # Calibrate the source levels: a softvol CONTROL only materializes on first open of its PCM,
+    # so play 1 s of silence through each, then set the level (re-asserted on every provision,
+    # like the master above) and store ALSA state so it survives a power cut, not just a clean
+    # shutdown. Runs as the login user: on Raspberry Pi OS the default user is in the `audio`
+    # group at login (needed to create the control); a first-ever provision under a user only just
+    # added to `audio` above would fail here — re-login (rerun the script) fixes it.
     XDG_RUNTIME_DIR=/run/user/$uid timeout 10 aplay -D tts -r 22050 -c 1 -f S16_LE -t raw -d 1 /dev/zero
     amixer -c "${outctl}" sset TTS "${TTS_VOLUME}%"
+    XDG_RUNTIME_DIR=/run/user/$uid timeout 10 aplay -D alert -r 22050 -c 1 -f S16_LE -t raw -d 1 /dev/zero
+    amixer -c "${outctl}" sset Alert "${ALERT_VOLUME}%"
     sudo alsactl store
 
     # snapclient -> the `music` softvol PCM (so the satellite can duck it); XDGDIR so its
@@ -332,9 +350,10 @@ ASOUND
     sudo systemctl enable snapclient.service
     sudo systemctl restart snapclient.service
 
-    # nabu-satellite drop-in: TTS/cues -> the `tts` softvol (calibrated agent-voice level) ->
-    # PipeWire (speaker); duck the `Music` softvol while active; XDG so aplay reaches PipeWire.
-    # Overrides the base voice ExecStart.
+    # nabu-satellite drop-in: replies + cues -> the `tts` softvol (calibrated agent-voice level),
+    # timer/alarm streams -> the `alert` softvol (ALERT_VOLUME, default 100) so they are not capped
+    # by that level; both -> PipeWire (speaker). Ducks the `Music` softvol while active; XDG so
+    # aplay reaches PipeWire. Overrides the base voice ExecStart.
     sudo mkdir -p /etc/systemd/system/nabu-satellite.service.d
     sudo tee /etc/systemd/system/nabu-satellite.service.d/pipewire.conf >/dev/null <<DROPEOF
 [Service]
@@ -344,6 +363,7 @@ ExecStart=/usr/local/bin/nabu-satellite \\
   --listen 0.0.0.0:10700 \\
   --mic-command "arecord -D ${dev} -r 16000 -c 1 -f S16_LE -t raw -F 20000" \\
   --snd-command "aplay -D tts -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \\
+  --alert-snd-command "aplay -D alert -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \\
   --preroll-ms 1000 \\
   --music-mixer Music --music-card ${outctl} \\
   --threshold ${THRESHOLD} \\
