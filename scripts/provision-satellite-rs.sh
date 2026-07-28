@@ -343,7 +343,7 @@ ExecStart=
 ExecStart=/usr/local/bin/nabu-satellite \\
   --listen 0.0.0.0:10700 \\
   --mic-command "arecord -D ${dev} -r 16000 -c 1 -f S16_LE -t raw -F 20000" \\
-  --snd-command "aplay -D tts -r 22050 -c 1 -f S16_LE -t raw" \\
+  --snd-command "aplay -D tts -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \\
   --preroll-ms 1000 \\
   --music-mixer Music --music-card ${outctl} \\
   --threshold ${THRESHOLD} \\
