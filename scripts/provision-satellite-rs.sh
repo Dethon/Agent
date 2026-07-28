@@ -21,12 +21,14 @@ set -euo pipefail
 # present, else the 3.5mm jack. The mic card stays OUT of PipeWire, owned raw by the satellite.
 # On music units the satellite's own playback flows through per-source ALSA softvols on the speaker
 # card, under a master (the PipeWire sink) held at 100% — all calibration lives in the source knobs:
-#   TTS   (TTS_VOLUME%, default 75)  agent voice + cues; the volume knob for amp HATs that have none
+#   TTS   (TTS_VOLUME%, default 65)  agent voice + cues; the volume knob for amp HATs that have none
 #   Alert (ALERT_VOLUME%, default 100) timers/alarms, so an alert bypasses the conversational level
 #   Music (ducked live by the satellite while it is listening or speaking)
 # Tune live: amixer -c <card> sset TTS <pct>% / sset Alert <pct>% ; persist: sudo alsactl store.
 # NOTE: the master used to sit at 0.8 and now sits at 1.0, so re-provisioning an already-calibrated
-# unit makes music AND the agent voice louder, not just alerts — retune TTS_VOLUME to compensate.
+# unit makes music AND the agent voice louder, not just alerts. The TTS default dropped 75 -> 65
+# (-5.1 dB on the taper below) to absorb that on the voice side; music still needs its own retune,
+# and a unit provisioned with an explicit TTS_VOLUME bypasses the default — lower that value too.
 #
 # Audio addressing:
 #   - No [mic-device] arg (the usual case): the USB audio card is auto-detected by NAME from
@@ -66,7 +68,7 @@ trigger_level=${TRIGGER_LEVEL:-2}
 # Softvol levels, validated here for the same reason: a malformed one fails at `amixer` under
 # `set -e` only AFTER asound.conf and the PipeWire master have already been rewritten, leaving a
 # half-provisioned unit to repair over SSH.
-tts_volume=${TTS_VOLUME:-75}
+tts_volume=${TTS_VOLUME:-65}
 alert_volume=${ALERT_VOLUME:-100}
 [[ $tts_volume =~ ^([0-9]|[1-9][0-9]|100)$ ]] || { echo "ERROR: TTS_VOLUME must be an integer in 0..100 (got '$tts_volume')" >&2; exit 1; }
 [[ $alert_volume =~ ^([0-9]|[1-9][0-9]|100)$ ]] || { echo "ERROR: ALERT_VOLUME must be an integer in 0..100 (got '$alert_volume')" >&2; exit 1; }
