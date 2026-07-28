@@ -28,6 +28,29 @@ public class ProviderRoutingBindingTests
         ex.Message.ShouldContain("providerRouting:sort");
     }
 
+    // Enum.Parse accepts numeric strings including undefined values, so without a guard
+    // "sort": 7 binds to (ProviderSort)7 and reaches the wire as "7" -- the exact silent
+    // misconfiguration the enum exists to prevent. Alphabetic typos alone failing loudly
+    // is not enough.
+    // The binder reaches the property through reflection, so the guard surfaces wrapped
+    // (today in TargetInvocationException); the wrapper type is implementation detail, the
+    // ArgumentOutOfRangeException at the root of the chain is the contract.
+    [Fact]
+    public void Bind_UndefinedNumericSort_Throws()
+    {
+        var ex = Should.Throw<Exception>(() => Bind(("providerRouting:sort", "7")));
+
+        ex.GetBaseException().ShouldBeOfType<ArgumentOutOfRangeException>()
+            .Message.ShouldContain(nameof(ProviderSort));
+    }
+
+    [Fact]
+    public void Construct_UndefinedSortValue_Throws()
+    {
+        Should.Throw<ArgumentOutOfRangeException>(
+            () => new ProviderRouting { Sort = (ProviderSort)7 });
+    }
+
     [Fact]
     public void Bind_ArraysAndFlags_MapFromIndexedKeys()
     {

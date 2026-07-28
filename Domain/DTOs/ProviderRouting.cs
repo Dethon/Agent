@@ -9,7 +9,19 @@ namespace Domain.DTOs;
 [PublicAPI]
 public record ProviderRouting
 {
-    public ProviderSort? Sort { get; init; }
+    private readonly ProviderSort? _sort;
+
+    // Enum.Parse accepts numeric strings including undefined values, so bind-time enum
+    // conversion alone lets "sort": 7 through as (ProviderSort)7 and onto the wire as "7".
+    // Guarding the property covers binding and direct construction with one check.
+    public ProviderSort? Sort
+    {
+        get => _sort;
+        init => _sort = value is { } sort && !Enum.IsDefined(sort)
+            ? throw new ArgumentOutOfRangeException(
+                nameof(Sort), value, $"'{value}' is not a defined {nameof(ProviderSort)}.")
+            : value;
+    }
     public string[]? Order { get; init; }
     public string[]? Only { get; init; }
     public string[]? Ignore { get; init; }
