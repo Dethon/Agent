@@ -24,7 +24,7 @@ set -euo pipefail
 #   TTS   (TTS_VOLUME%, default 75)  agent voice + cues; the volume knob for amp HATs that have none
 #   Alert (ALERT_VOLUME%, default 100) timers/alarms, so an alert bypasses the conversational level
 #   Music (ducked live by the satellite while it is listening or speaking)
-# Tune live: amixer -c <card> sset TTS <pct>% ; persist: sudo alsactl store.
+# Tune live: amixer -c <card> sset TTS <pct>% / sset Alert <pct>% ; persist: sudo alsactl store.
 # NOTE: the master used to sit at 0.8 and now sits at 1.0, so re-provisioning an already-calibrated
 # unit makes music AND the agent voice louder, not just alerts — retune TTS_VOLUME to compensate.
 #
@@ -62,6 +62,14 @@ threshold=${THRESHOLD:-0.7}
 trigger_level=${TRIGGER_LEVEL:-2}
 [[ $threshold =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "ERROR: THRESHOLD must be a number in 0..1 (got '$threshold')" >&2; exit 1; }
 [[ $trigger_level =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: TRIGGER_LEVEL must be a positive integer (got '$trigger_level')" >&2; exit 1; }
+
+# Softvol levels, validated here for the same reason: a malformed one fails at `amixer` under
+# `set -e` only AFTER asound.conf and the PipeWire master have already been rewritten, leaving a
+# half-provisioned unit to repair over SSH.
+tts_volume=${TTS_VOLUME:-75}
+alert_volume=${ALERT_VOLUME:-100}
+[[ $tts_volume =~ ^([0-9]|[1-9][0-9]|100)$ ]] || { echo "ERROR: TTS_VOLUME must be an integer in 0..100 (got '$tts_volume')" >&2; exit 1; }
+[[ $alert_volume =~ ^([0-9]|[1-9][0-9]|100)$ ]] || { echo "ERROR: ALERT_VOLUME must be an integer in 0..100 (got '$alert_volume')" >&2; exit 1; }
 
 "$(dirname "$0")/../satellite/scripts/build-release.sh"
 bin="$(dirname "$0")/../satellite/target/aarch64-unknown-linux-musl/release/nabu-satellite"
@@ -124,8 +132,9 @@ scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-micclock.service" 
 
 # Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/ALERT_VOLUME/THRESHOLD/TRIGGER_LEVEL env
 # vars: nothing is expanded locally; the remote bash evaluates everything (and reads vars from the
-# command-prefix assignments). THRESHOLD/TRIGGER_LEVEL arrive already defaulted and validated above.
-ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${TTS_VOLUME:-75}" ALERT_VOLUME="${ALERT_VOLUME:-100}" THRESHOLD="${threshold}" TRIGGER_LEVEL="${trigger_level}" bash -se <<'EOF'
+# command-prefix assignments). TTS_VOLUME/ALERT_VOLUME/THRESHOLD/TRIGGER_LEVEL arrive already
+# defaulted and validated above.
+ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${tts_volume}" ALERT_VOLUME="${alert_volume}" THRESHOLD="${threshold}" TRIGGER_LEVEL="${trigger_level}" bash -se <<'EOF'
   set -euo pipefail
 
   if [ -n "${MUSIC_HUB:-}" ] && [ -n "${MIC}" ]; then
