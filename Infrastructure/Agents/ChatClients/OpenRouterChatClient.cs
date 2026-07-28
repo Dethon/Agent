@@ -33,13 +33,16 @@ public sealed class OpenRouterChatClient : IChatClient
         int? maxContextTokens = null,
         IMetricsPublisher? metricsPublisher = null,
         string? sessionId = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ProviderRouting? providerRouting = null,
+        HttpMessageHandler? transportHandler = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _httpClient = CreateHttpClient(_reasoningQueue, _costQueue, _cachedTokenQueue, sessionId);
+        _httpClient = CreateHttpClient(
+            _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
     }
@@ -312,21 +315,27 @@ public sealed class OpenRouterChatClient : IChatClient
 
     private static HttpClient CreateHttpClient(
         ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue, string? sessionId)
+        ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting,
+        HttpMessageHandler? transportHandler = null)
     {
-        var handler = new ReasoningHandler(reasoningQueue, costQueue, cachedQueue, sessionId) { InnerHandler = _sharedHandler };
+        var handler = new ReasoningHandler(reasoningQueue, costQueue, cachedQueue, sessionId, providerRouting)
+        {
+            InnerHandler = transportHandler ?? _sharedHandler
+        };
         return new HttpClient(handler, disposeHandler: false);
     }
 
     private sealed class ReasoningHandler(
         ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue, string? sessionId) : DelegatingHandler
+        ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting)
+        : DelegatingHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, sessionId, cancellationToken);
+            await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
+                request, sessionId, providerRouting, cancellationToken);
             var response = await base.SendAsync(request, cancellationToken);
 
             if (response.Content.Headers.ContentType?.MediaType?.Equals("text/event-stream",

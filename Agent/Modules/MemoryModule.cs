@@ -1,6 +1,7 @@
 using System.ClientModel;
 using System.Net.Http.Headers;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Memory;
 using Domain.Tools.Memory;
 using Infrastructure.Agents.ChatClients;
@@ -37,13 +38,15 @@ public static class MemoryModule
             services.AddSingleton<IMemoryExtractor>(sp =>
             {
                 var openRouterConfig = config.GetSection("openRouter");
-                var extractionModel = memoryConfig["Extraction:Model"] ?? "z-ai/glm-4.7-flash:nitro";
+                var providerRouting = openRouterConfig.GetSection("providerRouting").Get<ProviderRouting>();
+                var extractionModel = memoryConfig["Extraction:Model"] ?? "z-ai/glm-4.7-flash";
                 var metricsPublisher = sp.GetRequiredService<IMetricsPublisher>();
                 var chatClient = new OpenRouterChatClient(
                     openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!,
                     extractionModel,
                     maxContextTokens: openRouterConfig.GetValue<int?>("maxContextTokens"),
-                    metricsPublisher: metricsPublisher);
+                    metricsPublisher: metricsPublisher,
+                    providerRouting: providerRouting);
                 return new OpenRouterMemoryExtractor(
                     chatClient,
                     sp.GetRequiredService<IMemoryStore>(),
@@ -53,13 +56,15 @@ public static class MemoryModule
             services.AddSingleton<IMemoryConsolidator>(sp =>
             {
                 var openRouterConfig = config.GetSection("openRouter");
-                var dreamingModel = memoryConfig["Dreaming:Model"] ?? "z-ai/glm-4.7-flash:nitro";
+                var providerRouting = openRouterConfig.GetSection("providerRouting").Get<ProviderRouting>();
+                var dreamingModel = memoryConfig["Dreaming:Model"] ?? "z-ai/glm-4.7-flash";
                 var metricsPublisher = sp.GetRequiredService<IMetricsPublisher>();
                 var chatClient = new OpenRouterChatClient(
                     openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!,
                     dreamingModel,
                     maxContextTokens: openRouterConfig.GetValue<int?>("maxContextTokens"),
-                    metricsPublisher: metricsPublisher);
+                    metricsPublisher: metricsPublisher,
+                    providerRouting: providerRouting);
                 return new OpenRouterMemoryConsolidator(
                     chatClient,
                     sp.GetRequiredService<ILogger<OpenRouterMemoryConsolidator>>());

@@ -24,7 +24,8 @@ public static class InjectorModule
             {
                 ApiUrl = settings.OpenRouter.ApiUrl,
                 ApiKey = settings.OpenRouter.ApiKey,
-                MaxContextTokens = settings.OpenRouter.MaxContextTokens
+                MaxContextTokens = settings.OpenRouter.MaxContextTokens,
+                ProviderRouting = settings.OpenRouter.ProviderRouting
             };
 
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);

@@ -74,13 +74,7 @@ public class AgentAppSettingsTests
     [Fact]
     public void Language_Nabu_ReachesTheSystemPromptAsItsLastSection()
     {
-        var agents = new ConfigurationBuilder()
-            .AddJsonFile(Path.Combine(RepoRoot(), "Agent", "appsettings.json"))
-            .Build()
-            .GetSection("agents")
-            .Get<AgentDefinition[]>()!;
-
-        var nabu = agents.Single(a => a.Id == "nabu");
+        var nabu = BoundAgents().Single(a => a.Id == "nabu");
         nabu.Language.ShouldBe("es");
 
         McpAgent.BuildInstructions(
@@ -95,18 +89,102 @@ public class AgentAppSettingsTests
             .ShouldEndWith(LanguagePrompt.Build("es")!);
     }
 
+    // Sort choices are deliberate per-agent decisions that nothing else would catch if reverted.
+    // Nabu is the voice agent: time-to-first-token gates when speech starts, which is what
+    // `latency` sorts on, where `throughput` sorts on sustained tokens/second -- the wrong metric
+    // for replies capped at one short sentence.
+    [Fact]
+    public void ProviderRouting_Nabu_SortsByLatency()
+    {
+        Agent("nabu")["providerRouting"]!["sort"]!.GetValue<string>().ShouldBe("latency");
+    }
+
+    [Fact]
+    public void ProviderRouting_JonasWorker_SortsByThroughput()
+    {
+        SubAgent("jonas-worker")["providerRouting"]!["sort"]!.GetValue<string>().ShouldBe("throughput");
+    }
+
+    // The raw-JSON pins above prove what the file says; these prove the binder delivers it.
+    // ProviderRouting binds by naming convention with no ErrorOnUnknownConfiguration anywhere,
+    // so a renamed property would leave the JSON key silently ignored -- every raw pin still
+    // green while nabu quietly reverts to balanced routing. Same silent-severing hazard the
+    // language test above exists for.
+    [Fact]
+    public void ProviderRouting_Nabu_ReachesAgentDefinition()
+    {
+        var nabu = BoundAgents().Single(a => a.Id == "nabu");
+
+        nabu.ProviderRouting.ShouldNotBeNull();
+        nabu.ProviderRouting!.Sort.ShouldBe(ProviderSort.Latency);
+    }
+
+    [Fact]
+    public void ProviderRouting_JonasWorker_ReachesSubAgentDefinition()
+    {
+        var worker = BoundSubAgents().Single(a => a.Id == "jonas-worker");
+
+        worker.ProviderRouting.ShouldNotBeNull();
+        worker.ProviderRouting!.Sort.ShouldBe(ProviderSort.Throughput);
+    }
+
+    // Balanced routing is the absence of a provider object -- there is no `sort` value for it --
+    // so it can only be asserted as an absence, never read back off a request.
+    [Theory]
+    [InlineData("jack")]
+    [InlineData("jonas")]
+    public void ProviderRouting_BalancedAgents_DeclareNone(string agentId)
+    {
+        Agent(agentId).AsObject().ContainsKey("providerRouting").ShouldBeFalse();
+    }
+
+    // One line added here would move every non-overriding caller -- Jack, Jonas and both memory
+    // models -- off load balancing at once, silently.
+    [Fact]
+    public void ProviderRouting_GlobalDefault_IsUnset()
+    {
+        Root()["openRouter"]!.AsObject().ContainsKey("providerRouting").ShouldBeFalse();
+    }
+
+    // The migration exists to remove the dual-idiom problem; a pasted suffix would bring it back.
+    [Fact]
+    public void Model_NoAgentOrSubAgent_CarriesARoutingSuffix()
+    {
+        var models = Root()["agents"]!.AsArray()
+            .Concat(Root()["subAgents"]!.AsArray())
+            .Select(a => a!["model"]!.GetValue<string>());
+
+        models.ShouldAllBe(m => !m.Contains(":nitro") && !m.Contains(":floor"));
+    }
+
+    private static AgentDefinition[] BoundAgents() =>
+        BoundConfig().GetSection("agents").Get<AgentDefinition[]>()!;
+
+    private static SubAgentDefinition[] BoundSubAgents() =>
+        BoundConfig().GetSection("subAgents").Get<SubAgentDefinition[]>()!;
+
+    private static IConfigurationRoot BoundConfig() =>
+        new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(RepoRoot(), "Agent", "appsettings.json"))
+            .Build();
+
     private static string[] Endpoints(string agentId) =>
         [.. Agent(agentId)["mcpServerEndpoints"]!.AsArray().Select(e => e!.GetValue<string>())];
 
-    private static JsonNode Agent(string agentId)
+    private static JsonNode Agent(string agentId) =>
+        Root()["agents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == agentId)!;
+
+    private static JsonNode SubAgent(string subAgentId) =>
+        Root()["subAgents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == subAgentId)!;
+
+    private static JsonNode Root()
     {
         // Read the working tree, never AppContext.BaseDirectory: many referenced projects copy
         // their own appsettings.json to the test output, so Tests/bin/.../appsettings.json is
         // whichever one won the copy race -- not the Agent's. File.ReadAllText also strips the
         // UTF-8 BOM this file carries, which would otherwise fail JSON parsing.
         var json = File.ReadAllText(Path.Combine(RepoRoot(), "Agent", "appsettings.json"));
-        return JsonNode.Parse(json)!["agents"]!.AsArray()
-            .Single(a => a!["id"]!.GetValue<string>() == agentId)!;
+        return JsonNode.Parse(json)!;
     }
 
     private static string RepoRoot()
