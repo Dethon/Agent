@@ -118,7 +118,7 @@ public class AgentAppSettingsTests
     [InlineData("jonas")]
     public void ProviderRouting_BalancedAgents_DeclareNone(string agentId)
     {
-        Agent(agentId)["providerRouting"].ShouldBeNull();
+        Agent(agentId).AsObject().ContainsKey("providerRouting").ShouldBeFalse();
     }
 
     // One line added here would move every non-overriding caller -- Jack, Jonas and both memory
@@ -126,7 +126,7 @@ public class AgentAppSettingsTests
     [Fact]
     public void ProviderRouting_GlobalDefault_IsUnset()
     {
-        Root()["openRouter"]!["providerRouting"].ShouldBeNull();
+        Root()["openRouter"]!.AsObject().ContainsKey("providerRouting").ShouldBeFalse();
     }
 
     // The migration exists to remove the dual-idiom problem; a pasted suffix would bring it back.

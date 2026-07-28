@@ -83,6 +83,10 @@ Each `agents[]` / `subAgents[]` entry may carry a `providerRouting` object (`sor
 `openRouter.providerRouting` **wholesale** — never field-by-field. It reaches the wire through
 the same path as `session_id`: `MultiAgentFactory.ResolveRouting` → `OpenRouterChatClient` →
 `ReasoningHandler` → `OpenRouterHttpHelpers.PrepareRequestBodyAsync`, which stamps `provider`.
+`{}` is not the wholesale opt-out it looks like: the JSON config provider records an empty
+object as a null-valued key, `Get<ProviderRouting>()` returns null for it, and `declared ??
+global` inherits the global — opting an agent out of a non-empty global default needs per-field
+values instead, e.g. `{"sort": "price"}`.
 
 **Balanced routing is the absence of the object.** OpenRouter has no `sort` value for its
 default load balancing (uptime filter, then inverse-square price weighting) — it is only
@@ -95,7 +99,10 @@ the cheapest provider, not a weighted spread.
 re-sent uncached every turn. `sort` does *not* disable it. Prefer `only` + `sort` to restrict
 the provider set. `ProviderRoutingAdvisories` logs a warning for this and for a `:nitro`/`:floor`
 model suffix fighting an explicit `sort`; both are warnings, never throws, because the same path
-serves runtime-created agents.
+serves runtime-created agents. The advisories only run at agent/subagent construction
+(`MultiAgentFactory.ResolveRouting`) — `MemoryModule` binds `openRouter.providerRouting` for the
+memory extraction and dreaming chat clients directly, so a future global default carrying `order`
+would warn once per agent and stay silent for those two models.
 
 Current: `nabu` latency, `jonas-worker` throughput, everything else balanced.
 
