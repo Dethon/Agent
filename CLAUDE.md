@@ -85,8 +85,11 @@ the same path as `session_id`: `MultiAgentFactory.ResolveRouting` → `OpenRoute
 `ReasoningHandler` → `OpenRouterHttpHelpers.PrepareRequestBodyAsync`, which stamps `provider`.
 `{}` is not the wholesale opt-out it looks like: the JSON config provider records an empty
 object as a null-valued key, `Get<ProviderRouting>()` returns null for it, and `declared ??
-global` inherits the global — opting an agent out of a non-empty global default needs per-field
-values instead, e.g. `{"sort": "price"}`.
+global` inherits the global — opting an agent back to balanced routing under a non-empty global
+default needs a value-bearing field that doesn't change routing: `{"allowFallbacks": true}`
+binds to a real object that shadows the global wholesale while leaving `sort`/`order` unset,
+and `allow_fallbacks: true` is OpenRouter's default anyway (pinned by
+`ProviderRoutingBindingTests`).
 
 **Balanced routing is the absence of the object.** OpenRouter has no `sort` value for its
 default load balancing (uptime filter, then inverse-square price weighting) — it is only
@@ -99,10 +102,11 @@ the cheapest provider, not a weighted spread.
 re-sent uncached every turn. `sort` does *not* disable it. Prefer `only` + `sort` to restrict
 the provider set. `ProviderRoutingAdvisories` logs a warning for this and for a `:nitro`/`:floor`
 model suffix fighting an explicit `sort`; both are warnings, never throws, because the same path
-serves runtime-created agents. The advisories only run at agent/subagent construction
-(`MultiAgentFactory.ResolveRouting`) — `MemoryModule` binds `openRouter.providerRouting` for the
-memory extraction and dreaming chat clients directly, so a future global default carrying `order`
-would warn once per agent and stay silent for those two models.
+serves runtime-created agents. The advisories run at agent/subagent construction
+(`MultiAgentFactory.ResolveRouting`) with no dedupe — agents are constructed per conversation
+activation and subagents per spawn, so a tripped advisory repeats for the lifetime of the config,
+not once per agent. `MemoryModule` binds `openRouter.providerRouting` for the memory extraction
+and dreaming chat clients directly, so those two models skip the advisories entirely.
 
 Current: `nabu` latency, `jonas-worker` throughput, everything else balanced.
 

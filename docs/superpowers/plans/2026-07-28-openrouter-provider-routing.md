@@ -1309,3 +1309,5 @@ git commit -m "feat(routing): migrate agents off :nitro onto explicit provider r
 ## Deployment note
 
 This changes `Agent/appsettings.json`, which is baked into the `agent` image. The routing change reaches production only after `mcp`-stack rebuild and redeploy of the `agent` service — there is no runtime reload path for `agents[]`.
+
+The dashboard's by-model token/latency series split at the deploy boundary: `TokenUsageEvent`/`ContextTruncationEvent` carry the config model string verbatim, so jonas, nabu and jonas-worker history keyed on `z-ai/glm-5.2:nitro` flatlines and a new bare-slug series starts. Not a traffic or model change — the discontinuity self-heals as the old series ages past the 30-day metric TTL.
