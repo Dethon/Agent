@@ -70,28 +70,38 @@ The record is added as `ProviderRouting? ProviderRouting { get; init; }` to thre
 
 Example:
 
+The shipped configuration after migration:
+
 ```json
 "openRouter": {
     "apiUrl": "https://openrouter.ai/api/v1/"
 },
 "agents": [
+    { "id": "jack",  "model": "z-ai/glm-5.2" },
+    { "id": "jonas", "model": "z-ai/glm-5.2" },
     {
         "id": "nabu",
         "model": "z-ai/glm-5.2",
-        "providerRouting": {
-            "sort": "latency",
-            "order": ["deepinfra", "novita"],
-            "ignore": ["chutes"],
-            "allowFallbacks": true
-        }
-    },
-    { "id": "jack", "model": "z-ai/glm-5.2" }
+        "providerRouting": { "sort": "latency" }
+    }
+],
+"subAgents": [
+    {
+        "id": "jonas-worker",
+        "model": "z-ai/glm-5.2",
+        "providerRouting": { "sort": "throughput" }
+    }
 ]
 ```
 
-Here Nabu routes by latency across a preferred provider order, while Jack — with no
-`providerRouting` and no global default — gets OpenRouter's balanced routing. That absence
-is the intended global default; see below.
+Nabu routes by latency; `jonas-worker` by throughput; Jack and Jonas carry no
+`providerRouting` and, with no global default, get OpenRouter's balanced routing. That
+absence is the intended global default; see below.
+
+The remaining fields are available but unused by the shipped configuration — for example
+`{ "sort": "price", "only": ["deepinfra", "novita"], "ignore": ["chutes"],
+"allowFallbacks": false }`. Note that `order` is deliberately absent from this illustration:
+see Interaction with sticky routing.
 
 Per the repository's environment-variable rule, `providerRouting` is a generic tunable and
 belongs in `appsettings.json` alone. It gets no `docker-compose.yml` entry and no
@@ -244,8 +254,8 @@ preserving today's behaviour exactly:
 
 | Location | Before | After |
 |---|---|---|
-| `Agent/appsettings.json` — agent `jonas` | `z-ai/glm-5.2:nitro` | `z-ai/glm-5.2` + `providerRouting.sort = throughput` |
-| `Agent/appsettings.json` — agent `nabu` | `z-ai/glm-5.2:nitro` | `z-ai/glm-5.2` + `providerRouting.sort = throughput` |
+| `Agent/appsettings.json` — agent `jonas` | `z-ai/glm-5.2:nitro` | `z-ai/glm-5.2`, no `providerRouting` |
+| `Agent/appsettings.json` — agent `nabu` | `z-ai/glm-5.2:nitro` | `z-ai/glm-5.2` + `providerRouting.sort = latency` |
 | `Agent/appsettings.json` — subagent `jonas-worker` | `z-ai/glm-5.2:nitro` | `z-ai/glm-5.2` + `providerRouting.sort = throughput` |
 | `Agent/Modules/MemoryModule.cs:40` — extraction fallback | `z-ai/glm-4.7-flash:nitro` | `z-ai/glm-4.7-flash` |
 | `Agent/Modules/MemoryModule.cs:56` — dreaming fallback | `z-ai/glm-4.7-flash:nitro` | `z-ai/glm-4.7-flash` |
@@ -253,15 +263,39 @@ preserving today's behaviour exactly:
 The two `MemoryModule` strings are hard-coded fallbacks used only when `Memory:Extraction:Model`
 and `Memory:Dreaming:Model` are absent from configuration. They are currently present in
 `appsettings.json` as `openai/gpt-5.4-nano`, so the fallbacks are inert today; they are
-migrated for consistency and pick up throughput sorting from the global default instead.
+migrated for consistency and inherit the unset global default, which is what they already
+do.
 
-Agent `jack` carries no suffix today, gets no per-agent `providerRouting`, and inherits an
-unset global default — so it keeps sending no `provider` object and stays on balanced
-routing.
+### Target routing, and what changes
 
-**The migration is therefore behaviour-preserving end to end.** Every caller sends exactly
-what it sends today: `throughput` for Jonas, Nabu and `jonas-worker`, balanced for Jack and
-for the two memory models. The only thing that changes is where the policy is written.
+| Caller | Today | After | Delta |
+|---|---|---|---|
+| global default | — | balanced (unset) | — |
+| `jack` | balanced | balanced (inherits) | unchanged |
+| `jonas` | throughput | balanced (inherits) | **changed** |
+| `nabu` | throughput | latency | **changed** |
+| `jonas-worker` | throughput | throughput (explicit) | unchanged |
+| memory extraction | balanced | balanced (inherits) | unchanged |
+| memory dreaming | balanced | balanced (inherits) | unchanged |
+
+Only `nabu` and `jonas-worker` end up carrying a `providerRouting` key; everything else
+inherits the unset default.
+
+This migration is **not** behaviour-preserving, by intent. Two callers move:
+
+- **`jonas` throughput → balanced.** Balanced routing is inverse-square price-weighted, so
+  Jonas will tend toward cheaper providers and away from the fastest. Jonas is the
+  general-purpose assistant reached from WebChat and Telegram, where a reply is read rather
+  than spoken and a slower provider costs patience rather than a broken interaction. This is
+  a deliberate cost-for-speed trade.
+- **`nabu` throughput → latency.** Nabu is the voice agent, where the whole pipeline is
+  latency-bound and time-to-first-token gates when speech starts. `latency` sorts on exactly
+  that, where `throughput` sorts on sustained tokens/second — the wrong metric for replies
+  capped at one short sentence. `sort` coexists with sticky routing, so Nabu keeps its
+  prompt cache.
+
+Because no model string carries a suffix after the migration, the suffix-versus-sort
+advisory has no live trigger in the shipped configuration. It exists for future edits.
 
 ## Testing
 
@@ -312,15 +346,19 @@ Suffix versus sort:
 These build an in-memory `ConfigurationBuilder` rather than reading the repository file,
 following the pattern in `Tests/Unit/McpChannelVoice/*SettingsBindingTests.cs`.
 
-**Migration** (`Tests/Unit/Agent/AgentAppSettingsTests.cs`)
+**Shipped routing** (`Tests/Unit/Agent/AgentAppSettingsTests.cs`)
 
-- The migrated agents still resolve to `throughput`, and no agent or subagent model string
-  carries a `:nitro` or `:floor` suffix any more, so the migration cannot silently regress.
-- The `openRouter` section declares no `providerRouting`. Balanced routing is expressed by
-  omission and cannot be asserted from the request body of an agent that overrides it, so
-  this pin is the only thing standing between a one-line edit and every non-overriding
-  agent — Jack and both memory models — silently leaving load balancing.
-- Jack declares no `providerRouting`, so it stays balanced.
+These pin the target table above. Sort choices are deliberate per-agent decisions that no
+other test would catch if reverted, and balanced-by-omission cannot be asserted from a
+request body at all — a one-line edit to the `openRouter` section moves every
+non-overriding caller at once, silently.
+
+- `nabu` sorts by `latency`. It is the voice agent and this is the reason the field exists.
+- `jonas-worker` sorts by `throughput`.
+- `jack` and `jonas` declare no `providerRouting`, so they stay balanced.
+- The `openRouter` section declares no `providerRouting`, so the default stays balanced.
+- No agent or subagent model string carries a `:nitro` or `:floor` suffix any more, so the
+  dual-idiom problem the migration removes cannot creep back in.
 
 These read the working-tree `appsettings.json` through the existing `RepoRoot()` helper,
 matching how the file's other pins work.
