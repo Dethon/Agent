@@ -79,7 +79,8 @@ A new generic tunable (threshold, window, feature flag) belongs in `appsettings.
 ## OpenRouter Provider Routing
 
 Each `agents[]` / `subAgents[]` entry may carry a `providerRouting` object (`sort` ∈
-`price`|`throughput`|`latency`, plus `order`, `only`, `ignore`, `allowFallbacks`), overriding
+`price`|`throughput`|`latency`, plus `order`, `only`, `ignore`, `allowFallbacks`,
+`preferredMinThroughput`, `preferredMaxLatency`, `maxPrice`), overriding
 `openRouter.providerRouting` **wholesale** — never field-by-field. It reaches the wire through
 the same path as `session_id`: `MultiAgentFactory.ResolveRouting` → `OpenRouterChatClient` →
 `ReasoningHandler` → `OpenRouterHttpHelpers.PrepareRequestBodyAsync`, which stamps `provider`.
@@ -108,7 +109,18 @@ activation and subagents per spawn, so a tripped advisory repeats for the lifeti
 not once per agent. `MemoryModule` binds `openRouter.providerRouting` for the memory extraction
 and dreaming chat clients directly, so those two models skip the advisories entirely.
 
-Current: `nabu` latency, `jonas-worker` throughput, everything else balanced.
+**Two criteria = one `sort` plus a threshold.** `sort` ranks by exactly one metric; there is no
+composite sort. `preferredMinThroughput` (tokens/s) and `preferredMaxLatency` (seconds) are the
+second criterion, and they *deprioritize* rather than filter — an endpoint that misses one drops
+to the end of the candidate list, so a threshold nobody meets still routes and can never dead-end
+a turn. Each takes either a bare number (OpenRouter's shorthand for the p50 cutoff, and what
+`ProviderThreshold` emits when only `p50` is set) or `{p50, p75, p90, p99}`. `maxPrice`
+(`{prompt, completion}` in $/M tokens, `{request, image}` per unit) is the exception: a real
+ceiling that excludes. Cutoffs are guarded non-negative and finite at bind time, because a
+negative one is otherwise silent — it deprioritizes nothing and excludes nobody.
+
+Current: `nabu` latency with a 80 tok/s throughput floor, `jonas-worker` throughput, everything
+else balanced.
 
 ## Multi-Agent Patterns
 

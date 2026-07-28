@@ -68,6 +68,78 @@ public class ProviderRoutingBindingTests
         routing.AllowFallbacks.ShouldBe(false);
     }
 
+    // OpenRouter documents a bare number as shorthand for the p50 cutoff, so config may spell a
+    // threshold either way. Binding the scalar form needs a TypeConverter -- without one the
+    // binder sees a value on a complex-typed key and throws.
+    [Fact]
+    public void Bind_ScalarThreshold_MapsToP50()
+    {
+        var routing = Bind(("providerRouting:preferredMinThroughput", "80"));
+
+        routing.PreferredMinThroughput.ShouldNotBeNull();
+        routing.PreferredMinThroughput!.P50.ShouldBe(80);
+        routing.PreferredMinThroughput.P90.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Bind_PercentileThreshold_MapsEachCutoff()
+    {
+        var routing = Bind(
+            ("providerRouting:preferredMaxLatency:p50", "1"),
+            ("providerRouting:preferredMaxLatency:p90", "3"),
+            ("providerRouting:preferredMaxLatency:p99", "5"));
+
+        routing.PreferredMaxLatency.ShouldNotBeNull();
+        routing.PreferredMaxLatency!.P50.ShouldBe(1);
+        routing.PreferredMaxLatency.P75.ShouldBeNull();
+        routing.PreferredMaxLatency.P90.ShouldBe(3);
+        routing.PreferredMaxLatency.P99.ShouldBe(5);
+    }
+
+    [Fact]
+    public void Bind_MaxPrice_MapsEachCeiling()
+    {
+        var routing = Bind(
+            ("providerRouting:maxPrice:prompt", "1"),
+            ("providerRouting:maxPrice:completion", "2.5"),
+            ("providerRouting:maxPrice:request", "0.01"),
+            ("providerRouting:maxPrice:image", "0.5"));
+
+        routing.MaxPrice.ShouldNotBeNull();
+        routing.MaxPrice!.Prompt.ShouldBe(1);
+        routing.MaxPrice.Completion.ShouldBe(2.5);
+        routing.MaxPrice.Request.ShouldBe(0.01);
+        routing.MaxPrice.Image.ShouldBe(0.5);
+    }
+
+    // A negative threshold is silent: nothing is deprioritized and no provider is excluded, so
+    // the misconfiguration only ever shows up as routing that ignores the preference entirely.
+    [Fact]
+    public void Bind_NegativeThreshold_Throws()
+    {
+        var ex = Should.Throw<Exception>(() => Bind(("providerRouting:preferredMinThroughput", "-80")));
+
+        ex.GetBaseException().ShouldBeOfType<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Construct_NegativeThreshold_Throws()
+    {
+        Should.Throw<ArgumentOutOfRangeException>(() => new ProviderThreshold { P90 = -1 });
+    }
+
+    [Fact]
+    public void Construct_NegativeMaxPrice_Throws()
+    {
+        Should.Throw<ArgumentOutOfRangeException>(() => new ProviderMaxPrice { Prompt = -1 });
+    }
+
+    [Fact]
+    public void Bind_NonNumericThreshold_Throws()
+    {
+        Should.Throw<InvalidOperationException>(() => Bind(("providerRouting:preferredMaxLatency", "fast")));
+    }
+
     [Fact]
     public void Bind_MissingSection_YieldsNull()
     {
@@ -121,6 +193,20 @@ public class ProviderRoutingBindingTests
         new ProviderRouting { Order = [], Only = [], Ignore = [] }.IsEmpty.ShouldBeTrue();
     }
 
+    // `"maxPrice": {"foo": 1}` binds to an instance with every cutoff unset. Treating that as a
+    // field being set would put an empty `provider` object on the wire, which is the one shape
+    // balanced routing must never take.
+    [Fact]
+    public void IsEmpty_CutoffLessThresholdObjects_IsTrue()
+    {
+        new ProviderRouting
+        {
+            PreferredMinThroughput = new ProviderThreshold(),
+            PreferredMaxLatency = new ProviderThreshold(),
+            MaxPrice = new ProviderMaxPrice()
+        }.IsEmpty.ShouldBeTrue();
+    }
+
     [Theory]
     [MemberData(nameof(NonEmptyRoutings))]
     public void IsEmpty_AnyFieldSet_IsFalse(string _, ProviderRouting routing)
@@ -134,7 +220,12 @@ public class ProviderRoutingBindingTests
         ["order", new ProviderRouting { Order = ["deepinfra"] }],
         ["only", new ProviderRouting { Only = ["deepinfra"] }],
         ["ignore", new ProviderRouting { Ignore = ["chutes"] }],
-        ["allowFallbacks", new ProviderRouting { AllowFallbacks = false }]
+        ["allowFallbacks", new ProviderRouting { AllowFallbacks = false }],
+        ["preferredMinThroughput", new ProviderRouting
+            { PreferredMinThroughput = new ProviderThreshold { P50 = 80 } }],
+        ["preferredMaxLatency", new ProviderRouting
+            { PreferredMaxLatency = new ProviderThreshold { P90 = 3 } }],
+        ["maxPrice", new ProviderRouting { MaxPrice = new ProviderMaxPrice { Prompt = 1 } }]
     ];
 
     private static ProviderRouting Bind(params (string Key, string? Value)[] entries) =>

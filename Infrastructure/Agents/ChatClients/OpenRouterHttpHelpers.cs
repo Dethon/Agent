@@ -80,6 +80,10 @@ internal static class OpenRouterHttpHelpers
             node["allow_fallbacks"] = allowFallbacks;
         }
 
+        AddThreshold(node, "preferred_min_throughput", routing.PreferredMinThroughput);
+        AddThreshold(node, "preferred_max_latency", routing.PreferredMaxLatency);
+        AddMaxPrice(node, routing.MaxPrice);
+
         return node;
     }
 
@@ -91,6 +95,56 @@ internal static class OpenRouterHttpHelpers
         }
 
         node[key] = new JsonArray(slugs.Select(s => (JsonNode?)JsonValue.Create(s)).ToArray());
+    }
+
+    private static void AddThreshold(JsonObject node, string key, ProviderThreshold? threshold)
+    {
+        if (threshold is null || threshold.IsEmpty)
+        {
+            return;
+        }
+
+        // A bare number is OpenRouter's documented shorthand for the p50 cutoff, so a p50-only
+        // threshold goes out in the shape its own examples use rather than a one-key object.
+        if (threshold is { P50: { } p50, P75: null, P90: null, P99: null })
+        {
+            node[key] = p50;
+            return;
+        }
+
+        var cutoffs = new JsonObject();
+
+        AddCutoff(cutoffs, "p50", threshold.P50);
+        AddCutoff(cutoffs, "p75", threshold.P75);
+        AddCutoff(cutoffs, "p90", threshold.P90);
+        AddCutoff(cutoffs, "p99", threshold.P99);
+
+        node[key] = cutoffs;
+    }
+
+    private static void AddMaxPrice(JsonObject node, ProviderMaxPrice? maxPrice)
+    {
+        if (maxPrice is null || maxPrice.IsEmpty)
+        {
+            return;
+        }
+
+        var ceilings = new JsonObject();
+
+        AddCutoff(ceilings, "prompt", maxPrice.Prompt);
+        AddCutoff(ceilings, "completion", maxPrice.Completion);
+        AddCutoff(ceilings, "request", maxPrice.Request);
+        AddCutoff(ceilings, "image", maxPrice.Image);
+
+        node["max_price"] = ceilings;
+    }
+
+    private static void AddCutoff(JsonObject node, string key, double? cutoff)
+    {
+        if (cutoff is { } value)
+        {
+            node[key] = value;
+        }
     }
 
     // Some OpenRouter providers (e.g., Z.AI / GLM) reject assistant messages with tool_calls when content is empty

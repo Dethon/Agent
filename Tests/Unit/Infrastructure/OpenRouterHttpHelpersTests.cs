@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
 using Infrastructure.Agents.ChatClients;
@@ -185,7 +186,10 @@ public class OpenRouterHttpHelpersTests
             Order = ["deepinfra", "novita"],
             Only = ["deepinfra"],
             Ignore = ["chutes"],
-            AllowFallbacks = false
+            AllowFallbacks = false,
+            PreferredMinThroughput = new ProviderThreshold { P50 = 100, P90 = 50 },
+            PreferredMaxLatency = new ProviderThreshold { P75 = 2, P99 = 5 },
+            MaxPrice = new ProviderMaxPrice { Prompt = 1, Completion = 2, Request = 0.01, Image = 0.5 }
         };
 
         // Act
@@ -199,6 +203,86 @@ public class OpenRouterHttpHelpersTests
         provider["only"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["deepinfra"]);
         provider["ignore"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["chutes"]);
         provider["allow_fallbacks"]!.GetValue<bool>().ShouldBeFalse();
+        provider["preferred_min_throughput"]!["p50"]!.GetValue<double>().ShouldBe(100);
+        provider["preferred_min_throughput"]!["p90"]!.GetValue<double>().ShouldBe(50);
+        provider["preferred_max_latency"]!["p75"]!.GetValue<double>().ShouldBe(2);
+        provider["preferred_max_latency"]!["p99"]!.GetValue<double>().ShouldBe(5);
+        provider["max_price"]!["prompt"]!.GetValue<double>().ShouldBe(1);
+        provider["max_price"]!["completion"]!.GetValue<double>().ShouldBe(2);
+        provider["max_price"]!["request"]!.GetValue<double>().ShouldBe(0.01);
+        provider["max_price"]!["image"]!.GetValue<double>().ShouldBe(0.5);
+    }
+
+    // OpenRouter documents a bare number as the p50 form, and that is the shape its own examples
+    // use, so a p50-only threshold ships as a number rather than a one-key object.
+    [Fact]
+    public async Task PrepareRequestBody_ThresholdWithOnlyP50_SerializesAsBareNumber()
+    {
+        // Arrange
+        var request = CreateRequest(BodyJson);
+        var routing = new ProviderRouting
+        {
+            Sort = ProviderSort.Latency,
+            PreferredMinThroughput = new ProviderThreshold { P50 = 80 }
+        };
+
+        // Act
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, CancellationToken.None);
+
+        // Assert
+        var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!.AsObject();
+
+        provider["preferred_min_throughput"]!.GetValueKind().ShouldBe(JsonValueKind.Number);
+        provider["preferred_min_throughput"]!.GetValue<double>().ShouldBe(80);
+    }
+
+    // Thresholds are deprioritizations, not filters, so an unset percentile must be absent rather
+    // than a null the API would have to interpret.
+    [Fact]
+    public async Task PrepareRequestBody_ThresholdWithSomePercentiles_OmitsTheUnsetOnes()
+    {
+        // Arrange
+        var request = CreateRequest(BodyJson);
+        var routing = new ProviderRouting
+        {
+            PreferredMaxLatency = new ProviderThreshold { P50 = 1, P99 = 5 },
+            MaxPrice = new ProviderMaxPrice { Completion = 2 }
+        };
+
+        // Act
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, CancellationToken.None);
+
+        // Assert
+        var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!.AsObject();
+
+        var latency = provider["preferred_max_latency"]!.AsObject();
+        latency.Count.ShouldBe(2);
+        latency["p75"].ShouldBeNull();
+        latency["p90"].ShouldBeNull();
+
+        var price = provider["max_price"]!.AsObject();
+        price.Count.ShouldBe(1);
+        price["completion"]!.GetValue<double>().ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task PrepareRequestBody_WithCutoffLessThresholdObjects_OmitsProviderKey()
+    {
+        // Arrange
+        var request = CreateRequest(BodyJson);
+        var routing = new ProviderRouting
+        {
+            PreferredMinThroughput = new ProviderThreshold(),
+            PreferredMaxLatency = new ProviderThreshold(),
+            MaxPrice = new ProviderMaxPrice()
+        };
+
+        // Act
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, CancellationToken.None);
+
+        // Assert
+        JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject()
+            .ContainsKey("provider").ShouldBeFalse();
     }
 
     [Theory]

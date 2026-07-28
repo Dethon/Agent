@@ -99,6 +99,16 @@ public class AgentAppSettingsTests
         Agent("nabu")["providerRouting"]!["sort"]!.GetValue<string>().ShouldBe("latency");
     }
 
+    // `latency` alone ranks on time-to-first-token and says nothing about what happens after it,
+    // so the fastest-answering provider can still be the one that dribbles the rest of the reply
+    // out. The floor deprioritizes those without excluding anyone -- a threshold nobody meets
+    // still routes -- which is why it can sit under a latency sort without risking a dead turn.
+    [Fact]
+    public void ProviderRouting_Nabu_FloorsThroughputUnderTheLatencySort()
+    {
+        Agent("nabu")["providerRouting"]!["preferredMinThroughput"]!.GetValue<double>().ShouldBe(80);
+    }
+
     [Fact]
     public void ProviderRouting_JonasWorker_SortsByThroughput()
     {
@@ -117,6 +127,7 @@ public class AgentAppSettingsTests
 
         nabu.ProviderRouting.ShouldNotBeNull();
         nabu.ProviderRouting!.Sort.ShouldBe(ProviderSort.Latency);
+        nabu.ProviderRouting.PreferredMinThroughput!.P50.ShouldBe(80);
     }
 
     [Fact]
