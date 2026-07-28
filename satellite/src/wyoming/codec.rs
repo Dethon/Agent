@@ -172,6 +172,31 @@ mod tests {
         assert_eq!(&raw[nl + 1 + dl..], &[1, 2, 3]);
     }
 
+    // The alert routing field has to survive the wire, and this branch made data_obj() the FIRST
+    // production reader of a hub event's `data`. The hub sends `data` ONLY as the data_length body,
+    // so a codec change that stopped parsing that body for hub frames would silently disable alerts
+    // while every state_machine test — which builds WyomingEvents in memory — stayed green.
+    #[tokio::test]
+    async fn audio_start_carries_the_alert_field_through_the_codec() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        let marked = json!({"rate":22050,"width":2,"channels":1,"timestamp":0,"alert":true});
+        write_event(&mut a, &WyomingEvent::with_data("audio-start", marked)).await.unwrap();
+        // A pre-1.5 hub sends audio-start with no data at all.
+        write_event(&mut a, &WyomingEvent::new("audio-start")).await.unwrap();
+        let mut buf = tokio::io::BufReader::new(b);
+
+        let e = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        assert_eq!(e.event_type, "audio-start");
+        assert_eq!(e.data_obj()["alert"], json!(true));
+        assert_eq!(e.data_obj()["rate"], json!(22050));
+
+        // data: None -> an empty map, so the state machine's `alert` lookup misses and its
+        // unwrap_or(false) keeps the normal sink.
+        let bare = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        assert!(bare.data_obj().is_empty());
+        assert!(bare.data_obj().get("alert").is_none());
+    }
+
     #[tokio::test]
     async fn eof_returns_none() {
         let (a, mut b) = tokio::io::duplex(16);

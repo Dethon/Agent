@@ -161,6 +161,11 @@ public sealed class InsistentAnnouncementController(
         new(
             Label: $"alarm:{announcementId}",
             Priority: AnnouncePriority.High,
+            // The only place an alert is minted. This controller handles exactly the insistent
+            // announces — timers and alarms — so the satellite's non-attenuated route is reached
+            // by those and nothing else. AnnouncePriority.High is deliberately NOT the marker:
+            // approval prompts and wake announcements share it and must stay at voice level.
+            Alert: true,
             Audio: Replay(buffered, gain),
             OnStarted: _ => SafePublishAsync(new VoiceEvent
             {

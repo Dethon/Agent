@@ -27,7 +27,8 @@ public class InsistentAnnounceE2ETests
         satListener.Start();
         var satPort = ((IPEndPoint)satListener.LocalEndpoint).Port;
 
-        var audioStarts = new System.Collections.Concurrent.ConcurrentQueue<DateTimeOffset>();
+        // Each entry is one audio-start frame's `alert` flag as it arrived on the wire.
+        var audioStarts = new System.Collections.Concurrent.ConcurrentQueue<bool>();
         var fakeSatellite = Task.Run(async () =>
         {
             using var conn = await satListener.AcceptTcpClientAsync(ct);
@@ -37,7 +38,7 @@ public class InsistentAnnounceE2ETests
             {
                 if (evt.Type == "audio-start")
                 {
-                    audioStarts.Enqueue(DateTimeOffset.UtcNow);
+                    audioStarts.Enqueue(evt.Data["alert"]?.GetValue<bool>() ?? false);
                 }
             }
         }, ct);
@@ -86,6 +87,10 @@ public class InsistentAnnounceE2ETests
         builder.Services.AddSingleton<AnnouncementService>();
         builder.Services.AddHttpClient();
         builder.Services.AddSingleton<InsistentAnnouncementController>();
+        // The host takes the arbiter as a constructor dependency; without these the container fails
+        // to activate it and the whole test dies at StartAsync before reaching any assertion.
+        builder.Services.AddSingleton(settings.Arbitration);
+        builder.Services.AddSingleton<WakeArbiter>();
         builder.Services.AddHostedService<WyomingSatelliteHost>();
 
         var app = builder.Build();
@@ -109,6 +114,12 @@ public class InsistentAnnounceE2ETests
 
         // It must REPEAT: wait for at least two audio-start envelopes (gap = 1s).
         await WaitForAsync(() => audioStarts.Count >= 2, TimeSpan.FromSeconds(10));
+
+        // Every ring must reach the satellite marked as an alert, or it plays on the calibrated
+        // conversational route and the alarm is capped by TTS_VOLUME. This is the only coverage of
+        // the host lambda that puts job.Alert on the wire — the pure builder and PlaybackJob.Alert
+        // are unit-tested either side of it, so a literal there would ship a dead feature.
+        audioStarts.ToArray().ShouldAllBe(alert => alert);
 
         // Acknowledge -> the loop stops; no meaningful growth after a couple more gaps.
         app.Services.GetRequiredService<ActiveAlertRegistry>().Acknowledge("kitchen-01").ShouldNotBeEmpty();

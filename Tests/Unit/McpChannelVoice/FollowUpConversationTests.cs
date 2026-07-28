@@ -23,6 +23,7 @@ public class FollowUpConversationTests
         public readonly List<UtteranceCapture> Dispatched = [];
         public readonly List<CaptureStats> Rejected = [];
         public bool DispatchResult = true;
+        public bool ListeningStartedThrows;
         public int EarlyVerify;
         public bool EarlyRejectResult;
         public TaskCompletionSource<bool>? EarlyRejectGate;
@@ -59,6 +60,13 @@ public class FollowUpConversationTests
             },
             OnReplyTimeout = _ => { Events.Add("reply-timeout"); return Task.CompletedTask; },
             SpeechStopped = _ => { Events.Add("speech-stopped"); return Task.CompletedTask; },
+            ListeningStarted = _ =>
+            {
+                Events.Add("listening-started");
+                return ListeningStartedThrows
+                    ? throw new IOException("satellite write failed")
+                    : Task.CompletedTask;
+            },
             EarlyVerifyMs = EarlyVerify,
             EarlyReject = async (_, _) =>
             {
@@ -441,6 +449,54 @@ public class FollowUpConversationTests
         h.Events.ShouldContain("timed-out");
         // Only the accepted first capture fired it; the silent follow-up must not add another.
         h.Events.Count(e => e == "speech-stopped").ShouldBe(1);
+
+        await StopAsync(sut, run);
+    }
+
+    // The satellite has no other way to know the mic reopened: its own capture never closed, so
+    // after a reply drains its ring stays on the "agent is working" look until something says
+    // otherwise. Announce the window before opening it, so the light and the live mic agree.
+    [Fact]
+    public async Task Enabled_FollowUpWindow_AnnouncesListeningBeforeOpeningTheCapture()
+    {
+        var h = new Harness();
+        var sut = h.Build(new FollowUpSettings { Enabled = true, Chime = true, PlaybackTailMs = 400, WindowMs = 500 });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        h.Opened[0].ForceEnd();
+        await Task.Delay(50);
+        h.Reply(spoke: true);
+        await Task.Delay(50);
+        h.Time.Advance(TimeSpan.FromMilliseconds(400));
+        await Task.Delay(50);
+
+        h.Events.ShouldContain("listening-started");
+        h.Events.IndexOf("listening-started").ShouldBeLessThan(h.Events.IndexOf("open-followup"));
+        // The first capture comes from the satellite's own wake, which lights its ring locally.
+        h.Events.Count(e => e == "listening-started").ShouldBe(1);
+
+        await StopAsync(sut, run);
+    }
+
+    // Same contract as SpeechStopped: this drives an indicator only, so a satellite write that
+    // fails must never cost the user the follow-up window it was announcing.
+    [Fact]
+    public async Task Enabled_ListeningStartedThrows_StillOpensTheFollowUpWindow()
+    {
+        var h = new Harness { ListeningStartedThrows = true };
+        var sut = h.Build(new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 500 });
+        var run = sut.RunAsync(CancellationToken.None);
+
+        sut.OnWake();
+        h.Opened[0].ForceEnd();
+        await Task.Delay(50);
+        h.Reply(spoke: true);
+        h.Time.Advance(TimeSpan.FromMilliseconds(1));
+        await Task.Delay(50);
+
+        h.Events.ShouldContain("open-followup");
+        h.Opened.Count.ShouldBe(2);
 
         await StopAsync(sut, run);
     }

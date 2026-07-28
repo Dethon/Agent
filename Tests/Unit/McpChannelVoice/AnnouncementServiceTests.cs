@@ -142,4 +142,39 @@ public class AnnouncementServiceTests
             await Task.Delay(10);
         }
     }
+
+    // A plain announcement (a download finishing, a reminder read out) is NOT an alert: it must
+    // keep the calibrated per-satellite voice level rather than ringing at full scale.
+    [Fact]
+    public async Task Announce_PlainAnnouncement_IsNotMarkedAsAnAlert()
+    {
+        var (sut, sessions) = BuildSut(("kitchen-01", "Kitchen"));
+        var session = sessions.Get("kitchen-01")!;
+        var flags = new List<bool>();
+        var pump = session.RunPlaybackLoopAsync(
+            (_, _) => Task.CompletedTask,
+            CancellationToken.None,
+            onAudioStart: (_, alert, _) =>
+            {
+                lock (flags)
+                { flags.Add(alert); }
+                return Task.CompletedTask;
+            });
+
+        await sut.AnnounceAsync(
+            new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "download done" },
+            CancellationToken.None);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (flags.Count == 0 && sw.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            await Task.Delay(20);
+        }
+
+        flags.ShouldHaveSingleItem();
+        flags[0].ShouldBeFalse();
+
+        session.CompletePlayback();
+        await pump;
+    }
 }

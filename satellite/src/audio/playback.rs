@@ -44,6 +44,14 @@ impl PlaybackSink {
         Ok(())
     }
 
+    /// Whether the player process is already gone. Non-blocking. A sink that spawned fine can
+    /// still die milliseconds later — `aplay` against an undefined ALSA PCM fails its device open
+    /// and exits, and with stderr nulled the exit is the only trace. An errored wait counts as
+    /// gone too: we can no longer vouch for the child, and the only caller prefers a fallback.
+    pub fn has_exited(&mut self) -> bool {
+        !matches!(self.child.try_wait(), Ok(None))
+    }
+
     /// Kill immediately (used if a new stream preempts an in-flight one).
     pub async fn kill(mut self) {
         let _ = self.child.kill().await;
@@ -52,8 +60,10 @@ impl PlaybackSink {
 
 /// Commands accepted by the playback pump — the single owner of the playback device.
 pub enum PlaybackCmd {
-    /// Begin a stream (kills a still-open previous stream: mid-stream preempt).
-    Start { generation: u64 },
+    /// Begin a stream (kills a still-open previous stream: mid-stream preempt). `alert` routes
+    /// the stream to the alert sink — a non-attenuated ALSA route on music units, so a timer or
+    /// alarm bypasses the calibrated voice level.
+    Start { generation: u64, alert: bool },
     Pcm(Vec<u8>),
     /// End the stream: close stdin, let the player drain, then report a DrainDone.
     Stop { generation: u64 },
@@ -75,9 +85,9 @@ pub struct PlaybackHandle {
 }
 
 impl PlaybackHandle {
-    pub async fn start(&mut self) -> anyhow::Result<()> {
+    pub async fn start(&mut self, alert: bool) -> anyhow::Result<()> {
         self.generation += 1;
-        self.send(PlaybackCmd::Start { generation: self.generation }).await
+        self.send(PlaybackCmd::Start { generation: self.generation, alert }).await
     }
 
     pub async fn pcm(&self, pcm: Vec<u8>) -> anyhow::Result<()> {
@@ -108,17 +118,24 @@ impl PlaybackHandle {
 /// child) dies with the connection.
 pub fn spawn_pump(
     snd_command: &str,
+    alert_snd_command: &str,
 ) -> (PlaybackHandle, mpsc::UnboundedReceiver<DrainDone>, tokio::task::JoinHandle<()>) {
     let (cmd_tx, cmd_rx) = mpsc::channel(16);
     // Unbounded ON PURPOSE: a bounded blocking send from the pump could AB-deadlock against a
     // main loop blocked sending a command. Completions are tiny and at most one per stream.
     let (done_tx, done_rx) = mpsc::unbounded_channel();
-    let task = tokio::spawn(run_pump(snd_command.to_string(), cmd_rx, done_tx));
+    let task = tokio::spawn(run_pump(
+        snd_command.to_string(),
+        alert_snd_command.to_string(),
+        cmd_rx,
+        done_tx,
+    ));
     (PlaybackHandle { cmd_tx, generation: 0 }, done_rx, task)
 }
 
 async fn run_pump(
     snd_command: String,
+    alert_snd_command: String,
     mut cmd_rx: mpsc::Receiver<PlaybackCmd>,
     done_tx: mpsc::UnboundedSender<DrainDone>,
 ) {
@@ -130,11 +147,11 @@ async fn run_pump(
 
     while let Some(cmd) = cmd_rx.recv().await {
         let result: anyhow::Result<()> = match cmd {
-            PlaybackCmd::Start { generation: g } => {
+            PlaybackCmd::Start { generation: g, alert } => {
                 generation = g;
                 streaming = true;
                 if let Some(p) = sink.take() { p.kill().await; } // mid-stream preempt
-                PlaybackSink::start(&snd_command).map(|p| sink = Some(p))
+                open_sink(&snd_command, &alert_snd_command, alert).await.map(|p| sink = Some(p))
             }
             PlaybackCmd::Pcm(pcm) => match sink.as_mut() {
                 Some(p) => p.write_pcm(&pcm).await,
@@ -177,6 +194,41 @@ async fn play_cue(snd_command: &str, pcm: &[u8]) -> anyhow::Result<()> {
     p.finish().await
 }
 
+/// How long to let a freshly spawned alert player prove it survived its device open. Generous on
+/// purpose: guessing too short costs the reconnect loop this probe exists to prevent, while
+/// guessing too long costs only that much extra silence at the very start of a ring — and an
+/// `aplay` whose ALSA config lookup fails is dead within a few ms of exec even on a Pi.
+const ALERT_LIVENESS_PROBE: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Open the sink for one stream. Playback-open errors are connection-fatal by design, so an
+/// alert whose dedicated device is missing falls back to the normal sink instead: an alarm that
+/// rings quietly beats one that drops the hub connection. Only the normal sink failing is fatal.
+///
+/// A missing device has two shapes and both must fall back. `spawn()` fails only when the player
+/// binary is missing; the realistic one — an undefined `pcm.alert` — spawns fine and dies on the
+/// device open, invisible until writes EPIPE well into the ring, so the alert sink is probed for
+/// liveness before the stream is committed to it. The probe runs here, inside the pump task, which
+/// is the only place compound playback I/O is allowed. Both routes are skipped when the two
+/// commands are identical (the default), so a voice-only unit pays nothing and a genuine device
+/// failure reports once rather than twice.
+async fn open_sink(snd: &str, alert_snd: &str, alert: bool) -> anyhow::Result<PlaybackSink> {
+    if !alert || alert_snd == snd {
+        return PlaybackSink::start(snd);
+    }
+    match PlaybackSink::start(alert_snd) {
+        Ok(mut p) => {
+            tokio::time::sleep(ALERT_LIVENESS_PROBE).await;
+            if !p.has_exited() {
+                return Ok(p);
+            }
+            tracing::warn!("alert sink died on open, falling back to the normal sink");
+            // p drops here, before the normal sink opens: never two sinks on one device.
+        }
+        Err(e) => tracing::warn!("alert sink unavailable, falling back to the normal sink: {e:#}"),
+    }
+    PlaybackSink::start(snd)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,8 +243,8 @@ mod tests {
 
     #[tokio::test]
     async fn pump_reports_drain_done_with_stream_generation() {
-        let (mut handle, mut done_rx, _task) = spawn_pump("cat >/dev/null");
-        handle.start().await.unwrap();
+        let (mut handle, mut done_rx, _task) = spawn_pump("cat >/dev/null", "cat >/dev/null");
+        handle.start(false).await.unwrap();
         handle.pcm(vec![0u8; 4410]).await.unwrap();
         handle.stop().await.unwrap();
         let d = done_rx.recv().await.unwrap();
@@ -208,9 +260,9 @@ mod tests {
     async fn pump_serializes_cue_and_stream_on_an_exclusive_device() {
         let lock = std::env::temp_dir().join(format!("nabu-pump-test-{}.lock", std::process::id()));
         let snd = format!("flock -n {} -c 'cat >/dev/null'", lock.display());
-        let (mut handle, mut done_rx, _task) = spawn_pump(&snd);
+        let (mut handle, mut done_rx, _task) = spawn_pump(&snd, &snd);
         handle.cue(vec![0u8; 8820]); // ~200 ms worth of 22050 Hz PCM
-        handle.start().await.unwrap();
+        handle.start(false).await.unwrap();
         handle.pcm(vec![0u8; 4410]).await.unwrap();
         handle.stop().await.unwrap();
         let d = done_rx.recv().await.unwrap();
@@ -220,9 +272,12 @@ mod tests {
 
     #[tokio::test]
     async fn pump_playback_error_is_reported_fatally() {
-        // player dies instantly (as aplay does on a busy/absent device) -> a later write EPIPEs
-        let (mut handle, mut done_rx, _task) = spawn_pump("exit 1");
-        handle.start().await.unwrap();
+        // A NORMAL-sink failure stays fatal — the alert fallback above is narrowly scoped and does
+        // not apply here. `exit 1` is plain argv (no sh metacharacters), so it execs a nonexistent
+        // `exit` binary and spawn() fails outright at Start; a player that spawned and then died
+        // reaches the same place via EPIPE on a later write. Either must surface as fatal.
+        let (mut handle, mut done_rx, _task) = spawn_pump("exit 1", "exit 1");
+        handle.start(false).await.unwrap();
         let mut failed = false;
         for _ in 0..50 {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -245,11 +300,142 @@ mod tests {
         let path = std::env::temp_dir().join(format!("nabu-idle-{}.raw", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let snd = format!("cat >> {}", path.display());
-        let (_handle, _done_rx, task) = spawn_pump(&snd);
+        let (_handle, _done_rx, task) = spawn_pump(&snd, &snd);
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         task.abort();
         let created = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         let _ = std::fs::remove_file(&path);
         assert_eq!(created, 0, "an idle pump must not open or feed a player");
+    }
+
+    // Unique temp paths per test: the suite runs in-process in parallel, so a shared name would
+    // let two tests append to the same file.
+    fn sink_paths(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = std::env::temp_dir();
+        let pid = std::process::id();
+        let normal = dir.join(format!("nabu-{tag}-normal-{pid}.raw"));
+        let alert = dir.join(format!("nabu-{tag}-alert-{pid}.raw"));
+        let _ = std::fs::remove_file(&normal);
+        let _ = std::fs::remove_file(&alert);
+        (normal, alert)
+    }
+
+    fn cleanup(paths: &[&std::path::Path]) {
+        for p in paths {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    // THE routing guarantee: an alert stream (timer/alarm) must open the alert sink and must not
+    // touch the normal one. `cat >> <file>` creates its file on open, so "the normal file does
+    // not exist" proves the normal player was never even spawned.
+    #[tokio::test]
+    async fn pump_routes_an_alert_stream_to_the_alert_sink() {
+        let (normal, alert) = sink_paths("route-alert");
+        let (mut handle, mut done_rx, _task) = spawn_pump(
+            &format!("cat >> {}", normal.display()),
+            &format!("cat >> {}", alert.display()),
+        );
+
+        handle.start(true).await.unwrap();
+        handle.pcm(vec![7u8; 64]).await.unwrap();
+        handle.stop().await.unwrap();
+        let d = done_rx.recv().await.unwrap();
+        assert!(d.result.is_ok());
+
+        assert_eq!(std::fs::metadata(&alert).map(|m| m.len()).unwrap_or(0), 64);
+        assert!(!normal.exists(), "an alert stream must not open the normal sink");
+        cleanup(&[&normal, &alert]);
+    }
+
+    #[tokio::test]
+    async fn pump_routes_a_normal_stream_to_the_normal_sink() {
+        let (normal, alert) = sink_paths("route-normal");
+        let (mut handle, mut done_rx, _task) = spawn_pump(
+            &format!("cat >> {}", normal.display()),
+            &format!("cat >> {}", alert.display()),
+        );
+
+        handle.start(false).await.unwrap();
+        handle.pcm(vec![7u8; 64]).await.unwrap();
+        handle.stop().await.unwrap();
+        done_rx.recv().await.unwrap();
+
+        assert_eq!(std::fs::metadata(&normal).map(|m| m.len()).unwrap_or(0), 64);
+        assert!(!alert.exists(), "a reply must not open the alert sink");
+        cleanup(&[&normal, &alert]);
+    }
+
+    // Cues are voice-class earcons (awake/done/chime), never alerts — even immediately after an
+    // alert stream has set the pump's most recent generation.
+    #[tokio::test]
+    async fn cues_always_play_on_the_normal_sink() {
+        let (normal, alert) = sink_paths("route-cue");
+        let (mut handle, mut done_rx, _task) = spawn_pump(
+            &format!("cat >> {}", normal.display()),
+            &format!("cat >> {}", alert.display()),
+        );
+
+        handle.start(true).await.unwrap();
+        handle.pcm(vec![7u8; 64]).await.unwrap();
+        handle.stop().await.unwrap();
+        done_rx.recv().await.unwrap(); // stream over -> cues are no longer dropped
+
+        handle.cue(vec![1u8; 32]);
+        for _ in 0..200 {
+            if std::fs::metadata(&normal).map(|m| m.len()).unwrap_or(0) == 32 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(std::fs::metadata(&normal).map(|m| m.len()).unwrap_or(0), 32);
+        cleanup(&[&normal, &alert]);
+    }
+
+    // The REALISTIC alert-device failure: an `aplay -D alert` against an undefined `pcm.alert`
+    // spawns FINE, then fails its ALSA open and exits within milliseconds with stderr nulled.
+    // `false` is exactly that shape — a real binary (so spawn succeeds, unlike the ENOENT case
+    // below) that exits 1 immediately. Without a liveness probe the stream's bytes go into a dead
+    // pipe and the eventual EPIPE reports fatal, tearing the hub connection down for the whole
+    // duration of the alarm — strictly worse than a quiet alarm.
+    #[tokio::test]
+    async fn alert_sink_dying_right_after_spawn_falls_back_to_the_normal_sink() {
+        let (normal, _) = sink_paths("route-dead-alert");
+        let (mut handle, mut done_rx, _task) =
+            spawn_pump(&format!("cat >> {}", normal.display()), "false");
+
+        handle.start(true).await.unwrap();
+        handle.pcm(vec![7u8; 64]).await.unwrap();
+        handle.stop().await.unwrap();
+        let d = done_rx.recv().await.unwrap();
+
+        assert_eq!(
+            std::fs::metadata(&normal).map(|m| m.len()).unwrap_or(0),
+            64,
+            "a dead alert sink must hand the stream to the normal sink"
+        );
+        assert!(d.result.is_ok(), "a dead alert sink must not be fatal: {:?}", d.result);
+        cleanup(&[&normal]);
+    }
+
+    // An absent/misconfigured alert device must make the alarm QUIET, not drop the hub connection.
+    // A nonexistent binary is plain argv, so build_command execs it directly and spawn() fails
+    // with ENOENT — the other half of "the device can't be opened".
+    #[tokio::test]
+    async fn alert_sink_open_failure_falls_back_to_the_normal_sink_non_fatally() {
+        let (normal, _) = sink_paths("route-fallback");
+        let (mut handle, mut done_rx, _task) = spawn_pump(
+            &format!("cat >> {}", normal.display()),
+            "/nonexistent/aplay -D alert",
+        );
+
+        handle.start(true).await.unwrap();
+        handle.pcm(vec![7u8; 64]).await.unwrap();
+        handle.stop().await.unwrap();
+        let d = done_rx.recv().await.unwrap();
+
+        assert!(d.result.is_ok(), "an unavailable alert sink must not be fatal: {:?}", d.result);
+        assert_eq!(std::fs::metadata(&normal).map(|m| m.len()).unwrap_or(0), 64);
+        cleanup(&[&normal]);
     }
 }

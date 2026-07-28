@@ -18,13 +18,13 @@ Standalone Rust crate (NOT in the .NET solution): a fully static aarch64-musl Wy
 
 - **The satellite is the Wyoming SERVER; the hub dials in** (default `--listen 0.0.0.0:10700`). A new hub connection supersedes the previous one (abort + await), so a dead-peer TCP wedge can't hold the exclusive `plughw` mic for the ~15-min retransmission timeout. The three ONNX models are parsed + optimized ONCE at boot (`WakeModels::load`, fail-fast) and shared across connections, so re-arm after a reconnect is instant.
 - **Cancellation safety**: hub/mic reads AND playback writes/drains are multi-await compound I/O, NOT `select!`-safe. They run in dedicated pump tasks (hub, mic, playback) feeding bounded mpsc channels; the main `select!` only races `recv()` futures.
-- **Playback pump** — the single owner of the playback device. `audio-stop`'s drain (~0.5-2 s of buffered TTS) happens inside the pump, so wake/button/mic stay live during the reply tail. Drain completions return on an unbounded channel (bounded would AB-deadlock) carrying a generation that gates the LED Idle/Listening transition, so a stale completion can't blank a newer stream. Playback errors stay connection-fatal. Cues route through the pump too (and are dropped while a stream is active), so a cue can never EBUSY-race a reply for the exclusive device.
+- **Playback pump** — the single owner of the playback device. `audio-stop`'s drain (~0.5-2 s of buffered TTS) happens inside the pump, so wake/button/mic stay live during the reply tail. Drain completions return on an unbounded channel (bounded would AB-deadlock) carrying a generation that gates the LED Idle/Listening transition, so a stale completion can't blank a newer stream. Playback errors stay connection-fatal, the alert sink's open being the one deliberate exception (below). Cues route through the pump too (and are dropped while a stream is active), so a cue can never EBUSY-race a reply for the exclusive device.
 - **Audio contract**: mic = 16 kHz mono S16LE in 1280-sample/80 ms chunks (arecord subprocess; bytes end-to-end internally, decoded to i16 only at the detector). Playback sink = FIXED 22 050 Hz mono S16LE (aplay) that ignores announced rates — hub-side TTS, the chime and the embedded cue WAVs must all be 22 050 Hz.
-- **ALSA latency flags**: defaults carry `arecord … -F 20000` (20 ms periods; the alsa-utils default of buffer/4 = 125 ms delayed every mic sample on the wake and STT paths) and `aplay … --start-delay=100000 -F 50000` (start at ~100 ms queued instead of the full 500 ms buffer, which stays for underrun headroom). Keep them when overriding devices. Plain-argv audio commands exec directly (no `sh -c`) so kill/supersede SIGKILLs aplay/arecord themselves; shell-shaped commands (WSL gain pipe) still go through sh.
+- **ALSA latency flags**: defaults carry `arecord … -F 20000` (20 ms periods; the alsa-utils default of buffer/4 = 125 ms delayed every mic sample on the wake and STT paths) and `aplay … --start-delay=100000 -F 50000` (start at ~100 ms queued instead of the full 500 ms buffer, which stays for underrun headroom). Keep them when overriding devices — on **both** `--snd-command` and `--alert-snd-command`. Plain-argv audio commands exec directly (no `sh -c`) so kill/supersede SIGKILLs aplay/arecord themselves; shell-shaped commands (WSL gain pipe) still go through sh.
 - **Zero-lag pre-roll**: while idle, mic chunks fill a pre-roll ring (`--preroll-ms`, default 1000); a wake trigger flushes only the detection gap (3 chunks ≈ 240 ms), never the wake word itself; a button press flushes the full ring.
 - **Wire format**: frames are one contiguous buffer with event `data` sent once as the `data_length` body (the hub's reader prefers the body; its writer emits the same shape) — pinned by a codec test.
 
-## Wake Metadata & Arbitration (PROTOCOL_VERSION 1.4)
+## Wake Metadata & Arbitration (PROTOCOL_VERSION 1.6)
 
 `run-pipeline` carries `{"source":"wake"|"button","wake_rms":f32,"wake_score":f32}` — rms over the pre-roll ring minus the detection gap, BEFORE trim, in i16-amplitude units matching the hub's SilenceGate. The hub may reply `pause-satellite` (arbitration loss): Streaming → audio-stop back, Idle, detector reset, NO cue, LED Idle; Idle → no-op.
 
@@ -32,12 +32,35 @@ A button-triggered `run-pipeline` carries only `{"source":"button"}` with no `wa
 
 The hub also sends `voice-stopped` (header-only) once it has endpointed the user's speech and is about to transcribe — deliberately NOT sent for captures abandoned to arbitration or ending in silence. The satellite uses it purely as the Thinking indicator and does **not** close its capture on it; only `transcript`, the actual turn-end signal, does that.
 
+`listening-started` (header-only, 1.6) is its counterpart: the hub sends it from
+`FollowUpConversation` just before it reopens the mic for a wake-free follow-up turn, and the
+satellite uses it purely to move the turn's LED phase back to Listening. The satellite cannot
+infer that moment — its own capture never closed, so from its side a reply draining looks
+identical whether the agent is mid-answer or finished. Ignored while Idle, and a pre-1.6 hub
+simply never sends it (the ring then keeps breathing through the window).
+
+`audio-start` carries `alert: bool` (1.5). `true` routes the stream to `--alert-snd-command`
+instead of `--snd-command` — on music units a non-attenuated `alert` softvol, so a timer or alarm
+rings at full scale rather than the calibrated conversational `TTS` level. The hub sets it only for
+insistent announces (timers and alarms). Read defensively and defaulted to `false`, so a pre-1.5
+hub, an ordinary reply and a garbage value all keep the normal sink. If the alert device cannot be
+opened the pump falls back to the normal sink and warns — never connection-fatal on open, because a
+quiet alarm beats a dropped connection (a player that outlives the probe and dies mid-ring is still
+an ordinary fatal playback error). That covers **both** failure shapes, which is why the fallback is
+not merely an `Err` branch: a missing player binary fails `spawn()`, but the realistic case — an
+undefined `pcm.alert` — spawns fine and dies on the device open, invisible until writes EPIPE well
+into the ring. So an alert sink gets a 50 ms `try_wait` liveness probe before a stream is committed
+to it. **Don't "optimize away" that sleep**: it is on the alert path only, never replies or cues, and
+without it a misconfigured alert device drops the hub connection for the whole duration of the alarm
+(the insistent loop re-enqueues on every gap).
+
 ## LED
 
 The state machine publishes `LedState` (Idle/Listening/Thinking/Speaking) on a tokio watch channel; a per-connection render task owns the backend — the reSpeaker XVF3800's 12-LED WS2812 ring, driven over USB vendor control transfers (`bmRequestType` 0x40/0xC0, `bRequest` 0x00, `wValue` = command id, `wIndex` = resource 0x14, LE payload; every write is status-read like the vendor's `xvf_host`). Command ids: `LED_EFFECT` 0x0c, `LED_BRIGHTNESS` 0x0d, `LED_SPEED` 0x0f, `LED_COLOR` 0x10, `LED_DOA_COLOR` 0x11.
 
 - **Looks**: Idle → effect 0 (dark), Listening → effect 4 (DoA, blue ring + green pointer), Thinking → breathing blue (effect 1), Speaking → solid blue (effect 3). Colour is always written BEFORE effect so the old colour can't flash in the new mode.
-- **Phase mapping** (`handle_hub_event`): `run-pipeline` (wake or button) → Listening; `voice-stopped` → Thinking (capture stays open); `audio-start` → Speaking; a reply's drain completing while `mode` is still `Streaming` → Listening (the follow-up window, mic genuinely live again); `transcript` → Idle. Idle after a reply therefore means actual-playback-complete. A 120 s Thinking fallback mirrors the hub reply timeout in case `voice-stopped` fired but no reply/transcript ever arrives.
+- **Phase mapping** (`handle_hub_event`): `run-pipeline` (wake or button) → Listening; `voice-stopped` → Thinking (capture stays open); `listening-started` → Listening; `audio-start` → Speaking; `transcript` → Idle. Idle after a reply therefore means actual-playback-complete. A 120 s Thinking fallback mirrors the hub reply timeout in case `voice-stopped` fired but no reply/transcript ever arrives.
+- **A stream draining mid-turn returns the ring to the turn's phase, not to a fixed state.** `run_connection` carries `phase` (Listening/Thinking) alongside `mode`, and `apply_drain_done` publishes it whenever `mode` is still `Streaming` — Idle otherwise. This is what makes the seams of a segmented answer (say something → call a tool → say the rest) read as Thinking: they are one hub turn, so no `transcript` arrives between them, and hard-coding Listening there put the ring on the DoA look, which with no sound in the room renders as good as dark. Listening is still correct **before** `voice-stopped` — an announcement draining while a fresh capture is open — which is the case that mapping was originally added for.
 - Enabled by default when 2886:001a is on USB (`--no-led` opts out); an absent device or USB subsystem is silent, a failed open warns. **The service needs write access to the USB node** — provisioning's `99-nabu-usb-audio.rules` sets `MODE="0660", GROUP="plugdev"` and the unit lists `plugdev`; without it the ring stays dark. `main.rs` blanks the ring at startup and on SIGTERM/SIGINT, because the ring's power-on default is lit and the render task only exists while a hub is connected.
 
 ## Hardware: reSpeaker XVF3800 + MiniAmp (deployed fran-office unit)
@@ -57,7 +80,7 @@ The state machine publishes `LedState` (Idle/Listening/Thinking/Speaking) on a t
 Repo-root `scripts/provision-satellite-rs.sh <user@host> [mic-device]` installs the binary plus the templated `deploy/nabu-satellite.service` unit (only dependency: `alsa-utils`; the unit pins the `performance` governor and `Nice=-10`) and, without an explicit mic device, auto-detects the USB card by name plus a USB-autosuspend-off udev rule keyed on vendor:product.
 
 - **I2S DAC/amp HATs** (MiniAmp) declare `DAC_OVERLAY=hifiberry-dac` — I2S is electrically undiscoverable, so the script writes the dtoverlay to config.txt, reboots, waits for the card and continues (one-shot on a fresh Pi).
-- **Music units** route the satellite's own playback (TTS + cues) through a `tts` ALSA softvol (control `TTS` on the speaker card, set to `TTS_VOLUME`%, default 75, re-asserted per provision) so agent-voice loudness is calibrated independently of music — the volume knob for amp HATs that have none. Tune live with `amixer -c <card> sset TTS <pct>%` + `sudo alsactl store`.
+- **Music units** carry **three** per-source ALSA softvols on the speaker card under a master (the PipeWire sink) held at **100 %** — the MiniAmp has no hardware volume, so every level is software and all calibration lives in the source knobs. `Music` is what the satellite ducks while listening/speaking; `TTS` (`TTS_VOLUME`%, default 65) carries replies + cues, so agent-voice loudness is calibrated independently of music — the volume knob for amp HATs that have none; `Alert` (`ALERT_VOLUME`%, default 100) carries only hub-marked timer/alarm streams via `--alert-snd-command`, so a ring is not capped by the conversational level. All three are re-asserted per provision, and both env vars are validated locally before the build. Tune live with `amixer -c <card> sset TTS <pct>%` / `sset Alert <pct>%` + `sudo alsactl store`. **The master used to sit at 0.8**, so re-provisioning an already-calibrated unit makes music *and* agent speech louder, not just alerts; the `TTS` default dropped 75 → 65 (−5.1 dB on the −51 dB taper) to absorb that on the voice side, but an explicit `TTS_VOLUME` bypasses the default — lower that value too.
 - **Wake sensitivity** comes from `THRESHOLD` (default 0.7) and `TRIGGER_LEVEL` (default 2), validated locally before the build and applied to **both** unit paths (the voice-only `ExecStart` and the music drop-in that overrides it). Lowering either makes wake easier but noisier — `TRIGGER_LEVEL=1` is what let music itself trigger the wake word on the office satellite, so retune one knob at a time.
 - **qemu smoke tests need `--no-wake`** (qemu's fp16 hwcaps activate tract f16 kernels that crash under emulation; a real A53 selects f32). On-device E2E validation is still open, blocked on hardware — it should also read the `RUST_LOG=debug` per-chunk "wake inference" timing line.
 

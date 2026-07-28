@@ -750,6 +750,40 @@ public class SatelliteSessionPlaybackTests
         await pump.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
+    // The alert bit is what the hub puts on the wire for the satellite's sink selection, so it has
+    // to survive the queue and arrive with the stream it belongs to — not with a neighbouring job.
+    [Fact]
+    public async Task RunPlaybackLoop_ReportsEachJobsAlertFlagOnAudioStart()
+    {
+        var session = MakeSession();
+        var flags = new List<bool>();
+
+        var pumpTask = session.RunPlaybackLoopAsync(
+            (_, _) => Task.CompletedTask,
+            CancellationToken.None,
+            onAudioStart: (_, alert, _) =>
+            {
+                lock (flags)
+                { flags.Add(alert); }
+                return Task.CompletedTask;
+            });
+
+        var reply = new PlaybackJob(
+            Label: "reply",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("reply", count: 1),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask);
+        var alarm = reply with { Label = "alarm", Audio = GenerateAudio("alarm", count: 1), Alert = true };
+
+        await session.EnqueuePlaybackAsync(reply, queueMaxDepth: 8);
+        await session.EnqueuePlaybackAsync(alarm, queueMaxDepth: 8);
+        session.CompletePlayback();
+        await pumpTask;
+
+        flags.ShouldBe(new[] { false, true });
+    }
+
     private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)
     {
         for (var i = 0; i < count; i++)
