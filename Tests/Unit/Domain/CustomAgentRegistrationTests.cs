@@ -54,6 +54,36 @@ public class CustomAgentRegistrationTests
         routing.MaxPrice.Completion.ShouldBe(2);
     }
 
+    // The body an external host actually posts, rather than the tidy one a hand-written example
+    // would use: SexyTime's /api/config serializes its config record with default options, so
+    // every unset field arrives as an explicit null rather than being omitted.
+    [Fact]
+    public void Deserialize_ProviderRoutingWithExplicitNulls_BindsWhatIsSet()
+    {
+        var registration = Deserialize(
+            """
+            {
+                "name": "SexyTime",
+                "model": "z-ai/glm-5.1",
+                "mcpServerEndpoints": [],
+                "providerRouting": {
+                    "sort": "throughput",
+                    "order": null,
+                    "only": null,
+                    "ignore": null,
+                    "allowFallbacks": null,
+                    "preferredMinThroughput": null,
+                    "preferredMaxLatency": null,
+                    "maxPrice": null
+                }
+            }
+            """);
+
+        var routing = registration.ProviderRouting.ShouldNotBeNull();
+        routing.Sort.ShouldBe(ProviderSort.Throughput);
+        routing.IsEmpty.ShouldBeFalse();
+    }
+
     [Fact]
     public void Deserialize_UnknownSort_Throws()
     {
