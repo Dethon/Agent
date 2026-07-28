@@ -181,7 +181,8 @@ public class AgentDefinitionProviderTests
             McpServerEndpoints = [],
             WhitelistPatterns = ["pattern1"],
             CustomInstructions = "Be helpful",
-            EnabledFeatures = ["feature1"]
+            EnabledFeatures = ["feature1"],
+            ProviderRouting = new ProviderRouting { Sort = ProviderSort.Throughput }
         };
 
         var result = _sut.RegisterCustomAgent("user1", registration);
@@ -189,6 +190,19 @@ public class AgentDefinitionProviderTests
         result.WhitelistPatterns.ShouldBe(["pattern1"]);
         result.CustomInstructions.ShouldBe("Be helpful");
         result.EnabledFeatures.ShouldBe(["feature1"]);
+        result.ProviderRouting!.Sort.ShouldBe(ProviderSort.Throughput);
+    }
+
+    // A registered agent's only other routing lever is a `:nitro`/`:floor` model suffix, the dual
+    // idiom the built-in agents migrated off. Dropping this on the floor would leave an external
+    // host's declared routing silently unapplied, with the request still succeeding.
+    [Fact]
+    public void RegisterCustomAgent_NoProviderRouting_LeavesItNullForBalancedRouting()
+    {
+        var result = _sut.RegisterCustomAgent(
+            "user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
+
+        result.ProviderRouting.ShouldBeNull();
     }
 
     [Fact]

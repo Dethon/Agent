@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Text.Json.Serialization;
 using JetBrains.Annotations;
 
 namespace Domain.DTOs;
@@ -146,7 +147,11 @@ public sealed class ProviderThresholdConverter : TypeConverter
 }
 
 // An enum rather than a string so configuration binding rejects a typo at bind time, naming
-// the offending path, instead of sending a value OpenRouter would silently ignore.
+// the offending path, instead of sending a value OpenRouter would silently ignore. The
+// converter is for the other entry point: /api/agents deserializes a registration with
+// JsonSerializerDefaults.Web, which reads an enum as a number, and a string is the only
+// spelling an external host's JSON can carry.
+[JsonConverter(typeof(JsonStringEnumConverter<ProviderSort>))]
 public enum ProviderSort
 {
     Price,

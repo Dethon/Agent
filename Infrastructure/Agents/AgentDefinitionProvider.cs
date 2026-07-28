@@ -38,7 +38,8 @@ public class AgentDefinitionProvider(
             McpServerEndpoints = registration.McpServerEndpoints,
             WhitelistPatterns = registration.WhitelistPatterns,
             CustomInstructions = registration.CustomInstructions,
-            EnabledFeatures = registration.EnabledFeatures
+            EnabledFeatures = registration.EnabledFeatures,
+            ProviderRouting = registration.ProviderRouting
         };
 
         customAgentRegistry.Add(userId, definition);
