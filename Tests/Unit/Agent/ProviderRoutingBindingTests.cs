@@ -1,3 +1,4 @@
+using System.Text;
 using Domain.DTOs;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
@@ -78,6 +79,36 @@ public class ProviderRoutingBindingTests
             .ShouldBeNull();
     }
 
+    // The JSON provider records an empty object as a null-valued key, so `"providerRouting": {}`
+    // binds to null and the agent INHERITS the global default -- {} is not a wholesale opt-out.
+    // CLAUDE.md documents that trap; this pins the binder behavior the documentation relies on.
+    // The key-presence assert keeps the null from ever meaning "the test's JSON lost the key".
+    [Fact]
+    public void Bind_EmptyJsonObject_YieldsNull()
+    {
+        var config = BuildJson("""{"providerRouting": {}}""");
+
+        config.GetChildren().Select(c => c.Key).ShouldContain("providerRouting");
+        config.GetSection("providerRouting").Get<ProviderRouting>().ShouldBeNull();
+    }
+
+    // The working opt-out spelling for a future non-empty global default:
+    // {"allowFallbacks": true} binds to a real instance -- so it shadows the global wholesale --
+    // whose only wire effect is `allow_fallbacks: true`, OpenRouter's default, leaving the
+    // agent on balanced routing.
+    [Fact]
+    public void Bind_AllowFallbacksOnly_YieldsAnInstanceThatShadowsButStaysBalanced()
+    {
+        var routing = BuildJson("""{"providerRouting": {"allowFallbacks": true}}""")
+            .GetSection("providerRouting")
+            .Get<ProviderRouting>();
+
+        routing.ShouldNotBeNull();
+        routing.IsEmpty.ShouldBeFalse();
+        routing.Sort.ShouldBeNull();
+        routing.Order.ShouldBeNull();
+    }
+
     [Fact]
     public void IsEmpty_NoFieldsSet_IsTrue()
     {
@@ -112,4 +143,9 @@ public class ProviderRoutingBindingTests
             .Build()
             .GetSection("providerRouting")
             .Get<ProviderRouting>()!;
+
+    private static IConfigurationRoot BuildJson(string json) =>
+        new ConfigurationBuilder()
+            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(json)))
+            .Build();
 }
