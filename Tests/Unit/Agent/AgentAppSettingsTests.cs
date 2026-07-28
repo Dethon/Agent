@@ -74,13 +74,7 @@ public class AgentAppSettingsTests
     [Fact]
     public void Language_Nabu_ReachesTheSystemPromptAsItsLastSection()
     {
-        var agents = new ConfigurationBuilder()
-            .AddJsonFile(Path.Combine(RepoRoot(), "Agent", "appsettings.json"))
-            .Build()
-            .GetSection("agents")
-            .Get<AgentDefinition[]>()!;
-
-        var nabu = agents.Single(a => a.Id == "nabu");
+        var nabu = BoundAgents().Single(a => a.Id == "nabu");
         nabu.Language.ShouldBe("es");
 
         McpAgent.BuildInstructions(
@@ -111,6 +105,29 @@ public class AgentAppSettingsTests
         SubAgent("jonas-worker")["providerRouting"]!["sort"]!.GetValue<string>().ShouldBe("throughput");
     }
 
+    // The raw-JSON pins above prove what the file says; these prove the binder delivers it.
+    // ProviderRouting binds by naming convention with no ErrorOnUnknownConfiguration anywhere,
+    // so a renamed property would leave the JSON key silently ignored -- every raw pin still
+    // green while nabu quietly reverts to balanced routing. Same silent-severing hazard the
+    // language test above exists for.
+    [Fact]
+    public void ProviderRouting_Nabu_ReachesAgentDefinition()
+    {
+        var nabu = BoundAgents().Single(a => a.Id == "nabu");
+
+        nabu.ProviderRouting.ShouldNotBeNull();
+        nabu.ProviderRouting!.Sort.ShouldBe(ProviderSort.Latency);
+    }
+
+    [Fact]
+    public void ProviderRouting_JonasWorker_ReachesSubAgentDefinition()
+    {
+        var worker = BoundSubAgents().Single(a => a.Id == "jonas-worker");
+
+        worker.ProviderRouting.ShouldNotBeNull();
+        worker.ProviderRouting!.Sort.ShouldBe(ProviderSort.Throughput);
+    }
+
     // Balanced routing is the absence of a provider object -- there is no `sort` value for it --
     // so it can only be asserted as an absence, never read back off a request.
     [Theory]
@@ -137,12 +154,19 @@ public class AgentAppSettingsTests
             .Concat(Root()["subAgents"]!.AsArray())
             .Select(a => a!["model"]!.GetValue<string>());
 
-        foreach (var model in models)
-        {
-            model.ShouldNotContain(":nitro");
-            model.ShouldNotContain(":floor");
-        }
+        models.ShouldAllBe(m => !m.Contains(":nitro") && !m.Contains(":floor"));
     }
+
+    private static AgentDefinition[] BoundAgents() =>
+        BoundConfig().GetSection("agents").Get<AgentDefinition[]>()!;
+
+    private static SubAgentDefinition[] BoundSubAgents() =>
+        BoundConfig().GetSection("subAgents").Get<SubAgentDefinition[]>()!;
+
+    private static IConfigurationRoot BoundConfig() =>
+        new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(RepoRoot(), "Agent", "appsettings.json"))
+            .Build();
 
     private static string[] Endpoints(string agentId) =>
         [.. Agent(agentId)["mcpServerEndpoints"]!.AsArray().Select(e => e!.GetValue<string>())];
