@@ -19,7 +19,7 @@ public sealed class MultiAgentFactory(
     IDomainToolRegistry domainToolRegistry,
     IMetricsPublisher? metricsPublisher = null,
     ILoggerFactory? loggerFactory = null,
-    Func<string, int?, IMetricsPublisher?, IChatClient>? chatClientFactory = null) : IAgentFactory
+    Func<string, int?, IMetricsPublisher?, ProviderRouting?, IChatClient>? chatClientFactory = null) : IAgentFactory
 {
 
     private readonly McpPromptCache _promptCache = new(TimeProvider.System, TimeSpan.FromSeconds(60));
@@ -52,7 +52,9 @@ public sealed class MultiAgentFactory(
 
         var chatClient = CreateChatClient(
             definition.Model, agentPublisher, definition.MaxContextTokens,
-            sessionId: $"subagent-{definition.Id}:{Guid.NewGuid():N}");
+            sessionId: $"subagent-{definition.Id}:{Guid.NewGuid():N}",
+            providerRouting: ResolveRouting(
+                $"subagent-{definition.Id}", definition.Model, definition.ProviderRouting));
 
         var effectiveClient = new ToolApprovalChatClient(
             chatClient,
@@ -99,7 +101,8 @@ public sealed class MultiAgentFactory(
             : metricsPublisher;
         var chatClient = CreateChatClient(
             definition.Model, agentPublisher, definition.MaxContextTokens,
-            sessionId: $"{definition.Id}:{agentKey.ConversationId}");
+            sessionId: $"{definition.Id}:{agentKey.ConversationId}",
+            providerRouting: ResolveRouting(definition.Id, definition.Model, definition.ProviderRouting));
         var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
 
         var name = $"{definition.Name}-{agentKey.ConversationId}";
@@ -160,15 +163,36 @@ public sealed class MultiAgentFactory(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
+    // Wholesale replacement, not a per-field merge: an agent that declares routing owns the
+    // whole object, so it can never inherit an `ignore` list invisible at its own config site.
+    private ProviderRouting? ResolveRouting(string agentId, string model, ProviderRouting? declared)
+    {
+        var effective = declared ?? openRouterConfig.ProviderRouting;
+        var logger = loggerFactory?.CreateLogger<MultiAgentFactory>();
+
+        if (logger is null)
+        {
+            return effective;
+        }
+
+        foreach (var advisory in ProviderRoutingAdvisories.For(model, effective))
+        {
+            logger.LogWarning("Agent '{AgentId}': {Advisory}", agentId, advisory);
+        }
+
+        return effective;
+    }
+
     private IChatClient CreateChatClient(
-        string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null, string? sessionId = null)
+        string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null,
+        string? sessionId = null, ProviderRouting? providerRouting = null)
     {
         var effectivePublisher = publisher ?? metricsPublisher;
         var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
 
         if (chatClientFactory is not null)
         {
-            return chatClientFactory(model, effectiveContext, effectivePublisher);
+            return chatClientFactory(model, effectiveContext, effectivePublisher, providerRouting);
         }
 
         return new OpenRouterChatClient(
@@ -177,7 +201,8 @@ public sealed class MultiAgentFactory(
             model,
             effectiveContext,
             effectivePublisher,
-            sessionId);
+            sessionId,
+            providerRouting: providerRouting);
     }
 }
 
@@ -186,6 +211,7 @@ public record OpenRouterConfig
     public required string ApiUrl { get; init; }
     public required string ApiKey { get; init; }
     public int? MaxContextTokens { get; init; }
+    public ProviderRouting? ProviderRouting { get; init; }
 }
 
 public sealed class AgentRegistryOptions

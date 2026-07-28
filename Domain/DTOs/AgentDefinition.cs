@@ -19,4 +19,5 @@ public record AgentDefinition
     public string[] EnabledFeatures { get; init; } = [];
     public int? MaxContextTokens { get; init; }
     public string? ReasoningEffort { get; init; }
+    public ProviderRouting? ProviderRouting { get; init; }
 }

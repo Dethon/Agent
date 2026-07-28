@@ -18,4 +18,5 @@ public record SubAgentDefinition
     public int MaxExecutionSeconds { get; init; } = 120;
     public int? MaxContextTokens { get; init; }
     public string? ReasoningEffort { get; init; }
+    public ProviderRouting? ProviderRouting { get; init; }
 }
