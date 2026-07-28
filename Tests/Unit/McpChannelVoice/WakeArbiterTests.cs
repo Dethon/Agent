@@ -332,6 +332,45 @@ public class WakeArbiterTests
             .Single(e => e.Metric == VoiceMetric.WakeHandoff).SatelliteId.ShouldBe("waker");
     }
 
+    // The ordinary field steal: the holder is mid-way through its FIRST utterance, so nothing has
+    // dispatched and it owns no conversation to move (bindings are minted at dispatch). The
+    // attention still moved, so this is a handoff. Reporting it as stale_steal would blame a
+    // staleness that never happened, and — since a holder only owns a binding when an EARLIER
+    // utterance of the same conversation already dispatched — that is the path most real steals take.
+    [Fact]
+    public async Task Claim_StealFromHolderWithNoConversationYet_StillRecordsAHandoff()
+    {
+        var (arbiter, time, metrics, conversations) = Create();
+        var settings = new ArbitrationSettings();
+        var holder = new SatelliteHarness("holder", "A");
+        var waker = new SatelliteHarness("waker", "B");
+        arbiter.Register("holder", holder.Handle);
+        arbiter.Register("waker", waker.Handle);
+        holder.Session.MarkSupportsPause();
+        waker.Session.MarkSupportsPause();
+
+        holder.OpenCapture(time, settings);
+        holder.Capture!.Feed(SilentChunk());
+        time.Advance(TimeSpan.FromMilliseconds(500));
+        holder.Capture.Feed(LoudChunk(600));    // faint leak of the wake word said far from A
+        time.Advance(TimeSpan.FromMilliseconds(settings.DetectionLatencyMs + 700));
+
+        waker.OpenCapture(time, settings);
+        arbiter.Claim("waker", 5000, null, "wake"); // user is right next to B: > 6 dB louder
+        await SettleAsync(time, settings.WindowMs);
+
+        holder.Paused.ShouldBe(1);
+        (await holder.Capture.Completed).ShouldBe(CaptureOutcome.Abandoned);
+        waker.Paused.ShouldBe(0);
+        conversations.GetActiveConversationId("waker").ShouldBeNull();
+        var handoff = metrics.Events.OfType<VoiceEvent>()
+            .Single(e => e.Metric == VoiceMetric.WakeHandoff);
+        handoff.SatelliteId.ShouldBe("waker");
+        handoff.Outcome.ShouldBe("holder");
+        metrics.Events.OfType<VoiceEvent>().Any(e => e.Metric == VoiceMetric.WakeSuppressed)
+            .ShouldBeFalse("the holder's turn moved to the waker, it did not go stale");
+    }
+
     [Fact]
     public async Task Claim_StealDelayedPastWinnersOwnDispatch_KeepsWinnersConversation()
     {

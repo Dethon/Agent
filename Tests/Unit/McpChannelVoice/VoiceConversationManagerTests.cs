@@ -113,7 +113,7 @@ public class VoiceConversationManagerTests
         var conversationId = await sut.GetOrCreateAsync(sessionA, "agent-1", "hola", default);
 
         clock.Advance(TimeSpan.FromMinutes(2));
-        sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBeTrue();
+        sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBe(BindingTransfer.Moved);
 
         sut.GetActiveConversationId("sat-b").ShouldBe(conversationId);
         sut.GetActiveConversationId("sat-a").ShouldBeNull();
@@ -127,12 +127,12 @@ public class VoiceConversationManagerTests
     }
 
     [Fact]
-    public void TransferBinding_NoActiveConversation_ReturnsFalse()
+    public void TransferBinding_NoActiveConversation_ReportsNothingToMove()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var (sut, _) = Build(clock);
 
-        sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBeFalse();
+        sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBe(BindingTransfer.NothingToMove);
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public class VoiceConversationManagerTests
         var conversationB = await sut.GetOrCreateAsync(sessionB, "agent-1", "hey", default);
 
         clock.Advance(TimeSpan.FromMinutes(2));
-        sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBeTrue();
+        sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBe(BindingTransfer.Moved);
 
         sut.GetActiveConversationId("sat-b").ShouldBe(conversationA);
         sut.ResolveSatelliteId(conversationB).ShouldBeNull();
@@ -175,7 +175,7 @@ public class VoiceConversationManagerTests
 
         // sat-b's own turn already ran and bound its own conversation after the claim: the
         // handoff is stale, and displacing conversationB would silently drop its in-flight reply.
-        sut.TransferBinding("sat-a", "sat-b", claimedAt).ShouldBeFalse();
+        sut.TransferBinding("sat-a", "sat-b", claimedAt).ShouldBe(BindingTransfer.DeclinedStale);
 
         sut.ResolveSatelliteId(conversationB).ShouldBe("sat-b");
         sut.GetActiveConversationId("sat-b").ShouldBe(conversationB);

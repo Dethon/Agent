@@ -200,11 +200,22 @@ public sealed class WakeArbiter(
             // TransferBinding declines a stale handoff (the winner bound its own conversation
             // after the claim — its turn already ran while this decision was delayed): the
             // holder still lost its leaked capture and gets re-armed, but nothing moved, so the
-            // record is a holder suppression, not a handoff.
-            var moved = conversations.TransferBinding(
+            // record is a holder suppression, not a handoff. NothingToMove is the opposite fact and
+            // stays a handoff: the holder was on its first utterance, so it had no conversation to
+            // carry over — the ordinary field steal, and reporting it as a staleness would blame a
+            // late decision that never happened.
+            var transfer = conversations.TransferBinding(
                 holderId, winner.Claim.SatelliteId, winner.Claim.ReceivedAt);
-            await PublishAsync(moved
+            await PublishAsync(transfer is BindingTransfer.DeclinedStale
                 ? new VoiceEvent
+                {
+                    Metric = VoiceMetric.WakeSuppressed,
+                    SatelliteId = holderId,
+                    Room = holderHandle.Session.Config.Room,
+                    Identity = holderHandle.Session.Config.Identity,
+                    Outcome = "stale_steal"
+                }
+                : new VoiceEvent
                 {
                     Metric = VoiceMetric.WakeHandoff,
                     SatelliteId = winner.Claim.SatelliteId,
@@ -213,14 +224,6 @@ public sealed class WakeArbiter(
                     Outcome = holderId,
                     WakeRms = winner.Claim.WakeRms,
                     WakeScore = winner.Claim.WakeScore
-                }
-                : new VoiceEvent
-                {
-                    Metric = VoiceMetric.WakeSuppressed,
-                    SatelliteId = holderId,
-                    Room = holderHandle.Session.Config.Room,
-                    Identity = holderHandle.Session.Config.Identity,
-                    Outcome = "stale_steal"
                 });
             await SendReArmAsync(holderHandle);
             return;

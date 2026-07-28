@@ -3,6 +3,17 @@ using Domain.DTOs.Channel;
 
 namespace McpChannelVoice.Services;
 
+// Outcome of an attention handoff. The two non-moving cases are deliberately distinct because only
+// one of them means a handoff was refused: DeclinedStale is the winner's own turn having already
+// run, while NothingToMove is the ordinary first-utterance steal — the holder had no conversation
+// yet, so the attention moved with nothing to carry.
+public enum BindingTransfer
+{
+    Moved,
+    DeclinedStale,
+    NothingToMove
+}
+
 // One active conversation per satellite. Each utterance renews a TimeProvider-based
 // idle timer; when it fires, the in-memory mapping is dropped so the next utterance
 // mints a fresh conversation. Persisted Redis history and the WebChat topic are left
@@ -93,18 +104,21 @@ public sealed class VoiceConversationManager(
     // newer than the claim means the winner's turn already ran independently while the decision
     // was delayed, and the agent's reply to that binding may still be in flight — displacing it
     // would silently drop the reply, so the stale handoff is skipped instead.
-    public bool TransferBinding(string fromSatelliteId, string toSatelliteId, long claimedAt)
+    public BindingTransfer TransferBinding(string fromSatelliteId, string toSatelliteId, long claimedAt)
     {
         lock (_gate)
         {
             if (_bySatellite.TryGetValue(toSatelliteId, out var target) && target.BoundAt >= claimedAt)
             {
-                return false;
+                return BindingTransfer.DeclinedStale;
             }
 
+            // Bindings are minted at dispatch, so a holder still mid-capture owns one only if an
+            // earlier utterance of the same conversation already dispatched. Having none is the
+            // normal first-utterance case, not a refusal.
             if (!_bySatellite.Remove(fromSatelliteId, out var entry))
             {
-                return false;
+                return BindingTransfer.NothingToMove;
             }
 
             if (_bySatellite.Remove(toSatelliteId, out var displaced))
@@ -118,7 +132,7 @@ public sealed class VoiceConversationManager(
             logger.LogInformation(
                 "Voice conversation {ConversationId} handed off {From} -> {To}",
                 entry.ConversationId, fromSatelliteId, toSatelliteId);
-            return true;
+            return BindingTransfer.Moved;
         }
     }
 
