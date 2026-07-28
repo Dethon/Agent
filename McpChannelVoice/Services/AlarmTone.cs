@@ -8,7 +8,10 @@ namespace McpChannelVoice.Services;
 public static class AlarmTone
 {
     private const int SampleRateHz = 22_050;
-    private const double Amplitude = 0.5;
+    // Near full scale on purpose: the earcon is the attention-grabbing part of an alert and used
+    // to sit 6 dB under the speech that follows it. A pure sine does not clip here, and Segment's
+    // 10 ms fades keep the edges click-free; the remaining headroom is for the PipeWire mixer.
+    private const double Amplitude = 0.9;
 
     private static readonly AudioFormat _playbackFormat = new()
     {
