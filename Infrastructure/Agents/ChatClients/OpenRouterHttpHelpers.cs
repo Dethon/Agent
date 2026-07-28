@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.DTOs;
 
 namespace Infrastructure.Agents.ChatClients;
 
@@ -10,7 +11,8 @@ internal static class OpenRouterHttpHelpers
 {
     private static readonly string[] _reasoningPropertyNames = ["reasoning", "reasoning_content", "thinking"];
 
-    public static async Task PrepareRequestBodyAsync(HttpRequestMessage request, string? sessionId, CancellationToken ct)
+    public static async Task PrepareRequestBodyAsync(
+        HttpRequestMessage request, string? sessionId, ProviderRouting? providerRouting, CancellationToken ct)
     {
         if (request.Method != HttpMethod.Post ||
             request.Content?.Headers.ContentType?.MediaType?
@@ -44,7 +46,51 @@ internal static class OpenRouterHttpHelpers
         // whether the ~17k static prefix is actually being served from the provider's prompt cache.
         obj["usage"] = new JsonObject { ["include"] = true };
 
+        // Per-agent provider routing. Omitted entirely when unset: OpenRouter's balanced load
+        // balancing has no explicit `sort` value and is only reachable by sending no `sort` and
+        // no `order` at all.
+        if (BuildProviderNode(providerRouting) is { } provider)
+        {
+            obj["provider"] = provider;
+        }
+
         request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
+    }
+
+    internal static JsonObject? BuildProviderNode(ProviderRouting? routing)
+    {
+        if (routing is null || routing.IsEmpty)
+        {
+            return null;
+        }
+
+        var node = new JsonObject();
+
+        if (routing.Sort is { } sort)
+        {
+            node["sort"] = sort.ToString().ToLowerInvariant();
+        }
+
+        AddSlugs(node, "order", routing.Order);
+        AddSlugs(node, "only", routing.Only);
+        AddSlugs(node, "ignore", routing.Ignore);
+
+        if (routing.AllowFallbacks is { } allowFallbacks)
+        {
+            node["allow_fallbacks"] = allowFallbacks;
+        }
+
+        return node;
+    }
+
+    private static void AddSlugs(JsonObject node, string key, string[]? slugs)
+    {
+        if (slugs is not { Length: > 0 })
+        {
+            return;
+        }
+
+        node[key] = new JsonArray(slugs.Select(s => (JsonNode?)JsonValue.Create(s)).ToArray());
     }
 
     // Some OpenRouter providers (e.g., Z.AI / GLM) reject assistant messages with tool_calls when content is empty
