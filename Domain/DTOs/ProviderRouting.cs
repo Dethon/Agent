@@ -31,3 +31,51 @@ public enum ProviderSort
     Throughput,
     Latency
 }
+
+// Two routing configurations are legal, silent, and almost certainly not what the author meant.
+// Neither is visible in a response, so they are reported at agent construction instead.
+public static class ProviderRoutingAdvisories
+{
+    private static readonly (string Suffix, ProviderSort Sort)[] _suffixSorts =
+    [
+        (":nitro", ProviderSort.Throughput),
+        (":floor", ProviderSort.Price)
+    ];
+
+    public static IReadOnlyList<string> For(string model, ProviderRouting? routing)
+    {
+        return routing is null
+            ? []
+            : new[] { SuffixConflict(model, routing), StickyRoutingLoss(routing) }
+                .OfType<string>()
+                .ToList();
+    }
+
+    private static string? SuffixConflict(string model, ProviderRouting routing)
+    {
+        if (routing.Sort is not { } sort)
+        {
+            return null;
+        }
+
+        var match = _suffixSorts.FirstOrDefault(
+            s => model.EndsWith(s.Suffix, StringComparison.OrdinalIgnoreCase));
+
+        return match.Suffix is not null && match.Sort != sort
+            ? $"model '{model}' carries the '{match.Suffix}' suffix, which means sort "
+              + $"'{Name(match.Sort)}', but providerRouting.sort is '{Name(sort)}'. OpenRouter "
+              + "does not document which wins -- remove one."
+            : null;
+    }
+
+    private static string? StickyRoutingLoss(ProviderRouting routing)
+    {
+        return routing.Order is { Length: > 0 }
+            ? "providerRouting.order disables OpenRouter sticky routing, so the session_id on "
+              + "each request is ignored and the prompt cache goes cold every turn. Use 'only' "
+              + "with 'sort' to restrict the provider set without that cost."
+            : null;
+    }
+
+    private static string Name(ProviderSort sort) => sort.ToString().ToLowerInvariant();
+}
