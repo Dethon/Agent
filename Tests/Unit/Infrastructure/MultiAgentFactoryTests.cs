@@ -258,6 +258,29 @@ public sealed class MultiAgentFactoryTests
         logs.ShouldNotContain(m => m.Contains("sticky routing") || m.Contains("providerRouting.sort"));
     }
 
+    // The chatClientFactory seam short-circuits before the real OpenRouterChatClient
+    // construction, so the routing tests above pin ResolveRouting but not the argument
+    // mapping at the real ctor call -- the one hop a null slip would sever in production
+    // only, invisibly to every seam-based test. This drives the real branch end-to-end
+    // onto a captured request.
+    [Fact]
+    public async Task CreateChatClient_NoFactoryOverride_StampsRoutingAndSessionOntoTheRequest()
+    {
+        var handler = new CapturingSseHandler();
+
+        using var client = _sut.CreateChatClient(
+            "test-model",
+            sessionId: "session-1",
+            providerRouting: new ProviderRouting { Sort = ProviderSort.Latency },
+            transportHandler: handler);
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "hi")]);
+
+        var body = System.Text.Json.Nodes.JsonNode.Parse(handler.CapturedBody!)!.AsObject();
+        body["provider"]!["sort"]!.GetValue<string>().ShouldBe("latency");
+        body["session_id"]!.GetValue<string>().ShouldBe("session-1");
+    }
+
     private static AgentDefinition RoutedAgent(string id, ProviderRouting? routing) => new()
     {
         Id = id,

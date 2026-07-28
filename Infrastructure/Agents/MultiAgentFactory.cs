@@ -183,9 +183,10 @@ public sealed class MultiAgentFactory(
         return effective;
     }
 
-    private IChatClient CreateChatClient(
+    internal IChatClient CreateChatClient(
         string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null,
-        string? sessionId = null, ProviderRouting? providerRouting = null)
+        string? sessionId = null, ProviderRouting? providerRouting = null,
+        HttpMessageHandler? transportHandler = null)
     {
         var effectivePublisher = publisher ?? metricsPublisher;
         var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
@@ -202,7 +203,8 @@ public sealed class MultiAgentFactory(
             effectiveContext,
             effectivePublisher,
             sessionId,
-            providerRouting: providerRouting);
+            providerRouting: providerRouting,
+            transportHandler: transportHandler);
     }
 }
 

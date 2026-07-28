@@ -1,5 +1,3 @@
-using System.Net;
-using System.Text;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
 using Infrastructure.Agents.ChatClients;
@@ -18,7 +16,7 @@ public sealed class OpenRouterChatClientTests
     [Fact]
     public async Task GetResponseAsync_CtorRoutingAndSession_ReachTheOutgoingRequestBody()
     {
-        var handler = new CapturingHandler();
+        var handler = new CapturingSseHandler();
         using var client = new OpenRouterChatClient(
             "http://localhost/api/v1",
             "test-key",
@@ -32,31 +30,5 @@ public sealed class OpenRouterChatClientTests
         var body = JsonNode.Parse(handler.CapturedBody!)!.AsObject();
         body["provider"]!["sort"]!.GetValue<string>().ShouldBe("latency");
         body["session_id"]!.GetValue<string>().ShouldBe("session-1");
-    }
-
-    private sealed class CapturingHandler : HttpMessageHandler
-    {
-        private const string Sse =
-            """
-            data: {"id":"1","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}
-
-            data: [DONE]
-
-            """;
-
-        public string? CapturedBody { get; private set; }
-
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            CapturedBody = request.Content is null
-                ? null
-                : await request.Content.ReadAsStringAsync(cancellationToken);
-
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(Sse, Encoding.UTF8, "text/event-stream")
-            };
-        }
     }
 }
