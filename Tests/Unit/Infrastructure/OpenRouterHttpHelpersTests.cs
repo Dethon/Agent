@@ -252,7 +252,8 @@ public class OpenRouterHttpHelpersTests
         await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
 
         // Assert
-        JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"].ShouldBeNull();
+        JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject()
+            .ContainsKey("provider").ShouldBeFalse();
     }
 
     [Fact]
@@ -266,7 +267,8 @@ public class OpenRouterHttpHelpersTests
             request, null, new ProviderRouting(), CancellationToken.None);
 
         // Assert
-        JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"].ShouldBeNull();
+        JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject()
+            .ContainsKey("provider").ShouldBeFalse();
     }
 
     [Fact]
