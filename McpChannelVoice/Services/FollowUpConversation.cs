@@ -40,6 +40,12 @@ public sealed class FollowUpConversation(
     // an arbitration-abandoned or speechless capture never lights it.
     public required Func<CancellationToken, Task> SpeechStopped { get; init; }
 
+    // Tell the satellite the mic is live again for a wake-free follow-up turn — this returns its
+    // indicator from Thinking to Listening. It cannot infer the moment: its own capture never
+    // closed, so from its side a reply draining looks the same whether the agent is mid-answer or
+    // done. Sent just before the capture opens, so the light and the live mic agree.
+    public required Func<CancellationToken, Task> ListeningStarted { get; init; }
+
     // Reset / await the per-turn "did the agent speak?" handshake.
     public required Action ResetTurn { get; init; }
     public required Func<Task<bool>> AwaitReply { get; init; }
@@ -180,6 +186,19 @@ public sealed class FollowUpConversation(
 
                 turns++;
                 await OnFollowUpWindow(ct);
+                try
+                {
+                    await ListeningStarted(ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    // Same contract as SpeechStopped: this only drives the satellite's indicator,
+                    // so a failed write must never cost the user the window it was announcing.
+                }
                 capture = OpenCapture(true);
             }
         }

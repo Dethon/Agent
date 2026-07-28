@@ -324,6 +324,8 @@ public sealed class WyomingSatelliteHost(
                 WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), token),
             SpeechStopped = token => client.WriteAsync(
                 WyomingEvent.Header("voice-stopped", new JsonObject()), token),
+            ListeningStarted = token => client.WriteAsync(
+                WyomingEvent.Header("listening-started", new JsonObject()), token),
             ResetTurn = session.ResetTurn,
             AwaitReply = session.WaitForTurnSpokenAsync,
             OnFollowUpWindow = token =>

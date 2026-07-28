@@ -1,6 +1,6 @@
 use serde_json::{json, Map, Value};
 
-pub const PROTOCOL_VERSION: &str = "1.5"; // matches the hub's WyomingWriter
+pub const PROTOCOL_VERSION: &str = "1.6"; // matches the hub's WyomingWriter
 
 #[derive(Debug, Clone)]
 pub struct WyomingEvent {
@@ -53,10 +53,11 @@ mod tests {
         assert_eq!(e.data.as_ref().unwrap()["rate"], serde_json::json!(16000));
         assert_eq!(e.payload, vec![1, 2, 3, 4]);
     }
-    // The alert routing field on audio-start landed in 1.5; the constant is documented as ONE
-    // number shared with the hub's WyomingWriter.ProtocolVersion, so it moves with the wire.
+    // The alert routing field on audio-start landed in 1.5, the listening-started event in
+    // 1.6; the constant is documented as ONE number shared with the hub's
+    // WyomingWriter.ProtocolVersion, so it moves with the wire.
     #[test]
-    fn protocol_version_is_1_5() {
-        assert_eq!(PROTOCOL_VERSION, "1.5");
+    fn protocol_version_is_1_6() {
+        assert_eq!(PROTOCOL_VERSION, "1.6");
     }
 }

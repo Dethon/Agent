@@ -24,13 +24,20 @@ Standalone Rust crate (NOT in the .NET solution): a fully static aarch64-musl Wy
 - **Zero-lag pre-roll**: while idle, mic chunks fill a pre-roll ring (`--preroll-ms`, default 1000); a wake trigger flushes only the detection gap (3 chunks ≈ 240 ms), never the wake word itself; a button press flushes the full ring.
 - **Wire format**: frames are one contiguous buffer with event `data` sent once as the `data_length` body (the hub's reader prefers the body; its writer emits the same shape) — pinned by a codec test.
 
-## Wake Metadata & Arbitration (PROTOCOL_VERSION 1.5)
+## Wake Metadata & Arbitration (PROTOCOL_VERSION 1.6)
 
 `run-pipeline` carries `{"source":"wake"|"button","wake_rms":f32,"wake_score":f32}` — rms over the pre-roll ring minus the detection gap, BEFORE trim, in i16-amplitude units matching the hub's SilenceGate. The hub may reply `pause-satellite` (arbitration loss): Streaming → audio-stop back, Idle, detector reset, NO cue, LED Idle; Idle → no-op.
 
 A button-triggered `run-pipeline` carries only `{"source":"button"}` with no `wake_rms`, and the hub marks a connection pause-capable only after seeing a non-null `wake_rms` — so a satellite whose first turn on a connection is a button press still gets the legacy audible `transcript` abort if that turn loses arbitration.
 
 The hub also sends `voice-stopped` (header-only) once it has endpointed the user's speech and is about to transcribe — deliberately NOT sent for captures abandoned to arbitration or ending in silence. The satellite uses it purely as the Thinking indicator and does **not** close its capture on it; only `transcript`, the actual turn-end signal, does that.
+
+`listening-started` (header-only, 1.6) is its counterpart: the hub sends it from
+`FollowUpConversation` just before it reopens the mic for a wake-free follow-up turn, and the
+satellite uses it purely to move the turn's LED phase back to Listening. The satellite cannot
+infer that moment — its own capture never closed, so from its side a reply draining looks
+identical whether the agent is mid-answer or finished. Ignored while Idle, and a pre-1.6 hub
+simply never sends it (the ring then keeps breathing through the window).
 
 `audio-start` carries `alert: bool` (1.5). `true` routes the stream to `--alert-snd-command`
 instead of `--snd-command` — on music units a non-attenuated `alert` softvol, so a timer or alarm
@@ -52,7 +59,8 @@ without it a misconfigured alert device drops the hub connection for the whole d
 The state machine publishes `LedState` (Idle/Listening/Thinking/Speaking) on a tokio watch channel; a per-connection render task owns the backend — the reSpeaker XVF3800's 12-LED WS2812 ring, driven over USB vendor control transfers (`bmRequestType` 0x40/0xC0, `bRequest` 0x00, `wValue` = command id, `wIndex` = resource 0x14, LE payload; every write is status-read like the vendor's `xvf_host`). Command ids: `LED_EFFECT` 0x0c, `LED_BRIGHTNESS` 0x0d, `LED_SPEED` 0x0f, `LED_COLOR` 0x10, `LED_DOA_COLOR` 0x11.
 
 - **Looks**: Idle → effect 0 (dark), Listening → effect 4 (DoA, blue ring + green pointer), Thinking → breathing blue (effect 1), Speaking → solid blue (effect 3). Colour is always written BEFORE effect so the old colour can't flash in the new mode.
-- **Phase mapping** (`handle_hub_event`): `run-pipeline` (wake or button) → Listening; `voice-stopped` → Thinking (capture stays open); `audio-start` → Speaking; a reply's drain completing while `mode` is still `Streaming` → Listening (the follow-up window, mic genuinely live again); `transcript` → Idle. Idle after a reply therefore means actual-playback-complete. A 120 s Thinking fallback mirrors the hub reply timeout in case `voice-stopped` fired but no reply/transcript ever arrives.
+- **Phase mapping** (`handle_hub_event`): `run-pipeline` (wake or button) → Listening; `voice-stopped` → Thinking (capture stays open); `listening-started` → Listening; `audio-start` → Speaking; `transcript` → Idle. Idle after a reply therefore means actual-playback-complete. A 120 s Thinking fallback mirrors the hub reply timeout in case `voice-stopped` fired but no reply/transcript ever arrives.
+- **A stream draining mid-turn returns the ring to the turn's phase, not to a fixed state.** `run_connection` carries `phase` (Listening/Thinking) alongside `mode`, and `apply_drain_done` publishes it whenever `mode` is still `Streaming` — Idle otherwise. This is what makes the seams of a segmented answer (say something → call a tool → say the rest) read as Thinking: they are one hub turn, so no `transcript` arrives between them, and hard-coding Listening there put the ring on the DoA look, which with no sound in the room renders as good as dark. Listening is still correct **before** `voice-stopped` — an announcement draining while a fresh capture is open — which is the case that mapping was originally added for.
 - Enabled by default when 2886:001a is on USB (`--no-led` opts out); an absent device or USB subsystem is silent, a failed open warns. **The service needs write access to the USB node** — provisioning's `99-nabu-usb-audio.rules` sets `MODE="0660", GROUP="plugdev"` and the unit lists `plugdev`; without it the ring stays dark. `main.rs` blanks the ring at startup and on SIGTERM/SIGINT, because the ring's power-on default is lit and the render task only exists while a hub is connected.
 
 ## Hardware: reSpeaker XVF3800 + MiniAmp (deployed fran-office unit)
