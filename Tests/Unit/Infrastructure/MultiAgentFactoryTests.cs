@@ -133,17 +133,21 @@ public sealed class MultiAgentFactoryTests
         ex.Message.ShouldContain(expectedMessageFragment ?? agentId);
     }
 
+    // The global default carries an `ignore` the agent never declares: a field-by-field merge
+    // would leak it while leaving `sort` intact, so only a fixture shaped like this can tell
+    // wholesale replacement from a merge.
     [Fact]
     public void Create_AgentDeclaresRouting_UsesItsOwnAndNotTheGlobalDefault()
     {
         var agentRouting = new ProviderRouting { Sort = ProviderSort.Latency };
         var (factory, captured, _) = CreateCapturingFactory(
-            new ProviderRouting { Sort = ProviderSort.Throughput },
+            new ProviderRouting { Sort = ProviderSort.Throughput, Ignore = ["chutes"] },
             RoutedAgent("routed", agentRouting));
 
         factory.Create(new AgentKey("1:1", "test"), "user1", "routed", _approvalHandler.Object);
 
         captured.Single().ShouldBe(agentRouting);
+        captured.Single()!.Ignore.ShouldBeNull();
     }
 
     [Fact]
@@ -169,17 +173,19 @@ public sealed class MultiAgentFactoryTests
         captured.Single().ShouldBeNull();
     }
 
+    // Same merge-vs-wholesale fixture shape as the agent variant above.
     [Fact]
     public void CreateSubAgent_DeclaresRouting_UsesItsOwnAndNotTheGlobalDefault()
     {
         var subRouting = new ProviderRouting { Sort = ProviderSort.Throughput };
         var (factory, captured, _) = CreateCapturingFactory(
-            new ProviderRouting { Sort = ProviderSort.Price });
+            new ProviderRouting { Sort = ProviderSort.Price, Ignore = ["chutes"] });
 
         factory.CreateSubAgent(
             RoutedSubAgent(subRouting), _approvalHandler.Object, [], "user1");
 
         captured.Single().ShouldBe(subRouting);
+        captured.Single()!.Ignore.ShouldBeNull();
     }
 
     [Fact]
@@ -194,6 +200,16 @@ public sealed class MultiAgentFactoryTests
     }
 
     [Fact]
+    public void CreateSubAgent_NeitherDeclaresRouting_ResolvesToNull()
+    {
+        var (factory, captured, _) = CreateCapturingFactory(null);
+
+        factory.CreateSubAgent(RoutedSubAgent(null), _approvalHandler.Object, [], "user1");
+
+        captured.Single().ShouldBeNull();
+    }
+
+    [Fact]
     public void Create_RoutingTripsAnAdvisory_LogsAWarningNamingTheAgent()
     {
         var routing = new ProviderRouting { Order = ["deepinfra"] };
@@ -202,6 +218,31 @@ public sealed class MultiAgentFactoryTests
         factory.Create(new AgentKey("1:1", "test"), "user1", "noisy", _approvalHandler.Object);
 
         logs.ShouldContain(m => m.Contains("noisy") && m.Contains("sticky routing"));
+    }
+
+    // Advisories run on the resolved routing, not the declared one: a global default that trips
+    // one must warn for every agent that inherits it, or the config mistake stays invisible
+    // exactly where it does the most damage.
+    [Fact]
+    public void Create_InheritedGlobalRoutingTripsAnAdvisory_LogsAWarningNamingTheAgent()
+    {
+        var globalRouting = new ProviderRouting { Order = ["deepinfra"] };
+        var (factory, _, logs) = CreateCapturingFactory(globalRouting, RoutedAgent("plain", null));
+
+        factory.Create(new AgentKey("1:1", "test"), "user1", "plain", _approvalHandler.Object);
+
+        logs.ShouldContain(m => m.Contains("plain") && m.Contains("sticky routing"));
+    }
+
+    [Fact]
+    public void CreateSubAgent_RoutingTripsAnAdvisory_LogsAWarningNamingTheSubAgent()
+    {
+        var routing = new ProviderRouting { Order = ["deepinfra"] };
+        var (factory, _, logs) = CreateCapturingFactory(null);
+
+        factory.CreateSubAgent(RoutedSubAgent(routing), _approvalHandler.Object, [], "user1");
+
+        logs.ShouldContain(m => m.Contains("subagent-worker") && m.Contains("sticky routing"));
     }
 
     // Asserts the absence of an advisory rather than an empty log: agent construction may warn
