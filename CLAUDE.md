@@ -76,6 +76,29 @@ New configuration lives in `appsettings.json` / `appsettings.Development.json` b
 
 A new generic tunable (threshold, window, feature flag) belongs in `appsettings.json` **alone**. When adding code that reads a new setting, update whichever category applies in the same change.
 
+## OpenRouter Provider Routing
+
+Each `agents[]` / `subAgents[]` entry may carry a `providerRouting` object (`sort` ∈
+`price`|`throughput`|`latency`, plus `order`, `only`, `ignore`, `allowFallbacks`), overriding
+`openRouter.providerRouting` **wholesale** — never field-by-field. It reaches the wire through
+the same path as `session_id`: `MultiAgentFactory.ResolveRouting` → `OpenRouterChatClient` →
+`ReasoningHandler` → `OpenRouterHttpHelpers.PrepareRequestBodyAsync`, which stamps `provider`.
+
+**Balanced routing is the absence of the object.** OpenRouter has no `sort` value for its
+default load balancing (uptime filter, then inverse-square price weighting) — it is only
+reachable by sending neither `sort` nor `order`, so the global default ships unset and
+`AgentAppSettingsTests` pins it that way. `sort: "price"` is a different thing: deterministically
+the cheapest provider, not a weighted spread.
+
+**`order` costs the prompt cache.** Sticky routing — the reason every request carries a
+`session_id` — is disabled when `provider.order` is set, so the ~17k-token static prefix is
+re-sent uncached every turn. `sort` does *not* disable it. Prefer `only` + `sort` to restrict
+the provider set. `ProviderRoutingAdvisories` logs a warning for this and for a `:nitro`/`:floor`
+model suffix fighting an explicit `sort`; both are warnings, never throws, because the same path
+serves runtime-created agents.
+
+Current: `nabu` latency, `jonas-worker` throughput, everything else balanced.
+
 ## Multi-Agent Patterns
 
 - **Stuck workers**: replace, don't wait — spawn a fresh agent for the same task. Never retry the same failing action more than twice; after two failures reassess or escalate.
