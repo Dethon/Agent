@@ -37,8 +37,9 @@ instead of `--snd-command` — on music units a non-attenuated `alert` softvol, 
 rings at full scale rather than the calibrated conversational `TTS` level. The hub sets it only for
 insistent announces (timers and alarms). Read defensively and defaulted to `false`, so a pre-1.5
 hub, an ordinary reply and a garbage value all keep the normal sink. If the alert device cannot be
-opened the pump falls back to the normal sink and warns — never connection-fatal, because a quiet
-alarm beats a dropped connection. That covers **both** failure shapes, which is why the fallback is
+opened the pump falls back to the normal sink and warns — never connection-fatal on open, because a
+quiet alarm beats a dropped connection (a player that outlives the probe and dies mid-ring is still
+an ordinary fatal playback error). That covers **both** failure shapes, which is why the fallback is
 not merely an `Err` branch: a missing player binary fails `spawn()`, but the realistic case — an
 undefined `pcm.alert` — spawns fine and dies on the device open, invisible until writes EPIPE well
 into the ring. So an alert sink gets a 50 ms `try_wait` liveness probe before a stream is committed
