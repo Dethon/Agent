@@ -8,7 +8,10 @@ public sealed class ChannelInbox(
     TimeSpan? subscriberIdleTimeout = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private readonly TimeSpan _idleTimeout = subscriberIdleTimeout ?? TimeSpan.FromMinutes(5);
+    // Only an *empty* subscriber is ever evicted, so this bounds nothing but abandoned bookkeeping.
+    // A healthy agent touches its subscriber at least every 30s (the long-poll ceiling, which is
+    // also the reconnect backoff cap), so an hour is ~120x any legitimate gap.
+    private readonly TimeSpan _idleTimeout = subscriberIdleTimeout ?? TimeSpan.FromHours(1);
     private readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
     private readonly int _capacity = ValidateCapacity(capacity);
 
@@ -35,9 +38,19 @@ public sealed class ChannelInbox(
         TimeSpan maxWait,
         CancellationToken ct)
     {
-        var subscriber = _subscribers.GetOrAdd(subscriberId, _ => new Subscriber());
-        subscriber.Touch(_timeProvider.GetUtcNow());
-        return subscriber.ReceiveAsync(maxWait, _timeProvider, ct);
+        var now = _timeProvider.GetUtcNow();
+        while (true)
+        {
+            var subscriber = _subscribers.GetOrAdd(subscriberId, _ => new Subscriber());
+            if (subscriber.TryTouch(now))
+            {
+                return subscriber.ReceiveAsync(maxWait, _timeProvider, ct);
+            }
+
+            // A concurrent prune retired this instance between the lookup and the touch. Finish its
+            // removal ourselves rather than poll a subscriber Enqueue can no longer reach.
+            _subscribers.TryRemove(new KeyValuePair<string, Subscriber>(subscriberId, subscriber));
+        }
     }
 
     private static int ValidateCapacity(int capacity)
@@ -46,13 +59,16 @@ public sealed class ChannelInbox(
         return capacity;
     }
 
+    // Eviction exists only to stop the subscriber map growing without bound; it must never be the
+    // thing that loses a message. A subscriber still holding items is kept however long it has been
+    // idle, so a channel outage of any length is survivable — capacity, not time, is the bound.
     private void PruneIdle()
     {
         var cutoff = _timeProvider.GetUtcNow() - _idleTimeout;
-        var stale = _subscribers.Where(kv => kv.Value.LastPolledAt < cutoff).Select(kv => kv.Key);
-        foreach (var key in stale)
+        var retired = _subscribers.Where(kv => kv.Value.TryRetire(cutoff)).ToArray();
+        foreach (var entry in retired)
         {
-            _subscribers.TryRemove(key, out _);
+            _subscribers.TryRemove(entry);
         }
     }
 
@@ -61,14 +77,37 @@ public sealed class ChannelInbox(
         private readonly Lock _gate = new();
         private readonly Queue<ChannelInboxItem> _items = new();
         private TaskCompletionSource<bool>? _waiter;
+        private DateTimeOffset _lastPolledAt;
+        private bool _retired;
 
-        public DateTimeOffset LastPolledAt { get; private set; }
-
-        public void Touch(DateTimeOffset now)
+        public bool TryTouch(DateTimeOffset now)
         {
             lock (_gate)
             {
-                LastPolledAt = now;
+                if (_retired)
+                {
+                    return false;
+                }
+
+                _lastPolledAt = now;
+                return true;
+            }
+        }
+
+        // Both conditions are read under the same lock that Enqueue and Drain mutate them under, and
+        // the retirement is latched in the same critical section: an item can never be accepted into
+        // a queue that a prune has already decided to throw away.
+        public bool TryRetire(DateTimeOffset cutoff)
+        {
+            lock (_gate)
+            {
+                if (_retired || _items.Count > 0 || _lastPolledAt >= cutoff)
+                {
+                    return false;
+                }
+
+                _retired = true;
+                return true;
             }
         }
 
@@ -77,6 +116,11 @@ public sealed class ChannelInbox(
             TaskCompletionSource<bool>? toSignal;
             lock (_gate)
             {
+                if (_retired)
+                {
+                    return;
+                }
+
                 if (_items.Count >= capacity)
                 {
                     _items.Dequeue();

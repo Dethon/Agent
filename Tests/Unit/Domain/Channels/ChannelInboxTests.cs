@@ -130,14 +130,53 @@ public class ChannelInboxTests
     }
 
     [Fact]
-    public async Task Subscriber_IsEvictedAfterIdleTimeout()
+    public async Task Subscriber_WhenIdleAndEmpty_IsEvicted()
     {
+        using var cts = new CancellationTokenSource(Deadline);
         var time = new FakeTimeProvider();
         var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
-        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
 
         inbox.HasSubscribers.ShouldBeTrue();
 
+        time.Advance(TimeSpan.FromMinutes(6));
+
+        inbox.HasSubscribers.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Subscriber_WhenIdleWithQueuedItems_IsNotEvictedAndStillDeliversThem()
+    {
+        using var cts = new CancellationTokenSource(Deadline);
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+
+        inbox.Enqueue(Message("c1"));
+        inbox.Enqueue(Message("c2"));
+
+        // A channel outage outlasting the idle timeout must not discard what was buffered during it.
+        time.Advance(TimeSpan.FromHours(3));
+
+        inbox.HasSubscribers.ShouldBeTrue();
+
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+
+        batch.Select(i => i.Message!.ConversationId).ShouldBe(["c1", "c2"]);
+    }
+
+    [Fact]
+    public async Task Subscriber_WhenIdleAfterDrainingItems_IsEvicted()
+    {
+        using var cts = new CancellationTokenSource(Deadline);
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+
+        inbox.Enqueue(Message("c1"));
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token)).Count.ShouldBe(1);
+
+        // Having once held items must not make a subscriber permanently unevictable.
         time.Advance(TimeSpan.FromMinutes(6));
 
         inbox.HasSubscribers.ShouldBeFalse();
