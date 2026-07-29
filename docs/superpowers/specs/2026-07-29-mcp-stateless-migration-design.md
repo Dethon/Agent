@@ -401,6 +401,15 @@ wrong, find out on one server instead of six.
   channels keep the window deliberately: ServiceBus redelivers through the broker, Scheduling and
   Library keep a durable record that stays due, and SignalR/Voice messages come from a live
   interactive session rather than a fire-and-forget sender.
+- **Two agent processes sharing one channel server split the stream.** Every agent process
+  derives the same `channel-<channelId>` subscriber id, and the inbox keeps one waiter per id:
+  each poll displaces the previous one, so every message reaches exactly one of the two
+  processes, non-deterministically. Pre-migration the session fan-out *duplicated* to both —
+  annoying, but visible. This is the dev/prod-hubs-dialing-one-satellite contention shape applied
+  to channels (a dev stack pointed at prod channel servers will hit it); the observable signature
+  is a run of instantly-empty polls, which the pump promotes to a Warning after three in a row
+  (`McpChannelConnection.SplitStreamWarnThreshold`, re-warned about once a minute while the
+  contention lasts).
 - **Browser sessions reclaim up to 30 minutes later** than the old DELETE hook managed.
 
 ## Non-goals

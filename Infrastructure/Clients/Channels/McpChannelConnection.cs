@@ -32,6 +32,16 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
         TimeSpan.FromMilliseconds(ChannelProtocol.DefaultReceiveWaitMs / 2.0);
     private static readonly TimeSpan _earlyEmptyThrottle = TimeSpan.FromMilliseconds(250);
 
+    // One displaced poll is routine — our own reconnect issues a fresh poll right behind the dying
+    // pump's, and the inbox retires the old waiter with an instant empty batch. A *run* of them is
+    // the signature of another process polling the same subscriber id (two agents pointed at one
+    // channel server — the dev/prod contention shape): the rival displaces us every time, and each
+    // message reaches exactly one of the two processes, non-deterministically. Three in a row is
+    // past anything a reconnect can produce; the re-warn interval keeps a long-lived rival visible
+    // (~once a minute at the 250ms throttle) without turning sustained contention into log spam.
+    private const int SplitStreamWarnThreshold = 3;
+    private const int SplitStreamRewarnEvery = 240;
+
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
     private McpClient? _client;
     private CancellationTokenSource? _pumpCts;
@@ -71,6 +81,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
     {
         var subscriberId = $"{ChannelProtocol.ChannelClientNamePrefix}{ChannelId}";
         var backoff = _minBackoff;
+        var consecutiveEarlyEmpties = 0;
 
         while (!ct.IsCancellationRequested)
         {
@@ -82,12 +93,27 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
                     // Items delivered, or the wait honoured in full: re-poll at once, so the next
                     // real message is never sitting behind a timer.
                     backoff = _minBackoff;
+                    consecutiveEarlyEmpties = 0;
                     continue;
                 }
 
-                logger?.LogDebug(
-                    "{Tool} came back empty early on {ChannelId}; throttling the next poll",
-                    ChannelProtocol.ReceiveTool, ChannelId);
+                consecutiveEarlyEmpties++;
+                if (consecutiveEarlyEmpties == SplitStreamWarnThreshold ||
+                    consecutiveEarlyEmpties % SplitStreamRewarnEvery == 0)
+                {
+                    logger?.LogWarning(
+                        "{Tool} on {ChannelId} was displaced {Count} polls in a row; another process " +
+                        "is likely polling subscriber id {SubscriberId} and splitting the stream — " +
+                        "each message reaches exactly one of the two processes",
+                        ChannelProtocol.ReceiveTool, ChannelId, consecutiveEarlyEmpties, subscriberId);
+                }
+                else
+                {
+                    logger?.LogDebug(
+                        "{Tool} came back empty early on {ChannelId}; throttling the next poll",
+                        ChannelProtocol.ReceiveTool, ChannelId);
+                }
+
                 pause = _earlyEmptyThrottle;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -99,6 +125,8 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
                 logger?.LogWarning(ex, "channel_receive failed on {ChannelId}; retrying", ChannelId);
                 pause = backoff;
                 backoff = TimeSpan.FromSeconds(Math.Min(backoff.TotalSeconds * 2, _maxBackoff.TotalSeconds));
+                // An error is not displacement evidence; a rival poller produces clean empties.
+                consecutiveEarlyEmpties = 0;
             }
 
             try

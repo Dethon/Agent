@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -381,6 +382,65 @@ public class ChannelReceiveContractTests
         }
     }
 
+    // Two agent processes pointed at one channel server derive the same subscriber id, and the
+    // inbox keeps one waiter per id: each poll displaces the other process's, so every message
+    // reaches exactly one of them, non-deterministically — the dev/prod contention failure shape.
+    // A single displaced poll is routine (our own reconnect does it); a *run* of them is the
+    // signature of a second poller, and it must surface as a Warning, not stay buried at Debug.
+    [Fact]
+    public async Task McpChannelConnection_WhenASecondPollerSharesItsSubscriberId_WarnsAboutTheSplitStream()
+    {
+        var port = TestPort.GetAvailable();
+        var inbox = new ChannelInbox();
+        var warnings = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<McpChannelReceiveTool>());
+        var endpoint = $"http://localhost:{port}/mcp";
+        await using var connection = new McpChannelConnection(
+            "signalr", logger: new CapturingConnectionLogger(warnings));
+        try
+        {
+            await connection.ConnectAsync(endpoint, CancellationToken.None);
+
+            await using var rival = await McpClient.CreateAsync(
+                new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }));
+
+            using var contention = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var rivalLoop = Task.Run(async () =>
+            {
+                // Mutual displacement keeps every poll short, so this loop spins fast; it stops
+                // as soon as the warning has been observed (or the deadline hits).
+                while (!contention.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Poll(rival, SignalRSubscriberId, maxWaitMs: 30_000);
+                    }
+                    catch
+                    {
+                        return;
+                    }
+                }
+            });
+
+            while (warnings.IsEmpty && !contention.IsCancellationRequested)
+            {
+                await Task.Delay(100);
+            }
+
+            await contention.CancelAsync();
+            await rivalLoop.WaitAsync(TimeSpan.FromSeconds(35));
+
+            warnings.ShouldContain(w => w.Contains("splitting the stream"));
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
     [Fact]
     public async Task AHeldLongPoll_DoesNotBlockOtherToolCallsOnTheSameClient()
     {
@@ -493,6 +553,26 @@ public class ChannelReceiveContractTests
 
         var text = call.Content.OfType<TextContentBlock>().First().Text;
         return JsonSerializer.Deserialize<ChannelReceiveResult>(text, ChannelProtocol.SerializerOptions)!;
+    }
+}
+
+// Captures the pump's warnings for the contention pin; thread-safe because the pump logs from
+// its own loop while the test thread polls the queue.
+public sealed class CapturingConnectionLogger(
+    System.Collections.Concurrent.ConcurrentQueue<string> warnings) : ILogger<McpChannelConnection>
+{
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+    public void Log<TState>(
+        LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        if (logLevel >= LogLevel.Warning)
+        {
+            warnings.Enqueue(formatter(state, exception));
+        }
     }
 }
 
