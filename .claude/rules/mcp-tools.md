@@ -28,11 +28,21 @@ public class McpExampleTool(IDependency dep) : ExampleTool(dep)
         string parameter,
         CancellationToken cancellationToken)
     {
-        var sessionId = context.Server.StateKey;
-        return ToolResponse.Create(await Run(sessionId, parameter, cancellationToken));
+        if (!ConversationScope.TryResolve(context.Params?.Meta, out var scope))
+        {
+            return ToolResponse.Create(ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                "Conversation context is missing from request _meta.",
+                retryable: false));
+        }
+
+        return ToolResponse.Create(await Run(scope, parameter, cancellationToken));
     }
 }
 ```
+
+The scope guard is only needed by tools that cache per-caller state across calls
+(`file_search`/`download_file`, the `web_*` browse tools). A stateless tool takes no scope at all.
 
 ## Error Handling
 
@@ -40,6 +50,11 @@ Error handling is centralized via `AddCallToolFilter` in each server's `ConfigMo
 
 ## Key Points
 
-- Use `context.Server.StateKey` for session identification
+- There is no MCP session: `McpServer.SessionId` is always null under the 2026-07-28 protocol, and
+  `ClientInfo.Name` is the *agent* name, so it collapses every user and conversation into one bucket.
+  Per-caller state is namespaced with `Domain.Channels.ConversationScope`, which reads the
+  `ConversationContext` the agent stamps into every `tools/call`'s `_meta`. Never fall back when it
+  is absent — return a `ToolError`, because a shared-bucket fallback leaks state across conversations
+  and a per-request fallback silently severs multi-call flows.
 - Do NOT add try/catch or `ILogger<T>` for error handling — the global filter handles this
 - `Name` and `Description` constants come from the base Domain tool
