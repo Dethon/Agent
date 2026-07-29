@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -52,23 +53,13 @@ public class ChannelReceiveContractTests
     // id cannot drift with the implementation it is pinning.
     private const string SignalRSubscriberId = ChannelProtocol.ChannelClientNamePrefix + "signalr";
 
-    // One row per channel server. Later channel migrations each append exactly one row; the test
-    // body is written once and never copied.
-    public static TheoryData<string, Action<IMcpServerBuilder>> Servers => new()
-    {
-        { "signalr", b => b.WithTools<ChannelReceiveTool>() },
-        { "telegram", b => b.WithTools<ChannelReceiveTool>() },
-        { "servicebus", b => b.WithTools<ChannelReceiveTool>() },
-        { "voice", b => b.WithTools<ChannelReceiveTool>() },
-        { "scheduling", b => b.WithTools<ChannelReceiveTool>() },
-        { "library", b => b.WithTools<ChannelReceiveTool>() }
-    };
-
-    // One row per channel server, driving that server's REAL registration entry point. The
-    // contract test hand-registers the tool and the inbox, so it stays green against a ConfigModule
-    // that forgot .WithTools<ChannelReceiveTool>() or .AddSingleton<ChannelInbox>() — which would
-    // ship a silently dead channel. This theory is what catches that.
-    public static TheoryData<string, Action<IServiceCollection>> Registrations => new()
+    // One row per channel server, driving that server's REAL registration entry point — the
+    // ConfigModule that ships. Hand-registering ChannelReceiveTool and ChannelInbox here instead
+    // would stay green against a module that forgot either (a silently dead channel), and would
+    // pin the SDK's transport defaults rather than the options each module actually passes to
+    // WithHttpTransport. Later channel migrations append exactly one row; the test bodies are
+    // written once and never copied.
+    public static TheoryData<string, Action<IServiceCollection>> Servers => new()
     {
         {
             "signalr",
@@ -126,14 +117,14 @@ public class ChannelReceiveContractTests
 
     [Theory]
     [MemberData(nameof(Servers))]
-    public async Task EnqueuedMessage_IsDeliveredToAPollingClient(
-        string channelId, Action<IMcpServerBuilder> registerTool)
+    public async Task ChannelServer_NegotiatesStatelessProtocolAndDeliversEnqueuedMessages(
+        string channelId, Action<IServiceCollection> configureChannel)
     {
         var subscriberId = ChannelProtocol.ChannelClientNamePrefix + channelId;
         var port = TestPort.GetAvailable();
-        var inbox = new ChannelInbox();
 
-        var app = await StartServerAsync(port, inbox, registerTool);
+        var app = await StartChannelServerAsync(port, configureChannel);
+        var inbox = app.Services.GetRequiredService<ChannelInbox>();
         try
         {
             await using var client = await McpClient.CreateAsync(
@@ -141,6 +132,16 @@ public class ChannelReceiveContractTests
                 {
                     Endpoint = new Uri($"http://localhost:{port}/mcp")
                 }));
+
+            // The clean break, pinned per server rather than in one place. Stateless = false does
+            // not select a mode of the current protocol: it falls back to the legacy initialize
+            // handshake and renegotiates all the way down to 2025-11-25, where unsolicited
+            // SendNotificationAsync works again — so a future "fix" that sets it on any single
+            // channel server would quietly undo this whole migration for that server alone. These
+            // two lines are what make that fail loudly.
+            client.NegotiatedProtocolVersion.ShouldBe(
+                "2026-07-28", $"{channelId} must stay on the stateless protocol");
+            client.SessionId.ShouldBeNull($"{channelId} must not mint an Mcp-Session-Id");
 
             // Register the subscriber, then enqueue while a poll is in flight.
             //
@@ -176,7 +177,7 @@ public class ChannelReceiveContractTests
     }
 
     [Theory]
-    [MemberData(nameof(Registrations))]
+    [MemberData(nameof(Servers))]
     public void ChannelServerRegistration_ExposesReceiveToolAndInbox(
         string channelId, Action<IServiceCollection> configureChannel)
     {
@@ -430,6 +431,36 @@ public class ChannelReceiveContractTests
             await app.StopAsync();
             await app.DisposeAsync();
         }
+    }
+
+    // Boots a channel server from its own ConfigModule, so the MCP registration under test — tools,
+    // transport options and all — is byte-for-byte what ships.
+    private static async Task<WebApplication> StartChannelServerAsync(
+        int port, Action<IServiceCollection> configureChannel)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+
+        var hostServices = builder.Services.Count;
+        configureChannel(builder.Services);
+
+        // Only the workers the module itself added: a Telegram poller, a Service Bus processor, a
+        // Wyoming dialer — all reaching for infrastructure that is not here. The web host's own
+        // hosted service was registered before this point and must survive, or Kestrel never
+        // listens.
+        var moduleWorkers = builder.Services
+            .Skip(hostServices)
+            .Where(descriptor => descriptor.ServiceType == typeof(IHostedService))
+            .ToArray();
+        foreach (var worker in moduleWorkers)
+        {
+            builder.Services.Remove(worker);
+        }
+
+        var app = builder.Build();
+        app.MapMcp("/mcp");
+        await app.StartAsync();
+        return app;
     }
 
     private static async Task<WebApplication> StartServerAsync(
