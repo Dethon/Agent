@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace Domain.Channels;
 
 public sealed class ChannelInbox(
     TimeProvider? timeProvider = null,
     int capacity = 256,
-    TimeSpan? subscriberIdleTimeout = null)
+    TimeSpan? subscriberIdleTimeout = null,
+    ILogger<ChannelInbox>? logger = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     // Only an *empty* subscriber is ever evicted, so this bounds nothing but abandoned bookkeeping.
@@ -33,9 +35,17 @@ public sealed class ChannelInbox(
     public void Enqueue(ChannelInboxItem item)
     {
         PruneIdle();
-        foreach (var subscriber in _subscribers.Values)
+        var dropped = _subscribers
+            .Where(entry => entry.Value.Enqueue(item, _capacity))
+            .Select(entry => entry.Key)
+            .ToArray();
+        if (dropped.Length > 0)
         {
-            subscriber.Enqueue(item, _capacity);
+            // Capacity is the only bound on what an outage can buffer, so crossing it is the
+            // moment a message is irrecoverably lost — the one line that must not pass silently.
+            logger?.LogWarning(
+                "Inbox at capacity ({Capacity}); dropped the oldest buffered item for {SubscriberIds}",
+                _capacity, string.Join(", ", dropped));
         }
     }
 
@@ -139,9 +149,11 @@ public sealed class ChannelInbox(
             }
         }
 
-        public void Enqueue(ChannelInboxItem item, int capacity)
+        // True when admitting the item cost the oldest buffered one, so the inbox can log the loss.
+        public bool Enqueue(ChannelInboxItem item, int capacity)
         {
             TaskCompletionSource<bool>? toSignal;
+            var droppedOldest = false;
             lock (_gate)
             {
                 // Refusing here is what makes retirement safe: a prune that has already latched this
@@ -149,12 +161,13 @@ public sealed class ChannelInbox(
                 // predates the removal, or that item would be accepted into a queue nobody drains.
                 if (_retired)
                 {
-                    return;
+                    return false;
                 }
 
                 if (_items.Count >= capacity)
                 {
                     _items.Dequeue();
+                    droppedOldest = true;
                 }
 
                 _items.Enqueue(item);
@@ -163,6 +176,7 @@ public sealed class ChannelInbox(
             }
 
             toSignal?.TrySetResult(true);
+            return droppedOldest;
         }
 
         public async Task<IReadOnlyList<ChannelInboxItem>> ReceiveAsync(

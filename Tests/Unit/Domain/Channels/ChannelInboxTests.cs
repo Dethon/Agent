@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
@@ -69,6 +70,26 @@ public class ChannelInboxTests
         var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
 
         batch.Select(i => i.Message!.ConversationId).ShouldBe(["c2", "c3"]);
+    }
+
+    // Capacity is the documented survival bound — "capacity, not time" — so crossing it must
+    // leave a trace: during a long enough outage user messages start vanishing at this line, and
+    // without the warning nothing anywhere records that it happened.
+    [Fact]
+    public async Task Enqueue_BeyondCapacity_WarnsAboutTheDroppedItem()
+    {
+        var warnings = new List<string>();
+        var inbox = new ChannelInbox(
+            new FakeTimeProvider(), capacity: 2, logger: new CapturingLogger(warnings));
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        inbox.Enqueue(Message("c1"));
+        inbox.Enqueue(Message("c2"));
+        warnings.ShouldBeEmpty();
+
+        inbox.Enqueue(Message("c3"));
+
+        warnings.ShouldHaveSingleItem().ShouldContain(Subscriber);
     }
 
     [Fact]
@@ -383,6 +404,23 @@ public class ChannelInboxTests
 
         batch.Count.ShouldBe(1);
         batch[0].Message!.ConversationId.ShouldBe("c2");
+    }
+
+    private sealed class CapturingLogger(List<string> warnings) : ILogger<ChannelInbox>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= LogLevel.Warning)
+            {
+                warnings.Add(formatter(state, exception));
+            }
+        }
     }
 
     // Parks a poll's continuations on a context only the test pumps, which pins the interleaving
