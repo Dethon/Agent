@@ -1,3 +1,4 @@
+using Domain.Channels;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,7 @@ namespace Tests.Unit.McpChannelTelegram;
 public class TelegramBotServiceTests : IDisposable
 {
     private readonly Mock<ITelegramBotClient> _botClient = new();
+    private readonly ChannelInbox _inbox = new();
     private readonly ChannelNotificationEmitter _emitter;
     private readonly ApprovalCallbackRouter _callbackRouter = new();
     private readonly BotRegistry _botRegistry;
@@ -21,7 +23,7 @@ public class TelegramBotServiceTests : IDisposable
 
     public TelegramBotServiceTests()
     {
-        _emitter = new ChannelNotificationEmitter(new Mock<ILogger<ChannelNotificationEmitter>>().Object);
+        _emitter = new ChannelNotificationEmitter(_inbox);
         var settings = new ChannelSettings
         {
             Bots = [new AgentBotConfig { AgentId = "jack", BotToken = "unused" }],
@@ -55,7 +57,7 @@ public class TelegramBotServiceTests : IDisposable
                 }
             }
         ]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 
@@ -74,7 +76,7 @@ public class TelegramBotServiceTests : IDisposable
                 Message = CreateTextMessage("/hello", 100, "eve")
             }
         ]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 
@@ -93,7 +95,7 @@ public class TelegramBotServiceTests : IDisposable
                 Message = CreateTextMessage("just chatting", 100, "alice")
             }
         ]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 
@@ -112,7 +114,7 @@ public class TelegramBotServiceTests : IDisposable
                 Message = CreateTextMessage("/ask what is 2+2", 100, "alice")
             }
         ]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 
@@ -174,7 +176,7 @@ public class TelegramBotServiceTests : IDisposable
                 Message = CreateTextMessage("/ask something", 100, "alice")
             }
         ]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 
@@ -188,7 +190,7 @@ public class TelegramBotServiceTests : IDisposable
         msg.MessageThreadId = 42;
 
         SetupPollingSequence([new Update { Id = 1, Message = msg }]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 

@@ -1,3 +1,5 @@
+using Domain.Channels;
+using Infrastructure.McpTools;
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
@@ -20,12 +22,10 @@ public static class ConfigModule
 
     public static IServiceCollection ConfigureChannel(this IServiceCollection services, ChannelSettings settings)
     {
-        var notificationEmitter = new ChannelNotificationEmitter(
-            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ChannelNotificationEmitter>());
-
         services
             .AddSingleton(settings)
-            .AddSingleton(notificationEmitter)
+            .AddSingleton<ChannelInbox>()
+            .AddSingleton<ChannelNotificationEmitter>()
             .AddSingleton(new BotRegistry(settings.Bots))
             .AddSingleton<MessageAccumulator>()
             .AddSingleton<ApprovalCallbackRouter>()
@@ -33,31 +33,22 @@ public static class ConfigModule
 
         services
             .AddMcpServer()
-            .WithHttpTransport(options =>
-            {
-#pragma warning disable MCPEXP002 // RunSessionHandler is experimental
-                options.RunSessionHandler = async (_, server, ct) =>
-                {
-                    var sessionId = server.SessionId ?? Guid.NewGuid().ToString();
-                    notificationEmitter.RegisterSession(sessionId, server);
-                    try
-                    {
-                        await server.RunAsync(ct);
-                    }
-                    finally
-                    {
-                        notificationEmitter.UnregisterSession(sessionId);
-                    }
-                };
-#pragma warning restore MCPEXP002
-            })
+            .WithHttpTransport()
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            .WithTools<ChannelReceiveTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
                 {
                     return await next(context, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
+                    // or the server shuts down. Mapping that to IsError would hand the pump an
+                    // error result to retry on; let it propagate as the abort it is.
+                    throw;
                 }
                 catch (Exception ex)
                 {

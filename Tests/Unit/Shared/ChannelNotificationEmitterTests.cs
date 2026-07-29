@@ -3,7 +3,6 @@ using ModelContextProtocol.Server;
 using Moq;
 using Shouldly;
 using ServiceBusChannel = McpChannelServiceBus.Services;
-using TelegramChannel = McpChannelTelegram.Services;
 using VoiceChannel = McpChannelVoice.Services;
 
 namespace Tests.Unit.Shared;
@@ -16,15 +15,6 @@ public class ChannelNotificationEmitterTests
 {
     public static TheoryData<string, Func<IChannelNotificationEmitterAdapter>> Implementations => new()
     {
-        {
-            "Telegram",
-            () =>
-            {
-                var sut = new TelegramChannel.ChannelNotificationEmitter(
-                    new Mock<ILogger<TelegramChannel.ChannelNotificationEmitter>>().Object);
-                return new ReflectionAdapter(sut);
-            }
-        },
         {
             "ServiceBus",
             () =>

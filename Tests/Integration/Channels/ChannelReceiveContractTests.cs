@@ -7,6 +7,7 @@ using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
 using Infrastructure.McpTools;
 using McpChannelSignalR.Modules;
+using McpChannelTelegram.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -19,6 +20,7 @@ using Tests.Integration.Fixtures;
 // Aliased because Tests.Integration has a sibling namespace named after the channel project
 // (Tests.Integration.McpChannelSignalR), which shadows the project namespace from inside Tests.
 using SignalRSettings = McpChannelSignalR.Settings;
+using TelegramSettings = McpChannelTelegram.Settings;
 
 namespace Tests.Integration.Channels;
 
@@ -39,7 +41,8 @@ public class ChannelReceiveContractTests
     // body is written once and never copied.
     public static TheoryData<string, Action<IMcpServerBuilder>> Servers => new()
     {
-        { "signalr", b => b.WithTools<ChannelReceiveTool>() }
+        { "signalr", b => b.WithTools<ChannelReceiveTool>() },
+        { "telegram", b => b.WithTools<ChannelReceiveTool>() }
     };
 
     // One row per channel server, driving that server's REAL registration entry point. The
@@ -52,6 +55,11 @@ public class ChannelReceiveContractTests
             "signalr",
             services => services.ConfigureChannel(
                 new SignalRSettings.ChannelSettings { RedisConnectionString = UnreachableRedis })
+        },
+        {
+            "telegram",
+            services => services.ConfigureChannel(
+                new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] })
         }
     };
 
