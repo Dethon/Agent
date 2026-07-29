@@ -41,7 +41,7 @@ public class QualifiedMcpToolMetaTests(MetaEchoServerFixture fixture) : IClassFi
         {
             var result = await qualified.InvokeAsync(new AIFunctionArguments(), CancellationToken.None);
             var text = result is string s ? s : JsonSerializer.Serialize(result);
-            text.ShouldContain("conversationContext");
+            text.ShouldContain(ChannelProtocol.ConversationContextMetaKey);
             text.ShouldContain("conv-1");
             text.ShouldContain("signalr");
         }

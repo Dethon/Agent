@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.Channels;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -15,8 +17,35 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 {
     private const string CancelCommandContent = "/cancel";
 
+    private static readonly TimeSpan _minBackoff = TimeSpan.FromSeconds(1);
+
+    // Shared with the liveness contract, not a local tuning knob: LiveSubscriberFreshness is sized
+    // to a fully held poll plus exactly one of these worst-case pauses, so raising the ceiling
+    // here without raising the freshness window makes channel servers misread a retrying pump as
+    // a disconnected agent.
+    private static readonly TimeSpan _maxBackoff =
+        TimeSpan.FromMilliseconds(ChannelProtocol.MaxReceiveRetryBackoffMs);
+
+    // Long enough that only a poll the server never really held can miss it, short enough that
+    // mistaking a genuinely short-waiting server for a spin costs milliseconds, not seconds.
+    private static readonly TimeSpan _minHonouredWait =
+        TimeSpan.FromMilliseconds(ChannelProtocol.DefaultReceiveWaitMs / 2.0);
+    private static readonly TimeSpan _earlyEmptyThrottle = TimeSpan.FromMilliseconds(250);
+
+    // One displaced poll is routine — our own reconnect issues a fresh poll right behind the dying
+    // pump's, and the inbox retires the old waiter with an instant empty batch. A *run* of them is
+    // the signature of another process polling the same subscriber id (two agents pointed at one
+    // channel server — the dev/prod contention shape): the rival displaces us every time, and each
+    // message reaches exactly one of the two processes, non-deterministically. Three in a row is
+    // past anything a reconnect can produce; the re-warn interval keeps a long-lived rival visible
+    // (~once a minute at the 250ms throttle) without turning sustained contention into log spam.
+    private const int SplitStreamWarnThreshold = 3;
+    private const int SplitStreamRewarnEvery = 240;
+
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
     private McpClient? _client;
+    private CancellationTokenSource? _pumpCts;
+    private Task? _pumpTask;
 
     public string ChannelId { get; } = channelId;
 
@@ -26,6 +55,10 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     public async Task ConnectAsync(string endpoint, CancellationToken ct)
     {
+        // Never leave a second pump alive on this connection: two of them share one subscriberId
+        // and displace each other's waiter, which the inbox retires with an instant empty batch.
+        await StopPumpAsync();
+
         _client = await McpClient.CreateAsync(
             new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }),
             new McpClientOptions
@@ -38,31 +71,144 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
             },
             cancellationToken: ct);
 
-        _client.RegisterNotificationHandler(
-            ChannelProtocol.MessageNotification,
-            (notification, _) =>
+        _pumpCts = new CancellationTokenSource();
+        _pumpTask = PumpAsync(_pumpCts.Token);
+    }
+
+    // Inbound items are pulled, not pushed: a stateless server cannot address a session, so the
+    // agent long-polls channel_receive and feeds the two notification handlers itself.
+    private async Task PumpAsync(CancellationToken ct)
+    {
+        var subscriberId = $"{ChannelProtocol.ChannelClientNamePrefix}{ChannelId}";
+        var backoff = _minBackoff;
+        var consecutiveEarlyEmpties = 0;
+
+        while (!ct.IsCancellationRequested)
+        {
+            TimeSpan pause;
+            try
             {
-                if (notification.Params is { } paramsNode)
+                if (await PollOnceAsync(subscriberId, ct))
                 {
-                    var element = JsonSerializer.Deserialize<JsonElement>(paramsNode.ToJsonString());
-                    HandleChannelMessageNotification(element);
+                    // Items delivered, or the wait honoured in full: re-poll at once, so the next
+                    // real message is never sitting behind a timer.
+                    backoff = _minBackoff;
+                    consecutiveEarlyEmpties = 0;
+                    continue;
                 }
 
-                return ValueTask.CompletedTask;
-            });
-
-        _client.RegisterNotificationHandler(
-            ChannelProtocol.CancelNotification,
-            (notification, _) =>
-            {
-                if (notification.Params is { } paramsNode)
+                consecutiveEarlyEmpties++;
+                if (consecutiveEarlyEmpties == SplitStreamWarnThreshold ||
+                    consecutiveEarlyEmpties % SplitStreamRewarnEvery == 0)
                 {
-                    var element = JsonSerializer.Deserialize<JsonElement>(paramsNode.ToJsonString());
-                    HandleChannelCancelNotification(element);
+                    logger?.LogWarning(
+                        "{Tool} on {ChannelId} was displaced {Count} polls in a row; another process " +
+                        "is likely polling subscriber id {SubscriberId} and splitting the stream — " +
+                        "each message reaches exactly one of the two processes",
+                        ChannelProtocol.ReceiveTool, ChannelId, consecutiveEarlyEmpties, subscriberId);
+                }
+                else
+                {
+                    logger?.LogDebug(
+                        "{Tool} came back empty early on {ChannelId}; throttling the next poll",
+                        ChannelProtocol.ReceiveTool, ChannelId);
                 }
 
-                return ValueTask.CompletedTask;
-            });
+                pause = _earlyEmptyThrottle;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "channel_receive failed on {ChannelId}; retrying", ChannelId);
+                pause = backoff;
+                backoff = TimeSpan.FromSeconds(Math.Min(backoff.TotalSeconds * 2, _maxBackoff.TotalSeconds));
+                // An error is not displacement evidence; a rival poller produces clean empties.
+                consecutiveEarlyEmpties = 0;
+            }
+
+            try
+            {
+                await Task.Delay(pause, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    // False when the batch came back empty without the server having honoured a meaningful share
+    // of the wait. That is the shape of a displaced waiter, which the inbox retires instantly —
+    // re-polling on it with no pause is how a stray second poller spins a core.
+    private async Task<bool> PollOnceAsync(string subscriberId, CancellationToken ct)
+    {
+        var startedAt = Stopwatch.GetTimestamp();
+        var call = await _client!.CallToolAsync(
+            ChannelProtocol.ReceiveTool,
+            new Dictionary<string, object?>
+            {
+                ["subscriberId"] = subscriberId,
+                ["maxWaitMs"] = ChannelProtocol.DefaultReceiveWaitMs
+            },
+            cancellationToken: ct);
+
+        var text = call.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
+        if (call.IsError == true || string.IsNullOrEmpty(text))
+        {
+            // Not a batch: re-polling straight away would spin the loop hot against a server that
+            // keeps answering this way, so take the back-off path.
+            throw new InvalidOperationException($"{ChannelProtocol.ReceiveTool} returned no batch: {text}");
+        }
+
+        var batch = JsonSerializer.Deserialize<ChannelReceiveResult>(text, ChannelProtocol.SerializerOptions);
+        var items = batch?.Items ?? [];
+        foreach (var item in items)
+        {
+            Dispatch(item);
+        }
+
+        return items.Count > 0 || Stopwatch.GetElapsedTime(startedAt) >= _minHonouredWait;
+    }
+
+    private void Dispatch(ChannelInboxItem item)
+    {
+        if (item.Kind == ChannelInboxItemKind.Message)
+        {
+            HandleChannelMessageNotification(
+                JsonSerializer.SerializeToElement(item.Message, ChannelProtocol.SerializerOptions));
+        }
+        else
+        {
+            HandleChannelCancelNotification(
+                JsonSerializer.SerializeToElement(item.Cancel, ChannelProtocol.SerializerOptions));
+        }
+    }
+
+    private async Task StopPumpAsync()
+    {
+        if (_pumpCts is null)
+        {
+            return;
+        }
+
+        await _pumpCts.CancelAsync();
+        if (_pumpTask is not null)
+        {
+            try
+            {
+                await _pumpTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        _pumpCts.Dispose();
+        _pumpCts = null;
+        _pumpTask = null;
     }
 
     public void HandleChannelMessageNotification(JsonElement payload)
@@ -267,6 +413,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     public async ValueTask DisposeAsync()
     {
+        await StopPumpAsync();
         _messageChannel.Writer.TryComplete();
         if (_client is not null)
         {
@@ -294,6 +441,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     public async Task ReconnectAsync(string endpoint, CancellationToken ct)
     {
+        await StopPumpAsync();
         if (_client is not null)
         {
             await _client.DisposeAsync();

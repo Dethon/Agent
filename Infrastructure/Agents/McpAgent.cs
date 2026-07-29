@@ -28,6 +28,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly string[] _endpoints;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
+    private readonly ILogger<McpAgent>? _logger;
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
     private readonly string _userId;
@@ -68,6 +69,7 @@ public sealed class McpAgent : DisposableAgent
         _endpoints = endpoints;
         _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
         _loggerFactory = loggerFactory;
+        _logger = loggerFactory?.CreateLogger<McpAgent>();
         _name = name;
         _description = description;
         _userId = userId;
@@ -280,10 +282,32 @@ public sealed class McpAgent : DisposableAgent
             Reasoning = _reasoningEffort is null
                 ? null
                 : new ReasoningOptions { Effort = _reasoningEffort.Value },
-            AdditionalProperties = conversationContext is null
-                ? null
-                : new AdditionalPropertiesDictionary { [ConversationContextMeta.OptionsKey] = conversationContext }
+            AdditionalProperties = BuildConversationContextProperties(conversationContext)
         });
+    }
+
+    // The 2026-07-28 protocol dropped MCP sessions: a server may no longer treat connection or
+    // process identity as a proxy for conversation continuity, so every tools/call has to carry
+    // its own context. The property bag is therefore built unconditionally -- an absent context
+    // is a defect, not a mode.
+    //
+    // It is reported rather than thrown, deliberately. The context is metadata that only some
+    // downstream servers consume (Library search scoping, WebSearch browser sessions); the LLM
+    // turn itself does not need it. Throwing would trade a degraded tool call for a dead
+    // user-facing turn, and it would do so on the whole of McpAgent, whose non-channel callers
+    // (harnesses, benchmarks, any future non-channel trigger) legitimately run without one.
+    // What this task exists to prevent is the SILENT omission, and an error log fixes that.
+    private AdditionalPropertiesDictionary BuildConversationContextProperties(ConversationContext? conversationContext)
+    {
+        if (conversationContext is null)
+        {
+            _logger?.LogError(
+                "Agent '{AgentName}' ran without a ConversationContext; MCP tool calls in this run carry no '{MetaKey}' _meta",
+                _name, ChannelProtocol.ConversationContextMetaKey);
+            return [];
+        }
+
+        return new AdditionalPropertiesDictionary { [ConversationContextMeta.OptionsKey] = conversationContext };
     }
 
     internal static string BuildInstructions(
@@ -362,7 +386,7 @@ public sealed class McpAgent : DisposableAgent
             }
 
             var newSession = await ThreadSession
-                .CreateAsync(_endpoints, _name, _userId, _description, _innerAgent,
+                .CreateAsync(_endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
                              ct, _promptCache);
             _threadSessions[thread] = newSession;

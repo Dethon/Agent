@@ -1,7 +1,5 @@
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -29,7 +27,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -38,7 +35,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             "TestClient",
             "test-user",
             "Test Description",
-            agent,
             [],
             new HashSet<string>(),
             null,
@@ -67,7 +63,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var session = await ThreadSession.CreateAsync(
@@ -75,7 +70,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             "DisposeTestClient",
             "test-user",
             "Dispose Test",
-            agent,
             [],
             new HashSet<string>(),
             null,
@@ -93,7 +87,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
     {
         // Arrange - Use the same endpoint twice to verify multiple connections
         using var chatClient = CreateChatClient();
-        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -102,7 +95,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             "MultiEndpointClient",
             "test-user",
             "Multi Endpoint Test",
-            agent,
             [],
             new HashSet<string>(),
             null,

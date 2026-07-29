@@ -1,59 +1,28 @@
-using System.Collections.Concurrent;
+using Domain.Channels;
 using Domain.DTOs.Channel;
-using Microsoft.Extensions.Logging;
-using ModelContextProtocol.Server;
 
 namespace McpServerLibrary.Services;
 
-public sealed class DownloadNotificationEmitter(ILogger<DownloadNotificationEmitter> logger)
-    : IDownloadNotificationEmitter
+public sealed class DownloadNotificationEmitter(ChannelInbox inbox) : IDownloadNotificationEmitter
 {
-    private readonly ConcurrentDictionary<string, McpServer> _activeSessions = new();
+    // Only the agent's channel connection ever calls channel_receive on this dual-role server —
+    // tool sessions (per-conversation filesystem clients) never poll it, so no client-name filter
+    // is needed here: the distinction is structural now, not something the emitter enforces.
+    //
+    // ChannelProtocol.LiveSubscriberFreshness (not HasSubscribers) gates both properties below:
+    // DownloadCompletionWatcher drops the routing entry only when EmitAsync returns true, so a
+    // disconnected-but-still-buffering subscriber must not read as "delivered" — see the constant's
+    // own doc comment for why HasSubscribers is the wrong check for that.
+    public bool HasActiveSessions => inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness);
 
-    public void RegisterSession(string sessionId, McpServer server)
+    public Task<bool> EmitAsync(ChannelMessageNotification payload, CancellationToken ct = default)
     {
-        _activeSessions[sessionId] = server;
-        logger.LogInformation("MCP session registered: {SessionId}", sessionId);
-    }
-
-    public void UnregisterSession(string sessionId)
-    {
-        _activeSessions.TryRemove(sessionId, out _);
-        logger.LogInformation("MCP session unregistered: {SessionId}", sessionId);
-    }
-
-    // Tool sessions (the agent's per-conversation MCP clients) also land here; they silently drop
-    // channel/message notifications, so only channel-client sessions count as delivery targets —
-    // otherwise EmitAsync reports success, the routing entry is deleted, and the alert is lost.
-    public bool HasActiveSessions =>
-        _activeSessions.Values.Any(s => ChannelProtocol.IsChannelClientName(s.ClientInfo?.Name));
-
-    public async Task<bool> EmitAsync(ChannelMessageNotification payload, CancellationToken ct = default)
-    {
-        var channelSessions = _activeSessions.Values
-            .Where(s => ChannelProtocol.IsChannelClientName(s.ClientInfo?.Name))
-            .ToList();
-        if (channelSessions.Count == 0)
+        if (!inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness))
         {
-            return false;
+            return Task.FromResult(false);
         }
 
-        var tasks = channelSessions.Select(async server =>
-        {
-            try
-            {
-                await server.SendNotificationAsync(
-                    ChannelProtocol.MessageNotification, payload, ChannelProtocol.SerializerOptions, ct);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to emit channel/message notification");
-                return false;
-            }
-        });
-
-        var results = await Task.WhenAll(tasks);
-        return Array.Exists(results, delivered => delivered);
+        inbox.Enqueue(ChannelInboxItem.ForMessage(payload));
+        return Task.FromResult(true);
     }
 }

@@ -1,6 +1,9 @@
+using Domain.Channels;
+using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 using Telegram.Bot;
@@ -13,6 +16,8 @@ namespace Tests.Unit.McpChannelTelegram;
 public class TelegramBotServiceTests : IDisposable
 {
     private readonly Mock<ITelegramBotClient> _botClient = new();
+    private readonly FakeTimeProvider _time = new();
+    private readonly ChannelInbox _inbox;
     private readonly ChannelNotificationEmitter _emitter;
     private readonly ApprovalCallbackRouter _callbackRouter = new();
     private readonly BotRegistry _botRegistry;
@@ -21,7 +26,8 @@ public class TelegramBotServiceTests : IDisposable
 
     public TelegramBotServiceTests()
     {
-        _emitter = new ChannelNotificationEmitter(new Mock<ILogger<ChannelNotificationEmitter>>().Object);
+        _inbox = new ChannelInbox(_time);
+        _emitter = new ChannelNotificationEmitter(_inbox);
         var settings = new ChannelSettings
         {
             Bots = [new AgentBotConfig { AgentId = "jack", BotToken = "unused" }],
@@ -55,7 +61,7 @@ public class TelegramBotServiceTests : IDisposable
                 }
             }
         ]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 
@@ -74,7 +80,7 @@ public class TelegramBotServiceTests : IDisposable
                 Message = CreateTextMessage("/hello", 100, "eve")
             }
         ]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 
@@ -93,7 +99,7 @@ public class TelegramBotServiceTests : IDisposable
                 Message = CreateTextMessage("just chatting", 100, "alice")
             }
         ]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 
@@ -112,7 +118,7 @@ public class TelegramBotServiceTests : IDisposable
                 Message = CreateTextMessage("/ask what is 2+2", 100, "alice")
             }
         ]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 
@@ -120,6 +126,7 @@ public class TelegramBotServiceTests : IDisposable
         _botClient.Verify(b => b.SendRequest(
             It.IsAny<SendMessageRequest>(),
             It.IsAny<CancellationToken>()), Times.Never);
+        (await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None)).Count.ShouldBe(1);
     }
 
     [Fact]
@@ -146,8 +153,12 @@ public class TelegramBotServiceTests : IDisposable
         result.ShouldBe("approved");
     }
 
+    // No subscriber is registered at all here — the cold-start case. Two things are pinned:
+    // Telegram stays quiet toward the sender (the reverted drop policy is not allowed to grow
+    // back a "the agent is unavailable" reply), and the message is buffered anyway, because the
+    // emitter targets the well-known subscriber id and mints its queue on demand.
     [Fact]
-    public async Task ExecuteAsync_NoActiveSessions_DropsMessage()
+    public async Task ExecuteAsync_NoActiveSessions_BuffersSilentlyWithoutRejectingTheSender()
     {
         SetupPollingSequence([
             new Update
@@ -162,6 +173,41 @@ public class TelegramBotServiceTests : IDisposable
         _botClient.Verify(b => b.SendRequest(
             It.IsAny<SendMessageRequest>(),
             It.IsAny<CancellationToken>()), Times.Never);
+
+        var buffered = await _inbox.ReceiveAsync(
+            ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
+        buffered.ShouldHaveSingleItem().Message!.Content.ShouldBe("/hello");
+    }
+
+    // Corrects a regression this suite itself introduced: an earlier round made Telegram gate
+    // EmitMessageNotificationAsync on HasActiveSessions, so a stale (but not yet evicted)
+    // subscriber caused an unconditional drop with only a log line — silent loss to a user actively
+    // waiting for a reply. Before that, the same scenario buffered the message and delivered it
+    // late on the agent's next reconnect poll (the stable "channel-telegram" subscriber id survives
+    // the disconnect). Telegram's own emit path has no way to signal failure back to the sender
+    // (unlike ServiceBus's broker-level abandon/redeliver, or Schedule/Library's durable record),
+    // so buffering — not dropping — is the correct behavior here: the message must always reach the
+    // inbox, regardless of whether anyone is known to be listening right now.
+    [Fact]
+    public async Task ExecuteAsync_SubscriberWentStaleWithoutRepolling_StillBuffersForALaterPoll()
+    {
+        var subscriberId = ChannelProtocol.ChannelClientNamePrefix + "telegram";
+        await _inbox.ReceiveAsync(subscriberId, TimeSpan.Zero, CancellationToken.None);
+        _time.Advance(ChannelProtocol.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
+
+        SetupPollingSequence([
+            new Update
+            {
+                Id = 1,
+                Message = CreateTextMessage("/ask what is 2+2", 100, "alice")
+            }
+        ]);
+
+        await RunServiceBriefly();
+
+        var batch = await _inbox.ReceiveAsync(subscriberId, TimeSpan.Zero, CancellationToken.None);
+        batch.Count.ShouldBe(1);
+        batch[0].Message!.Content.ShouldBe("/ask what is 2+2");
     }
 
     [Fact]
@@ -174,7 +220,7 @@ public class TelegramBotServiceTests : IDisposable
                 Message = CreateTextMessage("/ask something", 100, "alice")
             }
         ]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 
@@ -188,7 +234,7 @@ public class TelegramBotServiceTests : IDisposable
         msg.MessageThreadId = 42;
 
         SetupPollingSequence([new Update { Id = 1, Message = msg }]);
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "telegram", TimeSpan.Zero, CancellationToken.None);
 
         await RunServiceBriefly();
 

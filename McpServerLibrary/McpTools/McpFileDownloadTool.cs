@@ -1,12 +1,10 @@
 using System.ComponentModel;
-using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.Channels;
 using Domain.Contracts;
-using Domain.DTOs.Channel;
 using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads;
-using Infrastructure.Extensions;
 using Infrastructure.Utils;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -33,7 +31,13 @@ public class McpFileDownloadTool(
         string? title,
         CancellationToken cancellationToken)
     {
-        var sessionId = context.Server.StateKey;
+        if (!ConversationScope.TryResolve(context.Params?.Meta, out var sessionId))
+        {
+            return ToolResponse.Create(ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                "Conversation context is missing from request _meta; cannot scope search results.",
+                retryable: false));
+        }
 
         var normalizedLink = NormalizeOptionalText(link);
         var normalizedTitle = NormalizeOptionalText(title);
@@ -44,29 +48,13 @@ public class McpFileDownloadTool(
             return ToolResponse.Create(validation);
         }
 
-        var conversationContext = ParseConversationContext(context.Params?.Meta);
+        var conversationContext = ConversationScope.Parse(context.Params?.Meta);
 
         var result = searchResultId.HasValue
             ? await Run(sessionId, searchResultId.Value, conversationContext, cancellationToken)
             : await Run(sessionId, normalizedLink!, normalizedTitle!, conversationContext, cancellationToken);
 
         return ToolResponse.Create(result);
-    }
-
-    public static ConversationContext? ParseConversationContext(JsonObject? meta)
-    {
-        if (meta is null)
-        {
-            return null;
-        }
-
-        var node = meta[ChannelProtocol.ConversationContextMetaKey];
-        if (node is null)
-        {
-            return null;
-        }
-
-        return node.Deserialize<ConversationContext>(ChannelProtocol.SerializerOptions);
     }
 
     private static readonly string[] _placeholderValues = ["null", "undefined"];

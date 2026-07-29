@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json.Nodes;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
@@ -30,7 +31,7 @@ public class WyomingSatelliteHostTests
     private sealed class CapturingEmitter : ChannelNotificationEmitter
     {
         public TaskCompletionSource<ChannelMessageNotification> Tcs { get; } = new();
-        public CapturingEmitter() : base(NullLogger<ChannelNotificationEmitter>.Instance) { }
+        public CapturingEmitter() : base(new ChannelInbox()) { }
         public override Task EmitMessageNotificationAsync(
             string conversationId, string sender, string content, string? agentId, string? location,
             string? satelliteId, string? dismissedAlert, CancellationToken ct = default)
@@ -2064,7 +2065,7 @@ public class WyomingSatelliteHostTests
     }
 
     private sealed class CollectingEmitter(List<string> sink, TaskCompletionSource done, int expected)
-        : ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance)
+        : ChannelNotificationEmitter(new ChannelInbox())
     {
         public override Task EmitMessageNotificationAsync(
             string conversationId, string sender, string content, string? agentId, string? location, string? satelliteId, string? dismissedAlert, CancellationToken ct = default)

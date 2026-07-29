@@ -8,7 +8,6 @@ var settings = builder.Configuration.GetSettings();
 builder.Services.ConfigureMcp(settings);
 
 var app = builder.Build();
-app.UseBrowserSessionCleanupOnMcpDelete(mcpPath);
 app.MapMcp(mcpPath);
 
 await app.RunAsync();

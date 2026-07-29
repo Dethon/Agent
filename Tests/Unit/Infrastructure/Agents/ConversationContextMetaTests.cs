@@ -36,4 +36,13 @@ public class ConversationContextMetaTests
         ConversationContextMeta.TryBuild(null).ShouldBeNull();
         ConversationContextMeta.TryBuild(new ChatOptions()).ShouldBeNull();
     }
+
+    [Fact]
+    public void MetaKey_UsesAVendorPrefix()
+    {
+        // The 2026-07-28 spec reserves any _meta prefix whose second label is "mcp" or
+        // "modelcontextprotocol", and recommends reverse-DNS for everything else. A bare key
+        // sits in the same namespace as progressToken/traceparent and could be claimed later.
+        ChannelProtocol.ConversationContextMetaKey.ShouldBe("com.herfluffness/conversationContext");
+    }
 }

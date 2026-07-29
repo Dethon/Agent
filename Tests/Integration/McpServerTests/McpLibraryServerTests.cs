@@ -18,6 +18,31 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             .FirstOrDefault() ?? "";
     }
 
+    // file_search and download_file namespace their cached results on the conversation carried in
+    // _meta, so every call in these tests has to look like a real agent turn.
+    private static JsonObject MetaFor(string conversationId, string agentId = "jack")
+    {
+        var context = new ConversationContext(
+            agentId, conversationId, "fran", new ReplyTarget("signalr", conversationId));
+        return new JsonObject
+        {
+            [ChannelProtocol.ConversationContextMetaKey] =
+                JsonSerializer.SerializeToNode(context, ChannelProtocol.SerializerOptions)
+        };
+    }
+
+    private async Task<McpClientTool> GetToolAsync(string name)
+    {
+        var client = await McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(fixture.McpEndpoint)
+            }),
+            cancellationToken: CancellationToken.None);
+
+        return (await client.ListToolsAsync()).Single(t => t.Name == name);
+    }
+
     [Fact]
     public async Task McpServer_IsAccessible_ReturnsAllTools()
     {
@@ -68,16 +93,10 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     public async Task FileSearchTool_WithQuery_ReturnsResults()
     {
         // Arrange
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
+        var searchTool = await GetToolAsync("file_search");
 
         // Act - search for something generic that Jackett might return results for
-        var result = await client.CallToolAsync(
-            "file_search",
+        var result = await searchTool.WithMeta(MetaFor("conv-search")).CallAsync(
             new Dictionary<string, object?>
             {
                 ["searchStrings"] = new[] { "test" }
@@ -89,8 +108,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         result.ShouldNotBeNull();
         var content = GetTextContent(result);
         content.ShouldContain("status");
-
-        await client.DisposeAsync();
     }
 
     #endregion
@@ -101,16 +118,10 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     public async Task FileDownloadTool_WithInvalidId_ReturnsError()
     {
         // Arrange
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
+        var downloadTool = await GetToolAsync("download_file");
 
         // Act - try to download with an ID that doesn't exist in search results
-        var result = await client.CallToolAsync(
-            "download_file",
+        var result = await downloadTool.WithMeta(MetaFor("conv-invalid-id")).CallAsync(
             new Dictionary<string, object?>
             {
                 ["searchResultId"] = 12345,
@@ -124,8 +135,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         var content = GetTextContent(result);
         content.ShouldContain(
             "No search result found for id 12345. Make sure to run the file_search tool first and use the correct");
-
-        await client.DisposeAsync();
     }
 
     [Fact]
@@ -143,7 +152,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         var context = new ConversationContext("jack", "conv-journey", "fran", new ReplyTarget("signalr", "conv-journey"));
         var meta = new JsonObject
         {
-            ["conversationContext"] = JsonSerializer.SerializeToNode(context, ChannelProtocol.SerializerOptions)
+            [ChannelProtocol.ConversationContextMetaKey] = JsonSerializer.SerializeToNode(context, ChannelProtocol.SerializerOptions)
         };
         const string magnetLink =
             "magnet:?xt=urn:btih:KRWPCX3SJUM4IMM4YF3MVSJIBFTHVFCS&dn=ubuntu-24.04-desktop-amd64.iso";
@@ -220,16 +229,10 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     public async Task FileDownloadTool_WithBothIdAndLink_ReturnsInvalidArgument()
     {
         // Arrange
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
+        var downloadTool = await GetToolAsync("download_file");
 
         // Act
-        var result = await client.CallToolAsync(
-            "download_file",
+        var result = await downloadTool.WithMeta(MetaFor("conv-both")).CallAsync(
             new Dictionary<string, object?>
             {
                 ["searchResultId"] = 1,
@@ -242,8 +245,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         result.ShouldNotBeNull();
         var content = GetTextContent(result);
         content.ShouldContain("invalid_argument");
-
-        await client.DisposeAsync();
+        content.ShouldContain("Provide either searchResultId or link, not both");
     }
 
     #endregion

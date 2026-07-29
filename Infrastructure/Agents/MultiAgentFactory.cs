@@ -67,7 +67,8 @@ public sealed class MultiAgentFactory(
 
         var featureConfig = new FeatureConfig(
             SubAgentFactory: def => CreateSubAgent(def, approvalHandler, whitelistPatterns, userId),
-            UserId: userId);
+            UserId: userId,
+            ConversationContextProvider: () => ConversationContextMeta.Current);
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(enabledFeatures, featureConfig)
             .ToList();
@@ -110,7 +111,8 @@ public sealed class MultiAgentFactory(
 
         var featureConfig = new FeatureConfig(
             SubAgentFactory: def => CreateSubAgent(def, approvalHandler, definition.WhitelistPatterns, userId),
-            UserId: userId);
+            UserId: userId,
+            ConversationContextProvider: () => ConversationContextMeta.Current);
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(definition.EnabledFeatures, featureConfig)
             .ToList();

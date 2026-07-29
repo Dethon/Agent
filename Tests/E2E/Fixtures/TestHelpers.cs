@@ -1,7 +1,12 @@
 using System.Collections.Concurrent;
-using DotNet.Testcontainers.Builders;
+using System.Diagnostics;
 
 namespace Tests.E2E.Fixtures;
+
+internal sealed record DockerBuildCommand(
+    string FileName,
+    string Arguments,
+    IReadOnlyDictionary<string, string> Environment);
 
 internal static class TestHelpers
 {
@@ -42,9 +47,9 @@ internal static class TestHelpers
         {
             // The semaphore above only serialises threads within this process. Separate
             // processes (E2E vs benchmark as distinct `dotnet test` jobs, or a concurrent
-            // `docker compose build`) would otherwise race the destructive
-            // WithDeleteIfExists(true) + build on the same tag — including deleting
-            // base-sdk:latest out from under another process's `FROM base-sdk:latest`.
+            // `docker compose build`) would otherwise duplicate the same build, and a leaf
+            // build could start while base-sdk:latest is still being re-tagged under its
+            // own `FROM base-sdk:latest`.
             await using var fileLock = await AcquireImageFileLockAsync(imageName, ct);
 
             var imageCreatedAt = await GetDockerImageCreatedAtAsync(imageName, ct);
@@ -57,19 +62,81 @@ internal static class TestHelpers
                 }
             }
 
-            var image = new ImageFromDockerfileBuilder()
-                .WithDockerfileDirectory(solutionRoot)
-                .WithDockerfile(dockerfile)
-                .WithName(imageName)
-                .WithDeleteIfExists(true)
-                .WithCleanUp(false)
-                .Build();
-            await image.CreateAsync(ct);
+            await RunDockerBuildAsync(solutionRoot, dockerfile, imageName, ct);
         }
         finally
         {
             gate.Release();
         }
+    }
+
+    // Driving the docker CLI rather than Testcontainers' ImageFromDockerfileBuilder is
+    // deliberate. The builder posts to the Engine /build endpoint, which serves the legacy
+    // builder: its layer cache is disjoint from the one docker compose and buildx use, so
+    // alternating between `docker compose up --build` and the tests meant a cold rebuild every
+    // time, and the legacy builder ignores the --mount=type=cache NuGet mounts. Asking
+    // Testcontainers for BuildKit (ImageBuildParameters.Version = "2") is not an option:
+    // Docker.DotNet.Enhanced types JSONMessage.Aux as an object, BuildKit sends it as a base64
+    // string, and the build throws while deserialising its own progress stream.
+    internal static DockerBuildCommand CreateBuildCommand(
+        string solutionRoot,
+        string dockerfile,
+        string imageName) =>
+        new(
+            "docker",
+            $"build --file \"{Path.Combine(solutionRoot, dockerfile)}\" --tag \"{imageName}\" "
+            + $"--progress plain \"{solutionRoot}\"",
+            new Dictionary<string, string> { ["DOCKER_BUILDKIT"] = "1" });
+
+    private static async Task RunDockerBuildAsync(
+        string solutionRoot,
+        string dockerfile,
+        string imageName,
+        CancellationToken ct)
+    {
+        var command = CreateBuildCommand(solutionRoot, dockerfile, imageName);
+        var psi = new ProcessStartInfo(command.FileName, command.Arguments)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            WorkingDirectory = solutionRoot
+        };
+        foreach (var (key, value) in command.Environment)
+        {
+            psi.Environment[key] = value;
+        }
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException($"Could not start docker to build {imageName}.");
+
+        // BuildKit writes its progress to stderr. Drain both pipes concurrently, or a build
+        // chatty enough to fill one blocks forever while we wait on the other.
+        var stdout = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+        var stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
+
+        try
+        {
+            await process.WaitForExitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        if (process.ExitCode == 0)
+        {
+            return;
+        }
+
+        var output = string.Join(Environment.NewLine, await stdout, await stderr);
+        var tail = string.Join(Environment.NewLine, output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .TakeLast(40)
+            .Select(l => l.TrimEnd()));
+        throw new InvalidOperationException(
+            $"docker build failed for {imageName} (exit {process.ExitCode}):{Environment.NewLine}{tail}");
     }
 
     // An OS file handle opened with FileShare.None is released automatically if the process
@@ -123,14 +190,14 @@ internal static class TestHelpers
     {
         try
         {
-            var psi = new System.Diagnostics.ProcessStartInfo("docker",
+            var psi = new ProcessStartInfo("docker",
                 $"image inspect {imageName} --format={{{{.Created}}}}")
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false
             };
-            using var process = System.Diagnostics.Process.Start(psi)!;
+            using var process = Process.Start(psi)!;
             var output = await process.StandardOutput.ReadToEndAsync(ct);
             await process.WaitForExitAsync(ct);
 

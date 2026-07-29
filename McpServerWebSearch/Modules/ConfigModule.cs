@@ -6,8 +6,6 @@ using Infrastructure.Utils;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -100,39 +98,6 @@ public static class ConfigModule
             });
 
             return services;
-        }
-    }
-
-    extension(IApplicationBuilder app)
-    {
-        public IApplicationBuilder UseBrowserSessionCleanupOnMcpDelete(string mcpPath)
-        {
-            return app.Use(async (context, next) =>
-            {
-                var sessionId = HttpMethods.IsDelete(context.Request.Method)
-                    && context.Request.Path.StartsWithSegments(mcpPath)
-                    && context.Request.Headers.TryGetValue(McpServerExtensions.SessionIdHeader, out var header)
-                    ? header.ToString()
-                    : null;
-
-                await next();
-
-                if (string.IsNullOrEmpty(sessionId))
-                {
-                    return;
-                }
-
-                try
-                {
-                    var browser = context.RequestServices.GetRequiredService<IWebBrowser>();
-                    await browser.CloseSessionAsync(sessionId, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    context.RequestServices.GetService<ILogger<Program>>()?
-                        .LogWarning(ex, "Failed to close browser session {SessionId} on MCP DELETE", sessionId);
-                }
-            });
         }
     }
 }

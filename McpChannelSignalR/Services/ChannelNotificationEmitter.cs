@@ -1,90 +1,47 @@
-using System.Collections.Concurrent;
+using Domain.Channels;
 using Domain.DTOs.Channel;
-using ModelContextProtocol.Server;
 
 namespace McpChannelSignalR.Services;
 
-public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitter> logger)
+public sealed class ChannelNotificationEmitter(ChannelInbox inbox)
 {
-    private readonly ConcurrentDictionary<string, McpServer> _activeSessions = new();
-
-    public void RegisterSession(string sessionId, McpServer server)
-    {
-        _activeSessions[sessionId] = server;
-        logger.LogInformation("MCP session registered: {SessionId}", sessionId);
-    }
-
-    public void UnregisterSession(string sessionId)
-    {
-        _activeSessions.TryRemove(sessionId, out _);
-        logger.LogInformation("MCP session unregistered: {SessionId}", sessionId);
-    }
-
-    public async Task EmitMessageNotificationAsync(
+    public Task EmitMessageNotificationAsync(
         string conversationId,
         string sender,
         string content,
         string agentId,
         CancellationToken cancellationToken = default)
     {
-        var payload = new ChannelMessageNotification
+        inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
         {
             ConversationId = conversationId,
             Sender = sender,
             Content = content,
             AgentId = agentId,
             Timestamp = DateTimeOffset.UtcNow
-        };
+        }));
 
-        var tasks = _activeSessions.Values.Select(async server =>
-        {
-            try
-            {
-                await server.SendNotificationAsync(
-                    ChannelProtocol.MessageNotification,
-                    payload,
-                    ChannelProtocol.SerializerOptions,
-                    cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to emit channel/message notification to MCP session");
-            }
-        });
-
-        await Task.WhenAll(tasks);
+        return Task.CompletedTask;
     }
 
-    public async Task EmitCancelNotificationAsync(
+    public Task EmitCancelNotificationAsync(
         string conversationId,
         string agentId,
         CancellationToken cancellationToken = default)
     {
-        var payload = new ChannelCancelNotification
+        inbox.Enqueue(ChannelInboxItem.ForCancel(new ChannelCancelNotification
         {
             ConversationId = conversationId,
             AgentId = agentId,
             Timestamp = DateTimeOffset.UtcNow
-        };
+        }));
 
-        var tasks = _activeSessions.Values.Select(async server =>
-        {
-            try
-            {
-                await server.SendNotificationAsync(
-                    ChannelProtocol.CancelNotification,
-                    payload,
-                    ChannelProtocol.SerializerOptions,
-                    cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to emit channel/cancel notification to MCP session");
-            }
-        });
-
-        await Task.WhenAll(tasks);
+        return Task.CompletedTask;
     }
 
-    public bool HasActiveSessions => !_activeSessions.IsEmpty;
+    // Not consumed in production today (no caller gates a destructive action on it here), but kept
+    // computed the same way as every other migrated channel's HasActiveSessions — see
+    // ChannelProtocol.LiveSubscriberFreshness's doc comment for why HasSubscribers is the wrong
+    // check wherever this property does end up read.
+    public bool HasActiveSessions => inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness);
 }

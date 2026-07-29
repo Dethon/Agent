@@ -48,5 +48,12 @@ nuget.config
 # Unused projects (not in docker-compose)
 BlazorUI
 
+# Host-side tooling, never copied by any Dockerfile. scripts/ alone is ~1 GB
+# (stt-enhancement-eval corpus); the legacy builder tars the whole context, so
+# leaving these in costs ~8.5s per image on every build.
+scripts
+docs
+temp
+
 # Rust satellite crate (deployed to hardware, not containerized; target/ is volatile cargo output)
 satellite

@@ -1,9 +1,8 @@
+using Domain.Channels;
 using Domain.DTOs.Channel;
 using McpServerLibrary.Services;
-using Microsoft.Extensions.Logging.Abstractions;
-using ModelContextProtocol.Protocol;
-using ModelContextProtocol.Server;
-using Moq;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
 namespace Tests.Unit.McpServerLibrary;
@@ -11,71 +10,79 @@ namespace Tests.Unit.McpServerLibrary;
 public class DownloadNotificationEmitterTests
 {
     [Fact]
-    public void HasActiveSessions_OnlyToolClientSessions_IsFalse()
+    public async Task EmitAsync_WithASubscriber_EnqueuesMessageItemAndReturnsTrue()
     {
-        var emitter = Emitter();
-        emitter.RegisterSession("tool", Session("Jack").Object);
+        var inbox = new ChannelInbox();
+        var sut = new DownloadNotificationEmitter(inbox);
+        await inbox.ReceiveAsync("channel-library", TimeSpan.Zero, CancellationToken.None);
 
-        emitter.HasActiveSessions.ShouldBeFalse();
+        var delivered = await sut.EmitAsync(Payload());
+
+        delivered.ShouldBeTrue();
+        var items = await inbox.ReceiveAsync("channel-library", TimeSpan.Zero, CancellationToken.None);
+        items.Count.ShouldBe(1);
+        items[0].Kind.ShouldBe(ChannelInboxItemKind.Message);
+        items[0].Message!.ConversationId.ShouldBe("conv-1");
+        items[0].Message!.Sender.ShouldBe("fran");
+        items[0].Message!.Content.ShouldBe("[download-complete] done");
     }
 
     [Fact]
-    public void HasActiveSessions_ChannelClientSession_IsTrue()
+    public async Task EmitAsync_NoSubscribers_ReturnsFalseWithoutEnqueuing()
     {
-        var emitter = Emitter();
-        emitter.RegisterSession("channel", Session("channel-library").Object);
+        var inbox = new ChannelInbox();
+        var sut = new DownloadNotificationEmitter(inbox);
 
-        emitter.HasActiveSessions.ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task EmitAsync_OnlyToolClientSessions_ReturnsFalse()
-    {
-        var emitter = Emitter();
-        emitter.RegisterSession("tool", Session("Jack").Object);
-
-        var delivered = await emitter.EmitAsync(Payload());
+        var delivered = await sut.EmitAsync(Payload());
 
         delivered.ShouldBeFalse();
     }
 
     [Fact]
-    public async Task EmitAsync_ChannelClientSession_DeliversAndReturnsTrue()
+    public async Task HasActiveSessions_FollowsInboxSubscribers()
     {
-        var emitter = Emitter();
-        emitter.RegisterSession("channel", Session("channel-library").Object);
+        var inbox = new ChannelInbox();
+        var sut = new DownloadNotificationEmitter(inbox);
 
-        var delivered = await emitter.EmitAsync(Payload());
+        sut.HasActiveSessions.ShouldBeFalse();
 
-        delivered.ShouldBeTrue();
+        await inbox.ReceiveAsync("channel-library", TimeSpan.Zero, CancellationToken.None);
+
+        sut.HasActiveSessions.ShouldBeTrue();
+    }
+
+    // The regression this test pins: PruneIdle keeps a subscriber that is holding items alive for
+    // up to an hour so a channel outage survives (see ChannelInboxTests), but a stale buffered
+    // subscriber must not be mistaken for "someone is listening" here — DownloadCompletionWatcher
+    // removes the routing entry only when EmitAsync reports true, so a false-true here would drop
+    // the durable routing record in exchange for an in-memory buffer that dies on the next restart.
+    [Fact]
+    public async Task EmitAsync_SubscriberWentStaleWhileStillBufferingAnItem_ReturnsFalse()
+    {
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time);
+        var sut = new DownloadNotificationEmitter(inbox);
+        await inbox.ReceiveAsync("channel-library", TimeSpan.Zero, CancellationToken.None);
+
+        (await sut.EmitAsync(Payload())).ShouldBeTrue();
+
+        // The agent's channel connection drops and never repolls; the subscriber keeps buffering
+        // (nothing evicts it — it still holds the item above), but nobody is actually listening.
+        time.Advance(TimeSpan.FromMinutes(2));
+
+        sut.HasActiveSessions.ShouldBeFalse();
+        (await sut.EmitAsync(Payload())).ShouldBeFalse();
     }
 
     [Fact]
-    public async Task EmitAsync_MixedSessions_SendsOnlyToChannelClients()
+    public void Emitter_IsConstructibleFromTheRegisteredInbox()
     {
-        var emitter = Emitter();
-        var tool = Session("Jack");
-        var channel = Session("channel-library");
-        emitter.RegisterSession("tool", tool.Object);
-        emitter.RegisterSession("channel", channel.Object);
+        var provider = new ServiceCollection()
+            .AddSingleton<ChannelInbox>()
+            .AddSingleton<DownloadNotificationEmitter>()
+            .BuildServiceProvider();
 
-        var delivered = await emitter.EmitAsync(Payload());
-
-        delivered.ShouldBeTrue();
-        tool.Verify(
-            s => s.SendMessageAsync(It.IsAny<JsonRpcMessage>(), It.IsAny<CancellationToken>()), Times.Never);
-        channel.Verify(
-            s => s.SendMessageAsync(It.IsAny<JsonRpcMessage>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    private static DownloadNotificationEmitter Emitter() =>
-        new(NullLogger<DownloadNotificationEmitter>.Instance);
-
-    private static Mock<McpServer> Session(string clientName)
-    {
-        var server = new Mock<McpServer>();
-        server.SetupGet(s => s.ClientInfo).Returns(new Implementation { Name = clientName, Version = "1.0.0" });
-        return server;
+        Should.NotThrow(() => provider.GetRequiredService<DownloadNotificationEmitter>());
     }
 
     private static ChannelMessageNotification Payload() => new()

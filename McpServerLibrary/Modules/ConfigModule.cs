@@ -1,3 +1,4 @@
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
@@ -30,14 +31,12 @@ public static class ConfigModule
 
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
-        var emitter = new DownloadNotificationEmitter(
-            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<DownloadNotificationEmitter>());
-
         services
             .AddMemoryCache()
             .AddSingleton(settings)
-            .AddSingleton(emitter)
-            .AddSingleton<IDownloadNotificationEmitter>(emitter)
+            .AddSingleton<ChannelInbox>()
+            .AddSingleton<DownloadNotificationEmitter>()
+            .AddSingleton<IDownloadNotificationEmitter>(sp => sp.GetRequiredService<DownloadNotificationEmitter>())
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.BaseLibraryPath))
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
@@ -49,29 +48,19 @@ public static class ConfigModule
             .AddSingleton<DownloadsOverlay>()
             .AddHostedService<DownloadCompletionWatcher>()
             .AddMcpServer()
-            .WithHttpTransport(options =>
-            {
-#pragma warning disable MCPEXP002 // RunSessionHandler is experimental
-                options.RunSessionHandler = async (_, server, ct) =>
-                {
-                    var sessionId = server.SessionId ?? Guid.NewGuid().ToString();
-                    emitter.RegisterSession(sessionId, server);
-                    try
-                    {
-                        await server.RunAsync(ct);
-                    }
-                    finally
-                    {
-                        emitter.UnregisterSession(sessionId);
-                    }
-                };
-#pragma warning restore MCPEXP002
-            })
+            .WithHttpTransport()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
                 {
                     return await next(context, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
+                    // or the server shuts down. Mapping that to IsError would hand the pump an
+                    // error result to retry on; let it propagate as the abort it is.
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -82,11 +71,11 @@ public static class ConfigModule
             }))
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
-            .WithTools<McpContentRecommendationTool>()
             // Channel-protocol tools (invoked by the agent's channel connection, hidden from the LLM)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
+            .WithTools<McpChannelReceiveTool>()
             .WithTools<FsGlobTool>()
             .WithTools<FsReadTool>()
             .WithTools<FsDeleteTool>()

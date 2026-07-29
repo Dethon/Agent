@@ -1,4 +1,5 @@
 using Domain.Agents;
+using Domain.Channels;
 using Domain.Contracts;
 using Infrastructure.Metrics;
 using McpChannelVoice.McpTools;
@@ -30,12 +31,10 @@ public static class ConfigModule
     {
         var redisConnection = settings.RedisConnectionString;
 
-        var emitter = new ChannelNotificationEmitter(
-            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ChannelNotificationEmitter>());
-
         services
             .AddSingleton(settings)
-            .AddSingleton(emitter)
+            .AddSingleton<ChannelInbox>()
+            .AddSingleton<ChannelNotificationEmitter>()
             .AddSingleton(new SatelliteRegistry(settings.Satellites))
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection))
             .AddSingleton<IMetricsPublisher, RedisMetricsPublisher>()
@@ -147,33 +146,24 @@ public static class ConfigModule
 
         services
             .AddMcpServer()
-            .WithHttpTransport(options =>
-            {
-#pragma warning disable MCPEXP002 // RunSessionHandler is experimental
-                options.RunSessionHandler = async (_, server, ct) =>
-                {
-                    var sessionId = server.SessionId ?? Guid.NewGuid().ToString();
-                    emitter.RegisterSession(sessionId, server);
-                    try
-                    {
-                        await server.RunAsync(ct);
-                    }
-                    finally
-                    {
-                        emitter.UnregisterSession(sessionId);
-                    }
-                };
-#pragma warning restore MCPEXP002
-            })
+            .WithHttpTransport()
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
             .WithTools<CreateConversationTool>()
+            .WithTools<McpChannelReceiveTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
                 {
                     return await next(context, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
+                    // or the server shuts down. Mapping that to IsError would hand the pump an
+                    // error result to retry on; let it propagate as the abort it is.
+                    throw;
                 }
                 catch (Exception ex)
                 {
