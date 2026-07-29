@@ -24,10 +24,10 @@ public static class ChannelProtocol
 
     // How long a ChannelInbox subscriber is still considered "someone is actually listening" after
     // its last poll. Every emitter's HasActiveSessions must use this via ChannelInbox.HasLiveSubscriber
-    // instead of ChannelInbox.HasSubscribers — PruneIdle keeps a subscriber that is buffering items
-    // alive for up to an hour after it goes quiet (so a channel outage doesn't discard what was
-    // buffered during it), which answers "is there bookkeeping for this id", not "is anyone actually
-    // polling right now". A caller that reads HasActiveSessions as "delivered"/"available" (schedule
+    // rather than merely asking whether a subscriber is registered — PruneIdle keeps a subscriber that
+    // is buffering items alive for up to an hour after it goes quiet (so a channel outage doesn't
+    // discard what was buffered during it), which answers "is there bookkeeping for this id", not "is
+    // anyone actually polling right now". A caller that reads HasActiveSessions as "delivered"/"available" (schedule
     // and routing-entry deletion, ServiceBus message settlement, Telegram's unavailable-path gate)
     // would otherwise treat a disconnected agent's stale buffer as live delivery. ~2x the long-poll
     // ceiling: long enough that a subscriber mid-poll (touched at most DefaultReceiveWaitMs ago)
@@ -48,13 +48,12 @@ public static class ChannelProtocol
     // alerts. Keeps these off the initiating user's identity (memory scoping, attribution).
     public const string SystemSender = "system";
 
-    // The agent's channel connections identify themselves as "channel-<channelId>"; tool sessions
-    // use the agent name. Dual-role servers must only count channel clients as delivery targets —
-    // tool sessions silently drop channel/message notifications.
+    // The agent's channel connections identify themselves as "channel-<channelId>", and derive
+    // their ChannelInbox subscriber id from the same string. It is the subscriber id that decides
+    // delivery now: every channel_receive poll carries it as an argument, so a client's declared
+    // identity no longer selects who receives anything, and dual-role servers no longer filter
+    // tool sessions out of the fan-out — there is nothing to filter, one inbox serves the channel.
     public const string ChannelClientNamePrefix = "channel-";
-
-    public static bool IsChannelClientName(string? clientName)
-        => clientName?.StartsWith(ChannelClientNamePrefix, StringComparison.Ordinal) == true;
 
     // A TypeInfoResolver is mandatory: the MCP SDK's SendNotificationAsync calls
     // JsonSerializerOptions.MakeReadOnly() on these options, which throws if no resolver is set.

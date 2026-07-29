@@ -15,22 +15,14 @@ public sealed class ChannelInbox(
     private readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
     private readonly int _capacity = ValidateCapacity(capacity);
 
-    public bool HasSubscribers
-    {
-        get
-        {
-            PruneIdle();
-            return !_subscribers.IsEmpty;
-        }
-    }
-
-    // HasSubscribers answers "is there bookkeeping for this id" — true for up to an hour after a
-    // subscriber goes quiet, precisely so a channel outage doesn't discard what was buffered during
-    // it (see PruneIdle). That is the wrong question for a caller about to act on "delivery":
-    // gating a destructive action (deleting a schedule, dropping a routing entry) on HasSubscribers
-    // would treat an item merely sitting in an idle buffer as delivered. HasLiveSubscriber asks
-    // whether *someone actually polled recently* — a subscriber holding items but not repolling
-    // does not count, which is the case this method exists to distinguish.
+    // The only liveness question this type answers, and deliberately so. "Is there bookkeeping for
+    // this id" is true for up to an hour after a subscriber goes quiet — precisely so a channel
+    // outage doesn't discard what was buffered during it (see PruneIdle) — which makes it the wrong
+    // question for a caller about to act on "delivery": gating a destructive action (deleting a
+    // schedule, dropping a routing entry) on it would treat an item merely sitting in an idle buffer
+    // as delivered. HasLiveSubscriber asks whether *someone actually polled recently*; a subscriber
+    // holding items but not repolling does not count, which is the case this method exists to
+    // distinguish. A near-miss twin of this method is how that distinction gets lost again.
     public bool HasLiveSubscriber(TimeSpan freshness)
     {
         PruneIdle();

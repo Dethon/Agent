@@ -129,6 +129,10 @@ public class ChannelInboxTests
         (await inbox.ReceiveAsync("b", TimeSpan.Zero, CancellationToken.None)).Count.ShouldBe(1);
     }
 
+    // Eviction is asserted through what it changes rather than through a "do you still have
+    // bookkeeping" flag: an evicted subscriber is not in the Enqueue fan-out, so an item published
+    // after the timeout reaches nobody and the next poll comes back empty. A subscriber that was
+    // not evicted would have buffered it and handed it over here.
     [Fact]
     public async Task Subscriber_WhenIdleAndEmpty_IsEvicted()
     {
@@ -137,11 +141,14 @@ public class ChannelInboxTests
         var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
 
-        inbox.HasSubscribers.ShouldBeTrue();
+        // The positive control: while it is registered, the fan-out reaches it.
+        inbox.Enqueue(Message("registered"));
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token)).Count.ShouldBe(1);
 
         time.Advance(TimeSpan.FromMinutes(6));
+        inbox.Enqueue(Message("after-eviction"));
 
-        inbox.HasSubscribers.ShouldBeFalse();
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token)).ShouldBeEmpty();
     }
 
     [Fact]
@@ -156,9 +163,9 @@ public class ChannelInboxTests
         inbox.Enqueue(Message("c2"));
 
         // A channel outage outlasting the idle timeout must not discard what was buffered during it.
+        // Delivering both items below is the survival claim in full — strictly more than asking
+        // whether the subscriber is still registered.
         time.Advance(TimeSpan.FromHours(3));
-
-        inbox.HasSubscribers.ShouldBeTrue();
 
         var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
 
@@ -175,12 +182,14 @@ public class ChannelInboxTests
 
         time.Advance(TimeSpan.FromMinutes(6));
 
-        inbox.HasSubscribers.ShouldBeFalse();
-
         // Eviction retires the *instance*, so the id must be reusable: a retired subscriber can
         // neither be resurrected by the next poll nor poison its id, and the early return that stops
-        // a retired subscriber accepting items must not follow the id to its replacement.
-        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+        // a retired subscriber accepting items must not follow the id to its replacement. The
+        // dropped item is what proves the eviction actually happened before the re-subscription —
+        // without it, a subscriber that was never evicted would pass this test unchanged.
+        inbox.Enqueue(Message("dropped"));
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token)).ShouldBeEmpty();
+
         inbox.Enqueue(Message("c1"));
 
         var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
@@ -202,8 +211,9 @@ public class ChannelInboxTests
 
         // Having once held items must not make a subscriber permanently unevictable.
         time.Advance(TimeSpan.FromMinutes(6));
+        inbox.Enqueue(Message("after-eviction"));
 
-        inbox.HasSubscribers.ShouldBeFalse();
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token)).ShouldBeEmpty();
     }
 
     [Fact]
@@ -257,8 +267,12 @@ public class ChannelInboxTests
         inbox.Enqueue(Message("c1"));
         time.Advance(TimeSpan.FromSeconds(61));
 
-        inbox.HasSubscribers.ShouldBeTrue("the subscriber is still buffering the item, not evicted");
         inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+
+        // ...while the subscriber itself is very much still there: the buffered item is delivered
+        // on the next poll. "Not live" must not be read as "evicted" — the two answers are
+        // deliberately different, and this is the case that separates them.
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None)).Count.ShouldBe(1);
     }
 
     [Fact]
