@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using Domain.Channels;
@@ -7,6 +9,7 @@ using Infrastructure.Clients.Channels;
 using McpChannelSignalR.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Client;
@@ -29,6 +32,10 @@ public class ChannelReceiveContractTests
     // background reconnect loop from lingering.
     private const string UnreachableRedis =
         "127.0.0.1:1,abortConnect=false,connectTimeout=100,connectRetry=1";
+
+    // What McpChannelConnection("signalr") derives for itself, spelled out so a test that pins the
+    // id cannot drift with the implementation it is pinning.
+    private const string SignalRSubscriberId = ChannelProtocol.ChannelClientNamePrefix + "signalr";
 
     // One row per channel server. Later channel migrations each append exactly one row; the test
     // body is written once and never copied.
@@ -157,7 +164,7 @@ public class ChannelReceiveContractTests
     }
 
     [Fact]
-    public async Task McpChannelConnection_AfterReconnect_DrainsWhatBufferedDuringTheOutage()
+    public async Task McpChannelConnection_AfterReconnect_KeepsPumping()
     {
         var port = TestPort.GetAvailable();
         var inbox = new ChannelInbox();
@@ -170,7 +177,8 @@ public class ChannelReceiveContractTests
             await connection.ConnectAsync(endpoint, CancellationToken.None);
             await Task.Delay(300);
 
-            // The subscriber id is stable across reconnects, so the queue survives.
+            // The reconnect stops the pump and starts a fresh one on the new client; the stream
+            // must go on carrying items rather than going quiet.
             await connection.ReconnectAsync(endpoint, CancellationToken.None);
 
             inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
@@ -194,6 +202,55 @@ public class ChannelReceiveContractTests
     }
 
     [Fact]
+    public async Task McpChannelConnection_WithAStableSubscriberId_DrainsWhatBufferedWhileItWasDown()
+    {
+        var port = TestPort.GetAvailable();
+        var inbox = new ChannelInbox();
+
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<SignalRChannel.ChannelReceiveTool>());
+        var endpoint = $"http://localhost:{port}/mcp";
+        var restarted = new McpChannelConnection("signalr");
+        var original = new McpChannelConnection("signalr");
+        try
+        {
+            // One agent process connects — registering its subscriber — and then goes away.
+            await original.ConnectAsync(endpoint, CancellationToken.None);
+            await Task.Delay(300);
+            await original.DisposeAsync();
+
+            // Barrier, not a fixture: retires the waiter the departed pump left behind, so the
+            // item below cannot be handed to a poll whose caller is already gone. (That handover
+            // loses the batch — see the delivery-gap note in the task report.)
+            (await inbox.ReceiveAsync(SignalRSubscriberId, TimeSpan.Zero, CancellationToken.None))
+                .ShouldBeEmpty();
+
+            inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+            {
+                ConversationId = "conv-2",
+                Sender = "user",
+                Content = "buffered"
+            }));
+
+            // A brand-new connection derives the same channel-signalr id from its channel id, so it
+            // inherits the queue. An id minted per connect would orphan it and lose precisely the
+            // messages that arrived while the agent was restarting.
+            await restarted.ConnectAsync(endpoint, CancellationToken.None);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var received = await restarted.Messages.FirstAsync(cts.Token);
+
+            received.Content.ShouldBe("buffered");
+        }
+        finally
+        {
+            await original.DisposeAsync();
+            await restarted.DisposeAsync();
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task McpChannelConnection_WhenServerIsDown_DisposesWithoutHanging()
     {
         // No server listening on this port at all.
@@ -208,8 +265,111 @@ public class ChannelReceiveContractTests
         await connection.DisposeAsync().AsTask().WaitAsync(cts.Token);
     }
 
+    [Fact]
+    public async Task McpChannelConnection_ConnectingTwice_LeavesOnlyOnePumpPolling()
+    {
+        var port = TestPort.GetAvailable();
+        var inbox = new ChannelInbox();
+        var posts = 0;
+
+        var app = await StartServerAsync(
+            port,
+            inbox,
+            b => b.WithTools<SignalRChannel.ChannelReceiveTool>(),
+            web => web.Use(async (context, next) =>
+            {
+                if (HttpMethods.IsPost(context.Request.Method))
+                {
+                    Interlocked.Increment(ref posts);
+                }
+
+                await next(context);
+            }));
+
+        var endpoint = $"http://localhost:{port}/mcp";
+        await using var connection = new McpChannelConnection("signalr");
+        try
+        {
+            await connection.ConnectAsync(endpoint, CancellationToken.None);
+            await Task.Delay(300);
+
+            // A second connect must retire the first pump. Two pumps share one subscriberId and
+            // displace each other's waiter, which ChannelInbox retires with an *instant* empty
+            // batch — indistinguishable from a timeout, so both re-poll at once and peg a core.
+            await connection.ConnectAsync(endpoint, CancellationToken.None);
+            await Task.Delay(300);
+
+            Interlocked.Exchange(ref posts, 0);
+            await Task.Delay(TimeSpan.FromSeconds(1.5));
+
+            // One pump holding one long poll open: the server should see nothing else.
+            Volatile.Read(ref posts).ShouldBeLessThanOrEqualTo(3);
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task AHeldLongPoll_DoesNotBlockOtherToolCallsOnTheSameClient()
+    {
+        var port = TestPort.GetAvailable();
+        var inbox = new ChannelInbox();
+
+        var app = await StartServerAsync(
+            port,
+            inbox,
+            b => b.WithTools<SignalRChannel.ChannelReceiveTool>().WithTools<ImmediateTool>());
+        try
+        {
+            await using var client = await McpClient.CreateAsync(
+                new HttpClientTransport(new HttpClientTransportOptions
+                {
+                    Endpoint = new Uri($"http://localhost:{port}/mcp")
+                }));
+
+            var held = Poll(client, SignalRSubscriberId, maxWaitMs: 10_000);
+            await Task.Delay(200);
+
+            var startedAt = Stopwatch.GetTimestamp();
+            foreach (var _ in Enumerable.Range(0, 5))
+            {
+                var pong = await client.CallToolAsync("ping");
+                pong.Content.OfType<TextContentBlock>().First().Text.ShouldBe("pong");
+            }
+
+            var elapsed = Stopwatch.GetElapsedTime(startedAt);
+
+            // The pump holds a 30 s channel_receive open on the same McpClient that send_reply
+            // streams over. If the SDK ever serialized concurrent tools/call, every reply chunk
+            // would queue behind that poll — invisible to every other test, catastrophic for voice.
+            held.IsCompleted.ShouldBeFalse("the poll must still be held while the pings run");
+            elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2));
+
+            inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+            {
+                ConversationId = "conv-3",
+                Sender = "user",
+                Content = "release"
+            }));
+
+            (await held).Items.Count.ShouldBe(1);
+        }
+        finally
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
     private static async Task<WebApplication> StartServerAsync(
-        int port, ChannelInbox inbox, Action<IMcpServerBuilder> registerTool)
+        int port,
+        ChannelInbox inbox,
+        Action<IMcpServerBuilder> registerTool,
+        Action<WebApplication>? configure = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
@@ -217,6 +377,7 @@ public class ChannelReceiveContractTests
         registerTool(builder.Services.AddMcpServer().WithHttpTransport());
 
         var app = builder.Build();
+        configure?.Invoke(app);
         app.MapMcp("/mcp");
         await app.StartAsync();
         return app;
@@ -235,4 +396,14 @@ public class ChannelReceiveContractTests
         var text = call.Content.OfType<TextContentBlock>().First().Text;
         return JsonSerializer.Deserialize<ChannelReceiveResult>(text, ChannelProtocol.SerializerOptions)!;
     }
+}
+
+// A second tool for the concurrency pin: something that answers instantly while a long poll is
+// held open on the same client.
+[McpServerToolType]
+public sealed class ImmediateTool
+{
+    [McpServerTool(Name = "ping")]
+    [Description("Test tool that answers immediately.")]
+    public static string McpRun() => "pong";
 }

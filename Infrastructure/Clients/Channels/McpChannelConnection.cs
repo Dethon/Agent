@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Channels;
@@ -16,6 +17,15 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 {
     private const string CancelCommandContent = "/cancel";
 
+    private static readonly TimeSpan MinBackoff = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
+
+    // Long enough that only a poll the server never really held can miss it, short enough that
+    // mistaking a genuinely short-waiting server for a spin costs milliseconds, not seconds.
+    private static readonly TimeSpan MinHonouredWait =
+        TimeSpan.FromMilliseconds(ChannelProtocol.DefaultReceiveWaitMs / 2.0);
+    private static readonly TimeSpan EarlyEmptyThrottle = TimeSpan.FromMilliseconds(250);
+
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
     private McpClient? _client;
     private CancellationTokenSource? _pumpCts;
@@ -29,6 +39,10 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     public async Task ConnectAsync(string endpoint, CancellationToken ct)
     {
+        // Never leave a second pump alive on this connection: two of them share one subscriberId
+        // and displace each other's waiter, which the inbox retires with an instant empty batch.
+        await StopPumpAsync();
+
         _client = await McpClient.CreateAsync(
             new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }),
             new McpClientOptions
@@ -50,38 +64,25 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
     private async Task PumpAsync(CancellationToken ct)
     {
         var subscriberId = $"{ChannelProtocol.ChannelClientNamePrefix}{ChannelId}";
-        var backoff = TimeSpan.FromSeconds(1);
+        var backoff = MinBackoff;
 
         while (!ct.IsCancellationRequested)
         {
+            TimeSpan pause;
             try
             {
-                var call = await _client!.CallToolAsync(
-                    ChannelProtocol.ReceiveTool,
-                    new Dictionary<string, object?>
-                    {
-                        ["subscriberId"] = subscriberId,
-                        ["maxWaitMs"] = ChannelProtocol.DefaultReceiveWaitMs
-                    },
-                    cancellationToken: ct);
-
-                var text = call.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
-                if (call.IsError == true || string.IsNullOrEmpty(text))
+                if (await PollOnceAsync(subscriberId, ct))
                 {
-                    // Not a batch: re-polling straight away would spin the loop hot against a
-                    // server that keeps answering this way, so take the back-off path.
-                    throw new InvalidOperationException($"{ChannelProtocol.ReceiveTool} returned no batch: {text}");
+                    // Items delivered, or the wait honoured in full: re-poll at once, so the next
+                    // real message is never sitting behind a timer.
+                    backoff = MinBackoff;
+                    continue;
                 }
 
-                var batch = JsonSerializer.Deserialize<ChannelReceiveResult>(text, ChannelProtocol.SerializerOptions);
-                foreach (var item in batch?.Items ?? [])
-                {
-                    Dispatch(item);
-                }
-
-                // An empty batch is the normal timeout outcome, so re-poll immediately; the
-                // back-off below is reserved for the failure path.
-                backoff = TimeSpan.FromSeconds(1);
+                logger?.LogDebug(
+                    "{Tool} came back empty early on {ChannelId}; throttling the next poll",
+                    ChannelProtocol.ReceiveTool, ChannelId);
+                pause = EarlyEmptyThrottle;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -90,18 +91,52 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "channel_receive failed on {ChannelId}; retrying", ChannelId);
-                try
-                {
-                    await Task.Delay(backoff, ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
+                pause = backoff;
+                backoff = TimeSpan.FromSeconds(Math.Min(backoff.TotalSeconds * 2, MaxBackoff.TotalSeconds));
+            }
 
-                backoff = TimeSpan.FromSeconds(Math.Min(backoff.TotalSeconds * 2, 30));
+            try
+            {
+                await Task.Delay(pause, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
             }
         }
+    }
+
+    // False when the batch came back empty without the server having honoured a meaningful share
+    // of the wait. That is the shape of a displaced waiter, which the inbox retires instantly —
+    // re-polling on it with no pause is how a stray second poller spins a core.
+    private async Task<bool> PollOnceAsync(string subscriberId, CancellationToken ct)
+    {
+        var startedAt = Stopwatch.GetTimestamp();
+        var call = await _client!.CallToolAsync(
+            ChannelProtocol.ReceiveTool,
+            new Dictionary<string, object?>
+            {
+                ["subscriberId"] = subscriberId,
+                ["maxWaitMs"] = ChannelProtocol.DefaultReceiveWaitMs
+            },
+            cancellationToken: ct);
+
+        var text = call.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
+        if (call.IsError == true || string.IsNullOrEmpty(text))
+        {
+            // Not a batch: re-polling straight away would spin the loop hot against a server that
+            // keeps answering this way, so take the back-off path.
+            throw new InvalidOperationException($"{ChannelProtocol.ReceiveTool} returned no batch: {text}");
+        }
+
+        var batch = JsonSerializer.Deserialize<ChannelReceiveResult>(text, ChannelProtocol.SerializerOptions);
+        var items = batch?.Items ?? [];
+        foreach (var item in items)
+        {
+            Dispatch(item);
+        }
+
+        return items.Count > 0 || Stopwatch.GetElapsedTime(startedAt) >= MinHonouredWait;
     }
 
     private void Dispatch(ChannelInboxItem item)
