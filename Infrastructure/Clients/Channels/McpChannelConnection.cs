@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Threading.Channels;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -17,6 +18,8 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
     private McpClient? _client;
+    private CancellationTokenSource? _pumpCts;
+    private Task? _pumpTask;
 
     public string ChannelId { get; } = channelId;
 
@@ -38,31 +41,105 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
             },
             cancellationToken: ct);
 
-        _client.RegisterNotificationHandler(
-            ChannelProtocol.MessageNotification,
-            (notification, _) =>
+        _pumpCts = new CancellationTokenSource();
+        _pumpTask = PumpAsync(_pumpCts.Token);
+    }
+
+    // Inbound items are pulled, not pushed: a stateless server cannot address a session, so the
+    // agent long-polls channel_receive and feeds the two notification handlers itself.
+    private async Task PumpAsync(CancellationToken ct)
+    {
+        var subscriberId = $"{ChannelProtocol.ChannelClientNamePrefix}{ChannelId}";
+        var backoff = TimeSpan.FromSeconds(1);
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
             {
-                if (notification.Params is { } paramsNode)
+                var call = await _client!.CallToolAsync(
+                    ChannelProtocol.ReceiveTool,
+                    new Dictionary<string, object?>
+                    {
+                        ["subscriberId"] = subscriberId,
+                        ["maxWaitMs"] = ChannelProtocol.DefaultReceiveWaitMs
+                    },
+                    cancellationToken: ct);
+
+                var text = call.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
+                if (call.IsError == true || string.IsNullOrEmpty(text))
                 {
-                    var element = JsonSerializer.Deserialize<JsonElement>(paramsNode.ToJsonString());
-                    HandleChannelMessageNotification(element);
+                    // Not a batch: re-polling straight away would spin the loop hot against a
+                    // server that keeps answering this way, so take the back-off path.
+                    throw new InvalidOperationException($"{ChannelProtocol.ReceiveTool} returned no batch: {text}");
                 }
 
-                return ValueTask.CompletedTask;
-            });
-
-        _client.RegisterNotificationHandler(
-            ChannelProtocol.CancelNotification,
-            (notification, _) =>
-            {
-                if (notification.Params is { } paramsNode)
+                var batch = JsonSerializer.Deserialize<ChannelReceiveResult>(text, ChannelProtocol.SerializerOptions);
+                foreach (var item in batch?.Items ?? [])
                 {
-                    var element = JsonSerializer.Deserialize<JsonElement>(paramsNode.ToJsonString());
-                    HandleChannelCancelNotification(element);
+                    Dispatch(item);
                 }
 
-                return ValueTask.CompletedTask;
-            });
+                // An empty batch is the normal timeout outcome, so re-poll immediately; the
+                // back-off below is reserved for the failure path.
+                backoff = TimeSpan.FromSeconds(1);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "channel_receive failed on {ChannelId}; retrying", ChannelId);
+                try
+                {
+                    await Task.Delay(backoff, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                backoff = TimeSpan.FromSeconds(Math.Min(backoff.TotalSeconds * 2, 30));
+            }
+        }
+    }
+
+    private void Dispatch(ChannelInboxItem item)
+    {
+        if (item.Kind == ChannelInboxItemKind.Message)
+        {
+            HandleChannelMessageNotification(
+                JsonSerializer.SerializeToElement(item.Message, ChannelProtocol.SerializerOptions));
+        }
+        else
+        {
+            HandleChannelCancelNotification(
+                JsonSerializer.SerializeToElement(item.Cancel, ChannelProtocol.SerializerOptions));
+        }
+    }
+
+    private async Task StopPumpAsync()
+    {
+        if (_pumpCts is null)
+        {
+            return;
+        }
+
+        await _pumpCts.CancelAsync();
+        if (_pumpTask is not null)
+        {
+            try
+            {
+                await _pumpTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        _pumpCts.Dispose();
+        _pumpCts = null;
+        _pumpTask = null;
     }
 
     public void HandleChannelMessageNotification(JsonElement payload)
@@ -267,6 +344,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     public async ValueTask DisposeAsync()
     {
+        await StopPumpAsync();
         _messageChannel.Writer.TryComplete();
         if (_client is not null)
         {
@@ -294,6 +372,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     public async Task ReconnectAsync(string endpoint, CancellationToken ct)
     {
+        await StopPumpAsync();
         if (_client is not null)
         {
             await _client.DisposeAsync();

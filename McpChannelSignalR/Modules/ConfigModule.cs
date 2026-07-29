@@ -85,6 +85,13 @@ public static class ConfigModule
                 {
                     return await next(context, cancellationToken);
                 }
+                catch (OperationCanceledException)
+                {
+                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
+                    // or the server shuts down. Mapping that to IsError would hand the pump an
+                    // error result to retry on; let it propagate as the abort it is.
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     var logger = context.Services?.GetRequiredService<ILogger<Program>>();

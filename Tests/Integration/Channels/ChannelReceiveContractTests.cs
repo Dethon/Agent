@@ -1,7 +1,9 @@
 using System.Net;
 using System.Text.Json;
 using Domain.Channels;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Infrastructure.Clients.Channels;
 using McpChannelSignalR.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -57,14 +59,7 @@ public class ChannelReceiveContractTests
         var port = TestPort.GetAvailable();
         var inbox = new ChannelInbox();
 
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services.AddSingleton(inbox);
-        registerTool(builder.Services.AddMcpServer().WithHttpTransport());
-
-        var app = builder.Build();
-        app.MapMcp("/mcp");
-        await app.StartAsync();
+        var app = await StartServerAsync(port, inbox, registerTool);
         try
         {
             await using var client = await McpClient.CreateAsync(
@@ -123,6 +118,108 @@ public class ChannelReceiveContractTests
             .ShouldContain(
                 ChannelProtocol.ReceiveTool,
                 $"{channelId} must expose {ChannelProtocol.ReceiveTool} from its own ConfigModule");
+    }
+
+    [Fact]
+    public async Task McpChannelConnection_SurfacesEnqueuedMessagesOnItsStream()
+    {
+        var port = TestPort.GetAvailable();
+        var inbox = new ChannelInbox();
+
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<SignalRChannel.ChannelReceiveTool>());
+        await using var connection = new McpChannelConnection("signalr");
+        try
+        {
+            await connection.ConnectAsync($"http://localhost:{port}/mcp", CancellationToken.None);
+
+            await Task.Delay(300);
+            inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+            {
+                ConversationId = "conv-1",
+                Sender = "user",
+                Content = "hello from the inbox",
+                AgentId = "nabu"
+            }));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var received = await connection.Messages.FirstAsync(cts.Token);
+
+            received.ConversationId.ShouldBe("conv-1");
+            received.Content.ShouldBe("hello from the inbox");
+            received.ChannelId.ShouldBe("signalr");
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task McpChannelConnection_AfterReconnect_DrainsWhatBufferedDuringTheOutage()
+    {
+        var port = TestPort.GetAvailable();
+        var inbox = new ChannelInbox();
+
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<SignalRChannel.ChannelReceiveTool>());
+        var endpoint = $"http://localhost:{port}/mcp";
+        await using var connection = new McpChannelConnection("signalr");
+        try
+        {
+            await connection.ConnectAsync(endpoint, CancellationToken.None);
+            await Task.Delay(300);
+
+            // The subscriber id is stable across reconnects, so the queue survives.
+            await connection.ReconnectAsync(endpoint, CancellationToken.None);
+
+            inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+            {
+                ConversationId = "conv-2",
+                Sender = "user",
+                Content = "buffered"
+            }));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var received = await connection.Messages.FirstAsync(cts.Token);
+
+            received.Content.ShouldBe("buffered");
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task McpChannelConnection_WhenServerIsDown_DisposesWithoutHanging()
+    {
+        // No server listening on this port at all.
+        var port = TestPort.GetAvailable();
+        await using var connection = new McpChannelConnection("signalr");
+
+        // ConnectAsync throws, so no pump was ever started; dispose must not wait on one.
+        await Should.ThrowAsync<Exception>(
+            () => connection.ConnectAsync($"http://localhost:{port}/mcp", CancellationToken.None));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await connection.DisposeAsync().AsTask().WaitAsync(cts.Token);
+    }
+
+    private static async Task<WebApplication> StartServerAsync(
+        int port, ChannelInbox inbox, Action<IMcpServerBuilder> registerTool)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services.AddSingleton(inbox);
+        registerTool(builder.Services.AddMcpServer().WithHttpTransport());
+
+        var app = builder.Build();
+        app.MapMcp("/mcp");
+        await app.StartAsync();
+        return app;
     }
 
     private static async Task<ChannelReceiveResult> Poll(McpClient client, string subscriberId, int maxWaitMs)
