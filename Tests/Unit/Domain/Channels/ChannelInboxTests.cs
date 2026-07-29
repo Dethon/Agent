@@ -300,6 +300,31 @@ public class ChannelInboxTests
         batch[0].Message!.ConversationId.ShouldBe("c1");
     }
 
+    // The sibling of ReceiveAsync_WhenCancelled_LeavesItemsForTheNextPoll, on the path that has no
+    // wait at all. ReconnectAsync aborts a poll and starts a fresh one immediately behind it, so a
+    // token that is already cancelled when the poll arrives is the common case, not a corner: the
+    // pending-items fast path must refuse it exactly like the wait path does, or the batch is
+    // drained into a caller that is already gone.
+    [Fact]
+    public async Task ReceiveAsync_WhenAlreadyCancelled_LeavesPendingItemsQueued()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        inbox.Enqueue(Message("c1"));
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), cts.Token));
+
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        batch.Count.ShouldBe(1);
+        batch[0].Message!.ConversationId.ShouldBe("c1");
+    }
+
     [Fact]
     public async Task ReceiveAsync_WhenAResumingPollFinishes_DoesNotOrphanALaterWaiter()
     {

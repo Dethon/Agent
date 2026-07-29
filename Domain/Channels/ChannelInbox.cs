@@ -178,6 +178,12 @@ public sealed class ChannelInbox(
             TimeProvider timeProvider,
             CancellationToken ct)
         {
+            // Same contract as the post-wait check below, on the path that never waits: a poll whose
+            // caller has already hung up must not drain. ReconnectAsync aborts a poll and issues a
+            // fresh one immediately behind it, so an already-cancelled token reaching the fast path
+            // is routine — and draining there hands the batch to a dead request and loses it.
+            ct.ThrowIfCancellationRequested();
+
             TaskCompletionSource<bool> waiter;
             TaskCompletionSource<bool>? displaced;
             lock (_gate)
