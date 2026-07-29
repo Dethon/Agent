@@ -92,6 +92,88 @@ public class ChannelInboxTests
         warnings.ShouldHaveSingleItem().ShouldContain(Subscriber);
     }
 
+    // The targeted variant exists for channels whose policy is buffer-always (Telegram): a message
+    // arriving before the agent's first poll — server cold start, or just after an idle eviction —
+    // must land in the well-known subscriber's queue instead of fanning out to nobody.
+    [Fact]
+    public async Task EnqueueFor_WithNoSubscriberRegistered_CreatesTheQueueAndDeliversOnTheFirstPoll()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+
+        inbox.EnqueueFor(Subscriber, Message("c1"));
+
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        batch.Count.ShouldBe(1);
+        batch[0].Message!.ConversationId.ShouldBe("c1");
+    }
+
+    // The post-eviction reopening of the cold-start window: after the empty subscriber is pruned,
+    // a broadcast reaches nobody (see Inbox_AfterEvictingAnIdleSubscriber_...), but the targeted
+    // enqueue must mint a fresh queue and buffer.
+    [Fact]
+    public async Task EnqueueFor_AfterTheSubscriberWasEvicted_StillBuffersForItsNextPoll()
+    {
+        using var cts = new CancellationTokenSource(_deadline);
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+
+        time.Advance(TimeSpan.FromMinutes(6));
+
+        inbox.EnqueueFor(Subscriber, Message("c1"));
+
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+        batch.Count.ShouldBe(1);
+        batch[0].Message!.ConversationId.ShouldBe("c1");
+    }
+
+    // Creating the queue is not polling it: HasLiveSubscriber answers "has anyone actually polled
+    // recently", and a buffer minted by EnqueueFor has no poller yet — reading it as live would
+    // resurrect the stale-buffer bug for any caller gating a destructive action on liveness.
+    [Fact]
+    public async Task EnqueueFor_WithNobodyPolling_DoesNotReadAsALiveSubscriber()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+
+        inbox.EnqueueFor(Subscriber, Message("c1"));
+
+        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task EnqueueFor_WhileAPollIsParked_WakesIt()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        var pending = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
+        await Task.Delay(50);
+
+        inbox.EnqueueFor(Subscriber, Message("c1"));
+
+        (await pending.WaitAsync(_deadline)).Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task EnqueueFor_BeyondCapacity_DropsOldestAndWarns()
+    {
+        var warnings = new List<string>();
+        var inbox = new ChannelInbox(
+            new FakeTimeProvider(), capacity: 2, logger: new CapturingLogger(warnings));
+
+        inbox.EnqueueFor(Subscriber, Message("c1"));
+        inbox.EnqueueFor(Subscriber, Message("c2"));
+        warnings.ShouldBeEmpty();
+
+        inbox.EnqueueFor(Subscriber, Message("c3"));
+
+        warnings.ShouldHaveSingleItem().ShouldContain(Subscriber);
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        batch.Select(i => i.Message!.ConversationId).ShouldBe(["c2", "c3"]);
+    }
+
     [Fact]
     public async Task ReceiveAsync_WhenEmpty_WakesOnEnqueue()
     {

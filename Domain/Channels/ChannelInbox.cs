@@ -36,16 +36,54 @@ public sealed class ChannelInbox(
     {
         PruneIdle();
         var dropped = _subscribers
-            .Where(entry => entry.Value.Enqueue(item, _capacity))
+            .Where(entry => entry.Value.Enqueue(item, _capacity) == EnqueueOutcome.AcceptedDroppingOldest)
             .Select(entry => entry.Key)
             .ToArray();
-        if (dropped.Length > 0)
+        WarnDroppedOldest(dropped);
+    }
+
+    // The targeted variant, for channels whose delivery policy is buffer-always (Telegram): unlike
+    // the broadcast Enqueue it creates the subscriber's queue on demand, so a message arriving
+    // before the agent's first poll — server cold start, or just after an idle eviction — is
+    // buffered instead of fanned out to nobody. Creation is bookkeeping only: the subscriber does
+    // not count as live until someone actually polls it, and capacity remains the only bound.
+    public void EnqueueFor(string subscriberId, ChannelInboxItem item)
+    {
+        PruneIdle();
+        var now = _timeProvider.GetUtcNow();
+        while (true)
+        {
+            // Same seeding rationale as ReceiveAsync: left at default, the stamp would sit behind
+            // every cutoff and a concurrent prune could retire and remove the instance this call
+            // just created before the item lands in it.
+            var subscriber = _subscribers.GetOrAdd(subscriberId, _ => new Subscriber(now));
+            var outcome = subscriber.Enqueue(item, _capacity);
+            if (outcome != EnqueueOutcome.Refused)
+            {
+                if (outcome == EnqueueOutcome.AcceptedDroppingOldest)
+                {
+                    WarnDroppedOldest([subscriberId]);
+                }
+
+                return;
+            }
+
+            // A concurrent prune retired this instance between the lookup and the enqueue; finish
+            // its removal rather than hand the item to a queue nobody drains. Each pass drops the
+            // instance it observed, so the loop is bounded.
+            _subscribers.TryRemove(new KeyValuePair<string, Subscriber>(subscriberId, subscriber));
+        }
+    }
+
+    private void WarnDroppedOldest(IReadOnlyList<string> subscriberIds)
+    {
+        if (subscriberIds.Count > 0)
         {
             // Capacity is the only bound on what an outage can buffer, so crossing it is the
             // moment a message is irrecoverably lost — the one line that must not pass silently.
             logger?.LogWarning(
                 "Inbox at capacity ({Capacity}); dropped the oldest buffered item for {SubscriberIds}",
-                _capacity, string.Join(", ", dropped));
+                _capacity, string.Join(", ", subscriberIds));
         }
     }
 
@@ -93,12 +131,21 @@ public sealed class ChannelInbox(
         }
     }
 
+    private enum EnqueueOutcome
+    {
+        // The retirement latch refused the item; the caller must not treat it as buffered.
+        Refused,
+        Accepted,
+        AcceptedDroppingOldest
+    }
+
     private sealed class Subscriber(DateTimeOffset createdAt)
     {
         private readonly Lock _gate = new();
         private readonly Queue<ChannelInboxItem> _items = new();
         private TaskCompletionSource<bool>? _waiter;
         private DateTimeOffset _lastPolledAt = createdAt;
+        private bool _hasPolled;
         private bool _retired;
 
         public bool TryTouch(DateTimeOffset now)
@@ -111,17 +158,21 @@ public sealed class ChannelInbox(
                 }
 
                 _lastPolledAt = now;
+                _hasPolled = true;
                 return true;
             }
         }
 
         // Deliberately ignores _items: a subscriber that is only holding buffered items but hasn't
         // repolled since the cutoff is exactly the stale-buffer case HasLiveSubscriber must reject.
+        // Requiring an actual poll matters for the same reason: a queue minted by EnqueueFor has a
+        // fresh seed stamp but no poller yet, and reading it as live would hand the stale-buffer
+        // bug right back to any caller gating a destructive action on liveness.
         public bool IsLiveSince(DateTimeOffset cutoff)
         {
             lock (_gate)
             {
-                return !_retired && _lastPolledAt >= cutoff;
+                return !_retired && _hasPolled && _lastPolledAt >= cutoff;
             }
         }
 
@@ -149,8 +200,7 @@ public sealed class ChannelInbox(
             }
         }
 
-        // True when admitting the item cost the oldest buffered one, so the inbox can log the loss.
-        public bool Enqueue(ChannelInboxItem item, int capacity)
+        public EnqueueOutcome Enqueue(ChannelInboxItem item, int capacity)
         {
             TaskCompletionSource<bool>? toSignal;
             var droppedOldest = false;
@@ -161,7 +211,7 @@ public sealed class ChannelInbox(
                 // predates the removal, or that item would be accepted into a queue nobody drains.
                 if (_retired)
                 {
-                    return false;
+                    return EnqueueOutcome.Refused;
                 }
 
                 if (_items.Count >= capacity)
@@ -176,7 +226,7 @@ public sealed class ChannelInbox(
             }
 
             toSignal?.TrySetResult(true);
-            return droppedOldest;
+            return droppedOldest ? EnqueueOutcome.AcceptedDroppingOldest : EnqueueOutcome.Accepted;
         }
 
         public async Task<IReadOnlyList<ChannelInboxItem>> ReceiveAsync(

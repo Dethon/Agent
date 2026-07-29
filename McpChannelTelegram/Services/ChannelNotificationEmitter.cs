@@ -5,6 +5,12 @@ namespace McpChannelTelegram.Services;
 
 public sealed class ChannelNotificationEmitter(ChannelInbox inbox)
 {
+    // The id McpChannelConnection("telegram") derives for itself. Targeting it — rather than
+    // broadcasting to whoever happens to be registered — is what closes the cold-start window:
+    // EnqueueFor creates the queue on demand, so a message arriving before the agent's first poll
+    // after a server restart or an idle eviction is buffered instead of fanned out to nobody.
+    private const string AgentSubscriberId = ChannelProtocol.ChannelClientNamePrefix + "telegram";
+
     public Task EmitMessageNotificationAsync(
         string conversationId,
         string sender,
@@ -12,7 +18,7 @@ public sealed class ChannelNotificationEmitter(ChannelInbox inbox)
         string agentId,
         CancellationToken cancellationToken = default)
     {
-        inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+        inbox.EnqueueFor(AgentSubscriberId, ChannelInboxItem.ForMessage(new ChannelMessageNotification
         {
             ConversationId = conversationId,
             Sender = sender,

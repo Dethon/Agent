@@ -25,6 +25,22 @@ public class ChannelNotificationEmitterTests
         items[0].Message!.AgentId.ShouldBe("nabu");
     }
 
+    // The cold-start window: a message arriving after a server restart but before the agent's
+    // first poll used to fan out to nobody and vanish while the service logged "buffering".
+    // Targeting the well-known subscriber id creates the queue on demand, so it buffers for real.
+    [Fact]
+    public async Task EmitMessageNotificationAsync_BeforeAnySubscriberRegistered_StillBuffers()
+    {
+        var inbox = new ChannelInbox();
+        var sut = new ChannelNotificationEmitter(inbox);
+
+        await sut.EmitMessageNotificationAsync("conv-1", "user", "hola", "nabu");
+
+        var items = await inbox.ReceiveAsync("channel-telegram", TimeSpan.Zero, CancellationToken.None);
+        items.Count.ShouldBe(1);
+        items[0].Message!.Content.ShouldBe("hola");
+    }
+
     [Fact]
     public async Task HasActiveSessions_FollowsInboxSubscribers()
     {

@@ -109,13 +109,15 @@ public sealed class TelegramBotService(
 
         // Unlike ServiceBus (broker-level abandon/redeliver) or Schedule/Library (a durable record
         // that simply stays due), Telegram has no channel-level way to signal "try again later" back
-        // to the sender — so a stale HasActiveSessions must not gate this away. The stable
-        // "channel-telegram" subscriber id survives the agent disconnecting (PruneIdle only evicts
-        // an empty, hour-idle subscriber), so buffering here means a late reconnect still delivers
-        // the message; dropping it would be silent, permanent loss to a user waiting on a reply.
+        // to the sender — so a stale HasActiveSessions must not gate this away. The emitter targets
+        // the well-known "channel-telegram" subscriber id and creates its queue on demand, so
+        // buffering holds unconditionally: through a disconnect (PruneIdle only evicts an empty,
+        // hour-idle subscriber), and even before the agent's first poll after a server restart or
+        // an idle eviction. A late reconnect still delivers, bounded only by the inbox capacity.
         if (!notificationEmitter.HasActiveSessions)
         {
-            logger.LogWarning("No active MCP sessions; buffering message from {Sender} for later delivery", sender);
+            logger.LogWarning(
+                "No live channel_receive subscriber; buffering message from {Sender} for later delivery", sender);
         }
 
         await notificationEmitter.EmitMessageNotificationAsync(

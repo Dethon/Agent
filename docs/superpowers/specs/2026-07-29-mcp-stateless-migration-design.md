@@ -391,11 +391,16 @@ wrong, find out on one server instead of six.
 - **D3's "survives agent restart" has a one-hour ceiling.** The subscriber that holds the buffer is
   evicted after an hour idle *if its queue is empty*, so an agent absent longer than that comes
   back to no subscriber. A restart takes seconds; an hour of absence is an outage, not a deploy.
-- **A message arriving before the agent's first poll is dropped**, same as today (no subscriber
+- **A message arriving before the agent's first poll is dropped** on most channels (no subscriber
   registered → the fan-out reaches nobody). The window is small since the pump starts immediately
-  on connect — but eviction **reopens** it: after an hour of agent absence the subscriber is gone,
-  so the first enqueue after that is dropped exactly like a cold start, and buffering only resumes
-  once the agent polls again.
+  on connect — but eviction **reopens** it: after an hour of agent absence the empty subscriber is
+  gone, so the first enqueue after that is dropped exactly like a cold start. **Telegram is the
+  exception**: its emitter targets the well-known `channel-telegram` subscriber via
+  `ChannelInbox.EnqueueFor`, which mints the queue on demand (without counting as live — nobody
+  has polled it), so cold-start and post-eviction messages buffer up to capacity. The other
+  channels keep the window deliberately: ServiceBus redelivers through the broker, Scheduling and
+  Library keep a durable record that stays due, and SignalR/Voice messages come from a live
+  interactive session rather than a fire-and-forget sender.
 - **Browser sessions reclaim up to 30 minutes later** than the old DELETE hook managed.
 
 ## Non-goals
