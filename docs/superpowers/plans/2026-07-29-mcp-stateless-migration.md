@@ -1617,9 +1617,19 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -u Infrastructure Domain McpServerLibrary Tests
+git add Infrastructure/Agents/ThreadSession.cs \
+        Infrastructure/Agents/Mcp/McpSamplingHandler.cs \
+        Infrastructure/Agents/Mappers/ChatResponseUpdateExtensions.cs \
+        Domain/Tools/ContentRecommendationTool.cs \
+        McpServerLibrary/McpTools/McpContentRecommendationTool.cs \
+        McpServerLibrary/Modules/ConfigModule.cs \
+        Tests/Integration/Agents/McpSamplingHandlerTests.cs
 git commit -m "refactor: remove sampling and its only consumer"
 ```
+
+Deletions staged via `git rm` are already in the index; the explicit `git add` above covers the
+edited files. Never `git add -A` or `git add -u` without paths — the user commits into this tree
+concurrently.
 
 ---
 
