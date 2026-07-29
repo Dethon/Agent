@@ -41,14 +41,19 @@ public sealed class ChannelInbox(
         var now = _timeProvider.GetUtcNow();
         while (true)
         {
-            var subscriber = _subscribers.GetOrAdd(subscriberId, _ => new Subscriber());
+            // Seeding the new subscriber with `now` matters: left at default it would sit behind
+            // every cutoff, so a concurrent Enqueue's prune could retire and remove it in the window
+            // before TryTouch and then broadcast to a snapshot that excludes it — dropping the item.
+            var subscriber = _subscribers.GetOrAdd(subscriberId, _ => new Subscriber(now));
             if (subscriber.TryTouch(now))
             {
                 return subscriber.ReceiveAsync(maxWait, _timeProvider, ct);
             }
 
-            // A concurrent prune retired this instance between the lookup and the touch. Finish its
-            // removal ourselves rather than poll a subscriber Enqueue can no longer reach.
+            // A concurrent prune retired this instance between the lookup and the touch. Seeding
+            // makes that unreachable for a subscriber this call created, so only one already past
+            // the cutoff can land here; finish its removal rather than poll a subscriber Enqueue can
+            // no longer reach. Each pass drops the instance it observed, so the loop is bounded.
             _subscribers.TryRemove(new KeyValuePair<string, Subscriber>(subscriberId, subscriber));
         }
     }
@@ -72,12 +77,12 @@ public sealed class ChannelInbox(
         }
     }
 
-    private sealed class Subscriber
+    private sealed class Subscriber(DateTimeOffset createdAt)
     {
         private readonly Lock _gate = new();
         private readonly Queue<ChannelInboxItem> _items = new();
         private TaskCompletionSource<bool>? _waiter;
-        private DateTimeOffset _lastPolledAt;
+        private DateTimeOffset _lastPolledAt = createdAt;
         private bool _retired;
 
         public bool TryTouch(DateTimeOffset now)
@@ -97,6 +102,13 @@ public sealed class ChannelInbox(
         // Both conditions are read under the same lock that Enqueue and Drain mutate them under, and
         // the retirement is latched in the same critical section: an item can never be accepted into
         // a queue that a prune has already decided to throw away.
+        //
+        // A subscriber is stamped when its poll *starts*, so "a touch protects for one idle timeout"
+        // only holds while the caller's maxWait stays below that timeout — otherwise a poll could be
+        // retired while still parked on it, and items arriving before it re-polls would reach no
+        // subscriber. maxWaitMs is caller-supplied (ChannelReceiveTool), 30s against a 1h timeout
+        // today, so there is decades of headroom; a caller closing that gap would have to widen the
+        // timeout to match.
         public bool TryRetire(DateTimeOffset cutoff)
         {
             lock (_gate)
@@ -116,6 +128,9 @@ public sealed class ChannelInbox(
             TaskCompletionSource<bool>? toSignal;
             lock (_gate)
             {
+                // Refusing here is what makes retirement safe: a prune that has already latched this
+                // subscriber must not be handed an item by a thread whose _subscribers snapshot
+                // predates the removal, or that item would be accepted into a queue nobody drains.
                 if (_retired)
                 {
                     return;

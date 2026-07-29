@@ -166,6 +166,30 @@ public class ChannelInboxTests
     }
 
     [Fact]
+    public async Task Inbox_AfterEvictingAnIdleSubscriber_StillDeliversToAFreshSubscription()
+    {
+        using var cts = new CancellationTokenSource(Deadline);
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+
+        time.Advance(TimeSpan.FromMinutes(6));
+
+        inbox.HasSubscribers.ShouldBeFalse();
+
+        // Eviction retires the *instance*, so the id must be reusable: a retired subscriber can
+        // neither be resurrected by the next poll nor poison its id, and the early return that stops
+        // a retired subscriber accepting items must not follow the id to its replacement.
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+        inbox.Enqueue(Message("c1"));
+
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+
+        batch.Count.ShouldBe(1);
+        batch[0].Message!.ConversationId.ShouldBe("c1");
+    }
+
+    [Fact]
     public async Task Subscriber_WhenIdleAfterDrainingItems_IsEvicted()
     {
         using var cts = new CancellationTokenSource(Deadline);
