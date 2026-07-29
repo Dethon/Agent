@@ -70,8 +70,8 @@ untested:
 |---|---|---|
 | D1 | Clean break to 2026-07-28 | One code path. Everything deploys from one compose stack; the Rust satellite speaks Wyoming, not MCP, so nothing external pins the old protocol. |
 | D2 | Replace push with a **long-poll tool** | Delivers in one hop with the payload inline — identical latency to today's push. Resource subscriptions cost a second hop (`resources/updated` carries only a URI). |
-| D3 | **In-memory bounded queue** per subscriber | Closes the poll gap, and survives agent restart (better than today). Channel-server restart still loses, same as today. No new infrastructure. |
-| D4 | Conversation identity travels in **`_meta`**, always present | Prescribed by the spec (below). |
+| D3 | **In-memory bounded queue** per subscriber | Closes the poll gap, and survives agent restart (better than today) — *as implemented*, for as long as the subscriber survives eviction (1 h) and for any batch not in flight when the agent died. Channel-server restart still loses, same as today. No new infrastructure. |
+| D4 | Conversation identity travels in **`_meta`**, always present | Prescribed by the spec (below). *As implemented*, "always present" is an invariant the agent asserts and logs, not one it enforces by throwing — see §Conversation context. |
 | D5 | **Delete sampling entirely** | Experimental, never really used; its only consumer costs a whole extra LLM turn for no added capability. |
 
 ### Why `_meta` (D4)
@@ -166,12 +166,61 @@ unit-tests without a server.
   a `TaskCompletionSource` until an item arrives or `maxWaitMs` elapses, then drains.
 - **One in-flight poll per subscriber.** A second poll for the same id completes the previous
   one with an empty batch; otherwise two waiters split the stream.
-- Queues are evicted after a few minutes without a poll, so a vanished agent cannot leak.
+- **Eviction is bookkeeping cleanup only, and never the thing that loses a message.**
+  *Changed during implementation* (the design said "evicted after a few minutes without a poll"):
+  a subscriber is evicted only after **1 hour** idle **and only while its queue is empty**. One
+  still holding items is kept however long it has been idle, so a channel outage of any length is
+  survivable and **capacity — 256, drop-oldest — is the only bound**, not time. The original rule
+  discarded exactly what D3 exists to protect: a five-minute agent restart would have thrown away
+  everything buffered during it. A vanished agent still cannot leak; it leaks one empty queue for
+  an hour.
+
+  The 1 h figure is ~120× the largest legitimate gap: a healthy agent touches its subscriber at
+  least every 30 s (the long-poll ceiling, which is also the reconnect backoff cap).
 
 The six emitters replace `SendNotificationAsync` with `inbox.Enqueue(...)`. `RunSessionHandler`
 disappears from all **six** servers that use it (SignalR, Telegram, ServiceBus, Voice,
 Scheduling, Library — verified), taking the `MCPEXP002` suppressions with it and removing a
 standing upgrade risk.
+
+### Delivery liveness (`HasActiveSessions`)
+
+*Not in the original design; it took three fix rounds during implementation and is the largest
+cross-cutting risk in the migration. Recorded here so nobody re-derives it wrong.*
+
+Every emitter exposes `HasActiveSessions`, and its **meaning silently changed**. Before, it read
+the MCP session registry: sessions appeared on connect and vanished on disconnect, so it answered
+*"is an agent connected right now"*. The obvious port — "does the inbox have a subscriber for this
+id" — answers something else entirely, because subscriber bookkeeping deliberately outlives the
+connection by up to an hour so a channel outage does not discard what buffered during it. Ported
+that way, a disconnected agent's stale buffer reads as a live delivery.
+
+The fix is `ChannelInbox.HasLiveSubscriber(freshness)` — *has anyone actually polled within
+`freshness`* — gated on `ChannelProtocol.LiveSubscriberFreshness` (2 × the 30 s long-poll ceiling:
+long enough that a subscriber parked mid-poll always counts, short enough that a disconnected
+agent stops counting almost at once). `ChannelReceiveTool` clamps `maxWaitMs` to the ceiling for
+the same reason: an unclamped poll could park a genuinely live subscriber past the window.
+`HasLiveSubscriber` is the *only* liveness question `ChannelInbox` answers; the near-miss twin that
+answered "is it registered" was deleted, since having both in a public API is how the distinction
+gets lost again.
+
+**The correct answer differs per consumer, which is why it took three rounds.** What matters is not
+the check but what each caller *does* when it reads false:
+
+- **ServiceBus** abandons the message back to the broker (`ServiceBusProcessorService`) — the
+  message is redelivered, so gating is right and a stale "live" would have completed a message
+  nobody received.
+- **Scheduling / Library** return early from the sweep (`ScheduleDispatcherService.DispatchDueAsync`,
+  `DownloadCompletionWatcher.SweepAsync`), leaving the schedule due and the download entry in the
+  store — nothing is consumed, so gating is right for the same reason.
+- **Telegram** had nowhere to put it. There is no channel-level "try again later" back to the
+  sender, so the gate's only effect was to **drop a user's message permanently**. That gate is
+  gone: `TelegramBotService` now logs the warning and emits regardless, letting the inbox buffer
+  it for a late reconnect (the stable `channel-telegram` subscriber id is what makes that work).
+
+The rule: gate on `HasLiveSubscriber` when the alternative to delivering is *retrying or
+preserving*. Do **not** gate when the alternative is *dropping* — the inbox buffers better than the
+caller does, and that is the whole point of D3.
 
 ### Agent pump
 
@@ -214,8 +263,23 @@ per-conversation granularity exactly.
 
 **No fallback.** Tools return a structured `ToolError` when the context is missing. A
 shared-bucket fallback is a privacy leak; a per-request fallback silently severs
-search→download. Both fail invisibly, and with the always-present guarantee a fallback would
-only ever mask a bug.
+search→download. Both fail invisibly, and a fallback would only ever mask a bug.
+
+**"Always present" is asserted, not enforced — changed during implementation.** The design read as
+though `McpAgent` could not run without a context. It can, and
+`McpAgent.BuildConversationContextProperties` *deliberately* **logs an error and omits the key**
+rather than throwing:
+
+- The context is metadata only some downstream servers consume (Library search scoping, WebSearch
+  browser sessions). The LLM turn itself does not need it, so throwing trades one degraded tool
+  call for a dead user-facing turn.
+- `McpAgent` has legitimate non-channel callers — harnesses, benchmarks, any future non-channel
+  trigger — that run without a conversation at all. A throw would break them for a value they
+  never use.
+
+The defect this task exists to prevent is the **silent** omission; an error log closes that without
+the collateral. Consumers therefore keep their `ToolError` path: it is unreachable in normal
+operation and is the visible failure when the invariant is broken.
 
 ### Library
 
@@ -270,10 +334,15 @@ rather than reproducing it.
    enqueue; timeout returns empty; a second poll displaces the first; idle subscribers evicted.
 2. **Channel contract test — real Kestrel, real `McpClient`**, parameterized across all six
    servers: enqueue on the server, assert it surfaces on `McpChannelConnection.Messages`. *This
-   is the test that would have caught the original regression.*
+   is the test that would have caught the original regression.* Each row boots the server from
+   its **own `ConfigModule`** (background workers stripped, nothing else): hand-registering the
+   tool and the inbox would stay green against a module that forgot either, and would pin the
+   SDK's transport defaults instead of the options the module actually passes.
 3. **Protocol guard** — assert `NegotiatedProtocolVersion == "2026-07-28"` and
    `SessionId is null`. Pins the clean break: reintroducing `Stateless = false` fails loudly
-   instead of silently dropping to 2025-11-25.
+   instead of silently dropping to 2025-11-25. *As implemented*, this is not a separate test: it
+   folded into (2)'s per-server theory, so all six servers that regressed are pinned individually.
+   A standalone guard against one server would leave the other five free to renegotiate down.
 4. **Pump behavior** — reconnect resumes the same `subscriberId` and drains what buffered during
    the outage; a failing server backs off; cancellation exits cleanly.
 5. **`_meta` contract** — key is vendor-prefixed; context present on every `tools/call`; a
@@ -318,8 +387,14 @@ wrong, find out on one server instead of six.
   the one new-in-kind loss window, and it is strictly narrower than the accepted
   channel-restart loss. Closing it requires an ack cursor — deliberately not built.
 - **Channel-server restart loses queued messages** (in-memory), same as today.
-- **A message arriving before the agent's first poll is dropped**, same as today (no active
-  session → no-op). The window is small since the pump starts immediately on connect.
+- **D3's "survives agent restart" has a one-hour ceiling.** The subscriber that holds the buffer is
+  evicted after an hour idle *if its queue is empty*, so an agent absent longer than that comes
+  back to no subscriber. A restart takes seconds; an hour of absence is an outage, not a deploy.
+- **A message arriving before the agent's first poll is dropped**, same as today (no subscriber
+  registered → the fan-out reaches nobody). The window is small since the pump starts immediately
+  on connect — but eviction **reopens** it: after an hour of agent absence the subscriber is gone,
+  so the first enqueue after that is dropped exactly like a cold start, and buffering only resumes
+  once the agent polls again.
 - **Browser sessions reclaim up to 30 minutes later** than the old DELETE hook managed.
 
 ## Non-goals
