@@ -10,6 +10,7 @@ public sealed class ChannelInbox(
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly TimeSpan _idleTimeout = subscriberIdleTimeout ?? TimeSpan.FromMinutes(5);
     private readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
+    private readonly int _capacity = ValidateCapacity(capacity);
 
     public bool HasSubscribers
     {
@@ -25,7 +26,7 @@ public sealed class ChannelInbox(
         PruneIdle();
         foreach (var subscriber in _subscribers.Values)
         {
-            subscriber.Enqueue(item, capacity);
+            subscriber.Enqueue(item, _capacity);
         }
     }
 
@@ -37,6 +38,12 @@ public sealed class ChannelInbox(
         var subscriber = _subscribers.GetOrAdd(subscriberId, _ => new Subscriber());
         subscriber.Touch(_timeProvider.GetUtcNow());
         return subscriber.ReceiveAsync(maxWait, _timeProvider, ct);
+    }
+
+    private static int ValidateCapacity(int capacity)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
+        return capacity;
     }
 
     private void PruneIdle()
@@ -108,11 +115,7 @@ public sealed class ChannelInbox(
 
             if (maxWait <= TimeSpan.Zero)
             {
-                lock (_gate)
-                {
-                    _waiter = null;
-                    return Drain();
-                }
+                return RetireAndDrain(waiter);
             }
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -120,15 +123,44 @@ public sealed class ChannelInbox(
             var completed = await Task.WhenAny(waiter.Task, delay);
             await timeoutCts.CancelAsync();
 
+            if (ct.IsCancellationRequested)
+            {
+                // The caller is gone — draining here would hand the batch to an aborted request and
+                // lose it. Leave the items queued for the next poll and surface the cancellation.
+                lock (_gate)
+                {
+                    RetireWaiter(waiter);
+                }
+
+                ct.ThrowIfCancellationRequested();
+            }
+
             if (completed == waiter.Task && !waiter.Task.Result)
             {
                 return [];
             }
 
+            return RetireAndDrain(waiter);
+        }
+
+        private IReadOnlyList<ChannelInboxItem> RetireAndDrain(TaskCompletionSource<bool> waiter)
+        {
             lock (_gate)
             {
-                _waiter = null;
+                RetireWaiter(waiter);
                 return Drain();
+            }
+        }
+
+        // Caller holds _gate. Only the poll that registered a waiter may retire it: a poll that
+        // blindly nulls _waiter can drop the waiter a *later* poll registered while this one was
+        // resuming, leaving the next Enqueue with nobody to signal — that poll then sleeps out its
+        // whole maxWait with items already sitting in its queue.
+        private void RetireWaiter(TaskCompletionSource<bool> waiter)
+        {
+            if (ReferenceEquals(_waiter, waiter))
+            {
+                _waiter = null;
             }
         }
 

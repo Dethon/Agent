@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Domain.Channels;
 using Domain.DTOs.Channel;
 using Microsoft.Extensions.Time.Testing;
@@ -8,6 +9,11 @@ namespace Tests.Unit.Domain.Channels;
 public class ChannelInboxTests
 {
     private const string Subscriber = "channel-signalr";
+
+    // Every wait in these tests is bounded so a regression fails the run instead of hanging it:
+    // the inbox is driven by a FakeTimeProvider that is never advanced, so a poll that is never
+    // signalled would otherwise wait forever.
+    private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(5);
 
     private static ChannelInboxItem Message(string conversationId) =>
         ChannelInboxItem.ForMessage(new ChannelMessageNotification
@@ -135,5 +141,138 @@ public class ChannelInboxTests
         time.Advance(TimeSpan.FromMinutes(6));
 
         inbox.HasSubscribers.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Constructor_WithNonPositiveCapacity_Throws()
+    {
+        Should.Throw<ArgumentOutOfRangeException>(() => new ChannelInbox(new FakeTimeProvider(), capacity: 0));
+        Should.Throw<ArgumentOutOfRangeException>(() => new ChannelInbox(new FakeTimeProvider(), capacity: -1));
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_WhenAnotherPollTakesTheBatchFirst_ReturnsEmptyWithoutLosingItems()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        var context = new ManualSynchronizationContext();
+        var parked = context.Start(() =>
+            inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None));
+
+        inbox.Enqueue(Message("c1"));
+
+        // The parked poll has been signalled but cannot resume until pumped, so the second poll
+        // takes the batch. The item must land in exactly one of them, never be lost between them.
+        var taken = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        taken.Count.ShouldBe(1);
+        taken[0].Message!.ConversationId.ShouldBe("c1");
+        (await context.PumpUntilAsync(parked, Deadline)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_WhenCancelled_LeavesItemsForTheNextPoll()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        using var cts = new CancellationTokenSource();
+        var context = new ManualSynchronizationContext();
+        var parked = context.Start(() => inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), cts.Token));
+
+        inbox.Enqueue(Message("c1"));
+        await cts.CancelAsync();
+
+        // The caller is gone, so the batch must stay queued rather than be handed to an aborted poll.
+        await Should.ThrowAsync<OperationCanceledException>(() => context.PumpUntilAsync(parked, Deadline));
+
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        batch.Count.ShouldBe(1);
+        batch[0].Message!.ConversationId.ShouldBe("c1");
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_WhenAResumingPollFinishes_DoesNotOrphanALaterWaiter()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        var context = new ManualSynchronizationContext();
+        var parked = context.Start(() =>
+            inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None));
+
+        inbox.Enqueue(Message("c1"));
+
+        // Take everything the parked poll was signalled for, then register a fresh waiter while it
+        // is still suspended. Retiring the parked poll must not null out this later waiter.
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None)).Count.ShouldBe(1);
+        var next = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
+
+        (await context.PumpUntilAsync(parked, Deadline)).ShouldBeEmpty();
+
+        inbox.Enqueue(Message("c2"));
+
+        var batch = await next.WaitAsync(Deadline);
+
+        batch.Count.ShouldBe(1);
+        batch[0].Message!.ConversationId.ShouldBe("c2");
+    }
+
+    // Parks a poll's continuations on a context only the test pumps, which pins the interleaving
+    // the racy sites need without adding a seam to production code. It works because the inbox
+    // awaits without ConfigureAwait(false), so the continuation is posted to the captured context;
+    // adding ConfigureAwait(false) there would not fail these tests, it would quietly make them
+    // race again.
+    private sealed class ManualSynchronizationContext : SynchronizationContext
+    {
+        private readonly ConcurrentQueue<(SendOrPostCallback Callback, object? State)> _pending = new();
+
+        public override void Post(SendOrPostCallback d, object? state) => _pending.Enqueue((d, state));
+
+        public override void Send(SendOrPostCallback d, object? state) => d(state);
+
+        public T Start<T>(Func<T> work)
+        {
+            var previous = Current;
+            SetSynchronizationContext(this);
+            try
+            {
+                return work();
+            }
+            finally
+            {
+                SetSynchronizationContext(previous);
+            }
+        }
+
+        public async Task<T> PumpUntilAsync<T>(Task<T> task, TimeSpan timeout)
+        {
+            var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+            while (!task.IsCompleted)
+            {
+                if (Environment.TickCount64 > deadline)
+                {
+                    throw new TimeoutException("The parked poll never completed.");
+                }
+
+                RunPending();
+                await Task.Delay(5);
+            }
+
+            return await task;
+        }
+
+        private void RunPending()
+        {
+            var previous = Current;
+            SetSynchronizationContext(this);
+            try
+            {
+                while (_pending.TryDequeue(out var work))
+                {
+                    work.Callback(work.State);
+                }
+            }
+            finally
+            {
+                SetSynchronizationContext(previous);
+            }
+        }
     }
 }
