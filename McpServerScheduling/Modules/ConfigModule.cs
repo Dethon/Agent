@@ -3,7 +3,6 @@ using Domain.Channels;
 using Domain.Contracts;
 using Domain.Prompts;
 using Domain.Tools.Scheduling.Vfs;
-using Infrastructure.McpTools;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Infrastructure.Validation;
@@ -58,7 +57,7 @@ public static class ConfigModule
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
-            .WithTools<ChannelReceiveTool>()
+            .WithTools<McpChannelReceiveTool>()
             .WithTools<FsGlobTool>()
             .WithTools<FsInfoTool>()
             .WithTools<FsReadTool>()

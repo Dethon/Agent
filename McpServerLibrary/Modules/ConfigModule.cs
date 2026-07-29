@@ -2,7 +2,6 @@ using Domain.Channels;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
-using Infrastructure.McpTools;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using McpServerLibrary.McpPrompts;
@@ -76,7 +75,7 @@ public static class ConfigModule
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
-            .WithTools<ChannelReceiveTool>()
+            .WithTools<McpChannelReceiveTool>()
             .WithTools<FsGlobTool>()
             .WithTools<FsReadTool>()
             .WithTools<FsDeleteTool>()

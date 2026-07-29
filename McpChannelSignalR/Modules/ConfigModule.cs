@@ -3,7 +3,6 @@ using Domain.Channels;
 using Domain.Contracts;
 using Infrastructure.Clients.Push;
 using Infrastructure.Conversations;
-using Infrastructure.McpTools;
 using Infrastructure.StateManagers;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
@@ -79,7 +78,7 @@ public static class ConfigModule
             .WithTools<RequestApprovalTool>()
             .WithTools<CreateConversationTool>()
             .WithTools<RegisterAgentsTool>()
-            .WithTools<ChannelReceiveTool>()
+            .WithTools<McpChannelReceiveTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try

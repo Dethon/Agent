@@ -1,6 +1,5 @@
 using Azure.Messaging.ServiceBus;
 using Domain.Channels;
-using Infrastructure.McpTools;
 using McpChannelServiceBus.McpTools;
 using McpChannelServiceBus.Services;
 using McpChannelServiceBus.Settings;
@@ -41,7 +40,7 @@ public static class ConfigModule
             .WithHttpTransport()
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
-            .WithTools<ChannelReceiveTool>()
+            .WithTools<McpChannelReceiveTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try

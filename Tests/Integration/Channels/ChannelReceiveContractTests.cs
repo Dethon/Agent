@@ -5,8 +5,8 @@ using System.Text.Json;
 using Domain.Channels;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
-using Infrastructure.McpTools;
 using McpChannelServiceBus.Modules;
+using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Modules;
 using McpChannelTelegram.Modules;
 using McpChannelVoice.Modules;
@@ -201,7 +201,7 @@ public class ChannelReceiveContractTests
         var port = TestPort.GetAvailable();
         var inbox = new ChannelInbox();
 
-        var app = await StartServerAsync(port, inbox, b => b.WithTools<ChannelReceiveTool>());
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<McpChannelReceiveTool>());
         await using var connection = new McpChannelConnection("signalr");
         try
         {
@@ -237,7 +237,7 @@ public class ChannelReceiveContractTests
         var port = TestPort.GetAvailable();
         var inbox = new ChannelInbox();
 
-        var app = await StartServerAsync(port, inbox, b => b.WithTools<ChannelReceiveTool>());
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<McpChannelReceiveTool>());
         var endpoint = $"http://localhost:{port}/mcp";
         await using var connection = new McpChannelConnection("signalr");
         try
@@ -275,7 +275,7 @@ public class ChannelReceiveContractTests
         var port = TestPort.GetAvailable();
         var inbox = new ChannelInbox();
 
-        var app = await StartServerAsync(port, inbox, b => b.WithTools<ChannelReceiveTool>());
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<McpChannelReceiveTool>());
         var endpoint = $"http://localhost:{port}/mcp";
         var restarted = new McpChannelConnection("signalr");
         var original = new McpChannelConnection("signalr");
@@ -343,7 +343,7 @@ public class ChannelReceiveContractTests
         var app = await StartServerAsync(
             port,
             inbox,
-            b => b.WithTools<ChannelReceiveTool>(),
+            b => b.WithTools<McpChannelReceiveTool>(),
             web => web.Use(async (context, next) =>
             {
                 if (HttpMethods.IsPost(context.Request.Method))
@@ -390,7 +390,7 @@ public class ChannelReceiveContractTests
         var app = await StartServerAsync(
             port,
             inbox,
-            b => b.WithTools<ChannelReceiveTool>().WithTools<ImmediateTool>());
+            b => b.WithTools<McpChannelReceiveTool>().WithTools<ImmediateTool>());
         try
         {
             await using var client = await McpClient.CreateAsync(

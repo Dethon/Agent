@@ -1,7 +1,6 @@
 using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
-using Infrastructure.McpTools;
 using Infrastructure.Metrics;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
@@ -152,7 +151,7 @@ public static class ConfigModule
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
             .WithTools<CreateConversationTool>()
-            .WithTools<ChannelReceiveTool>()
+            .WithTools<McpChannelReceiveTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try

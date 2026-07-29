@@ -1,5 +1,4 @@
 using Domain.Channels;
-using Infrastructure.McpTools;
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
@@ -36,7 +35,7 @@ public static class ConfigModule
             .WithHttpTransport()
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
-            .WithTools<ChannelReceiveTool>()
+            .WithTools<McpChannelReceiveTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
