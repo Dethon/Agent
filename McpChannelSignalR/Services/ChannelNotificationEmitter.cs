@@ -39,5 +39,9 @@ public sealed class ChannelNotificationEmitter(ChannelInbox inbox)
         return Task.CompletedTask;
     }
 
-    public bool HasActiveSessions => inbox.HasSubscribers;
+    // Not consumed in production today (no caller gates a destructive action on it here), but kept
+    // computed the same way as every other migrated channel's HasActiveSessions — see
+    // ChannelProtocol.LiveSubscriberFreshness's doc comment for why HasSubscribers is the wrong
+    // check wherever this property does end up read.
+    public bool HasActiveSessions => inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness);
 }

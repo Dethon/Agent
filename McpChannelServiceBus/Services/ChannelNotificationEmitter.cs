@@ -24,5 +24,10 @@ public sealed class ChannelNotificationEmitter(ChannelInbox inbox)
         return Task.CompletedTask;
     }
 
-    public bool HasActiveSessions => inbox.HasSubscribers;
+    // ServiceBusProcessorService gates message settlement on this — see
+    // ChannelProtocol.LiveSubscriberFreshness's doc comment for why HasSubscribers would be wrong
+    // here: it stays true for up to an hour after a subscriber goes quiet, which would complete
+    // (settle) the broker message instead of abandoning it, defeating Service Bus's at-least-once
+    // redelivery for an item that can still be lost with the in-process inbox.
+    public bool HasActiveSessions => inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness);
 }

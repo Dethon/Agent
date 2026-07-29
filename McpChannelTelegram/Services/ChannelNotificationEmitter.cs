@@ -24,5 +24,9 @@ public sealed class ChannelNotificationEmitter(ChannelInbox inbox)
         return Task.CompletedTask;
     }
 
-    public bool HasActiveSessions => inbox.HasSubscribers;
+    // TelegramBotService gates its "agent unavailable" drop path on this — see
+    // ChannelProtocol.LiveSubscriberFreshness's doc comment for why HasSubscribers would be wrong
+    // here: it stays true for up to an hour after a subscriber goes quiet, which would silently
+    // accept a message into a buffer nobody is polling instead of dropping it with a clear signal.
+    public bool HasActiveSessions => inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness);
 }

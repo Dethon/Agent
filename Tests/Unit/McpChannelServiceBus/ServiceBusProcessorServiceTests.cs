@@ -2,8 +2,10 @@ using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Domain.Channels;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using McpChannelServiceBus.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 
@@ -12,13 +14,15 @@ namespace Tests.Unit.McpChannelServiceBus;
 public class ServiceBusProcessorServiceTests : IDisposable
 {
     private readonly Mock<ServiceBusProcessor> _processor = new();
-    private readonly ChannelInbox _inbox = new();
+    private readonly FakeTimeProvider _time = new();
+    private readonly ChannelInbox _inbox;
     private readonly ChannelNotificationEmitter _emitter;
     private readonly ServiceBusProcessorService _sut;
     private readonly CancellationTokenSource _cts = new();
 
     public ServiceBusProcessorServiceTests()
     {
+        _inbox = new ChannelInbox(_time);
         _emitter = new ChannelNotificationEmitter(_inbox);
 
         _processor
@@ -126,6 +130,44 @@ public class ServiceBusProcessorServiceTests : IDisposable
             It.IsAny<ServiceBusReceivedMessage>(),
             It.IsAny<IDictionary<string, object>>(),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // Regression: a subscriber that registered once and then went quiet (the agent's channel
+    // connection dropped) is not evicted by PruneIdle until it has been both empty and idle for a
+    // full hour, so HasActiveSessions stayed true long after nobody was actually polling. That let
+    // this settle (complete) the broker message instead of abandoning it — defeating Service Bus's
+    // at-least-once redelivery, since the buffered item can still be lost with the in-process inbox.
+    [Fact]
+    public async Task ProcessMessage_SubscriberWentStaleWithoutRepolling_AbandonsMessage()
+    {
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
+        _time.Advance(ChannelProtocol.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
+
+        var receiver = new Mock<ServiceBusReceiver>();
+        receiver
+            .Setup(r => r.AbandonMessageAsync(
+                It.IsAny<ServiceBusReceivedMessage>(),
+                It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var message = CreateReceivedMessage(new ServiceBusPromptMessage
+        {
+            CorrelationId = "corr-1",
+            Prompt = "Hello"
+        });
+
+        var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
+        await _sut.ProcessMessageAsync(args);
+
+        receiver.Verify(r => r.AbandonMessageAsync(
+            It.IsAny<ServiceBusReceivedMessage>(),
+            It.IsAny<IDictionary<string, object>>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+        receiver.Verify(r => r.CompleteMessageAsync(
+            It.IsAny<ServiceBusReceivedMessage>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
     }
 
     [Fact]

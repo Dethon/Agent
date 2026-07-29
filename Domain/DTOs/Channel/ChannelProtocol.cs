@@ -22,6 +22,19 @@ public static class ChannelProtocol
     // container-to-container; Caddy only fronts the browser-facing /hubs/* route).
     public const int DefaultReceiveWaitMs = 30_000;
 
+    // How long a ChannelInbox subscriber is still considered "someone is actually listening" after
+    // its last poll. Every emitter's HasActiveSessions must use this via ChannelInbox.HasLiveSubscriber
+    // instead of ChannelInbox.HasSubscribers — PruneIdle keeps a subscriber that is buffering items
+    // alive for up to an hour after it goes quiet (so a channel outage doesn't discard what was
+    // buffered during it), which answers "is there bookkeeping for this id", not "is anyone actually
+    // polling right now". A caller that reads HasActiveSessions as "delivered"/"available" (schedule
+    // and routing-entry deletion, ServiceBus message settlement, Telegram's unavailable-path gate)
+    // would otherwise treat a disconnected agent's stale buffer as live delivery. ~2x the long-poll
+    // ceiling: long enough that a subscriber mid-poll (touched at most DefaultReceiveWaitMs ago)
+    // always counts, short enough that a disconnected agent stops counting almost immediately. One
+    // shared constant so all six migrated channel servers compute "is anyone listening" identically.
+    public static readonly TimeSpan LiveSubscriberFreshness = TimeSpan.FromMilliseconds(DefaultReceiveWaitMs * 2);
+
     // _meta key under which the agent's MCP tool wrapper attaches the current turn's
     // ConversationContext to every tools/call; dual-role servers read it for routing.
     public const string ConversationContextMetaKey = "conversationContext";

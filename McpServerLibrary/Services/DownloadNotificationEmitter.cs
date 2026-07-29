@@ -9,21 +9,15 @@ public sealed class DownloadNotificationEmitter(ChannelInbox inbox) : IDownloadN
     // tool sessions (per-conversation filesystem clients) never poll it, so no client-name filter
     // is needed here: the distinction is structural now, not something the emitter enforces.
     //
-    // HasSubscribers is the wrong check for gating EmitAsync's delivery report: PruneIdle keeps a
-    // subscriber that is buffering items alive for up to an hour so a channel outage survives, so a
-    // disconnected-but-buffered subscriber would otherwise read as "delivered" here. This gates a
-    // destructive action (DownloadCompletionWatcher drops the routing entry only when EmitAsync
-    // returns true), so it needs "is someone actually polling", not "is there bookkeeping for this
-    // id" — ~2x the long-poll ceiling keeps a mid-poll subscriber always counted while a
-    // disconnected agent stops counting almost immediately.
-    private static readonly TimeSpan LiveSubscriberFreshness =
-        TimeSpan.FromMilliseconds(ChannelProtocol.DefaultReceiveWaitMs * 2);
-
-    public bool HasActiveSessions => inbox.HasLiveSubscriber(LiveSubscriberFreshness);
+    // ChannelProtocol.LiveSubscriberFreshness (not HasSubscribers) gates both properties below:
+    // DownloadCompletionWatcher drops the routing entry only when EmitAsync returns true, so a
+    // disconnected-but-still-buffering subscriber must not read as "delivered" — see the constant's
+    // own doc comment for why HasSubscribers is the wrong check for that.
+    public bool HasActiveSessions => inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness);
 
     public Task<bool> EmitAsync(ChannelMessageNotification payload, CancellationToken ct = default)
     {
-        if (!inbox.HasLiveSubscriber(LiveSubscriberFreshness))
+        if (!inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness))
         {
             return Task.FromResult(false);
         }

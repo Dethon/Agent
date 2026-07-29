@@ -1,7 +1,9 @@
 using Domain.Channels;
+using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 using Telegram.Bot;
@@ -14,7 +16,8 @@ namespace Tests.Unit.McpChannelTelegram;
 public class TelegramBotServiceTests : IDisposable
 {
     private readonly Mock<ITelegramBotClient> _botClient = new();
-    private readonly ChannelInbox _inbox = new();
+    private readonly FakeTimeProvider _time = new();
+    private readonly ChannelInbox _inbox;
     private readonly ChannelNotificationEmitter _emitter;
     private readonly ApprovalCallbackRouter _callbackRouter = new();
     private readonly BotRegistry _botRegistry;
@@ -23,6 +26,7 @@ public class TelegramBotServiceTests : IDisposable
 
     public TelegramBotServiceTests()
     {
+        _inbox = new ChannelInbox(_time);
         _emitter = new ChannelNotificationEmitter(_inbox);
         var settings = new ChannelSettings
         {
@@ -165,6 +169,33 @@ public class TelegramBotServiceTests : IDisposable
         _botClient.Verify(b => b.SendRequest(
             It.IsAny<SendMessageRequest>(),
             It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // Regression: a subscriber that registered once and then went quiet (the agent's channel
+    // connection dropped) is not evicted by PruneIdle until it has been both empty and idle for a
+    // full hour, so HasActiveSessions stayed true long after nobody was actually polling. That let
+    // this gate accept the message, silently enqueue it into a buffer nobody drains, and never
+    // surface an error — worse than dropping it, because the sender gets no signal anything failed.
+    [Fact]
+    public async Task ExecuteAsync_SubscriberWentStaleWithoutRepolling_DropsMessage()
+    {
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
+        _time.Advance(ChannelProtocol.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
+
+        SetupPollingSequence([
+            new Update
+            {
+                Id = 1,
+                Message = CreateTextMessage("/ask what is 2+2", 100, "alice")
+            }
+        ]);
+
+        await RunServiceBriefly();
+
+        _botClient.Verify(b => b.SendRequest(
+            It.IsAny<SendMessageRequest>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
     }
 
     [Fact]
