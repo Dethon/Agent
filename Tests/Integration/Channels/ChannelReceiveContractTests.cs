@@ -10,6 +10,7 @@ using McpChannelServiceBus.Modules;
 using McpChannelSignalR.Modules;
 using McpChannelTelegram.Modules;
 using McpChannelVoice.Modules;
+using McpServerLibrary.Modules;
 using McpServerScheduling.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -20,6 +21,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using LibrarySettings = McpServerLibrary.Settings;
 using SchedulingSettings = McpServerScheduling.Settings;
 using ServiceBusSettings = McpChannelServiceBus.Settings;
 // Aliased because Tests.Integration has a sibling namespace named after the channel project
@@ -58,7 +60,8 @@ public class ChannelReceiveContractTests
         { "telegram", b => b.WithTools<ChannelReceiveTool>() },
         { "servicebus", b => b.WithTools<ChannelReceiveTool>() },
         { "voice", b => b.WithTools<ChannelReceiveTool>() },
-        { "scheduling", b => b.WithTools<ChannelReceiveTool>() }
+        { "scheduling", b => b.WithTools<ChannelReceiveTool>() },
+        { "library", b => b.WithTools<ChannelReceiveTool>() }
     };
 
     // One row per channel server, driving that server's REAL registration entry point. The
@@ -101,6 +104,23 @@ public class ChannelReceiveContractTests
             // connection string just needs to satisfy the required property.
             services => services.ConfigureScheduling(
                 new SchedulingSettings.SchedulingSettings { RedisConnectionString = "unused" })
+        },
+        {
+            "library",
+            // ConfigureMcp's IConnectionMultiplexer registration is the same lazy factory pattern,
+            // and AddJacketClient/AddQBittorrentClient only register typed HttpClients (no eager
+            // dial), so plain placeholder settings are enough to build the container.
+            services => services.ConfigureMcp(new LibrarySettings.McpSettings
+            {
+                Jackett = new LibrarySettings.JackettConfiguration { ApiKey = "x", ApiUrl = "http://jackett" },
+                QBittorrent = new LibrarySettings.QBittorrentConfiguration
+                {
+                    ApiUrl = "http://qbittorrent", UserName = "x", Password = "x"
+                },
+                DownloadLocation = "/downloads",
+                BaseLibraryPath = "/media",
+                RedisConnectionString = "unused"
+            })
         }
     };
 
