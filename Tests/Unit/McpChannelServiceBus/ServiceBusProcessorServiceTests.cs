@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
+using Domain.Channels;
 using Domain.DTOs;
 using McpChannelServiceBus.Services;
 using Microsoft.Extensions.Logging;
@@ -11,13 +12,14 @@ namespace Tests.Unit.McpChannelServiceBus;
 public class ServiceBusProcessorServiceTests : IDisposable
 {
     private readonly Mock<ServiceBusProcessor> _processor = new();
+    private readonly ChannelInbox _inbox = new();
     private readonly ChannelNotificationEmitter _emitter;
     private readonly ServiceBusProcessorService _sut;
     private readonly CancellationTokenSource _cts = new();
 
     public ServiceBusProcessorServiceTests()
     {
-        _emitter = new ChannelNotificationEmitter(new Mock<ILogger<ChannelNotificationEmitter>>().Object);
+        _emitter = new ChannelNotificationEmitter(_inbox);
 
         _processor
             .Setup(p => p.StartProcessingAsync(It.IsAny<CancellationToken>()))
@@ -45,7 +47,7 @@ public class ServiceBusProcessorServiceTests : IDisposable
     [Fact]
     public async Task ProcessMessage_ValidPrompt_WithActiveSessions_CompletesMessage()
     {
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
         var receiver = new Mock<ServiceBusReceiver>();
         receiver
@@ -73,7 +75,7 @@ public class ServiceBusProcessorServiceTests : IDisposable
     [InlineData("")]
     public async Task ProcessMessage_MissingOrEmptyPrompt_DeadLettersMessage(string? prompt)
     {
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
         var receiver = new Mock<ServiceBusReceiver>();
         receiver
@@ -129,7 +131,7 @@ public class ServiceBusProcessorServiceTests : IDisposable
     [Fact]
     public async Task ProcessMessage_NullCorrelationId_GeneratesFallback()
     {
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
         var receiver = new Mock<ServiceBusReceiver>();
         receiver
@@ -154,7 +156,7 @@ public class ServiceBusProcessorServiceTests : IDisposable
     [Fact]
     public async Task ProcessMessage_MissingSender_DefaultsToServiceBus()
     {
-        _emitter.RegisterSession("sess-1", null!);
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
         var receiver = new Mock<ServiceBusReceiver>();
         receiver

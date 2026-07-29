@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using Moq;
 using Shouldly;
-using ServiceBusChannel = McpChannelServiceBus.Services;
 using VoiceChannel = McpChannelVoice.Services;
 
 namespace Tests.Unit.Shared;
@@ -15,15 +14,6 @@ public class ChannelNotificationEmitterTests
 {
     public static TheoryData<string, Func<IChannelNotificationEmitterAdapter>> Implementations => new()
     {
-        {
-            "ServiceBus",
-            () =>
-            {
-                var sut = new ServiceBusChannel.ChannelNotificationEmitter(
-                    new Mock<ILogger<ServiceBusChannel.ChannelNotificationEmitter>>().Object);
-                return new ReflectionAdapter(sut);
-            }
-        },
         {
             "Voice",
             () =>

@@ -6,6 +6,7 @@ using Domain.Channels;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
 using Infrastructure.McpTools;
+using McpChannelServiceBus.Modules;
 using McpChannelSignalR.Modules;
 using McpChannelTelegram.Modules;
 using Microsoft.AspNetCore.Builder;
@@ -17,6 +18,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using ServiceBusSettings = McpChannelServiceBus.Settings;
 // Aliased because Tests.Integration has a sibling namespace named after the channel project
 // (Tests.Integration.McpChannelSignalR), which shadows the project namespace from inside Tests.
 using SignalRSettings = McpChannelSignalR.Settings;
@@ -33,6 +35,12 @@ public class ChannelReceiveContractTests
     private const string UnreachableRedis =
         "127.0.0.1:1,abortConnect=false,connectTimeout=100,connectRetry=1";
 
+    // ConfigureChannel eagerly constructs a ServiceBusClient from this, which parses the
+    // connection string without ever dialing out. Well-formed but unreachable — SharedAccessKey
+    // just needs to be valid base64.
+    private const string FakeServiceBusConnectionString =
+        "Endpoint=sb://fake.servicebus.windows.net/;SharedAccessKeyName=x;SharedAccessKey=Zm9vYmFyMTIzNDU2Nzg5MA==";
+
     // What McpChannelConnection("signalr") derives for itself, spelled out so a test that pins the
     // id cannot drift with the implementation it is pinning.
     private const string SignalRSubscriberId = ChannelProtocol.ChannelClientNamePrefix + "signalr";
@@ -42,7 +50,8 @@ public class ChannelReceiveContractTests
     public static TheoryData<string, Action<IMcpServerBuilder>> Servers => new()
     {
         { "signalr", b => b.WithTools<ChannelReceiveTool>() },
-        { "telegram", b => b.WithTools<ChannelReceiveTool>() }
+        { "telegram", b => b.WithTools<ChannelReceiveTool>() },
+        { "servicebus", b => b.WithTools<ChannelReceiveTool>() }
     };
 
     // One row per channel server, driving that server's REAL registration entry point. The
@@ -60,6 +69,16 @@ public class ChannelReceiveContractTests
             "telegram",
             services => services.ConfigureChannel(
                 new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] })
+        },
+        {
+            "servicebus",
+            services => services.ConfigureChannel(
+                new ServiceBusSettings.ChannelSettings
+                {
+                    ServiceBusConnectionString = FakeServiceBusConnectionString,
+                    PromptQueueName = "prompts",
+                    ResponseQueueName = "responses"
+                })
         }
     };
 
