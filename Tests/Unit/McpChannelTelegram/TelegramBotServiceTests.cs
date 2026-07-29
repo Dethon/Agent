@@ -122,6 +122,7 @@ public class TelegramBotServiceTests : IDisposable
         _botClient.Verify(b => b.SendRequest(
             It.IsAny<SendMessageRequest>(),
             It.IsAny<CancellationToken>()), Times.Never);
+        (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None)).Count.ShouldBe(1);
     }
 
     [Fact]
