@@ -252,6 +252,27 @@ public class ChannelInboxTests
         inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
     }
 
+    // A subscriber is stamped when its poll *starts*, so the longest legitimate quiet gap is a
+    // fully held poll followed by one worst-case retry backoff (the pump's ceiling after a failed
+    // call), plus network and scheduling slop. Freshness must cover that whole gap: a value that
+    // only covers the held poll reads a healthy-but-flaky pump as dead, and ServiceBus punishes
+    // that by abandoning deliveries — ticking the message's delivery count toward the DLQ cap for
+    // an agent that is actually connected.
+    [Fact]
+    public async Task HasLiveSubscriber_AfterAHeldPollAndOneRetryBackoff_IsStillTrue()
+    {
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time);
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        time.Advance(
+            TimeSpan.FromMilliseconds(
+                ChannelProtocol.DefaultReceiveWaitMs + ChannelProtocol.MaxReceiveRetryBackoffMs)
+            + TimeSpan.FromSeconds(5));
+
+        inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness).ShouldBeTrue();
+    }
+
     // The exact regression this method exists to close: PruneIdle keeps a subscriber that is
     // holding items alive for up to an hour so a channel outage survives, but that must not be
     // mistaken for "someone is listening" — a caller gating a destructive action (deleting a

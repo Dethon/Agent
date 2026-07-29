@@ -9,8 +9,8 @@ public sealed class ChannelInbox(
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     // Only an *empty* subscriber is ever evicted, so this bounds nothing but abandoned bookkeeping.
-    // A healthy agent touches its subscriber at least every 30s (the long-poll ceiling, which is
-    // also the reconnect backoff cap), so an hour is ~120x any legitimate gap.
+    // A healthy agent touches its subscriber at least every ~60s (a fully held 30s poll plus the
+    // 30s retry backoff ceiling), so an hour is ~60x any legitimate gap.
     private readonly TimeSpan _idleTimeout = subscriberIdleTimeout ?? TimeSpan.FromHours(1);
     private readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
     private readonly int _capacity = ValidateCapacity(capacity);

@@ -196,9 +196,10 @@ connection by up to an hour so a channel outage does not discard what buffered d
 that way, a disconnected agent's stale buffer reads as a live delivery.
 
 The fix is `ChannelInbox.HasLiveSubscriber(freshness)` — *has anyone actually polled within
-`freshness`* — gated on `ChannelProtocol.LiveSubscriberFreshness` (2 × the 30 s long-poll ceiling:
-long enough that a subscriber parked mid-poll always counts, short enough that a disconnected
-agent stops counting almost at once). `ChannelReceiveTool` clamps `maxWaitMs` to the ceiling for
+`freshness`* — gated on `ChannelProtocol.LiveSubscriberFreshness` (a fully held 30 s poll, plus
+the pump's 30 s retry backoff ceiling, plus 15 s of network/scheduling slop: long enough that a
+subscriber parked mid-poll — or retrying after one failed call — always counts, short enough that
+a disconnected agent stops counting in about a minute). `ChannelReceiveTool` clamps `maxWaitMs` to the ceiling for
 the same reason: an unclamped poll could park a genuinely live subscriber past the window.
 `HasLiveSubscriber` is the *only* liveness question `ChannelInbox` answers; the near-miss twin that
 answered "is it registered" was deleted, since having both in a public API is how the distinction
