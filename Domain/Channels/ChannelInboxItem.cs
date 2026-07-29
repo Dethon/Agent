@@ -1,7 +1,7 @@
 using Domain.DTOs.Channel;
 using JetBrains.Annotations;
 
-namespace Domain.Channel;
+namespace Domain.Channels;
 
 public enum ChannelInboxItemKind
 {

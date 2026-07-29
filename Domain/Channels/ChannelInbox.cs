@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace Domain.Channel;
+namespace Domain.Channels;
 
 public sealed class ChannelInbox(
     TimeProvider? timeProvider = null,

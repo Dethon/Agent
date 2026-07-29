@@ -1,9 +1,9 @@
-using Domain.Channel;
+using Domain.Channels;
 using Domain.DTOs.Channel;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
-namespace Tests.Unit.Domain.Channel;
+namespace Tests.Unit.Domain.Channels;
 
 public class ChannelInboxTests
 {
