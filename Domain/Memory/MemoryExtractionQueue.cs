@@ -6,7 +6,7 @@ namespace Domain.Memory;
 public sealed class MemoryExtractionQueue
 {
     private readonly Channel<MemoryExtractionRequest> _channel =
-        Channel.CreateUnbounded<MemoryExtractionRequest>(
+        System.Threading.Channels.Channel.CreateUnbounded<MemoryExtractionRequest>(
             new UnboundedChannelOptions { SingleReader = true });
 
     public ValueTask EnqueueAsync(MemoryExtractionRequest request, CancellationToken ct) =>
