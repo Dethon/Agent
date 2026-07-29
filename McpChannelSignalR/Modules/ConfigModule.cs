@@ -1,4 +1,5 @@
 using Domain.Agents;
+using Domain.Channels;
 using Domain.Contracts;
 using Infrastructure.Clients.Push;
 using Infrastructure.Conversations;
@@ -26,9 +27,6 @@ public static class ConfigModule
 
     public static IServiceCollection ConfigureChannel(this IServiceCollection services, ChannelSettings settings)
     {
-        var notificationEmitter = new ChannelNotificationEmitter(
-            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ChannelNotificationEmitter>());
-
         var redisMultiplexer = ConnectionMultiplexer.Connect(settings.RedisConnectionString);
 
         services
@@ -37,7 +35,8 @@ public static class ConfigModule
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
-            .AddSingleton(notificationEmitter)
+            .AddSingleton<ChannelInbox>()
+            .AddSingleton<ChannelNotificationEmitter>()
             .AddSingleton<RedisStateService>()
             .AddSingleton(TimeProvider.System)
             .AddSingleton<IThreadStateStore>(sp =>
@@ -74,28 +73,12 @@ public static class ConfigModule
 
         services
             .AddMcpServer()
-            .WithHttpTransport(options =>
-            {
-#pragma warning disable MCPEXP002 // RunSessionHandler is experimental
-                options.RunSessionHandler = async (_, server, ct) =>
-                {
-                    var sessionId = server.SessionId ?? Guid.NewGuid().ToString();
-                    notificationEmitter.RegisterSession(sessionId, server);
-                    try
-                    {
-                        await server.RunAsync(ct);
-                    }
-                    finally
-                    {
-                        notificationEmitter.UnregisterSession(sessionId);
-                    }
-                };
-#pragma warning restore MCPEXP002
-            })
+            .WithHttpTransport()
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<CreateConversationTool>()
             .WithTools<RegisterAgentsTool>()
+            .WithTools<ChannelReceiveTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try

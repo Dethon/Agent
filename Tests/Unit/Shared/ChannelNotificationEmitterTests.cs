@@ -3,25 +3,19 @@ using ModelContextProtocol.Server;
 using Moq;
 using Shouldly;
 using ServiceBusChannel = McpChannelServiceBus.Services;
-using SignalRChannel = McpChannelSignalR.Services;
 using TelegramChannel = McpChannelTelegram.Services;
 using VoiceChannel = McpChannelVoice.Services;
 
 namespace Tests.Unit.Shared;
 
+// Covers the session-push emitters that have not yet moved to the ChannelInbox long-poll model.
+// A channel drops its row here once it migrates (its inbox behaviour is pinned by
+// Tests/Integration/Channels/ChannelReceiveContractTests and its own emitter tests); the file
+// goes away with the last migration.
 public class ChannelNotificationEmitterTests
 {
     public static TheoryData<string, Func<IChannelNotificationEmitterAdapter>> Implementations => new()
     {
-        {
-            "SignalR",
-            () =>
-            {
-                var sut = new SignalRChannel.ChannelNotificationEmitter(
-                    new Mock<ILogger<SignalRChannel.ChannelNotificationEmitter>>().Object);
-                return new ReflectionAdapter(sut);
-            }
-        },
         {
             "Telegram",
             () =>
@@ -92,16 +86,6 @@ public class ChannelNotificationEmitterTests
 
         await Should.NotThrowAsync(() =>
             sut.EmitMessageNotificationAsync("conv-1", "user", "hi", "agent1"));
-    }
-
-    [Fact]
-    public async Task EmitCancelNotificationAsync_NoSessions_CompletesWithoutError()
-    {
-        var sut = new SignalRChannel.ChannelNotificationEmitter(
-            new Mock<ILogger<SignalRChannel.ChannelNotificationEmitter>>().Object);
-
-        await Should.NotThrowAsync(() =>
-            sut.EmitCancelNotificationAsync("conv-1", "agent1"));
     }
 
     [Theory]
