@@ -40,12 +40,12 @@ dotnet test Tests/Tests.csproj --filter "Category!=E2E" -m:1
 
 | File | Responsibility |
 |---|---|
-| `Domain/Channel/ChannelInboxItem.cs` | Discriminated envelope for one queued item |
-| `Domain/Channel/ChannelInbox.cs` | Per-subscriber bounded queues + wait/wake/drain |
+| `Domain/Channels/ChannelInboxItem.cs` | Discriminated envelope for one queued item |
+| `Domain/Channels/ChannelInbox.cs` | Per-subscriber bounded queues + wait/wake/drain |
 | `Domain/DTOs/Channel/ChannelReceiveResult.cs` | Wire shape returned by `channel_receive` |
 | `McpChannel{SignalR,Telegram,ServiceBus,Voice}/McpTools/ChannelReceiveTool.cs` | Thin MCP wrapper over `ChannelInbox` |
 | `McpServer{Scheduling,Library}/McpTools/ChannelReceiveTool.cs` | Same, for the two dual-role servers |
-| `Tests/Unit/Domain/Channel/ChannelInboxTests.cs` | `ChannelInbox` unit tests |
+| `Tests/Unit/Domain/Channels/ChannelInboxTests.cs` | `ChannelInbox` unit tests |
 | `Tests/Integration/Channels/ChannelReceiveContractTests.cs` | Real Kestrel + real `McpClient` round trip |
 | `Tests/Integration/Channels/StatelessProtocolGuardTests.cs` | Pins protocol 2026-07-28 / null SessionId |
 
@@ -177,8 +177,8 @@ git commit -m "test(mcp): pin the 2026-07-28 stateless protocol negotiation"
 The buffer that closes the gap between the agent's polls. Pure `Domain` logic so it tests without a server.
 
 **Files:**
-- Create: `Domain/Channel/ChannelInboxItem.cs`, `Domain/Channel/ChannelInbox.cs`
-- Test: `Tests/Unit/Domain/Channel/ChannelInboxTests.cs`
+- Create: `Domain/Channels/ChannelInboxItem.cs`, `Domain/Channels/ChannelInbox.cs`
+- Test: `Tests/Unit/Domain/Channels/ChannelInboxTests.cs`
 
 **Interfaces:**
 - Consumes: `ChannelMessageNotification`, `ChannelCancelNotification` (`Domain/DTOs/Channel/`)
@@ -193,15 +193,15 @@ The buffer that closes the gap between the agent's polls. Pure `Domain` logic so
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `Tests/Unit/Domain/Channel/ChannelInboxTests.cs`:
+Create `Tests/Unit/Domain/Channels/ChannelInboxTests.cs`:
 
 ```csharp
-using Domain.Channel;
+using Domain.Channels;
 using Domain.DTOs.Channel;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
-namespace Tests.Unit.Domain.Channel;
+namespace Tests.Unit.Domain.Channels;
 
 public class ChannelInboxTests
 {
@@ -340,17 +340,19 @@ public class ChannelInboxTests
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ChannelInboxTests" -m:1`
-Expected: FAIL to compile — `Domain.Channel` namespace and `ChannelInbox` do not exist.
+Expected: FAIL to compile — `Domain.Channels` namespace and `ChannelInbox` do not exist.
+
+**Namespace note:** it must be `Domain.Channels` (plural). `Domain.Channel` shadows the *type* `System.Threading.Channels.Channel` for every file compiled under `namespace Domain.*` — the compiler searches enclosing namespaces before `using` directives — which breaks existing callers in `Domain/Memory/` and `Domain/Extensions/`.
 
 - [ ] **Step 3: Implement**
 
-Create `Domain/Channel/ChannelInboxItem.cs`:
+Create `Domain/Channels/ChannelInboxItem.cs`:
 
 ```csharp
 using Domain.DTOs.Channel;
 using JetBrains.Annotations;
 
-namespace Domain.Channel;
+namespace Domain.Channels;
 
 public enum ChannelInboxItemKind
 {
@@ -373,12 +375,12 @@ public sealed record ChannelInboxItem
 }
 ```
 
-Create `Domain/Channel/ChannelInbox.cs`:
+Create `Domain/Channels/ChannelInbox.cs`:
 
 ```csharp
 using System.Collections.Concurrent;
 
-namespace Domain.Channel;
+namespace Domain.Channels;
 
 public sealed class ChannelInbox(
     TimeProvider? timeProvider = null,
@@ -528,7 +530,7 @@ Expected: PASS, 8/8
 - [ ] **Step 5: Commit**
 
 ```bash
-git add Domain/Channel/ChannelInboxItem.cs Domain/Channel/ChannelInbox.cs Tests/Unit/Domain/Channel/ChannelInboxTests.cs
+git add Domain/Channels/ChannelInboxItem.cs Domain/Channels/ChannelInbox.cs Tests/Unit/Domain/Channels/ChannelInboxTests.cs
 git commit -m "feat(channel): add ChannelInbox for stateless long-poll delivery"
 ```
 
@@ -590,7 +592,7 @@ In `Domain/DTOs/Channel/ChannelProtocol.cs`, add beneath `RegisterAgentsTool`:
 Create `Domain/DTOs/Channel/ChannelReceiveResult.cs`:
 
 ```csharp
-using Domain.Channel;
+using Domain.Channels;
 using JetBrains.Annotations;
 
 namespace Domain.DTOs.Channel;
@@ -641,7 +643,7 @@ Create `Tests/Integration/Channels/ChannelReceiveContractTests.cs`:
 
 ```csharp
 using System.Net;
-using Domain.Channel;
+using Domain.Channels;
 using Domain.DTOs.Channel;
 using McpChannelSignalR.Services;
 using Microsoft.AspNetCore.Builder;
@@ -744,7 +746,7 @@ Create `McpChannelSignalR/McpTools/ChannelReceiveTool.cs`:
 ```csharp
 using System.ComponentModel;
 using System.Text.Json;
-using Domain.Channel;
+using Domain.Channels;
 using Domain.DTOs.Channel;
 using ModelContextProtocol.Server;
 
@@ -774,7 +776,7 @@ public sealed class ChannelReceiveTool
 Replace the body of `McpChannelSignalR/Services/ChannelNotificationEmitter.cs`:
 
 ```csharp
-using Domain.Channel;
+using Domain.Channels;
 using Domain.DTOs.Channel;
 
 namespace McpChannelSignalR.Services;
@@ -834,7 +836,7 @@ In `McpChannelSignalR/Modules/ConfigModule.cs`, delete the whole `WithHttpTransp
             .WithTools<ChannelReceiveTool>()
 ```
 
-Add `using Domain.Channel;` and `using McpChannelSignalR.McpTools;` as needed. If `ConfigureMcp` took a `notificationEmitter` parameter purely to wire `RunSessionHandler`, drop that parameter and let DI construct the emitter from the registered `ChannelInbox`; update `Program.cs` accordingly.
+Add `using Domain.Channels;` and `using McpChannelSignalR.McpTools;` as needed. If `ConfigureMcp` took a `notificationEmitter` parameter purely to wire `RunSessionHandler`, drop that parameter and let DI construct the emitter from the registered `ChannelInbox`; update `Program.cs` accordingly.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -1085,7 +1087,7 @@ Add:
     }
 ```
 
-Add `using Domain.Channel;`. Stop the pump in `DisposeAsync` and `ReconnectAsync`, before disposing the client:
+Add `using Domain.Channels;`. Stop the pump in `DisposeAsync` and `ReconnectAsync`, before disposing the client:
 
 ```csharp
     private async Task StopPumpAsync()
@@ -1277,7 +1279,7 @@ git commit -m "feat(mcp): send a vendor-prefixed conversation context on every t
 Today `StateKey` is the MCP session id, which is one per `ThreadSession`, which is one per conversation. In stateless it falls back to `ClientInfo.Name` — the **agent name** — collapsing every user of an agent into one bucket.
 
 **Files:**
-- Create: `Domain/Channel/ConversationScope.cs` (shared — Task 13 reuses it, do **not** duplicate per server)
+- Create: `Domain/Channels/ConversationScope.cs` (shared — Task 13 reuses it, do **not** duplicate per server)
 - Modify: `McpServerLibrary/McpTools/McpFileSearchTool.cs:23`, `McpServerLibrary/McpTools/McpFileDownloadTool.cs:36,56-70`
 - Test: `Tests/Integration/McpServerTests/McpLibraryServerTests.cs`
 
@@ -1325,7 +1327,7 @@ And a test pinning the isolation property itself, against the real `SearchResult
     }
 ```
 
-Add `using Infrastructure.StateManagers;`, `using Microsoft.Extensions.Caching.Memory;`, `using Domain.Channel;`, `using Domain.DTOs;`.
+Add `using Infrastructure.StateManagers;`, `using Microsoft.Extensions.Caching.Memory;`, `using Domain.Channels;`, `using Domain.DTOs;`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1334,14 +1336,14 @@ Expected: FAIL to compile — `ConversationScope` does not exist.
 
 - [ ] **Step 3: Implement**
 
-Create `Domain/Channel/ConversationScope.cs`:
+Create `Domain/Channels/ConversationScope.cs`:
 
 ```csharp
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs.Channel;
 
-namespace Domain.Channel;
+namespace Domain.Channels;
 
 public static class ConversationScope
 {
@@ -1531,7 +1533,7 @@ Expected: FAIL — `RequireSessionId()` throws `InvalidOperationException: MCP S
 
 - [ ] **Step 3: Implement**
 
-Reuse `Domain.Channel.ConversationScope` from Task 12 — do **not** copy it into this project. In each of the three browse tools, replace `var sessionId = context.Server.RequireSessionId();` with:
+Reuse `Domain.Channels.ConversationScope` from Task 12 — do **not** copy it into this project. In each of the three browse tools, replace `var sessionId = context.Server.RequireSessionId();` with:
 
 ```csharp
         if (!ConversationScope.TryResolve(context.Params?.Meta, out var sessionId))
@@ -1543,7 +1545,7 @@ Reuse `Domain.Channel.ConversationScope` from Task 12 — do **not** copy it int
         }
 ```
 
-adding `using Domain.Channel;`.
+adding `using Domain.Channels;`.
 
 Delete `Infrastructure/Extensions/McpServerExtensions.cs` entirely — `StateKey` moved to `_meta` in Task 12, `RequireSessionId` is now unused, and `SessionIdHeader` loses its only consumer with the middleware below.
 

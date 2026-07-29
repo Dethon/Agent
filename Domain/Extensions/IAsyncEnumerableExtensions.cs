@@ -17,8 +17,7 @@ public static class IAsyncEnumerableExtensions
 {
     private sealed class AsyncGrouping<TKey, TElement>(TKey key, Action onComplete) : IAsyncGrouping<TKey, TElement>
     {
-        private readonly Channel<TElement> _channel =
-            System.Threading.Channels.Channel.CreateUnbounded<TElement>();
+        private readonly Channel<TElement> _channel = Channel.CreateUnbounded<TElement>();
         private int _completed;
 
         public TKey Key => key;
@@ -150,7 +149,7 @@ public static class IAsyncEnumerableExtensions
         this IAsyncEnumerable<IAsyncEnumerable<T>> sources,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var channel = System.Threading.Channels.Channel.CreateBounded<T>(new BoundedChannelOptions(1000)
+        var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(1000)
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,

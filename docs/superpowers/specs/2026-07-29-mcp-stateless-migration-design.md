@@ -155,7 +155,7 @@ endpoint the agent dials — so no proxy idle timeout applies to the held call.
 
 ### `ChannelInbox`
 
-Lives in `Domain/Channel/`. Pure logic, `TimeProvider`-injected, no external dependencies, so it
+Lives in `Domain/Channels/` (plural — `Domain.Channel` would shadow the type `System.Threading.Channels.Channel` for every file under `Domain.*`). Pure logic, `TimeProvider`-injected, no external dependencies, so it
 unit-tests without a server.
 
 - `ConcurrentDictionary<subscriberId, SubscriberQueue>`; a subscriber registers on first poll.
