@@ -171,13 +171,17 @@ public class TelegramBotServiceTests : IDisposable
             It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    // Regression: a subscriber that registered once and then went quiet (the agent's channel
-    // connection dropped) is not evicted by PruneIdle until it has been both empty and idle for a
-    // full hour, so HasActiveSessions stayed true long after nobody was actually polling. That let
-    // this gate accept the message, silently enqueue it into a buffer nobody drains, and never
-    // surface an error — worse than dropping it, because the sender gets no signal anything failed.
+    // Corrects a regression this suite itself introduced: an earlier round made Telegram gate
+    // EmitMessageNotificationAsync on HasActiveSessions, so a stale (but not yet evicted)
+    // subscriber caused an unconditional drop with only a log line — silent loss to a user actively
+    // waiting for a reply. Before that, the same scenario buffered the message and delivered it
+    // late on the agent's next reconnect poll (the stable "channel-telegram" subscriber id survives
+    // the disconnect). Telegram's own emit path has no way to signal failure back to the sender
+    // (unlike ServiceBus's broker-level abandon/redeliver, or Schedule/Library's durable record),
+    // so buffering — not dropping — is the correct behavior here: the message must always reach the
+    // inbox, regardless of whether anyone is known to be listening right now.
     [Fact]
-    public async Task ExecuteAsync_SubscriberWentStaleWithoutRepolling_DropsMessage()
+    public async Task ExecuteAsync_SubscriberWentStaleWithoutRepolling_StillBuffersForALaterPoll()
     {
         await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
         _time.Advance(ChannelProtocol.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
@@ -192,10 +196,9 @@ public class TelegramBotServiceTests : IDisposable
 
         await RunServiceBriefly();
 
-        _botClient.Verify(b => b.SendRequest(
-            It.IsAny<SendMessageRequest>(),
-            It.IsAny<CancellationToken>()), Times.Never);
-        (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
+        var batch = await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
+        batch.Count.ShouldBe(1);
+        batch[0].Message!.Content.ShouldBe("/ask what is 2+2");
     }
 
     [Fact]
