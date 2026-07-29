@@ -10,6 +10,7 @@ using McpChannelServiceBus.Modules;
 using McpChannelSignalR.Modules;
 using McpChannelTelegram.Modules;
 using McpChannelVoice.Modules;
+using McpServerScheduling.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -19,6 +20,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using SchedulingSettings = McpServerScheduling.Settings;
 using ServiceBusSettings = McpChannelServiceBus.Settings;
 // Aliased because Tests.Integration has a sibling namespace named after the channel project
 // (Tests.Integration.McpChannelSignalR / .McpChannelVoice), which shadows the project namespace
@@ -55,7 +57,8 @@ public class ChannelReceiveContractTests
         { "signalr", b => b.WithTools<ChannelReceiveTool>() },
         { "telegram", b => b.WithTools<ChannelReceiveTool>() },
         { "servicebus", b => b.WithTools<ChannelReceiveTool>() },
-        { "voice", b => b.WithTools<ChannelReceiveTool>() }
+        { "voice", b => b.WithTools<ChannelReceiveTool>() },
+        { "scheduling", b => b.WithTools<ChannelReceiveTool>() }
     };
 
     // One row per channel server, driving that server's REAL registration entry point. The
@@ -91,6 +94,13 @@ public class ChannelReceiveContractTests
             // no live/fake Redis endpoint is needed — defaults are enough, exactly as ConfigModuleTests
             // already relies on for the rest of the voice DI graph.
             services => services.ConfigureVoiceChannel(new VoiceSettings.VoiceSettings())
+        },
+        {
+            "scheduling",
+            // Same lazy IConnectionMultiplexer factory as voice — never resolved here, so the
+            // connection string just needs to satisfy the required property.
+            services => services.ConfigureScheduling(
+                new SchedulingSettings.SchedulingSettings { RedisConnectionString = "unused" })
         }
     };
 

@@ -1,7 +1,9 @@
 using Domain.Agents;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.Prompts;
 using Domain.Tools.Scheduling.Vfs;
+using Infrastructure.McpTools;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Infrastructure.Validation;
@@ -32,10 +34,10 @@ public static class ConfigModule
 
     public static IServiceCollection ConfigureScheduling(this IServiceCollection services, SchedulingSettings settings)
     {
-        var emitter = new ScheduleNotificationEmitter(
-            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ScheduleNotificationEmitter>());
-        services.AddSingleton(emitter);
-        services.AddSingleton<IScheduleNotificationEmitter>(emitter);
+        services
+            .AddSingleton<ChannelInbox>()
+            .AddSingleton<ScheduleNotificationEmitter>()
+            .AddSingleton<IScheduleNotificationEmitter>(sp => sp.GetRequiredService<ScheduleNotificationEmitter>());
 
         services
             .AddSingleton(settings)
@@ -52,27 +54,11 @@ public static class ConfigModule
 
         services
             .AddMcpServer()
-            .WithHttpTransport(options =>
-            {
-#pragma warning disable MCPEXP002
-                options.RunSessionHandler = async (_, server, ct) =>
-                {
-                    var sessionId = server.SessionId ?? Guid.NewGuid().ToString();
-                    emitter.RegisterSession(sessionId, server);
-                    try
-                    {
-                        await server.RunAsync(ct);
-                    }
-                    finally
-                    {
-                        emitter.UnregisterSession(sessionId);
-                    }
-                };
-#pragma warning restore MCPEXP002
-            })
+            .WithHttpTransport()
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
+            .WithTools<ChannelReceiveTool>()
             .WithTools<FsGlobTool>()
             .WithTools<FsInfoTool>()
             .WithTools<FsReadTool>()
@@ -89,6 +75,13 @@ public static class ConfigModule
                 try
                 {
                     return await next(context, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
+                    // or the server shuts down. Mapping that to IsError would hand the pump an
+                    // error result to retry on; let it propagate as the abort it is.
+                    throw;
                 }
                 catch (Exception ex)
                 {
