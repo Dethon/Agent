@@ -84,7 +84,8 @@ internal sealed class ThreadSessionBuilder(
         ChannelProtocol.SendReplyTool,
         ChannelProtocol.RequestApprovalTool,
         ChannelProtocol.CreateConversationTool,
-        ChannelProtocol.RegisterAgentsTool
+        ChannelProtocol.RegisterAgentsTool,
+        ChannelProtocol.ReceiveTool
     ];
 
     private IReadOnlyList<AITool> _tools = [];

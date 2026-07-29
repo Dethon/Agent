@@ -14,6 +14,13 @@ public static class ChannelProtocol
     public const string RequestApprovalTool = "request_approval";
     public const string CreateConversationTool = "create_conversation";
     public const string RegisterAgentsTool = "register_agents";
+    public const string ReceiveTool = "channel_receive";
+
+    // How long a channel_receive call may be held open server-side before returning an empty
+    // batch. Verified safe: a 45s hold completes on the SDK's default client timeout, and no
+    // reverse proxy sits between the agent and a channel server (ChannelEndpoints are
+    // container-to-container; Caddy only fronts the browser-facing /hubs/* route).
+    public const int DefaultReceiveWaitMs = 30_000;
 
     // _meta key under which the agent's MCP tool wrapper attaches the current turn's
     // ConversationContext to every tools/call; dual-role servers read it for routing.
