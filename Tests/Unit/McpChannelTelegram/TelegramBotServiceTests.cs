@@ -153,8 +153,11 @@ public class TelegramBotServiceTests : IDisposable
         result.ShouldBe("approved");
     }
 
+    // No subscriber is registered at all here, so there is nobody to buffer for; what this pins is
+    // that Telegram stays quiet toward the sender either way — the reverted drop policy is not
+    // allowed to grow back a "the agent is unavailable" reply.
     [Fact]
-    public async Task ExecuteAsync_NoActiveSessions_DropsMessage()
+    public async Task ExecuteAsync_NoActiveSessions_RepliesNothingToTheSender()
     {
         SetupPollingSequence([
             new Update

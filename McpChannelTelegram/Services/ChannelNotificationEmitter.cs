@@ -24,9 +24,10 @@ public sealed class ChannelNotificationEmitter(ChannelInbox inbox)
         return Task.CompletedTask;
     }
 
-    // TelegramBotService gates its "agent unavailable" drop path on this — see
-    // ChannelProtocol.LiveSubscriberFreshness's doc comment for why HasSubscribers would be wrong
-    // here: it stays true for up to an hour after a subscriber goes quiet, which would silently
-    // accept a message into a buffer nobody is polling instead of dropping it with a clear signal.
+    // TelegramBotService only *warns* on this — nothing gates on it: the message is emitted into
+    // the inbox either way, because Telegram has no channel-level way to tell the sender "try again
+    // later" (see the buffering comment in TelegramBotService.ProcessUpdateAsync). HasSubscribers would
+    // still be the wrong signal here — it stays true for up to an hour after a subscriber goes
+    // quiet, so the warning would fall silent exactly when the agent has stopped polling.
     public bool HasActiveSessions => inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness);
 }
