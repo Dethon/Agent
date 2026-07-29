@@ -2,9 +2,10 @@ using System.ComponentModel;
 using System.Text.Json;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 
-namespace McpChannelSignalR.McpTools;
+namespace Infrastructure.McpTools;
 
 [McpServerToolType]
 public sealed class ChannelReceiveTool

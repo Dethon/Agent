@@ -3,23 +3,21 @@ using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using Domain.Channels;
-using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
+using Infrastructure.McpTools;
 using McpChannelSignalR.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Tests.Integration.Fixtures;
-// Aliased because Tests.Integration has sibling namespaces named after the channel projects
-// (Tests.Integration.McpChannelSignalR), which shadow the project namespaces from inside Tests.
-using SignalRChannel = McpChannelSignalR.McpTools;
+// Aliased because Tests.Integration has a sibling namespace named after the channel project
+// (Tests.Integration.McpChannelSignalR), which shadows the project namespace from inside Tests.
 using SignalRSettings = McpChannelSignalR.Settings;
 
 namespace Tests.Integration.Channels;
@@ -41,7 +39,7 @@ public class ChannelReceiveContractTests
     // body is written once and never copied.
     public static TheoryData<string, Action<IMcpServerBuilder>> Servers => new()
     {
-        { "signalr", b => b.WithTools<SignalRChannel.ChannelReceiveTool>() }
+        { "signalr", b => b.WithTools<ChannelReceiveTool>() }
     };
 
     // One row per channel server, driving that server's REAL registration entry point. The
@@ -133,7 +131,7 @@ public class ChannelReceiveContractTests
         var port = TestPort.GetAvailable();
         var inbox = new ChannelInbox();
 
-        var app = await StartServerAsync(port, inbox, b => b.WithTools<SignalRChannel.ChannelReceiveTool>());
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<ChannelReceiveTool>());
         await using var connection = new McpChannelConnection("signalr");
         try
         {
@@ -169,7 +167,7 @@ public class ChannelReceiveContractTests
         var port = TestPort.GetAvailable();
         var inbox = new ChannelInbox();
 
-        var app = await StartServerAsync(port, inbox, b => b.WithTools<SignalRChannel.ChannelReceiveTool>());
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<ChannelReceiveTool>());
         var endpoint = $"http://localhost:{port}/mcp";
         await using var connection = new McpChannelConnection("signalr");
         try
@@ -207,7 +205,7 @@ public class ChannelReceiveContractTests
         var port = TestPort.GetAvailable();
         var inbox = new ChannelInbox();
 
-        var app = await StartServerAsync(port, inbox, b => b.WithTools<SignalRChannel.ChannelReceiveTool>());
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<ChannelReceiveTool>());
         var endpoint = $"http://localhost:{port}/mcp";
         var restarted = new McpChannelConnection("signalr");
         var original = new McpChannelConnection("signalr");
@@ -275,7 +273,7 @@ public class ChannelReceiveContractTests
         var app = await StartServerAsync(
             port,
             inbox,
-            b => b.WithTools<SignalRChannel.ChannelReceiveTool>(),
+            b => b.WithTools<ChannelReceiveTool>(),
             web => web.Use(async (context, next) =>
             {
                 if (HttpMethods.IsPost(context.Request.Method))
@@ -322,7 +320,7 @@ public class ChannelReceiveContractTests
         var app = await StartServerAsync(
             port,
             inbox,
-            b => b.WithTools<SignalRChannel.ChannelReceiveTool>().WithTools<ImmediateTool>());
+            b => b.WithTools<ChannelReceiveTool>().WithTools<ImmediateTool>());
         try
         {
             await using var client = await McpClient.CreateAsync(
