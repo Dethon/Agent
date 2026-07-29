@@ -214,6 +214,54 @@ public class ChannelInboxTests
     }
 
     [Fact]
+    public async Task HasLiveSubscriber_FreshlyPolledSubscriber_IsTrue()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HasLiveSubscriber_NoSubscribers_IsFalse()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+
+        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task HasLiveSubscriber_SubscriberIdlePastFreshnessWindow_IsFalse()
+    {
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time);
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        time.Advance(TimeSpan.FromSeconds(61));
+
+        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+    }
+
+    // The exact regression this method exists to close: PruneIdle keeps a subscriber that is
+    // holding items alive for up to an hour so a channel outage survives, but that must not be
+    // mistaken for "someone is listening" — a caller gating a destructive action (deleting a
+    // schedule, dropping a routing entry) on liveness needs this to read false once nobody has
+    // actually polled in a while, even though the queue is non-empty.
+    [Fact]
+    public async Task HasLiveSubscriber_SubscriberHoldingItemsButNotPolling_IsFalse()
+    {
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromHours(1));
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        inbox.Enqueue(Message("c1"));
+        time.Advance(TimeSpan.FromSeconds(61));
+
+        inbox.HasSubscribers.ShouldBeTrue("the subscriber is still buffering the item, not evicted");
+        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task ReceiveAsync_WhenAnotherPollTakesTheBatchFirst_ReturnsEmptyWithoutLosingItems()
     {
         var inbox = new ChannelInbox(new FakeTimeProvider());

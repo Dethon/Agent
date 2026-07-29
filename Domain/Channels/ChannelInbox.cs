@@ -24,6 +24,20 @@ public sealed class ChannelInbox(
         }
     }
 
+    // HasSubscribers answers "is there bookkeeping for this id" — true for up to an hour after a
+    // subscriber goes quiet, precisely so a channel outage doesn't discard what was buffered during
+    // it (see PruneIdle). That is the wrong question for a caller about to act on "delivery":
+    // gating a destructive action (deleting a schedule, dropping a routing entry) on HasSubscribers
+    // would treat an item merely sitting in an idle buffer as delivered. HasLiveSubscriber asks
+    // whether *someone actually polled recently* — a subscriber holding items but not repolling
+    // does not count, which is the case this method exists to distinguish.
+    public bool HasLiveSubscriber(TimeSpan freshness)
+    {
+        PruneIdle();
+        var cutoff = _timeProvider.GetUtcNow() - freshness;
+        return _subscribers.Values.Any(subscriber => subscriber.IsLiveSince(cutoff));
+    }
+
     public void Enqueue(ChannelInboxItem item)
     {
         PruneIdle();
@@ -96,6 +110,16 @@ public sealed class ChannelInbox(
 
                 _lastPolledAt = now;
                 return true;
+            }
+        }
+
+        // Deliberately ignores _items: a subscriber that is only holding buffered items but hasn't
+        // repolled since the cutoff is exactly the stale-buffer case HasLiveSubscriber must reject.
+        public bool IsLiveSince(DateTimeOffset cutoff)
+        {
+            lock (_gate)
+            {
+                return !_retired && _lastPolledAt >= cutoff;
             }
         }
 

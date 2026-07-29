@@ -2,6 +2,7 @@ using Domain.Channels;
 using Domain.DTOs.Channel;
 using McpServerLibrary.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
 namespace Tests.Unit.McpServerLibrary;
@@ -48,6 +49,29 @@ public class DownloadNotificationEmitterTests
         await inbox.ReceiveAsync("channel-library", TimeSpan.Zero, CancellationToken.None);
 
         sut.HasActiveSessions.ShouldBeTrue();
+    }
+
+    // The regression this test pins: PruneIdle keeps a subscriber that is holding items alive for
+    // up to an hour so a channel outage survives (see ChannelInboxTests), but a stale buffered
+    // subscriber must not be mistaken for "someone is listening" here — DownloadCompletionWatcher
+    // removes the routing entry only when EmitAsync reports true, so a false-true here would drop
+    // the durable routing record in exchange for an in-memory buffer that dies on the next restart.
+    [Fact]
+    public async Task EmitAsync_SubscriberWentStaleWhileStillBufferingAnItem_ReturnsFalse()
+    {
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time);
+        var sut = new DownloadNotificationEmitter(inbox);
+        await inbox.ReceiveAsync("channel-library", TimeSpan.Zero, CancellationToken.None);
+
+        (await sut.EmitAsync(Payload())).ShouldBeTrue();
+
+        // The agent's channel connection drops and never repolls; the subscriber keeps buffering
+        // (nothing evicts it — it still holds the item above), but nobody is actually listening.
+        time.Advance(TimeSpan.FromMinutes(2));
+
+        sut.HasActiveSessions.ShouldBeFalse();
+        (await sut.EmitAsync(Payload())).ShouldBeFalse();
     }
 
     [Fact]
