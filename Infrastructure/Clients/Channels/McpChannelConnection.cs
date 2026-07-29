@@ -17,14 +17,14 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 {
     private const string CancelCommandContent = "/cancel";
 
-    private static readonly TimeSpan MinBackoff = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _minBackoff = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _maxBackoff = TimeSpan.FromSeconds(30);
 
     // Long enough that only a poll the server never really held can miss it, short enough that
     // mistaking a genuinely short-waiting server for a spin costs milliseconds, not seconds.
-    private static readonly TimeSpan MinHonouredWait =
+    private static readonly TimeSpan _minHonouredWait =
         TimeSpan.FromMilliseconds(ChannelProtocol.DefaultReceiveWaitMs / 2.0);
-    private static readonly TimeSpan EarlyEmptyThrottle = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan _earlyEmptyThrottle = TimeSpan.FromMilliseconds(250);
 
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
     private McpClient? _client;
@@ -64,7 +64,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
     private async Task PumpAsync(CancellationToken ct)
     {
         var subscriberId = $"{ChannelProtocol.ChannelClientNamePrefix}{ChannelId}";
-        var backoff = MinBackoff;
+        var backoff = _minBackoff;
 
         while (!ct.IsCancellationRequested)
         {
@@ -75,14 +75,14 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
                 {
                     // Items delivered, or the wait honoured in full: re-poll at once, so the next
                     // real message is never sitting behind a timer.
-                    backoff = MinBackoff;
+                    backoff = _minBackoff;
                     continue;
                 }
 
                 logger?.LogDebug(
                     "{Tool} came back empty early on {ChannelId}; throttling the next poll",
                     ChannelProtocol.ReceiveTool, ChannelId);
-                pause = EarlyEmptyThrottle;
+                pause = _earlyEmptyThrottle;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -92,7 +92,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
             {
                 logger?.LogWarning(ex, "channel_receive failed on {ChannelId}; retrying", ChannelId);
                 pause = backoff;
-                backoff = TimeSpan.FromSeconds(Math.Min(backoff.TotalSeconds * 2, MaxBackoff.TotalSeconds));
+                backoff = TimeSpan.FromSeconds(Math.Min(backoff.TotalSeconds * 2, _maxBackoff.TotalSeconds));
             }
 
             try
@@ -136,7 +136,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
             Dispatch(item);
         }
 
-        return items.Count > 0 || Stopwatch.GetElapsedTime(startedAt) >= MinHonouredWait;
+        return items.Count > 0 || Stopwatch.GetElapsedTime(startedAt) >= _minHonouredWait;
     }
 
     private void Dispatch(ChannelInboxItem item)

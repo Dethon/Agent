@@ -13,7 +13,7 @@ public class ChannelInboxTests
     // Every wait in these tests is bounded so a regression fails the run instead of hanging it:
     // the inbox is driven by a FakeTimeProvider that is never advanced, so a poll that is never
     // signalled would otherwise wait forever.
-    private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan _deadline = TimeSpan.FromSeconds(5);
 
     private static ChannelInboxItem Message(string conversationId) =>
         ChannelInboxItem.ForMessage(new ChannelMessageNotification
@@ -136,7 +136,7 @@ public class ChannelInboxTests
     [Fact]
     public async Task Subscriber_WhenIdleAndEmpty_IsEvicted()
     {
-        using var cts = new CancellationTokenSource(Deadline);
+        using var cts = new CancellationTokenSource(_deadline);
         var time = new FakeTimeProvider();
         var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
@@ -154,7 +154,7 @@ public class ChannelInboxTests
     [Fact]
     public async Task Subscriber_WhenIdleWithQueuedItems_IsNotEvictedAndStillDeliversThem()
     {
-        using var cts = new CancellationTokenSource(Deadline);
+        using var cts = new CancellationTokenSource(_deadline);
         var time = new FakeTimeProvider();
         var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
@@ -175,7 +175,7 @@ public class ChannelInboxTests
     [Fact]
     public async Task Inbox_AfterEvictingAnIdleSubscriber_StillDeliversToAFreshSubscription()
     {
-        using var cts = new CancellationTokenSource(Deadline);
+        using var cts = new CancellationTokenSource(_deadline);
         var time = new FakeTimeProvider();
         var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
@@ -201,7 +201,7 @@ public class ChannelInboxTests
     [Fact]
     public async Task Subscriber_WhenIdleAfterDrainingItems_IsEvicted()
     {
-        using var cts = new CancellationTokenSource(Deadline);
+        using var cts = new CancellationTokenSource(_deadline);
         var time = new FakeTimeProvider();
         var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
@@ -291,7 +291,7 @@ public class ChannelInboxTests
 
         taken.Count.ShouldBe(1);
         taken[0].Message!.ConversationId.ShouldBe("c1");
-        (await context.PumpUntilAsync(parked, Deadline)).ShouldBeEmpty();
+        (await context.PumpUntilAsync(parked, _deadline)).ShouldBeEmpty();
     }
 
     [Fact]
@@ -306,7 +306,7 @@ public class ChannelInboxTests
         await cts.CancelAsync();
 
         // The caller is gone, so the batch must stay queued rather than be handed to an aborted poll.
-        await Should.ThrowAsync<OperationCanceledException>(() => context.PumpUntilAsync(parked, Deadline));
+        await Should.ThrowAsync<OperationCanceledException>(() => context.PumpUntilAsync(parked, _deadline));
 
         var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
@@ -354,11 +354,11 @@ public class ChannelInboxTests
         (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None)).Count.ShouldBe(1);
         var next = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
 
-        (await context.PumpUntilAsync(parked, Deadline)).ShouldBeEmpty();
+        (await context.PumpUntilAsync(parked, _deadline)).ShouldBeEmpty();
 
         inbox.Enqueue(Message("c2"));
 
-        var batch = await next.WaitAsync(Deadline);
+        var batch = await next.WaitAsync(_deadline);
 
         batch.Count.ShouldBe(1);
         batch[0].Message!.ConversationId.ShouldBe("c2");
