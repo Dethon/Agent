@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
@@ -269,7 +270,7 @@ public class WakeArbitrationHostTests
         private readonly List<ChannelMessageNotification> _messages = [];
         private readonly Lock _gate = new();
 
-        public RecordingEmitter() : base(NullLogger<ChannelNotificationEmitter>.Instance) { }
+        public RecordingEmitter() : base(new ChannelInbox()) { }
 
         public IReadOnlyList<ChannelMessageNotification> Messages
         {
