@@ -41,6 +41,9 @@
     <ProjectReference Include="..\McpServerVault\McpServerVault.csproj" />
     <ProjectReference Include="..\McpServerSandbox\McpServerSandbox.csproj" />
     <ProjectReference Include="..\McpServerWebSearch\McpServerWebSearch.csproj" />
+    <ProjectReference Include="..\McpServerIdealista\McpServerIdealista.csproj" />
+    <ProjectReference Include="..\McpServerHomeAssistant\McpServerHomeAssistant.csproj" />
+    <ProjectReference Include="..\McpServerPrinter\McpServerPrinter.csproj" />
     <ProjectReference Include="..\WebChat.Client\WebChat.Client.csproj" />
     <ProjectReference Include="..\Dashboard.Client\Dashboard.Client.csproj" />
     <ProjectReference Include="..\McpChannelSignalR\McpChannelSignalR.csproj" />
