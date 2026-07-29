@@ -72,7 +72,6 @@ public static class ConfigModule
             }))
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
-            .WithTools<McpContentRecommendationTool>()
             // Channel-protocol tools (invoked by the agent's channel connection, hidden from the LLM)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()

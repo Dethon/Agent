@@ -3,7 +3,6 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.Mcp;
-using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
@@ -35,7 +34,6 @@ internal sealed class ThreadSession : IAsyncDisposable
         string name,
         string userId,
         string description,
-        ChatClientAgent agent,
         IReadOnlyList<AIFunction> domainTools,
         IReadOnlySet<string> filesystemEnabledTools,
         ILoggerFactory? loggerFactory,
@@ -43,7 +41,7 @@ internal sealed class ThreadSession : IAsyncDisposable
         McpPromptCache? promptCache = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
-            agent, userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache);
+            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -63,7 +61,6 @@ internal sealed class ThreadSessionBuilder(
     string[] endpoints,
     string name,
     string description,
-    ChatClientAgent agent,
     string userId,
     IReadOnlyList<AIFunction> domainTools,
     IReadOnlySet<string> filesystemEnabledTools,
@@ -88,14 +85,10 @@ internal sealed class ThreadSessionBuilder(
         ChannelProtocol.ReceiveTool
     ];
 
-    private IReadOnlyList<AITool> _tools = [];
-
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
     {
-        var samplingHandler = new McpSamplingHandler(agent, () => _tools);
-        var handlers = new McpClientHandlers { SamplingHandler = samplingHandler.HandleAsync };
-
-        var clientManager = await McpClientManager.CreateAsync(name, userId, description, endpoints, handlers, promptCache, ct);
+        var clientManager = await McpClientManager.CreateAsync(
+            name, userId, description, endpoints, new McpClientHandlers(), promptCache, ct);
 
         IVirtualFileSystemRegistry? registry = null;
         IReadOnlyList<AIFunction> fileSystemTools = [];
@@ -128,9 +121,9 @@ internal sealed class ThreadSessionBuilder(
         // Channel-protocol tools are always stripped; raw fs_* tools are stripped when their
         // domain filesystem wrappers are active, to avoid exposing duplicate functionality to the LLM.
         var mcpTools = FilterMcpTools(clientManager.Tools, fileSystemTools.Count > 0);
-        _tools = mcpTools.Concat(domainTools).Concat(fileSystemTools).ToList();
+        var tools = mcpTools.Concat(domainTools).Concat(fileSystemTools).ToList();
 
-        return new ThreadSessionData(clientManager, _tools, registry, fileSystemPrompts);
+        return new ThreadSessionData(clientManager, tools, registry, fileSystemPrompts);
     }
 
     internal static IReadOnlyList<AITool> FilterMcpTools(IReadOnlyList<AITool> mcpTools, bool filesystemToolsActive)

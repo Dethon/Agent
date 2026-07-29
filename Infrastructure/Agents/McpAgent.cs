@@ -386,7 +386,7 @@ public sealed class McpAgent : DisposableAgent
             }
 
             var newSession = await ThreadSession
-                .CreateAsync(_endpoints, _name, _userId, _description, _innerAgent,
+                .CreateAsync(_endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
                              ct, _promptCache);
             _threadSessions[thread] = newSession;
