@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Domain.Tools.SubAgents;
 using Microsoft.Agents.AI;
@@ -21,8 +22,10 @@ public class SubAgentRunToolTests
 
     private static FeatureConfig CreateConfig(
         Func<SubAgentDefinition, DisposableAgent>? factory = null,
-        string? userId = null) =>
-        new(SubAgentFactory: factory, UserId: userId);
+        string? userId = null,
+        Func<ConversationContext?>? conversationContextProvider = null) =>
+        new(SubAgentFactory: factory, UserId: userId,
+            ConversationContextProvider: conversationContextProvider);
 
     private static SubAgentRunTool CreateTool(FeatureConfig config, params SubAgentDefinition[] profiles) =>
         new(new SubAgentRegistryOptions { SubAgents = profiles }, config);
@@ -102,6 +105,52 @@ public class SubAgentRunToolTests
         stubAgent.LastMessages.ShouldNotBeNull();
         var userMessage = stubAgent.LastMessages.Single(m => m.Role == ChatRole.User);
         userMessage.GetSenderId().ShouldBe("user-42");
+    }
+
+    [Fact]
+    public async Task RunAsync_StampsParentConversationContextVerbatimOnUserMessage()
+    {
+        // Verbatim: the PARENT's agent id, not "summarizer". Downstream MCP servers scope
+        // per-conversation state by {AgentId}:{ConversationId}, so a file_search issued by the
+        // parent and a file_download issued by the subagent have to land in the same scope.
+        var parentContext = new ConversationContext(
+            "jack", "conv-7", "fran", new ReplyTarget("signalr", "conv-7"));
+        var stubAgent = new StubDisposableAgent("Summary result");
+        var config = CreateConfig(
+            factory: _ => stubAgent, userId: "fran", conversationContextProvider: () => parentContext);
+
+        var tool = CreateTool(config, _testProfile);
+
+        var result = await tool.RunAsync("summarizer", "summarize this");
+
+        result["status"]!.GetValue<string>().ShouldBe("completed");
+        stubAgent.LastMessages.ShouldNotBeNull();
+        var userMessage = stubAgent.LastMessages.Single(m => m.Role == ChatRole.User);
+        userMessage.GetConversationContext().ShouldBe(parentContext);
+    }
+
+    [Fact]
+    public async Task RunAsync_ResolvesConversationContextPerCall()
+    {
+        // The provider is invoked at run time, not captured at construction: a FeatureConfig (and
+        // the tool built from it) lives as long as the agent, which outlives a single turn.
+        var contexts = new Queue<ConversationContext>(
+        [
+            new ConversationContext("jack", "conv-1", "fran", new ReplyTarget("signalr", "conv-1")),
+            new ConversationContext("jack", "conv-2", "fran", new ReplyTarget("signalr", "conv-2"))
+        ]);
+        var stubAgent = new StubDisposableAgent("result");
+        var config = CreateConfig(factory: _ => stubAgent, conversationContextProvider: contexts.Dequeue);
+
+        var tool = CreateTool(config, _testProfile);
+
+        await tool.RunAsync("summarizer", "first");
+        stubAgent.LastMessages!.Single(m => m.Role == ChatRole.User)
+            .GetConversationContext()!.ConversationId.ShouldBe("conv-1");
+
+        await tool.RunAsync("summarizer", "second");
+        stubAgent.LastMessages!.Single(m => m.Role == ChatRole.User)
+            .GetConversationContext()!.ConversationId.ShouldBe("conv-2");
     }
 
     [Fact]

@@ -37,7 +37,11 @@ public static class ChannelProtocol
 
     // _meta key under which the agent's MCP tool wrapper attaches the current turn's
     // ConversationContext to every tools/call; dual-role servers read it for routing.
-    public const string ConversationContextMetaKey = "conversationContext";
+    // Vendor-prefixed on purpose: the 2026-07-28 spec reserves any _meta prefix whose second
+    // label is "mcp" or "modelcontextprotocol" and asks everyone else for a reverse-DNS label
+    // ending in "/". A bare key would share the namespace of progressToken and traceparent,
+    // where a later spec revision is free to claim it out from under us.
+    public const string ConversationContextMetaKey = "com.herfluffness/conversationContext";
 
     // Sender attributed to channel/message notifications the system originates on a user's
     // behalf rather than the user themselves — e.g. the /cancel command and download-completion

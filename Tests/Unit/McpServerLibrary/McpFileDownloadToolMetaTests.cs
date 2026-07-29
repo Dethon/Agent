@@ -41,7 +41,7 @@ public class McpFileDownloadToolMetaTests
             Origin: new ReplyTarget("signalr", "conv-abc"));
 
         var node = JsonSerializer.SerializeToNode(context, ChannelProtocol.SerializerOptions);
-        var meta = new JsonObject { ["conversationContext"] = node };
+        var meta = new JsonObject { [ChannelProtocol.ConversationContextMetaKey] = node };
 
         var result = McpFileDownloadTool.ParseConversationContext(meta);
 
@@ -56,7 +56,7 @@ public class McpFileDownloadToolMetaTests
     [Fact]
     public void ParseConversationContext_MetaWithNullConversationContextNode_ReturnsNull()
     {
-        var meta = new JsonObject { ["conversationContext"] = null };
+        var meta = new JsonObject { [ChannelProtocol.ConversationContextMetaKey] = null };
         var result = McpFileDownloadTool.ParseConversationContext(meta);
         result.ShouldBeNull();
     }

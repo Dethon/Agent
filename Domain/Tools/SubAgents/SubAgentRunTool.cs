@@ -63,6 +63,12 @@ public class SubAgentRunTool(
 
             var userMessage = new ChatMessage(ChatRole.User, prompt);
             userMessage.SetSenderId(featureConfig.UserId);
+            // The PARENT's context, verbatim -- never the subagent's own id. Downstream MCP
+            // servers scope per-conversation state by {AgentId}:{ConversationId}, so a
+            // file_search issued by the parent and a file_download issued by the subagent it
+            // spawned have to resolve to the same scope. A subagent acts on the parent's
+            // behalf, which makes parent attribution the correct one, not a shortcut.
+            userMessage.SetConversationContext(featureConfig.ConversationContextProvider?.Invoke());
             var response = await agent.RunAsync(
                 [userMessage], cancellationToken: timeoutCts.Token);
 
