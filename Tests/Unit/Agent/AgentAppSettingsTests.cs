@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
 using Domain.Prompts;
@@ -7,58 +8,13 @@ using Shouldly;
 
 namespace Tests.Unit.Agent;
 
-// Pins which agents mount which MCP servers. An agent's mcpServerEndpoints list is the only
-// per-agent input that decides what it can see, so a mount that is meant to be shared across
-// agents is only shared if every one of them lists it.
+// Guards the appsettings -> definition -> prompt chain, and the cross-key rules that break a
+// turn outright. Deliberately not the values the file happens to carry: reading a value back
+// off the same file only fails when someone changes it on purpose, and then the test is edited
+// to match -- friction, never a defect caught. What is left is the wiring that fails silently
+// and the couplings no single reader would spot.
 public class AgentAppSettingsTests
 {
-    private const string TimersEndpoint = "http://mcp-timers:8080/mcp";
-    private const string VoiceEndpoint = "http://mcp-channel-voice:8080/mcp";
-
-    // mcp-timers hosts filesystem://timers as a pure tool server. Countdown timers are household
-    // state, not per-agent state, so an agent reached from any channel must be able to read, arm and
-    // dismiss them -- not only the voice agent that happened to create one.
-    [Fact]
-    public void McpServerEndpoints_Jonas_MountsTimersServer()
-    {
-        Endpoints("jonas").ShouldContain(TimersEndpoint);
-    }
-
-    [Fact]
-    public void McpServerEndpoints_Nabu_MountsTimersServer()
-    {
-        Endpoints("nabu").ShouldContain(TimersEndpoint);
-    }
-
-    // Jack is the download bot: it has neither filesystem.create nor filesystem.exec, so it could
-    // not arm or dismiss a timer anyway.
-    [Fact]
-    public void McpServerEndpoints_Jack_DoesNotMountTimersServer()
-    {
-        Endpoints("jack").ShouldNotContain(TimersEndpoint);
-    }
-
-    // The voice hub is a pure channel again: timers moved out to mcp-timers, so no agent mounts the
-    // voice server as a tool server. It reaches agents only via channelEndpoints.
-    [Fact]
-    public void McpServerEndpoints_NoAgentMountsTheVoiceChannelServer()
-    {
-        foreach (var agentId in new[] { "jack", "jonas", "nabu" })
-        {
-            Endpoints(agentId).ShouldNotContain(VoiceEndpoint);
-        }
-    }
-
-    // Nabu speaks through a Spanish TTS voice and reads a transcript from an STT pinned to
-    // Spanish, while everything else in its request -- prompts, tool results, memory block --
-    // is English. Declaring the language makes the reply language an absolute contract instead
-    // of a relative rule the English context can outvote.
-    [Fact]
-    public void Language_Nabu_DeclaresSpanish()
-    {
-        Agent("nabu")["language"]!.GetValue<string>().ShouldBe("es");
-    }
-
     // Two contracts for the same thing is how the drift got in: a relative rule sitting beside
     // the absolute one lets a short transcript surrounded by English resolve to English.
     [Fact]
@@ -89,79 +45,11 @@ public class AgentAppSettingsTests
             .ShouldEndWith(LanguagePrompt.Build("es")!);
     }
 
-    // Sort choices are deliberate per-agent decisions that nothing else would catch if reverted.
-    // Nabu is the voice agent: time-to-first-token gates when speech starts, which is what
-    // `latency` sorts on, where `throughput` sorts on sustained tokens/second -- the wrong metric
-    // for replies capped at one short sentence.
-    [Fact]
-    public void ProviderRouting_Nabu_SortsByLatency()
-    {
-        Agent("nabu")["providerRouting"]!["sort"]!.GetValue<string>().ShouldBe("latency");
-    }
-
-    // `latency` alone ranks on time-to-first-token and says nothing about what happens after it,
-    // so the fastest-answering provider can still be the one that dribbles the rest of the reply
-    // out. The floor deprioritizes those without excluding anyone -- a threshold nobody meets
-    // still routes -- which is why it can sit under a latency sort without risking a dead turn.
-    [Fact]
-    public void ProviderRouting_Nabu_FloorsThroughputUnderTheLatencySort()
-    {
-        Agent("nabu")["providerRouting"]!["preferredMinThroughput"]!.GetValue<double>().ShouldBe(80);
-    }
-
-    [Fact]
-    public void ProviderRouting_JonasWorker_SortsByThroughput()
-    {
-        SubAgent("jonas-worker")["providerRouting"]!["sort"]!.GetValue<string>().ShouldBe("throughput");
-    }
-
-    // The raw-JSON pins above prove what the file says; these prove the binder delivers it.
-    // ProviderRouting binds by naming convention with no ErrorOnUnknownConfiguration anywhere,
-    // so a renamed property would leave the JSON key silently ignored -- every raw pin still
-    // green while nabu quietly reverts to balanced routing. Same silent-severing hazard the
-    // language test above exists for.
-    [Fact]
-    public void ProviderRouting_Nabu_ReachesAgentDefinition()
-    {
-        var nabu = BoundAgents().Single(a => a.Id == "nabu");
-
-        nabu.ProviderRouting.ShouldNotBeNull();
-        nabu.ProviderRouting!.Sort.ShouldBe(ProviderSort.Latency);
-        nabu.ProviderRouting.PreferredMinThroughput!.P50.ShouldBe(80);
-    }
-
-    [Fact]
-    public void ProviderRouting_JonasWorker_ReachesSubAgentDefinition()
-    {
-        var worker = BoundSubAgents().Single(a => a.Id == "jonas-worker");
-
-        worker.ProviderRouting.ShouldNotBeNull();
-        worker.ProviderRouting!.Sort.ShouldBe(ProviderSort.Throughput);
-    }
-
-    // Every model in this file is served by OpenAI, and OpenRouter lists the same model from Azure
-    // and Bedrock at ten times the price -- $1.00/$6.00 per M against $0.10/$0.60. Balanced routing
-    // weights inversely by price so it would pick a reseller rarely, but rarely is not never, and
-    // no field of a response says which one answered. The pin is the only thing that makes the
-    // bill predictable.
-    [Theory]
-    [InlineData("jack")]
-    [InlineData("jonas")]
-    [InlineData("nabu")]
-    public void ProviderRouting_EveryAgent_PinsTheOpenAiProvider(string agentId)
-    {
-        Only(Agent(agentId)).ShouldBe(["openai"]);
-    }
-
-    [Fact]
-    public void ProviderRouting_JonasWorker_PinsTheOpenAiProvider()
-    {
-        Only(SubAgent("jonas-worker")).ShouldBe(["openai"]);
-    }
-
-    // `only` excludes where the preferred-* thresholds merely deprioritize, so the pin and the
-    // model are coupled: a model OpenAI does not serve is left with no candidate endpoint at all
-    // and every turn dead-ends. Nothing relates the two keys at bind time.
+    // Every entry pins `only: ["openai"]`, and `only` excludes where the preferred-* thresholds
+    // merely deprioritize. That couples the pin to the model: switch to something OpenAI does not
+    // serve and there is no candidate endpoint left, so every turn dead-ends. Nothing relates the
+    // two keys at bind time, and the pin has to stay because OpenRouter lists the same model from
+    // Azure and Bedrock at ten times the price -- $1.00/$6.00 per M against $0.10/$0.60.
     [Fact]
     public void Model_EveryPinnedEntry_IsServedByTheOpenAiProvider()
     {
@@ -172,39 +60,24 @@ public class AgentAppSettingsTests
         models.ShouldAllBe(m => m.StartsWith("openai/"));
     }
 
-    // Restricting the provider set is not the same as ranking it. Jack and Jonas stay on balanced
-    // routing, which is the absence of a `sort` -- there is no value that spells it -- so it can
-    // only be asserted as an absence. They now balance across OpenAI's own tiers rather than
-    // across every reseller.
-    [Theory]
-    [InlineData("jack")]
-    [InlineData("jonas")]
-    public void ProviderRouting_BalancedAgents_RankNothingUnderTheProviderPin(string agentId)
-    {
-        var routing = Agent(agentId)["providerRouting"]!.AsObject();
-
-        routing.ContainsKey("sort").ShouldBeFalse();
-        routing.ContainsKey("order").ShouldBeFalse();
-    }
-
-    // Same silent-severing hazard as the nabu pin below: the raw-JSON assertions prove what the
-    // file says, this proves the binder still delivers a pin with no sort attached.
+    // The failure in this file's territory that nobody would notice. Configuration binds by naming
+    // convention and nothing sets ErrorOnUnknownConfiguration, so renaming a property on
+    // AgentDefinition leaves its JSON key silently ignored -- no error, no warning, the agent just
+    // quietly runs on the default. Walking every declared key covers keys added later too, and
+    // says nothing about which values they hold.
     [Fact]
-    public void ProviderRouting_Jack_ReachesAgentDefinitionAsAPinWithoutASort()
+    public void Binding_EveryKeyDeclaredInAppSettings_ReachesItsDefinition()
     {
-        var jack = BoundAgents().Single(a => a.Id == "jack");
+        var agents = BoundAgents();
+        var subAgents = BoundSubAgents();
 
-        jack.ProviderRouting.ShouldNotBeNull();
-        jack.ProviderRouting!.Only.ShouldBe(["openai"]);
-        jack.ProviderRouting.Sort.ShouldBeNull();
-    }
+        var severed = Declared("agents", id => agents.Single(a => a.Id == id))
+            .Concat(Declared("subAgents", id => subAgents.Single(a => a.Id == id)))
+            .Where(binding => binding.Bound is null)
+            .Select(binding => binding.Path)
+            .ToList();
 
-    // One line added here would move every non-overriding caller -- Jack, Jonas and both memory
-    // models -- off load balancing at once, silently.
-    [Fact]
-    public void ProviderRouting_GlobalDefault_IsUnset()
-    {
-        Root()["openRouter"]!.AsObject().ContainsKey("providerRouting").ShouldBeFalse();
+        severed.ShouldBeEmpty();
     }
 
     // The migration exists to remove the dual-idiom problem; a pasted suffix would bring it back.
@@ -229,17 +102,26 @@ public class AgentAppSettingsTests
             .AddJsonFile(Path.Combine(RepoRoot(), "Agent", "appsettings.json"))
             .Build();
 
-    private static string[] Only(JsonNode entry) =>
-        [.. entry["providerRouting"]!["only"]!.AsArray().Select(p => p!.GetValue<string>())];
+    // Every key each entry declares, paired with what the binder put on the matching definition.
+    private static IEnumerable<(string Path, object? Bound)> Declared(
+        string section, Func<string, object> definitionFor)
+    {
+        return Root()[section]!.AsArray()
+            .Select(entry => entry!.AsObject())
+            .SelectMany(entry =>
+            {
+                var definition = definitionFor(entry["id"]!.GetValue<string>());
+                return entry.Select(key => ($"{entry["id"]}.{key.Key}", Bound(definition, key.Key)));
+            });
+    }
 
-    private static string[] Endpoints(string agentId) =>
-        [.. Agent(agentId)["mcpServerEndpoints"]!.AsArray().Select(e => e!.GetValue<string>())];
+    private static object? Bound(object definition, string key) =>
+        definition.GetType()
+            .GetProperty(key, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
+            ?.GetValue(definition);
 
     private static JsonNode Agent(string agentId) =>
         Root()["agents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == agentId)!;
-
-    private static JsonNode SubAgent(string subAgentId) =>
-        Root()["subAgents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == subAgentId)!;
 
     private static JsonNode Root()
     {
@@ -254,10 +136,10 @@ public class AgentAppSettingsTests
     private static string RepoRoot()
     {
         var dir = AppContext.BaseDirectory;
-        while (dir is not null && !File.Exists(Path.Combine(dir, "agent.sln")))
+        while (dir is not null && !File.Exists(Path.Combine(dir, "Ziggurat.sln")))
         {
             dir = Path.GetDirectoryName(dir);
         }
-        return dir ?? throw new InvalidOperationException("agent.sln not found above test directory");
+        return dir ?? throw new InvalidOperationException("Ziggurat.sln not found above test directory");
     }
 }

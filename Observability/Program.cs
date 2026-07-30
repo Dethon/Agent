@@ -34,7 +34,7 @@ app.MapGet("/manifest.webmanifest", () =>
 {
     var manifest = new
     {
-        name = "Agent Dashboard",
+        name = "Ziggurat Dashboard",
         short_name = "Dashboard",
         start_url = "/",
         id = "/",

@@ -193,7 +193,7 @@ public class BrowserJQueryWidgetCompatTests(
     private static string JQueryAssetPath()
     {
         var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "agent.sln")))
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Ziggurat.sln")))
         {
             dir = dir.Parent;
         }

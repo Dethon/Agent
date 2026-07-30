@@ -173,11 +173,11 @@ public class LemonadeEntrypointConfigTests : IDisposable
     private static string RepoRoot()
     {
         var dir = AppContext.BaseDirectory;
-        while (dir is not null && !File.Exists(Path.Combine(dir, "agent.sln")))
+        while (dir is not null && !File.Exists(Path.Combine(dir, "Ziggurat.sln")))
         {
             dir = Path.GetDirectoryName(dir);
         }
-        return dir ?? throw new InvalidOperationException("agent.sln not found above test directory");
+        return dir ?? throw new InvalidOperationException("Ziggurat.sln not found above test directory");
     }
 
     private static (int Exit, string StdOut, string StdErr) Run(string command, IEnumerable<string> args)

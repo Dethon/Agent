@@ -10,7 +10,7 @@ if [ -z "$STAGED_FILES" ]; then
 fi
 
 # Run dotnet format on the solution, scoped to staged files
-dotnet format agent.sln --include $STAGED_FILES --verbosity quiet
+dotnet format Ziggurat.sln --include $STAGED_FILES --verbosity quiet
 
 # Re-stage the formatted files
 echo "$STAGED_FILES" | xargs git add

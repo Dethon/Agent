@@ -1,7 +1,11 @@
-# Agent - AI Media Library Agent
+# Ziggurat
 
-An AI-powered agent that manages a personal media library through Telegram chat, web interface, voice satellites, or
-Azure Service Bus, using OpenRouter LLMs and the Model Context Protocol (MCP).
+A layered AI agent for the home — Telegram, WebChat, and voice satellites on one stack, built on MCP and OpenRouter
+LLMs.
+
+Every tier is a separate MCP server. Channel servers carry the conversation (Telegram, WebChat, voice, Azure Service
+Bus, scheduling), tool servers mount as virtual filesystems, and one agent works across all of them: the media
+library, the smart home, schedules, timers, and the printer.
 
 ## Features
 
@@ -281,8 +285,8 @@ Agent routing:
 ### 1. Clone and Configure
 
 ```bash
-git clone https://github.com/yourusername/agent.git
-cd agent
+git clone https://github.com/Dethon/Ziggurat.git
+cd Ziggurat
 ```
 
 ### 2. Set Environment Variables

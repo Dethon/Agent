@@ -27,7 +27,7 @@
             "type": "process",
             "args": [
                 "build",
-                "${workspaceFolder}/agent.sln",
+                "${workspaceFolder}/Ziggurat.sln",
                 "-c",
                 "Debug"
             ],
