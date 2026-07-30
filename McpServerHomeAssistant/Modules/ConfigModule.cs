@@ -30,13 +30,25 @@ public static class ConfigModule
     {
         public IServiceCollection ConfigureMcp(McpSettings settings)
         {
+            // The podcast-episode action is advertised only when Music Assistant is reachable, so a
+            // deployment without it never lists an action that cannot work.
+            var music = settings.MusicAssistant;
+            var musicConfigured = music?.IsConfigured == true;
+            if (musicConfigured)
+            {
+                services.AddMusicAssistantClient(music!.BaseUrl, music.Token);
+            }
+
             services
                 .AddSingleton(settings)
                 .AddHomeAssistantClient(settings.HomeAssistant.BaseUrl, settings.HomeAssistant.Token)
-                .AddSingleton(sp => new HaCatalogProvider(sp.GetRequiredService<IHomeAssistantClient>))
+                .AddSingleton(sp => new HaCatalogProvider(
+                    sp.GetRequiredService<IHomeAssistantClient>,
+                    extraServices: musicConfigured ? [HaMusicActions.PodcastEpisodes] : null))
                 .AddSingleton(sp => new HaFileSystem(
                     sp.GetRequiredService<HaCatalogProvider>(),
-                    sp.GetRequiredService<IHomeAssistantClient>))
+                    sp.GetRequiredService<IHomeAssistantClient>,
+                    musicClientFactory: musicConfigured ? sp.GetRequiredService<IMusicAssistantClient> : null))
                 .AddSingleton(sp => new HomeAssistantSetupSummary(sp.GetRequiredService<HaCatalogProvider>()))
                 .AddMcpServer()
                 .WithHttpTransport()

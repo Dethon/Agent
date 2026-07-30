@@ -11,7 +11,13 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 // falls back to HaCatalog.Empty with a short negative TTL, so a transient outage doesn't blind the
 // agent for the full window. Func<IHomeAssistantClient> (not a direct injection) keeps the transient,
 // IHttpClientFactory-managed client from being pinned for this singleton's lifetime.
-public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, TimeProvider? timeProvider = null)
+// `extraServices` are action definitions the VFS serves itself (see HaMusicActions) rather than
+// forwarding to HA. They join the catalog so glob/read/info/exec resolve them through the same
+// paths as real services; only the exec call itself is intercepted.
+public sealed class HaCatalogProvider(
+    Func<IHomeAssistantClient> clientFactory,
+    TimeProvider? timeProvider = null,
+    IReadOnlyList<HaServiceDefinition>? extraServices = null)
 {
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _failureCacheTtl = TimeSpan.FromSeconds(30);
@@ -61,7 +67,10 @@ public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, 
             var services = client.ListServicesAsync(ct);
             var areas = LoadAreasAsync(client, ct);
             await Task.WhenAll(states, services, areas);
-            return (new HaCatalog(states.Result, services.Result, areas.Result), true);
+            var allServices = extraServices is null or []
+                ? services.Result
+                : [.. services.Result, .. extraServices];
+            return (new HaCatalog(states.Result, allServices, areas.Result), true);
         }
         // Let cancellation propagate without writing the cache — otherwise a cancelled request would
         // poison the (process-wide) cache with an empty catalog for the negative TTL, blinding

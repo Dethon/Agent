@@ -80,6 +80,13 @@ public sealed partial class HaFileSystem
 
         try
         {
+            // Served here, not by HA: no Home Assistant call can list a podcast's episodes.
+            if (HaMusicActions.IsPodcastEpisodes(svc))
+            {
+                var (code, output, error) = await HaPodcastEpisodes.RunAsync(musicClientFactory?.Invoke(), data, effectiveCt);
+                return done(code, output, error);
+            }
+
             IReadOnlyDictionary<string, JsonNode?> payload = data.ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.DeepClone());
             var result = await clientFactory().CallServiceAsync(svc.Domain, svc.Service, entityId, payload, effectiveCt);
             var changed = new JsonArray(result.ChangedEntities
@@ -105,7 +112,7 @@ public sealed partial class HaFileSystem
             var hint = ex.StatusCode switch
             {
                 400 => $"\nRe-check the field types with `{serviceName}.sh --help`; don't retry the same shape.",
-                >= 500 => "\nThe arguments were accepted but the action failed inside Home Assistant — a named item may not exist. For media, list the library (`browse_media.sh`) and use an exact title instead of retrying guesses.",
+                >= 500 => "\nThe arguments were accepted but the action failed inside Home Assistant — a named item may not exist. For media, list the library (`browse_media.sh`) and use an exact title instead of retrying guesses. For a podcast episode no title resolves and `browse_media.sh` cannot expand a show: list them with `music_assistant.podcast_episodes.sh` and play the uri it returns.",
                 _ => ""
             };
             return done(1, "", $"{ex.Message}{hint}");

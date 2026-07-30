@@ -140,9 +140,21 @@ public static class HomeAssistantPrompt
           `exec music_assistant.play_media.sh --media_id "<exact title>" --media_type playlist`.
           Inventing or translating a title (e.g. "Mi música favorita") does not fail cleanly — it
           comes back as a bare HA 500 that says nothing about what went wrong.
+        - Podcasts: a SHOW plays by name, but a specific EPISODE never does. `play_media` looks a
+          name up across tracks, albums, playlists, artists, radio and shows — never episodes — so an
+          episode title resolves to the show and starts its **newest episode**, and reports success
+          while doing it. An episode plays only by its exact uri. Get that uri first:
+          `exec music_assistant.podcast_episodes.sh --podcast "<show name>" --match "<words from the episode>"`
+          then play what it returned:
+          `exec music_assistant.play_media.sh --media_id "<the episode's uri>"`.
+          `--match` ignores case and accents; drop it to see the most recent titles, and widen it to
+          fewer words if nothing matches. Do NOT look an episode up on Spotify or anywhere else on
+          the web — that action already returns the id in playable form.
+          `browse_media.sh` cannot expand a podcast: it fails with a bare 500 for any show.
         - A 500 from `music_assistant.play_media.sh` means the item could not be resolved (the
           name isn't in the library) — NOT that MA is down. Browse the library and use an exact
-          title instead of retrying name variants.
+          title instead of retrying name variants. Never retry the same call with a reworded name
+          or a different uri shape: if a name did not resolve, list the real items and pick one.
         - `search_media.sh` searches the entire provider catalog (public Spotify etc.), not the
           user's saved items, and the URIs it returns are generally not playable via
           `play_media`. Use it only for content the user doesn't have saved, then play the

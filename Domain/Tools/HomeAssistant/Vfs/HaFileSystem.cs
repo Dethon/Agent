@@ -9,7 +9,8 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 public sealed partial class HaFileSystem(
     HaCatalogProvider catalogProvider,
     Func<IHomeAssistantClient> clientFactory,
-    TimeSpan? regexMatchTimeout = null) : IFileSystemBackend
+    TimeSpan? regexMatchTimeout = null,
+    Func<IMusicAssistantClient>? musicClientFactory = null) : IFileSystemBackend
 {
     public string FilesystemName => "ha";
 

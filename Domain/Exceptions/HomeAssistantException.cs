@@ -16,3 +16,6 @@ public sealed class HomeAssistantUnauthorizedException(string message)
 
 public sealed class HomeAssistantNotFoundException(string message)
     : HomeAssistantException(message, 404);
+
+public sealed class MusicAssistantException(string message, Exception? inner = null)
+    : Exception(message, inner);

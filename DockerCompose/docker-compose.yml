@@ -362,6 +362,10 @@ services:
     container_name: mcp-homeassistant
     ports:
       - "6006:8080"
+    # music-assistant runs with network_mode: host, so it is not on the jackbot bridge and its
+    # container name does not resolve. Its podcast-episode API is reached via the host gateway.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerHomeAssistant/Dockerfile

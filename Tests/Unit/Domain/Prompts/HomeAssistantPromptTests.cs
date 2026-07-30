@@ -83,4 +83,30 @@ public class HomeAssistantPromptTests
         prompt.ShouldContain("apaga el aire en una hora");
         prompt.ShouldContain("/schedules` one-shot");
     }
+
+    // Two conversations on 2026-07-30 failed to play a specific podcast episode. Passing the exact
+    // episode title to music_assistant.play_media resolves to the SHOW (MA's name lookup scans
+    // podcasts, never episodes) and starts its newest episode while reporting success. No HA call
+    // can list a show's episodes, so the agent brute-forced ~15 URI shapes and scraped Spotify's web
+    // UI for an episode id. The prompt has to name the trap and point at the action that solves it.
+    [Fact]
+    public void SystemPrompt_TeachesPodcastEpisodesMustPlayByUri()
+    {
+        var prompt = HomeAssistantPrompt.SystemPrompt;
+
+        prompt.ShouldContain("music_assistant.podcast_episodes.sh"); // the action that yields episode uris
+        prompt.ShouldContain("--match");                             // how to narrow a long episode list
+        prompt.ShouldContain("newest episode");                      // what a title actually resolves to
+    }
+
+    // The agent spent minutes browsing open.spotify.com to recover an episode id that the podcast
+    // episodes action returns directly, in already-playable form.
+    [Fact]
+    public void SystemPrompt_TellsAgentNotToHuntEpisodeIdsOnTheWeb()
+    {
+        var prompt = HomeAssistantPrompt.SystemPrompt;
+
+        prompt.ShouldContain("Spotify");
+        prompt.ShouldContain("browse_media.sh` cannot expand a podcast"); // why the obvious path 500s
+    }
 }
