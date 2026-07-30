@@ -315,7 +315,7 @@ QBITTORRENT__PASSWORD=your_password
 # Agent definitions (array)
 AGENTS__0__ID=jack
 AGENTS__0__NAME=Jack
-AGENTS__0__MODEL=z-ai/glm-5.2
+AGENTS__0__MODEL=openai/gpt-5.6-luna
 AGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-library:8080/mcp
 AGENTS__0__MCPSERVERENDPOINTS__1=http://mcp-websearch:8080/mcp
 AGENTS__0__ENABLEDFEATURES__0=filesystem.glob
@@ -329,7 +329,7 @@ AGENTS__0__CUSTOMINSTRUCTIONS=You are Jack, a media library assistant...
 SUBAGENTS__0__ID=jonas-worker
 SUBAGENTS__0__NAME=Jonas Worker
 SUBAGENTS__0__DESCRIPTION=A worker subagent with the same toolset as Jonas
-SUBAGENTS__0__MODEL=z-ai/glm-5.2
+SUBAGENTS__0__MODEL=openai/gpt-5.6-luna
 SUBAGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-vault:8080/mcp
 SUBAGENTS__0__MAXEXECUTIONSECONDS=600
 

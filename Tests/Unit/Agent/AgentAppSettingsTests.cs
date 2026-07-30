@@ -139,14 +139,64 @@ public class AgentAppSettingsTests
         worker.ProviderRouting!.Sort.ShouldBe(ProviderSort.Throughput);
     }
 
-    // Balanced routing is the absence of a provider object -- there is no `sort` value for it --
-    // so it can only be asserted as an absence, never read back off a request.
+    // Every model in this file is served by OpenAI, and OpenRouter lists the same model from Azure
+    // and Bedrock at ten times the price -- $1.00/$6.00 per M against $0.10/$0.60. Balanced routing
+    // weights inversely by price so it would pick a reseller rarely, but rarely is not never, and
+    // no field of a response says which one answered. The pin is the only thing that makes the
+    // bill predictable.
     [Theory]
     [InlineData("jack")]
     [InlineData("jonas")]
-    public void ProviderRouting_BalancedAgents_DeclareNone(string agentId)
+    [InlineData("nabu")]
+    public void ProviderRouting_EveryAgent_PinsTheOpenAiProvider(string agentId)
     {
-        Agent(agentId).AsObject().ContainsKey("providerRouting").ShouldBeFalse();
+        Only(Agent(agentId)).ShouldBe(["openai"]);
+    }
+
+    [Fact]
+    public void ProviderRouting_JonasWorker_PinsTheOpenAiProvider()
+    {
+        Only(SubAgent("jonas-worker")).ShouldBe(["openai"]);
+    }
+
+    // `only` excludes where the preferred-* thresholds merely deprioritize, so the pin and the
+    // model are coupled: a model OpenAI does not serve is left with no candidate endpoint at all
+    // and every turn dead-ends. Nothing relates the two keys at bind time.
+    [Fact]
+    public void Model_EveryPinnedEntry_IsServedByTheOpenAiProvider()
+    {
+        var models = Root()["agents"]!.AsArray()
+            .Concat(Root()["subAgents"]!.AsArray())
+            .Select(a => a!["model"]!.GetValue<string>());
+
+        models.ShouldAllBe(m => m.StartsWith("openai/"));
+    }
+
+    // Restricting the provider set is not the same as ranking it. Jack and Jonas stay on balanced
+    // routing, which is the absence of a `sort` -- there is no value that spells it -- so it can
+    // only be asserted as an absence. They now balance across OpenAI's own tiers rather than
+    // across every reseller.
+    [Theory]
+    [InlineData("jack")]
+    [InlineData("jonas")]
+    public void ProviderRouting_BalancedAgents_RankNothingUnderTheProviderPin(string agentId)
+    {
+        var routing = Agent(agentId)["providerRouting"]!.AsObject();
+
+        routing.ContainsKey("sort").ShouldBeFalse();
+        routing.ContainsKey("order").ShouldBeFalse();
+    }
+
+    // Same silent-severing hazard as the nabu pin below: the raw-JSON assertions prove what the
+    // file says, this proves the binder still delivers a pin with no sort attached.
+    [Fact]
+    public void ProviderRouting_Jack_ReachesAgentDefinitionAsAPinWithoutASort()
+    {
+        var jack = BoundAgents().Single(a => a.Id == "jack");
+
+        jack.ProviderRouting.ShouldNotBeNull();
+        jack.ProviderRouting!.Only.ShouldBe(["openai"]);
+        jack.ProviderRouting.Sort.ShouldBeNull();
     }
 
     // One line added here would move every non-overriding caller -- Jack, Jonas and both memory
@@ -178,6 +228,9 @@ public class AgentAppSettingsTests
         new ConfigurationBuilder()
             .AddJsonFile(Path.Combine(RepoRoot(), "Agent", "appsettings.json"))
             .Build();
+
+    private static string[] Only(JsonNode entry) =>
+        [.. entry["providerRouting"]!["only"]!.AsArray().Select(p => p!.GetValue<string>())];
 
     private static string[] Endpoints(string agentId) =>
         [.. Agent(agentId)["mcpServerEndpoints"]!.AsArray().Select(e => e!.GetValue<string>())];
