@@ -32,21 +32,37 @@ public sealed class AdaptiveLevelTracker(
     double peakDropDb,
     TimeSpan floorWindow,
     TimeSpan? floorSmoothing = null,
-    double? demoteMarginDb = null)
+    double? demoteMarginDb = null,
+    double? roomRms = null)
 {
     private readonly double _clampDb = ToDb(clampRms);
     private readonly double _floorSmoothingMs = (floorSmoothing ?? TimeSpan.FromMilliseconds(500)).TotalMilliseconds;
+    private readonly double _roomDb = roomRms is { } rms ? ToDb(rms) : double.PositiveInfinity;
     private readonly Queue<(double DurationMs, double RmsDb)> _window = new();
     private readonly Queue<(double DurationMs, double Energy)> _smoothing = new();
     private double _windowMs;
     private double _smoothingMs;
+    private double _measuredFloorDb;
     private double _peakDb = double.NegativeInfinity;
     private bool _active;
     private bool _speechSeen;
 
-    public double FloorDb { get; private set; }
+    // Capped by the room level the hub measured on this satellite while nobody was speaking
+    // (RoomNoiseMemory / the satellite's own idle reading). A capture that opens on sound has
+    // nothing but that sound to measure the background from — someone running straight from
+    // the wake word into their command IS the window — and the resulting floor froze 6x above
+    // the room in the field (534 RMS against 71 measured minutes apart, 28% of prod captures).
+    // The cap is one-directional on purpose: a remembered level can only say "the room was no
+    // louder than this", so a room that is quieter now still reads as its live self, and a
+    // remembered level that has gone stale upwards can only cost adaptivity, never speech.
+    public double FloorDb => Math.Min(_measuredFloorDb, _roomDb);
 
     public double FloorRms => Math.Pow(10, FloorDb / 20);
+
+    // The window's own reading, before the remembered room caps it. This is the measurement worth
+    // remembering: feeding the capped value back into RoomNoiseMemory would let one quiet reading
+    // re-record itself for as long as captures keep happening, and outlive the room it described.
+    public double MeasuredFloorRms => Math.Pow(10, _measuredFloorDb / 20);
 
     // Capture-level accept test: did anything speech-classified stand above the floor by
     // the demote margin? The floor (windowed min) is the reference, not the trailing-run
@@ -131,7 +147,7 @@ public sealed class AdaptiveLevelTracker(
         {
             _windowMs -= _window.Dequeue().DurationMs;
         }
-        FloorDb = _window.Min(e => e.RmsDb);
+        _measuredFloorDb = _window.Min(e => e.RmsDb);
     }
 
     private static double ToDb(double rms) => 20 * Math.Log10(Math.Max(rms, 1));

@@ -1,6 +1,7 @@
 pub mod capture;
 pub mod playback;
 pub mod cues;
+pub mod room;
 
 use tokio::process::Command;
 

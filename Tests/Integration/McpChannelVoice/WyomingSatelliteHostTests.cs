@@ -257,6 +257,139 @@ public class WyomingSatelliteHostTests
         catch { /* cancellation / disposal */ }
     }
 
+    [Fact]
+    public async Task Hub_CommandRunsOnFromTheWakeWord_UsesTheRoomLevelTheSatelliteMeasured()
+    {
+        // Field report 2026-07-30: "sometimes the voice starts processing when I'm still talking."
+        // With no gap after the wake word, the capture's first frames ARE the command, so the
+        // gate's noise floor froze at the speaker's own level (6x the room, measured on prod) and
+        // the rest of the utterance read as background. The satellite listens to the room the
+        // whole time it is idle, so it can report what silence there actually sounds like; the hub
+        // caps the floor with it and the command survives.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = cts.Token;
+
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var sawRunSatellite = new TaskCompletionSource();
+
+        var fakeSatellite = Task.Run(async () =>
+        {
+            using var conn = await listener.AcceptTcpClientAsync(ct);
+            await using var stream = conn.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+
+            var readLoop = Task.Run(async () =>
+            {
+                await foreach (var evt in reader.ReadAllAsync(ct))
+                {
+                    if (evt.Type == "run-satellite")
+                    {
+                        sawRunSatellite.TrySetResult();
+                    }
+                }
+            }, ct);
+
+            await sawRunSatellite.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+
+            await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject
+            {
+                ["source"] = "wake",
+                ["wake_rms"] = 9000.0,
+                // Measured on the satellite while idle: no wake word, no capture, just the room.
+                ["room_rms"] = 60.0
+            }), ct);
+
+            var data = new JsonObject { ["rate"] = 16_000, ["width"] = 2, ["channels"] = 1 };
+            async Task Stream(short level, int chunks)
+            {
+                foreach (var _ in Enumerable.Range(0, chunks))
+                {
+                    await writer.WriteAsync(
+                        WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(level)), ct);
+                }
+            }
+
+            await Stream(8000, 4);  // the command starts on the very first frame — no pre-roll gap
+            await Stream(2000, 8);  // a quieter clause: 12 dB under the peak, still far above the clamp
+            await Stream(0, 20);    // the user actually stops
+            await Task.Delay(TimeSpan.FromSeconds(5), ct);
+        }, ct);
+
+        var chunksSeen = 0;
+        var stt = new Mock<ISpeechToText>();
+        stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
+                                         It.IsAny<TranscriptionOptions>(),
+                                         It.IsAny<CancellationToken>()))
+            .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
+                async (audio, _, token) =>
+                {
+                    await foreach (var chunk in audio.WithCancellation(token))
+                    {
+                        chunksSeen++;
+                    }
+                    return new TranscriptionResult { Text = "baja el volumen al diez por ciento", Language = "es" };
+                });
+
+        var emitter = new CapturingEmitter();
+        var publisher = new Mock<IMetricsPublisher>();
+        var factory = new Mock<IConversationFactory>();
+        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var identity = ConversationIdGenerator.CreateFor("topic-room");
+                var topic = new TopicMetadata("topic-room", identity.ChatId, identity.ThreadId, "agent-1",
+                    "household @ Office", DateTimeOffset.UtcNow, null);
+                return new ConversationCreation(identity, topic);
+            });
+        var manager = new VoiceConversationManager(
+            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+        var dispatcher = new TranscriptDispatcher(
+            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
+        {
+            ["office-01"] = new()
+            {
+                Identity = "household",
+                Room = "Office",
+                WakeWord = "ok_nabu",
+                Address = $"tcp://127.0.0.1:{port}"
+            }
+        });
+
+        var host = new WyomingSatelliteHost(
+            new WyomingClientSettings
+            {
+                ReconnectDelaySeconds = 1,
+                SilenceRmsThreshold = 500,
+                TrailingSilenceMs = 200,
+                MaxUtteranceMs = 10_000,
+                MinSpeechMs = 100
+            },
+            new VoiceSettings { AgentId = "nabu", FollowUp = new FollowUpSettings { Enabled = false } },
+            registry, new SatelliteSessionRegistry(), manager, stt.Object, dispatcher, new ActiveAlertRegistry(),
+            publisher.Object, TimeProvider.System, Arbiter(manager), NullLogger<WyomingSatelliteHost>.Instance);
+
+        await host.StartAsync(ct);
+
+        var msg = await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        msg.Content.ShouldBe("baja el volumen al diez por ciento");
+        // The whole command reached STT: 12 spoken chunks plus the trailing run that ended it. An
+        // uncapped floor endpoints inside the quieter clause (or drops the turn as no-speech).
+        chunksSeen.ShouldBeGreaterThanOrEqualTo(12);
+
+        await host.StopAsync(CancellationToken.None);
+        listener.Stop();
+        await cts.CancelAsync();
+        try
+        { await fakeSatellite; }
+        catch { /* cancellation / disposal */ }
+    }
+
     // Only run-pipeline carries the wake metadata; a satellite that also announces its mic stream
     // sends a metadata-free audio-start for the SAME turn. WakeTriggered must report exactly what
     // opened the turn — that field is what RmsOffsetDb is calibrated from, and a wrong value is

@@ -39,7 +39,21 @@ public class WyomingSatelliteHostWakeAnnouncementTests
 
         wake.Rms.ShouldBeNull();
         wake.Score.ShouldBeNull();
+        wake.RoomRms.ShouldBeNull();
         wake.Source.ShouldBe("wake");
+    }
+
+    // Protocol 1.7: the satellite listens to the room the whole time it is idle, so it can measure
+    // the background from audio that contains neither the user's voice nor the capture. The hub
+    // cannot — its first frame is already the turn. A satellite that doesn't send it reads as null
+    // and the hub falls back to what its own captures have learned.
+    [Fact]
+    public void ReadWakeAnnouncement_WakeFrameWithRoomLevel_ReturnsTheMeasuredRoom()
+    {
+        var wake = WyomingSatelliteHost.ReadWakeAnnouncement(
+            new JsonObject { ["source"] = "wake", ["wake_rms"] = 1234.5, ["room_rms"] = 68.25 });
+
+        wake.RoomRms.ShouldBe(68.25);
     }
 
     [Fact]

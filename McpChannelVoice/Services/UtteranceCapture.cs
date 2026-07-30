@@ -14,9 +14,12 @@ public enum CaptureOutcome
 // Audio-level facts about one capture, published on UtteranceTranscribed metrics so the
 // RMS/min-speech entry bar and the adaptive-floor margins can be tuned from real data
 // instead of guesswork.
+// MeasuredFloorRms is the gate's own reading of the background before the remembered room level
+// caps it (FloorRms is what the gate actually used). It is what RoomNoiseMemory learns from, so a
+// remembered level is never re-derived from itself.
 public readonly record struct CaptureStats(
     double PeakRms, double FloorRms, long SpeechMs, string? EndReason, double TrailingRms = 0,
-    long TrailingSilenceMs = 0);
+    long TrailingSilenceMs = 0, double MeasuredFloorRms = 0);
 
 // One bounded mic capture over the held-open Wyoming stream. The read loop pushes audio
 // via Feed (single-threaded); the gate decides when speech ends (Ended) or the no-speech
@@ -50,7 +53,8 @@ public sealed class UtteranceCapture(SilenceGate gate, ChunkHistory? history = n
         (long)gate.SpeechElapsed.TotalMilliseconds,
         _forced ? "forced" : gate.EndReason,
         gate.TrailingRms,
-        (long)gate.TrailingSilence.TotalMilliseconds);
+        (long)gate.TrailingSilence.TotalMilliseconds,
+        gate.MeasuredFloorRms);
 
     public void Feed(AudioChunk chunk)
     {

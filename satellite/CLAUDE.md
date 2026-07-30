@@ -12,9 +12,13 @@ Standalone Rust crate (NOT in the .NET solution): a fully static aarch64-musl Wy
 - **Zero-lag pre-roll**: while idle, mic chunks fill a pre-roll ring (`--preroll-ms`, default 1000); a wake trigger flushes only the detection gap (3 chunks ≈ 240 ms), never the wake word itself; a button press flushes the full ring.
 - **Wire format**: frames are one contiguous buffer with event `data` sent once as the `data_length` body (the hub's reader prefers the body; its writer emits the same shape) — pinned by a codec test.
 
-## Wake Metadata & Arbitration (PROTOCOL_VERSION 1.6)
+## Wake Metadata & Arbitration (PROTOCOL_VERSION 1.7)
 
 `run-pipeline` carries `{"source":"wake"|"button","wake_rms":f32,"wake_score":f32}` — rms over the pre-roll ring minus the detection gap, BEFORE trim, in i16-amplitude units matching the hub's SilenceGate. The hub may reply `pause-satellite` (arbitration loss): Streaming → audio-stop back, Idle, detector reset, NO cue, LED Idle; Idle → no-op.
+
+**`room_rms` (1.7, optional)** — what the room sounds like with nobody talking to the satellite, from `audio/room.rs`: the minimum of 480 ms-smoothed energy over a trailing 3 s of **idle** mic audio, same units and same statistic as the hub's own noise floor. It exists because the hub cannot measure this: its first captured frame is already the turn, so a command spoken straight after the wake word leaves its `AdaptiveLevelTracker` estimating the background from the speaker's own voice (measured at 6x the true room on prod, which armed the noisy-room regime in a silent office and endpointed people mid-sentence). Smoothing before the minimum is what stops bursty TV dialog from reading as a quiet room through its 100-400 ms lulls; the wake word needs no exclusion despite sitting at the end of the window, because loud audio cannot lower a minimum. The estimator is **reset at every trigger**, so a reading only ever describes idle audio measured since the last turn ended — a satellite that has not been idle for a full window sends **no field at all** (absent, never null or zero: the hub reads a missing value as "ask my own captures", and a zero would pin its floor at silence).
+
+The measurement is taken **before the duck engages** (ducking starts at Listening, i.e. at the trigger), which is what makes it safe on a music unit: with music playing it reports the *unducked* level, louder than the ducked music the capture then hears, so the hub's cap is inert and its adaptive gating stays armed exactly where it is needed. In a quiet room the two are the same number.
 
 A button-triggered `run-pipeline` carries only `{"source":"button"}` with no `wake_rms`, and the hub marks a connection pause-capable only after seeing a non-null `wake_rms` — so a satellite whose first turn on a connection is a button press still gets the legacy audible `transcript` abort if that turn loses arbitration.
 

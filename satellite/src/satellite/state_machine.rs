@@ -1,6 +1,7 @@
 use crate::audio::capture::{bytes_to_samples, MicCapture};
 use crate::audio::cues::Cues;
 use crate::audio::playback::{spawn_pump, DrainDone, PlaybackHandle};
+use crate::audio::room::RoomLevel;
 use crate::config::Config;
 use crate::gpio;
 use crate::led::{self, LedState};
@@ -13,6 +14,12 @@ use tokio::io::{AsyncWrite, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
+
+/// Room-measurement windows. The smoothing span matches the hub's floor smoothing (bursty TV
+/// dialog must not read as a quiet room through its 100-400 ms lulls) and the trailing window
+/// matches its FloorWindowMs, so both ends of the wire describe the background the same way.
+const ROOM_SMOOTHING_MS: usize = 480;
+const ROOM_WINDOW_MS: usize = 3000;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum Mode { Idle, Streaming }
@@ -118,6 +125,11 @@ pub async fn run_connection(
     let preroll_cap = cfg.preroll_chunks();
     let mut preroll: VecDeque<Vec<u8>> = VecDeque::with_capacity(preroll_cap + 1);
 
+    // Measured off the same idle mic audio the pre-roll ring holds, and reported to the hub on
+    // every trigger (see start_turn): the hub's gate has no other way to know what silence sounds
+    // like in this room before the user starts talking into it.
+    let mut room = RoomLevel::new(ROOM_SMOOTHING_MS, ROOM_WINDOW_MS);
+
     let mut mode = Mode::Idle;
     // The LED phase the open turn sits in between playback streams: Listening while the mic is
     // genuinely capturing the user, Thinking once the hub has endpointed the utterance and the
@@ -142,8 +154,11 @@ pub async fn run_connection(
                 Some(Err(e)) => return Err(e),
                 Some(Ok(bytes)) => match mode {
                     Mode::Idle => {
-                        // decode for the detector BEFORE the ring takes ownership — no clone
-                        let samples = detector.is_some().then(|| bytes_to_samples(&bytes));
+                        // decode BEFORE the ring takes ownership — no clone. Needed by the wake
+                        // detector and by the room measurement, so it happens even with --no-wake.
+                        let samples = bytes_to_samples(&bytes);
+                        room.push(&samples);
+                        let samples = detector.is_some().then_some(samples);
                         push_preroll(&mut preroll, bytes, preroll_cap);
                         if let (Some(d), Some(samples)) = (detector.as_mut(), samples) {
                             let t0 = std::time::Instant::now();
@@ -156,8 +171,10 @@ pub async fn run_connection(
                                 // wake-word audio this measures.
                                 let rms = ring_rms(&preroll, cfg.wake_preroll_chunks());
                                 trim_preroll(&mut preroll, cfg.wake_preroll_chunks());
+                                let measured = room.rms();
+                                room.reset();
                                 start_turn(&mut wr, &mut mode, &mut phase, &ctx, &mut preroll,
-                                    &playback, Some(WakeSignal { rms, score })).await?;
+                                    &playback, Some(WakeSignal { rms, score }), measured).await?;
                             }
                         }
                     }
@@ -170,7 +187,9 @@ pub async fn run_connection(
                 if mode == Mode::Idle {
                     info!("button pressed -> start turn");
                     if let Some(d) = detector.as_mut() { d.reset(); }
-                    start_turn(&mut wr, &mut mode, &mut phase, &ctx, &mut preroll, &playback, None).await?;
+                    let measured = room.rms();
+                    room.reset();
+                    start_turn(&mut wr, &mut mode, &mut phase, &ctx, &mut preroll, &playback, None, measured).await?;
                 }
             }
         }
@@ -252,11 +271,21 @@ async fn end_capture<W: AsyncWrite + Unpin>(
 async fn start_turn<W: AsyncWrite + Unpin>(
     wr: &mut W, mode: &mut Mode, phase: &mut LedState, ctx: &Ctx<'_>,
     preroll: &mut VecDeque<Vec<u8>>, playback: &PlaybackHandle, wake: Option<WakeSignal>,
+    room: Option<f32>,
 ) -> anyhow::Result<()> {
-    let data = match &wake {
+    let mut data = match &wake {
         Some(w) => json!({ "source": "wake", "wake_rms": w.rms, "wake_score": w.score }),
         None => json!({ "source": "button" }),
     };
+    // Protocol 1.7: what the room sounded like while this satellite was idle. The hub's
+    // end-of-utterance gate cannot measure that itself — its first frame is already the turn —
+    // and without it a command spoken straight after the wake word leaves the gate estimating
+    // its noise floor from the speaker's own voice. Omitted, not nulled, when the satellite has
+    // not been idle long enough to stand behind a reading: the hub then falls back to what its
+    // own captures have learned.
+    if let (Some(rms), Some(obj)) = (room, data.as_object_mut()) {
+        obj.insert("room_rms".into(), json!(rms));
+    }
     write_event(wr, &WyomingEvent::with_data("run-pipeline", data)).await?;
     if let Some(pcm) = ctx.cues.awake() { playback.cue(pcm); }
     *phase = LedState::Listening;
@@ -506,7 +535,7 @@ mod tests {
         let (playback, _done_rx, _pump) = pump();
 
         start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback,
-            Some(WakeSignal { rms: 123.5, score: 0.87 })).await.unwrap();
+            Some(WakeSignal { rms: 123.5, score: 0.87 }), None).await.unwrap();
 
         let mut buf = BufReader::new(b);
         let e = read_event_buffered(&mut buf).await.unwrap().unwrap();
@@ -515,6 +544,52 @@ mod tests {
         assert_eq!(data["source"], serde_json::json!("wake"));
         assert!((data["wake_rms"].as_f64().unwrap() - 123.5).abs() < 0.01);
         assert!((data["wake_score"].as_f64().unwrap() - 0.87).abs() < 0.001);
+    }
+
+    // Protocol 1.7. The hub cannot measure the room itself: its first captured frame is already
+    // the turn, so a command that runs on from the wake word leaves its gate estimating the noise
+    // floor from the speaker's own voice (6x the room, measured on prod). This satellite hears the
+    // room the whole time it is idle, which is the measurement that closes that hole.
+    #[tokio::test]
+    async fn turn_reports_the_room_level_measured_while_idle() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        let c = cues();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let mut phase = LedState::Listening;
+        let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
+        let (playback, _done_rx, _pump) = pump();
+
+        start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback,
+            Some(WakeSignal { rms: 123.5, score: 0.87 }), Some(64.5)).await.unwrap();
+
+        let mut buf = BufReader::new(b);
+        let e = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        let data = e.data_obj();
+        assert!((data["room_rms"].as_f64().unwrap() - 64.5).abs() < 0.01);
+    }
+
+    // Absent, not null: a satellite that has not been idle long enough to stand behind a reading
+    // says nothing, and the hub falls back to what its own captures learned rather than reading a
+    // zero as "the room is silent" and pinning its floor there.
+    #[tokio::test]
+    async fn turn_without_a_room_measurement_omits_the_field() {
+        let (mut a, b) = tokio::io::duplex(1 << 16);
+        let c = cues();
+        let (led_tx, _led_rx) = watch::channel(LedState::Idle);
+        let ctx = Ctx { cues: &c, led: &led_tx };
+        let mut mode = Mode::Idle;
+        let mut phase = LedState::Listening;
+        let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
+        let (playback, _done_rx, _pump) = pump();
+
+        start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback,
+            Some(WakeSignal { rms: 123.5, score: 0.87 }), None).await.unwrap();
+
+        let mut buf = BufReader::new(b);
+        let e = read_event_buffered(&mut buf).await.unwrap().unwrap();
+        assert!(!e.data_obj().contains_key("room_rms"));
     }
 
     #[tokio::test]
@@ -528,7 +603,7 @@ mod tests {
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
         let (playback, _done_rx, _pump) = pump();
 
-        start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback, None).await.unwrap();
+        start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback, None, None).await.unwrap();
 
         let mut buf = BufReader::new(b);
         let e = read_event_buffered(&mut buf).await.unwrap().unwrap();
@@ -553,7 +628,7 @@ mod tests {
         for _ in 0..5 { preroll.push_back(vec![0u8; 2560]); }
         let (playback, _done_rx, _pump) = pump();
 
-        start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback, None).await.unwrap();
+        start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback, None, None).await.unwrap();
 
         assert_eq!(mode, Mode::Streaming);
         assert!(preroll.is_empty(), "pre-roll must be drained on trigger");
@@ -774,7 +849,7 @@ mod tests {
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
         let (mut playback, mut done_rx, _pump) = pump();
 
-        start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback, None).await.unwrap();
+        start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback, None, None).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
 
         let voice_stopped = WyomingEvent::new("voice-stopped");
@@ -837,7 +912,7 @@ mod tests {
         let start = WyomingEvent::with_data("audio-start", json!({"rate":22050,"width":2,"channels":1}));
         handle_hub_event(start, &mut mode, &mut phase, None, &mut a, &mut playback, &ctx).await.unwrap();
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
-        start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback, None).await.unwrap();
+        start_turn(&mut a, &mut mode, &mut phase, &ctx, &mut preroll, &playback, None, None).await.unwrap();
         assert_eq!(*led_rx.borrow_and_update(), LedState::Listening);
 
         // the announcement's audio-stop drains while we are mid-turn

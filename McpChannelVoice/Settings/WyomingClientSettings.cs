@@ -33,4 +33,14 @@ public record WyomingClientSettings
     // TV rejection directly for dropped soft commands. Note the floor is now frozen at first
     // speech, so at or below EnterMarginDb this bar is inert — see SpeechProminent.
     public double? DemoteMarginDb { get; init; }
+
+    // Room-level memory (RoomNoiseMemory): how many recent background samples to keep per
+    // satellite, and how long one stays valid. A capture that opens on sound cannot measure the
+    // background itself, so the quietest of these caps its floor. Short retention is deliberate —
+    // the risk of a stale sample is a room that has since got louder (music starting), where the
+    // cap costs the adaptive regime a turn or two until the next sample lands. Five samples over
+    // ten minutes measured as the safe end of that trade on a week of field captures.
+    public int RoomLevelSamples { get; init; } = 5;
+
+    public int RoomLevelRetentionSeconds { get; init; } = 600;
 }

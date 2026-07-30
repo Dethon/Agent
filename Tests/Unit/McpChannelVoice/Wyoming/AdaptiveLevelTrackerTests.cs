@@ -155,6 +155,39 @@ public class AdaptiveLevelTrackerTests
     }
 
     [Fact]
+    public void IsSpeech_CaptureOpensOnSpeech_MeasuredRoomLevelHoldsTheFloorDown()
+    {
+        // Field failure 2026-07-30 (prod fran-office, 337 captures): with no gap between the
+        // wake word and the command, the only audio the floor can measure IS the speaker, so
+        // it froze 6x above the room — 534 RMS median against 71 RMS measured on the same
+        // satellite minutes away. That armed the adaptive regime in a silent office, the
+        // peak-drop backstop then read most of the utterance as background, and the turn ended
+        // mid-sentence. A room level the hub has actually measured while nobody was speaking
+        // caps the floor, so the capture's own contaminated measurement can never raise it.
+        var tracker = new AdaptiveLevelTracker(
+            clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
+            floorWindow: TimeSpan.FromMilliseconds(400), roomRms: 60);
+
+        Feed(tracker, 8000).ShouldBeTrue(); // speech from the very first chunk
+
+        tracker.FloorRms.ShouldBe(60, 1);
+    }
+
+    [Fact]
+    public void FloorDb_RoomQuieterThanRemembered_FollowsTheLiveMeasurement()
+    {
+        // The remembered level is a ceiling, not a replacement: a room that is quieter now than
+        // when it was last measured (music ducked, TV off) must still read as its live self.
+        var tracker = new AdaptiveLevelTracker(
+            clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
+            floorWindow: TimeSpan.FromMilliseconds(400), roomRms: 2000);
+
+        FeedAll(tracker, 0, 6);
+
+        tracker.FloorDb.ShouldBe(0, 0.01);
+    }
+
+    [Fact]
     public void IsSpeech_LoudTransientBeforeSpeech_DoesNotPoisonPeakBackstop()
     {
         var tracker = Tracker();

@@ -402,14 +402,14 @@ public class SilenceGateTests
 
     // Exact production wiring (appsettings.json WyomingClient + FollowUp.WindowMs as the
     // no-speech window), so this pins the real deployed behaviour rather than a test rig.
-    private static SilenceGate ProductionGate() => new(
+    private static SilenceGate ProductionGate(double? roomRms = null) => new(
         new AdaptiveLevelTracker(
             clampRms: 700, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 10,
-            floorWindow: TimeSpan.FromSeconds(3), demoteMarginDb: 9),
-        trailingSilence: TimeSpan.FromSeconds(2),
+            floorWindow: TimeSpan.FromSeconds(3), demoteMarginDb: 9, roomRms: roomRms),
+        trailingSilence: TimeSpan.FromMilliseconds(1200),
         maxUtterance: TimeSpan.FromSeconds(40),
         minSpeech: TimeSpan.FromMilliseconds(300),
-        noSpeechTimeout: TimeSpan.FromSeconds(5));
+        noSpeechTimeout: TimeSpan.FromMilliseconds(2500));
 
     [Fact]
     public void Process_ContinuousSpeechPastFloorWindow_DoesNotEndUtterance()
@@ -428,6 +428,55 @@ public class SilenceGateTests
         {
             Feed(gate, Loud()).ShouldBe(SilenceGate.Decision.Continue);
         }
+    }
+
+    // One command spoken straight after the wake word, with the syllable-level dynamics of real
+    // speech: stressed syllables at 8000 RMS, a quieter middle clause at 1300-2500, all of it far
+    // above the 700 clamp. Nothing here is silence to a human ear.
+    private static IEnumerable<short> Command()
+    {
+        short[] stressed = [8000, 3000, 2000, 6000, 2800, 5000];
+        short[] quieter = [2200, 1600, 2400, 1300, 2000, 1500, 2300, 1700, 2100, 1400, 2500, 1800, 2200, 1500];
+        return Enumerable.Range(0, 20).Select(i => stressed[i % stressed.Length])
+            .Concat(quieter)
+            .Concat(Enumerable.Range(0, 20).Select(i => stressed[i % stressed.Length]));
+    }
+
+    [Fact]
+    public void Process_CommandRunsOnFromTheWakeWord_DoesNotEndWhileTheUserIsStillTalking()
+    {
+        // Field report 2026-07-30: "sometimes the voice starts processing when I'm still talking."
+        // Measured over a week of prod captures: 28% ran with a floor contaminated by the opening
+        // of the utterance itself (no gap after "ok nabu"), which armed the adaptive regime in a
+        // quiet office; the gate then credited only ~40% of the speech and ended the turn on the
+        // first quieter clause. The room level the hub measured while nobody was speaking is what
+        // makes the difference between a floor of 71 RMS and one of 534.
+        var gate = ProductionGate(roomRms: 71);
+
+        foreach (var level in Command())
+        {
+            Feed(gate, Tone(level)).ShouldBe(SilenceGate.Decision.Continue);
+        }
+    }
+
+    [Fact]
+    public void Process_CommandRunsOnFromTheWakeWord_WithNoRoomMeasurement_StillEndsOnRealSilence()
+    {
+        // The cap must not defeat endpointing itself: once the user actually stops, the run of
+        // true room-level frames ends the capture as before.
+        var gate = ProductionGate(roomRms: 71);
+        foreach (var level in Command())
+        {
+            Feed(gate, Tone(level));
+        }
+
+        foreach (var _ in Enumerable.Range(0, 11))
+        {
+            Feed(gate, Tone(70)).ShouldBe(SilenceGate.Decision.Continue);
+        }
+
+        Feed(gate, Tone(70)).ShouldBe(SilenceGate.Decision.EndUtterance);
+        gate.EndReason.ShouldBe("trailing_silence");
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
@@ -34,6 +35,13 @@ public sealed class WyomingSatelliteHost(
 {
     private CancellationTokenSource? _cts;
     private readonly List<Task> _connections = [];
+
+    // Keyed by satellite rather than held per connection: a room does not change because the TCP
+    // link blipped, and a reconnect is exactly when a satellite is least able to measure itself.
+    private readonly ConcurrentDictionary<string, RoomNoiseMemory> _roomNoise = new();
+
+    private RoomNoiseMemory RoomNoiseFor(string id) => _roomNoise.GetOrAdd(id, _ => new RoomNoiseMemory(
+        time, settings.RoomLevelSamples, TimeSpan.FromSeconds(settings.RoomLevelRetentionSeconds)));
 
     public Task StartAsync(CancellationToken ct)
     {
@@ -201,6 +209,10 @@ public sealed class WyomingSatelliteHost(
                             session.MarkSupportsPause();
                         }
                         wakeAnnounced = true;
+                        // Recorded before OnWake, which opens the capture on this thread and reads
+                        // the memory: the satellite measured this while idle, so it describes the
+                        // room the user is about to speak into better than anything the hub has.
+                        RoomNoiseFor(id).Record(wake.RoomRms ?? 0);
                         // Stashed before OnWake, which opens the capture synchronously on this thread
                         // and consumes the stash onto WakeTriggered.
                         session.NoteWakeSignal(wake.Rms, wake.Score);
@@ -273,6 +285,7 @@ public sealed class WyomingSatelliteHost(
     private FollowUpConversation BuildCoordinator(
         string id, SatelliteConfig config, WyomingClient client, SatelliteSession session, FollowUpSettings followUp)
     {
+        var roomNoise = RoomNoiseFor(id);
         return new FollowUpConversation(followUp, time)
         {
             OpenCapture = isFollowUp =>
@@ -298,7 +311,10 @@ public sealed class WyomingSatelliteHost(
                         config.ResolveExitMarginDb(settings),
                         config.ResolvePeakDropDb(settings),
                         TimeSpan.FromMilliseconds(config.ResolveFloorWindowMs(settings)),
-                        demoteMarginDb: config.ResolveDemoteMarginDb(settings)),
+                        demoteMarginDb: config.ResolveDemoteMarginDb(settings),
+                        // The capture cannot measure the background it opens on top of, so the
+                        // quietest room reading this satellite has produced recently caps it.
+                        roomRms: roomNoise.Rms),
                     TimeSpan.FromMilliseconds(settings.TrailingSilenceMs),
                     TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
                     TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(settings)),
@@ -310,6 +326,7 @@ public sealed class WyomingSatelliteHost(
             CloseCapture = capture =>
             {
                 session.CloseCapture();
+                roomNoise.Record(RoomSampleOf(capture.Stats));
                 // Stamped here rather than inside the session so it uses the host's TimeProvider —
                 // the same instance handed to RunPlaybackLoopAsync, which reads it back. The frozen
                 // endpointing tail rewinds the close to the instant the user actually stopped
@@ -645,7 +662,19 @@ public sealed class WyomingSatelliteHost(
         ["alert"] = alert
     };
 
-    internal readonly record struct WakeAnnouncement(double? Rms, double? Score, string Source);
+    internal readonly record struct WakeAnnouncement(double? Rms, double? Score, string Source, double? RoomRms = null);
+
+    // What a finished capture learned about the room. A capture that heard no speech spent its
+    // whole window measuring the background, so its own reading is the sample; one that ended on
+    // trailing silence measured it over the run that ended it. Anything else (abandoned to
+    // arbitration, forced, capped at max-utterance) never established what silence sounded like,
+    // and returns 0 — RoomNoiseMemory drops it, exactly as it drops an absent room_rms.
+    private static double RoomSampleOf(CaptureStats stats) => stats.EndReason switch
+    {
+        "no_speech" => stats.MeasuredFloorRms,
+        "trailing_silence" => stats.TrailingSilenceMs > 0 ? stats.TrailingRms : 0,
+        _ => 0
+    };
 
     // Wake metadata is peer-supplied and optional: pre-arbitration firmware sends run-pipeline with
     // no data object at all, and Wyoming has no schema to stop a peer sending the wrong types. Every
@@ -658,7 +687,8 @@ public sealed class WyomingSatelliteHost(
         && value.TryGetValue<string>(out var source)
         && !string.IsNullOrWhiteSpace(source)
             ? source
-            : "wake");
+            : "wake",
+        JsonNumber.ReadDouble(data, "room_rms"));
 
     private static (int Rate, int Width, int Channels) FormatOf(JsonObject data) =>
     (
