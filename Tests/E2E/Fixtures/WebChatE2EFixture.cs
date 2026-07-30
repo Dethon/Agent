@@ -22,7 +22,26 @@ public class WebChatE2EFixture : E2EFixtureBase
     // avoiding server-side state pollution (stream resume, pending approvals) between tests.
     public int NextUserIndex() => _userIndex++ % 10;
 
-    protected override TimeSpan ContainerStartupTimeout => TimeSpan.FromMinutes(15);
+    protected override async Task BuildImagesAsync(CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(GetOpenRouterApiKey()))
+        {
+            return;
+        }
+
+        var solutionRoot = TestHelpers.FindSolutionRoot();
+
+        // Every leaf image is FROM base-sdk:latest, so this must complete first.
+        await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
+
+        // Leaf images are mutually independent; EnsureImageAsync serialises per-tag
+        // internally, so distinct tags building at once is safe.
+        await Task.WhenAll(
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpVault, ct),
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.ChannelSignalR, ct),
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Agent, ct),
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.WebUi, ct));
+    }
 
     protected override async Task StartContainersAsync(CancellationToken ct)
     {
@@ -32,18 +51,11 @@ public class WebChatE2EFixture : E2EFixtureBase
             return;
         }
 
-        var solutionRoot = TestHelpers.FindSolutionRoot();
-
         _network = new NetworkBuilder()
             .WithName($"e2e-webchat-{Guid.NewGuid():N}")
             .Build();
         await _network.CreateAsync(ct);
 
-        // Every leaf image is FROM base-sdk:latest, so this must complete first.
-        await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
-
-        // Leaf images are mutually independent; EnsureImageAsync serialises per-tag
-        // internally, so distinct tags building at once is safe.
         var mcpVaultImageName = E2EImages.McpVault.ImageName;
         var signalRImageName = E2EImages.ChannelSignalR.ImageName;
         var agentImageName = E2EImages.Agent.ImageName;
@@ -56,13 +68,7 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithPortBinding(6379, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(6379))
             .Build();
-
-        await Task.WhenAll(
-            _redis.StartAsync(ct),
-            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpVault, ct),
-            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.ChannelSignalR, ct),
-            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Agent, ct),
-            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.WebUi, ct));
+        await _redis.StartAsync(ct);
 
         _mcpVault = new ContainerBuilder(mcpVaultImageName)
             .WithNetwork(_network)

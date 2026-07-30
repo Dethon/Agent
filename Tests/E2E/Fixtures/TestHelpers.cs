@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 
 namespace Tests.E2E.Fixtures;
 
@@ -52,17 +53,17 @@ internal static class TestHelpers
             // own `FROM base-sdk:latest`.
             await using var fileLock = await AcquireImageFileLockAsync(imageName, ct);
 
-            var imageCreatedAt = await GetDockerImageCreatedAtAsync(imageName, ct);
-            if (imageCreatedAt.HasValue)
+            var newestSource = GetNewestSourceTimestamp(solutionRoot, watchedDirs, dockerfile);
+            var imageExists = await DockerImageExistsAsync(imageName, ct);
+            if (IsImageFresh(imageExists, ReadImageBuildStamp(imageName), newestSource))
             {
-                var newestSource = GetNewestSourceTimestamp(solutionRoot, watchedDirs, dockerfile);
-                if (newestSource <= imageCreatedAt.Value)
-                {
-                    return;
-                }
+                return;
             }
 
+            var elapsed = Stopwatch.StartNew();
             await RunDockerBuildAsync(solutionRoot, dockerfile, imageName, ct);
+            RecordImageBuild(imageName, newestSource);
+            Console.WriteLine($"[e2e] built {imageName} in {elapsed.Elapsed.TotalSeconds:0.0}s");
         }
         finally
         {
@@ -122,15 +123,18 @@ internal static class TestHelpers
         catch (OperationCanceledException)
         {
             process.Kill(entireProcessTree: true);
+            // Both reads have to be observed before the `using` disposes the process out from
+            // under them, or the timeout path leaves two faulted tasks nobody ever looks at.
+            await DrainAsync(stdout, stderr);
             throw;
         }
 
+        var output = string.Join(Environment.NewLine, await stdout, await stderr);
         if (process.ExitCode == 0)
         {
             return;
         }
 
-        var output = string.Join(Environment.NewLine, await stdout, await stderr);
         var tail = string.Join(Environment.NewLine, output
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .TakeLast(40)
@@ -139,13 +143,24 @@ internal static class TestHelpers
             $"docker build failed for {imageName} (exit {process.ExitCode}):{Environment.NewLine}{tail}");
     }
 
+    private static async Task DrainAsync(params Task<string>[] reads)
+    {
+        try
+        {
+            await Task.WhenAll(reads).WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+        }
+        catch
+        {
+            // The build is already being torn down; whatever it managed to print no longer matters.
+        }
+    }
+
     // An OS file handle opened with FileShare.None is released automatically if the process
     // dies, so no stale-lock cleanup is needed. Bounded by the caller's CancellationToken
     // (the fixture timeout).
     private static async Task<FileStream> AcquireImageFileLockAsync(string imageName, CancellationToken ct)
     {
-        var safeName = string.Concat(imageName.Select(c => char.IsLetterOrDigit(c) ? c : '_'));
-        var lockPath = Path.Combine(Path.GetTempPath(), $"agent-tests-image-{safeName}.lock");
+        var lockPath = Path.Combine(Path.GetTempPath(), $"agent-tests-image-{SafeImageName(imageName)}.lock");
         while (true)
         {
             ct.ThrowIfCancellationRequested();
@@ -159,6 +174,37 @@ internal static class TestHelpers
             }
         }
     }
+
+    internal static bool IsImageFresh(bool imageExists, DateTimeOffset? lastBuiltAt, DateTimeOffset newestSource) =>
+        imageExists && lastBuiltAt.HasValue && newestSource <= lastBuiltAt.Value;
+
+    // The stamp records the source state the image was built *from*, not the wall clock at the
+    // end of the build: a file edited while the build was running must still read as stale.
+    internal static void RecordImageBuild(string imageName, DateTimeOffset builtAt) =>
+        File.WriteAllText(BuildStampPath(imageName), builtAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture));
+
+    internal static DateTimeOffset? ReadImageBuildStamp(string imageName)
+    {
+        var path = BuildStampPath(imageName);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParse(
+            File.ReadAllText(path),
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal,
+            out var stamp)
+            ? stamp
+            : null;
+    }
+
+    internal static string BuildStampPath(string imageName) =>
+        Path.Combine(Path.GetTempPath(), $"agent-tests-image-{SafeImageName(imageName)}.stamp");
+
+    private static string SafeImageName(string imageName) =>
+        string.Concat(imageName.Select(c => char.IsLetterOrDigit(c) ? c : '_'));
 
     private static readonly string[] _buildOutputDirs = ["bin", "obj"];
 
@@ -186,31 +232,33 @@ internal static class TestHelpers
             .Max();
     }
 
-    private static async Task<DateTimeOffset?> GetDockerImageCreatedAtAsync(string imageName, CancellationToken ct)
+    // Only existence is asked of docker here. Freshness deliberately does not come from
+    // `--format={{.Created}}`: BuildKit reuses the cached image config when a rebuild produces
+    // identical content, so `.Created` stays pinned to when those layers were first produced and
+    // no rebuild can move it forward. Pair that with a source tree whose mtimes advance without
+    // its content changing — `dotnet format` in the pre-commit hook rewrites files whole — and
+    // the comparison became permanently unsatisfiable, rebuilding all six images every run.
+    private static async Task<bool> DockerImageExistsAsync(string imageName, CancellationToken ct)
     {
         try
         {
-            var psi = new ProcessStartInfo("docker",
-                $"image inspect {imageName} --format={{{{.Created}}}}")
+            var psi = new ProcessStartInfo("docker", $"image inspect {imageName} --format={{{{.Id}}}}")
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false
             };
             using var process = Process.Start(psi)!;
-            var output = await process.StandardOutput.ReadToEndAsync(ct);
+            var stdout = process.StandardOutput.ReadToEndAsync(ct);
+            var stderr = process.StandardError.ReadToEndAsync(ct);
             await process.WaitForExitAsync(ct);
+            await Task.WhenAll(stdout, stderr);
 
-            if (process.ExitCode != 0)
-            {
-                return null;
-            }
-
-            return DateTimeOffset.TryParse(output.Trim(), out var created) ? created : null;
+            return process.ExitCode == 0;
         }
         catch
         {
-            return null;
+            return false;
         }
     }
 }

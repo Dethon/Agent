@@ -13,16 +13,21 @@ public class DashboardE2EFixture : E2EFixtureBase
     public string DashboardUrl { get; private set; } = "";
     public string RedisConnectionString { get; private set; } = "";
 
-    protected override async Task StartContainersAsync(CancellationToken ct)
+    protected override async Task BuildImagesAsync(CancellationToken ct)
     {
         var solutionRoot = TestHelpers.FindSolutionRoot();
 
+        // observability:latest is FROM base-sdk:latest, so the base has to land first.
+        await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
+        await TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Observability, ct);
+    }
+
+    protected override async Task StartContainersAsync(CancellationToken ct)
+    {
         _network = new NetworkBuilder()
             .WithName($"e2e-dashboard-{Guid.NewGuid():N}")
             .Build();
         await _network.CreateAsync(ct);
-
-        await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
 
         _redis = new ContainerBuilder("redis/redis-stack-server:latest")
             .WithName($"redis-{Guid.NewGuid():N}")
@@ -34,7 +39,6 @@ public class DashboardE2EFixture : E2EFixtureBase
         await _redis.StartAsync(ct);
 
         var observabilityImageName = E2EImages.Observability.ImageName;
-        await TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Observability, ct);
 
         _observability = new ContainerBuilder(observabilityImageName)
             .WithNetwork(_network)

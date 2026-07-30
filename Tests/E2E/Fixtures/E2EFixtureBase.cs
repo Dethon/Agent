@@ -7,6 +7,7 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     protected virtual TimeSpan ContainerStartupTimeout => TimeSpan.FromMinutes(5);
+    protected virtual TimeSpan ImageBuildTimeout => TimeSpan.FromMinutes(20);
 
     public async Task InitializeAsync()
     {
@@ -18,8 +19,14 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             Headless = headless
         });
 
-        using var cts = new CancellationTokenSource(ContainerStartupTimeout);
-        await StartContainersAsync(cts.Token);
+        // The fixtures initialise concurrently and share per-tag image locks, so one of them
+        // spends most of this phase queued behind the other's base-sdk build having started no
+        // work of its own. Budgeting builds separately stops that wait from consuming the budget
+        // that exists for starting containers — which is what made the smaller-budget fixture
+        // give up first on a cold run while the other went on to pass.
+        var fixtureName = GetType().Name;
+        await E2EPhase.RunAsync(fixtureName, "image build", ImageBuildTimeout, BuildImagesAsync);
+        await E2EPhase.RunAsync(fixtureName, "container startup", ContainerStartupTimeout, StartContainersAsync);
     }
 
     public async Task<IPage> CreatePageAsync()
@@ -59,6 +66,7 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         return await context.NewPageAsync();
     }
 
+    protected abstract Task BuildImagesAsync(CancellationToken ct);
     protected abstract Task StartContainersAsync(CancellationToken ct);
     protected abstract Task StopContainersAsync();
 
