@@ -18,7 +18,7 @@ const CLF_FRAMES: usize = 16; // classifier window: the last 16 embeddings
 
 /// Root-mean-square level of a chunk of i16 PCM samples, in i16-amplitude units (0..=32768).
 /// Diagnostic only: lets the wake path log how loud each chunk is (silence vs speech vs music)
-/// so detector tuning (threshold, trigger_level, gain) is driven by real on-device levels.
+/// so detector tuning (threshold, window, gain) is driven by real on-device levels.
 pub fn chunk_rms(samples: &[i16]) -> f32 {
     if samples.is_empty() { return 0.0; }
     let sum_sq: f64 = samples.iter().map(|&s| s as f64 * s as f64).sum();
@@ -28,12 +28,76 @@ pub fn chunk_rms(samples: &[i16]) -> f32 {
 #[derive(Clone)]
 pub struct DetectorConfig {
     pub threshold: f32,
-    pub trigger_level: u32,
+    /// How many consecutive classifier scores are averaged before the mean is compared against
+    /// `threshold`. 1 compares each score directly. Raising it buys noise immunity at one extra
+    /// 80 ms frame of wake latency per step — past 3 the total exceeds `wake_preroll_ms`'s 240 ms
+    /// gap flush, so bump that too.
+    pub window: u32,
     pub refractory: Duration,
 }
 impl Default for DetectorConfig {
     fn default() -> Self {
-        Self { threshold: 0.5, trigger_level: 1, refractory: Duration::from_secs_f32(2.0) }
+        Self { threshold: 0.5, window: 1, refractory: Duration::from_secs_f32(2.0) }
+    }
+}
+
+/// The wake decision rule: a sliding mean of the last `window` classifier scores, fired when
+/// that mean reaches `threshold`.
+///
+/// This replaced a consecutive-frame counter that reset to zero on any single frame below
+/// threshold. With a jittery score trace — which is what background TV or music produces — one
+/// dip between two strong frames threw the whole utterance away, so the satellite would not
+/// wake even when the phrase was clearly spoken. Averaging rides through the dip. It is also
+/// what microWakeWord/ESPHome does, and it subsumes the old `trigger_level` knob: `window` 1 is
+/// the old level 1, and `window` n is strictly more permissive than the old level n (that
+/// required every frame at or above threshold; the mean only needs them to average it).
+///
+/// Deliberately model-free so the rule is testable with plain numbers, no ONNX inference.
+struct WindowTrigger {
+    scores: VecDeque<f32>,
+    window: usize,
+    threshold: f32,
+    refractory: Duration,
+    refractory_until: Option<Instant>,
+}
+
+impl WindowTrigger {
+    fn new(cfg: &DetectorConfig) -> Self {
+        Self {
+            scores: VecDeque::with_capacity(cfg.window as usize),
+            window: (cfg.window as usize).max(1),
+            threshold: cfg.threshold,
+            refractory: cfg.refractory,
+            refractory_until: None,
+        }
+    }
+
+    /// Feed one classifier score. Returns `(fired, mean)`, where `mean` is over the scores
+    /// currently buffered — diagnostic only, and 0.0 while the refractory is suppressing input.
+    ///
+    /// A partial window never fires: after a fire or a reset the next `window - 1` frames carry
+    /// no decision. Firing clears the buffer, so the stale high scores that produced it cannot
+    /// immediately re-fire once the refractory expires.
+    fn push(&mut self, score: f32) -> (bool, f32) {
+        if let Some(until) = self.refractory_until {
+            if Instant::now() < until { return (false, 0.0); }
+            self.refractory_until = None;
+        }
+        self.scores.push_back(score);
+        while self.scores.len() > self.window { self.scores.pop_front(); }
+        let mean = self.scores.iter().sum::<f32>() / self.scores.len() as f32;
+        if self.scores.len() < self.window { return (false, mean); }
+        if mean >= self.threshold {
+            self.scores.clear();
+            self.refractory_until = Some(Instant::now() + self.refractory);
+            return (true, mean);
+        }
+        (false, mean)
+    }
+
+    fn reset(&mut self) {
+        self.scores.clear();
+        self.refractory_until = None;
     }
 }
 
@@ -77,12 +141,10 @@ pub struct WakeDetector {
     mel: Model,
     emb: Model,
     clf: Model,
-    cfg: DetectorConfig,
     tail: Vec<f32>,                    // last LOOKBACK samples, zero-seeded
     mel_buf: VecDeque<[f32; 32]>,      // last 76 mel frames, ones-seeded (mirrors openwakeword)
     emb_buf: VecDeque<[f32; EMB_DIM]>, // last 16 embeddings
-    activations: u32,
-    refractory_until: Option<Instant>,
+    trigger: WindowTrigger,
 }
 
 impl WakeDetector {
@@ -91,12 +153,10 @@ impl WakeDetector {
             mel: models.mel.clone(),
             emb: models.emb.clone(),
             clf: models.clf.clone(),
-            cfg,
             tail: vec![0f32; LOOKBACK],
             mel_buf: (0..MEL_FRAMES).map(|_| [1f32; 32]).collect(),
             emb_buf: VecDeque::new(),
-            activations: 0,
-            refractory_until: None,
+            trigger: WindowTrigger::new(&cfg),
         })
     }
 
@@ -144,33 +204,18 @@ impl WakeDetector {
                 tract_ndarray::Array3::from_shape_vec((1, CLF_FRAMES, EMB_DIM), c).unwrap().into();
             let co = self.clf.run(tvec!(ct.into())).expect("clf run");
             let score = co[0].to_plain_array_view::<f32>().unwrap()[[0, 0]];
-            // Diagnostic (tuning): per-chunk wake score + mic level, for setting threshold /
-            // trigger_level from real on-device data. At debug so it's silent in production
-            // (RUST_LOG=info) but available via RUST_LOG=...=debug when tuning; gated at a low
-            // score floor so even at debug idle silence doesn't flood, and rms (and the macro
-            // fields) are only evaluated when the level is enabled — the steady path pays nothing.
-            if score >= 0.05 { tracing::debug!(score, rms = chunk_rms(chunk), "wake score"); }
-            if self.evaluate(score) { return Some(score); }
+            // The trigger must see EVERY frame, so push before the log gate below.
+            let (fired, mean) = self.trigger.push(score);
+            // Diagnostic (tuning): per-chunk wake score, the window mean the rule actually acts
+            // on, and mic level — for setting threshold / window from real on-device data. At
+            // debug so it's silent in production (RUST_LOG=info) but available via
+            // RUST_LOG=...=debug when tuning; gated at a low score floor so even at debug idle
+            // silence doesn't flood, and rms (and the macro fields) are only evaluated when the
+            // level is enabled — the steady path pays nothing.
+            if score >= 0.05 { tracing::debug!(score, mean, rms = chunk_rms(chunk), "wake score"); }
+            if fired { return Some(score); }
         }
         None
-    }
-
-    fn evaluate(&mut self, score: f32) -> bool {
-        if let Some(until) = self.refractory_until {
-            if Instant::now() < until { return false; }
-            self.refractory_until = None;
-        }
-        if score >= self.cfg.threshold {
-            self.activations += 1;
-            if self.activations >= self.cfg.trigger_level {
-                self.activations = 0;
-                self.refractory_until = Some(Instant::now() + self.cfg.refractory);
-                return true;
-            }
-        } else {
-            self.activations = 0;
-        }
-        false
     }
 
     /// Clear streaming state when re-arming after a turn.
@@ -178,8 +223,7 @@ impl WakeDetector {
         self.tail.fill(0.0);
         self.mel_buf = (0..MEL_FRAMES).map(|_| [1f32; 32]).collect();
         self.emb_buf.clear();
-        self.activations = 0;
-        self.refractory_until = None;
+        self.trigger.reset();
     }
 }
 
@@ -246,5 +290,95 @@ mod tests {
             .collect();
         assert_eq!(scores.len(), 1, "exactly one wake from one utterance");
         assert!(scores[0] >= 0.5, "winning score is at least the threshold, got {}", scores[0]);
+    }
+
+    // ---- WindowTrigger: the decision rule, tested with plain numbers (no ONNX inference) ----
+
+    fn trigger(window: u32, threshold: f32, refractory_ms: u64) -> WindowTrigger {
+        WindowTrigger::new(&DetectorConfig {
+            threshold,
+            window,
+            refractory: Duration::from_millis(refractory_ms),
+        })
+    }
+
+    /// The whole point of the change: the old consecutive-frame counter reset on any single
+    /// frame below threshold, so a jittery score trace in noise threw the utterance away.
+    #[test]
+    fn window_mean_fires_through_a_single_frame_dip() {
+        let mut t = trigger(3, 0.7, 0);
+        assert!(!t.push(0.75).0);
+        assert!(!t.push(0.68).0, "second frame dips below threshold");
+        assert!(t.push(0.78).0, "mean 0.7367 clears 0.7 despite the dip");
+    }
+
+    #[test]
+    fn window_mean_stays_silent_on_a_plateau_below_threshold() {
+        let mut t = trigger(3, 0.7, 0);
+        for s in [0.60, 0.62, 0.64, 0.63, 0.61] {
+            assert!(!t.push(s).0, "mean never reaches 0.7, so {s} must not fire");
+        }
+    }
+
+    /// A partial window must never fire: after a reset the first window-1 frames carry no
+    /// decision, exactly as trigger_level 2 cost one frame of deadness before.
+    #[test]
+    fn partial_window_never_fires() {
+        let mut t = trigger(3, 0.7, 0);
+        assert!(!t.push(0.99).0);
+        assert!(!t.push(0.99).0);
+        assert!(t.push(0.99).0, "fires only once the window is full");
+    }
+
+    /// Firing clears the buffer. Without this the stale high scores still in it would re-fire
+    /// on the very next frame once the refractory expired.
+    #[test]
+    fn firing_clears_the_window() {
+        let mut t = trigger(3, 0.7, 0);
+        let fires = (0..6).filter(|_| t.push(0.8).0).count();
+        assert_eq!(fires, 2, "6 frames at window 3 = 2 fires, not 4");
+    }
+
+    #[test]
+    fn refractory_suppresses_then_expires() {
+        let mut t = trigger(1, 0.7, 40);
+        assert!(t.push(0.9).0, "first frame fires");
+        assert!(!t.push(0.9).0, "second is inside the refractory");
+        std::thread::sleep(Duration::from_millis(60));
+        assert!(t.push(0.9).0, "fires again once the refractory has expired");
+    }
+
+    /// window 1 is the default and must behave exactly like the old trigger_level 1: the
+    /// instantaneous score compared straight against the threshold.
+    #[test]
+    fn window_of_one_fires_on_any_frame_at_threshold() {
+        let mut t = trigger(1, 0.7, 0);
+        assert!(t.push(0.8).0);
+        assert!(!t.push(0.6).0);
+        assert!(t.push(0.71).0);
+    }
+
+    #[test]
+    fn reset_clears_window_and_refractory() {
+        let mut t = trigger(3, 0.7, 60_000);
+        assert!(!t.push(0.8).0);
+        assert!(!t.push(0.8).0);
+        t.reset();
+        assert!(!t.push(0.8).0, "reset dropped the two buffered frames");
+        assert!(!t.push(0.8).0);
+        assert!(t.push(0.8).0, "a fresh full window fires");
+        t.reset();
+        assert!(!t.push(0.8).0, "reset also cleared the 60 s refractory");
+        assert!(!t.push(0.8).0);
+        assert!(t.push(0.8).0, "so a full window fires instead of being suppressed");
+    }
+
+    #[test]
+    fn push_reports_the_mean_it_evaluated() {
+        let mut t = trigger(2, 0.9, 0);
+        assert_eq!(t.push(0.4).1, 0.4, "partial window reports what it has");
+        let (fired, mean) = t.push(0.6);
+        assert!(!fired);
+        assert!((mean - 0.5).abs() < 1e-6, "mean of 0.4 and 0.6, got {mean}");
     }
 }

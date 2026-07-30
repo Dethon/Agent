@@ -89,7 +89,8 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Flags: --listen --mic-command --snd-command --alert-snd-command --threshold --trigger-level --no-wake
+    /// Flags: --listen --mic-command --snd-command --alert-snd-command --threshold --no-wake
+    ///        --wake-window <n> (alias: --trigger-level)
     ///        --button-gpio <pin> | --button-evdev <device>:<keycode> | --no-button
     ///        --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
@@ -109,7 +110,17 @@ impl Config {
             .opt_value_from_str::<_, String>("--alert-snd-command")?
             .unwrap_or_else(|| c.snd_command.clone());
         if let Some(v) = pa.opt_value_from_str::<_, f32>("--threshold")? { c.detector.threshold = v; }
-        if let Some(v) = pa.opt_value_from_str::<_, u32>("--trigger-level")? { c.detector.trigger_level = v; }
+        // --wake-window is the sliding-mean length. --trigger-level is its pre-sliding-window
+        // name, still accepted because parse() errors on unknown arguments below: a unit file
+        // still carrying the old flag would otherwise fail to start and loop under
+        // Restart=always. BOTH are always read, even when --wake-window wins, so a leftover
+        // alias can't land in `rest` and trip that same check.
+        let wake_window = pa.opt_value_from_str::<_, u32>("--wake-window")?;
+        let trigger_level = pa.opt_value_from_str::<_, u32>("--trigger-level")?;
+        if let Some(v) = wake_window.or(trigger_level) {
+            anyhow::ensure!(v >= 1, "--wake-window must be at least 1 (got {v})");
+            c.detector.window = v;
+        }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--preroll-ms")? { c.preroll_ms = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u32>("--wake-preroll-ms")? { c.wake_preroll_ms = v; }
         if pa.contains("--no-wake") { c.wake_enabled = false; }
@@ -175,10 +186,37 @@ mod tests {
     }
 
     #[test]
-    fn trigger_level_defaults_to_one_and_flag_parses() {
-        assert_eq!(Config::default().detector.trigger_level, 1);
+    fn wake_window_defaults_to_one_and_flag_parses() {
+        assert_eq!(Config::default().detector.window, 1);
+        let c = Config::parse(args(&["--wake-window", "3"])).unwrap();
+        assert_eq!(c.detector.window, 3);
+    }
+
+    /// --trigger-level is the pre-sliding-window name, kept as an alias because parse() errors
+    /// on unknown arguments: a unit file still carrying the old flag would otherwise fail to
+    /// start and loop forever under Restart=always.
+    #[test]
+    fn trigger_level_alias_still_sets_the_window() {
         let c = Config::parse(args(&["--trigger-level", "3"])).unwrap();
-        assert_eq!(c.detector.trigger_level, 3);
+        assert_eq!(c.detector.window, 3);
+    }
+
+    #[test]
+    fn wake_window_wins_over_the_trigger_level_alias() {
+        let c = Config::parse(pico_args::Arguments::from_vec(vec![
+            "--wake-window".into(), "4".into(),
+            "--trigger-level".into(), "2".into(),
+        ]))
+        .unwrap();
+        assert_eq!(c.detector.window, 4);
+    }
+
+    /// A zero window would average nothing and fire on every frame; provisioning's own regex
+    /// rejects it, but the flag is reachable directly.
+    #[test]
+    fn zero_wake_window_is_rejected() {
+        assert!(Config::parse(args(&["--wake-window", "0"])).is_err());
+        assert!(Config::parse(args(&["--trigger-level", "0"])).is_err());
     }
 
     #[test]

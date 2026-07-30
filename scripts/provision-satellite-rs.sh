@@ -4,12 +4,17 @@ set -euo pipefail
 # Usage: scripts/provision-satellite-rs.sh <user@host> [mic-device]
 #   Music satellite: MUSIC_HUB=<snapserver-host> MUSIC_ROOM=<player-name> [TTS_VOLUME=<pct>] \
 #                    [ALERT_VOLUME=<pct>] scripts/provision-satellite-rs.sh <user@host>
-#   Wake tuning:     THRESHOLD=<0..1> TRIGGER_LEVEL=<n> scripts/provision-satellite-rs.sh <user@host>
+#   Wake tuning:     THRESHOLD=<0..1> WAKE_WINDOW=<n> scripts/provision-satellite-rs.sh <user@host>
 #                    Defaults 0.7 / 2 — applied to BOTH unit paths (the voice-only ExecStart and
 #                    the music drop-in that overrides it), so a music unit is tuned by the same
-#                    two vars. LOWER threshold / trigger-level = easier wake but more false
-#                    positives; on a music satellite trigger-level 1 is what made music itself
-#                    trigger the wake word (raised to 2 to fix it) — retune one knob at a time.
+#                    two vars. WAKE_WINDOW is how many 80 ms classifier scores are AVERAGED before
+#                    the mean is compared against THRESHOLD (it replaced TRIGGER_LEVEL, which
+#                    counted consecutive frames and reset on any single dip — a jittery score
+#                    trace under background TV or music never fired). TRIGGER_LEVEL is still read
+#                    as an alias. LOWER threshold or window = easier wake but more false positives;
+#                    window 1 with a low threshold is what made music itself trigger the wake word
+#                    — retune one knob at a time. Above 3 the added wake latency exceeds the
+#                    240 ms --wake-preroll-ms gap flush, so raise that too.
 #   I2S DAC/amp HAT (e.g. MiniAmp): additionally DAC_OVERLAY=hifiberry-dac — I2S hardware is
 #                    electrically undiscoverable, so the overlay must be declared; the script
 #                    writes it to config.txt, reboots the Pi, waits, and continues (one-shot).
@@ -61,9 +66,11 @@ mic=${2:-}     # empty => auto-detect the USB audio card, address it by name
 # spliced into the unit's ExecStart, so a malformed one would install a satellite that fails to
 # start — a bricked Pi is a much worse failure than a rejected argument.
 threshold=${THRESHOLD:-0.7}
-trigger_level=${TRIGGER_LEVEL:-2}
+# TRIGGER_LEVEL is the pre-sliding-window name, still honoured so muscle memory (and any wrapper
+# script) keeps working instead of being silently ignored; WAKE_WINDOW wins when both are set.
+wake_window=${WAKE_WINDOW:-${TRIGGER_LEVEL:-2}}
 [[ $threshold =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "ERROR: THRESHOLD must be a number in 0..1 (got '$threshold')" >&2; exit 1; }
-[[ $trigger_level =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: TRIGGER_LEVEL must be a positive integer (got '$trigger_level')" >&2; exit 1; }
+[[ $wake_window =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: WAKE_WINDOW must be a positive integer (got '$wake_window')" >&2; exit 1; }
 
 # Softvol levels, validated here for the same reason: a malformed one fails at `amixer` under
 # `set -e` only AFTER asound.conf and the PipeWire master have already been rewritten, leaving a
@@ -132,11 +139,11 @@ scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-satellite.service"
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/snapclient.service" "$host:/tmp/"
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-micclock.service" "$host:/tmp/"
 
-# Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/ALERT_VOLUME/THRESHOLD/TRIGGER_LEVEL env
+# Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/ALERT_VOLUME/THRESHOLD/WAKE_WINDOW env
 # vars: nothing is expanded locally; the remote bash evaluates everything (and reads vars from the
-# command-prefix assignments). TTS_VOLUME/ALERT_VOLUME/THRESHOLD/TRIGGER_LEVEL arrive already
-# defaulted and validated above.
-ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${tts_volume}" ALERT_VOLUME="${alert_volume}" THRESHOLD="${threshold}" TRIGGER_LEVEL="${trigger_level}" bash -se <<'EOF'
+# command-prefix assignments). TTS_VOLUME/ALERT_VOLUME/THRESHOLD/WAKE_WINDOW arrive already
+# defaulted and validated above (WAKE_WINDOW having absorbed any TRIGGER_LEVEL alias).
+ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${tts_volume}" ALERT_VOLUME="${alert_volume}" THRESHOLD="${threshold}" WAKE_WINDOW="${wake_window}" bash -se <<'EOF'
   set -euo pipefail
 
   if [ -n "${MUSIC_HUB:-}" ] && [ -n "${MIC}" ]; then
@@ -378,7 +385,7 @@ ExecStart=/usr/local/bin/nabu-satellite \\
   --preroll-ms 1000 \\
   --music-mixer Music --music-card ${outctl} \\
   --threshold ${THRESHOLD} \\
-  --trigger-level ${TRIGGER_LEVEL}
+  --wake-window ${WAKE_WINDOW}
 DROPEOF
   else
     # downgrade / voice-only: tear down any prior music install so a re-provisioned Pi returns to
@@ -390,18 +397,20 @@ DROPEOF
   fi
 
   # Template the base (voice) unit: mic + snd devices -> the detected plughw, wake tuning -> the
-  # THRESHOLD/TRIGGER_LEVEL vars, %i -> user. Music units additionally carry the pipewire.conf
+  # THRESHOLD/WAKE_WINDOW vars, %i -> user. Music units additionally carry the pipewire.conf
   # drop-in written above, which overrides this ExecStart to route TTS/cues to PipeWire — it
   # carries the same two tuning values, so tuning applies either way.
-  # The device substitutions rewrite the whole -D argument rather than matching a literal
-  # placeholder, so changing the unit template's default devices can't silently break
-  # provisioning. Anchored to the ExecStart continuation lines (leading whitespace) so the
-  # header COMMENTS, which also mention --mic-command/--snd-command and carry their own
-  # `-D` examples, are left alone.
+  # Every substitution rewrites the ARGUMENT rather than matching a literal default value, so
+  # changing the unit template's defaults can't silently break provisioning (the tuning seds used
+  # to match `--threshold 0.7` / `--trigger-level 2` verbatim and would have gone quietly inert
+  # the moment either default moved). `[^ ]*` stops at the value token, leaving the ExecStart's
+  # trailing ` \` continuation intact. All are anchored to the continuation lines (leading
+  # whitespace) so the header COMMENTS, which mention the same flags and carry their own `-D`
+  # examples, are left alone.
   sudo sed -e "/^[[:space:]]*--mic-command/ s#-D [^ ]*#-D ${dev}#" \
            -e "/^[[:space:]]*--snd-command/ s#-D [^ ]*#-D ${snddev}#" \
-           -e "s#--threshold 0\.7#--threshold ${THRESHOLD}#" \
-           -e "s#--trigger-level 2#--trigger-level ${TRIGGER_LEVEL}#" \
+           -e "/^[[:space:]]*--threshold/ s#--threshold [^ ]*#--threshold ${THRESHOLD}#" \
+           -e "/^[[:space:]]*--wake-window/ s#--wake-window [^ ]*#--wake-window ${WAKE_WINDOW}#" \
            -e "s/%i/$user/g" \
            /tmp/nabu-satellite.service | sudo tee /etc/systemd/system/nabu-satellite.service >/dev/null
 
