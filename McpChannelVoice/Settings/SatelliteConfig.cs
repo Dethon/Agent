@@ -112,6 +112,7 @@ public record SttOverrides
 public record OpenAiSttOverrides
 {
     public string? Language { get; init; }
+    public string? Prompt { get; init; }
     public double? AvgLogProbThreshold { get; init; }
     public double? NoSpeechProbThreshold { get; init; }
 }

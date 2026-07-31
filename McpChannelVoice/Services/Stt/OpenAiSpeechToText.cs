@@ -49,7 +49,8 @@ public sealed class OpenAiSpeechToText(
         }
 
         if (WhisperPromptBuilder.Build(
-                config.Prompt, options.Room, options.Locality, options.Prompt, config.MaxPromptChars)
+                options.PromptTemplate ?? config.Prompt, options.Room, options.Locality,
+                options.PriorText, config.MaxPromptChars)
             is { } prompt)
         {
             content.Add(new StringContent(prompt), "prompt");

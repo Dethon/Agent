@@ -1,3 +1,4 @@
+using McpChannelVoice.Services.Stt;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
@@ -222,5 +223,55 @@ public class VoiceSettingsBindingTests
                 Environment.SetEnvironmentVariable(k, null);
             }
         }
+    }
+
+    [Fact]
+    public void TranscriptionOptionsFactory_Create_CarriesRoomAndLocality()
+    {
+        var config = new SatelliteConfig
+        {
+            Identity = "household",
+            Room = "Fran's office",
+            Locality = "Valladolid, Spain"
+        };
+
+        var options = TranscriptionOptionsFactory.Create("fran-office-01", config, null, default);
+
+        options.Room.ShouldBe("Fran's office");
+        options.Locality.ShouldBe("Valladolid, Spain");
+    }
+
+    // Symmetric with the Language override: the factory carries only the satellite's value and a
+    // null falls back to the global Stt.OpenAi.Prompt inside the backend.
+    [Fact]
+    public void TranscriptionOptionsFactory_NoSatellitePrompt_LeavesTheTemplateNull()
+    {
+        var config = new SatelliteConfig { Identity = "household", Room = "Kitchen" };
+
+        TranscriptionOptionsFactory.Create("kitchen-01", config, null, default)
+            .PromptTemplate.ShouldBeNull();
+    }
+
+    [Fact]
+    public void TranscriptionOptionsFactory_SatellitePrompt_ReachesTheTemplate()
+    {
+        var config = new SatelliteConfig
+        {
+            Identity = "household",
+            Room = "Kitchen",
+            Stt = new SttOverrides { OpenAi = new OpenAiSttOverrides { Prompt = "room text" } }
+        };
+
+        TranscriptionOptionsFactory.Create("kitchen-01", config, null, default)
+            .PromptTemplate.ShouldBe("room text");
+    }
+
+    [Fact]
+    public void OpenAiSttConfig_PromptDefaults_MatchTheShippedWindow()
+    {
+        var config = new OpenAiSttConfig();
+
+        config.Prompt.ShouldBeNull();
+        config.MaxPromptChars.ShouldBe(700);
     }
 }
