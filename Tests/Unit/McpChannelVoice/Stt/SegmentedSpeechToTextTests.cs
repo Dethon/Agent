@@ -161,11 +161,29 @@ public class SegmentedSpeechToTextTests
 
         // Leading Silence(1) seeds the floor (pre-roll gap) — see the identical note
         // on TranscribeAsync_ManySegments_RespectsMaxInFlightDecodes above.
-        await New(inner, Config(maxInFlight: 2)).TranscribeAsync(
+        // ChainContext off: chaining makes a segment await its predecessor's transcript, which
+        // serializes decodes by construction — pinned by the test below.
+        await New(inner, Config(maxInFlight: 2) with { ChainContext = false }).TranscribeAsync(
             Stream(Silence(1), Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
             new TranscriptionOptions(), CancellationToken.None);
 
         inner.MaxConcurrent.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_ChainContext_SerializesDecodesRegardlessOfMaxInFlight()
+    {
+        var inner = new FakeStt(async count =>
+        {
+            await Task.Delay(50);
+            return new TranscriptionResult { Text = count.ToString() };
+        });
+
+        await New(inner, Config(maxInFlight: 2) with { ChainContext = true }).TranscribeAsync(
+            Stream(Silence(1), Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.MaxConcurrent.ShouldBe(1);
     }
 
     [Fact]
@@ -353,5 +371,59 @@ public class SegmentedSpeechToTextTests
             new TranscriptionOptions(), CancellationToken.None);
 
         inner.Calls.ShouldBe(2);
+    }
+
+    // Records the options each segment was decoded with, and returns a distinct word per call so
+    // the chained prompt is identifiable.
+    private sealed class OptionsRecordingStt : ISpeechToText
+    {
+        private readonly Lock _lock = new();
+        private int _calls;
+        public List<string?> PriorTexts { get; } = [];
+
+        public async Task<TranscriptionResult> TranscribeAsync(
+            IAsyncEnumerable<AudioChunk> audio, TranscriptionOptions options, CancellationToken ct)
+        {
+            await foreach (var _ in audio.WithCancellation(ct))
+            {
+            }
+
+            int index;
+            lock (_lock)
+            {
+                PriorTexts.Add(options.PriorText);
+                index = _calls++;
+            }
+            return new TranscriptionResult { Text = $"seg{index}" };
+        }
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_ChainContext_PassesThePriorSegmentTextAsThePriorText()
+    {
+        var inner = new OptionsRecordingStt();
+        var sut = New(inner, Config() with { ChainContext = true });
+
+        await sut.TranscribeAsync(
+            Stream(Silence(1), Speech(6), Silence(4), Speech(6), Silence(4)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.PriorTexts.Count.ShouldBe(2);
+        inner.PriorTexts[0].ShouldBeNull();
+        inner.PriorTexts[1].ShouldBe("seg0");
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_ChainContextOff_LeavesThePriorTextAlone()
+    {
+        var inner = new OptionsRecordingStt();
+        var sut = New(inner, Config() with { ChainContext = false });
+
+        await sut.TranscribeAsync(
+            Stream(Silence(1), Speech(6), Silence(4), Speech(6), Silence(4)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.PriorTexts.Count.ShouldBe(2);
+        inner.PriorTexts.ShouldAllBe(p => p == null);
     }
 }

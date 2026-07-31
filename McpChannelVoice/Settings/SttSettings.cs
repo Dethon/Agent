@@ -52,4 +52,10 @@ public record SegmentedSttConfig
     // wrong verb and a duplicated number. Only the FIRST split is gated: once an utterance has
     // proven itself long, later splits keep the overlap-with-speech latency win.
     public int FirstSplitAfterMs { get; init; } = 4000;
+
+    // Feed each segment the previous segment's transcript as whisper's initial prompt, so a
+    // fragment is decoded as the continuation it is rather than as a standalone utterance. This
+    // serializes decodes by construction, which is why MaxInFlightDecodes buys nothing while it
+    // is on (SegmentedSpeechToText.Wrap warns if both are set).
+    public bool ChainContext { get; init; } = true;
 }
