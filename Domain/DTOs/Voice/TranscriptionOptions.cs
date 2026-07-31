@@ -14,4 +14,10 @@ public record TranscriptionOptions
     // attribute their events to the satellite/room the way the host's own publishes do.
     public string? SatelliteId { get; init; }
     public string? Room { get; init; }
+    public string? Locality { get; init; }
+
+    // Text that immediately precedes this audio — the prior segment's transcript when a
+    // segmenting decorator split the utterance. Posted as whisper's initial prompt so a fragment
+    // is decoded as the continuation it actually is.
+    public string? Prompt { get; init; }
 }

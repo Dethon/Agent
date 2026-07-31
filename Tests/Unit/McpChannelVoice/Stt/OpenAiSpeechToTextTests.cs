@@ -226,4 +226,43 @@ public class OpenAiSpeechToTextTests
         await Should.ThrowAsync<InvalidOperationException>(() =>
             sut.TranscribeAsync(Chunks(new byte[32]), new TranscriptionOptions(), CancellationToken.None));
     }
+
+    [Fact]
+    public async Task TranscribeAsync_NoConfiguredPrompt_OmitsThePromptField()
+    {
+        var handler = new StubHandler(_ => Json("""{ "text": "hola" }"""));
+        var sut = Sut(handler);
+
+        await sut.TranscribeAsync(Chunks(new byte[32]), new TranscriptionOptions(), CancellationToken.None);
+
+        handler.Fields.ShouldNotContainKey("prompt");
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_ConfiguredPrompt_SendsItWithPlaceholdersResolved()
+    {
+        var handler = new StubHandler(_ => Json("""{ "text": "hola" }"""));
+        var sut = Sut(handler, new OpenAiSttConfig { Prompt = "Órdenes en {room} ({locality})." });
+
+        await sut.TranscribeAsync(
+            Chunks(new byte[32]),
+            new TranscriptionOptions { Room = "la cocina", Locality = "Valladolid" },
+            CancellationToken.None);
+
+        handler.Fields["prompt"].ShouldBe("Órdenes en la cocina (Valladolid).");
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_OptionsPrompt_IsAppendedAfterTheConfiguredText()
+    {
+        var handler = new StubHandler(_ => Json("""{ "text": "hola" }"""));
+        var sut = Sut(handler, new OpenAiSttConfig { Prompt = "Órdenes breves." });
+
+        await sut.TranscribeAsync(
+            Chunks(new byte[32]),
+            new TranscriptionOptions { Prompt = "pon el temporizador" },
+            CancellationToken.None);
+
+        handler.Fields["prompt"].ShouldBe("Órdenes breves. pon el temporizador");
+    }
 }

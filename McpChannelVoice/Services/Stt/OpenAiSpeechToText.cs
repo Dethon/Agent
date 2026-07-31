@@ -48,6 +48,13 @@ public sealed class OpenAiSpeechToText(
             content.Add(new StringContent(language), "language");
         }
 
+        if (WhisperPromptBuilder.Build(
+                config.Prompt, options.Room, options.Locality, options.Prompt, config.MaxPromptChars)
+            is { } prompt)
+        {
+            content.Add(new StringContent(prompt), "prompt");
+        }
+
         using var response = await PostWithTimeoutAsync(content, ct);
         response.EnsureSuccessStatusCode();
 

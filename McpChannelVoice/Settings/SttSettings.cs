@@ -17,6 +17,16 @@ public record OpenAiSttConfig
     public string Model { get; init; } = "Whisper-Medium";
     public string? Language { get; init; }
 
+    // Initial prompt posted with every transcription: it biases spelling and vocabulary, and on a
+    // one-to-three-second command it carries proportionally far more weight than on a paragraph.
+    // Supports {room} and {locality}, filled from the capturing satellite. A per-request prompt
+    // replaces whisper-server's own --prompt for that request, so this is authoritative for hub
+    // traffic and the container default only serves other callers.
+    public string? Prompt { get; init; }
+
+    // Character approximation of whisper's 224-token prompt window, deliberately under it.
+    public int MaxPromptChars { get; init; } = 700;
+
     // Gibberish gate: drop transcripts whose avg_logprob falls below the floor or whose
     // no_speech_prob rises above the ceiling. Null signals fail open (TranscriptDispatcher).
     public double AvgLogProbThreshold { get; init; } = -1.0;
