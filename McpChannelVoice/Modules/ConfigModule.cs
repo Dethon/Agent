@@ -57,6 +57,8 @@ public static class ConfigModule
                 sp.GetRequiredService<VoiceConversationManager>(),
                 avgLogProbThreshold: settings.Stt.OpenAi.AvgLogProbThreshold,
                 noSpeechProbThreshold: settings.Stt.OpenAi.NoSpeechProbThreshold,
+                shortSpeechAvgLogProbThreshold: settings.Stt.OpenAi.ShortSpeechAvgLogProbThreshold,
+                fullThresholdSpeechMs: settings.Stt.OpenAi.FullThresholdSpeechMs,
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<TranscriptDispatcher>>()))
             .AddSingleton(sp => new VoiceConversationManager(

@@ -274,4 +274,13 @@ public class VoiceSettingsBindingTests
         config.Prompt.ShouldBeNull();
         config.MaxPromptChars.ShouldBe(700);
     }
+
+    [Fact]
+    public void OpenAiSttConfig_ShortSpeechDefaults_MatchTheShippedGate()
+    {
+        var config = new OpenAiSttConfig();
+
+        config.ShortSpeechAvgLogProbThreshold.ShouldBe(-1.4);
+        config.FullThresholdSpeechMs.ShouldBe(2000);
+    }
 }

@@ -32,6 +32,14 @@ public record OpenAiSttConfig
     public double AvgLogProbThreshold { get; init; } = -1.0;
     public double NoSpeechProbThreshold { get; init; } = 0.6;
 
+    // avg_logprob falls with utterance length for reasons that have nothing to do with being
+    // wrong — measured on prod, a 2.9 s clip scored -0.12 and a 0.75 s clip -0.23 — so a single
+    // floor drops correct short commands more readily than correct long ones. Below
+    // FullThresholdSpeechMs of measured speech the looser floor applies. Mirrors the pair
+    // SpeakerVerification already uses for the same reason.
+    public double ShortSpeechAvgLogProbThreshold { get; init; } = -1.4;
+    public int FullThresholdSpeechMs { get; init; } = 2000;
+
     // Bounds the transcription POST only — audio capture length is the speaker's business. The
     // shared Lemonade HttpClient has an infinite timeout for streaming TTS, so without this a
     // Lemonade that accepts connections but never answers stalls the utterance indefinitely.

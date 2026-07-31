@@ -187,7 +187,7 @@ public class WakeArbitrationHostTests
             factory.Object, new ReplyTextAccumulator(), TimeProvider.System,
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, metrics, manager, -1.0, 0.6, TimeProvider.System,
+            emitter, metrics, manager, -1.0, 0.6, -1.4, 2000, TimeProvider.System,
             NullLogger<TranscriptDispatcher>.Instance);
         var arbiter = new WakeArbiter(
             voiceSettings.Arbitration, manager, metrics, TimeProvider.System,
