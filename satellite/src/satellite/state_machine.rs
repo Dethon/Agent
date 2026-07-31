@@ -38,10 +38,30 @@ impl Drop for AbortOnDrop {
 struct Ctx<'a> {
     cues: &'a Cues,
     led: &'a watch::Sender<LedState>,
+    volume: &'a std::sync::Arc<crate::volume::VolumeControl>,
+    /// Per-connection: an alert hold is outstanding, so the sink is unmuted for a ringing alarm
+    /// and the user's mute has to be put back when it ends — or when the connection dies.
+    alert_held: &'a std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Restores the user's mute if the connection dies while an alert hold is outstanding. Drop
+/// cannot await, so it fires a detached wpctl — the same fail-safe shape as music.rs's DuckGuard.
+struct HoldGuard {
+    volume: std::sync::Arc<crate::volume::VolumeControl>,
+    held: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for HoldGuard {
+    fn drop(&mut self) {
+        if self.held.load(std::sync::atomic::Ordering::SeqCst) {
+            self.volume.restore_user_mute_detached();
+        }
+    }
 }
 
 pub async fn run_connection(
     reader: OwnedReadHalf, writer: OwnedWriteHalf, cfg: Config, models: Option<WakeModels>,
+    volume: std::sync::Arc<crate::volume::VolumeControl>,
 ) -> anyhow::Result<()> {
     let mut wr = writer;
     let mic = MicCapture::spawn(&cfg.mic_command)?;
@@ -109,7 +129,8 @@ pub async fn run_connection(
         cfg.duck_percent,
         std::time::Duration::from_millis(cfg.music_restore_grace_ms),
     );
-    let ctx = Ctx { cues: &cues, led: &led_tx };
+    let alert_held = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let ctx = Ctx { cues: &cues, led: &led_tx, volume: &volume, alert_held: &alert_held };
 
     // Playback is a pump task too: PlaybackSink::finish() waits for the player to drain
     // (≈0.5-2 s of buffered TTS after every reply) and must not park this loop — wake/button
@@ -119,6 +140,9 @@ pub async fn run_connection(
     let (mut playback, mut playback_done, pump_task) =
         spawn_pump(&cfg.snd_command, &cfg.alert_snd_command);
     let _playback_pump = AbortOnDrop(pump_task);
+    // Covers every exit path — the ? error paths below and the task abort on connection
+    // supersede alike — because both simply drop this local.
+    let _hold_guard = HoldGuard { volume: volume.clone(), held: alert_held.clone() };
 
     // Pre-roll ring: keep the last `preroll_chunks()` mic chunks while Idle, so a request spoken
     // immediately after the wake word/button is never clipped (the zero-lag requirement).
@@ -370,6 +394,65 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
             // pump reports DrainDone (apply_drain_done), i.e. at actual playback end.
             playback.stop().await?;
         }
+        // Local speaker volume (protocol 1.8). The hub sends intent, never numbers — step size
+        // lives on the satellite, next to the hardware it applies to. Read defensively: this is
+        // peer-supplied and runs on the connection's event path, where a panic drops the satellite.
+        "speaker-volume" => {
+            let action = e.data_obj().get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            match action.as_str() {
+                "up" | "down" => {
+                    if ctx.volume.step(action == "up").await.is_ok() {
+                        if let Some(pcm) = ctx.cues.volume() { playback.cue(pcm); }
+                    }
+                }
+                "unmute" => {
+                    if ctx.volume.set_user_mute(false).await.is_ok() {
+                        if let Some(pcm) = ctx.cues.volume() { playback.cue(pcm); }
+                    }
+                }
+                // Cue FIRST, mute after it has drained: muting the sink would otherwise silence
+                // the very sound confirming the mute. The wait runs in a detached task so a
+                // ~300 ms cue cannot stall mic forwarding on the select! loop.
+                "mute" => {
+                    let volume = ctx.volume.clone();
+                    match ctx.cues.volume() {
+                        Some(pcm) => {
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            playback.cue_then(pcm, tx);
+                            tokio::spawn(async move {
+                                let _ = rx.await; // Err = cue dropped -> mute at once
+                                if let Err(e) = volume.set_user_mute(true).await {
+                                    warn!("local mute failed: {e:#}");
+                                }
+                            });
+                        }
+                        None => {
+                            if let Err(e) = volume.set_user_mute(true).await {
+                                warn!("local mute failed: {e:#}");
+                            }
+                        }
+                    }
+                }
+                // An alarm must ring even on a muted speaker. The sink is unmuted WITHOUT clearing
+                // the user's intent, so the release has something to restore.
+                "alert-hold" => {
+                    ctx.alert_held.store(true, std::sync::atomic::Ordering::SeqCst);
+                    if ctx.volume.user_muted() {
+                        if let Err(e) = ctx.volume.set_sink_mute(false).await {
+                            warn!("alert unmute failed: {e:#}");
+                        }
+                    }
+                }
+                "alert-release" => {
+                    if ctx.alert_held.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                        if let Err(e) = ctx.volume.set_sink_mute(ctx.volume.user_muted()).await {
+                            warn!("alert mute restore failed: {e:#}");
+                        }
+                    }
+                }
+                other => warn!("ignoring speaker-volume action {other}"),
+            }
+        }
         other => warn!("ignoring event {other}"),
     }
     Ok(())
@@ -381,6 +464,8 @@ mod tests {
     use crate::led::LedState;
     use crate::wyoming::codec::read_event;
     use serde_json::json;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
     use tokio::sync::watch;
 
     fn cues() -> Cues {
@@ -422,7 +507,9 @@ mod tests {
         let (mut a, _b) = tokio::io::duplex(4096);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let (mut playback, mut done_rx, _pump) = pump_with(&normal, &alert);
@@ -452,7 +539,9 @@ mod tests {
         let (mut a, _b) = tokio::io::duplex(4096);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let (mut playback, mut done_rx, _pump) = pump_with(&normal, &alert);
@@ -482,7 +571,9 @@ mod tests {
         let (mut a, _b) = tokio::io::duplex(4096);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let (mut playback, mut done_rx, _pump) = pump_with(&normal, &alert);
@@ -528,7 +619,9 @@ mod tests {
         let (mut a, b) = tokio::io::duplex(1 << 16);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
@@ -555,7 +648,9 @@ mod tests {
         let (mut a, b) = tokio::io::duplex(1 << 16);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
@@ -578,7 +673,9 @@ mod tests {
         let (mut a, b) = tokio::io::duplex(1 << 16);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
@@ -597,7 +694,9 @@ mod tests {
         let (mut a, b) = tokio::io::duplex(1 << 16);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
@@ -621,7 +720,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
@@ -663,7 +764,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Streaming;
         let mut phase = LedState::Listening;
         let (mut playback, _done_rx, _pump) = pump();
@@ -695,7 +798,7 @@ mod tests {
         let sat = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
             let (r, w) = sock.into_split();
-            run_connection(r, w, cfg, None).await
+            run_connection(r, w, cfg, None, crate::volume::VolumeControl::new(None, 10)).await
         });
 
         // hub side: dial in, then stream fragmented audio-chunk frames
@@ -751,7 +854,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let (handle, mut done_rx, task) = spawn_pump("cat >/dev/null; sleep 1", "cat >/dev/null; sleep 1");
@@ -784,7 +889,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let (mut playback, _done_rx, _pump) = pump();
@@ -804,7 +911,9 @@ mod tests {
         let (mut a, mut b) = tokio::io::duplex(4096);
         let c = cues();
         let (led_tx, mut led_rx) = watch::channel(LedState::Listening);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Streaming;
         let mut phase = LedState::Listening;
         let (mut playback, _done_rx, _pump) = pump();
@@ -822,7 +931,9 @@ mod tests {
         let (mut a, b) = tokio::io::duplex(4096);
         let c = cues();
         let (led_tx, led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let (mut playback, _done_rx, _pump) = pump();
@@ -843,7 +954,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let mut preroll: VecDeque<Vec<u8>> = VecDeque::new();
@@ -879,7 +992,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let (mut playback, mut done_rx, _pump) = pump();
@@ -903,7 +1018,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let (mut playback, mut done_rx, _pump) = pump();
@@ -931,7 +1048,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening;
         let (mut playback, mut done_rx, _pump) = pump();
@@ -956,7 +1075,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening; // not Streaming -> transcript is stale
         let (mut playback, _done_rx, _pump) = pump();
@@ -975,7 +1096,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Streaming;
         let mut phase = LedState::Listening;
         let (mut playback, _done_rx, _pump) = pump();
@@ -997,7 +1120,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Streaming;
         let mut phase = LedState::Listening;
         let (mut playback, mut done_rx, _pump) = pump();
@@ -1031,7 +1156,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Streaming;
         let mut phase = LedState::Listening;
         let (mut playback, mut done_rx, _pump) = pump();
@@ -1061,7 +1188,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening; // no turn open -> stale, must not light the ring
         let (mut playback, _done_rx, _pump) = pump();
@@ -1079,7 +1208,9 @@ mod tests {
         let c = cues();
 
         let (led_tx, led_rx) = watch::channel(LedState::Idle);
-        let ctx = Ctx { cues: &c, led: &led_tx };
+        let vol = crate::volume::VolumeControl::new(None, 10);
+        let held = Arc::new(AtomicBool::new(false));
+        let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, alert_held: &held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Listening; // not Streaming -> stale, must not touch the LED
         let (mut playback, _done_rx, _pump) = pump();
@@ -1089,5 +1220,130 @@ mod tests {
 
         assert_eq!(mode, Mode::Idle);
         assert!(!led_rx.has_changed().unwrap(), "stale voice-stopped must not touch the LED");
+    }
+
+    fn speaker_volume(action: &str) -> WyomingEvent {
+        WyomingEvent::with_data("speaker-volume", json!({ "action": action }))
+    }
+
+    /// Everything a speaker-volume test needs: a duplex sink for the writer, a probe volume
+    /// control that records its wpctl calls instead of running them, and a per-connection hold.
+    struct VolFixture {
+        log: Arc<std::sync::Mutex<Vec<String>>>,
+        vol: Arc<crate::volume::VolumeControl>,
+        held: Arc<AtomicBool>,
+        cues: Cues,
+        led: watch::Sender<LedState>,
+        // Keeping the receiver alive (rather than std::mem::forget-ing it) is what keeps the
+        // watch channel open for the whole test — a dropped receiver would fail led.send.
+        _led_rx: watch::Receiver<LedState>,
+    }
+
+    fn vol_fixture() -> VolFixture {
+        let (log, vol) = crate::volume::VolumeControl::probe_pair(10);
+        let (led, led_rx) = watch::channel(LedState::Idle);
+        VolFixture { log, vol, held: Arc::new(AtomicBool::new(false)), cues: cues(), led, _led_rx: led_rx }
+    }
+
+    async fn feed(f: &VolFixture, playback: &mut PlaybackHandle, action: &str) {
+        let (mut a, _b) = tokio::io::duplex(4096);
+        let ctx = Ctx { cues: &f.cues, led: &f.led, volume: &f.vol, alert_held: &f.held };
+        let mut mode = Mode::Idle;
+        let mut phase = LedState::Idle;
+        handle_hub_event(speaker_volume(action), &mut mode, &mut phase, None, &mut a, playback, &ctx)
+            .await
+            .unwrap();
+    }
+
+    // The mute is deliberately applied only after the confirmation cue has drained, in a detached
+    // task, so it cannot silence its own cue — hence the poll rather than a bare assert.
+    async fn wait_for_mute(vol: &Arc<crate::volume::VolumeControl>, expected: bool) {
+        for _ in 0..200 {
+            if vol.user_muted() == expected {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("mute never became {expected}");
+    }
+
+    #[tokio::test]
+    async fn speaker_volume_mute_then_unmute_tracks_the_users_intent() {
+        let f = vol_fixture();
+        let (mut playback, _done_rx, _pump) = pump();
+
+        feed(&f, &mut playback, "mute").await;
+        wait_for_mute(&f.vol, true).await;
+
+        feed(&f, &mut playback, "unmute").await;
+        assert!(!f.vol.user_muted());
+
+        let calls = f.log.lock().unwrap().clone();
+        assert!(calls.iter().any(|c| c.starts_with("set-mute") && c.ends_with('1')), "got {calls:?}");
+        assert!(calls.iter().any(|c| c.starts_with("set-mute") && c.ends_with('0')), "got {calls:?}");
+    }
+
+    #[tokio::test]
+    async fn speaker_volume_up_and_down_step_the_sink() {
+        let f = vol_fixture();
+        let (mut playback, _done_rx, _pump) = pump();
+
+        feed(&f, &mut playback, "up").await;
+        feed(&f, &mut playback, "down").await;
+
+        let calls = f.log.lock().unwrap().clone();
+        assert_eq!(calls.len(), 2, "got {calls:?}");
+        assert!(calls[0].contains("10%+"), "got {}", calls[0]);
+        assert!(calls[1].contains("10%-"), "got {}", calls[1]);
+    }
+
+    // An alarm must ring even on a muted speaker, and the user's mute must come back afterwards.
+    // The hold unmutes the SINK without clearing the user's intent — otherwise the release would
+    // have nothing to restore and a dismissed alarm would leave the speaker permanently unmuted.
+    #[tokio::test]
+    async fn alert_hold_unmutes_and_release_restores_the_users_mute() {
+        let f = vol_fixture();
+        let (mut playback, _done_rx, _pump) = pump();
+
+        f.vol.set_user_mute(true).await.unwrap();
+        f.log.lock().unwrap().clear();
+
+        feed(&f, &mut playback, "alert-hold").await;
+        assert!(f.vol.user_muted(), "the hold must not clear the user's intent");
+        assert!(f.held.load(Ordering::SeqCst));
+        assert!(
+            f.log.lock().unwrap().last().unwrap().ends_with('0'),
+            "the sink is unmuted for the ring"
+        );
+
+        feed(&f, &mut playback, "alert-release").await;
+        assert!(!f.held.load(Ordering::SeqCst));
+        assert!(
+            f.log.lock().unwrap().last().unwrap().ends_with('1'),
+            "the user's mute comes back after the alarm"
+        );
+    }
+
+    // A stray or duplicated release must not be able to change the mute state on its own.
+    #[tokio::test]
+    async fn alert_release_without_a_hold_is_a_no_op() {
+        let f = vol_fixture();
+        let (mut playback, _done_rx, _pump) = pump();
+
+        feed(&f, &mut playback, "alert-release").await;
+
+        assert!(f.log.lock().unwrap().is_empty(), "a release with no hold must write nothing");
+    }
+
+    // A newer hub must never be able to drop an older satellite's connection.
+    #[tokio::test]
+    async fn unknown_speaker_volume_action_is_ignored() {
+        let f = vol_fixture();
+        let (mut playback, _done_rx, _pump) = pump();
+
+        feed(&f, &mut playback, "teleport").await;
+
+        assert!(f.log.lock().unwrap().is_empty());
+        assert!(!f.vol.user_muted());
     }
 }

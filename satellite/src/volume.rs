@@ -1,8 +1,3 @@
-// Wired into main.rs's accept loop and the state machine by Task 10 (this task only adds the
-// module); until then nothing outside #[cfg(test)] calls in, so the whole surface reads as dead
-// to a non-test build. Same "not yet wired" shape as wyoming/codec.rs's read_event.
-#![allow(dead_code)]
-
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;

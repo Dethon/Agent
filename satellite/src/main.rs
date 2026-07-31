@@ -37,6 +37,11 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("failed to bind listen address {}", cfg.listen))?;
     info!("nabu-satellite listening on {} (hub dials in)", cfg.listen);
 
+    let volume = volume::VolumeControl::new(cfg.volume_sink.clone(), cfg.volume_step);
+    // Process-scoped, not per-connection: a hub reconnect must not forget that the user muted the
+    // speaker. Seeded from the sink so wireplumber's restored state and ours agree at boot.
+    volume.seed().await;
+
     // Single-hub policy: a new accept supersedes any previous connection. This guards the
     // dead-peer wedge — a black-holed hub TCP connection would otherwise park its writer for
     // the TCP retransmission timeout (~15 min) while holding the EXCLUSIVE mic device
@@ -62,8 +67,9 @@ async fn main() -> anyhow::Result<()> {
         let (r, w) = sock.into_split();
         let cfg = cfg.clone();
         let models = models.clone();
+        let volume = volume.clone();
         active = Some(tokio::spawn(async move {
-            if let Err(e) = satellite::state_machine::run_connection(r, w, cfg, models).await {
+            if let Err(e) = satellite::state_machine::run_connection(r, w, cfg, models, volume).await {
                 error!("connection ended with error: {e:#}");
             }
         }));
