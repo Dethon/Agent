@@ -83,6 +83,10 @@ A match executes the command, publishes a `VoiceEvent` with `Outcome = "command"
 it and calls `EndConversation`, which writes the closing `transcript` and re-arms the satellite.
 No new turn-end plumbing.
 
+**Known limitation, accepted for v1:** a command spoken inside an open follow-up window ends that
+conversation, because `false` ends the turn. Keeping the conversation alive would need a third
+outcome in that loop, which is deliberately out of scope.
+
 ### Reaching the satellite
 
 `SatelliteSession` today exposes a playback channel but no way to write a control event — the
@@ -100,10 +104,6 @@ It goes on the session rather than being threaded through the dispatcher because
 `InsistentAnnouncementController` needs the same write path for the alert hold, and it already
 holds sessions via `OnlineSessions(targetIds)`. One surface serves both, and every future
 fast-path command as well.
-
-**Known limitation, accepted for v1:** a command spoken inside an open follow-up window ends that
-conversation, because `false` ends the turn. Keeping the conversation alive would need a third
-outcome in that loop, which is deliberately out of scope.
 
 ### Alert hold
 
@@ -141,7 +141,7 @@ satellite.
   the feature is off: a `speaker-volume` event is a no-op with a warning. This mirrors
   `music_mixer: None` disabling ducking. Provisioning sets it only on music units, because
   PipeWire is only installed there.
-- `--volume-step <pct>` — points per step, default 10.
+- `--volume-step <pct>` — percentage points of the sink's range per step, default 10.
 
 The satellite service already has `XDG_RUNTIME_DIR` threaded in by provisioning, which it needs
 for `aplay` through PipeWire, so `wpctl` can reach the session bus.
@@ -182,10 +182,13 @@ mute means mute now, and a *new* alarm overrides it.
 
 ### Failure and teardown
 
-- A failed `wpctl` call warns and plays no cue. Silence therefore means the command did not land,
-  which makes the cue a real success signal rather than decoration.
-- Connection teardown reapplies `user_muted`, so a hub that dies mid-alarm leaves the speaker
-  audible rather than silently muted, and the next connection settles the state.
+- A failed `wpctl` call warns and plays no cue, so silence means the command did not land and the
+  cue is a real success signal rather than decoration. `mute` is the one exception: its cue plays
+  first by design, so a failed `set-mute` has already beeped. It warns, and `user_muted` is rolled
+  back so the satellite's state still matches the sink.
+- Connection teardown reapplies `user_muted` **if a hold is outstanding**, so a hub that dies
+  mid-alarm leaves the speaker audible rather than silently muted, and the next connection settles
+  the state. With no hold there is nothing to undo and no write is made.
 - With `--volume-sink` absent, every action warns and does nothing.
 
 ### Cue
@@ -253,7 +256,9 @@ Red-Green-Refactor throughout, per the project rules.
 - A `mute` issued during a hold applies immediately, and the later `alert-release` leaves it muted.
 - `mute` defers the `set-mute` call until the cue has drained, and applies it immediately when the
   cue is dropped because a stream is active.
-- Connection teardown reapplies `user_muted`.
+- Connection teardown with a hold outstanding reapplies `user_muted`; teardown with no hold makes
+  no write.
+- A failed `set-mute` rolls `user_muted` back so the tracked state matches the sink.
 - An unknown `action` is ignored rather than erroring the connection.
 - `--volume-sink` absent makes every action a no-op, including the startup mute-state read.
 - `sounds/volume.wav` decodes and passes the 22 050 Hz / mono / 16-bit assertion.
