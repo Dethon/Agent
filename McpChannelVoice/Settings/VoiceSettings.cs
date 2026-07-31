@@ -16,6 +16,7 @@ public record VoiceSettings
     public SpeakerVerificationSettings SpeakerVerification { get; init; } = new();
     public TseSettings Tse { get; init; } = new();
     public ArbitrationSettings Arbitration { get; init; } = new();
+    public CommandSettings Commands { get; init; } = new();
 
     // Channel-wide default geographic locality (e.g. "Madrid, Spain"). Satellites that don't set
     // their own Locality inherit this one. Surfaced to the agent via SatelliteConfig.DisplayLocation.
