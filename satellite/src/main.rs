@@ -4,6 +4,7 @@ mod gpio;
 mod led;
 mod music;
 mod satellite;
+mod volume;
 mod wake;
 mod wyoming;
 
