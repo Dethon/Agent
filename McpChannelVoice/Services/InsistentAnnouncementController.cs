@@ -1,8 +1,10 @@
 using System.Net.Http.Json;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
+using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
@@ -77,6 +79,7 @@ public sealed class InsistentAnnouncementController(
         try
         {
             var buffered = await BufferAudioAsync(request, handle.Token);
+            await SendAlertHoldAsync(targetIds, "alert-hold");
             var start = time.GetTimestamp();
             var round = 0;
 
@@ -138,7 +141,20 @@ public sealed class InsistentAnnouncementController(
         }
         finally
         {
+            await SendAlertHoldAsync(targetIds, "alert-release");
             alerts.Discard(handle);
+        }
+    }
+
+    // A local mute is the user's, but it must not silence a timer or an alarm. The hold unmutes
+    // the speaker for the duration of the ring; the release restores whatever the user had set.
+    // Both are best-effort: a satellite that never got the hold simply rings at its current level.
+    private async Task SendAlertHoldAsync(IReadOnlyList<string> targetIds, string action)
+    {
+        var evt = WyomingEvent.Header("speaker-volume", new JsonObject { ["action"] = action });
+        foreach (var session in OnlineSessions(targetIds))
+        {
+            await session.TrySendControlAsync(evt, CancellationToken.None);
         }
     }
 

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
@@ -113,6 +114,79 @@ public class InsistentAnnouncementControllerTests
             (_, _) => { Interlocked.Increment(ref count); return Task.CompletedTask; },
             CancellationToken.None, time);
         return (pump, () => Volatile.Read(ref count));
+    }
+
+    // Records the speaker-volume actions the controller writes to a satellite.
+    private static Func<IReadOnlyList<string>> RecordVolumeActions(SatelliteSession session)
+    {
+        var actions = new List<string>();
+        session.ControlWriter = (evt, _) =>
+        {
+            if (evt.Type == "speaker-volume")
+            {
+                lock (actions)
+                { actions.Add(evt.Data["action"]!.GetValue<string>()); }
+            }
+            return Task.CompletedTask;
+        };
+        return () => { lock (actions) { return actions.ToList(); } };
+    }
+
+    // A local mute must never swallow a timer or an alarm: the hold unmutes for the ring and the
+    // release puts the user's mute back. Both bracket the loop, so the speaker is audible for the
+    // whole insistent sequence rather than for one round of it.
+    [Fact]
+    public async Task Start_InsistentAlert_BracketsTheRingWithAlertHoldAndRelease()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
+        var session = h.Sessions.Get("kitchen-01")!;
+        var actions = RecordVolumeActions(session);
+        var (pump, _) = PumpPlays(session, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "eggs",
+                Kind = AnnounceKind.Timer,
+                Insistent = new() { MaxRepeats = 1 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(() => actions().Contains("alert-release"), TimeSpan.FromSeconds(5));
+        actions().ShouldBe(["alert-hold", "alert-release"]);
+
+        await DrainPumpAsync(pump, time, session);
+    }
+
+    // The release lives in the loop's finally, so it has to fire on the path that ends an alarm in
+    // practice — someone dismissing it — not only on repeats running out.
+    [Fact]
+    public async Task Start_DismissedMidRing_StillSendsAlertRelease()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
+        var session = h.Sessions.Get("kitchen-01")!;
+        var actions = RecordVolumeActions(session);
+        var (pump, _) = PumpPlays(session, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "wake up",
+                Kind = AnnounceKind.Alarm,
+                Insistent = new() { MaxRepeats = 12 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(() => actions().Contains("alert-hold"), TimeSpan.FromSeconds(5));
+        h.Alerts.DismissAll();
+
+        await WaitUntilAsync(() => actions().Contains("alert-release"), TimeSpan.FromSeconds(5));
+
+        await DrainPumpAsync(pump, time, session);
     }
 
     // Like PumpPlays, but records the alert flag the playback loop reports for each job — the bit
