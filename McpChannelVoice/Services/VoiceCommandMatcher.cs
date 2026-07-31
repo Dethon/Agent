@@ -12,13 +12,12 @@ public enum VoiceCommand
     LocalUnmute
 }
 
-public sealed class VoiceCommandMatcher
+public sealed class VoiceCommandMatcher(CommandSettings settings)
 {
-    private readonly Dictionary<string, VoiceCommand> _phrases;
+    private readonly Dictionary<string, VoiceCommand> _phrases = BuildPhrases(settings);
 
-    public VoiceCommandMatcher(CommandSettings settings)
-    {
-        _phrases = settings.Enabled
+    private static Dictionary<string, VoiceCommand> BuildPhrases(CommandSettings settings) =>
+        settings.Enabled
             ? new[]
                 {
                     (settings.Phrases.LocalVolumeUp, VoiceCommand.LocalVolumeUp),
@@ -31,7 +30,6 @@ public sealed class VoiceCommandMatcher
                 .GroupBy(entry => entry.Key)
                 .ToDictionary(g => g.Key, g => g.First().Item2, StringComparer.Ordinal)
             : [];
-    }
 
     // Whole-transcript match only. A command buried in a longer sentence is part of a request the
     // agent has to answer, and swallowing it here would silently drop the rest of what was said.
