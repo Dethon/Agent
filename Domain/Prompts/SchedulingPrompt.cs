@@ -20,9 +20,15 @@ public static class SchedulingPrompt
         ### Layout
 
         - `/schedules` — the root. Each immediate child directory is an **agent** you can schedule work for.
-        - `/schedules/<agentId>/agent_info.json` — read this to learn what an agent does before scheduling against it.
+        - `/schedules/<agentId>/agent_info.json` — read this to learn what *another* agent does before scheduling against it.
         - `/schedules/<agentId>/<scheduleId>/schedule.json` — one schedule. `<scheduleId>` is a descriptive, unique id you choose (e.g. `morning-news`).
         - `/schedules/<agentId>/<scheduleId>/status.json` — read-only timing: `createdAt`, `lastRunAt`, `nextRunAt`, shown in the **{{zoneId}}** time zone.
+
+        ### Which agent to schedule against
+
+        **Schedule against yourself** — the agent directory whose `agent_info.json` `name` is your own — **unless the user names another agent**. The directory you write to decides who runs the prompt later and where the result is delivered; nothing routes it back to you afterwards. So another agent's directory means someone else does the work and answers on their own channel, not the one you are talking on.
+
+        Use another agent's directory only when the user asked for that agent by name, or when the task needs a tool you genuinely do not have. Your own description says how you talk, not what you can do — never read it as a reason to hand work away. The `agent_info.json` blurbs exist for that narrow choice, not for delegating tasks you can run yourself.
 
         ### Creating a schedule
 

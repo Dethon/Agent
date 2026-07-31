@@ -21,6 +21,20 @@ public class SchedulingPromptTests
         SchedulingPrompt.Build("Europe/Madrid").ShouldNotContain("Remind me");
     }
 
+    // The agent that writes a schedule is not necessarily the agent that runs it: ownership is the
+    // <agentId> path segment and nothing else re-derives it at fire time. Told only to "read
+    // agent_info.json to learn what an agent does", an agent whose own catalog description
+    // advertises reply style rather than abilities hands its own deferred actions to whichever
+    // agent's blurb names the subject -- and the result then comes back on that agent's channel.
+    [Fact]
+    public void Prompt_DefaultsOwnershipToTheSchedulingAgentItself()
+    {
+        var prompt = SchedulingPrompt.Build("Europe/Madrid");
+
+        prompt.ShouldContain("schedule against yourself");
+        prompt.ShouldContain("unless the user names another agent");
+    }
+
     [Fact]
     public void Prompt_ClaimsDeferredActionsEvenWhenPhrasedAsADuration()
     {
