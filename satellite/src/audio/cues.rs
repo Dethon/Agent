@@ -13,6 +13,7 @@ pub struct Cues {
     done_enabled: bool,
     pub(crate) awake_pcm: Vec<u8>,
     pub(crate) done_pcm: Vec<u8>,
+    #[allow(dead_code)] // wired in Task 10
     pub(crate) volume_pcm: Vec<u8>,
 }
 
@@ -37,6 +38,7 @@ impl Cues {
 
     /// Confirmation for a local volume or mute command. Deliberately always on: with no reply
     /// spoken and no LED change, it is the only signal that the command landed.
+    #[allow(dead_code)] // wired in Task 10
     pub fn volume(&self) -> Option<Vec<u8>> {
         Some(self.volume_pcm.clone())
     }
