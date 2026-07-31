@@ -69,6 +69,11 @@ pub enum PlaybackCmd {
     Stop { generation: u64 },
     /// Best-effort short earcon: plays only when no stream is active; errors are non-fatal.
     Cue(Vec<u8>),
+    /// Same as `Cue`, plus an acknowledgement sent once the sound has finished — or immediately
+    /// if it was dropped. The local mute needs it: muting the sink would otherwise cut off the
+    /// cue that confirms the mute.
+    #[allow(dead_code)] // wired in Task 10
+    CueThen(Vec<u8>, tokio::sync::oneshot::Sender<()>),
 }
 
 /// Completion report for a Stop — and the carrier for fatal playback errors.
@@ -101,6 +106,13 @@ impl PlaybackHandle {
     /// try_send on purpose: when the pump is backlogged a late cue is worse than no cue.
     pub fn cue(&self, pcm: Vec<u8>) {
         let _ = self.cmd_tx.try_send(PlaybackCmd::Cue(pcm));
+    }
+
+    /// try_send like `cue`. A failed send drops the sender, so the waiter resolves at once and
+    /// the caller proceeds — which is the wanted behaviour when the pump is backlogged.
+    #[allow(dead_code)] // wired in Task 10
+    pub fn cue_then(&self, pcm: Vec<u8>, done: tokio::sync::oneshot::Sender<()>) {
+        let _ = self.cmd_tx.try_send(PlaybackCmd::CueThen(pcm, done));
     }
 
     pub fn latest_generation(&self) -> u64 {
@@ -179,6 +191,17 @@ async fn run_pump(
                 }
                 Ok(())
             }
+            PlaybackCmd::CueThen(pcm, done) => {
+                if !streaming {
+                    if let Err(e) = play_cue(&snd_command, &pcm).await {
+                        tracing::warn!("cue playback failed: {e:#}");
+                    }
+                }
+                // Acknowledge on BOTH paths — played and dropped — so a caller sequencing an
+                // action after the sound is never left waiting on one that will not come.
+                let _ = done.send(());
+                Ok(())
+            }
         };
         if let Err(e) = result {
             let _ = done_tx.send(DrainDone { generation, result: Err(e) });
@@ -232,6 +255,35 @@ async fn open_sink(snd: &str, alert_snd: &str, alert: bool) -> anyhow::Result<Pl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Plain "cat" sink, matching the shape most tests here need: a pump that will actually
+    // play whatever is written to it.
+    fn pump() -> (PlaybackHandle, mpsc::UnboundedReceiver<DrainDone>, tokio::task::JoinHandle<()>)
+    {
+        spawn_pump("cat >/dev/null", "cat >/dev/null")
+    }
+
+    /// The mute path depends on this: the acknowledgement must arrive only AFTER the cue has
+    /// actually finished playing, or the mute silences its own confirmation.
+    #[tokio::test]
+    async fn cue_then_acknowledges_after_the_cue_has_played() {
+        let (handle, _done_rx, _task) = pump();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        handle.cue_then(vec![0u8; 64], tx);
+        rx.await.expect("the pump must acknowledge a played cue");
+    }
+
+    /// A cue dropped because a stream is active still has to acknowledge, otherwise a pending
+    /// mute would hang forever waiting for a sound that is never going to play.
+    #[tokio::test]
+    async fn cue_then_acknowledges_even_when_the_cue_is_dropped() {
+        let (mut handle, _done_rx, _task) = pump();
+        handle.start(false).await.unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        handle.cue_then(vec![0u8; 64], tx);
+        rx.await.expect("a dropped cue must still acknowledge");
+    }
+
     #[tokio::test]
     async fn accepts_a_playback_stream() {
         // `cat` consumes stdin and exits when closed — stands in for aplay.
