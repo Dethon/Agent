@@ -47,6 +47,8 @@ public sealed class SegmentedSpeechToText(
         var segments = new List<Segment>();
         var all = new List<AudioChunk>();
         var current = new List<AudioChunk>();
+        var elapsed = TimeSpan.Zero;
+        var firstSplitAfter = TimeSpan.FromMilliseconds(config.FirstSplitAfterMs);
 
         try
         {
@@ -54,8 +56,13 @@ public sealed class SegmentedSpeechToText(
             {
                 all.Add(chunk);
                 current.Add(chunk);
-                if (gate.Process(chunk.Data.Span, chunk.Format.SampleRateHz,
-                        chunk.Format.SampleWidthBytes, chunk.Format.Channels) == SilenceGate.Decision.EndUtterance)
+                elapsed += ChunkDuration(chunk);
+                var decision = gate.Process(chunk.Data.Span, chunk.Format.SampleRateHz,
+                    chunk.Format.SampleWidthBytes, chunk.Format.Channels);
+                // Ignoring a decision does not disturb the gate: resumed speech resets its
+                // trailing-silence run, and continued silence re-raises EndUtterance on the next
+                // chunk past the floor.
+                if (decision == SilenceGate.Decision.EndUtterance && elapsed >= firstSplitAfter)
                 {
                     var closed = current;
                     current = new List<AudioChunk>();
@@ -165,6 +172,15 @@ public sealed class SegmentedSpeechToText(
         return pairs.Count > 0
             ? pairs.Sum(p => p.Weight * p.Value) / pairs.Sum(p => p.Weight)
             : null;
+    }
+
+    private static TimeSpan ChunkDuration(AudioChunk chunk)
+    {
+        var bytesPerSecond =
+            chunk.Format.SampleRateHz * chunk.Format.SampleWidthBytes * chunk.Format.Channels;
+        return bytesPerSecond == 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromSeconds((double)chunk.Data.Length / bytesPerSecond);
     }
 
     private static double DurationSeconds(IReadOnlyList<AudioChunk> chunks) =>

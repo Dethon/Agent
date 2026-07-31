@@ -45,4 +45,11 @@ public record SegmentedSttConfig
     public int SegmentSilenceMs { get; init; } = 350;
     public int MinSegmentMs { get; init; } = 800;
     public int MaxInFlightDecodes { get; init; } = 1;
+
+    // Audio that must accumulate before the segmenting gate is allowed to split at all. A short
+    // command decoded whole beats the same command decoded as two context-free fragments —
+    // measured on prod, splitting "Pon el temporizador de 10 minutos en la cocina" produced a
+    // wrong verb and a duplicated number. Only the FIRST split is gated: once an utterance has
+    // proven itself long, later splits keep the overlap-with-speech latency win.
+    public int FirstSplitAfterMs { get; init; } = 4000;
 }

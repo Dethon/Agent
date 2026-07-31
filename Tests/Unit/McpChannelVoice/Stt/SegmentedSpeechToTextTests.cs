@@ -56,13 +56,14 @@ public class SegmentedSpeechToTextTests
 
     // 100 ms chunks: 300 ms segment-silence => 3 silent chunks close a segment;
     // 500 ms min-segment => 5 loud chunks minimum.
-    private static SegmentedSttConfig Config(int maxInFlight = 1) => new()
+    private static SegmentedSttConfig Config(int maxInFlight = 1, int firstSplitAfterMs = 0) => new()
     {
         Enabled = true,
         SilenceRmsThreshold = 500,
         SegmentSilenceMs = 300,
         MinSegmentMs = 500,
-        MaxInFlightDecodes = maxInFlight
+        MaxInFlightDecodes = maxInFlight,
+        FirstSplitAfterMs = firstSplitAfterMs
     };
 
     private static SegmentedSpeechToText New(ISpeechToText inner, SegmentedSttConfig? config = null) =>
@@ -322,5 +323,35 @@ public class SegmentedSpeechToTextTests
         // the whole stream decodes as ONE segment; adaptively it must slice at least twice.
         inner.Calls.ShouldBeGreaterThanOrEqualTo(2);
         result.Text.ShouldNotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_UtteranceShorterThanFirstSplit_DecodesAsOneSegment()
+    {
+        var inner = new FakeStt();
+        // Leading Silence(1) seeds the floor (pre-roll gap), as in the tests above; the rest is
+        // 2.3 s of audio with two internal pauses, all under a 4 s first-split floor.
+        var sut = New(inner, Config(firstSplitAfterMs: 4000));
+
+        await sut.TranscribeAsync(
+            Stream(Silence(1), Speech(8), Silence(4), Speech(6), Silence(4)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.Calls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_UtterancePastFirstSplit_ResumesSplitting()
+    {
+        var inner = new FakeStt();
+        // 1 + 12 chunks put 1.3 s of audio behind the stream before the first pause closes a
+        // segment, so the 1 s floor is already crossed and both pauses split.
+        var sut = New(inner, Config(firstSplitAfterMs: 1000));
+
+        await sut.TranscribeAsync(
+            Stream(Silence(1), Speech(12), Silence(4), Speech(6), Silence(4)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.Calls.ShouldBe(2);
     }
 }
