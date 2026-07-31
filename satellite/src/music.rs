@@ -377,7 +377,7 @@ mod tests {
         tokio::time::advance(std::time::Duration::from_secs(MAX_THINKING_DUCK_SECS - 1)).await;
         settle().await;
         assert_eq!(log.lock().unwrap().len(), 2, "must outlast any real agent turn");
-        assert!(MAX_THINKING_DUCK_SECS >= 120, "the cap must not undercut the hub's reply timeout");
+        const { assert!(MAX_THINKING_DUCK_SECS >= 120, "the cap must not undercut the hub's reply timeout") };
 
         tokio::time::advance(std::time::Duration::from_secs(2)).await; // past the cap
         wait_for(&log, 3).await;

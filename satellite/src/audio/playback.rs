@@ -83,15 +83,20 @@ pub struct DrainDone {
 
 /// Main-loop side of the pump. Stream sends await on the bounded channel, preserving the
 /// flow control that writing into the player pipe used to provide; cues are fire-and-forget.
+/// `generation` is atomic (not a plain counter behind `&mut self`) because the handle now lives
+/// inside the connection's `Ctx` — one instance shared by reference across the whole connection,
+/// never exclusively borrowed, same as `cues`/`led`/`volume`/`alert_held` there. All access is
+/// still from the single connection task, so `Ordering::Relaxed` is enough: there is no other
+/// thread to synchronize with, only a `&mut self` receiver to avoid.
 pub struct PlaybackHandle {
     cmd_tx: mpsc::Sender<PlaybackCmd>,
-    generation: u64,
+    generation: std::sync::atomic::AtomicU64,
 }
 
 impl PlaybackHandle {
-    pub async fn start(&mut self, alert: bool) -> anyhow::Result<()> {
-        self.generation += 1;
-        self.send(PlaybackCmd::Start { generation: self.generation, alert }).await
+    pub async fn start(&self, alert: bool) -> anyhow::Result<()> {
+        let generation = self.generation.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        self.send(PlaybackCmd::Start { generation, alert }).await
     }
 
     pub async fn pcm(&self, pcm: Vec<u8>) -> anyhow::Result<()> {
@@ -99,7 +104,8 @@ impl PlaybackHandle {
     }
 
     pub async fn stop(&self) -> anyhow::Result<()> {
-        self.send(PlaybackCmd::Stop { generation: self.generation }).await
+        let generation = self.generation.load(std::sync::atomic::Ordering::Relaxed);
+        self.send(PlaybackCmd::Stop { generation }).await
     }
 
     /// try_send on purpose: when the pump is backlogged a late cue is worse than no cue.
@@ -114,7 +120,7 @@ impl PlaybackHandle {
     }
 
     pub fn latest_generation(&self) -> u64 {
-        self.generation
+        self.generation.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     async fn send(&self, cmd: PlaybackCmd) -> anyhow::Result<()> {
@@ -140,7 +146,7 @@ pub fn spawn_pump(
         cmd_rx,
         done_tx,
     ));
-    (PlaybackHandle { cmd_tx, generation: 0 }, done_rx, task)
+    (PlaybackHandle { cmd_tx, generation: std::sync::atomic::AtomicU64::new(0) }, done_rx, task)
 }
 
 async fn run_pump(
@@ -275,7 +281,7 @@ mod tests {
     /// mute would hang forever waiting for a sound that is never going to play.
     #[tokio::test]
     async fn cue_then_acknowledges_even_when_the_cue_is_dropped() {
-        let (mut handle, _done_rx, _task) = pump();
+        let (handle, _done_rx, _task) = pump();
         handle.start(false).await.unwrap();
         let (tx, rx) = tokio::sync::oneshot::channel();
         handle.cue_then(vec![0u8; 64], tx);
@@ -293,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn pump_reports_drain_done_with_stream_generation() {
-        let (mut handle, mut done_rx, _task) = spawn_pump("cat >/dev/null", "cat >/dev/null");
+        let (handle, mut done_rx, _task) = spawn_pump("cat >/dev/null", "cat >/dev/null");
         handle.start(false).await.unwrap();
         handle.pcm(vec![0u8; 4410]).await.unwrap();
         handle.stop().await.unwrap();
@@ -310,7 +316,7 @@ mod tests {
     async fn pump_serializes_cue_and_stream_on_an_exclusive_device() {
         let lock = std::env::temp_dir().join(format!("nabu-pump-test-{}.lock", std::process::id()));
         let snd = format!("flock -n {} -c 'cat >/dev/null'", lock.display());
-        let (mut handle, mut done_rx, _task) = spawn_pump(&snd, &snd);
+        let (handle, mut done_rx, _task) = spawn_pump(&snd, &snd);
         handle.cue(vec![0u8; 8820]); // ~200 ms worth of 22050 Hz PCM
         handle.start(false).await.unwrap();
         handle.pcm(vec![0u8; 4410]).await.unwrap();
@@ -326,7 +332,7 @@ mod tests {
         // not apply here. `exit 1` is plain argv (no sh metacharacters), so it execs a nonexistent
         // `exit` binary and spawn() fails outright at Start; a player that spawned and then died
         // reaches the same place via EPIPE on a later write. Either must surface as fatal.
-        let (mut handle, mut done_rx, _task) = spawn_pump("exit 1", "exit 1");
+        let (handle, mut done_rx, _task) = spawn_pump("exit 1", "exit 1");
         handle.start(false).await.unwrap();
         let mut failed = false;
         for _ in 0..50 {
@@ -382,7 +388,7 @@ mod tests {
     #[tokio::test]
     async fn pump_routes_an_alert_stream_to_the_alert_sink() {
         let (normal, alert) = sink_paths("route-alert");
-        let (mut handle, mut done_rx, _task) = spawn_pump(
+        let (handle, mut done_rx, _task) = spawn_pump(
             &format!("cat >> {}", normal.display()),
             &format!("cat >> {}", alert.display()),
         );
@@ -401,7 +407,7 @@ mod tests {
     #[tokio::test]
     async fn pump_routes_a_normal_stream_to_the_normal_sink() {
         let (normal, alert) = sink_paths("route-normal");
-        let (mut handle, mut done_rx, _task) = spawn_pump(
+        let (handle, mut done_rx, _task) = spawn_pump(
             &format!("cat >> {}", normal.display()),
             &format!("cat >> {}", alert.display()),
         );
@@ -421,7 +427,7 @@ mod tests {
     #[tokio::test]
     async fn cues_always_play_on_the_normal_sink() {
         let (normal, alert) = sink_paths("route-cue");
-        let (mut handle, mut done_rx, _task) = spawn_pump(
+        let (handle, mut done_rx, _task) = spawn_pump(
             &format!("cat >> {}", normal.display()),
             &format!("cat >> {}", alert.display()),
         );
@@ -451,7 +457,7 @@ mod tests {
     #[tokio::test]
     async fn alert_sink_dying_right_after_spawn_falls_back_to_the_normal_sink() {
         let (normal, _) = sink_paths("route-dead-alert");
-        let (mut handle, mut done_rx, _task) =
+        let (handle, mut done_rx, _task) =
             spawn_pump(&format!("cat >> {}", normal.display()), "false");
 
         handle.start(true).await.unwrap();
@@ -474,7 +480,7 @@ mod tests {
     #[tokio::test]
     async fn alert_sink_open_failure_falls_back_to_the_normal_sink_non_fatally() {
         let (normal, _) = sink_paths("route-fallback");
-        let (mut handle, mut done_rx, _task) = spawn_pump(
+        let (handle, mut done_rx, _task) = spawn_pump(
             &format!("cat >> {}", normal.display()),
             "/nonexistent/aplay -D alert",
         );
