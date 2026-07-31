@@ -72,6 +72,8 @@ public sealed partial class HaFileSystem
             return done(2, "", ex.Message);
         }
 
+        NormalizeMediaSeek(svc, data);
+
         using var timeoutCts = timeoutSeconds is > 0
             ? CancellationTokenSource.CreateLinkedTokenSource(ct)
             : null;
@@ -116,6 +118,26 @@ public sealed partial class HaFileSystem
                 _ => ""
             };
             return done(1, "", $"{ex.Message}{hint}");
+        }
+    }
+
+    // Music Assistant's `play_index` reads `seek_position` as falsy-or-set: a 0 means "no seek
+    // requested", so it substitutes the item's stored resume point and the stream restarts half a
+    // second behind where the listener already was. Seeking a podcast episode or audiobook to the
+    // start is therefore impossible through the honest value. 1 second is truthy for MA and
+    // indistinguishable from 0 to a listener.
+    private static void NormalizeMediaSeek(HaServiceDefinition svc, JsonObject data)
+    {
+        if (svc.Domain != "media_player" || svc.Service != "media_seek")
+        {
+            return;
+        }
+
+        // JsonNode.Parse, not JsonValue.Create: it yields the same JsonElement-backed value the arg
+        // parser produces, which reads back as either int or double (see HaArgParser.Coerce).
+        if (data["seek_position"] is JsonValue position && position.TryGetValue<double>(out var seconds) && seconds == 0)
+        {
+            data["seek_position"] = JsonNode.Parse("1");
         }
     }
 

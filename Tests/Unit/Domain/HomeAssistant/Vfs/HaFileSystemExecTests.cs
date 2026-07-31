@@ -212,6 +212,64 @@ public class HaFileSystemExecTests
         client.LastCall.Value.Data!["media_id"]!.GetValue<string>().ShouldBe("miles davis");
     }
 
+    [Fact]
+    public async Task Exec_MediaSeekToZero_SendsOneSecond()
+    {
+        // Music Assistant's play_index treats `seek_position` 0 as "no seek requested" and silently
+        // substitutes the item's stored resume point, so seeking a podcast episode to 0 lands where
+        // the listener already was. 1 second is truthy there and inaudible here.
+        var fs = BuildSeekable(out var client);
+
+        var result = await fs.ExecAsync("entities/media_player/office",
+            "media_seek.sh --seek_position 0", null, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
+        client.LastCall!.Value.Data!["seek_position"]!.GetValue<double>().ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Exec_MediaSeekToNonZero_SendsPositionUnchanged()
+    {
+        var fs = BuildSeekable(out var client);
+
+        var result = await fs.ExecAsync("entities/media_player/office",
+            "media_seek.sh --seek_position 42.5", null, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
+        client.LastCall!.Value.Data!["seek_position"]!.GetValue<double>().ShouldBe(42.5);
+    }
+
+    [Fact]
+    public async Task Exec_ZeroOnAnotherService_SendsZeroUnchanged()
+    {
+        var fs = Build(out var client);
+
+        var result = await fs.ExecAsync("entities/light/kitchen",
+            "turn_on.sh --brightness_pct 0", null, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
+        client.LastCall!.Value.Data!["brightness_pct"]!.GetValue<double>().ShouldBe(0);
+    }
+
+    private static HaFileSystem BuildSeekable(out FakeHaClient client)
+    {
+        client = new FakeHaClient
+        {
+            States = { Entity("media_player.office", "playing") },
+            Services =
+            {
+                Service("media_player", "media_seek", DomainTarget("media_player"),
+                    ("seek_position", new HaServiceField
+                    {
+                        Required = true,
+                        Selector = JsonNode.Parse("""{"number":{"min":0,"max":9223372036854775807}}""")
+                    }))
+            }
+        };
+        var local = client;
+        return new HaFileSystem(new HaCatalogProvider(() => local, new FakeTimeProvider()), () => local);
+    }
+
     private sealed class BlockingHaClient : FakeHaClient
     {
         public override async Task<HaServiceCallResult> CallServiceAsync(

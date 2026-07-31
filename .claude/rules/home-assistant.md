@@ -42,3 +42,17 @@ without MA never advertises an action that cannot work.
 
 MA runs `network_mode: host`, so `mcp-homeassistant` reaches it over `host.docker.internal`
 (`extra_hosts: host-gateway`), not a container name.
+
+## Music Assistant (restarting an episode)
+
+MA keeps a **resume point** per podcast episode and audiobook, and `play_index` reads its
+`seek_position` argument as falsy-or-set: a 0 means "no seek requested", so it substitutes
+`resume_position_ms - 500` and the stream restarts half a second behind where the listener already
+was (`music_assistant/controllers/player_queues.py`, MA 2.9.9). Both routes into it are affected —
+`music_assistant.play_media` always resumes, and `media_player.media_seek` forwards straight to
+`play_index` — and HA's `music_assistant.play_media` exposes no start-position field, so nothing the
+agent can say means "second zero".
+
+`HaFileSystem.NormalizeMediaSeek` therefore rewrites a `media_player.media_seek` of 0 to 1 second:
+truthy for MA, inaudible to a listener. Keep that rewrite as long as MA reads the field this way —
+without it "play it from the beginning" silently becomes "jump back half a second".

@@ -58,6 +58,19 @@ public class HomeAssistantPromptTests
         prompt.ShouldContain("Mi música favorita");           // the concrete anti-example that failed
     }
 
+    // "Play it from the beginning" failed four times in a row because every route the model had —
+    // re-issuing play_media, seeking to 0, stopping and replaying — lands on Music Assistant's
+    // resume point. Teach the one call that restarts, and that replaying the uri does not.
+    [Fact]
+    public void SystemPrompt_TeachesHowToRestartAnEpisodeFromTheBeginning()
+    {
+        var prompt = HomeAssistantPrompt.SystemPrompt;
+
+        prompt.ShouldContain("from the beginning");      // the request being answered
+        prompt.ShouldContain("media_seek.sh --seek_position"); // the only call that restarts
+        prompt.ShouldContain("resume point");            // why replaying the uri does not restart
+    }
+
     [Fact]
     public void Prompt_TeachesSnoozeAfterDismissal()
     {

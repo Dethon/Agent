@@ -164,6 +164,13 @@ public static class HomeAssistantPrompt
           names.
         - Transport: `media_play.sh` / `media_pause.sh` / `media_next_track.sh` / `volume_set.sh`
           on the player.
+        - "Play it from the beginning" / "start it over": use
+          `exec media_seek.sh --seek_position 1` on the player. Playing the uri again does NOT
+          restart it — MA keeps a resume point per podcast episode and audiobook, and every play
+          of that item starts there, reporting success while doing it. Stopping first changes
+          nothing; the resume point just moves to where you stopped. `media_seek.sh` is the only
+          call that restarts, and it needs something already loaded on the player: if the item is
+          not playing yet, play it first, then seek.
         - Grouping (synced multi-room): `join.sh` (`media_player.join`; `--group_members` = the
           other players) to play in sync; `unjoin.sh` (`media_player.unjoin`) to split a room
           back out.
