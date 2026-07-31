@@ -44,27 +44,9 @@ public sealed class TranscriptDispatcher(
                 transcript.AvgLogProb,
                 transcript.NoSpeechProb);
 
-            await publisher.PublishAsync(
-                new VoiceEvent
-                {
-                    Metric = VoiceMetric.UtteranceTranscribed,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
-                    Outcome = "dropped",
-                    Confidence = transcript.Confidence,
-                    Similarity = similarity,
-                    AvgLogProb = transcript.AvgLogProb,
-                    NoSpeechProb = transcript.NoSpeechProb,
-                    CompressionRatio = transcript.CompressionRatio,
-                    PeakRms = stats?.PeakRms,
-                    SpeechMs = stats?.SpeechMs,
-                    FloorRms = stats?.FloorRms,
-                    TrailingRms = stats?.TrailingRms,
-                    EndReason = stats?.EndReason,
-                    ConversationId = manager.GetActiveConversationId(session.SatelliteId)
-                },
-                ct);
+            await PublishUtteranceEventAsync(
+                session, transcript, similarity, stats, "dropped",
+                manager.GetActiveConversationId(session.SatelliteId), ct);
             return false;
         }
 
@@ -89,27 +71,9 @@ public sealed class TranscriptDispatcher(
             logger.LogInformation(
                 "Local command {Command} for {Satellite}: sent={Sent}", command, session.SatelliteId, sent);
 
-            await publisher.PublishAsync(
-                new VoiceEvent
-                {
-                    Metric = VoiceMetric.UtteranceTranscribed,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
-                    Outcome = sent ? "command" : "command_failed",
-                    Confidence = transcript.Confidence,
-                    Similarity = similarity,
-                    AvgLogProb = transcript.AvgLogProb,
-                    NoSpeechProb = transcript.NoSpeechProb,
-                    CompressionRatio = transcript.CompressionRatio,
-                    PeakRms = stats?.PeakRms,
-                    SpeechMs = stats?.SpeechMs,
-                    FloorRms = stats?.FloorRms,
-                    TrailingRms = stats?.TrailingRms,
-                    EndReason = stats?.EndReason,
-                    ConversationId = manager.GetActiveConversationId(session.SatelliteId)
-                },
-                ct);
+            await PublishUtteranceEventAsync(
+                session, transcript, similarity, stats, sent ? "command" : "command_failed",
+                manager.GetActiveConversationId(session.SatelliteId), ct);
 
             // False means "nothing reached the agent", which FollowUpConversation already turns into
             // EndConversation — the satellite gets its closing transcript and re-arms. No new
@@ -138,14 +102,28 @@ public sealed class TranscriptDispatcher(
             dismissedAlert,
             ct);
 
-        await publisher.PublishAsync(
+        await PublishUtteranceEventAsync(session, transcript, similarity, stats, "dispatched", conversationId, ct);
+        return true;
+    }
+
+    // Every UtteranceTranscribed publish shares this shape; only the outcome label and the
+    // conversation id (active vs. newly created vs. none) differ per call site.
+    private Task PublishUtteranceEventAsync(
+        SatelliteSession session,
+        TranscriptionResult transcript,
+        double? similarity,
+        CaptureStats? stats,
+        string outcome,
+        string? conversationId,
+        CancellationToken ct) =>
+        publisher.PublishAsync(
             new VoiceEvent
             {
                 Metric = VoiceMetric.UtteranceTranscribed,
                 SatelliteId = session.SatelliteId,
                 Room = session.Config.Room,
                 Identity = session.Config.Identity,
-                Outcome = "dispatched",
+                Outcome = outcome,
                 Confidence = transcript.Confidence,
                 Similarity = similarity,
                 AvgLogProb = transcript.AvgLogProb,
@@ -159,6 +137,4 @@ public sealed class TranscriptDispatcher(
                 ConversationId = conversationId
             },
             ct);
-        return true;
-    }
 }

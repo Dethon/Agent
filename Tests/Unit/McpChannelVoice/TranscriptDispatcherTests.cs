@@ -35,7 +35,7 @@ public class TranscriptDispatcherTests
         };
 
     private static (TranscriptDispatcher Sut, VoiceConversationManager Manager, CapturingEmitter Emitter) Build(
-        CommandSettings? commands = null)
+        CommandSettings? commands = null, IMetricsPublisher? publisher = null)
     {
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -54,10 +54,20 @@ public class TranscriptDispatcherTests
         var emitter = new CapturingEmitter();
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var sut = new TranscriptDispatcher(
-            emitter, Mock.Of<IMetricsPublisher>(), manager,
+            emitter, publisher ?? Mock.Of<IMetricsPublisher>(), manager,
             new VoiceCommandMatcher(commands ?? new CommandSettings()),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, time, NullLogger<TranscriptDispatcher>.Instance);
         return (sut, manager, emitter);
+    }
+
+    private static (Mock<IMetricsPublisher> Publisher, List<MetricEvent> Published) CapturingMetricsPublisher()
+    {
+        var published = new List<MetricEvent>();
+        var publisher = new Mock<IMetricsPublisher>();
+        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
+            .Returns(Task.CompletedTask);
+        return (publisher, published);
     }
 
     [Fact]
@@ -414,6 +424,36 @@ public class TranscriptDispatcherTests
         written[0].Data["action"]!.GetValue<string>().ShouldBe("up");
         emitter.Captured.ShouldBeEmpty();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_LocalCommandWithControlWriter_PublishesCommandOutcome()
+    {
+        var (publisher, published) = CapturingMetricsPublisher();
+        var (sut, _, _) = Build(Commands(), publisher.Object);
+        var session = Session();
+        session.ControlWriter = (_, _) => Task.CompletedTask;
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "sube el volumen local", Confidence = 0.9 },
+            "agent-1", null, null, null, default);
+
+        var evt = published.OfType<VoiceEvent>().Single(e => e.Metric == VoiceMetric.UtteranceTranscribed);
+        evt.Outcome.ShouldBe("command");
+    }
+
+    [Fact]
+    public async Task DispatchAsync_LocalCommandWithNoControlWriter_PublishesCommandFailedOutcome()
+    {
+        var (publisher, published) = CapturingMetricsPublisher();
+        var (sut, _, _) = Build(Commands(), publisher.Object);
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "sube el volumen local", Confidence = 0.9 },
+            "agent-1", null, null, null, default);
+
+        var evt = published.OfType<VoiceEvent>().Single(e => e.Metric == VoiceMetric.UtteranceTranscribed);
+        evt.Outcome.ShouldBe("command_failed");
     }
 
     [Theory]
