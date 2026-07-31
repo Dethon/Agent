@@ -50,6 +50,12 @@ pub struct Config {
     pub duck_percent: u8,              // softvol level while the satellite is active
     pub music_restore_grace_ms: u64,   // hold the un-duck this long so a long reply's inter-segment
                                        // Idle gaps don't flap the music up between segments
+    // The satellite's own master output level — the PipeWire sink everything ultimately feeds,
+    // driven with wpctl. Distinct from the per-source ALSA softvols (Music / TTS / Alert): this is
+    // the physical volume knob an amp HAT like the MiniAmp does not have. None = feature off,
+    // mirroring music_mixer, because PipeWire is installed only on music units.
+    pub volume_sink: Option<String>,
+    pub volume_step: u8,
 }
 
 impl Default for Config {
@@ -84,6 +90,8 @@ impl Default for Config {
             music_card: None,
             duck_percent: 20,
             music_restore_grace_ms: 3000,
+            volume_sink: None,
+            volume_step: 10,
         }
     }
 }
@@ -95,6 +103,7 @@ impl Config {
     ///        --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
     ///        --music-mixer <control> --music-card <card> --duck-percent <pct> --music-restore-grace-ms <ms>
+    ///        --volume-sink <name> --volume-step <pct>
     pub fn from_args() -> anyhow::Result<Self> {
         Self::parse(pico_args::Arguments::from_env())
     }
@@ -140,6 +149,11 @@ impl Config {
         if let Some(v) = pa.opt_value_from_str::<_, String>("--music-card")? { c.music_card = Some(v); }
         if let Some(v) = pa.opt_value_from_str::<_, u8>("--duck-percent")? { c.duck_percent = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u64>("--music-restore-grace-ms")? { c.music_restore_grace_ms = v; }
+        if let Some(v) = pa.opt_value_from_str::<_, String>("--volume-sink")? { c.volume_sink = Some(v); }
+        if let Some(v) = pa.opt_value_from_str::<_, u8>("--volume-step")? {
+            anyhow::ensure!(v >= 1, "--volume-step must be at least 1 (got {v})");
+            c.volume_step = v;
+        }
         let rest = pa.finish();
         anyhow::ensure!(rest.is_empty(), "unknown arguments: {rest:?}");
         Ok(c)
@@ -267,6 +281,28 @@ mod tests {
         .unwrap();
         assert_eq!(c.snd_command, "aplay -D tts -r 22050");
         assert_eq!(c.alert_snd_command, "aplay -D alert -r 22050");
+    }
+
+    #[test]
+    fn volume_flags_parse_and_default_off() {
+        let off = Config::default();
+        assert_eq!(off.volume_sink, None, "no sink configured = local volume control off");
+        assert_eq!(off.volume_step, 10);
+
+        let on = Config::parse(pico_args::Arguments::from_vec(vec![
+            "--volume-sink".into(), "@DEFAULT_AUDIO_SINK@".into(),
+            "--volume-step".into(), "5".into(),
+        ]))
+        .unwrap();
+        assert_eq!(on.volume_sink.as_deref(), Some("@DEFAULT_AUDIO_SINK@"));
+        assert_eq!(on.volume_step, 5);
+    }
+
+    /// A zero step would make every command a silent no-op that still beeps, which reads as
+    /// broken hardware rather than as misconfiguration.
+    #[test]
+    fn zero_volume_step_is_rejected() {
+        assert!(Config::parse(args(&["--volume-step", "0"])).is_err());
     }
 
     #[test]
