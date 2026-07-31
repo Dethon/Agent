@@ -37,4 +37,20 @@ public class FileSystemResourceTests
         description.ShouldContain("schedule against yourself");
         description.ShouldContain("unless the user names another agent");
     }
+
+    // The blurb is a second copy of the timing contract, and it contradicted the engine on both
+    // halves: ComputeNextRunAt evaluates cron against TimeProvider.LocalTimeZone, not UTC, and ToUtc
+    // reads a zoneless runAt as wall clock in that same zone rather than rejecting it. An agent that
+    // reads this surface instead of the prompt would stamp UTC on both and fire hours off.
+    [Fact]
+    public void GetInfo_TimingContract_MatchesTheEngineInsteadOfClaimingUtc()
+    {
+        var json = new FileSystemResource().GetInfo();
+        using var doc = JsonDocument.Parse(json);
+        var description = doc.RootElement.GetProperty("description").GetString()!;
+
+        description.ShouldNotContain("UTC cron");
+        description.ShouldNotContain("MUST include a time zone");
+        description.ShouldContain(TimeZoneInfo.Local.Id);
+    }
 }
