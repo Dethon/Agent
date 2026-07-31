@@ -400,16 +400,14 @@ async fn handle_hub_event<W: AsyncWrite + Unpin>(
         "speaker-volume" => {
             let action = e.data_obj().get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
             match action.as_str() {
-                "up" | "down" => {
-                    if ctx.volume.step(action == "up").await.is_ok() {
-                        if let Some(pcm) = ctx.cues.volume() { playback.cue(pcm); }
-                    }
-                }
-                "unmute" => {
-                    if ctx.volume.set_user_mute(false).await.is_ok() {
-                        if let Some(pcm) = ctx.cues.volume() { playback.cue(pcm); }
-                    }
-                }
+                "up" | "down" => match ctx.volume.step(action == "up").await {
+                    Ok(()) => { if let Some(pcm) = ctx.cues.volume() { playback.cue(pcm); } }
+                    Err(e) => warn!("local volume step failed: {e:#}"),
+                },
+                "unmute" => match ctx.volume.set_user_mute(false).await {
+                    Ok(()) => { if let Some(pcm) = ctx.cues.volume() { playback.cue(pcm); } }
+                    Err(e) => warn!("local unmute failed: {e:#}"),
+                },
                 // Cue FIRST, mute after it has drained: muting the sink would otherwise silence
                 // the very sound confirming the mute. The wait runs in a detached task so a
                 // ~300 ms cue cannot stall mic forwarding on the select! loop.
@@ -1222,10 +1220,6 @@ mod tests {
         assert!(!led_rx.has_changed().unwrap(), "stale voice-stopped must not touch the LED");
     }
 
-    fn speaker_volume(action: &str) -> WyomingEvent {
-        WyomingEvent::with_data("speaker-volume", json!({ "action": action }))
-    }
-
     /// Everything a speaker-volume test needs: a duplex sink for the writer, a probe volume
     /// control that records its wpctl calls instead of running them, and a per-connection hold.
     struct VolFixture {
@@ -1246,11 +1240,18 @@ mod tests {
     }
 
     async fn feed(f: &VolFixture, playback: &mut PlaybackHandle, action: &str) {
+        feed_data(f, playback, json!({ "action": action })).await;
+    }
+
+    // Drives handle_hub_event with an arbitrary speaker-volume `data` payload, for covering the
+    // defensive read itself (missing key / wrong type) rather than a valid-but-unknown action.
+    async fn feed_data(f: &VolFixture, playback: &mut PlaybackHandle, data: serde_json::Value) {
         let (mut a, _b) = tokio::io::duplex(4096);
         let ctx = Ctx { cues: &f.cues, led: &f.led, volume: &f.vol, alert_held: &f.held };
         let mut mode = Mode::Idle;
         let mut phase = LedState::Idle;
-        handle_hub_event(speaker_volume(action), &mut mode, &mut phase, None, &mut a, playback, &ctx)
+        let event = WyomingEvent::with_data("speaker-volume", data);
+        handle_hub_event(event, &mut mode, &mut phase, None, &mut a, playback, &ctx)
             .await
             .unwrap();
     }
@@ -1342,6 +1343,35 @@ mod tests {
         let (mut playback, _done_rx, _pump) = pump();
 
         feed(&f, &mut playback, "teleport").await;
+
+        assert!(f.log.lock().unwrap().is_empty());
+        assert!(!f.vol.user_muted());
+    }
+
+    // The defensive read (`.get("action").and_then(|v| v.as_str()).unwrap_or("")`) exists for
+    // exactly this: a peer-supplied event on the connection's event path with no `action` key at
+    // all must not panic and drop the satellite, and must fall through to the same ignored path
+    // as an unrecognized action.
+    #[tokio::test]
+    async fn speaker_volume_event_missing_the_action_key_is_ignored() {
+        let f = vol_fixture();
+        let (mut playback, _done_rx, _pump) = pump();
+
+        feed_data(&f, &mut playback, json!({})).await;
+
+        assert!(f.log.lock().unwrap().is_empty());
+        assert!(!f.vol.user_muted());
+    }
+
+    // Same defensive read, the other failure shape: `action` present but not a string (e.g. a
+    // hub-side encoding bug sending a number). `.as_str()` returns None here too, so this must
+    // degrade exactly like the missing-key case, never panic.
+    #[tokio::test]
+    async fn speaker_volume_event_with_a_non_string_action_is_ignored() {
+        let f = vol_fixture();
+        let (mut playback, _done_rx, _pump) = pump();
+
+        feed_data(&f, &mut playback, json!({ "action": 5 })).await;
 
         assert!(f.log.lock().unwrap().is_empty());
         assert!(!f.vol.user_muted());

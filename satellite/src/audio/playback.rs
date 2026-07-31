@@ -72,7 +72,6 @@ pub enum PlaybackCmd {
     /// Same as `Cue`, plus an acknowledgement sent once the sound has finished — or immediately
     /// if it was dropped. The local mute needs it: muting the sink would otherwise cut off the
     /// cue that confirms the mute.
-    #[allow(dead_code)] // wired in Task 10
     CueThen(Vec<u8>, tokio::sync::oneshot::Sender<()>),
 }
 
@@ -110,7 +109,6 @@ impl PlaybackHandle {
 
     /// try_send like `cue`. A failed send drops the sender, so the waiter resolves at once and
     /// the caller proceeds — which is the wanted behaviour when the pump is backlogged.
-    #[allow(dead_code)] // wired in Task 10
     pub fn cue_then(&self, pcm: Vec<u8>, done: tokio::sync::oneshot::Sender<()>) {
         let _ = self.cmd_tx.try_send(PlaybackCmd::CueThen(pcm, done));
     }
