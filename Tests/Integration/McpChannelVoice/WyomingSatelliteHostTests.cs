@@ -205,7 +205,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -349,7 +349,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
             ["office-01"] = new()
@@ -504,7 +504,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System,
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System,
             NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
@@ -645,7 +645,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -789,7 +789,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -942,7 +942,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1125,7 +1125,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1260,7 +1260,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1410,7 +1410,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1539,7 +1539,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1677,7 +1677,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1798,7 +1798,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1901,7 +1901,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -2012,7 +2012,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -2127,7 +2127,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {

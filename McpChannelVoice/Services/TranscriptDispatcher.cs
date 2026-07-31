@@ -1,7 +1,9 @@
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
+using McpChannelVoice.Services.WyomingProtocol;
 
 namespace McpChannelVoice.Services;
 
@@ -9,6 +11,7 @@ public sealed class TranscriptDispatcher(
     ChannelNotificationEmitter emitter,
     IMetricsPublisher publisher,
     VoiceConversationManager manager,
+    VoiceCommandMatcher matcher,
     double avgLogProbThreshold,
     double noSpeechProbThreshold,
     TimeProvider timeProvider,
@@ -62,6 +65,55 @@ public sealed class TranscriptDispatcher(
                     ConversationId = manager.GetActiveConversationId(session.SatelliteId)
                 },
                 ct);
+            return false;
+        }
+
+        // Local speaker commands are answered here and never reach the agent. Placed AFTER the
+        // quality gate (garbage audio must not move a volume knob) and BEFORE GetOrCreateAsync,
+        // which is a full create_conversation MCP round trip — matching first keeps the path fast
+        // and keeps these out of conversation history.
+        if (matcher.Match(transcript.Text) is { } command)
+        {
+            var action = command switch
+            {
+                VoiceCommand.LocalVolumeUp => "up",
+                VoiceCommand.LocalVolumeDown => "down",
+                VoiceCommand.LocalMute => "mute",
+                VoiceCommand.LocalUnmute => "unmute",
+                _ => null
+            };
+
+            var sent = action is not null && await session.TrySendControlAsync(
+                WyomingEvent.Header("speaker-volume", new JsonObject { ["action"] = action }), ct);
+
+            logger.LogInformation(
+                "Local command {Command} for {Satellite}: sent={Sent}", command, session.SatelliteId, sent);
+
+            await publisher.PublishAsync(
+                new VoiceEvent
+                {
+                    Metric = VoiceMetric.UtteranceTranscribed,
+                    SatelliteId = session.SatelliteId,
+                    Room = session.Config.Room,
+                    Identity = session.Config.Identity,
+                    Outcome = sent ? "command" : "command_failed",
+                    Confidence = transcript.Confidence,
+                    Similarity = similarity,
+                    AvgLogProb = transcript.AvgLogProb,
+                    NoSpeechProb = transcript.NoSpeechProb,
+                    CompressionRatio = transcript.CompressionRatio,
+                    PeakRms = stats?.PeakRms,
+                    SpeechMs = stats?.SpeechMs,
+                    FloorRms = stats?.FloorRms,
+                    TrailingRms = stats?.TrailingRms,
+                    EndReason = stats?.EndReason,
+                    ConversationId = manager.GetActiveConversationId(session.SatelliteId)
+                },
+                ct);
+
+            // False means "nothing reached the agent", which FollowUpConversation already turns into
+            // EndConversation — the satellite gets its closing transcript and re-arms. No new
+            // turn-end path is needed.
             return false;
         }
 

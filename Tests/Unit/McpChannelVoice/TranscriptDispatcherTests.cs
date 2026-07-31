@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
@@ -6,6 +7,7 @@ using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -19,7 +21,21 @@ public class TranscriptDispatcherTests
     private static SatelliteSession Session() =>
         new("kitchen-01", new SatelliteConfig { Identity = "household", Room = "Kitchen" });
 
-    private static (TranscriptDispatcher Sut, VoiceConversationManager Manager, CapturingEmitter Emitter) Build()
+    private static CommandSettings Commands(bool enabled = true) =>
+        new()
+        {
+            Enabled = enabled,
+            Phrases = new CommandPhrases
+            {
+                LocalVolumeUp = ["sube el volumen local"],
+                LocalVolumeDown = ["baja el volumen local"],
+                LocalMute = ["silencia el altavoz"],
+                LocalUnmute = ["quita el silencio local"]
+            }
+        };
+
+    private static (TranscriptDispatcher Sut, VoiceConversationManager Manager, CapturingEmitter Emitter) Build(
+        CommandSettings? commands = null)
     {
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -39,6 +55,7 @@ public class TranscriptDispatcherTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var sut = new TranscriptDispatcher(
             emitter, Mock.Of<IMetricsPublisher>(), manager,
+            new VoiceCommandMatcher(commands ?? new CommandSettings()),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, time, NullLogger<TranscriptDispatcher>.Instance);
         return (sut, manager, emitter);
     }
@@ -244,7 +261,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
-            emitter, publisher.Object, manager,
+            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
@@ -298,7 +315,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
-            new CapturingEmitter(), publisher.Object, manager,
+            new CapturingEmitter(), publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 
@@ -346,7 +363,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
-            new CapturingEmitter(), publisher.Object, manager,
+            new CapturingEmitter(), publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 
@@ -377,5 +394,96 @@ public class TranscriptDispatcherTests
         evt.SpeechMs.ShouldBe(450);
         evt.FloorRms.ShouldBe(610);
         evt.EndReason.ShouldBe("max_utterance");
+    }
+
+    [Fact]
+    public async Task DispatchAsync_LocalCommand_SendsSpeakerVolumeAndSkipsTheAgent()
+    {
+        var (sut, manager, emitter) = Build(Commands());
+        var session = Session();
+        var written = new List<WyomingEvent>();
+        session.ControlWriter = (evt, _) => { written.Add(evt); return Task.CompletedTask; };
+
+        var dispatched = await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "sube el volumen local", Confidence = 0.9 },
+            "agent-1", null, null, null, default);
+
+        dispatched.ShouldBeFalse();
+        written.Count.ShouldBe(1);
+        written[0].Type.ShouldBe("speaker-volume");
+        written[0].Data["action"]!.GetValue<string>().ShouldBe("up");
+        emitter.Captured.ShouldBeEmpty();
+        manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("sube el volumen local", "up")]
+    [InlineData("baja el volumen local", "down")]
+    [InlineData("silencia el altavoz", "mute")]
+    [InlineData("quita el silencio local", "unmute")]
+    public async Task DispatchAsync_EachLocalCommand_SendsItsAction(string text, string action)
+    {
+        var (sut, _, _) = Build(Commands());
+        var session = Session();
+        var written = new List<WyomingEvent>();
+        session.ControlWriter = (evt, _) => { written.Add(evt); return Task.CompletedTask; };
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = text, Confidence = 0.9 }, "agent-1", null, null, null, default);
+
+        written[0].Data["action"]!.GetValue<string>().ShouldBe(action);
+    }
+
+    // The gibberish gate runs first on purpose: acting on audio the STT itself flagged as poor is
+    // exactly the misfire the gate exists to prevent.
+    [Fact]
+    public async Task DispatchAsync_LowQualityTranscriptMatchingAPhrase_IsDroppedNotExecuted()
+    {
+        var (sut, _, emitter) = Build(Commands());
+        var session = Session();
+        var written = new List<WyomingEvent>();
+        session.ControlWriter = (evt, _) => { written.Add(evt); return Task.CompletedTask; };
+
+        var dispatched = await sut.DispatchAsync(
+            session,
+            new TranscriptionResult { Text = "sube el volumen local", AvgLogProb = -5.0 },
+            "agent-1", null, null, null, default);
+
+        dispatched.ShouldBeFalse();
+        written.ShouldBeEmpty();
+        emitter.Captured.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_NoControlWriter_ReturnsFalseWithoutThrowing()
+    {
+        var (sut, _, emitter) = Build(Commands());
+
+        var dispatched = await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "sube el volumen local", Confidence = 0.9 },
+            "agent-1", null, null, null, default);
+
+        dispatched.ShouldBeFalse();
+        emitter.Captured.ShouldBeEmpty();
+    }
+
+    // "sube el volumen" without the local marker is a Music Assistant request and belongs to the
+    // agent. It must travel the normal path untouched.
+    [Fact]
+    public async Task DispatchAsync_MusicVolumeRequest_StillReachesTheAgent()
+    {
+        var (sut, _, emitter) = Build(Commands());
+        var session = Session();
+        var written = new List<WyomingEvent>();
+        session.ControlWriter = (evt, _) => { written.Add(evt); return Task.CompletedTask; };
+
+        var dispatched = await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "sube el volumen", Confidence = 0.9 },
+            "agent-1", null, null, null, default);
+
+        dispatched.ShouldBeTrue();
+        written.ShouldBeEmpty();
+        emitter.Captured.Count.ShouldBe(1);
+        emitter.Captured[0].Content.ShouldBe("sube el volumen");
     }
 }
