@@ -138,6 +138,9 @@ public sealed class WyomingSatelliteHost(
         await client.ConnectAsync(host, port, ct);
 
         var session = new SatelliteSession(id, config);
+        // The WyomingClient lives only in this scope, so hand the session a writer for control
+        // events raised from outside it — the transcript fast-path and the insistent alert hold.
+        session.ControlWriter = (evt, ct2) => client.WriteAsync(evt, ct2);
         sessionRegistry.Register(session);
         // Both re-arm writes share the connection's single WyomingWriter with the playback loop and
         // the coordinator's EndConversation, which already write to it concurrently today — the
@@ -278,6 +281,7 @@ public sealed class WyomingSatelliteHost(
             try
             { await conversationTask; }
             catch { /* unwinds on cancellation / disconnect */ }
+            session.ControlWriter = null;
             sessionRegistry.Unregister(id);
         }
     }
