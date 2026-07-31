@@ -2,6 +2,7 @@ use crate::config::Config;
 
 const AWAKE_WAV: &[u8] = include_bytes!("../../sounds/awake.wav");
 const DONE_WAV: &[u8] = include_bytes!("../../sounds/done.wav");
+const VOLUME_WAV: &[u8] = include_bytes!("../../sounds/volume.wav");
 
 /// Cue PCM decoded once at startup. Playback goes through the connection's playback pump
 /// (PlaybackHandle::cue), which serializes cues with TTS streams on the single device owner —
@@ -12,6 +13,7 @@ pub struct Cues {
     done_enabled: bool,
     pub(crate) awake_pcm: Vec<u8>,
     pub(crate) done_pcm: Vec<u8>,
+    pub(crate) volume_pcm: Vec<u8>,
 }
 
 impl Cues {
@@ -21,6 +23,7 @@ impl Cues {
             done_enabled: cfg.done_cue,
             awake_pcm: decode_wav_pcm(AWAKE_WAV)?,
             done_pcm: decode_wav_pcm(DONE_WAV)?,
+            volume_pcm: decode_wav_pcm(VOLUME_WAV)?,
         })
     }
 
@@ -30,6 +33,12 @@ impl Cues {
 
     pub fn done(&self) -> Option<Vec<u8>> {
         self.done_enabled.then(|| self.done_pcm.clone())
+    }
+
+    /// Confirmation for a local volume or mute command. Deliberately always on: with no reply
+    /// spoken and no LED change, it is the only signal that the command landed.
+    pub fn volume(&self) -> Option<Vec<u8>> {
+        Some(self.volume_pcm.clone())
     }
 }
 
@@ -62,5 +71,11 @@ mod tests {
         let off = Cues::new(&Config { awake_cue: false, done_cue: false, ..Config::default() }).unwrap();
         assert!(off.awake().is_none());
         assert!(off.done().is_none());
+    }
+
+    #[test]
+    fn decodes_the_volume_cue() {
+        let cues = Cues::new(&Config::default()).unwrap();
+        assert!(!cues.volume().unwrap().is_empty());
     }
 }
