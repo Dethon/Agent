@@ -169,9 +169,18 @@ Volume up and down hold no state.
 `-l 1.0` caps at 100 %, so repeated `up` cannot push the sink above unity.
 
 Cue ordering is what makes the confirmation audible in both directions, and mute needs care:
-muting the sink silences an in-flight cue immediately, so the mute is applied on the cue's **drain
-completion**, which the playback pump already reports. If the cue is dropped because a stream is
-active, the mute applies at once — there is nothing to wait for.
+muting the sink silences an in-flight cue immediately, so the mute is applied only once the cue
+has finished playing.
+
+Cues are fire-and-forget today (`PlaybackHandle::cue` is a `try_send` with no completion signal),
+so this needs a small addition: a cue variant carrying a oneshot acknowledgement, which the pump
+fires after `play_cue` returns — and also fires when it drops the cue because a stream is active.
+Because the pump already awaits `finish()` on a cue inline, the acknowledgement lands at true
+playback end. A dropped or failed send leaves the oneshot sender dropped, so the waiter resolves
+immediately and the mute applies at once, which is the wanted behaviour in exactly those cases.
+
+The wait happens in a short detached task, never on the connection's `select!` loop, so a ~300 ms
+cue cannot stall mic forwarding.
 
 `alert-release` does nothing unless a hold is outstanding, so a stray or duplicated release can
 never change the mute state on its own.
