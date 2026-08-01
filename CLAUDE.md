@@ -52,6 +52,7 @@ Transports (WebChat, Telegram, ServiceBus, Voice, Scheduling) are independent MC
 - On connect and every reconnect the agent registers its `AgentCatalogEntry` list via `register_agents` (`ChannelConnectionHost`); channels use this single source instead of duplicated `Agents` config, and SignalR broadcasts `OnAgentsUpdated` so WebChat refreshes live.
 - `attachOnly: true` in `ChannelEndpoints` (voice) makes `DeliveryTargetResolver` order that channel last — it attaches to conversations minted elsewhere, never mints the primary target.
 - **Dual-role** servers are both a channel and a tool/filesystem server (`mcp-scheduling`, `mcp-library` download alerts); their channel-protocol tools are hidden from the LLM.
+- `ChannelMessageNotification.ConfigPatch` (`AgentConfigPatch`: model + reasoning effort) lets a channel override agent config per message; only the SignalR channel populates it. Whitelist: `patchableModels` in `Agent/appsettings.json`, surfaced to clients through the widened `AgentCatalogEntry`.
 
 ## Virtual Filesystem Architecture
 
