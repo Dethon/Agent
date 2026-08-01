@@ -14,11 +14,13 @@ public static class TranscriptionOptionsFactory
         new()
         {
             Language = config.Stt?.OpenAi?.Language,
+            PromptTemplate = config.Stt?.OpenAi?.Prompt,
             TargetSpeaker = verification is { Decision: SpeakerDecision.Accepted } v
                 ? v.IdentifiedSpeaker ?? v.BestMatch
                 : null,
             NoiseFloorRms = stats.FloorRms,
             SatelliteId = satelliteId,
-            Room = config.Room
+            Room = config.Room,
+            Locality = config.Locality
         };
 }

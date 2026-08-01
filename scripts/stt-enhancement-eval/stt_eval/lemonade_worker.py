@@ -13,12 +13,18 @@ import urllib.request
 import uuid
 
 
-def _post_transcription(host, port, model, wav_path):
+def _post_transcription(host, port, model, wav_path, prompt=None):
     with open(wav_path, "rb") as fh:
         audio = fh.read()
     boundary = uuid.uuid4().hex
+    fields = [("model", model), ("response_format", "verbose_json"), ("language", "es")]
+    # Lemonade forwards this to whisper-server, where it replaces the server's own --prompt for
+    # this request. Omitted entirely when unset, so an unprompted run keeps the container default
+    # and the two configurations stay comparable on identical audio.
+    if prompt:
+        fields.append(("prompt", prompt))
     parts = []
-    for name, value in (("model", model), ("response_format", "verbose_json"), ("language", "es")):
+    for name, value in fields:
         parts.append(
             f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
         )
@@ -51,13 +57,14 @@ def main():
     ap.add_argument("--host", default="lemonade")
     ap.add_argument("--port", type=int, default=13305)
     ap.add_argument("--model", default="Whisper-Medium")
+    ap.add_argument("--prompt", default=None, help="whisper initial prompt posted with each clip")
     ap.add_argument("--manifest", required=True, help="jsonl of {'wav': path}")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     with open(args.manifest, encoding="utf-8") as fin, open(args.out, "w", encoding="utf-8") as fout:
         for line in fin:
             wav = json.loads(line)["wav"]
-            payload = _post_transcription(args.host, args.port, args.model, wav)
+            payload = _post_transcription(args.host, args.port, args.model, wav, args.prompt)
             row = {"wav": wav, "text": payload.get("text", ""), "score": _score(payload)}
             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
             # Flush per row: mirrors _medium's per-row flush so a mid-batch docker kill (or a

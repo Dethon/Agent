@@ -1,8 +1,10 @@
 #!/bin/sh
 # Maps the single STT_BACKEND env var (cpu|gpu, default gpu) onto Lemonade's whisper.cpp
 # device selection (config.json — the same mechanism Lemonade's docker docs use for
-# llamacpp), restores the Wyoming-era decode-quality flags via whispercpp.args (appended
-# verbatim to the spawned whisper-server command line), and pre-pulls the model. Both
+# llamacpp), sets the decode-quality flags via whispercpp.args (appended verbatim to the
+# spawned whisper-server command line) — the Wyoming-era VAD/prompt/beam trio plus the
+# short-phrase knobs (non-speech-token suppression, best-of, VAD padding and minimum speech
+# duration) — and pre-pulls the model. Both
 # tiers run the same model, so the hub needs no corresponding setting; everything here is
 # container-side only. The NPU/flm tier ignores whispercpp.* entirely.
 set -eu
@@ -13,12 +15,21 @@ BACKEND="${STT_BACKEND:-gpu}"
 MODEL="${STT_MODEL:-Whisper-Medium}"
 
 # ${VAR-default}: unset inherits the tuned default, set-but-empty disables that flag.
-# whisper-server's own beam default is -1 (greedy); 5 matches the old wyoming-whisper.
+# whisper-server's own beam default is -1 (greedy); 5 matches the old wyoming-whisper, and
+# best-of 5 matches OpenAI's against whisper.cpp's 2 (it applies on temperature fallback).
 # The initial prompt biases spelling/vocabulary toward Castilian assistant turns; it must
-# not contain double quotes (it is embedded in config.json as a quoted argument).
+# not contain double quotes (it is embedded in config.json as a quoted argument) and must
+# stay free of meta-language — the earlier "…p. ej. Valladolid." tail was observed being
+# emitted verbatim as a transcript on short, quiet audio. This is only the fallback for
+# callers that are not the hub: the hub posts its own per-request prompt
+# (Stt.OpenAi.Prompt), which replaces this one for that request.
 BEAM_SIZE="${STT_BEAM_SIZE-5}"
+BEST_OF="${STT_BEST_OF-5}"
+SUPPRESS_NST="${STT_SUPPRESS_NST-1}"
 VAD_THRESHOLD="${STT_VAD_THRESHOLD-0.6}"
-INITIAL_PROMPT="${STT_INITIAL_PROMPT-Asistente de voz en español de España (castellano): domótica, recordatorios, listas de la compra, el tiempo y preguntas generales. Nombres propios y ciudades españolas, p. ej. Valladolid.}"
+VAD_SPEECH_PAD_MS="${STT_VAD_SPEECH_PAD_MS-150}"
+VAD_MIN_SPEECH_MS="${STT_VAD_MIN_SPEECH_MS-150}"
+INITIAL_PROMPT="${STT_INITIAL_PROMPT-Asistente de voz en español de España. Órdenes breves de domótica, temporizadores, listas de la compra, música y preguntas generales.}"
 
 case "$BACKEND" in
   cpu)  WHISPER_BACKEND="cpu" ;;
@@ -34,6 +45,14 @@ mkdir -p "$CONFIG_DIR"
 WHISPER_ARGS=""
 if [ -n "$BEAM_SIZE" ]; then
   WHISPER_ARGS="--beam-size $BEAM_SIZE"
+fi
+if [ -n "$BEST_OF" ]; then
+  WHISPER_ARGS="$WHISPER_ARGS --best-of $BEST_OF"
+fi
+# Non-speech tokens are what the round-1 eval saw come out as "[Música]" and YouTube
+# boilerplate on near-unintelligible audio.
+if [ -n "$SUPPRESS_NST" ]; then
+  WHISPER_ARGS="$WHISPER_ARGS --suppress-nst"
 fi
 # The \" survive into config.json as JSON escapes, so the prompt reaches whisper-server as
 # one quoted argument (lemond's parse_custom_args honors the quotes).
@@ -57,6 +76,16 @@ if [ -n "$VAD_THRESHOLD" ]; then
   fi
   if [ -s "$VAD_MODEL" ]; then
     WHISPER_ARGS="$WHISPER_ARGS --vad --vad-model $VAD_MODEL --vad-threshold $VAD_THRESHOLD"
+    # Inside this branch only: these are VAD arguments, and a boot that fell back to no-VAD
+    # must not pass them. whisper.cpp pads a VAD segment by 30 ms, tight enough to clip a
+    # leading plosive off a one-word command, and discards speech shorter than 250 ms
+    # outright — both are exactly the short-command case.
+    if [ -n "$VAD_SPEECH_PAD_MS" ]; then
+      WHISPER_ARGS="$WHISPER_ARGS --vad-speech-pad-ms $VAD_SPEECH_PAD_MS"
+    fi
+    if [ -n "$VAD_MIN_SPEECH_MS" ]; then
+      WHISPER_ARGS="$WHISPER_ARGS --vad-min-speech-duration-ms $VAD_MIN_SPEECH_MS"
+    fi
   fi
 fi
 WHISPER_ARGS="${WHISPER_ARGS# }"

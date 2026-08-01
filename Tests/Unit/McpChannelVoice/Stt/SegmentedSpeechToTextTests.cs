@@ -56,13 +56,14 @@ public class SegmentedSpeechToTextTests
 
     // 100 ms chunks: 300 ms segment-silence => 3 silent chunks close a segment;
     // 500 ms min-segment => 5 loud chunks minimum.
-    private static SegmentedSttConfig Config(int maxInFlight = 1) => new()
+    private static SegmentedSttConfig Config(int maxInFlight = 1, int firstSplitAfterMs = 0) => new()
     {
         Enabled = true,
         SilenceRmsThreshold = 500,
         SegmentSilenceMs = 300,
         MinSegmentMs = 500,
-        MaxInFlightDecodes = maxInFlight
+        MaxInFlightDecodes = maxInFlight,
+        FirstSplitAfterMs = firstSplitAfterMs
     };
 
     private static SegmentedSpeechToText New(ISpeechToText inner, SegmentedSttConfig? config = null) =>
@@ -160,11 +161,29 @@ public class SegmentedSpeechToTextTests
 
         // Leading Silence(1) seeds the floor (pre-roll gap) — see the identical note
         // on TranscribeAsync_ManySegments_RespectsMaxInFlightDecodes above.
-        await New(inner, Config(maxInFlight: 2)).TranscribeAsync(
+        // ChainContext off: chaining makes a segment await its predecessor's transcript, which
+        // serializes decodes by construction — pinned by the test below.
+        await New(inner, Config(maxInFlight: 2) with { ChainContext = false }).TranscribeAsync(
             Stream(Silence(1), Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
             new TranscriptionOptions(), CancellationToken.None);
 
         inner.MaxConcurrent.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_ChainContext_SerializesDecodesRegardlessOfMaxInFlight()
+    {
+        var inner = new FakeStt(async count =>
+        {
+            await Task.Delay(50);
+            return new TranscriptionResult { Text = count.ToString() };
+        });
+
+        await New(inner, Config(maxInFlight: 2) with { ChainContext = true }).TranscribeAsync(
+            Stream(Silence(1), Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.MaxConcurrent.ShouldBe(1);
     }
 
     [Fact]
@@ -322,5 +341,89 @@ public class SegmentedSpeechToTextTests
         // the whole stream decodes as ONE segment; adaptively it must slice at least twice.
         inner.Calls.ShouldBeGreaterThanOrEqualTo(2);
         result.Text.ShouldNotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_UtteranceShorterThanFirstSplit_DecodesAsOneSegment()
+    {
+        var inner = new FakeStt();
+        // Leading Silence(1) seeds the floor (pre-roll gap), as in the tests above; the rest is
+        // 2.3 s of audio with two internal pauses, all under a 4 s first-split floor.
+        var sut = New(inner, Config(firstSplitAfterMs: 4000));
+
+        await sut.TranscribeAsync(
+            Stream(Silence(1), Speech(8), Silence(4), Speech(6), Silence(4)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.Calls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_UtterancePastFirstSplit_ResumesSplitting()
+    {
+        var inner = new FakeStt();
+        // 1 + 12 chunks put 1.3 s of audio behind the stream before the first pause closes a
+        // segment, so the 1 s floor is already crossed and both pauses split.
+        var sut = New(inner, Config(firstSplitAfterMs: 1000));
+
+        await sut.TranscribeAsync(
+            Stream(Silence(1), Speech(12), Silence(4), Speech(6), Silence(4)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.Calls.ShouldBe(2);
+    }
+
+    // Records the options each segment was decoded with, and returns a distinct word per call so
+    // the chained prompt is identifiable.
+    private sealed class OptionsRecordingStt : ISpeechToText
+    {
+        private readonly Lock _lock = new();
+        private int _calls;
+        public List<string?> PriorTexts { get; } = [];
+
+        public async Task<TranscriptionResult> TranscribeAsync(
+            IAsyncEnumerable<AudioChunk> audio, TranscriptionOptions options, CancellationToken ct)
+        {
+            await foreach (var _ in audio.WithCancellation(ct))
+            {
+            }
+
+            int index;
+            lock (_lock)
+            {
+                PriorTexts.Add(options.PriorText);
+                index = _calls++;
+            }
+            return new TranscriptionResult { Text = $"seg{index}" };
+        }
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_ChainContext_PassesThePriorSegmentTextAsThePriorText()
+    {
+        var inner = new OptionsRecordingStt();
+        var sut = New(inner, Config() with { ChainContext = true });
+
+        await sut.TranscribeAsync(
+            Stream(Silence(1), Speech(6), Silence(4), Speech(6), Silence(4)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.PriorTexts.Count.ShouldBe(2);
+        inner.PriorTexts[0].ShouldBeNull();
+        inner.PriorTexts[1].ShouldBe("seg0");
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_ChainContextOff_LeavesThePriorTextAlone()
+    {
+        var inner = new OptionsRecordingStt();
+        var sut = New(inner, Config() with { ChainContext = false });
+
+        await sut.TranscribeAsync(
+            Stream(Silence(1), Speech(6), Silence(4), Speech(6), Silence(4)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.PriorTexts.Count.ShouldBe(2);
+        inner.PriorTexts.ShouldAllBe(p => p == null);
     }
 }

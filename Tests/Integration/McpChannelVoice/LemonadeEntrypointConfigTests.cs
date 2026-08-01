@@ -110,8 +110,73 @@ public class LemonadeEntrypointConfigTests : IDisposable
         var whisperArgs = WhisperArgs(config);
         whisperArgs.ShouldContain("--beam-size 5");
         whisperArgs.ShouldContain("--prompt \"Asistente de voz en español de España");
-        whisperArgs.ShouldContain("Valladolid.\"");
+        // The prompt must stay free of meta-language: "p. ej. Valladolid." was observed being
+        // emitted verbatim as a transcript on short, quiet audio.
+        whisperArgs.ShouldNotContain("p. ej.");
         whisperArgs.ShouldContain($"--vad --vad-model /cfg/vad/{VadModelFile} --vad-threshold 0.6");
+    }
+
+    [SkippableFact]
+    public void Entrypoint_Defaults_AddSuppressNstBestOfAndVadPadding()
+    {
+        SeedVadModel();
+
+        var whisperArgs = WhisperArgs(RunEntrypoint(("STT_BACKEND", "cpu")));
+
+        whisperArgs.ShouldContain("--suppress-nst");
+        whisperArgs.ShouldContain("--best-of 5");
+        whisperArgs.ShouldContain("--vad-speech-pad-ms 150");
+        whisperArgs.ShouldContain("--vad-min-speech-duration-ms 150");
+    }
+
+    [SkippableFact]
+    public void Entrypoint_EmptyDecodeKnobs_DisableTheirFlags()
+    {
+        SeedVadModel();
+
+        var whisperArgs = WhisperArgs(RunEntrypoint(
+            ("STT_BACKEND", "cpu"),
+            ("STT_SUPPRESS_NST", ""),
+            ("STT_BEST_OF", ""),
+            ("STT_VAD_SPEECH_PAD_MS", ""),
+            ("STT_VAD_MIN_SPEECH_MS", "")));
+
+        whisperArgs.ShouldNotContain("--suppress-nst");
+        whisperArgs.ShouldNotContain("--best-of");
+        whisperArgs.ShouldNotContain("--vad-speech-pad-ms");
+        whisperArgs.ShouldNotContain("--vad-min-speech-duration-ms");
+        whisperArgs.ShouldContain("--vad --vad-model");
+    }
+
+    // The VAD padding flags are only legal when VAD itself is on, so they must live inside the
+    // same branch that established the model is present.
+    [SkippableFact]
+    public void Entrypoint_VadDisabled_EmitsNoVadPaddingFlags()
+    {
+        SeedVadModel();
+
+        var whisperArgs = WhisperArgs(RunEntrypoint(
+            ("STT_BACKEND", "cpu"),
+            ("STT_VAD_THRESHOLD", "")));
+
+        whisperArgs.ShouldNotContain("--vad");
+        whisperArgs.ShouldContain("--suppress-nst");
+    }
+
+    [SkippableFact]
+    public void Entrypoint_DecodeOverrides_PropagateToArgs()
+    {
+        SeedVadModel();
+
+        var whisperArgs = WhisperArgs(RunEntrypoint(
+            ("STT_BACKEND", "cpu"),
+            ("STT_BEST_OF", "3"),
+            ("STT_VAD_SPEECH_PAD_MS", "80"),
+            ("STT_VAD_MIN_SPEECH_MS", "200")));
+
+        whisperArgs.ShouldContain("--best-of 3");
+        whisperArgs.ShouldContain("--vad-speech-pad-ms 80");
+        whisperArgs.ShouldContain("--vad-min-speech-duration-ms 200");
     }
 
     [SkippableFact]

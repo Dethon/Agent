@@ -35,7 +35,8 @@ public class TranscriptDispatcherTests
         };
 
     private static (TranscriptDispatcher Sut, VoiceConversationManager Manager, CapturingEmitter Emitter) Build(
-        CommandSettings? commands = null, IMetricsPublisher? publisher = null)
+        CommandSettings? commands = null, IMetricsPublisher? publisher = null,
+        double shortSpeechAvgLogProbThreshold = -1.4, int fullThresholdSpeechMs = 2000)
     {
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -56,7 +57,10 @@ public class TranscriptDispatcherTests
         var sut = new TranscriptDispatcher(
             emitter, publisher ?? Mock.Of<IMetricsPublisher>(), manager,
             new VoiceCommandMatcher(commands ?? new CommandSettings()),
-            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, time, NullLogger<TranscriptDispatcher>.Instance);
+            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6,
+            shortSpeechAvgLogProbThreshold: shortSpeechAvgLogProbThreshold,
+            fullThresholdSpeechMs: fullThresholdSpeechMs,
+            time, NullLogger<TranscriptDispatcher>.Instance);
         return (sut, manager, emitter);
     }
 
@@ -272,7 +276,7 @@ public class TranscriptDispatcherTests
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
             emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()),
-            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
+            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "   ", Confidence = 0.9 }, "agent-1", null, null, null, default);
@@ -326,7 +330,7 @@ public class TranscriptDispatcherTests
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
             new CapturingEmitter(), publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()),
-            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, new FakeTimeProvider(DateTimeOffset.UtcNow),
+            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
@@ -374,7 +378,7 @@ public class TranscriptDispatcherTests
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
             new CapturingEmitter(), publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()),
-            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, new FakeTimeProvider(DateTimeOffset.UtcNow),
+            avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
@@ -525,5 +529,60 @@ public class TranscriptDispatcherTests
         written.ShouldBeEmpty();
         emitter.Captured.Count.ShouldBe(1);
         emitter.Captured[0].Content.ShouldBe("sube el volumen");
+    }
+
+    [Fact]
+    public async Task DispatchAsync_ShortSpeechUnderTheFullFloor_StillDispatches()
+    {
+        var (sut, _, emitter) = Build();
+        var stats = new CaptureStats(0, 0, 900, "trailing_silence");
+
+        var dispatched = await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "para", AvgLogProb = -1.2 },
+            "agent-1", stats, null, null, CancellationToken.None);
+
+        dispatched.ShouldBeTrue();
+        emitter.Captured.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_SameScoreAtFullDuration_IsDropped()
+    {
+        var (sut, _, emitter) = Build();
+        var stats = new CaptureStats(0, 0, 5000, "trailing_silence");
+
+        var dispatched = await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "para", AvgLogProb = -1.2 },
+            "agent-1", stats, null, null, CancellationToken.None);
+
+        dispatched.ShouldBeFalse();
+        emitter.Captured.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_ShortSpeechUnderTheLooseFloorToo_IsStillDropped()
+    {
+        var (sut, _, emitter) = Build();
+        var stats = new CaptureStats(0, 0, 900, "trailing_silence");
+
+        var dispatched = await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "para", AvgLogProb = -1.9 },
+            "agent-1", stats, null, null, CancellationToken.None);
+
+        dispatched.ShouldBeFalse();
+        emitter.Captured.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_NoCaptureStats_UsesTheFullFloor()
+    {
+        var (sut, _, emitter) = Build();
+
+        var dispatched = await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "para", AvgLogProb = -1.2 },
+            "agent-1", null, null, null, CancellationToken.None);
+
+        dispatched.ShouldBeFalse();
+        emitter.Captured.ShouldBeEmpty();
     }
 }

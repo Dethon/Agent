@@ -14,6 +14,8 @@ public sealed class TranscriptDispatcher(
     VoiceCommandMatcher matcher,
     double avgLogProbThreshold,
     double noSpeechProbThreshold,
+    double shortSpeechAvgLogProbThreshold,
+    int fullThresholdSpeechMs,
     TimeProvider timeProvider,
     ILogger<TranscriptDispatcher> logger)
 {
@@ -30,7 +32,14 @@ public sealed class TranscriptDispatcher(
         // thresholds the raw quality signals instead. Null signals fail open — a backend that
         // stops emitting them degrades to dispatch-everything, never to drop-everything.
         // Thresholds resolve per satellite (rooms differ in noise floor), falling back to globals.
-        var avgLogProbFloor = session.Config.ResolveAvgLogProbThreshold(avgLogProbThreshold);
+        //
+        // The avg_logprob floor loosens below FullThresholdSpeechMs of speech: a short command
+        // scores lower than a long one for reasons unrelated to being wrong, so one floor drops
+        // correct short turns first. Absent capture stats keep the full floor.
+        var fullSpeechMs = session.Config.ResolveSttFullThresholdSpeechMs(fullThresholdSpeechMs);
+        var avgLogProbFloor = stats is { } capture && capture.SpeechMs < fullSpeechMs
+            ? session.Config.ResolveShortSpeechAvgLogProbThreshold(shortSpeechAvgLogProbThreshold)
+            : session.Config.ResolveAvgLogProbThreshold(avgLogProbThreshold);
         var noSpeechProbCeiling = session.Config.ResolveNoSpeechProbThreshold(noSpeechProbThreshold);
         var lowQuality = (transcript.AvgLogProb is { } lp && lp < avgLogProbFloor)
                          || (transcript.NoSpeechProb is { } np && np > noSpeechProbCeiling);
