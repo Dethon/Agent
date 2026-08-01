@@ -11,16 +11,22 @@ use tracing::warn;
 /// Wireplumber persists the sink's level and mute in its own state, so nothing here is written to
 /// disk and a level survives a restart on its own.
 ///
-/// `gate` serializes `step`/`set_sink_mute`/`set_user_mute` end-to-end (decision through the
-/// awaited `wpctl` call). Without it, `set_user_mute`'s read-modify-store of `user_muted` and its
-/// awaited sink write are two separate windows a concurrent call can land inside — e.g. Task 10's
-/// alert hold (`set_sink_mute`) racing a queued "mute" confirmation (`set_user_mute`), which can
-/// leave `user_muted()` disagreeing with whichever call's `wpctl` process actually landed last on
-/// the real sink. `tokio::sync::Mutex`, not `std::sync::Mutex`, because the held region awaits.
+/// `gate` serializes `step`/`alert_hold`/`alert_release`/`set_user_mute` end-to-end (decision
+/// through the awaited `wpctl` call). Without it, `set_user_mute`'s read-modify-store of
+/// `user_muted` and its awaited sink write are two separate windows a concurrent call can land
+/// inside — e.g. an alert hold racing a queued "mute" confirmation, which can leave `user_muted()`
+/// disagreeing with whichever call's `wpctl` process actually landed last on the real sink.
+/// `tokio::sync::Mutex`, not `std::sync::Mutex`, because the held region awaits.
+///
+/// `alert_held` lives here rather than in the connection's `Ctx` because every decision reads it
+/// together with `user_muted`, which is process-scoped: keeping them apart meant `set_user_mute`
+/// could not see a hold, so a mute arriving ~100 ms after an alarm started silenced the alarm.
+/// Under the same gate, the two are always read and written as one consistent pair.
 pub struct VolumeControl {
     backend: Backend,
     step: u8,
     user_muted: AtomicBool,
+    alert_held: AtomicBool,
     gate: Mutex<()>,
 }
 
@@ -41,7 +47,13 @@ impl VolumeControl {
             Some(s) => Backend::Real { sink: s },
             None => Backend::Disabled,
         };
-        Arc::new(Self { backend, step, user_muted: AtomicBool::new(false), gate: Mutex::new(()) })
+        Arc::new(Self {
+            backend,
+            step,
+            user_muted: AtomicBool::new(false),
+            alert_held: AtomicBool::new(false),
+            gate: Mutex::new(()),
+        })
     }
 
     /// pub(crate) so state_machine's tests can drive a real control without a wpctl binary.
@@ -52,6 +64,7 @@ impl VolumeControl {
             backend: Backend::Probe(log.clone()),
             step,
             user_muted: AtomicBool::new(false),
+            alert_held: AtomicBool::new(false),
             gate: Mutex::new(()),
         });
         (log, control)
@@ -59,7 +72,13 @@ impl VolumeControl {
 
     #[cfg(test)]
     fn failing(step: u8) -> Arc<Self> {
-        Arc::new(Self { backend: Backend::Failing, step, user_muted: AtomicBool::new(false), gate: Mutex::new(()) })
+        Arc::new(Self {
+            backend: Backend::Failing,
+            step,
+            user_muted: AtomicBool::new(false),
+            alert_held: AtomicBool::new(false),
+            gate: Mutex::new(()),
+        })
     }
 
     pub fn enabled(&self) -> bool {
@@ -68,6 +87,10 @@ impl VolumeControl {
 
     pub fn user_muted(&self) -> bool {
         self.user_muted.load(Ordering::SeqCst)
+    }
+
+    pub fn alert_held(&self) -> bool {
+        self.alert_held.load(Ordering::SeqCst)
     }
 
     /// Read the sink's current mute once at startup so the satellite's idea of the user's intent
@@ -93,26 +116,53 @@ impl VolumeControl {
         self.run(&format!("set-volume -l 1.0 {{sink}} {}%{sign}", self.step)).await
     }
 
-    /// Sets the sink only. The alert hold uses this to unmute a ringing alarm without forgetting
-    /// that the user asked for silence. Gated for the same reason as `set_user_mute`: without it,
-    /// this could land in the middle of a concurrent `set_user_mute`'s own store-then-await.
-    pub async fn set_sink_mute(&self, muted: bool) -> anyhow::Result<()> {
-        let _guard = self.gate.lock().await;
-        self.set_sink_mute_locked(muted).await
-    }
-
-    /// The actual sink write, shared by `set_sink_mute` and `set_user_mute` so the gate is taken
-    /// exactly once per call — `set_user_mute` calls this directly instead of the public
-    /// `set_sink_mute` to avoid re-locking an already-held `tokio::sync::Mutex` (a deadlock, since
-    /// it is not reentrant).
+    /// The actual sink write. Callers take the gate themselves and then call this, so the gate is
+    /// taken exactly once per public call — re-locking an already-held `tokio::sync::Mutex` would
+    /// deadlock, since it is not reentrant.
     async fn set_sink_mute_locked(&self, muted: bool) -> anyhow::Result<()> {
         self.run(&format!("set-mute {{sink}} {}", u8::from(muted))).await
     }
 
-    /// Sets the sink AND records the user's intent. Rolled back on failure so a mute that never
-    /// landed cannot be re-applied later by an alert release. Holds the gate for the whole
-    /// read-modify-await-store sequence, so a concurrent `set_sink_mute`/`set_user_mute` cannot
-    /// observe or land in the middle of it — see the gate's doc comment on the struct.
+    /// An alarm must ring even on a muted speaker: mark the hold and make sure the sink is
+    /// audible, without clearing the user's intent — the release has to have something to restore.
+    ///
+    /// Idempotent, because the hub re-sends the hold on every ring round (that is what heals a
+    /// satellite which reconnected mid-alarm, or was rebooting when the alarm started). A repeat
+    /// while the hold already stands writes nothing. A hold whose sink write FAILS un-marks
+    /// itself, so the next round's re-assert retries instead of skipping.
+    pub async fn alert_hold(&self) -> anyhow::Result<()> {
+        let _guard = self.gate.lock().await;
+        if self.alert_held.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+        if self.user_muted() {
+            if let Err(e) = self.set_sink_mute_locked(false).await {
+                self.alert_held.store(false, Ordering::SeqCst);
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+
+    /// Ends the hold and puts the sink back to whatever the user asked for — including a mute that
+    /// arrived DURING the alarm and was deliberately not applied then. A release with no hold
+    /// outstanding writes nothing, so a stray or duplicated one cannot mute a speaker on its own.
+    pub async fn alert_release(&self) -> anyhow::Result<()> {
+        let _guard = self.gate.lock().await;
+        if !self.alert_held.swap(false, Ordering::SeqCst) {
+            return Ok(());
+        }
+        self.set_sink_mute_locked(self.user_muted()).await
+    }
+
+    /// Records the user's intent and, unless an alert hold is outstanding, applies it to the sink.
+    /// A mute during a ringing alarm is DEFERRED — recorded now, written by `alert_release` — so a
+    /// "silencia el altavoz" said a second before a timer fires cannot silence that timer. An
+    /// unmute always lands at once: it is harmless mid-alarm and is exactly what was asked for.
+    ///
+    /// A failed write rolls the intent back, so a mute that never landed cannot be re-applied
+    /// later by an alert release. Holds the gate for the whole read-modify-await-store sequence,
+    /// so a concurrent call cannot observe or land in the middle of it — see the struct's docs.
     pub async fn set_user_mute(&self, muted: bool) -> anyhow::Result<()> {
         if !self.enabled() {
             warn!("local mute ignored: no --volume-sink configured");
@@ -122,6 +172,9 @@ impl VolumeControl {
         let _guard = self.gate.lock().await;
         let previous = self.user_muted();
         self.user_muted.store(muted, Ordering::SeqCst);
+        if muted && self.alert_held() {
+            return Ok(());
+        }
         if let Err(e) = self.set_sink_mute_locked(muted).await {
             self.user_muted.store(previous, Ordering::SeqCst);
             return Err(e);
@@ -129,20 +182,34 @@ impl VolumeControl {
         Ok(())
     }
 
-    /// Fail-safe restore for Drop, which cannot await: fire a detached std wpctl, never awaited.
-    /// Same shape as music.rs's DuckGuard restore, and for the same reason. Deliberately
-    /// synchronous and lock-free — `gate` is an async mutex and `Drop::drop` has no executor to
-    /// await it against, so this cannot take part in the serialization the other methods get.
-    /// It is a best-effort teardown restore firing after the connection is going away regardless,
-    /// not a command that needs to serialize against anything still running.
-    pub fn restore_user_mute_detached(&self) {
-        let Backend::Real { sink } = &self.backend else { return };
-        let mut cmd = std::process::Command::new("wpctl");
-        cmd.args(["set-mute", sink, if self.user_muted() { "1" } else { "0" }])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        let _ = cmd.spawn();
+    /// Fail-safe teardown for Drop, which cannot await: end the hold and fire a detached std
+    /// wpctl putting the sink back to the user's intent, never awaited. Same shape as music.rs's
+    /// DuckGuard restore, and for the same reason. It runs both ways — a hub that dies mid-alarm
+    /// must not leave the speaker silently muted, and must not swallow a mute deferred by the
+    /// hold either. Deliberately synchronous and lock-free: `gate` is an async mutex and
+    /// `Drop::drop` has no executor to await it against, so this cannot take part in the
+    /// serialization the other methods get. It is best-effort, firing after the connection is
+    /// going away regardless, not a command that needs to serialize against anything running.
+    pub fn release_hold_detached(&self) {
+        if !self.alert_held.swap(false, Ordering::SeqCst) {
+            return;
+        }
+        let muted = self.user_muted();
+        match &self.backend {
+            Backend::Real { sink } => {
+                let mut cmd = std::process::Command::new("wpctl");
+                cmd.args(["set-mute", sink, if muted { "1" } else { "0" }])
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
+                let _ = cmd.spawn();
+            }
+            #[cfg(test)]
+            Backend::Probe(log) => {
+                log.lock().unwrap().push(format!("set-mute SINK {}", u8::from(muted)));
+            }
+            _ => {}
+        }
     }
 
     async fn run(&self, template: &str) -> anyhow::Result<()> {
@@ -226,14 +293,79 @@ mod tests {
     /// The alert hold unmutes the sink for a ringing alarm WITHOUT forgetting that the user asked
     /// for silence — otherwise the release would have nothing to restore.
     #[tokio::test]
-    async fn set_sink_mute_does_not_touch_the_users_intent() {
+    async fn alert_hold_does_not_touch_the_users_intent() {
         let (log, vol) = probe(10);
         vol.set_user_mute(true).await.unwrap();
-        vol.set_sink_mute(false).await.unwrap();
+        vol.alert_hold().await.unwrap();
         assert!(vol.user_muted(), "the hold must not clear the user's mute");
         let calls = log.lock().unwrap().clone();
         assert!(calls[0].contains("set-mute") && calls[0].ends_with('1'), "got {}", calls[0]);
         assert!(calls[1].contains("set-mute") && calls[1].ends_with('0'), "got {}", calls[1]);
+    }
+
+    /// The hub re-sends the hold at the top of every ring round, so a repeat must be free: the
+    /// sink is already audible and a second unmute write would spam wpctl for the whole alarm.
+    #[tokio::test]
+    async fn repeated_alert_hold_writes_the_sink_only_once() {
+        let (log, vol) = probe(10);
+        vol.set_user_mute(true).await.unwrap();
+        log.lock().unwrap().clear();
+
+        vol.alert_hold().await.unwrap();
+        vol.alert_hold().await.unwrap();
+        vol.alert_hold().await.unwrap();
+
+        assert_eq!(log.lock().unwrap().clone(), vec!["set-mute SINK 0".to_string()]);
+    }
+
+    /// An unmute is what the user just asked for and cannot silence anything, so unlike a mute it
+    /// is never deferred by an outstanding hold.
+    #[tokio::test]
+    async fn unmute_during_an_alert_hold_lands_immediately() {
+        let (log, vol) = probe(10);
+        vol.set_user_mute(true).await.unwrap();
+        vol.alert_hold().await.unwrap();
+        log.lock().unwrap().clear();
+
+        vol.set_user_mute(false).await.unwrap();
+
+        assert!(!vol.user_muted());
+        assert_eq!(log.lock().unwrap().clone(), vec!["set-mute SINK 0".to_string()]);
+    }
+
+    /// A failed hold un-marks itself so the hub's next per-round re-assert retries it. Marked but
+    /// un-unmuted would leave the alarm ringing into a muted sink for its whole duration.
+    #[tokio::test]
+    async fn failed_alert_hold_leaves_no_hold_outstanding() {
+        let vol = VolumeControl::failing(10);
+        vol.user_muted.store(true, Ordering::SeqCst);
+
+        assert!(vol.alert_hold().await.is_err());
+        assert!(!vol.alert_held(), "a hold whose unmute failed must be retryable");
+    }
+
+    /// The teardown path C2's reconnect case runs through: the hub dies while a mute is deferred,
+    /// so the guard has to apply that mute rather than only ever un-muting.
+    #[tokio::test]
+    async fn release_hold_detached_applies_a_deferred_mute() {
+        let (log, vol) = probe(10);
+        vol.alert_hold().await.unwrap();
+        vol.set_user_mute(true).await.unwrap();
+        log.lock().unwrap().clear();
+
+        vol.release_hold_detached();
+
+        assert!(!vol.alert_held());
+        assert_eq!(log.lock().unwrap().clone(), vec!["set-mute SINK 1".to_string()]);
+    }
+
+    /// With no hold outstanding there is nothing to restore, and writing anyway would let a
+    /// teardown overwrite a sink state the satellite never changed.
+    #[tokio::test]
+    async fn release_hold_detached_without_a_hold_writes_nothing() {
+        let (log, vol) = probe(10);
+        vol.release_hold_detached();
+        assert!(log.lock().unwrap().is_empty());
     }
 
     /// A failed set-mute must not leave the satellite believing a mute that never landed: the

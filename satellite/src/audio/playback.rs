@@ -85,7 +85,7 @@ pub struct DrainDone {
 /// flow control that writing into the player pipe used to provide; cues are fire-and-forget.
 /// `generation` is atomic (not a plain counter behind `&mut self`) because the handle now lives
 /// inside the connection's `Ctx` — one instance shared by reference across the whole connection,
-/// never exclusively borrowed, same as `cues`/`led`/`volume`/`alert_held` there. All access is
+/// never exclusively borrowed, same as `cues`/`led`/`volume` there. All access is
 /// still from the single connection task, so `Ordering::Relaxed` is enough: there is no other
 /// thread to synchronize with, only a `&mut self` receiver to avoid.
 pub struct PlaybackHandle {
