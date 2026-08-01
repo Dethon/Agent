@@ -1,8 +1,12 @@
+using Domain.Contracts;
+using Domain.DTOs.Channel;
+using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -129,5 +133,77 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         }
 
         receivedAny.ShouldBeTrue("Agent should still succeed end-to-end without reasoning configured.");
+    }
+}
+
+// Runs without Docker: a fake IChatClient captures the ChatOptions McpAgent builds, so the
+// per-turn ConfigPatch override on _reasoningEffort can be asserted without a live OpenRouter
+// call or a Redis-backed IThreadStateStore.
+public class McpAgentReasoningTestsConfigPatch
+{
+    private static (McpAgent Agent, List<ChatOptions?> Captured) CreateAgent(string? reasoningEffort)
+    {
+        var captured = new List<ChatOptions?>();
+        var chatClient = new Mock<IChatClient>();
+        chatClient
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>(
+                (_, options, _) => captured.Add(options))
+            .Returns(new List<ChatResponseUpdate>
+            {
+                new() { Role = ChatRole.Assistant, Contents = [new TextContent("ok")] }
+            }.ToAsyncEnumerable());
+
+        var agent = new McpAgent(
+            [],
+            chatClient.Object,
+            "test-agent",
+            "",
+            new Mock<IThreadStateStore>().Object,
+            "fran",
+            reasoningEffort: reasoningEffort);
+
+        return (agent, captured);
+    }
+
+    [Fact]
+    public async Task RunStreaming_UserMessageWithEffortPatch_OverridesConfiguredEffort()
+    {
+        var (agent, captured) = CreateAgent("low");
+        await using var _ = agent;
+
+        var userMessage = new ChatMessage(ChatRole.User, "hi");
+        userMessage.SetConfigPatch(new AgentConfigPatch { ReasoningEffort = "high" });
+
+        await agent.RunStreamingAsync([userMessage]).ToListAsync();
+
+        var capturedOptions = captured.ShouldHaveSingleItem().ShouldNotBeNull();
+        capturedOptions.Reasoning.ShouldNotBeNull();
+        capturedOptions.Reasoning.Effort.ShouldBe(ReasoningEffort.High);
+    }
+
+    [Fact]
+    public async Task RunStreaming_UserMessageWithInvalidEffortPatch_FallsBackToConfigured()
+    {
+        var (agent, captured) = CreateAgent("low");
+        await using var _ = agent;
+
+        var userMessage = new ChatMessage(ChatRole.User, "hi");
+        userMessage.SetConfigPatch(new AgentConfigPatch { ReasoningEffort = "turbo" });
+
+        await agent.RunStreamingAsync([userMessage]).ToListAsync();
+
+        var capturedOptions = captured.ShouldHaveSingleItem().ShouldNotBeNull();
+        capturedOptions.Reasoning.ShouldNotBeNull();
+        capturedOptions.Reasoning.Effort.ShouldBe(ReasoningEffort.Low);
+    }
+
+    [Fact]
+    public void TryParseEffort_UnknownValue_ReturnsNull()
+    {
+        McpAgent.TryParseEffort("turbo").ShouldBeNull();
     }
 }
