@@ -137,4 +137,22 @@ public class McpChannelConnectionParsingTests
             break;
         }
     }
+
+    [Fact]
+    public async Task HandleChannelMessageNotification_WithConfigPatch_MapsPatchOntoChannelMessage()
+    {
+        var conn = new McpChannelConnection("signalr");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"conv-1","sender":"fran","content":"hi","configPatch":{"model":"z-ai/glm-5.2","reasoningEffort":"low"}}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.ConfigPatch.ShouldNotBeNull();
+            msg.ConfigPatch.Model.ShouldBe("z-ai/glm-5.2");
+            msg.ConfigPatch.ReasoningEffort.ShouldBe("low");
+            break;
+        }
+    }
 }
