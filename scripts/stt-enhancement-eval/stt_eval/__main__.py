@@ -33,6 +33,11 @@ def _add_stage_args(name: str, p: argparse.ArgumentParser) -> None:
     if name == "transcribe":
         p.add_argument("--backend", choices=["medium", "lemonade"], required=True)
         p.add_argument("--conditions", default="raw", help="comma-list of condition dirs, or 'raw' for the corpus")
+        p.add_argument("--prompt", default=None,
+                       help="whisper initial prompt to post with each clip (lemonade backend only)")
+        p.add_argument("--label", default=None,
+                       help="transcripts subdir name; defaults to the backend name. Use it to keep "
+                            "two decode configs of the same backend side by side in the report.")
     if name == "process":
         p.add_argument("--conditions", default="gtcrn,dfn3")
 
@@ -91,7 +96,11 @@ def _transcribe(args: argparse.Namespace) -> None:
         wavs = sorted(wav_dir.glob("*.wav"))
         if not wavs:
             raise SystemExit(f"no wavs in {wav_dir}")
-        transcribe_files(args.backend, wavs, run_dir / "transcripts" / args.backend / f"{cond}.jsonl")
+        # run_report treats every directory under transcripts/ as a backend column, so a label
+        # is what puts a prompted run beside an unprompted one in the same report.
+        label = args.label or args.backend
+        transcribe_files(args.backend, wavs, run_dir / "transcripts" / label / f"{cond}.jsonl",
+                         prompt=args.prompt)
 
 
 STAGES["transcribe"] = _transcribe

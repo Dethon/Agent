@@ -19,6 +19,20 @@ uv run python -m stt_eval transcribe --backend lemonade --conditions raw,gtcrn,d
 uv run python -m stt_eval report                                          # WER tables + decision block + per_utterance.csv
 ```
 
+## Comparing decode configurations
+
+`--prompt` posts a whisper initial prompt with every clip, which replaces whisper-server's own
+`--prompt` for that request; `--label` names the `transcripts/` subdir. `report` treats each of
+those subdirs as its own column, so a prompted run lands beside the unprompted one on identical
+audio. (`--prompt` is lemonade-only; the `medium` backend rejects it rather than silently ignoring
+it.) The container-side flags of `DockerCompose/lemonade/entrypoint.sh` are compared the same way:
+restart `lemonade` with different `STT_*` values and transcribe under a new label.
+
+```bash
+uv run python -m stt_eval transcribe --backend lemonade --label lemonade-prompted \
+  --prompt "Órdenes breves a un asistente de voz en español de España." --conditions raw
+```
+
 > `fetch`'s idempotence is presence-based (a source counts as done once its `data/...`
 > subdirectory exists and is non-empty): if a fetch is interrupted partway, delete the affected
 > `data/...` subdirectory before re-running, or the partial download is silently treated as complete.
