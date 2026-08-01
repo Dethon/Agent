@@ -1256,6 +1256,9 @@ mod tests {
         assert!(calls.iter().any(|c| c.contains("set-mute") && c.ends_with('0')), "got {calls:?}");
     }
 
+    // The probe's canned read is 0.65 (−11.2 dB, snapping to the −10.2 dB grid point), so a step
+    // up writes the −5.1 dB level and a step down the −15.3 dB one — the equal-dB grid, not a
+    // relative % bump (each feed re-reads the same canned 0.65).
     #[tokio::test]
     async fn speaker_volume_up_and_down_step_the_sink() {
         let f = vol_fixture();
@@ -1266,8 +1269,8 @@ mod tests {
 
         let calls = f.log.lock().unwrap().clone();
         assert_eq!(calls.len(), 2, "got {calls:?}");
-        assert!(calls[0].contains("10%+"), "got {}", calls[0]);
-        assert!(calls[1].contains("10%-"), "got {}", calls[1]);
+        assert!(calls[0].contains("set-volume") && calls[0].ends_with("0.8222"), "got {}", calls[0]);
+        assert!(calls[1].contains("set-volume") && calls[1].ends_with("0.5559"), "got {}", calls[1]);
     }
 
     // An alarm must ring even on a muted speaker, and the user's mute must come back afterwards.

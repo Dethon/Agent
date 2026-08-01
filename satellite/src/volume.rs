@@ -61,17 +61,18 @@ impl Backend {
     fn cmdline(&self, op: Op, step: u8) -> Option<String> {
         match self {
             Backend::Disabled => None,
-            // `-l 1.0` caps the sink at unity, so repeated steps up cannot push it into software
-            // gain. wpctl spells mute as a 0/1 argument.
-            Backend::Pipewire { sink } => Some(match op {
-                Op::Step { up } => format!("wpctl set-volume -l 1.0 {sink} {step}%{}", sign(up)),
-                Op::Mute(muted) => format!("wpctl set-mute {sink} {}", u8::from(muted)),
-            }),
+            // wpctl spells mute as a 0/1 argument. Steps never come through here: `step` takes
+            // the read → dB-snap → absolute-write path for this backend (see `step_read_query`).
+            Backend::Pipewire { sink } => match op {
+                Op::Step { .. } => None,
+                Op::Mute(muted) => Some(format!("wpctl set-mute {sink} {}", u8::from(muted))),
+            },
             // amixer clamps a relative step to the control's own range, so repeated steps up
-            // settle at 100% instead of overshooting — the `-l 1.0` above with no flag needed.
-            // A softvol carries no switch of its own, so provisioning pairs the `<name> Volume`
-            // element with a `<name> Switch` one; ALSA's simple mixer merges the two into this
-            // single control, which is why mute is the same `sset` the level uses.
+            // settle at 100% instead of overshooting. The softvol's taper is already linear in
+            // dB, so the relative step IS the equal-dB step the PipeWire backend computes by
+            // hand. A softvol carries no switch of its own, so provisioning pairs the `<name>
+            // Volume` element with a `<name> Switch` one; ALSA's simple mixer merges the two into
+            // this single control, which is why mute is the same `sset` the level uses.
             Backend::Alsa { control, card } => {
                 let card = card.as_ref().map(|c| format!(" -c {c}")).unwrap_or_default();
                 Some(match op {
@@ -85,6 +86,28 @@ impl Backend {
             Backend::Probe { inner, .. } => inner.cmdline(op, step),
             #[cfg(test)]
             Backend::Failing => Some("false".into()),
+        }
+    }
+
+    /// The read that must precede a step, or None when a blind relative command is enough.
+    /// PipeWire's display scale is cubic, so an equal-dB step needs the current level first;
+    /// the ALSA softvol's taper is already dB-linear, so its relative `amixer` step needs no read.
+    fn step_read_query(&self) -> Option<String> {
+        match self {
+            Backend::Pipewire { .. } => self.query_cmdline(),
+            #[cfg(test)]
+            Backend::Probe { inner, .. } => inner.step_read_query(),
+            _ => None,
+        }
+    }
+
+    /// The absolute write that lands a computed level, for the backends whose steps read first.
+    fn set_volume_cmdline(&self, value: f64) -> Option<String> {
+        match self {
+            Backend::Pipewire { sink } => Some(format!("wpctl set-volume {sink} {value:.4}")),
+            #[cfg(test)]
+            Backend::Probe { inner, .. } => inner.set_volume_cmdline(value),
+            _ => None,
         }
     }
 
@@ -196,9 +219,11 @@ impl VolumeControl {
     }
 
     /// pub(crate) so state_machine's tests can drive a real control without a wpctl binary.
+    /// Carries a canned sink read (0.65, snapping to −10.2 dB) because a PipeWire step reads
+    /// before it writes: one step up lands 0.8222, one step down 0.5559.
     #[cfg(test)]
     pub(crate) fn probe_pair(step: u8) -> (Arc<std::sync::Mutex<Vec<String>>>, Arc<Self>) {
-        Self::probe_backend(Backend::Pipewire { sink: "SINK".into() }, step, None)
+        Self::probe_backend(Backend::Pipewire { sink: "SINK".into() }, step, Some("Volume: 0.65\n"))
     }
 
     /// A control that logs what `inner` would have run. `capture` is what a `seed` read returns;
@@ -254,11 +279,22 @@ impl VolumeControl {
         }
     }
 
-    /// A relative step, capped at 100% by both backends (see `Backend::cmdline`). Gated so a step
-    /// can't interleave with a mute's own read-modify-store-await sequence.
+    /// One equal-dB step, clamped to the −51..0 dB range on both backends, so the same spoken
+    /// command moves the same loudness on a music and a voice-only unit. The ALSA softvol's taper
+    /// is dB-linear, so its relative `amixer` command is already that step; the PipeWire scale is
+    /// cubic, so the sink is read first and the snapped next grid level written back absolutely
+    /// (see `db_linear_step`). Both the read and the write run under the gate, so a step can't
+    /// interleave with a mute's own read-modify-store-await sequence. A failed or unparsable read
+    /// errors out — warn, no cue — rather than guessing a level.
     pub async fn step(&self, up: bool) -> anyhow::Result<()> {
         let _guard = self.gate.lock().await;
-        self.run(Op::Step { up }).await
+        let Some(query) = self.backend.step_read_query() else {
+            return self.run(Op::Step { up }).await;
+        };
+        let out = self.backend.capture(&query).await?;
+        let target = db_linear_step(parse_wpctl_volume(&out)?, up, self.step);
+        let Some(cmdline) = self.backend.set_volume_cmdline(target) else { return Ok(()) };
+        self.run_cmdline(cmdline).await
     }
 
     /// The actual master write. Callers take the gate themselves and then call this, so the gate is
@@ -358,7 +394,7 @@ impl VolumeControl {
             return Ok(());
         };
         #[cfg(test)]
-        if let Backend::Probe { log, .. } = &self.backend {
+        if let Backend::Probe { .. } = &self.backend {
             // A real mixer call is a subprocess with variable OS-scheduling latency, so two
             // overlapping calls can complete in either order regardless of which one started
             // (and stored its bookkeeping) first. Give a "mute on" command a few extra yields
@@ -369,6 +405,14 @@ impl VolumeControl {
             for _ in 0..extra_yields {
                 tokio::task::yield_now().await;
             }
+        }
+        self.run_cmdline(cmdline).await
+    }
+
+    /// Executes (or, on the probe backend, records) one already-built mixer command line.
+    async fn run_cmdline(&self, cmdline: String) -> anyhow::Result<()> {
+        #[cfg(test)]
+        if let Backend::Probe { log, .. } = &self.backend {
             log.lock().unwrap().push(cmdline);
             return Ok(());
         }
@@ -614,17 +658,42 @@ mod tests {
         assert_eq!(off.describe(), "disabled");
     }
 
+    /// A PipeWire step is read → snap to the dB grid → absolute write, so it moves the same
+    /// number of dB as the softvol's relative step does on a voice-only unit. 0.65 is −11.2 dB,
+    /// which snaps to the −10.2 dB grid point; one step up lands on −5.1 dB (0.8222) and one
+    /// step down on −15.3 dB (0.5559).
     #[tokio::test]
-    async fn step_up_and_down_issue_relative_wpctl_calls_capped_at_unity() {
-        let (log, vol) = probe(10);
+    async fn pipewire_step_reads_the_sink_and_writes_the_next_grid_level() {
+        let backend = Backend::Pipewire { sink: "SINK".into() };
+        let (log, vol) = VolumeControl::probe_backend(backend, 10, Some("Volume: 0.65\n"));
         vol.step(true).await.unwrap();
         vol.step(false).await.unwrap();
-        let calls = log.lock().unwrap().clone();
-        assert_eq!(calls.len(), 2);
-        assert!(calls[0].contains("set-volume"), "got {}", calls[0]);
-        assert!(calls[0].contains("10%+"), "got {}", calls[0]);
-        assert!(calls[0].contains("-l 1.0"), "a step must not push the sink past unity: {}", calls[0]);
-        assert!(calls[1].contains("10%-"), "got {}", calls[1]);
+        assert_eq!(
+            log.lock().unwrap().clone(),
+            vec![
+                "wpctl set-volume SINK 0.8222".to_string(),
+                "wpctl set-volume SINK 0.5559".to_string(),
+            ]
+        );
+    }
+
+    /// The 0 dB ceiling in the math replaces wpctl's `-l 1.0` limit flag.
+    #[tokio::test]
+    async fn pipewire_step_up_at_full_stays_at_full() {
+        let backend = Backend::Pipewire { sink: "SINK".into() };
+        let (log, vol) = VolumeControl::probe_backend(backend, 10, Some("Volume: 1.00\n"));
+        vol.step(true).await.unwrap();
+        assert_eq!(log.lock().unwrap().clone(), vec!["wpctl set-volume SINK 1.0000".to_string()]);
+    }
+
+    /// A step that cannot read the sink must not guess a level: error out (warn, no cue) and
+    /// write nothing.
+    #[tokio::test]
+    async fn pipewire_step_with_a_failed_read_writes_nothing() {
+        let backend = Backend::Pipewire { sink: "SINK".into() };
+        let (log, vol) = VolumeControl::probe_backend(backend, 10, None);
+        assert!(vol.step(true).await.is_err());
+        assert!(log.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
