@@ -206,7 +206,8 @@ public sealed class MultiAgentFactory(
             effectivePublisher,
             sessionId,
             providerRouting: providerRouting,
-            transportHandler: transportHandler);
+            transportHandler: transportHandler,
+            patchableModelIds: openRouterConfig.PatchableModelIds);
     }
 }
 
@@ -216,6 +217,7 @@ public record OpenRouterConfig
     public required string ApiKey { get; init; }
     public int? MaxContextTokens { get; init; }
     public ProviderRouting? ProviderRouting { get; init; }
+    public IReadOnlyList<string>? PatchableModelIds { get; init; }
 }
 
 public sealed class AgentRegistryOptions

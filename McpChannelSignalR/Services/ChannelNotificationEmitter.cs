@@ -10,6 +10,7 @@ public sealed class ChannelNotificationEmitter(ChannelInbox inbox)
         string sender,
         string content,
         string agentId,
+        AgentConfigPatch? configPatch = null,
         CancellationToken cancellationToken = default)
     {
         inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
@@ -18,6 +19,7 @@ public sealed class ChannelNotificationEmitter(ChannelInbox inbox)
             Sender = sender,
             Content = content,
             AgentId = agentId,
+            ConfigPatch = configPatch,
             Timestamp = DateTimeOffset.UtcNow
         }));
 

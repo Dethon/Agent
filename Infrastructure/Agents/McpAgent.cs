@@ -257,7 +257,11 @@ public sealed class McpAgent : DisposableAgent
             .Select(m => m.GetConversationContext())
             .FirstOrDefault(c => c is not null);
 
-        options ??= CreateRunOptions(session, conversationContext);
+        var configPatch = messageList
+            .LastOrDefault(m => m.Role == ChatRole.User)
+            ?.GetConfigPatch();
+
+        options ??= CreateRunOptions(session, conversationContext, configPatch);
 
         await foreach (var update in _innerAgent.RunStreamingAsync(messageList, thread, options, cancellationToken))
         {
@@ -265,8 +269,10 @@ public sealed class McpAgent : DisposableAgent
         }
     }
 
-    private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session, ConversationContext? conversationContext = null)
+    private ChatClientAgentRunOptions CreateRunOptions(
+        ThreadSession session, ConversationContext? conversationContext = null, AgentConfigPatch? configPatch = null)
     {
+        var effort = TryParseEffort(configPatch?.ReasoningEffort) ?? _reasoningEffort;
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             Tools = [.. session.Tools],
@@ -279,9 +285,9 @@ public sealed class McpAgent : DisposableAgent
                 session.FileSystemPrompts,
                 session.ClientManager.Prompts,
                 _timeProvider.GetLocalNow()),
-            Reasoning = _reasoningEffort is null
+            Reasoning = effort is null
                 ? null
-                : new ReasoningOptions { Effort = _reasoningEffort.Value },
+                : new ReasoningOptions { Effort = effort.Value },
             AdditionalProperties = BuildConversationContextProperties(conversationContext)
         });
     }
@@ -375,6 +381,17 @@ public sealed class McpAgent : DisposableAgent
         };
     }
 
+    internal static ReasoningEffort? TryParseEffort(string? value)
+    {
+        try
+        {
+            return ParseEffort(value);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
 
     private async Task<ThreadSession> GetOrCreateSessionAsync(AgentSession thread, CancellationToken ct)
     {

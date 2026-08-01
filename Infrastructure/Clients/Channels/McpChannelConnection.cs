@@ -240,7 +240,8 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
             Origin = notification.Origin,
             Location = notification.Location,
             SatelliteId = notification.SatelliteId,
-            DismissedAlert = notification.DismissedAlert
+            DismissedAlert = notification.DismissedAlert,
+            ConfigPatch = notification.ConfigPatch
         };
 
         _messageChannel.Writer.TryWrite(message);

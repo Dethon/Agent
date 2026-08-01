@@ -16,4 +16,5 @@ public record ChannelMessage
     public string? Location { get; init; }
     public string? SatelliteId { get; init; }
     public string? DismissedAlert { get; init; }
+    public AgentConfigPatch? ConfigPatch { get; init; }
 }

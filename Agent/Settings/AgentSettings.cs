@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using JetBrains.Annotations;
 
 namespace Agent.Settings;
@@ -10,6 +11,7 @@ public record AgentSettings
     public required AgentDefinition[] Agents { get; [UsedImplicitly] init; }
     public ChannelEndpoint[] ChannelEndpoints { get; init; } = [];
     public SubAgentDefinition[] SubAgents { get; init; } = [];
+    public PatchableModel[] PatchableModels { get; init; } = [];
 }
 
 public record OpenRouterConfiguration

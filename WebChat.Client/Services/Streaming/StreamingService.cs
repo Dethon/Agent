@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
+using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
@@ -16,7 +18,8 @@ public sealed class StreamingService(
     IDispatcher dispatcher,
     ITopicService topicService,
     TopicsStore topicsStore,
-    StreamingStore streamingStore) : IStreamingService
+    StreamingStore streamingStore,
+    AgentSettingsStore agentSettingsStore) : IStreamingService
 {
     private readonly ConcurrentDictionary<string, Task> _activeStreams = new();
     private readonly SemaphoreSlim _streamLock = new(1, 1);
@@ -26,19 +29,21 @@ public sealed class StreamingService(
         await _streamLock.WaitAsync();
         try
         {
+            var configPatch = GetConfigPatch(topic);
             var isNewStream = !_activeStreams.TryGetValue(topic.TopicId, out var task)
                               || task.IsCompleted;
 
             if (isNewStream)
             {
-                StartNewStream(topic, message, correlationId);
+                StartNewStream(topic, message, correlationId, configPatch);
             }
             else
             {
-                var success = await messagingService.EnqueueMessageAsync(topic.TopicId, message, correlationId);
+                var success = await messagingService.EnqueueMessageAsync(
+                    topic.TopicId, message, correlationId, configPatch);
                 if (!success)
                 {
-                    StartNewStream(topic, message, correlationId);
+                    StartNewStream(topic, message, correlationId, configPatch);
                 }
             }
         }
@@ -47,6 +52,10 @@ public sealed class StreamingService(
             _streamLock.Release();
         }
     }
+
+    private AgentConfigPatch? GetConfigPatch(StoredTopic topic) =>
+        AgentSettingsSelectors.GetConfigPatch(
+            agentSettingsStore.State, topicsStore.State.Agents, topic.AgentId);
 
     public async Task<bool> TryStartResumeStreamAsync(
         StoredTopic topic,
@@ -87,17 +96,19 @@ public sealed class StreamingService(
         }
     }
 
-    private void StartNewStream(StoredTopic topic, string message, string? correlationId)
+    private void StartNewStream(
+        StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)
     {
         dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-        var streamTask = StreamResponseAsync(topic, message, correlationId);
+        var streamTask = StreamResponseAsync(topic, message, correlationId, configPatch);
         _activeStreams[topic.TopicId] = streamTask;
         _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out var _));
     }
 
-    public Task StreamResponseAsync(StoredTopic topic, string message, string? correlationId = null)
+    public Task StreamResponseAsync(
+        StoredTopic topic, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
-        var chunks = messagingService.SendMessageAsync(topic.TopicId, message, correlationId);
+        var chunks = messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
         var streamingMessage = new ChatMessageModel { Role = "assistant" };
         return ProcessStreamAsync(topic, chunks, streamingMessage, currentMessageId: null);
     }

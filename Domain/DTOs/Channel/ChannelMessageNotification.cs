@@ -20,5 +20,8 @@ public record ChannelMessageNotification
     // Optional description of an alert (alarm/timer) the user dismissed just before speaking, e.g.
     // 'alarm "Take out the trash"'. Voice-only, like Location/SatelliteId; enables LLM-mediated snooze.
     public string? DismissedAlert { get; init; }
+    // Optional per-message config override (model, reasoning effort). Part of the shared protocol
+    // but currently only populated by the SignalR channel; other channels leave it null.
+    public AgentConfigPatch? ConfigPatch { get; init; }
     public DateTimeOffset Timestamp { get; init; }
 }

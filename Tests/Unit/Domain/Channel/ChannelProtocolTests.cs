@@ -109,4 +109,55 @@ public class ChannelProtocolTests
 
         Should.NotThrow(() => options.MakeReadOnly());
     }
+
+    [Fact]
+    public void Serialize_MessageNotificationWithConfigPatch_RoundTripsCamelCase()
+    {
+        var notification = new ChannelMessageNotification
+        {
+            ConversationId = "conv-1",
+            Sender = "fran",
+            Content = "hello",
+            ConfigPatch = new AgentConfigPatch { Model = "z-ai/glm-5.2", ReasoningEffort = "high" }
+        };
+
+        var json = JsonSerializer.Serialize(notification, ChannelProtocol.SerializerOptions);
+        var parsed = JsonSerializer.Deserialize<ChannelMessageNotification>(json, ChannelProtocol.SerializerOptions);
+
+        json.ShouldContain("\"configPatch\"");
+        parsed.ShouldNotBeNull();
+        parsed.ConfigPatch.ShouldBe(new AgentConfigPatch { Model = "z-ai/glm-5.2", ReasoningEffort = "high" });
+    }
+
+    [Fact]
+    public void Deserialize_MessageNotificationWithoutConfigPatch_LeavesPatchNull()
+    {
+        var json = """{"conversationId":"c","sender":"s","content":"m"}""";
+
+        var parsed = JsonSerializer.Deserialize<ChannelMessageNotification>(json, ChannelProtocol.SerializerOptions);
+
+        parsed.ShouldNotBeNull();
+        parsed.ConfigPatch.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Serialize_WidenedAgentCatalogEntry_RoundTrips()
+    {
+        var entry = new AgentCatalogEntry(
+            "jack", "Jack", "Main agent",
+            "openai/gpt-5.6-luna", "low",
+            [new PatchableModel("z-ai/glm-5.2", "GLM 5.2")],
+            AgentConfigPatch.SupportedEfforts);
+
+        var json = JsonSerializer.Serialize(entry, ChannelProtocol.SerializerOptions);
+        var parsed = JsonSerializer.Deserialize<AgentCatalogEntry>(json, ChannelProtocol.SerializerOptions);
+
+        parsed.ShouldBe(entry with
+        {
+            PatchableModels = parsed!.PatchableModels,
+            PatchableReasoningEfforts = parsed.PatchableReasoningEfforts
+        });
+        parsed.PatchableModels.ShouldBe([new PatchableModel("z-ai/glm-5.2", "GLM 5.2")]);
+        parsed.PatchableReasoningEfforts.ShouldBe(AgentConfigPatch.SupportedEfforts);
+    }
 }

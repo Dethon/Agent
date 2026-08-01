@@ -1,6 +1,7 @@
 using WebChat.Client.Services;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentActivity;
+using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
@@ -30,6 +31,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<ApprovalStore>();
             services.AddScoped<UserIdentityStore>();
             services.AddScoped<ToastStore>();
+            services.AddScoped<AgentSettingsStore>();
             services.AddScoped<SpaceStore>();
             services.AddScoped<AgentActivityStore>();
 
@@ -51,6 +53,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<UserIdentityEffect>();
             services.AddScoped<SpaceEffect>();
             services.AddScoped<AgentActivityEffect>();
+            services.AddScoped<AgentSettingsEffect>();
 
             return services;
         }

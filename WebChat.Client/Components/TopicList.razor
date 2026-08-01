@@ -17,6 +17,7 @@
                        Agents="@_agents.ToList()" SelectedAgentId="@_selectedAgentId"
                        ActiveAgentIds="@_activeAgentIds"
                        OnAgentSelected="SelectAgent" />
+        <AgentConfigMenu />
         <div class="hearth-peek-current">
             <span class="hearth-peek-name @(SelectedIsStreaming ? "glow" : "")">@SelectedTopicName</span>
             <span class="hearth-peek-time">@SelectedTopicTime</span>
@@ -39,6 +40,7 @@
         <div class="hearth-search">
             <input class="hearth-search-input" type="search" placeholder="Search conversations"
                    @bind="_search" @bind:event="oninput" @ref="_searchInput" aria-label="Search conversations" />
+            <AgentConfigMenu />
         </div>
 
         <div class="hearth-rows">

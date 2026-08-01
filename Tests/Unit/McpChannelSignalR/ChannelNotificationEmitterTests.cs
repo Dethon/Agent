@@ -1,4 +1,5 @@
 using Domain.Channels;
+using Domain.DTOs.Channel;
 using McpChannelSignalR.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
@@ -23,6 +24,22 @@ public class ChannelNotificationEmitterTests
         items[0].Message!.Sender.ShouldBe("user");
         items[0].Message!.Content.ShouldBe("hola");
         items[0].Message!.AgentId.ShouldBe("nabu");
+    }
+
+    [Fact]
+    public async Task EmitMessageNotificationAsync_WithConfigPatch_PutsPatchOnNotification()
+    {
+        var inbox = new ChannelInbox();
+        var sut = new ChannelNotificationEmitter(inbox);
+        await inbox.ReceiveAsync("channel-signalr", TimeSpan.Zero, CancellationToken.None);
+
+        await sut.EmitMessageNotificationAsync(
+            "chat:thread", "fran", "hello", "jack",
+            new AgentConfigPatch { Model = "z-ai/glm-5.2" });
+
+        var items = await inbox.ReceiveAsync("channel-signalr", TimeSpan.Zero, CancellationToken.None);
+        items.Count.ShouldBe(1);
+        items[0].Message!.ConfigPatch.ShouldBe(new AgentConfigPatch { Model = "z-ai/glm-5.2" });
     }
 
     [Fact]

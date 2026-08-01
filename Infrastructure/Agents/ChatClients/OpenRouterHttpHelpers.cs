@@ -12,7 +12,8 @@ internal static class OpenRouterHttpHelpers
     private static readonly string[] _reasoningPropertyNames = ["reasoning", "reasoning_content", "thinking"];
 
     public static async Task PrepareRequestBodyAsync(
-        HttpRequestMessage request, string? sessionId, ProviderRouting? providerRouting, CancellationToken ct)
+        HttpRequestMessage request, string? sessionId, ProviderRouting? providerRouting,
+        string? modelOverride, CancellationToken ct)
     {
         if (request.Method != HttpMethod.Post ||
             request.Content?.Headers.ContentType?.MediaType?
@@ -41,6 +42,13 @@ internal static class OpenRouterHttpHelpers
             obj["session_id"] = sessionId;
         }
 
+        // Per-message model patch. Stamped like session_id: the OpenAI SDK bakes the configured
+        // model into the body, so the override rewrites it here, after whitelist validation upstream.
+        if (!string.IsNullOrWhiteSpace(modelOverride))
+        {
+            obj["model"] = modelOverride;
+        }
+
         // Ask for the usage breakdown. `cost` arrives without this, but prompt_tokens_details —
         // which carries cached_tokens — does not, and that counter is the only direct measure of
         // whether the ~17k static prefix is actually being served from the provider's prompt cache.
@@ -49,6 +57,10 @@ internal static class OpenRouterHttpHelpers
         // Per-agent provider routing. Omitted entirely when unset: OpenRouter's balanced load
         // balancing has no explicit `sort` value and is only reachable by sending no `sort` and
         // no `order` at all.
+        //
+        // Routing is a deployment constraint and applies to override turns too — every
+        // `patchableModels` entry must be servable under the configured routing, or the
+        // config is wrong.
         if (BuildProviderNode(providerRouting) is { } provider)
         {
             obj["provider"] = provider;
