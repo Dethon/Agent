@@ -86,22 +86,37 @@ segmented answer never touch Idle. Two guards survive on top of that:
 every turn. Master and softvol multiply, so ducking is untouched by this feature. Absent
 `--volume-sink` the whole thing is a no-op with a warning, mirroring `music_mixer: None`.
 
-An internal `tokio::sync::Mutex` gate serializes `step`, `set_sink_mute` and `set_user_mute`
-end-to-end, across their own awaited `wpctl` call. It was added because an alert hold and a
-queued mute confirmation each read the tracked mute state, change it, and await a `wpctl` call —
-two separate windows a concurrent call could otherwise land inside, leaving `user_muted()`
+An internal `tokio::sync::Mutex` gate serializes `step`, `alert_hold`, `alert_release` and
+`set_user_mute` end-to-end, across their own awaited `wpctl` call. It was added because an alert
+hold and a queued mute confirmation each read the tracked state, change it, and await a `wpctl`
+call — two separate windows a concurrent call could otherwise land inside, leaving `user_muted()`
 disagreeing with whichever call's `wpctl` process actually finished last. The gate makes such
 calls run one fully after the other, so the last one to finish decides both consistently.
 
-`user_muted` is process-scoped so a hub reconnect cannot forget the user's mute, and is seeded
-once at boot from `wpctl get-volume` (which prints `[MUTED]`) so wireplumber's restored state and
-ours agree. Wireplumber persists level and mute itself; nothing is written to disk here.
+**`user_muted` and `alert_held` both live on `VolumeControl`, which is process-scoped.** A hub
+reconnect cannot forget the user's mute, and every decision reads the two together — that is the
+whole point of keeping them in one place. `user_muted` is seeded once at boot from `wpctl
+get-volume` (which prints `[MUTED]`) so wireplumber's restored state and ours agree. Wireplumber
+persists level and mute itself; nothing is written to disk here.
 
-**An alarm must ring on a muted speaker.** `alert-hold` unmutes the sink WITHOUT clearing
-`user_muted`, and `alert-release` — which the hub sends from the insistent loop's `finally`, so it
-covers dismissal and cancellation alike — puts it back. The hold is per-connection and a
-`HoldGuard` restores it on teardown, so a hub that dies mid-alarm leaves the speaker audible
-rather than silently muted.
+**An alarm must ring on a muted speaker.** `alert-hold` marks the hold and unmutes the sink
+WITHOUT clearing `user_muted`, so the release has something to put back. It is idempotent: the hub
+re-sends it at the top of every ring round, and a repeat while the hold already stands writes
+nothing. A hold whose unmute call fails un-marks itself, so the next round's re-assert retries it.
+There is no counter on this side — the hub counts overlapping alerts and sends `alert-release`
+only when the last one covering this satellite ends.
+
+**A mute that arrives during a ring is deferred, not applied.** `set_user_mute(true)` under an
+outstanding hold records the intent and skips the sink write; `alert-release` writes it. Without
+that, "silencia el altavoz" said a second before a timer fired silenced the timer: the mute
+confirmation is queued behind its cue, so it landed ~300 ms after the hold had already unmuted.
+An unmute always lands at once — it cannot silence anything, and it is what the user just asked
+for.
+
+`HoldGuard` covers a hub that dies mid-alarm. On connection teardown it ends the hold and fires a
+detached `wpctl` putting the sink back to `user_muted` (Drop cannot await, same shape as
+`music.rs`'s `DuckGuard`). It runs both ways: the speaker is left audible if the user never muted,
+and muted if their mute was still deferred by the hold.
 
 **The mute cue must not be silenced by its own mute**: `mute` plays the cue via
 `PlaybackHandle::cue_then` and applies the mute on the acknowledgement, which the pump sends after

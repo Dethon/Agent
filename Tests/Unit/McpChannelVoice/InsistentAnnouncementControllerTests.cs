@@ -133,8 +133,8 @@ public class InsistentAnnouncementControllerTests
     }
 
     // A local mute must never swallow a timer or an alarm: the hold unmutes for the ring and the
-    // release puts the user's mute back. Both bracket the loop, so the speaker is audible for the
-    // whole insistent sequence rather than for one round of it.
+    // release puts the user's mute back. A one-round alert is the simplest shape of that — one
+    // hold, one release — so the speaker is audible for the whole sequence, not part of it.
     [Fact]
     public async Task Start_InsistentAlert_BracketsTheRingWithAlertHoldAndRelease()
     {
