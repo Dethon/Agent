@@ -59,13 +59,14 @@ public sealed class OpenRouterChatClient : IChatClient
         string model,
         int? maxContextTokens = null,
         IMetricsPublisher? metricsPublisher = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IReadOnlyList<string>? patchableModelIds = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _patchableModelIds = [];
+        _patchableModelIds = patchableModelIds ?? [];
         _modelOverrideBox = new ModelOverrideBox();
         _client = innerClient;
     }
@@ -143,10 +144,12 @@ public sealed class OpenRouterChatClient : IChatClient
             return newMessage;
         }).ToList();
 
-        _modelOverrideBox.Value = ResolveModelOverride(
+        var modelOverride = ResolveModelOverride(
             transformedMessages.LastOrDefault(m => m.Role == ChatRole.User)?.GetConfigPatch(),
             _model,
             _patchableModelIds);
+        _modelOverrideBox.Value = modelOverride;
+        var effectiveModel = modelOverride ?? _model;
 
         var sender = transformedMessages
             .LastOrDefault(m => m.Role == ChatRole.User)
@@ -163,7 +166,7 @@ public sealed class OpenRouterChatClient : IChatClient
             await _metricsPublisher.PublishAsync(new ContextTruncationEvent
             {
                 Sender = sender ?? "unknown",
-                Model = _model,
+                Model = effectiveModel,
                 DroppedMessages = droppedCount,
                 EstimatedTokensBefore = tokensBefore,
                 EstimatedTokensAfter = tokensAfter,
@@ -193,7 +196,7 @@ public sealed class OpenRouterChatClient : IChatClient
             await _metricsPublisher.PublishAsync(new TokenUsageEvent
             {
                 Sender = sender ?? "unknown",
-                Model = _model,
+                Model = effectiveModel,
                 InputTokens = (int)(usage.Details.InputTokenCount ?? 0),
                 OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),
                 CachedInputTokens = DrainCachedTokenQueue() ?? ReadCachedInputTokens(usage.Details),

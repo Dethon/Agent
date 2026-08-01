@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Infrastructure.Agents.ChatClients;
@@ -204,6 +205,68 @@ public class OpenRouterChatClientMetricsTests : IDisposable
         captured.ShouldNotBeNull();
         captured.InputTokens.ShouldBe(21639);
         captured.CachedInputTokens.ShouldBe(13800);
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_WithPatchedModel_PublishesPatchedModel()
+    {
+        using var sut = new OpenRouterChatClient(
+            _innerClient.Object, "test-model", metricsPublisher: _publisher.Object,
+            patchableModelIds: ["patched-model"]);
+
+        var userMessage = new ChatMessage(ChatRole.User, "hello");
+        userMessage.SetConfigPatch(new AgentConfigPatch { Model = "patched-model" });
+
+        var usageDetails = new UsageDetails { InputTokenCount = 100, OutputTokenCount = 50 };
+        _innerClient
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions?>(), It.IsAny<CancellationToken>()))
+            .Returns(new List<ChatResponseUpdate>
+            {
+                new() { Role = ChatRole.Assistant, Contents = [new UsageContent(usageDetails)] }
+            }.ToAsyncEnumerable());
+
+        TokenUsageEvent? captured = null;
+        _publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as TokenUsageEvent ?? captured)
+            .Returns(Task.CompletedTask);
+
+        await sut.GetStreamingResponseAsync([userMessage]).ToListAsync();
+
+        captured.ShouldNotBeNull();
+        captured.Model.ShouldBe("patched-model");
+    }
+
+    [Fact]
+    public async Task GetStreamingResponseAsync_WithNonWhitelistedPatchModel_PublishesConfiguredModel()
+    {
+        using var sut = new OpenRouterChatClient(
+            _innerClient.Object, "test-model", metricsPublisher: _publisher.Object,
+            patchableModelIds: ["patched-model"]);
+
+        var userMessage = new ChatMessage(ChatRole.User, "hello");
+        userMessage.SetConfigPatch(new AgentConfigPatch { Model = "evil/model" });
+
+        var usageDetails = new UsageDetails { InputTokenCount = 100, OutputTokenCount = 50 };
+        _innerClient
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions?>(), It.IsAny<CancellationToken>()))
+            .Returns(new List<ChatResponseUpdate>
+            {
+                new() { Role = ChatRole.Assistant, Contents = [new UsageContent(usageDetails)] }
+            }.ToAsyncEnumerable());
+
+        TokenUsageEvent? captured = null;
+        _publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as TokenUsageEvent ?? captured)
+            .Returns(Task.CompletedTask);
+
+        await sut.GetStreamingResponseAsync([userMessage]).ToListAsync();
+
+        captured.ShouldNotBeNull();
+        captured.Model.ShouldBe("test-model");
     }
 
     [Fact]
