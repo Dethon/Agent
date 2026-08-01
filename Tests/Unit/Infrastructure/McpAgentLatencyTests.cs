@@ -1,6 +1,8 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
+using Domain.Extensions;
 using Infrastructure.Agents;
 using Microsoft.Extensions.AI;
 using Moq;
@@ -84,6 +86,42 @@ public class McpAgentLatencyTests : IAsyncDisposable
         total.Model.ShouldBe("anthropic/claude");
         total.ConversationId.ShouldBe("conv1");
         firstToken.Model.ShouldBe("anthropic/claude");
+    }
+
+    [Fact]
+    public async Task RunStreaming_WithPatchedModel_EmitsLatencyWithPatchedModel()
+    {
+        var chatClient = new Mock<IChatClient>();
+        chatClient
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(new List<ChatResponseUpdate>
+            {
+                new() { Role = ChatRole.Assistant, Contents = [new TextContent("hi")] }
+            }.ToAsyncEnumerable());
+
+        await using var agent = new McpAgent(
+            [],
+            chatClient.Object,
+            "test-agent",
+            "",
+            new Mock<IThreadStateStore>().Object,
+            "test-user",
+            metricsPublisher: _publisher.Object,
+            model: "anthropic/claude",
+            conversationId: "conv1",
+            patchableModelIds: ["z-ai/glm"]);
+
+        var message = new ChatMessage(ChatRole.User, "hello");
+        message.SetConfigPatch(new AgentConfigPatch { Model = "z-ai/glm" });
+
+        await agent.RunStreamingAsync(message).ToListAsync();
+
+        var events = Snapshot();
+        events.First(e => e.Stage == LatencyStage.LlmFirstToken).Model.ShouldBe("z-ai/glm");
+        events.First(e => e.Stage == LatencyStage.LlmTotal).Model.ShouldBe("z-ai/glm");
     }
 
     [Fact]
