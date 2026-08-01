@@ -423,16 +423,15 @@ public class OpenRouterHttpHelpersTests
         JsonNode.Parse(body)!["model"]!.GetValue<string>().ShouldBe("openai/gpt-5.6-luna");
     }
 
-    // A pinned `only`/`sort` was chosen for the configured model's providers. Stamping an
-    // overridden model onto that pinned routing can strand the request with no allowed
-    // provider (e.g. `only: ["openai"]` doesn't serve `z-ai/glm-5.2`), so an override turn must
-    // drop the configured routing entirely rather than carry it over.
+    // Provider routing is a deployment constraint, not a per-model preference: it is enforced
+    // on every turn, override or not. A whitelist entry no configured routing can serve is a
+    // config error to fix in `patchableModels`/`providerRouting`, not something to route around.
     [Fact]
-    public async Task PrepareRequestBodyAsync_WithProviderRoutingAndModelOverride_OmitsProviderKey()
+    public async Task PrepareRequestBodyAsync_WithProviderRoutingAndModelOverride_KeepsProviderNode()
     {
         // Arrange
         var request = CreateRequest(BodyJson);
-        var routing = new ProviderRouting { Only = ["openai"] };
+        var routing = new ProviderRouting { Ignore = ["azure", "azure/eu"] };
 
         // Act
         await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
@@ -441,7 +440,8 @@ public class OpenRouterHttpHelpersTests
         // Assert
         var obj = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject();
         obj["model"]!.GetValue<string>().ShouldBe("z-ai/glm-5.2");
-        obj.ContainsKey("provider").ShouldBeFalse();
+        obj["provider"]!["ignore"]!.AsArray().Select(n => n!.GetValue<string>())
+            .ShouldBe(["azure", "azure/eu"]);
     }
 
     [Fact]
