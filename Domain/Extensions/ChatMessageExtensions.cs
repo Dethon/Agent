@@ -15,6 +15,7 @@ public static class ChatMessageExtensions
     private const string SatelliteIdKey = "SatelliteId";
     private const string DismissedAlertKey = "DismissedAlert";
     private const string ConversationContextKey = "ConversationContext";
+    private const string ConfigPatchKey = "ConfigPatch";
 
     extension(ChatMessage message)
     {
@@ -164,6 +165,28 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[ConversationContextKey] = context;
+        }
+
+        public AgentConfigPatch? GetConfigPatch()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(ConfigPatchKey);
+            return value switch
+            {
+                AgentConfigPatch patch => patch,
+                JsonElement je => je.Deserialize<AgentConfigPatch>(ChannelProtocol.SerializerOptions),
+                _ => null
+            };
+        }
+
+        public void SetConfigPatch(AgentConfigPatch? patch)
+        {
+            if (patch is null)
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[ConfigPatchKey] = patch;
         }
     }
 
