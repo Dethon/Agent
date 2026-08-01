@@ -24,6 +24,12 @@
 # <speaker> ducks the `music` softvol (snapclient) while active, and Environment=XDG_RUNTIME_DIR
 # lets this system service reach the user's PipeWire (lingering is enabled).
 # See scripts/provision-satellite-rs.sh. (Voice-only units use this ExecStart verbatim.)
+# --volume-mixer/--volume-card is the voice-only master: a software ALSA softvol ("Nabu") that
+# provisioning writes into /etc/asound.conf in front of the speaker, since an amp HAT has no
+# hardware volume and PipeWire is not installed here. --snd-command targets that softvol PCM, so
+# everything the satellite plays passes through it. Provisioning rewrites the card, and drops both
+# flags on a unit whose output device it cannot name a card for. Music units get --volume-sink
+# (the PipeWire master) from the drop-in instead — the two are mutually exclusive.
 [Unit]
 Description=Nabu Rust Wyoming Satellite (%i)
 After=network-online.target sound.target
@@ -44,6 +50,8 @@ ExecStart=/usr/local/bin/nabu-satellite \
   --mic-command "arecord -D plughw:CARD=Array,DEV=0 -r 16000 -c 1 -f S16_LE -t raw -F 20000" \
   --snd-command "aplay -D plughw:CARD=sndrpihifiberry,DEV=0 -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \
   --preroll-ms 1000 \
+  --volume-mixer Nabu \
+  --volume-card sndrpihifiberry \
   --threshold 0.7 \
   --wake-window 2
 Environment=RUST_LOG=info
