@@ -33,6 +33,27 @@ uv run python -m stt_eval transcribe --backend lemonade --label lemonade-prompte
   --prompt "Órdenes breves a un asistente de voz en español de España." --conditions raw
 ```
 
+## Short-command corpus
+
+`synth` builds its own corpus by putting each phrase in `stt_eval/phrases.py`'s `SHORT_COMMANDS`
+through the running Lemonade's Kokoro TTS and resampling to the 16 kHz mono s16le the satellites
+send. It replaces `fetch`/`validate`/`mix` — there is nothing to mix, the corpus is clean-only —
+and then `transcribe` and `report` run unchanged.
+
+> **This corpus is SYNTHETIC speech.** No room, no reverberation, no far-field mic, no speaker
+> variation beyond the TTS voices. Use it to compare two decode configurations against each other
+> on identical audio. It does **not** produce a WER that transfers to a deployed satellite, and it
+> is clean-only, so `report`'s PASS/FAIL block (a low-SNR enhancement rule) is degenerate on it —
+> read the WER table. Real short-command recordings remain the only route to a transferable number.
+
+```bash
+uv run python -m stt_eval synth --run short1                              # needs lemonade reachable
+uv run python -m stt_eval transcribe --run short1 --backend lemonade --conditions raw
+uv run python -m stt_eval transcribe --run short1 --backend lemonade --label lemonade-prompted \
+  --prompt "Órdenes breves a un asistente de voz en español de España." --conditions raw
+uv run python -m stt_eval report --run short1
+```
+
 > `fetch`'s idempotence is presence-based (a source counts as done once its `data/...`
 > subdirectory exists and is non-empty): if a fetch is interrupted partway, delete the affected
 > `data/...` subdirectory before re-running, or the partial download is silently treated as complete.

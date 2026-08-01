@@ -26,3 +26,9 @@ def test_cli_lists_stages():
     )
     assert out.returncode == 0
     assert "fetch" in out.stdout
+
+def test_synth_stage_parses():
+    args = build_parser().parse_args(["synth", "--run", "short1"])
+
+    assert args.stage == "synth"
+    assert args.run == "short1"

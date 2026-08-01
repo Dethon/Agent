@@ -12,8 +12,9 @@ def _todo(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="stt_eval", description=__doc__)
-    sub = parser.add_subparsers(dest="stage", required=True, metavar="{fetch,validate,mix,process,transcribe,report}")
-    for name in ("fetch", "validate", "mix", "process", "transcribe", "report"):
+    sub = parser.add_subparsers(dest="stage", required=True,
+                                metavar="{fetch,validate,mix,synth,process,transcribe,report}")
+    for name in ("fetch", "validate", "mix", "synth", "process", "transcribe", "report"):
         p = sub.add_parser(name)
         p.set_defaults(func=STAGES.get(name, _todo))
         _add_stage_args(name, p)
@@ -40,6 +41,11 @@ def _add_stage_args(name: str, p: argparse.ArgumentParser) -> None:
                             "two decode configs of the same backend side by side in the report.")
     if name == "process":
         p.add_argument("--conditions", default="gtcrn,dfn3")
+    if name == "synth":
+        p.add_argument("--lemonade", default="http://localhost:13305",
+                       help="Lemonade base url used for Kokoro TTS")
+        p.add_argument("--tts-voices", default="em_santa,ef_dora")
+        p.add_argument("--tts-model", default="kokoro-v1")
 
 
 def _fetch(args: argparse.Namespace) -> None:
@@ -67,6 +73,15 @@ def _mix(args: argparse.Namespace) -> None:
 
 
 STAGES["mix"] = _mix
+
+
+def _synth(args: argparse.Namespace) -> None:
+    from .synth_stage import run_synth
+    run_synth(Path("runs") / args.run, args.lemonade,
+              [v.strip() for v in args.tts_voices.split(",") if v.strip()], args.tts_model)
+
+
+STAGES["synth"] = _synth
 
 
 def _process(args: argparse.Namespace) -> None:
