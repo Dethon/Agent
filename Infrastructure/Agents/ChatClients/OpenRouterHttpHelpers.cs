@@ -12,7 +12,8 @@ internal static class OpenRouterHttpHelpers
     private static readonly string[] _reasoningPropertyNames = ["reasoning", "reasoning_content", "thinking"];
 
     public static async Task PrepareRequestBodyAsync(
-        HttpRequestMessage request, string? sessionId, ProviderRouting? providerRouting, CancellationToken ct)
+        HttpRequestMessage request, string? sessionId, ProviderRouting? providerRouting,
+        string? modelOverride, CancellationToken ct)
     {
         if (request.Method != HttpMethod.Post ||
             request.Content?.Headers.ContentType?.MediaType?
@@ -39,6 +40,13 @@ internal static class OpenRouterHttpHelpers
         if (!string.IsNullOrWhiteSpace(sessionId))
         {
             obj["session_id"] = sessionId;
+        }
+
+        // Per-message model patch. Stamped like session_id: the OpenAI SDK bakes the configured
+        // model into the body, so the override rewrites it here, after whitelist validation upstream.
+        if (!string.IsNullOrWhiteSpace(modelOverride))
+        {
+            obj["model"] = modelOverride;
         }
 
         // Ask for the usage breakdown. `cost` arrives without this, but prompt_tokens_details —
