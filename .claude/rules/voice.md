@@ -22,10 +22,12 @@ the calibrated conversational `TTS` level. `AnnouncePriority.High` is deliberate
 approval prompts share it. The flag defaults to false everywhere, so ordinary replies, plain
 announcements and a pre-1.5 satellite are unaffected, and an unopenable alert device falls back to
 the normal sink rather than dropping the connection. A music unit's level chain is three per-source
-softvols (`Music`, `TTS`, `Alert`) under a PipeWire master held at 100 %; see
-`scripts/provision-satellite-rs.sh` for `TTS_VOLUME` / `ALERT_VOLUME`. A voice-only unit has no
-PipeWire and no per-source calibration: it plays everything, alerts included, through a single
-ALSA softvol master that the spoken volume commands drive.
+softvols (`Music`, `TTS`, `Alert`) under a PipeWire master that starts at `MASTER_VOLUME` %
+(default 50, persisted by wireplumber once the user moves it); see
+`scripts/provision-satellite-rs.sh` for `MASTER_VOLUME` / `TTS_VOLUME` / `ALERT_VOLUME`. A
+voice-only unit has no PipeWire and no per-source calibration: it plays everything, alerts
+included, through a single ALSA softvol master that the spoken volume commands drive, landed on
+the same startup level each boot by a provisioning-installed oneshot.
 
 **Local speaker commands.** `VoiceCommandMatcher` matches a normalized whole transcript (lowercase,
 accents and punctuation stripped, whitespace collapsed) against `VoiceSettings.Commands.Phrases`.
