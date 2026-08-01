@@ -51,10 +51,12 @@ public static class ConfigModule
 
         services
             .AddSingleton<SatelliteSessionRegistry>()
+            .AddSingleton(new VoiceCommandMatcher(settings.Commands))
             .AddSingleton<TranscriptDispatcher>(sp => new TranscriptDispatcher(
                 sp.GetRequiredService<ChannelNotificationEmitter>(),
                 sp.GetRequiredService<IMetricsPublisher>(),
                 sp.GetRequiredService<VoiceConversationManager>(),
+                sp.GetRequiredService<VoiceCommandMatcher>(),
                 avgLogProbThreshold: settings.Stt.OpenAi.AvgLogProbThreshold,
                 noSpeechProbThreshold: settings.Stt.OpenAi.NoSpeechProbThreshold,
                 shortSpeechAvgLogProbThreshold: settings.Stt.OpenAi.ShortSpeechAvgLogProbThreshold,

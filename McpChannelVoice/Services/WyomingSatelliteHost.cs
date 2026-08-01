@@ -138,59 +138,76 @@ public sealed class WyomingSatelliteHost(
         await client.ConnectAsync(host, port, ct);
 
         var session = new SatelliteSession(id, config);
-        sessionRegistry.Register(session);
-        // Both re-arm writes share the connection's single WyomingWriter with the playback loop and
-        // the coordinator's EndConversation, which already write to it concurrently today — the
-        // arbiter is a third caller under the same guarantees, not a new sharing model.
-        arbiter.Register(id, new WakeArbiterHandle(
-            session,
-            ct2 => client.WriteAsync(WyomingEvent.Header("pause-satellite", new JsonObject()), ct2),
-            ct2 => client.WriteAsync(
-                WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), ct2)));
-        logger.LogInformation("Connected to satellite {Id} at {Host}:{Port}", id, host, port);
+        // The WyomingClient lives only in this scope, so hand the session a writer for control
+        // events raised from outside it — the transcript fast-path and the insistent alert hold.
+        session.ControlWriter = (evt, ct2) => client.WriteAsync(evt, ct2);
 
-        var playbackTask = Task.Run(() => session.RunPlaybackLoopAsync(
-            (chunk, jct) => WritePlaybackFrameAsync(client, chunk, jct),
-            ct, time, logger,
-            onAudioStart: (format, alert, sct) => client.WriteAsync(
-                WyomingEvent.Header("audio-start", BuildAudioStart(format, alert)), sct),
-            onAudioStop: sct => client.WriteAsync(
-                WyomingEvent.Header("audio-stop", new JsonObject { ["timestamp"] = 0 }), sct),
-            onError: async (job, ex) =>
-            {
-                try
-                {
-                    await metrics.PublishAsync(new VoiceEvent
-                    {
-                        Metric = VoiceMetric.TtsError,
-                        SatelliteId = id,
-                        Room = config.Room,
-                        Identity = config.Identity,
-                        Error = ex.Message,
-                        ConversationId = conversationManager.GetActiveConversationId(id)
-                    }, ct);
-                }
-                catch (Exception mex)
-                {
-                    logger.LogWarning(mex, "Failed to publish TtsError metric for {Id} ({Label})", id, job.Label);
-                }
-            }), ct);
-
-        var followUp = voiceSettings.FollowUp with
-        {
-            Enabled = config.FollowUpEnabled ?? voiceSettings.FollowUp.Enabled
-        };
-
-        var coordinator = BuildCoordinator(id, config, client, session, followUp);
-        var conversationTask = Task.Run(() => coordinator.RunAsync(ct), ct);
-
-        // Per-turn, and only ever touched from this single read loop: did run-pipeline already
-        // announce this turn? Cleared at audio-stop, which is exactly where the satellite ends the
-        // mic stream (transcript or pause-satellite both route through its end_capture).
-        var wakeAnnounced = false;
+        // Hoisted so the widened try/finally below can release them even if something in the setup
+        // that follows (arbiter registration, the playback/conversation Task.Run calls, building the
+        // coordinator) throws synchronously — that setup used to sit OUTSIDE the try, so a throw
+        // there left the session registered with a ControlWriter closing over an already-disposed
+        // client until the next reconnect replaced it.
+        Task? playbackTask = null;
+        FollowUpConversation? coordinator = null;
+        Task? conversationTask = null;
 
         try
         {
+            sessionRegistry.Register(session);
+            // Both re-arm writes share the connection's single WyomingWriter with the playback loop and
+            // the coordinator's EndConversation, which already write to it concurrently today — the
+            // arbiter is a third caller under the same guarantees, not a new sharing model.
+            arbiter.Register(id, new WakeArbiterHandle(
+                session,
+                ct2 => client.WriteAsync(WyomingEvent.Header("pause-satellite", new JsonObject()), ct2),
+                ct2 => client.WriteAsync(
+                    WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), ct2)));
+            logger.LogInformation("Connected to satellite {Id} at {Host}:{Port}", id, host, port);
+
+            playbackTask = Task.Run(() => session.RunPlaybackLoopAsync(
+                (chunk, jct) => WritePlaybackFrameAsync(client, chunk, jct),
+                ct, time, logger,
+                onAudioStart: (format, alert, sct) => client.WriteAsync(
+                    WyomingEvent.Header("audio-start", BuildAudioStart(format, alert)), sct),
+                onAudioStop: sct => client.WriteAsync(
+                    WyomingEvent.Header("audio-stop", new JsonObject { ["timestamp"] = 0 }), sct),
+                onError: async (job, ex) =>
+                {
+                    try
+                    {
+                        await metrics.PublishAsync(new VoiceEvent
+                        {
+                            Metric = VoiceMetric.TtsError,
+                            SatelliteId = id,
+                            Room = config.Room,
+                            Identity = config.Identity,
+                            Error = ex.Message,
+                            ConversationId = conversationManager.GetActiveConversationId(id)
+                        }, ct);
+                    }
+                    catch (Exception mex)
+                    {
+                        logger.LogWarning(mex, "Failed to publish TtsError metric for {Id} ({Label})", id, job.Label);
+                    }
+                }), ct);
+
+            var followUp = voiceSettings.FollowUp with
+            {
+                Enabled = config.FollowUpEnabled ?? voiceSettings.FollowUp.Enabled
+            };
+
+            // Bound to a non-nullable local for the Task.Run lambda below: the nullable `coordinator`
+            // field exists only so the finally can null-conditionally Dispose it, and the compiler
+            // can't narrow a captured nullable field's null-state across a lambda boundary.
+            var builtCoordinator = BuildCoordinator(id, config, client, session, followUp);
+            coordinator = builtCoordinator;
+            conversationTask = Task.Run(() => builtCoordinator.RunAsync(ct), ct);
+
+            // Per-turn, and only ever touched from this single read loop: did run-pipeline already
+            // announce this turn? Cleared at audio-stop, which is exactly where the satellite ends the
+            // mic stream (transcript or pause-satellite both route through its end_capture).
+            var wakeAnnounced = false;
+
             await client.WriteAsync(WyomingEvent.Header("run-satellite", new JsonObject()), ct);
 
             await foreach (var evt in client.ReadAllAsync(ct))
@@ -270,14 +287,23 @@ public sealed class WyomingSatelliteHost(
             // satellite waking in that window would be suppressed as a leak in favour of a
             // satellite that is already gone.
             arbiter.Unregister(id);
-            coordinator.Dispose();
+            coordinator?.Dispose();
             session.CompletePlayback();
-            try
-            { await playbackTask; }
-            catch { /* unwinds on cancellation / disconnect */ }
-            try
-            { await conversationTask; }
-            catch { /* unwinds on cancellation / disconnect */ }
+            // Null-guarded: setup that failed before reaching the Task.Run call never produced a
+            // task to await, and there is nothing to wait out in that case.
+            if (playbackTask is not null)
+            {
+                try
+                { await playbackTask; }
+                catch { /* unwinds on cancellation / disconnect */ }
+            }
+            if (conversationTask is not null)
+            {
+                try
+                { await conversationTask; }
+                catch { /* unwinds on cancellation / disconnect */ }
+            }
+            session.ControlWriter = null;
             sessionRegistry.Unregister(id);
         }
     }

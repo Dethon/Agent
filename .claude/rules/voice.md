@@ -21,9 +21,35 @@ via `PlaybackJob.Alert`). The satellite plays a marked stream on `--alert-snd-co
 the calibrated conversational `TTS` level. `AnnouncePriority.High` is deliberately not the marker —
 approval prompts share it. The flag defaults to false everywhere, so ordinary replies, plain
 announcements and a pre-1.5 satellite are unaffected, and an unopenable alert device falls back to
-the normal sink rather than dropping the connection. The satellite's level chain is three per-source
-softvols (`Music`, `TTS`, `Alert`) under a PipeWire master held at 100 %; see
-`scripts/provision-satellite-rs.sh` for `TTS_VOLUME` / `ALERT_VOLUME`.
+the normal sink rather than dropping the connection. A music unit's level chain is three per-source
+softvols (`Music`, `TTS`, `Alert`) under a PipeWire master that starts at `MASTER_VOLUME` %
+(default 50, persisted by wireplumber once the user moves it); see
+`scripts/provision-satellite-rs.sh` for `MASTER_VOLUME` / `TTS_VOLUME` / `ALERT_VOLUME`. A
+voice-only unit has no PipeWire and no per-source calibration: it plays everything, alerts
+included, through a single ALSA softvol master that the spoken volume commands drive, landed on
+the same startup level each boot by a provisioning-installed oneshot.
+
+**Local speaker commands.** `VoiceCommandMatcher` matches a normalized whole transcript (lowercase,
+accents and punctuation stripped, whitespace collapsed) against `VoiceSettings.Commands.Phrases`.
+`TranscriptDispatcher` checks it AFTER the gibberish gate and BEFORE `GetOrCreateAsync`, so poor
+audio cannot move a volume knob and a hit costs no `create_conversation` round trip. A hit writes
+`speaker-volume` through `SatelliteSession.ControlWriter` and returns `false`, which
+`FollowUpConversation` already turns into `EndConversation`. Every phrase carries an explicit local
+marker: "sube el volumen" is a Music Assistant request and still belongs to the agent. Matching is
+whole-transcript only, so a compound sentence goes to the agent intact.
+**A local mute must never swallow a timer or an alarm.** `InsistentAnnouncementController` keeps
+the speaker audible for the whole ring, in two parts. It re-sends `alert-hold` to every online
+target at the top of EVERY round, not once before the loop: the satellite's hold dies with its TCP
+connection, so a reconnect mid-alarm needs a fresh one, and a satellite that was rebooting when
+the loop started gets one as soon as it comes back. The satellite's hold is idempotent, so a
+re-assert to a satellite that already holds costs nothing.
+
+The release is refcounted, because overlapping alerts on one satellite are normal (a timer and an
+alarm on the same speaker). `ActiveAlertRegistry.CountFor` says how many alerts still cover a
+satellite. The ring loop's `finally` discards its OWN handle first, then sends `alert-release`
+only to targets whose count reached zero. Discarding before counting is what stops an alert from
+counting itself; it also means an alert whose loop died before it ever sent a hold cannot release
+somebody else's.
 
 **Short-phrase decode.** Three hub-side pieces target the one-to-three-second command, where whisper
 has the least context and every gate is hardest on it. (1) Every transcription POSTs a `prompt`:

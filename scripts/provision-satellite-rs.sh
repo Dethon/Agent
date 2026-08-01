@@ -4,6 +4,9 @@ set -euo pipefail
 # Usage: scripts/provision-satellite-rs.sh <user@host> [mic-device]
 #   Music satellite: MUSIC_HUB=<snapserver-host> MUSIC_ROOM=<player-name> [TTS_VOLUME=<pct>] \
 #                    [ALERT_VOLUME=<pct>] scripts/provision-satellite-rs.sh <user@host>
+#   Master level:    [MASTER_VOLUME=<pct>] (default 50) — the startup level of the master the
+#                    spoken volume commands drive, on BOTH unit paths (the PipeWire sink on a
+#                    music unit, the "Nabu" softvol on a voice-only one).
 #   Wake tuning:     THRESHOLD=<0..1> WAKE_WINDOW=<n> scripts/provision-satellite-rs.sh <user@host>
 #                    Defaults 0.7 / 2 — applied to BOTH unit paths (the voice-only ExecStart and
 #                    the music drop-in that overrides it), so a music unit is tuned by the same
@@ -25,15 +28,24 @@ set -euo pipefail
 # HAT (HiFiBerry-class `sndrpihifiberry*` card, e.g. the MiniAmp driving a wired speaker) when
 # present, else the 3.5mm jack. The mic card stays OUT of PipeWire, owned raw by the satellite.
 # On music units the satellite's own playback flows through per-source ALSA softvols on the speaker
-# card, under a master (the PipeWire sink) held at 100% — all calibration lives in the source knobs:
-#   TTS   (TTS_VOLUME%, default 65)  agent voice + cues; the volume knob for amp HATs that have none
+# card, under a master (the PipeWire sink) that provisioning starts at MASTER_VOLUME% (default 50)
+# — calibration lives in the source knobs, and the master is the knob the spoken volume commands
+# drive, so it starts halfway to leave those commands headroom in both directions:
+#   TTS   (TTS_VOLUME%, default 100) agent voice + cues; the volume knob for amp HATs that have none
 #   Alert (ALERT_VOLUME%, default 100) timers/alarms, so an alert bypasses the conversational level
 #   Music (ducked live by the satellite for the whole turn: listening, thinking AND speaking)
 # Tune live: amixer -c <card> sset TTS <pct>% / sset Alert <pct>% ; persist: sudo alsactl store.
-# NOTE: the master used to sit at 0.8 and now sits at 1.0, so re-provisioning an already-calibrated
-# unit makes music AND the agent voice louder, not just alerts. The TTS default dropped 75 -> 65
-# (-5.1 dB on the taper below) to absorb that on the voice side; music still needs its own retune,
-# and a unit provisioned with an explicit TTS_VOLUME bypasses the default — lower that value too.
+# Wireplumber persists later master changes, so MASTER_VOLUME is only where a (re)provision puts
+# it. Note an alert rings through master × Alert, so a lowered master quiets alarms too.
+# A VOICE-ONLY unit has no PipeWire, so it gets its master as a software ALSA softvol instead:
+# `pcm.speaker` (control "Nabu") in front of the output device, which everything the satellite
+# plays goes through. That is what the hub's spoken volume/mute commands drive there — without it
+# they would beep a confirmation and move nothing, since an amp HAT has no hardware volume. It is
+# asserted to MASTER_VOLUME% unmuted on every provision, and — because a reboot wipes a softvol
+# control, whose first open would recreate it at MAX — a nabu-volume-init boot oneshot re-lands
+# it on the same level before the satellite starts, so every boot starts there too.
+# NOTE: a re-provision without explicit TTS_VOLUME/MASTER_VOLUME comes back at these factory
+# levels — pass a unit's calibrated values to keep its levels.
 #
 # Audio addressing:
 #   - No [mic-device] arg (the usual case): the USB audio card is auto-detected by NAME from
@@ -75,10 +87,12 @@ wake_window=${WAKE_WINDOW:-${TRIGGER_LEVEL:-2}}
 # Softvol levels, validated here for the same reason: a malformed one fails at `amixer` under
 # `set -e` only AFTER asound.conf and the PipeWire master have already been rewritten, leaving a
 # half-provisioned unit to repair over SSH.
-tts_volume=${TTS_VOLUME:-65}
+tts_volume=${TTS_VOLUME:-100}
 alert_volume=${ALERT_VOLUME:-100}
+master_volume=${MASTER_VOLUME:-50}
 [[ $tts_volume =~ ^([0-9]|[1-9][0-9]|100)$ ]] || { echo "ERROR: TTS_VOLUME must be an integer in 0..100 (got '$tts_volume')" >&2; exit 1; }
 [[ $alert_volume =~ ^([0-9]|[1-9][0-9]|100)$ ]] || { echo "ERROR: ALERT_VOLUME must be an integer in 0..100 (got '$alert_volume')" >&2; exit 1; }
+[[ $master_volume =~ ^([0-9]|[1-9][0-9]|100)$ ]] || { echo "ERROR: MASTER_VOLUME must be an integer in 0..100 (got '$master_volume')" >&2; exit 1; }
 
 "$(dirname "$0")/../satellite/scripts/build-release.sh"
 bin="$(dirname "$0")/../satellite/target/aarch64-unknown-linux-musl/release/nabu-satellite"
@@ -139,11 +153,11 @@ scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-satellite.service"
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/snapclient.service" "$host:/tmp/"
 scp "${SSHOPTS[@]}" "$(dirname "$0")/../satellite/deploy/nabu-micclock.service" "$host:/tmp/"
 
-# Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/ALERT_VOLUME/THRESHOLD/WAKE_WINDOW env
-# vars: nothing is expanded locally; the remote bash evaluates everything (and reads vars from the
-# command-prefix assignments). TTS_VOLUME/ALERT_VOLUME/THRESHOLD/WAKE_WINDOW arrive already
+# Quoted heredoc + MIC/MUSIC_HUB/MUSIC_ROOM/TTS_VOLUME/ALERT_VOLUME/MASTER_VOLUME/THRESHOLD/
+# WAKE_WINDOW env vars: nothing is expanded locally; the remote bash evaluates everything (and
+# reads vars from the command-prefix assignments). The volume and tuning vars arrive already
 # defaulted and validated above (WAKE_WINDOW having absorbed any TRIGGER_LEVEL alias).
-ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${tts_volume}" ALERT_VOLUME="${alert_volume}" THRESHOLD="${threshold}" WAKE_WINDOW="${wake_window}" bash -se <<'EOF'
+ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="${MUSIC_ROOM:-}" TTS_VOLUME="${tts_volume}" ALERT_VOLUME="${alert_volume}" MASTER_VOLUME="${master_volume}" THRESHOLD="${threshold}" WAKE_WINDOW="${wake_window}" bash -se <<'EOF'
   set -euo pipefail
 
   if [ -n "${MUSIC_HUB:-}" ] && [ -n "${MIC}" ]; then
@@ -179,9 +193,9 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
 
     # Address the mic by NAME (stable across reboots / ALSA index churn). The capture side is
     # 16 kHz mono native — exactly what the satellite wants, no resampling; `plughw` resamples
-    # only the 22050 Hz playback to a rate the device supports. No /etc/asound.conf: the earlier
-    # 48 kHz plug device was wrong (this capture is 16 kHz-ONLY) — remove a stale one if present.
-    sudo rm -f /etc/asound.conf
+    # only the 22050 Hz playback to a rate the device supports. CAPTURE never goes through
+    # /etc/asound.conf (an earlier 48 kHz plug device was wrong — this capture is 16 kHz-ONLY);
+    # that file describes PLAYBACK only, and both branches below rewrite it in full.
     dev="plughw:CARD=${cardname},DEV=0"
 
     # Stop USB autosuspend during long idle, keyed on the detected device's id — good hygiene
@@ -258,6 +272,22 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
   else
     snddev="${dev}"   # no HAT: play through the mic card's own output
   fi
+  # What the satellite's --snd-command actually opens. Same as the raw device unless the voice-only
+  # branch below puts its softvol master in front of it.
+  playdev="${snddev}"
+  # The voice-only master's simple-control name, and the ONE place it is written: the asound.conf
+  # elements, the amixer calls and the unit's --volume-mixer argument are all derived from it, so
+  # renaming it cannot leave the satellite driving a control that no longer exists.
+  volmixer="Nabu"
+  # Set ONLY once this unit really has a working softvol master. Everything downstream (the unit's
+  # volume flags) keys on this, so every way of not getting one — no card, or a chain that will not
+  # open — lands on the identical "no local volume control, plain plughw playback" outcome.
+  volume_ctl=""
+  # A softvol CONTROL has to be stored on a real card, so pull the card name out of the device
+  # string. Everything this script generates is `...CARD=<name>,DEV=0`; an explicit [mic-device]
+  # in another form (hw:1,0) leaves nothing to hang a control on, and that unit then runs with no
+  # local volume knob at all rather than with one that drives nothing.
+  sndcard=$(printf '%s' "$snddev" | sed -nE 's/.*CARD=([^,]+).*/\1/p')
 
   # --- music coexistence (opt-in via MUSIC_HUB) ---
   # Music + TTS + cues all share the speaker output ($snddev), mixed by PipeWire in userspace
@@ -341,12 +371,20 @@ pcm.alert {
 }
 ASOUND
 
+    # Upgrade hygiene: a prior voice-only install's boot oneshot targets pcm.speaker, which the
+    # rewrite above just removed; PipeWire persistence takes over the master here.
+    sudo systemctl disable --now nabu-volume-init.service 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/nabu-volume-init.service
+
     # Apply the rules (the speaker becomes the only/default sink) and set a sane output volume.
     XDG_RUNTIME_DIR=/run/user/$uid systemctl --user restart wireplumber 2>/dev/null || true
     sleep 3
-    # Master at FULL: every level lives in the per-source softvols below (Music / TTS / Alert), so
-    # a second attenuation here would only cap how loud an alert can get.
-    XDG_RUNTIME_DIR=/run/user/$uid wpctl set-volume @DEFAULT_AUDIO_SINK@ 1.0 2>/dev/null || true
+    # Master at MASTER_VOLUME% (default 50): this is the knob the spoken volume commands drive, so
+    # it starts halfway to leave them headroom in both directions; wireplumber persists the user's
+    # later changes, so this is only where a (re)provision puts it. Deliberate trade-off: an alert
+    # rings through master × Alert, so until the user raises the master an alarm rings at this
+    # level too.
+    XDG_RUNTIME_DIR=/run/user/$uid wpctl set-volume @DEFAULT_AUDIO_SINK@ "${MASTER_VOLUME}%" 2>/dev/null || true
 
     # Calibrate the source levels: a softvol CONTROL only materializes on first open of its PCM,
     # so play 1 s of silence through each, then set the level (re-asserted on every provision,
@@ -384,6 +422,7 @@ ExecStart=/usr/local/bin/nabu-satellite \\
   --alert-snd-command "aplay -D alert -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \\
   --preroll-ms 1000 \\
   --music-mixer Music --music-card ${outctl} \\
+  --volume-sink @DEFAULT_AUDIO_SINK@ \\
   --threshold ${THRESHOLD} \\
   --wake-window ${WAKE_WINDOW}
 DROPEOF
@@ -391,15 +430,113 @@ DROPEOF
     # downgrade / voice-only: tear down any prior music install so a re-provisioned Pi returns to
     # exactly the voice-only state (no orphaned snapclient / stale PipeWire routing config).
     sudo systemctl disable --now snapclient.service 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/snapclient.service /etc/asound.conf
+    sudo rm -f /etc/systemd/system/snapclient.service
     sudo rm -f /etc/wireplumber/wireplumber.conf.d/50-nabu-exclude-mic.conf
     sudo systemctl daemon-reload
+
+    # asound.conf used to be DELETED here: a voice-only unit played straight to plughw, so any file
+    # present belonged to a previous music install. It now carries this unit's OWN master, so the
+    # teardown became a full REWRITE — `tee` truncates, so a downgrade cannot leave pcm.music /
+    # pcm.tts / pcm.alert behind either way. The one case with nothing to write still deletes.
+    #
+    # The master is a software softvol because there is nothing else to turn: the MiniAmp (and amp
+    # HATs generally) have no hardware volume, and PipeWire — which is what gives a music unit its
+    # master — is deliberately not installed here. `<name> Volume` and `<name> Switch` are one ALSA
+    # simple control: the simple mixer merges a `<base> Volume` element with a `<base> Switch` one,
+    # which is what gives the satellite both a level and a mute on a plugin that provides only a
+    # single element each (a resolution-2 softvol IS the mute switch). Both sit in front of the
+    # real device, so EVERYTHING the satellite plays — replies, cues and alerts alike
+    # (--alert-snd-command defaults to --snd-command) — passes through them. A distinctive base
+    # name keeps the pair from merging with a hardware `Master` on some other output card.
+    if [ -n "$sndcard" ]; then
+      sudo tee /etc/asound.conf >/dev/null <<ASOUND
+pcm.speaker {
+    type softvol
+    slave.pcm "nabu_mute"
+    control { name "${volmixer} Volume" card "${sndcard}" }
+    min_dB -51.0
+    max_dB 0.0
+    resolution 256
+}
+
+pcm.nabu_mute {
+    type softvol
+    slave.pcm "${snddev}"
+    control { name "${volmixer} Switch" card "${sndcard}" }
+    resolution 2
+}
+ASOUND
+
+      # A softvol control only materializes on FIRST OPEN of its PCM, so open it once here (same
+      # reason the music branch plays 1 s of silence through `tts`/`alert`) and assert the
+      # master: MASTER_VOLUME% (default 50 — halfway, so the spoken volume commands have headroom
+      # in both directions), unmuted because a re-provision must never hand back a silent speaker.
+      # A reboot wipes the control regardless (it does not exist yet when alsa-restore runs, and
+      # its first open would recreate it at MAX), so the nabu-volume-init oneshot installed below
+      # re-lands it on the same level once per boot, BEFORE the satellite starts.
+      #
+      # THIS OPEN IS THE GATE, not a calibration nicety: it is the only chance to find out whether
+      # the chain works on this hardware before the satellite depends on it. If it fails, revert to
+      # raw plughw. A unit installed with --snd-command pointing at a PCM that will not open has NO
+      # audio at all — playback errors are connection-fatal, so every cue and reply would drop the
+      # hub connection and Restart=always would churn — which is strictly worse than the plain
+      # working speaker this unit had before the feature existed. Losing the volume knob is not.
+      # The aplay error text is echoed rather than swallowed, because it is what distinguishes a
+      # busy device from a chain the card cannot negotiate. No retry: the realistic holder is the
+      # micclock feeder on a unit whose output IS the mic card, which is permanent, and which also
+      # blocks the satellite's own playback — a retry would only delay the same fallback.
+      if probe_err=$(timeout 10 aplay -D speaker -r 22050 -c 1 -f S16_LE -t raw -d 1 /dev/zero 2>&1 >/dev/null); then
+        playdev="speaker"
+        volume_ctl="${volmixer}"
+        amixer -c "${sndcard}" sset "${volmixer}" "${MASTER_VOLUME}%" unmute >/dev/null \
+          || echo "WARNING: could not set the '${volmixer}' master on card ${sndcard}"
+        # amixer APPLIES `unmute` only if the element actually has a switch and says nothing when
+        # it does not, so the line above cannot report a Volume/Switch pair that failed to merge.
+        # Read the state back instead: `[on]`/`[off]` in sget is the switch, and it is also exactly
+        # what the satellite parses at startup to seed the user's mute.
+        amixer -c "${sndcard}" sget "${volmixer}" 2>/dev/null | grep -qE '\[(on|off)\]' \
+          || echo "WARNING: the '${volmixer}' master on card ${sndcard} has no mute switch — spoken volume will work, spoken mute will not"
+        sudo alsactl store || true
+        # Once per BOOT (not per service start): re-materialize the control and land the master on
+        # its startup level before the satellite runs. RemainAfterExit keeps the unit active, so a
+        # satellite crash-restart cannot re-trigger it and stomp a level the user set by voice; the
+        # trailing `|| true` keeps a busy device from parking the unit in failed — the satellite's
+        # own first playback then recreates the control at MAX, which is exactly today's fallback.
+        sudo tee /etc/systemd/system/nabu-volume-init.service >/dev/null <<UNITEOF
+[Unit]
+Description=Land the nabu speaker master on its startup level
+After=alsa-restore.service sound.target
+Before=nabu-satellite.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'timeout 10 aplay -D speaker -r 22050 -c 1 -f S16_LE -t raw -d 1 /dev/zero 2>/dev/null; amixer -c ${sndcard} sset ${volmixer} ${MASTER_VOLUME}% unmute || true'
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+        sudo systemctl enable nabu-volume-init.service
+      else
+        echo "WARNING: the softvol master PCM would not open, so LOCAL VOLUME CONTROL IS DISABLED on this unit;"
+        echo "         playback falls back to ${snddev} and the satellite keeps working. aplay said: ${probe_err}"
+        sudo rm -f /etc/asound.conf
+        sudo systemctl disable --now nabu-volume-init.service 2>/dev/null || true
+        sudo rm -f /etc/systemd/system/nabu-volume-init.service
+      fi
+    else
+      echo "WARNING: no ALSA card name in '${snddev}' — this unit gets no local speaker volume control"
+      sudo rm -f /etc/asound.conf
+      sudo systemctl disable --now nabu-volume-init.service 2>/dev/null || true
+      sudo rm -f /etc/systemd/system/nabu-volume-init.service
+    fi
   fi
 
-  # Template the base (voice) unit: mic + snd devices -> the detected plughw, wake tuning -> the
-  # THRESHOLD/WAKE_WINDOW vars, %i -> user. Music units additionally carry the pipewire.conf
-  # drop-in written above, which overrides this ExecStart to route TTS/cues to PipeWire — it
-  # carries the same two tuning values, so tuning applies either way.
+  # Template the base (voice) unit: mic + snd devices -> the detected plughw (the snd side being
+  # the softvol master PCM when this unit has one), wake tuning -> the THRESHOLD/WAKE_WINDOW vars,
+  # %i -> user. Music units additionally carry the pipewire.conf drop-in written above, which
+  # overrides this ExecStart to route TTS/cues to PipeWire — it carries the same two tuning values,
+  # so tuning applies either way, plus its own --volume-sink.
   # Every substitution rewrites the ARGUMENT rather than matching a literal default value, so
   # changing the unit template's defaults can't silently break provisioning (the tuning seds used
   # to match `--threshold 0.7` / `--trigger-level 2` verbatim and would have gone quietly inert
@@ -407,10 +544,19 @@ DROPEOF
   # trailing ` \` continuation intact. All are anchored to the continuation lines (leading
   # whitespace) so the header COMMENTS, which mention the same flags and carry their own `-D`
   # examples, are left alone.
+  # DEFAULT is to drop both volume flags: a --volume-mixer naming a control that does not exist is
+  # exactly the "beeps but moves nothing" failure this feature exists to remove, so a unit only
+  # gets them once $volume_ctl says it really has that control. Music units land here too — their
+  # drop-in supplies --volume-sink instead, and the two are mutually exclusive. The control NAME is
+  # rewritten like every other argument, so the unit file cannot drift from the asound.conf.
+  volsed=(-e "/^[[:space:]]*--volume-mixer/d" -e "/^[[:space:]]*--volume-card/d")
+  [ -z "$volume_ctl" ] || volsed=(-e "/^[[:space:]]*--volume-mixer/ s#--volume-mixer [^ ]*#--volume-mixer ${volume_ctl}#" \
+                                  -e "/^[[:space:]]*--volume-card/ s#--volume-card [^ ]*#--volume-card ${sndcard}#")
   sudo sed -e "/^[[:space:]]*--mic-command/ s#-D [^ ]*#-D ${dev}#" \
-           -e "/^[[:space:]]*--snd-command/ s#-D [^ ]*#-D ${snddev}#" \
+           -e "/^[[:space:]]*--snd-command/ s#-D [^ ]*#-D ${playdev}#" \
            -e "/^[[:space:]]*--threshold/ s#--threshold [^ ]*#--threshold ${THRESHOLD}#" \
            -e "/^[[:space:]]*--wake-window/ s#--wake-window [^ ]*#--wake-window ${WAKE_WINDOW}#" \
+           "${volsed[@]}" \
            -e "s/%i/$user/g" \
            /tmp/nabu-satellite.service | sudo tee /etc/systemd/system/nabu-satellite.service >/dev/null
 

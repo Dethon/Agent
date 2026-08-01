@@ -73,6 +73,33 @@ public sealed class SatelliteSession
     public string SatelliteId { get; }
     public SatelliteConfig Config { get; }
 
+    // Writes a control event on this satellite's live Wyoming connection. Set by
+    // WyomingSatelliteHost when the connection is established and cleared on teardown, because the
+    // WyomingClient itself lives only inside that per-connection scope. Null means not connected.
+    public Func<WyomingEvent, CancellationToken, Task>? ControlWriter { get; set; }
+
+    public async Task<bool> TrySendControlAsync(WyomingEvent evt, CancellationToken ct)
+    {
+        var writer = ControlWriter;
+        if (writer is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await writer(evt, ct);
+            return true;
+        }
+        catch (Exception)
+        {
+            // A control event is best-effort: the connection may be tearing down underneath us, and
+            // a failed volume step must not take out the caller's path (a transcript dispatch or an
+            // alarm loop). Callers log the false.
+            return false;
+        }
+    }
+
     // Lets a caller decide whether a segment can be queued BEFORE it consumes the text and starts
     // its synthesis, rather than finding out after both are already spent.
     public int PlaybackQueueDepth => _playback.Reader.Count;

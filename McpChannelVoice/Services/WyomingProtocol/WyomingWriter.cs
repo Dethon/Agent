@@ -9,8 +9,9 @@ public sealed class WyomingWriter(Stream stream)
     // Must match satellite/src/wyoming/event.rs PROTOCOL_VERSION. Neither side validates the value
     // today, so the only cost of drift is a misleading wire trace — but the two are documented as
     // one number (satellite/CLAUDE.md), so they move together. 1.5 added `alert` on audio-start;
-    // 1.6 added the `listening-started` event; 1.7 added `room_rms` on run-pipeline.
-    private const string ProtocolVersion = "1.7";
+    // 1.6 added the `listening-started` event; 1.7 added `room_rms` on run-pipeline; 1.8 added the
+    // `speaker-volume` event.
+    private const string ProtocolVersion = "1.8";
     private static readonly byte[] _newline = "\n"u8.ToArray();
     private static readonly JsonSerializerOptions _serializerOptions = new(JsonSerializerDefaults.Web);
     // Not disposed by design: SemaphoreSlim only needs disposal when its AvailableWaitHandle is

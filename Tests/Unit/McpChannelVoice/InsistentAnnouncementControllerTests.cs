@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
@@ -113,6 +114,203 @@ public class InsistentAnnouncementControllerTests
             (_, _) => { Interlocked.Increment(ref count); return Task.CompletedTask; },
             CancellationToken.None, time);
         return (pump, () => Volatile.Read(ref count));
+    }
+
+    // Records the speaker-volume actions the controller writes to a satellite.
+    private static Func<IReadOnlyList<string>> RecordVolumeActions(SatelliteSession session)
+    {
+        var actions = new List<string>();
+        session.ControlWriter = (evt, _) =>
+        {
+            if (evt.Type == "speaker-volume")
+            {
+                lock (actions)
+                { actions.Add(evt.Data["action"]!.GetValue<string>()); }
+            }
+            return Task.CompletedTask;
+        };
+        return () => { lock (actions) { return actions.ToList(); } };
+    }
+
+    // A local mute must never swallow a timer or an alarm: the hold unmutes for the ring and the
+    // release puts the user's mute back. A one-round alert is the simplest shape of that — one
+    // hold, one release — so the speaker is audible for the whole sequence, not part of it.
+    [Fact]
+    public async Task Start_InsistentAlert_BracketsTheRingWithAlertHoldAndRelease()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
+        var session = h.Sessions.Get("kitchen-01")!;
+        var actions = RecordVolumeActions(session);
+        var (pump, _) = PumpPlays(session, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "eggs",
+                Kind = AnnounceKind.Timer,
+                Insistent = new() { MaxRepeats = 1 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(() => actions().Contains("alert-release"), TimeSpan.FromSeconds(5));
+        actions().ShouldBe(["alert-hold", "alert-release"]);
+
+        await DrainPumpAsync(pump, time, session);
+    }
+
+    // The release lives in the loop's finally, so it has to fire on the path that ends an alarm in
+    // practice — someone dismissing it — not only on repeats running out.
+    [Fact]
+    public async Task Start_DismissedMidRing_StillSendsAlertRelease()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
+        var session = h.Sessions.Get("kitchen-01")!;
+        var actions = RecordVolumeActions(session);
+        var (pump, _) = PumpPlays(session, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "wake up",
+                Kind = AnnounceKind.Alarm,
+                Insistent = new() { MaxRepeats = 12 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(() => actions().Contains("alert-hold"), TimeSpan.FromSeconds(5));
+        h.Alerts.DismissAll();
+
+        await WaitUntilAsync(() => actions().Contains("alert-release"), TimeSpan.FromSeconds(5));
+
+        await DrainPumpAsync(pump, time, session);
+    }
+
+    // Overlapping alerts on one satellite are supported by design, so the hold is refcounted: the
+    // first alert to finish must not re-mute a speaker the second one is still ringing on.
+    [Fact]
+    public async Task Start_OverlappingAlerts_ReleasesOnlyAfterTheLastAlertEnds()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
+        var session = h.Sessions.Get("kitchen-01")!;
+        var actions = RecordVolumeActions(session);
+        var (pump, _) = PumpPlays(session, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "wake up",
+                Kind = AnnounceKind.Alarm,
+                Insistent = new() { GapSeconds = 30, MaxRepeats = 12 }
+            },
+            CancellationToken.None);
+        await WaitUntilAsync(() => actions().Contains("alert-hold"), TimeSpan.FromSeconds(5));
+
+        // A short timer on the same satellite, started and finished while the alarm keeps ringing.
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "eggs",
+                Kind = AnnounceKind.Timer,
+                Insistent = new() { MaxRepeats = 1 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(
+            () => h.Publisher.Events.Any(e => e.Metric == VoiceMetric.AlarmUnacknowledged),
+            TimeSpan.FromSeconds(5));
+        await Task.Delay(200); // give a wrongly-fired release a chance to surface
+
+        actions().ShouldNotContain("alert-release");
+
+        h.Alerts.DismissAll();
+        await WaitUntilAsync(() => actions().Contains("alert-release"), TimeSpan.FromSeconds(5));
+
+        await DrainPumpAsync(pump, time, session);
+    }
+
+    // An alert whose loop dies before it ever sent a hold — synthesis failing is the realistic
+    // case — must not release the hold a concurrent alert is relying on.
+    [Fact]
+    public async Task Start_AlertFailingBeforeItsHold_KeepsAConcurrentAlertsHold()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
+        var session = h.Sessions.Get("kitchen-01")!;
+        var actions = RecordVolumeActions(session);
+        var (pump, _) = PumpPlays(session, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "wake up",
+                Kind = AnnounceKind.Alarm,
+                Insistent = new() { GapSeconds = 30, MaxRepeats = 12 }
+            },
+            CancellationToken.None);
+        await WaitUntilAsync(() => actions().Contains("alert-hold"), TimeSpan.FromSeconds(5));
+
+        h.Tts.Setup(t => t.SynthesizeAsync("boom", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
+            .Throws(new InvalidOperationException("tts down"));
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "boom",
+                Kind = AnnounceKind.Timer,
+                Insistent = new() { MaxRepeats = 1 }
+            },
+            CancellationToken.None);
+
+        // The failing alert is gone from the registry; only the ringing alarm is left.
+        await WaitUntilAsync(() => h.Alerts.CountFor("kitchen-01") == 1, TimeSpan.FromSeconds(5));
+        await Task.Delay(200); // give a wrongly-fired release a chance to surface
+
+        actions().ShouldNotContain("alert-release");
+
+        h.Alerts.DismissAll();
+        await WaitUntilAsync(() => actions().Contains("alert-release"), TimeSpan.FromSeconds(5));
+
+        await DrainPumpAsync(pump, time, session);
+    }
+
+    // A satellite that reconnects mid-alarm comes back with no hold, and one that was rebooting when
+    // the loop started never got one. Re-asserting the hold on every round is what heals both.
+    [Fact]
+    public async Task Start_MultiRoundAlert_ReassertsAlertHoldEveryRound()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
+        var session = h.Sessions.Get("kitchen-01")!;
+        var actions = RecordVolumeActions(session);
+        var (pump, plays) = PumpPlays(session, time);
+
+        await h.Controller.StartAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "alarm",
+                Insistent = new() { GapSeconds = 30, MaxRepeats = 3 }
+            },
+            CancellationToken.None);
+
+        await WaitUntilAsync(() => plays() >= 2, TimeSpan.FromSeconds(5)); // round 1 (tone + TTS)
+        actions().Count(a => a == "alert-hold").ShouldBe(1);
+
+        time.Advance(TimeSpan.FromSeconds(30));
+        await WaitUntilAsync(() => plays() >= 4, TimeSpan.FromSeconds(5)); // round 2 (tone + TTS)
+        await WaitUntilAsync(
+            () => actions().Count(a => a == "alert-hold") >= 2, TimeSpan.FromSeconds(5));
+
+        h.Alerts.DismissAll();
+        await DrainPumpAsync(pump, time, session);
     }
 
     // Like PumpPlays, but records the alert flag the playback loop reports for each job — the bit
