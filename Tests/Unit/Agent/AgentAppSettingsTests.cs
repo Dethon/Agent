@@ -1,7 +1,9 @@
 using System.Reflection;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Prompts;
+using global::Agent.Settings;
 using Infrastructure.Agents;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
@@ -89,6 +91,47 @@ public class AgentAppSettingsTests
             .Select(a => a!["model"]!.GetValue<string>());
 
         models.ShouldAllBe(m => !m.Contains(":nitro") && !m.Contains(":floor"));
+    }
+
+    // Neighboring binding style (see ProviderRoutingBindingTests): an in-memory IConfiguration
+    // isolates the keys under test from the real appsettings.json, so a rename here fails loudly
+    // instead of silently reading back whatever the file happens to carry.
+    [Fact]
+    public void Bind_PatchableModels_BindsIdAndName()
+    {
+        var settings = BindSettings(
+            ("patchableModels:0:id", "openai/gpt-5.6-luna"),
+            ("patchableModels:0:name", "GPT Luna"),
+            ("patchableModels:1:id", "z-ai/glm-5.2"),
+            ("patchableModels:1:name", "GLM 5.2"));
+
+        settings.PatchableModels.ShouldBe([
+            new PatchableModel("openai/gpt-5.6-luna", "GPT Luna"),
+            new PatchableModel("z-ai/glm-5.2", "GLM 5.2")
+        ]);
+    }
+
+    private static AgentSettings BindSettings(params (string Key, string? Value)[] entries)
+    {
+        var config = new Dictionary<string, string?>
+        {
+            ["openRouter:apiUrl"] = "https://openrouter.ai/api/v1/",
+            ["openRouter:apiKey"] = "key",
+            ["redis:connectionString"] = "redis:6379",
+            ["agents:0:id"] = "agent",
+            ["agents:0:name"] = "Agent",
+            ["agents:0:model"] = "openai/gpt-5",
+            ["agents:0:mcpServerEndpoints:0"] = "http://localhost"
+        };
+        foreach (var (key, value) in entries)
+        {
+            config[key] = value;
+        }
+
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(config)
+            .Build()
+            .Get<AgentSettings>()!;
     }
 
     private static AgentDefinition[] BoundAgents() =>
