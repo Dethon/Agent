@@ -76,5 +76,5 @@ Red-Green-Refactor throughout.
 
 ## Notes
 
-- Per-message model switching changes the OpenRouter prompt-cache key for that turn; this is accepted.
+- Per-message model switching changes the OpenRouter prompt-cache key for that turn. Caches are per model, so switching back to the previous model recovers its cache key (subject to the provider's cache TTL). This is accepted.
 - The `openrouter-routing.md` rule's wholesale-override and `session_id` cache-pinning constraints apply to the `PrepareRequestBodyAsync` change.
