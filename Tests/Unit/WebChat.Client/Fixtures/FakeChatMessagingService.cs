@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 
@@ -12,6 +13,8 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     private bool _blockUntilComplete;
     private readonly TaskCompletionSource _completionSource = new();
     private Exception? _exceptionToThrow;
+
+    public AgentConfigPatch? LastConfigPatch { get; private set; }
 
     public void SetExceptionToThrow(Exception? exception)
     {
@@ -78,8 +81,10 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     public IReadOnlySet<string> CancelledTopics => _cancelledTopics;
 
     public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
-        string? correlationId = null)
+        string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
+        LastConfigPatch = configPatch;
+
         if (_exceptionToThrow is not null)
         {
             throw _exceptionToThrow;
@@ -131,8 +136,10 @@ public sealed class FakeChatMessagingService : IChatMessagingService
         return Task.CompletedTask;
     }
 
-    public Task<bool> EnqueueMessageAsync(string topicId, string message, string? correlationId = null)
+    public Task<bool> EnqueueMessageAsync(
+        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
+        LastConfigPatch = configPatch;
         return Task.FromResult(_enqueueResult);
     }
 }

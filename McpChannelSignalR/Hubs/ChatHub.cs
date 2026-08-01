@@ -131,6 +131,7 @@ public sealed class ChatHub(
         string topicId,
         string message,
         string? correlationId,
+        AgentConfigPatch? configPatch,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!IsRegistered)
@@ -176,6 +177,7 @@ public sealed class ChatHub(
             userId,
             message,
             session.AgentId,
+            configPatch,
             cancellationToken);
 
         // Stream responses back to the browser — the loop ends when the channel completes
@@ -186,7 +188,7 @@ public sealed class ChatHub(
         }
     }
 
-    public async Task<bool> EnqueueMessage(string topicId, string message, string? correlationId)
+    public async Task<bool> EnqueueMessage(string topicId, string message, string? correlationId, AgentConfigPatch? configPatch)
     {
         if (!IsRegistered)
         {
@@ -217,7 +219,8 @@ public sealed class ChatHub(
             $"{session.ChatId}:{session.ThreadId}",
             userId,
             message,
-            session.AgentId);
+            session.AgentId,
+            configPatch);
 
         return true;
     }

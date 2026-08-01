@@ -118,6 +118,7 @@ public sealed class InitializationEffect : IDisposable
 
         var agents = await _agentService.GetAgentsAsync();
         _dispatcher.Dispatch(new SetAgents(agents));
+        await AgentSettingsEffect.LoadAsync(agents, _localStorage, _dispatcher);
 
         if (agents.Count == 0)
         {

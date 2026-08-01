@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
@@ -7,7 +8,7 @@ namespace WebChat.Client.Services;
 public sealed class ChatMessagingService(ChatConnectionService connectionService) : IChatMessagingService
 {
     public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
-        string? correlationId = null)
+        string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
         var hubConnection = connectionService.HubConnection;
         if (hubConnection is null)
@@ -15,7 +16,8 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
             yield break;
         }
 
-        var stream = hubConnection.StreamAsync<ChatStreamMessage>("SendMessage", topicId, message, correlationId);
+        var stream = hubConnection.StreamAsync<ChatStreamMessage>(
+            "SendMessage", topicId, message, correlationId, configPatch);
 
         await foreach (var item in stream)
         {
@@ -61,7 +63,8 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
         await hubConnection.InvokeAsync("CancelTopic", topicId);
     }
 
-    public async Task<bool> EnqueueMessageAsync(string topicId, string message, string? correlationId = null)
+    public async Task<bool> EnqueueMessageAsync(
+        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
         var hubConnection = connectionService.HubConnection;
         if (hubConnection is null)
@@ -69,6 +72,7 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
             return false;
         }
 
-        return await hubConnection.InvokeAsync<bool>("EnqueueMessage", topicId, message, correlationId);
+        return await hubConnection.InvokeAsync<bool>(
+            "EnqueueMessage", topicId, message, correlationId, configPatch);
     }
 }

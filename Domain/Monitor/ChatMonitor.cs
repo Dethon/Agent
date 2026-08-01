@@ -195,6 +195,7 @@ public class ChatMonitor(
         userMessage.SetLocation(message.Location);
         userMessage.SetSatelliteId(message.SatelliteId);
         userMessage.SetDismissedAlert(message.DismissedAlert);
+        userMessage.SetConfigPatch(message.ConfigPatch);
         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
         userMessage.SetConversationContext(DeliveryTargetResolver.BuildConversationContext(message, targets));
         if (memoryRecallHook is not null)

@@ -25,7 +25,8 @@ public static class InjectorModule
                 ApiUrl = settings.OpenRouter.ApiUrl,
                 ApiKey = settings.OpenRouter.ApiKey,
                 MaxContextTokens = settings.OpenRouter.MaxContextTokens,
-                ProviderRouting = settings.OpenRouter.ProviderRouting
+                ProviderRouting = settings.OpenRouter.ProviderRouting,
+                PatchableModelIds = settings.PatchableModels.Select(m => m.Id).ToList()
             };
 
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
@@ -72,7 +73,10 @@ public static class InjectorModule
                     new ChannelConnectionHost(
                         settings.ChannelEndpoints,
                         sp.GetServices<IChannelConnection>().OfType<IMcpChannelConnection>().ToList(),
-                        settings.Agents.Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description)).ToList(),
+                        settings.Agents.Select(a => new AgentCatalogEntry(
+                            a.Id, a.Name, a.Description,
+                            a.Model, a.ReasoningEffort,
+                            settings.PatchableModels, AgentConfigPatch.SupportedEfforts)).ToList(),
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
         }
 

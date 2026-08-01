@@ -1,9 +1,11 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
+using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
@@ -23,6 +25,7 @@ public sealed class StreamingServiceTests : IDisposable
     private readonly ToastStore _toastStore;
     private readonly ApprovalStore _approvalStore;
     private readonly UserIdentityStore _userIdentityStore;
+    private readonly AgentSettingsStore _agentSettingsStore;
     private readonly FakeTopicService _topicService = new();
     private readonly StreamingService _service;
 
@@ -34,7 +37,9 @@ public sealed class StreamingServiceTests : IDisposable
         _toastStore = new ToastStore(_dispatcher);
         _approvalStore = new ApprovalStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
-        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
+        _agentSettingsStore = new AgentSettingsStore(_dispatcher);
+        _service = new StreamingService(
+            _messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore, _agentSettingsStore);
     }
 
     public void Dispose()
@@ -45,16 +50,17 @@ public sealed class StreamingServiceTests : IDisposable
         _toastStore.Dispose();
         _approvalStore.Dispose();
         _userIdentityStore.Dispose();
+        _agentSettingsStore.Dispose();
     }
 
-    private StoredTopic CreateTopic(string? topicId = null)
+    private StoredTopic CreateTopic(string? topicId = null, string agentId = "test-agent")
     {
         var topic = new StoredTopic
         {
             TopicId = topicId ?? Guid.NewGuid().ToString(),
             ChatId = Random.Shared.NextInt64(1000, 9999),
             ThreadId = Random.Shared.NextInt64(1000, 9999),
-            AgentId = "test-agent",
+            AgentId = agentId,
             Name = "Test Topic",
             CreatedAt = DateTime.UtcNow
         };
@@ -402,6 +408,37 @@ public sealed class StreamingServiceTests : IDisposable
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
         var messages = MessagesFor(topic.TopicId);
         messages.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_SettingsDifferFromDefaults_PassesConfigPatch()
+    {
+        var agent = new AgentCatalogEntry("jack", "Jack", null, DefaultModel: "luna", DefaultReasoningEffort: "low");
+        _dispatcher.Dispatch(new SetAgents([agent]));
+        var topic = CreateTopic(agentId: "jack");
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new SetAgentModel("jack", "z-ai/glm-5.2"));
+
+        _messagingService.EnqueueContent("Response");
+
+        await _service.SendMessageAsync(topic, "hello");
+
+        _messagingService.LastConfigPatch.ShouldBe(new AgentConfigPatch { Model = "z-ai/glm-5.2" });
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_SettingsMatchDefaults_PassesNullPatch()
+    {
+        var agent = new AgentCatalogEntry("jack", "Jack", null, DefaultModel: "luna", DefaultReasoningEffort: "low");
+        _dispatcher.Dispatch(new SetAgents([agent]));
+        var topic = CreateTopic(agentId: "jack");
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        _messagingService.EnqueueContent("Response");
+
+        await _service.SendMessageAsync(topic, "hello");
+
+        _messagingService.LastConfigPatch.ShouldBeNull();
     }
 
     #endregion
