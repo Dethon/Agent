@@ -384,6 +384,7 @@ ExecStart=/usr/local/bin/nabu-satellite \\
   --alert-snd-command "aplay -D alert -r 22050 -c 1 -f S16_LE -t raw --start-delay=100000 -F 50000" \\
   --preroll-ms 1000 \\
   --music-mixer Music --music-card ${outctl} \\
+  --volume-sink @DEFAULT_AUDIO_SINK@ \\
   --threshold ${THRESHOLD} \\
   --wake-window ${WAKE_WINDOW}
 DROPEOF

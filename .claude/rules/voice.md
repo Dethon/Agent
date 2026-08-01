@@ -25,6 +25,17 @@ the normal sink rather than dropping the connection. The satellite's level chain
 softvols (`Music`, `TTS`, `Alert`) under a PipeWire master held at 100 %; see
 `scripts/provision-satellite-rs.sh` for `TTS_VOLUME` / `ALERT_VOLUME`.
 
+**Local speaker commands.** `VoiceCommandMatcher` matches a normalized whole transcript (lowercase,
+accents and punctuation stripped, whitespace collapsed) against `VoiceSettings.Commands.Phrases`.
+`TranscriptDispatcher` checks it AFTER the gibberish gate and BEFORE `GetOrCreateAsync`, so poor
+audio cannot move a volume knob and a hit costs no `create_conversation` round trip. A hit writes
+`speaker-volume` through `SatelliteSession.ControlWriter` and returns `false`, which
+`FollowUpConversation` already turns into `EndConversation`. Every phrase carries an explicit local
+marker: "sube el volumen" is a Music Assistant request and still belongs to the agent. Matching is
+whole-transcript only, so a compound sentence goes to the agent intact.
+`InsistentAnnouncementController` brackets its ring loop with `alert-hold`/`alert-release` so a
+local mute never swallows a timer.
+
 **End-of-utterance floor.** `SilenceGate` classifies speech against a noise floor that `AdaptiveLevelTracker` measures inside the capture and freezes at the first accepted speech frame — so a capture that opens on sound (a command running straight on from the wake word) has nothing but that sound to measure. Two measurements taken where the room is actually audible cap it, and can only ever lower it: the satellite's own `room_rms` on `run-pipeline` (protocol 1.7, idle audio), and `RoomNoiseMemory`, a per-satellite window of recent background samples the hub keeps from its own captures (a no-speech capture's floor, or the trailing run that ended a capture — `WyomingClient.RoomLevelSamples` / `RoomLevelRetentionSeconds`). Without either the gate behaves exactly as before. An inflated floor is not a cosmetic error: it arms the adaptive regime, whose `PeakDropDb` backstop then reads normal syllable dynamics as background and endpoints the user mid-sentence.
 
 Sending a `transcript` event ends the satellite's turn and re-arms wake; `FollowUpConversation` reopens the mic wake-free, announced by the `ListeningChime` earcon and, on the wire, by a `listening-started` event (protocol 1.6) that returns the satellite's LED from Thinking to Listening — it cannot infer the moment itself, because its capture never closed. When several satellites hear the same wake word, `WakeArbiter` picks one winner (calibrated `wake_rms`, 500 ms coincidence window, onset-alignment check against open captures) and silently re-arms the losers via `pause-satellite`; a much-louder wake during another satellite's open conversation hands the conversation over.

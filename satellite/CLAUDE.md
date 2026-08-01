@@ -77,6 +77,37 @@ segmented answer never touch Idle. Two guards survive on top of that:
   together. Speaking is **uncapped**: it is bounded by drain-completion (and by connection teardown
   via `DuckGuard`), and a cap there flapped the music up ~0.5 s before a ~30 s reply finished.
 
+## Local speaker volume
+
+`volume.rs` drives the PipeWire sink (`--volume-sink`, `--volume-step`, default 10 points) with
+`wpctl` on the hub's `speaker-volume` event (protocol 1.8, actions `up`/`down`/`mute`/`unmute`/
+`alert-hold`/`alert-release`). This is the MASTER — deliberately not one of the `Music`/`TTS`/
+`Alert` softvols, which carry calibration and, in `Music`'s case, are rewritten by the ducker on
+every turn. Master and softvol multiply, so ducking is untouched by this feature. Absent
+`--volume-sink` the whole thing is a no-op with a warning, mirroring `music_mixer: None`.
+
+An internal `tokio::sync::Mutex` gate serializes `step`, `set_sink_mute` and `set_user_mute`
+end-to-end, across their own awaited `wpctl` call. It was added because an alert hold and a
+queued mute confirmation each read the tracked mute state, change it, and await a `wpctl` call —
+two separate windows a concurrent call could otherwise land inside, leaving `user_muted()`
+disagreeing with whichever call's `wpctl` process actually finished last. The gate makes such
+calls run one fully after the other, so the last one to finish decides both consistently.
+
+`user_muted` is process-scoped so a hub reconnect cannot forget the user's mute, and is seeded
+once at boot from `wpctl get-volume` (which prints `[MUTED]`) so wireplumber's restored state and
+ours agree. Wireplumber persists level and mute itself; nothing is written to disk here.
+
+**An alarm must ring on a muted speaker.** `alert-hold` unmutes the sink WITHOUT clearing
+`user_muted`, and `alert-release` — which the hub sends from the insistent loop's `finally`, so it
+covers dismissal and cancellation alike — puts it back. The hold is per-connection and a
+`HoldGuard` restores it on teardown, so a hub that dies mid-alarm leaves the speaker audible
+rather than silently muted.
+
+**The mute cue must not be silenced by its own mute**: `mute` plays the cue via
+`PlaybackHandle::cue_then` and applies the mute on the acknowledgement, which the pump sends after
+`play_cue` drains — and also when it drops the cue for an active stream, so the mute still lands.
+The wait is a detached task, never the `select!` loop.
+
 ## Hardware: reSpeaker XVF3800 + MiniAmp (deployed fran-office unit)
 
 - **Format**: 16 kHz-native S16LE both directions, 2ch (both capture channels carry the same processed signal, so `plughw` stereo→mono averaging is fine). Defaults target this hardware: provisioning auto-detects the USB capture card by NAME (`arecord -l`) and addresses it as `plughw:CARD=<name>,DEV=0`; capture needs no resampling, and `plughw` resamples only the 22 050 Hz playback to a rate the speaker lists (44100/48000 on the MiniAmp; a mic-card speaker output lists its own set). Override path for the ReSpeaker 2-Mic HAT: `plughw:CARD=seeed2micvoicec,DEV=0` on both audio commands plus `--button-gpio 17`.
