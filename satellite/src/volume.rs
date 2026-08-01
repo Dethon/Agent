@@ -3,19 +3,18 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::warn;
 
-/// The satellite's own MASTER output level: the PipeWire sink that music, replies, cues and
-/// alerts all end up in, driven with `wpctl`. This is deliberately not one of the per-source ALSA
-/// softvols (`Music` / `TTS` / `Alert`) — those carry calibration, and `Music` is written by the
-/// ducker on every turn. Driving the master keeps the two independent: they simply multiply.
+/// The satellite's own MASTER output level: the one knob that music, replies, cues and alerts all
+/// pass through. This is deliberately not one of the per-source ALSA softvols (`Music` / `TTS` /
+/// `Alert`) — those carry calibration, and `Music` is written by the ducker on every turn. Driving
+/// the master keeps the two independent: they simply multiply.
 ///
-/// Wireplumber persists the sink's level and mute in its own state, so nothing here is written to
-/// disk and a level survives a restart on its own.
+/// Two backends, the same master, different tools — see `Backend`.
 ///
 /// `gate` serializes `step`/`alert_hold`/`alert_release`/`set_user_mute` end-to-end (decision
-/// through the awaited `wpctl` call). Without it, `set_user_mute`'s read-modify-store of
-/// `user_muted` and its awaited sink write are two separate windows a concurrent call can land
+/// through the awaited mixer call). Without it, `set_user_mute`'s read-modify-store of
+/// `user_muted` and its awaited master write are two separate windows a concurrent call can land
 /// inside — e.g. an alert hold racing a queued "mute" confirmation, which can leave `user_muted()`
-/// disagreeing with whichever call's `wpctl` process actually landed last on the real sink.
+/// disagreeing with whichever call's process actually landed last on the real master.
 /// `tokio::sync::Mutex`, not `std::sync::Mutex`, because the held region awaits.
 ///
 /// `alert_held` lives here rather than in the connection's `Ctx` because every decision reads it
@@ -30,59 +29,179 @@ pub struct VolumeControl {
     gate: Mutex<()>,
 }
 
+/// What drives the master, which depends only on what is installed on the unit — the gate, the
+/// tracked mute and the alert hold above are identical either way.
+///
+/// Music units mix everything in PipeWire, so their master is its sink and `wpctl` moves it.
+/// Voice-only units have no PipeWire (installing it just for a volume knob would pull a sound
+/// server onto a unit that plays raw ALSA), so provisioning puts a software softvol in front of
+/// their output device and `amixer` moves that. A software level is not a shortcut on this
+/// hardware: an amp HAT like the MiniAmp has no hardware volume control at all.
 enum Backend {
-    /// No sink configured: PipeWire is installed only on music units, so a voice-only satellite
-    /// has nothing to drive. Mirrors `music_mixer: None` disabling ducking.
+    /// Neither flag given: nothing to drive, so every command is a warned no-op.
     Disabled,
-    Real { sink: String },
+    Pipewire { sink: String },
+    Alsa { control: String, card: Option<String> },
+    /// Records the command line a real backend would have run, without running it.
     #[cfg(test)]
-    Probe(Arc<std::sync::Mutex<Vec<String>>>),
+    Probe { inner: Box<Backend>, log: Arc<std::sync::Mutex<Vec<String>>>, capture: Option<String> },
     #[cfg(test)]
     Failing,
 }
 
+/// What a public method wants done, so the two real backends differ only in how they spell it.
+#[derive(Clone, Copy)]
+enum Op {
+    Step { up: bool },
+    Mute(bool),
+}
+
+impl Backend {
+    /// The command line that applies `op`, or None when there is nothing to drive.
+    fn cmdline(&self, op: Op, step: u8) -> Option<String> {
+        match self {
+            Backend::Disabled => None,
+            // `-l 1.0` caps the sink at unity, so repeated steps up cannot push it into software
+            // gain. wpctl spells mute as a 0/1 argument.
+            Backend::Pipewire { sink } => Some(match op {
+                Op::Step { up } => format!("wpctl set-volume -l 1.0 {sink} {step}%{}", sign(up)),
+                Op::Mute(muted) => format!("wpctl set-mute {sink} {}", u8::from(muted)),
+            }),
+            // amixer clamps a relative step to the control's own range, so repeated steps up
+            // settle at 100% instead of overshooting — the `-l 1.0` above with no flag needed.
+            // A softvol carries no switch of its own, so provisioning pairs the `<name> Volume`
+            // element with a `<name> Switch` one; ALSA's simple mixer merges the two into this
+            // single control, which is why mute is the same `sset` the level uses.
+            Backend::Alsa { control, card } => {
+                let card = card.as_ref().map(|c| format!(" -c {c}")).unwrap_or_default();
+                Some(match op {
+                    Op::Step { up } => format!("amixer{card} sset {control} {step}%{}", sign(up)),
+                    Op::Mute(muted) => {
+                        format!("amixer{card} sset {control} {}", if muted { "mute" } else { "unmute" })
+                    }
+                })
+            }
+            #[cfg(test)]
+            Backend::Probe { inner, .. } => inner.cmdline(op, step),
+            #[cfg(test)]
+            Backend::Failing => Some("false".into()),
+        }
+    }
+
+    /// The command line that PRINTS the current mute state, for `seed`.
+    fn query_cmdline(&self) -> Option<String> {
+        match self {
+            Backend::Disabled => None,
+            Backend::Pipewire { sink } => Some(format!("wpctl get-volume {sink}")),
+            Backend::Alsa { control, card } => {
+                let card = card.as_ref().map(|c| format!(" -c {c}")).unwrap_or_default();
+                Some(format!("amixer{card} sget {control}"))
+            }
+            #[cfg(test)]
+            Backend::Probe { inner, .. } => inner.query_cmdline(),
+            #[cfg(test)]
+            Backend::Failing => Some("false".into()),
+        }
+    }
+
+    /// Whether that output says the master is muted. Anything unrecognized reads as audible.
+    fn reads_muted(&self, out: &str) -> bool {
+        match self {
+            Backend::Pipewire { .. } => out.contains("[MUTED]"),
+            Backend::Alsa { .. } => out.contains("[off]"),
+            #[cfg(test)]
+            Backend::Probe { inner, .. } => inner.reads_muted(out),
+            _ => false,
+        }
+    }
+
+    /// What the startup log prints, so a unit driving nothing says so in its journal.
+    fn describe(&self) -> String {
+        match self {
+            Backend::Disabled => "disabled".into(),
+            Backend::Pipewire { sink } => format!("pipewire sink {sink}"),
+            Backend::Alsa { control, card: Some(card) } => format!("alsa control {control} on card {card}"),
+            Backend::Alsa { control, card: None } => format!("alsa control {control}"),
+            #[cfg(test)]
+            Backend::Probe { inner, .. } => inner.describe(),
+            #[cfg(test)]
+            Backend::Failing => "failing".into(),
+        }
+    }
+
+    async fn capture(&self, cmdline: &str) -> anyhow::Result<String> {
+        match self {
+            #[cfg(test)]
+            Backend::Probe { capture, .. } => {
+                capture.clone().ok_or_else(|| anyhow::anyhow!("probe read failed"))
+            }
+            #[cfg(test)]
+            Backend::Failing => anyhow::bail!("volume read failed"),
+            _ => run_capture(cmdline).await,
+        }
+    }
+}
+
+fn sign(up: bool) -> char {
+    if up { '+' } else { '-' }
+}
+
 impl VolumeControl {
-    pub fn new(sink: Option<String>, step: u8) -> Arc<Self> {
-        let backend = match sink {
-            Some(s) => Backend::Real { sink: s },
-            None => Backend::Disabled,
+    /// `sink` is the PipeWire master (music units), `mixer`/`card` the ALSA one (voice-only).
+    /// `Config::parse` rejects a unit that gives both, so the order below is only a tiebreak.
+    pub fn new(sink: Option<String>, mixer: Option<String>, card: Option<String>, step: u8) -> Arc<Self> {
+        let backend = match (sink, mixer) {
+            (Some(sink), _) => Backend::Pipewire { sink },
+            (None, Some(control)) => Backend::Alsa { control, card },
+            (None, None) => Backend::Disabled,
         };
-        Arc::new(Self {
+        Arc::new(Self::with_backend(backend, step))
+    }
+
+    fn with_backend(backend: Backend, step: u8) -> Self {
+        Self {
             backend,
             step,
             user_muted: AtomicBool::new(false),
             alert_held: AtomicBool::new(false),
             gate: Mutex::new(()),
-        })
+        }
     }
 
     /// pub(crate) so state_machine's tests can drive a real control without a wpctl binary.
     #[cfg(test)]
     pub(crate) fn probe_pair(step: u8) -> (Arc<std::sync::Mutex<Vec<String>>>, Arc<Self>) {
+        Self::probe_backend(Backend::Pipewire { sink: "SINK".into() }, step, None)
+    }
+
+    /// A control that logs what `inner` would have run. `capture` is what a `seed` read returns;
+    /// None makes that read fail.
+    #[cfg(test)]
+    fn probe_backend(
+        inner: Backend,
+        step: u8,
+        capture: Option<&str>,
+    ) -> (Arc<std::sync::Mutex<Vec<String>>>, Arc<Self>) {
         let log = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let control = Arc::new(Self {
-            backend: Backend::Probe(log.clone()),
-            step,
-            user_muted: AtomicBool::new(false),
-            alert_held: AtomicBool::new(false),
-            gate: Mutex::new(()),
-        });
-        (log, control)
+        let backend = Backend::Probe {
+            inner: Box::new(inner),
+            log: log.clone(),
+            capture: capture.map(str::to_owned),
+        };
+        (log, Arc::new(Self::with_backend(backend, step)))
     }
 
     #[cfg(test)]
     fn failing(step: u8) -> Arc<Self> {
-        Arc::new(Self {
-            backend: Backend::Failing,
-            step,
-            user_muted: AtomicBool::new(false),
-            alert_held: AtomicBool::new(false),
-            gate: Mutex::new(()),
-        })
+        Arc::new(Self::with_backend(Backend::Failing, step))
     }
 
     pub fn enabled(&self) -> bool {
         !matches!(self.backend, Backend::Disabled)
+    }
+
+    pub fn describe(&self) -> String {
+        self.backend.describe()
     }
 
     pub fn user_muted(&self) -> bool {
@@ -93,34 +212,33 @@ impl VolumeControl {
         self.alert_held.load(Ordering::SeqCst)
     }
 
-    /// Read the sink's current mute once at startup so the satellite's idea of the user's intent
-    /// matches what wireplumber restored. A failed or unparsable read leaves it unmuted, which is
+    /// Read the master's current mute once at startup so the satellite's idea of the user's intent
+    /// matches what the mixer restored. A failed or unparsable read leaves it unmuted, which is
     /// the safe direction: the speaker is audible and one spoken command fixes it.
     pub async fn seed(&self) {
-        let Backend::Real { sink } = &self.backend else { return };
-        match run_capture(&format!("wpctl get-volume {sink}")).await {
+        let Some(query) = self.backend.query_cmdline() else { return };
+        match self.backend.capture(&query).await {
             Ok(out) => {
-                let muted = out.contains("[MUTED]");
+                let muted = self.backend.reads_muted(&out);
                 self.user_muted.store(muted, Ordering::SeqCst);
                 tracing::info!(muted, "seeded local volume mute state");
             }
-            Err(e) => warn!("could not read sink mute state, assuming unmuted: {e:#}"),
+            Err(e) => warn!("could not read master mute state, assuming unmuted: {e:#}"),
         }
     }
 
-    /// `-l 1.0` caps the sink at unity, so repeated steps up cannot push it into software gain.
-    /// Gated so a step can't interleave with a mute's own read-modify-store-await sequence.
+    /// A relative step, capped at 100% by both backends (see `Backend::cmdline`). Gated so a step
+    /// can't interleave with a mute's own read-modify-store-await sequence.
     pub async fn step(&self, up: bool) -> anyhow::Result<()> {
         let _guard = self.gate.lock().await;
-        let sign = if up { '+' } else { '-' };
-        self.run(&format!("set-volume -l 1.0 {{sink}} {}%{sign}", self.step)).await
+        self.run(Op::Step { up }).await
     }
 
-    /// The actual sink write. Callers take the gate themselves and then call this, so the gate is
+    /// The actual master write. Callers take the gate themselves and then call this, so the gate is
     /// taken exactly once per public call — re-locking an already-held `tokio::sync::Mutex` would
     /// deadlock, since it is not reentrant.
     async fn set_sink_mute_locked(&self, muted: bool) -> anyhow::Result<()> {
-        self.run(&format!("set-mute {{sink}} {}", u8::from(muted))).await
+        self.run(Op::Mute(muted)).await
     }
 
     /// An alarm must ring even on a muted speaker: mark the hold and make sure the sink is
@@ -165,7 +283,7 @@ impl VolumeControl {
     /// so a concurrent call cannot observe or land in the middle of it — see the struct's docs.
     pub async fn set_user_mute(&self, muted: bool) -> anyhow::Result<()> {
         if !self.enabled() {
-            warn!("local mute ignored: no --volume-sink configured");
+            warn!("local mute ignored: neither --volume-sink nor --volume-mixer configured");
             return Ok(()); // track nothing, so a later alert release has nothing to restore
         }
 
@@ -183,10 +301,10 @@ impl VolumeControl {
     }
 
     /// Fail-safe teardown for Drop, which cannot await: end the hold and fire a detached std
-    /// wpctl putting the sink back to the user's intent, never awaited. Same shape as music.rs's
-    /// DuckGuard restore, and for the same reason. It runs both ways — a hub that dies mid-alarm
-    /// must not leave the speaker silently muted, and must not swallow a mute deferred by the
-    /// hold either. Deliberately synchronous and lock-free: `gate` is an async mutex and
+    /// mixer call putting the master back to the user's intent, never awaited. Same shape as
+    /// music.rs's DuckGuard restore, and for the same reason. It runs both ways — a hub that dies
+    /// mid-alarm must not leave the speaker silently muted, and must not swallow a mute deferred
+    /// by the hold either. Deliberately synchronous and lock-free: `gate` is an async mutex and
     /// `Drop::drop` has no executor to await it against, so this cannot take part in the
     /// serialization the other methods get. It is best-effort, firing after the connection is
     /// going away regardless, not a command that needs to serialize against anything running.
@@ -195,59 +313,59 @@ impl VolumeControl {
             return;
         }
         let muted = self.user_muted();
+        let Some(cmdline) = self.backend.cmdline(Op::Mute(muted), self.step) else { return };
         match &self.backend {
-            Backend::Real { sink } => {
-                let mut cmd = std::process::Command::new("wpctl");
-                cmd.args(["set-mute", sink, if muted { "1" } else { "0" }])
-                    .stdin(std::process::Stdio::null())
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null());
-                let _ = cmd.spawn();
-            }
             #[cfg(test)]
-            Backend::Probe(log) => {
-                log.lock().unwrap().push(format!("set-mute SINK {}", u8::from(muted)));
-            }
-            _ => {}
+            Backend::Probe { log, .. } => log.lock().unwrap().push(cmdline),
+            _ => spawn_detached(&cmdline),
         }
     }
 
-    async fn run(&self, template: &str) -> anyhow::Result<()> {
-        match &self.backend {
-            Backend::Disabled => {
-                warn!("local volume command ignored: no --volume-sink configured");
-                Ok(())
-            }
-            Backend::Real { sink } => {
-                let cmdline = format!("wpctl {}", template.replace("{sink}", sink));
-                let status = crate::audio::build_command(&cmdline)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status()
-                    .await?;
-                anyhow::ensure!(status.success(), "wpctl exited with {status}");
-                Ok(())
-            }
-            #[cfg(test)]
-            Backend::Probe(log) => {
-                let cmdline = template.replace("{sink}", "SINK");
-                // A real wpctl call is a subprocess with variable OS-scheduling latency, so two
-                // overlapping calls can complete in either order regardless of which one started
-                // (and stored its bookkeeping) first. Give a "mute on" command a few extra yields
-                // so a concurrency test can force that inversion deterministically on the
-                // single-threaded test runtime, without any real sleeping — see
-                // `concurrent_set_user_mute_calls_serialize_and_stay_consistent`.
-                let extra_yields = if cmdline.ends_with('1') { 3 } else { 1 };
-                for _ in 0..extra_yields {
-                    tokio::task::yield_now().await;
-                }
-                log.lock().unwrap().push(cmdline);
-                Ok(())
-            }
-            #[cfg(test)]
-            Backend::Failing => anyhow::bail!("wpctl failed"),
+    async fn run(&self, op: Op) -> anyhow::Result<()> {
+        #[cfg(test)]
+        if let Backend::Failing = self.backend {
+            anyhow::bail!("volume command failed");
         }
+        let Some(cmdline) = self.backend.cmdline(op, self.step) else {
+            warn!("local volume command ignored: neither --volume-sink nor --volume-mixer configured");
+            return Ok(());
+        };
+        #[cfg(test)]
+        if let Backend::Probe { log, .. } = &self.backend {
+            // A real mixer call is a subprocess with variable OS-scheduling latency, so two
+            // overlapping calls can complete in either order regardless of which one started
+            // (and stored its bookkeeping) first. Give a "mute on" command a few extra yields
+            // so a concurrency test can force that inversion deterministically on the
+            // single-threaded test runtime, without any real sleeping — see
+            // `concurrent_set_user_mute_calls_serialize_and_stay_consistent`.
+            let extra_yields = if matches!(op, Op::Mute(true)) { 3 } else { 1 };
+            for _ in 0..extra_yields {
+                tokio::task::yield_now().await;
+            }
+            log.lock().unwrap().push(cmdline);
+            return Ok(());
+        }
+        let status = crate::audio::build_command(&cmdline)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await?;
+        anyhow::ensure!(status.success(), "`{cmdline}` exited with {status}");
+        Ok(())
     }
+}
+
+/// Fire-and-forget a mixer command from a non-async context. Both backends' command lines are
+/// plain argv with no shell metacharacters, so a whitespace split is the whole parse.
+fn spawn_detached(cmdline: &str) {
+    let mut argv = cmdline.split_whitespace();
+    let Some(program) = argv.next() else { return };
+    let _ = std::process::Command::new(program)
+        .args(argv)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }
 
 async fn run_capture(cmdline: &str) -> anyhow::Result<String> {
@@ -265,6 +383,133 @@ mod tests {
 
     fn probe(step: u8) -> (Arc<std::sync::Mutex<Vec<String>>>, Arc<VolumeControl>) {
         VolumeControl::probe_pair(step)
+    }
+
+    /// The voice-only shape: an ALSA softvol master driven with `amixer`, on the speaker card.
+    fn alsa_probe(step: u8) -> (Arc<std::sync::Mutex<Vec<String>>>, Arc<VolumeControl>) {
+        let backend = Backend::Alsa { control: "Master".into(), card: Some("hat".into()) };
+        VolumeControl::probe_backend(backend, step, None)
+    }
+
+    #[tokio::test]
+    async fn alsa_step_up_and_down_issue_relative_amixer_calls() {
+        let (log, vol) = alsa_probe(10);
+        vol.step(true).await.unwrap();
+        vol.step(false).await.unwrap();
+        assert_eq!(
+            log.lock().unwrap().clone(),
+            vec![
+                "amixer -c hat sset Master 10%+".to_string(),
+                "amixer -c hat sset Master 10%-".to_string(),
+            ]
+        );
+    }
+
+    /// Without a card the control is looked up on ALSA's default card, mirroring `--music-card`.
+    #[tokio::test]
+    async fn alsa_without_a_card_omits_the_c_flag() {
+        let backend = Backend::Alsa { control: "Master".into(), card: None };
+        let (log, vol) = VolumeControl::probe_backend(backend, 5, None);
+        vol.step(true).await.unwrap();
+        assert_eq!(log.lock().unwrap().clone(), vec!["amixer sset Master 5%+".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn alsa_mute_and_unmute_drive_the_amixer_switch() {
+        let (log, vol) = alsa_probe(10);
+        vol.set_user_mute(true).await.unwrap();
+        vol.set_user_mute(false).await.unwrap();
+        assert_eq!(
+            log.lock().unwrap().clone(),
+            vec![
+                "amixer -c hat sset Master mute".to_string(),
+                "amixer -c hat sset Master unmute".to_string(),
+            ]
+        );
+    }
+
+    /// `amixer sget` prints `[off]` for a muted switch and `[on]` for an audible one.
+    #[tokio::test]
+    async fn alsa_seed_reads_the_switch_state() {
+        let muted = "Simple mixer control 'Master',0\n  Mono: Playback 168 [66%] [-17.00dB] [off]\n";
+        let backend = Backend::Alsa { control: "Master".into(), card: Some("hat".into()) };
+        let (_, vol) = VolumeControl::probe_backend(backend, 10, Some(muted));
+        vol.seed().await;
+        assert!(vol.user_muted());
+
+        let audible = "Simple mixer control 'Master',0\n  Mono: Playback 255 [100%] [0.00dB] [on]\n";
+        let backend = Backend::Alsa { control: "Master".into(), card: Some("hat".into()) };
+        let (_, vol) = VolumeControl::probe_backend(backend, 10, Some(audible));
+        vol.seed().await;
+        assert!(!vol.user_muted());
+    }
+
+    /// A read that succeeds but says nothing recognizable must leave the speaker audible — the
+    /// safe direction, exactly as the PipeWire path already treats an unparsable `wpctl` read.
+    #[tokio::test]
+    async fn alsa_seed_leaves_unmuted_on_a_garbage_read() {
+        let backend = Backend::Alsa { control: "Master".into(), card: Some("hat".into()) };
+        let (_, vol) = VolumeControl::probe_backend(backend, 10, Some("Unable to find simple control"));
+        vol.seed().await;
+        assert!(!vol.user_muted());
+    }
+
+    /// A read that FAILS outright (no amixer, no such control) must not be taken as a mute.
+    #[tokio::test]
+    async fn seed_leaves_unmuted_when_the_read_fails() {
+        let vol = VolumeControl::failing(10);
+        vol.seed().await;
+        assert!(!vol.user_muted());
+    }
+
+    #[tokio::test]
+    async fn pipewire_seed_reads_the_muted_marker() {
+        let backend = Backend::Pipewire { sink: "SINK".into() };
+        let (_, vol) = VolumeControl::probe_backend(backend, 10, Some("Volume: 0.65 [MUTED]\n"));
+        vol.seed().await;
+        assert!(vol.user_muted());
+
+        let backend = Backend::Pipewire { sink: "SINK".into() };
+        let (_, vol) = VolumeControl::probe_backend(backend, 10, Some("Volume: 0.65\n"));
+        vol.seed().await;
+        assert!(!vol.user_muted());
+    }
+
+    /// THE guarantee the two Critical fixes established, now on the ALSA backend: a mute spoken
+    /// while an alarm is ringing is recorded and applied at the release, never written under the
+    /// hold — otherwise it silences the alarm it arrived during.
+    #[tokio::test]
+    async fn alsa_mute_during_an_alert_hold_is_deferred_to_the_release() {
+        let (log, vol) = alsa_probe(10);
+        vol.alert_hold().await.unwrap();
+
+        vol.set_user_mute(true).await.unwrap();
+        assert!(vol.user_muted(), "the intent is recorded even though nothing is written");
+        assert!(log.lock().unwrap().is_empty(), "a mute must not silence a ringing alarm");
+
+        vol.alert_release().await.unwrap();
+        assert_eq!(log.lock().unwrap().clone(), vec!["amixer -c hat sset Master mute".to_string()]);
+    }
+
+    /// Both real backends are enabled; only an unconfigured one is off. The description is what
+    /// the startup log prints, so a unit that drives nothing says so in its journal.
+    #[test]
+    fn the_configured_flags_pick_the_backend() {
+        let pipewire = VolumeControl::new(Some("@DEFAULT_AUDIO_SINK@".into()), None, None, 10);
+        assert!(pipewire.enabled());
+        assert_eq!(pipewire.describe(), "pipewire sink @DEFAULT_AUDIO_SINK@");
+
+        let alsa = VolumeControl::new(None, Some("Master".into()), Some("hat".into()), 10);
+        assert!(alsa.enabled());
+        assert_eq!(alsa.describe(), "alsa control Master on card hat");
+
+        let alsa_default_card = VolumeControl::new(None, Some("Master".into()), None, 10);
+        assert!(alsa_default_card.enabled());
+        assert_eq!(alsa_default_card.describe(), "alsa control Master");
+
+        let off = VolumeControl::new(None, None, None, 10);
+        assert!(!off.enabled());
+        assert_eq!(off.describe(), "disabled");
     }
 
     #[tokio::test]
@@ -315,7 +560,7 @@ mod tests {
         vol.alert_hold().await.unwrap();
         vol.alert_hold().await.unwrap();
 
-        assert_eq!(log.lock().unwrap().clone(), vec!["set-mute SINK 0".to_string()]);
+        assert_eq!(log.lock().unwrap().clone(), vec!["wpctl set-mute SINK 0".to_string()]);
     }
 
     /// An unmute is what the user just asked for and cannot silence anything, so unlike a mute it
@@ -330,7 +575,7 @@ mod tests {
         vol.set_user_mute(false).await.unwrap();
 
         assert!(!vol.user_muted());
-        assert_eq!(log.lock().unwrap().clone(), vec!["set-mute SINK 0".to_string()]);
+        assert_eq!(log.lock().unwrap().clone(), vec!["wpctl set-mute SINK 0".to_string()]);
     }
 
     /// A failed hold un-marks itself so the hub's next per-round re-assert retries it. Marked but
@@ -356,7 +601,7 @@ mod tests {
         vol.release_hold_detached();
 
         assert!(!vol.alert_held());
-        assert_eq!(log.lock().unwrap().clone(), vec!["set-mute SINK 1".to_string()]);
+        assert_eq!(log.lock().unwrap().clone(), vec!["wpctl set-mute SINK 1".to_string()]);
     }
 
     /// With no hold outstanding there is nothing to restore, and writing anyway would let a
@@ -379,7 +624,7 @@ mod tests {
 
     #[tokio::test]
     async fn disabled_control_makes_every_action_a_no_op() {
-        let vol = VolumeControl::new(None, 10);
+        let vol = VolumeControl::new(None, None, None, 10);
         assert!(!vol.enabled());
         vol.step(true).await.unwrap();
         vol.set_user_mute(true).await.unwrap();

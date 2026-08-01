@@ -37,9 +37,15 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("failed to bind listen address {}", cfg.listen))?;
     info!("nabu-satellite listening on {} (hub dials in)", cfg.listen);
 
-    let volume = volume::VolumeControl::new(cfg.volume_sink.clone(), cfg.volume_step);
+    let volume = volume::VolumeControl::new(
+        cfg.volume_sink.clone(),
+        cfg.volume_mixer.clone(),
+        cfg.volume_card.clone(),
+        cfg.volume_step,
+    );
+    info!("local speaker volume: {}", volume.describe());
     // Process-scoped, not per-connection: a hub reconnect must not forget that the user muted the
-    // speaker. Seeded from the sink so wireplumber's restored state and ours agree at boot.
+    // speaker. Seeded from the master so the mixer's restored state and ours agree at boot.
     volume.seed().await;
 
     // Single-hub policy: a new accept supersedes any previous connection. This guards the

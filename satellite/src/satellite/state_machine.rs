@@ -501,7 +501,7 @@ mod tests {
         let (mut a, _b) = tokio::io::duplex(4096);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, mut done_rx, _pump) = pump_with(&normal, &alert);
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -532,7 +532,7 @@ mod tests {
         let (mut a, _b) = tokio::io::duplex(4096);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, mut done_rx, _pump) = pump_with(&normal, &alert);
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -563,7 +563,7 @@ mod tests {
         let (mut a, _b) = tokio::io::duplex(4096);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, mut done_rx, _pump) = pump_with(&normal, &alert);
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -610,7 +610,7 @@ mod tests {
         let (mut a, b) = tokio::io::duplex(1 << 16);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -638,7 +638,7 @@ mod tests {
         let (mut a, b) = tokio::io::duplex(1 << 16);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -662,7 +662,7 @@ mod tests {
         let (mut a, b) = tokio::io::duplex(1 << 16);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -682,7 +682,7 @@ mod tests {
         let (mut a, b) = tokio::io::duplex(1 << 16);
         let c = cues();
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -707,7 +707,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -750,7 +750,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Streaming;
@@ -783,7 +783,7 @@ mod tests {
         let sat = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
             let (r, w) = sock.into_split();
-            run_connection(r, w, cfg, None, crate::volume::VolumeControl::new(None, 10)).await
+            run_connection(r, w, cfg, None, crate::volume::VolumeControl::new(None, None, None, 10)).await
         });
 
         // hub side: dial in, then stream fragmented audio-chunk frames
@@ -839,7 +839,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (handle, mut done_rx, task) = spawn_pump("cat >/dev/null; sleep 1", "cat >/dev/null; sleep 1");
         let playback = handle;
         let _pump = AbortOnDrop(task);
@@ -873,7 +873,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, _led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -894,7 +894,7 @@ mod tests {
         let (mut a, mut b) = tokio::io::duplex(4096);
         let c = cues();
         let (led_tx, mut led_rx) = watch::channel(LedState::Listening);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Streaming;
@@ -913,7 +913,7 @@ mod tests {
         let (mut a, b) = tokio::io::duplex(4096);
         let c = cues();
         let (led_tx, led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -935,7 +935,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, mut done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -972,7 +972,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, mut done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -997,7 +997,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, mut done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -1026,7 +1026,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, mut done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -1052,7 +1052,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -1072,7 +1072,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Streaming;
@@ -1095,7 +1095,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, mut done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Streaming;
@@ -1130,7 +1130,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, mut led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, mut done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Streaming;
@@ -1161,7 +1161,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -1180,7 +1180,7 @@ mod tests {
         let c = cues();
 
         let (led_tx, led_rx) = watch::channel(LedState::Idle);
-        let vol = crate::volume::VolumeControl::new(None, 10);
+        let vol = crate::volume::VolumeControl::new(None, None, None, 10);
         let (playback, _done_rx, _pump) = pump();
         let ctx = Ctx { cues: &c, led: &led_tx, volume: &vol, playback: &playback };
         let mut mode = Mode::Idle;
@@ -1252,8 +1252,8 @@ mod tests {
         assert!(!f.vol.user_muted());
 
         let calls = f.log.lock().unwrap().clone();
-        assert!(calls.iter().any(|c| c.starts_with("set-mute") && c.ends_with('1')), "got {calls:?}");
-        assert!(calls.iter().any(|c| c.starts_with("set-mute") && c.ends_with('0')), "got {calls:?}");
+        assert!(calls.iter().any(|c| c.contains("set-mute") && c.ends_with('1')), "got {calls:?}");
+        assert!(calls.iter().any(|c| c.contains("set-mute") && c.ends_with('0')), "got {calls:?}");
     }
 
     #[tokio::test]
@@ -1318,7 +1318,7 @@ mod tests {
 
         feed(&f, &playback, "alert-release").await;
         let calls = f.log.lock().unwrap().clone();
-        assert_eq!(calls, vec!["set-mute SINK 1".to_string()], "the mute lands on the release");
+        assert_eq!(calls, vec!["wpctl set-mute SINK 1".to_string()], "the mute lands on the release");
     }
 
     // The guard exists so a hub dying mid-alarm cannot leave the speaker silently muted. With a
@@ -1336,7 +1336,7 @@ mod tests {
         drop(HoldGuard { volume: f.vol.clone() });
 
         let calls = f.log.lock().unwrap().clone();
-        assert_eq!(calls, vec!["set-mute SINK 1".to_string()], "teardown applies the user's mute");
+        assert_eq!(calls, vec!["wpctl set-mute SINK 1".to_string()], "teardown applies the user's mute");
     }
 
     // A stray or duplicated release must not be able to change the mute state on its own.

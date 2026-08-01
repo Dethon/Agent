@@ -50,11 +50,18 @@ pub struct Config {
     pub duck_percent: u8,              // softvol level while the satellite is active
     pub music_restore_grace_ms: u64,   // hold the un-duck this long so a long reply's inter-segment
                                        // Idle gaps don't flap the music up between segments
-    // The satellite's own master output level — the PipeWire sink everything ultimately feeds,
-    // driven with wpctl. Distinct from the per-source ALSA softvols (Music / TTS / Alert): this is
-    // the physical volume knob an amp HAT like the MiniAmp does not have. None = feature off,
-    // mirroring music_mixer, because PipeWire is installed only on music units.
+    // The satellite's own master output level — the one knob every source ultimately feeds. It is
+    // the volume an amp HAT like the MiniAmp does not have in hardware, and is distinct from the
+    // per-source ALSA softvols (Music / TTS / Alert), which carry calibration.
+    //
+    // Two ways to reach it, one per unit type: music units mix in PipeWire, so their master is its
+    // sink, driven with wpctl (volume_sink). Voice-only units have no PipeWire and play raw ALSA,
+    // so provisioning puts a software softvol in front of their output device and the satellite
+    // drives it with amixer (volume_mixer + volume_card, mirroring music_mixer/music_card).
+    // Mutually exclusive; all None = feature off.
     pub volume_sink: Option<String>,
+    pub volume_mixer: Option<String>,
+    pub volume_card: Option<String>,
     pub volume_step: u8,
 }
 
@@ -91,6 +98,8 @@ impl Default for Config {
             duck_percent: 20,
             music_restore_grace_ms: 3000,
             volume_sink: None,
+            volume_mixer: None,
+            volume_card: None,
             volume_step: 10,
         }
     }
@@ -103,7 +112,8 @@ impl Config {
     ///        --no-led
     ///        --preroll-ms <ms> --wake-preroll-ms <ms> --no-awake-cue --no-done-cue
     ///        --music-mixer <control> --music-card <card> --duck-percent <pct> --music-restore-grace-ms <ms>
-    ///        --volume-sink <name> --volume-step <pct>
+    ///        --volume-sink <name> | --volume-mixer <control> [--volume-card <card>]
+    ///        --volume-step <pct>
     pub fn from_args() -> anyhow::Result<Self> {
         Self::parse(pico_args::Arguments::from_env())
     }
@@ -150,6 +160,21 @@ impl Config {
         if let Some(v) = pa.opt_value_from_str::<_, u8>("--duck-percent")? { c.duck_percent = v; }
         if let Some(v) = pa.opt_value_from_str::<_, u64>("--music-restore-grace-ms")? { c.music_restore_grace_ms = v; }
         if let Some(v) = pa.opt_value_from_str::<_, String>("--volume-sink")? { c.volume_sink = Some(v); }
+        if let Some(v) = pa.opt_value_from_str::<_, String>("--volume-mixer")? { c.volume_mixer = Some(v); }
+        if let Some(v) = pa.opt_value_from_str::<_, String>("--volume-card")? { c.volume_card = Some(v); }
+        // The two masters are the same knob reached by different tools, so a unit naming both is
+        // misconfigured whichever one won: the satellite would still beep its confirmation while
+        // moving a level nobody hears — the exact failure a voice-only unit had before it had an
+        // ALSA master at all. Reject it here, where the mistake is, rather than picking one.
+        anyhow::ensure!(
+            !(c.volume_sink.is_some() && c.volume_mixer.is_some()),
+            "--volume-sink and --volume-mixer are mutually exclusive: pass the PipeWire sink on a \
+             music unit, or the ALSA softvol control on a voice-only one"
+        );
+        anyhow::ensure!(
+            !(c.volume_card.is_some() && c.volume_mixer.is_none()),
+            "--volume-card needs --volume-mixer (the control to look up on that card)"
+        );
         if let Some(v) = pa.opt_value_from_str::<_, u8>("--volume-step")? {
             anyhow::ensure!(v >= 1, "--volume-step must be at least 1 (got {v})");
             c.volume_step = v;
@@ -303,6 +328,33 @@ mod tests {
     #[test]
     fn zero_volume_step_is_rejected() {
         assert!(Config::parse(args(&["--volume-step", "0"])).is_err());
+    }
+
+    /// The voice-only shape: no PipeWire, so the master is an ALSA softvol driven with amixer.
+    #[test]
+    fn volume_mixer_flags_parse_and_default_off() {
+        let off = Config::default();
+        assert_eq!(off.volume_mixer, None);
+        assert_eq!(off.volume_card, None);
+
+        let on = Config::parse(args(&["--volume-mixer", "Master", "--volume-card", "sndrpihifiberry"])).unwrap();
+        assert_eq!(on.volume_mixer.as_deref(), Some("Master"));
+        assert_eq!(on.volume_card.as_deref(), Some("sndrpihifiberry"));
+        assert_eq!(on.volume_sink, None);
+    }
+
+    /// The two flags name two different tools for the SAME master, so a unit carrying both is
+    /// misconfigured however it is resolved: whichever one lost, the satellite would beep its
+    /// confirmation and move a level nobody hears. Reject it where the mistake is, at parse time.
+    #[test]
+    fn a_sink_and_a_mixer_together_are_rejected() {
+        assert!(Config::parse(args(&["--volume-sink", "@DEFAULT_AUDIO_SINK@", "--volume-mixer", "Master"])).is_err());
+    }
+
+    /// A card with no control to look up on it is the same silent no-op, one typo away.
+    #[test]
+    fn a_volume_card_without_a_mixer_is_rejected() {
+        assert!(Config::parse(args(&["--volume-card", "sndrpihifiberry"])).is_err());
     }
 
     #[test]
