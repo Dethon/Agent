@@ -31,10 +31,7 @@ the same startup level each boot by a provisioning-installed oneshot.
 
 **Local speaker commands.** `VoiceCommandMatcher` matches a normalized whole transcript (lowercase,
 accents and punctuation stripped, whitespace collapsed) against `VoiceSettings.Commands.Phrases`.
-`TranscriptDispatcher` checks it AFTER the gibberish gate and BEFORE `GetOrCreateAsync`, so poor
-audio cannot move a volume knob and a hit costs no `create_conversation` round trip. A hit writes
-`speaker-volume` through `SatelliteSession.ControlWriter` and returns `false`, which
-`FollowUpConversation` already turns into `EndConversation`. Every phrase carries an explicit local
+`LocalCommandDispatcher` (`Services/LocalCommands/`) routes a match to the `ILocalCommandHandler` that owns it — handlers are DI-registered and self-declare their commands; construction fails fast on duplicate or unowned commands. `TranscriptDispatcher` calls it AFTER the gibberish gate and BEFORE `GetOrCreateAsync`, so poor audio cannot move a volume knob and a hit costs no `create_conversation` round trip. `SpeakerVolumeCommandHandler` writes `speaker-volume` through `SatelliteSession.ControlWriter`; a hit returns `false`, which `FollowUpConversation` already turns into `EndConversation`. A new local command is a new enum value plus a handler registration — `TranscriptDispatcher` stays untouched. Every phrase carries an explicit local
 marker: "sube el volumen" is a Music Assistant request and still belongs to the agent. Matching is
 whole-transcript only, so a compound sentence goes to the agent intact.
 **A local mute must never swallow a timer or an alarm.** `InsistentAnnouncementController` keeps
