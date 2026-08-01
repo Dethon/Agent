@@ -18,7 +18,8 @@ public class ChatMonitorConfigPatchTests
         var patch = new AgentConfigPatch { Model = "z-ai/glm-5.2", ReasoningEffort = "high" };
         var message = MonitorTestMocks.CreateChannelMessage(
             conversationId: "conv-1", channelId: "signalr", agentId: "jonas", sender: "test")
-            with { ConfigPatch = patch };
+            with
+        { ConfigPatch = patch };
         var signalr = MonitorTestMocks.CreateChannel("signalr", message);
         var fakeAgent = MonitorTestMocks.CreateAgent();
 
