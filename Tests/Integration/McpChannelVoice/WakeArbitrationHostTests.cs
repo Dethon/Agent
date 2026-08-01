@@ -8,6 +8,7 @@ using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -187,7 +188,7 @@ public class WakeArbitrationHostTests
             factory.Object, new ReplyTextAccumulator(), TimeProvider.System,
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, metrics, manager, new VoiceCommandMatcher(new CommandSettings()), -1.0, 0.6, -1.4, 2000, TimeProvider.System,
+            emitter, metrics, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System,
             NullLogger<TranscriptDispatcher>.Instance);
         var arbiter = new WakeArbiter(
             voiceSettings.Arbitration, manager, metrics, TimeProvider.System,

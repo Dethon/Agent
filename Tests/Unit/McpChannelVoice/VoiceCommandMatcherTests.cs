@@ -1,4 +1,5 @@
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Settings;
 using Shouldly;
 

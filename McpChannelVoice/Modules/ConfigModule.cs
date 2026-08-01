@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Infrastructure.Metrics;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Settings;
 using ModelContextProtocol.Protocol;
@@ -52,11 +53,13 @@ public static class ConfigModule
         services
             .AddSingleton<SatelliteSessionRegistry>()
             .AddSingleton(new VoiceCommandMatcher(settings.Commands))
+            .AddSingleton<ILocalCommandHandler, SpeakerVolumeCommandHandler>()
+            .AddSingleton<LocalCommandDispatcher>()
             .AddSingleton<TranscriptDispatcher>(sp => new TranscriptDispatcher(
                 sp.GetRequiredService<ChannelNotificationEmitter>(),
                 sp.GetRequiredService<IMetricsPublisher>(),
                 sp.GetRequiredService<VoiceConversationManager>(),
-                sp.GetRequiredService<VoiceCommandMatcher>(),
+                sp.GetRequiredService<LocalCommandDispatcher>(),
                 avgLogProbThreshold: settings.Stt.OpenAi.AvgLogProbThreshold,
                 noSpeechProbThreshold: settings.Stt.OpenAi.NoSpeechProbThreshold,
                 shortSpeechAvgLogProbThreshold: settings.Stt.OpenAi.ShortSpeechAvgLogProbThreshold,

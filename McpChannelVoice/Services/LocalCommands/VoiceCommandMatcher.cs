@@ -2,15 +2,7 @@ using System.Globalization;
 using System.Text;
 using McpChannelVoice.Settings;
 
-namespace McpChannelVoice.Services;
-
-public enum VoiceCommand
-{
-    LocalVolumeUp,
-    LocalVolumeDown,
-    LocalMute,
-    LocalUnmute
-}
+namespace McpChannelVoice.Services.LocalCommands;
 
 public sealed class VoiceCommandMatcher(CommandSettings settings)
 {
