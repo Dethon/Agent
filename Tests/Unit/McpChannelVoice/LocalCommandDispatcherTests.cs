@@ -45,15 +45,19 @@ public class LocalCommandDispatcherTests
     {
         var all = Enum.GetValues<VoiceCommand>().ToHashSet();
 
-        Should.Throw<InvalidOperationException>(
+        var exception = Should.Throw<InvalidOperationException>(
             () => new LocalCommandDispatcher(Matcher(), [new FakeHandler(all), new FakeHandler(_muteCommands)]));
+
+        exception.Message.ShouldContain(nameof(VoiceCommand.LocalMute));
     }
 
     [Fact]
     public void Ctor_UncoveredCommand_Throws()
     {
-        Should.Throw<InvalidOperationException>(
+        var exception = Should.Throw<InvalidOperationException>(
             () => new LocalCommandDispatcher(Matcher(), [new FakeHandler(_volumeCommands)]));
+
+        exception.Message.ShouldContain(nameof(VoiceCommand.LocalMute));
     }
 
     [Fact]

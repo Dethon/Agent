@@ -9,10 +9,14 @@ public sealed class LocalCommandDispatcher
 
     public LocalCommandDispatcher(VoiceCommandMatcher matcher, IEnumerable<ILocalCommandHandler> handlers)
     {
+        ArgumentNullException.ThrowIfNull(matcher);
+        ArgumentNullException.ThrowIfNull(handlers);
+
         _matcher = matcher;
 
-        // Both checks throw at container build time, so a routing mistake is a startup crash
-        // rather than a command silently dropped (or double-handled) on the first utterance.
+        // Both checks throw when the host first resolves the dispatcher at startup, so a routing
+        // mistake is a startup crash rather than a command silently dropped (or double-handled)
+        // on the first utterance.
         var claims = handlers
             .SelectMany(h => h.Commands.Select(command => (Command: command, Handler: h)))
             .ToList();
