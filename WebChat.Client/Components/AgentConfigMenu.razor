@@ -1,0 +1,53 @@
+@using WebChat.Client.State.AgentSettings
+@inherits StoreSubscriberComponent
+@inject TopicsStore TopicsStore
+@inject AgentSettingsStore SettingsStore
+@inject IDispatcher Dispatcher
+
+@if (SelectedAgent is { PatchableModels.Count: > 0 } agent)
+{
+    <div class="agent-config">
+        <select class="agent-config-select" title="Model"
+                value="@CurrentModel(agent)" @onchange="e => SetModel(agent, e)">
+            @foreach (var model in agent.PatchableModels!)
+            {
+                <option value="@model.Id">@model.Name</option>
+            }
+        </select>
+        <select class="agent-config-select" title="Reasoning effort"
+                value="@CurrentEffort(agent)" @onchange="e => SetEffort(agent, e)">
+            @foreach (var effort in agent.PatchableReasoningEfforts ?? AgentConfigPatch.SupportedEfforts)
+            {
+                <option value="@effort">@effort</option>
+            }
+        </select>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<AgentCatalogEntry> _agents = [];
+    private string? _selectedAgentId;
+    private IReadOnlyDictionary<string, AgentModelSettings> _byAgent = new Dictionary<string, AgentModelSettings>();
+
+    private AgentCatalogEntry? SelectedAgent =>
+        _agents.FirstOrDefault(a => a.Id == _selectedAgentId);
+
+    protected override void OnInitialized()
+    {
+        Subscribe(TopicsStore.StateObservable, s => s.Agents, a => _agents = a);
+        Subscribe(TopicsStore.StateObservable, s => s.SelectedAgentId, id => _selectedAgentId = id);
+        Subscribe(SettingsStore.StateObservable, s => s.ByAgent, byAgent => _byAgent = byAgent);
+    }
+
+    private string? CurrentModel(AgentCatalogEntry agent) =>
+        _byAgent.GetValueOrDefault(agent.Id)?.Model ?? agent.DefaultModel;
+
+    private string? CurrentEffort(AgentCatalogEntry agent) =>
+        _byAgent.GetValueOrDefault(agent.Id)?.ReasoningEffort ?? agent.DefaultReasoningEffort;
+
+    private void SetModel(AgentCatalogEntry agent, ChangeEventArgs e) =>
+        Dispatcher.Dispatch(new SetAgentModel(agent.Id, e.Value?.ToString()));
+
+    private void SetEffort(AgentCatalogEntry agent, ChangeEventArgs e) =>
+        Dispatcher.Dispatch(new SetAgentReasoningEffort(agent.Id, e.Value?.ToString()));
+}

@@ -2338,6 +2338,12 @@ select:focus:not(:focus-visible) {
 .agent-seg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-mono { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
     color: #fff; font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.7rem; flex: 0 0 auto; }
+
+/* agent config — model & reasoning-effort dropdowns, next to the agent selector */
+.agent-config { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
+.agent-config-select { flex: 1; min-width: 0; padding: 0.4rem 0.5rem; border-radius: 10px;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    color: var(--text-primary); font-family: inherit; font-size: 0.8rem; }
 .agent-activity-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
     box-shadow: 0 0 8px 1px color-mix(in srgb, var(--accent) 70%, transparent); }
 .is-streaming .agent-activity-dot, .agent-seg .agent-activity-dot { animation: emberPulse 1.6s ease-in-out infinite; }
