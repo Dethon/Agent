@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Infrastructure.Metrics;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Settings;
 using ModelContextProtocol.Protocol;

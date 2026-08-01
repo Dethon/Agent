@@ -10,6 +10,7 @@ using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;

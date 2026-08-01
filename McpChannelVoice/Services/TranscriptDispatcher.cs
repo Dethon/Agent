@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
+using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Services.WyomingProtocol;
 
 namespace McpChannelVoice.Services;
