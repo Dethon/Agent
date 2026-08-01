@@ -38,4 +38,13 @@ public class OpenRouterModelOverrideTests
     {
         OpenRouterChatClient.ResolveModelOverride(null, "openai/gpt-5.6-luna", Whitelist).ShouldBeNull();
     }
+
+    [Fact]
+    public void ResolveModelOverride_DifferentCasing_ReturnsWhitelistCanonicalCasing()
+    {
+        var patch = new AgentConfigPatch { Model = "Z-AI/GLM-5.2" };
+
+        OpenRouterChatClient.ResolveModelOverride(patch, "openai/gpt-5.6-luna", Whitelist)
+            .ShouldBe("z-ai/glm-5.2");
+    }
 }

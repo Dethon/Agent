@@ -335,11 +335,15 @@ public sealed class OpenRouterChatClient : IChatClient
     internal static string? ResolveModelOverride(
         AgentConfigPatch? patch, string configuredModel, IReadOnlyList<string> patchableModelIds)
     {
-        return patch?.Model is { } model
-               && !string.Equals(model, configuredModel, StringComparison.OrdinalIgnoreCase)
-               && patchableModelIds.Contains(model, StringComparer.OrdinalIgnoreCase)
-            ? model
-            : null;
+        if (patch?.Model is not { } model || string.Equals(model, configuredModel, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        // Return the whitelist's own casing, not the patch's: OpenRouter model IDs are lowercase
+        // slugs, and stamping the patch's casing verbatim can turn a valid override into a
+        // model-not-found error.
+        return patchableModelIds.FirstOrDefault(id => string.Equals(id, model, StringComparison.OrdinalIgnoreCase));
     }
 
     private static HttpClient CreateHttpClient(
