@@ -589,11 +589,18 @@ services:
       # of leaving the container to lazily download the right one on the first utterance.
       STT_MODEL: ${STT_MODEL:-Whisper-Medium}
       # Decode-quality knobs, passed through only when set (defaults — VAD 0.6, beam 5,
-      # Castilian initial prompt — live in lemonade/entrypoint.sh; set one empty in .env to
-      # disable it). The NPU/flm tier ignores all three.
+      # Castilian initial prompt, best-of 5, non-speech-token suppression on, VAD speech
+      # padding 150 ms, VAD minimum speech 150 ms — live in lemonade/entrypoint.sh; set one
+      # empty in .env to disable it). The last four target short commands: whisper.cpp's own
+      # 30 ms padding clips a leading plosive off a one-word turn and its 250 ms minimum
+      # discards one outright. The NPU/flm tier ignores all of them.
       STT_VAD_THRESHOLD:
       STT_INITIAL_PROMPT:
       STT_BEAM_SIZE:
+      STT_BEST_OF:
+      STT_SUPPRESS_NST:
+      STT_VAD_SPEECH_PAD_MS:
+      STT_VAD_MIN_SPEECH_MS:
     # Vulkan whisper on the Ryzen AI iGPU. Kokoro TTS is CPU-only on Linux, so it never
     # contends with whisper for the iGPU. Only /dev/dri is mapped: the shipped Vulkan tier
     # (RADV) needs just the render node, so this stays up on non-AMD hosts that have /dev/dri
