@@ -79,7 +79,6 @@ public sealed class InsistentAnnouncementController(
         try
         {
             var buffered = await BufferAudioAsync(request, handle.Token);
-            await SendAlertHoldAsync(targetIds, "alert-hold");
             var start = time.GetTimestamp();
             var round = 0;
 
@@ -88,6 +87,13 @@ public sealed class InsistentAnnouncementController(
                    && (plan.MaxDuration is not { } max || time.GetElapsedTime(start) < max))
             {
                 var gain = plan.GainFor(round);
+
+                // Re-asserted every round, not once before the loop: a satellite that reconnects
+                // mid-alarm comes back with no hold, and one that was rebooting when the loop
+                // started never got the first one. Both heal within a round. The satellite's hold
+                // is idempotent, so a re-assert to a satellite that already holds costs nothing.
+                await SendSpeakerVolumeAsync(targetIds, "alert-hold");
+
                 foreach (var session in OnlineSessions(targetIds))
                 {
                     await session.EnqueuePlaybackAsync(
@@ -141,15 +147,18 @@ public sealed class InsistentAnnouncementController(
         }
         finally
         {
-            await SendAlertHoldAsync(targetIds, "alert-release");
+            // Discard BEFORE asking who is still covered, so this alert no longer counts itself.
+            // Discard is idempotent, so the unacknowledged branch's earlier call is harmless.
             alerts.Discard(handle);
+            await SendSpeakerVolumeAsync(
+                targetIds.Where(id => alerts.CountFor(id) == 0), "alert-release");
         }
     }
 
     // A local mute is the user's, but it must not silence a timer or an alarm. The hold unmutes
     // the speaker for the duration of the ring; the release restores whatever the user had set.
     // Both are best-effort: a satellite that never got the hold simply rings at its current level.
-    private async Task SendAlertHoldAsync(IReadOnlyList<string> targetIds, string action)
+    private async Task SendSpeakerVolumeAsync(IEnumerable<string> targetIds, string action)
     {
         var evt = WyomingEvent.Header("speaker-volume", new JsonObject { ["action"] = action });
         foreach (var session in OnlineSessions(targetIds))
@@ -193,7 +202,7 @@ public sealed class InsistentAnnouncementController(
             }),
             OnPreempted: _ => Task.CompletedTask);
 
-    private IEnumerable<SatelliteSession> OnlineSessions(IReadOnlyList<string> targetIds) =>
+    private IEnumerable<SatelliteSession> OnlineSessions(IEnumerable<string> targetIds) =>
         targetIds.Select(sessions.Get).Where(s => s is not null).Select(s => s!);
 
     private VoiceEvent AlarmEvent(VoiceMetric metric, IReadOnlyList<string> targetIds, int rounds)

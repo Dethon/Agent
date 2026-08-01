@@ -96,6 +96,16 @@ public sealed class ActiveAlertRegistry
         return all.Select(h => new DismissedAlert(h.Text, h.Kind)).ToList();
     }
 
+    // How many alerts still cover a satellite. The insistent loop asks after discarding its own
+    // handle, so zero means nothing else is ringing there and the alert hold can be released.
+    public int CountFor(string satelliteId)
+    {
+        lock (_gate)
+        {
+            return _bySatellite.TryGetValue(satelliteId, out var handles) ? handles.Count : 0;
+        }
+    }
+
     public void Discard(AlertHandle handle)
     {
         ArgumentNullException.ThrowIfNull(handle);
