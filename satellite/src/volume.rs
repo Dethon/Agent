@@ -146,6 +146,24 @@ fn sign(up: bool) -> char {
     if up { '+' } else { '-' }
 }
 
+/// The bottom of the stepping range, matching the voice-only softvol's taper: quiet, never
+/// silent. Only `mute` silences a speaker.
+const FLOOR_DB: f64 = -51.0;
+
+/// One dB-linear step on the PipeWire sink's cubic display scale (0.0..=1.0), so a spoken step
+/// moves the same number of dB as `amixer` does on the voice-only softvol: 51·step/100 dB
+/// (5.1 dB at the default 10). wpctl's display value maps to `dB = 60·log10(v)` — the pulse-style
+/// cubic curve — which makes a constant-dB step pure math on the read value. The current level is
+/// snapped to a grid anchored at 0 dB before stepping, so repeated commands never drift and an
+/// externally-moved sink heals to the grid on the first command. A level at or below silence
+/// clamps to the floor, so a step up from a zeroed sink is immediately audible.
+fn db_linear_step(current: f64, up: bool, step_pct: u8) -> f64 {
+    let spacing = -FLOOR_DB * f64::from(step_pct) / 100.0;
+    let db = if current > 0.0 { (60.0 * current.log10()).clamp(FLOOR_DB, 0.0) } else { FLOOR_DB };
+    let steps_below_full = (-db / spacing).round() + if up { -1.0 } else { 1.0 };
+    10f64.powf((-steps_below_full * spacing).clamp(FLOOR_DB, 0.0) / 60.0)
+}
+
 impl VolumeControl {
     /// `sink` is the PipeWire master (music units), `mixer`/`card` the ALSA one (voice-only).
     /// `Config::parse` rejects a unit that gives both, so the order below is only a tiebreak.
@@ -383,6 +401,57 @@ mod tests {
 
     fn probe(step: u8) -> (Arc<std::sync::Mutex<Vec<String>>>, Arc<VolumeControl>) {
         VolumeControl::probe_pair(step)
+    }
+
+    /// Loudness math parity with the voice-only softvol: the display value is PipeWire's cubic
+    /// scale (`dB = 60·log10(v)`), and one step moves 51·step/100 dB on a grid anchored at 0 dB.
+    mod db_linear_step_math {
+        use super::super::db_linear_step;
+
+        fn assert_close(actual: f64, expected: f64) {
+            assert!((actual - expected).abs() < 1e-3, "expected ~{expected}, got {actual}");
+        }
+
+        /// The default step (10) is 5.1 dB, the same jump the softvol makes: 10^(-5.1/60).
+        #[test]
+        fn one_step_down_from_full_is_5_1_db() {
+            assert_close(db_linear_step(1.0, false, 10), 0.82224);
+        }
+
+        /// 0 dB is the ceiling — the math clamp that replaces wpctl's `-l 1.0`.
+        #[test]
+        fn step_up_from_full_stays_at_full() {
+            assert_close(db_linear_step(1.0, true, 10), 1.0);
+        }
+
+        /// −51 dB is the floor, matching the softvol: quiet, never silent. Only mute silences.
+        #[test]
+        fn step_down_from_the_floor_stays_at_the_floor() {
+            let floor = 10f64.powf(-51.0 / 60.0); // ≈ 0.141254
+            assert_close(db_linear_step(floor, false, 10), floor);
+        }
+
+        /// An externally-moved sink snaps to the grid on the first command: 0.5 is −18.06 dB,
+        /// nearest grid point −20.4 dB (k=4), so up lands on −15.3 dB and down on −25.5 dB.
+        #[test]
+        fn off_grid_level_snaps_to_the_grid_before_stepping() {
+            assert_close(db_linear_step(0.5, true, 10), 0.55590);
+            assert_close(db_linear_step(0.5, false, 10), 0.37584);
+        }
+
+        /// A sink someone zeroed externally: −∞ dB clamps to the floor, so the first step up
+        /// lands one step above it rather than staying inaudible forever.
+        #[test]
+        fn step_up_from_silence_lands_one_step_above_the_floor() {
+            assert_close(db_linear_step(0.0, true, 10), 0.17179); // −45.9 dB
+            assert_close(db_linear_step(0.0, false, 10), 10f64.powf(-51.0 / 60.0));
+        }
+
+        /// The per-step dB scales with --volume-step: 50 → two steps across the range, 25.5 dB each.
+        #[test]
+        fn a_non_default_step_scales_the_grid() {
+            assert_close(db_linear_step(1.0, false, 50), 0.37584); // −25.5 dB
+        }
     }
 
     /// The voice-only shape: an ALSA softvol master driven with `amixer`, on the speaker card.
