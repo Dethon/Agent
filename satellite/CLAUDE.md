@@ -79,25 +79,52 @@ segmented answer never touch Idle. Two guards survive on top of that:
 
 ## Local speaker volume
 
-`volume.rs` drives the PipeWire sink (`--volume-sink`, `--volume-step`, default 10 points) with
-`wpctl` on the hub's `speaker-volume` event (protocol 1.8, actions `up`/`down`/`mute`/`unmute`/
-`alert-hold`/`alert-release`). This is the MASTER — deliberately not one of the `Music`/`TTS`/
-`Alert` softvols, which carry calibration and, in `Music`'s case, are rewritten by the ducker on
-every turn. Master and softvol multiply, so ducking is untouched by this feature. Absent
-`--volume-sink` the whole thing is a no-op with a warning, mirroring `music_mixer: None`.
+`volume.rs` drives the satellite's MASTER output level on the hub's `speaker-volume` event
+(protocol 1.8, actions `up`/`down`/`mute`/`unmute`/`alert-hold`/`alert-release`), stepping by
+`--volume-step` points (default 10). Master is deliberately not one of the `Music`/`TTS`/`Alert`
+softvols, which carry calibration and, in `Music`'s case, are rewritten by the ducker on every
+turn. Master and softvol multiply, so ducking is untouched by this feature.
+
+**Two backends, one master.** They are the same knob — the last thing every source passes
+through — reached with whatever tool the unit has:
+
+- **Music units**: `--volume-sink` names the PipeWire sink, driven with `wpctl`. Wireplumber
+  persists its level and mute, so nothing is written to disk here and a level survives a restart.
+- **Voice-only units**: `--volume-mixer` (plus `--volume-card`) names an ALSA softvol, driven with
+  `amixer` — the same tool and shape as the music ducker. PipeWire is installed only on music
+  units, so provisioning writes a software master into `/etc/asound.conf` instead and points
+  `--snd-command` at it. Software is not a shortcut: an amp HAT like the MiniAmp has no hardware
+  volume control at all, so on this hardware every level is software anyway.
+
+A softvol provides one element, so the voice-only master is a pair: `Nabu Volume` (level) and
+`Nabu Switch` (a resolution-2 softvol, which IS a mute switch). ALSA's simple mixer merges a
+`<base> Volume` element with a `<base> Switch` one, so both are the single control `Nabu` and
+`amixer sset Nabu 10%+` / `sset Nabu mute` drive them. `amixer` clamps a relative step to the
+control's own range, which is what `-l 1.0` does for `wpctl`. Unlike wireplumber, nothing persists
+this across a reboot: the control does not exist when `alsa-restore` runs, so softvol recreates it
+at maximum on the satellite's first playback.
+
+With neither flag the whole thing is a no-op with a warning, mirroring `music_mixer: None`.
+Passing BOTH is rejected by `Config::parse`: they name two tools for the same master, so whichever
+one lost would leave the satellite beeping its confirmation at a level nobody hears — exactly the
+failure a voice-only unit had before it had a master at all.
+
+Everything below is backend-independent — the gate, the tracked mute and the alert hold sit above
+`Backend` and behave identically on both.
 
 An internal `tokio::sync::Mutex` gate serializes `step`, `alert_hold`, `alert_release` and
-`set_user_mute` end-to-end, across their own awaited `wpctl` call. It was added because an alert
-hold and a queued mute confirmation each read the tracked state, change it, and await a `wpctl`
+`set_user_mute` end-to-end, across their own awaited mixer call. It was added because an alert
+hold and a queued mute confirmation each read the tracked state, change it, and await a mixer
 call — two separate windows a concurrent call could otherwise land inside, leaving `user_muted()`
-disagreeing with whichever call's `wpctl` process actually finished last. The gate makes such
-calls run one fully after the other, so the last one to finish decides both consistently.
+disagreeing with whichever call's process actually finished last. The gate makes such calls run
+one fully after the other, so the last one to finish decides both consistently.
 
 **`user_muted` and `alert_held` both live on `VolumeControl`, which is process-scoped.** A hub
 reconnect cannot forget the user's mute, and every decision reads the two together — that is the
-whole point of keeping them in one place. `user_muted` is seeded once at boot from `wpctl
-get-volume` (which prints `[MUTED]`) so wireplumber's restored state and ours agree. Wireplumber
-persists level and mute itself; nothing is written to disk here.
+whole point of keeping them in one place. `user_muted` is seeded once at boot by reading the
+master (`wpctl get-volume`, which prints `[MUTED]`; `amixer sget`, which prints `[on]`/`[off]`),
+so the mixer's restored state and ours agree. A failed or unparsable read leaves it unmuted, the
+safe direction: the speaker is audible and one spoken command fixes it.
 
 **An alarm must ring on a muted speaker.** `alert-hold` marks the hold and unmutes the sink
 WITHOUT clearing `user_muted`, so the release has something to put back. It is idempotent: the hub
@@ -114,7 +141,7 @@ An unmute always lands at once — it cannot silence anything, and it is what th
 for.
 
 `HoldGuard` covers a hub that dies mid-alarm. On connection teardown it ends the hold and fires a
-detached `wpctl` putting the sink back to `user_muted` (Drop cannot await, same shape as
+detached mixer call putting the master back to `user_muted` (Drop cannot await, same shape as
 `music.rs`'s `DuckGuard`). It runs both ways: the speaker is left audible if the user never muted,
 and muted if their mute was still deferred by the hold.
 
@@ -141,6 +168,7 @@ Repo-root `scripts/provision-satellite-rs.sh <user@host> [mic-device]` installs 
 
 - **I2S DAC/amp HATs** (MiniAmp) declare `DAC_OVERLAY=hifiberry-dac` — I2S is electrically undiscoverable, so the script writes the dtoverlay to config.txt, reboots, waits for the card and continues (one-shot on a fresh Pi).
 - **Music units** carry **three** per-source ALSA softvols on the speaker card under a master (the PipeWire sink) held at **100 %** — the MiniAmp has no hardware volume, so every level is software and all calibration lives in the source knobs. `Music` is what the satellite ducks for the whole turn (see **Music ducking** below); `TTS` (`TTS_VOLUME`%, default 65) carries replies + cues, so agent-voice loudness is calibrated independently of music — the volume knob for amp HATs that have none; `Alert` (`ALERT_VOLUME`%, default 100) carries only hub-marked timer/alarm streams via `--alert-snd-command`, so a ring is not capped by the conversational level. All three are re-asserted per provision, and both env vars are validated locally before the build. Tune live with `amixer -c <card> sset TTS <pct>%` / `sset Alert <pct>%` + `sudo alsactl store`. **The master used to sit at 0.8**, so re-provisioning an already-calibrated unit makes music *and* agent speech louder, not just alerts; the `TTS` default dropped 75 → 65 (−5.1 dB on the −51 dB taper) to absorb that on the voice side, but an explicit `TTS_VOLUME` bypasses the default — lower that value too.
+- **Voice-only units** carry **one** softvol instead: the master the spoken volume commands drive (`pcm.speaker` → `Nabu Volume` + `Nabu Switch` on the output card, see **Local speaker volume**). There is no PipeWire to hold a master and no per-source calibration to keep, so `--snd-command` plays through it and alerts follow (`--alert-snd-command` defaults to `--snd-command`). Provisioning materializes the control with 1 s of silence and re-asserts it to **100 % unmuted** every run, so a re-provision restores factory loudness and can never hand back a silent speaker; failing to open it is a warning, not a failed provision, since the satellite creates the control itself on its first playback. `/etc/asound.conf` is now **rewritten** rather than deleted on a music → voice-only downgrade — an output device whose ALSA card name provisioning cannot work out is the one case that still deletes it, and that unit gets no volume flags at all rather than flags naming a control that does not exist.
 - **Wake sensitivity** comes from `THRESHOLD` (default 0.7) and `WAKE_WINDOW` (default 2), validated locally before the build and applied to **both** unit paths (the voice-only `ExecStart` and the music drop-in that overrides it). Lowering either makes wake easier but noisier — window 1 at a low threshold is what let music itself trigger the wake word on the office satellite, so retune one knob at a time. Both substitutions rewrite the flag's *argument* rather than matching a literal default, so moving a default in the unit template can't silently render provisioning's `sed` inert.
   - `WAKE_WINDOW` replaced `TRIGGER_LEVEL` (still read as an alias, both here and as `--trigger-level` on the binary — `Config::parse` errors on unknown arguments, so a stale unit file carrying the old flag would otherwise fail to start and loop under `Restart=always`). It is no longer a count of *consecutive* frames over the threshold: it is how many 80 ms classifier scores are **averaged** before the mean is compared against `THRESHOLD`. The old counter reset to zero on any single frame below threshold, so the jittery score trace produced by background TV or music threw the utterance away and the satellite would not wake even when the phrase was clearly spoken. Window *n* is therefore strictly more permissive than the old level *n* at the same threshold, at identical latency — the old rule needed every frame at or above it, the mean only needs them to average it.
   - **Above 3 the added latency exceeds `--wake-preroll-ms`** (240 ms, sized for the ~181 ms measured detection latency): each step adds one 80 ms frame before the window fills, so raise the pre-roll gap flush in the same change or the start of the user's speech is clipped from what reaches the hub.
