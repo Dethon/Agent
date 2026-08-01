@@ -164,6 +164,15 @@ fn db_linear_step(current: f64, up: bool, step_pct: u8) -> f64 {
     10f64.powf((-steps_below_full * spacing).clamp(FLOOR_DB, 0.0) / 60.0)
 }
 
+/// The level out of `wpctl get-volume` ("Volume: 0.65", possibly with a trailing "[MUTED]").
+fn parse_wpctl_volume(out: &str) -> anyhow::Result<f64> {
+    out.split_whitespace()
+        .skip_while(|token| *token != "Volume:")
+        .nth(1)
+        .and_then(|token| token.parse().ok())
+        .ok_or_else(|| anyhow::anyhow!("unrecognized wpctl get-volume output: {out:?}"))
+}
+
 impl VolumeControl {
     /// `sink` is the PipeWire master (music units), `mixer`/`card` the ALSA one (voice-only).
     /// `Config::parse` rejects a unit that gives both, so the order below is only a tiebreak.
@@ -451,6 +460,30 @@ mod tests {
         #[test]
         fn a_non_default_step_scales_the_grid() {
             assert_close(db_linear_step(1.0, false, 50), 0.37584); // −25.5 dB
+        }
+    }
+
+    /// The read side of a PipeWire step: what `wpctl get-volume` prints, level extracted, mute
+    /// marker tolerated, anything unrecognizable an error (never a guessed level).
+    mod parse_wpctl_volume_output {
+        use super::super::parse_wpctl_volume;
+
+        #[test]
+        fn reads_the_level() {
+            assert_eq!(parse_wpctl_volume("Volume: 0.65\n").unwrap(), 0.65);
+        }
+
+        /// A muted sink still reports its stored level; stepping while muted must see it.
+        #[test]
+        fn reads_the_level_of_a_muted_sink() {
+            assert_eq!(parse_wpctl_volume("Volume: 0.65 [MUTED]\n").unwrap(), 0.65);
+        }
+
+        #[test]
+        fn garbage_is_an_error_not_a_guessed_level() {
+            assert!(parse_wpctl_volume("Object '99' not found\n").is_err());
+            assert!(parse_wpctl_volume("Volume: loud\n").is_err());
+            assert!(parse_wpctl_volume("").is_err());
         }
     }
 
