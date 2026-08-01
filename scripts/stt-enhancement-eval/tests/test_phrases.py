@@ -13,3 +13,10 @@ def test_mapping_matches_bash_formula():
     assert phrase_for_take(6) == PHRASES[1]   # second pass shifts by one
     assert phrase_for_take(10) == PHRASES[0]
     assert phrase_for_take(11) == PHRASES[2]  # third pass shifts by two
+
+
+def test_short_commands_are_short_and_distinct():
+    from stt_eval.phrases import SHORT_COMMANDS
+
+    assert len(SHORT_COMMANDS) == len(set(SHORT_COMMANDS))
+    assert all(len(p.split()) <= 6 for p in SHORT_COMMANDS)

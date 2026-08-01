@@ -42,7 +42,7 @@ def _jackbot_network() -> str:
     return nets[0]
 
 
-def _lemonade(wavs: list[Path], out_jsonl: Path) -> None:
+def _lemonade(wavs: list[Path], out_jsonl: Path, prompt: str | None = None) -> None:
     # Prod-parity backend: transcribes through the same Lemonade OpenAI endpoint the hub uses.
     # All wavs must live under one root (the run dir) so a single -v mount covers them.
     root = _mount_root(wavs)
@@ -55,12 +55,15 @@ def _lemonade(wavs: list[Path], out_jsonl: Path) -> None:
             for wav in wavs:
                 f.write(json.dumps({"wav": f"/work/{wav.resolve().relative_to(root.resolve())}"}) + "\n")
         worker = Path(__file__).resolve().parent
-        result = subprocess.run([
+        argv = [
             "docker", "run", "--rm", "--network", _jackbot_network(),
             "-v", f"{root.resolve()}:/work", "-v", f"{worker}:/s:ro",
             "python:3.12-slim", "python", "/s/lemonade_worker.py",
             "--manifest", f"/work/{tdp.name}/in.jsonl", "--out", f"/work/{tdp.name}/out.jsonl",
-        ])
+        ]
+        if prompt:
+            argv += ["--prompt", prompt]
+        result = subprocess.run(argv)
         # Merge whatever the worker managed to write BEFORE checking the return code, so a
         # mid-batch docker failure doesn't discard progress that already reached out.jsonl
         # (which lives inside this TemporaryDirectory and is gone once the `with` exits).
@@ -89,11 +92,20 @@ def _mount_root(wavs: list[Path]) -> Path:
     return common if common.is_dir() else common.parent
 
 
-def transcribe_files(backend: str, wavs: list[Path], out_jsonl: Path) -> None:
+def transcribe_files(
+    backend: str, wavs: list[Path], out_jsonl: Path, prompt: str | None = None
+) -> None:
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
     done = _done_wavs(out_jsonl)
     todo = [w for w in wavs if str(w) not in done and str(w.resolve()) not in done]
     if not todo:
         print(f"{out_jsonl}: complete ({len(done)} rows)")
         return
-    {"medium": _medium, "lemonade": _lemonade}[backend](todo, out_jsonl)
+    if backend == "medium":
+        # Loud rather than silent: a prompted run that quietly decoded unprompted would be
+        # reported as a decode-config comparison while being nothing of the sort.
+        if prompt:
+            raise SystemExit("--prompt is only supported by the lemonade backend")
+        _medium(todo, out_jsonl)
+    else:
+        _lemonade(todo, out_jsonl, prompt)

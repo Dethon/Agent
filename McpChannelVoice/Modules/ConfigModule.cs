@@ -57,6 +57,8 @@ public static class ConfigModule
                 sp.GetRequiredService<VoiceConversationManager>(),
                 avgLogProbThreshold: settings.Stt.OpenAi.AvgLogProbThreshold,
                 noSpeechProbThreshold: settings.Stt.OpenAi.NoSpeechProbThreshold,
+                shortSpeechAvgLogProbThreshold: settings.Stt.OpenAi.ShortSpeechAvgLogProbThreshold,
+                fullThresholdSpeechMs: settings.Stt.OpenAi.FullThresholdSpeechMs,
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<TranscriptDispatcher>>()))
             .AddSingleton(sp => new VoiceConversationManager(
@@ -93,10 +95,20 @@ public static class ConfigModule
 
         services.AddSingleton<ISpeechToText>(sp =>
         {
+            var sttLogger = sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.OpenAiSpeechToText>>();
+            var overBudget = McpChannelVoice.Services.Stt.WhisperPromptBuilder.OverBudgetPromptSources(settings);
+            if (overBudget.Count > 0)
+            {
+                sttLogger.LogWarning(
+                    "Whisper prompt template(s) longer than MaxPromptChars={MaxChars} are posted whole, "
+                    + "and whisper.cpp truncates keeping the tail — the front of the vocabulary is lost: {Sources}",
+                    settings.Stt.OpenAi.MaxPromptChars, string.Join(", ", overBudget));
+            }
+
             var inner = new McpChannelVoice.Services.Stt.OpenAiSpeechToText(
                 sp.GetRequiredService<IHttpClientFactory>(),
                 settings.Stt.OpenAi,
-                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.OpenAiSpeechToText>>());
+                sttLogger);
 
             var segmented = McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
                 inner, settings.Stt.Streaming, settings.WyomingClient, sp.GetRequiredService<ILoggerFactory>());

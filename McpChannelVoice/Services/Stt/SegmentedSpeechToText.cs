@@ -20,10 +20,22 @@ public sealed class SegmentedSpeechToText(
     private sealed record Segment(IReadOnlyList<AudioChunk> Audio, Task<TranscriptionResult> Task);
 
     public static ISpeechToText Wrap(
-        ISpeechToText inner, SegmentedSttConfig config, WyomingClientSettings gateSettings, ILoggerFactory loggers) =>
-        config.Enabled
-            ? new SegmentedSpeechToText(inner, config, gateSettings, loggers.CreateLogger<SegmentedSpeechToText>())
-            : inner;
+        ISpeechToText inner, SegmentedSttConfig config, WyomingClientSettings gateSettings, ILoggerFactory loggers)
+    {
+        if (!config.Enabled)
+        {
+            return inner;
+        }
+
+        var logger = loggers.CreateLogger<SegmentedSpeechToText>();
+        if (config.ChainContext && config.MaxInFlightDecodes > 1)
+        {
+            logger.LogWarning(
+                "Stt.Streaming.ChainContext serializes decodes; MaxInFlightDecodes={MaxInFlight} buys no parallelism",
+                config.MaxInFlightDecodes);
+        }
+        return new SegmentedSpeechToText(inner, config, gateSettings, logger);
+    }
 
     public async Task<TranscriptionResult> TranscribeAsync(
         IAsyncEnumerable<AudioChunk> audio, TranscriptionOptions options, CancellationToken ct)
@@ -47,6 +59,8 @@ public sealed class SegmentedSpeechToText(
         var segments = new List<Segment>();
         var all = new List<AudioChunk>();
         var current = new List<AudioChunk>();
+        var elapsed = TimeSpan.Zero;
+        var firstSplitAfter = TimeSpan.FromMilliseconds(config.FirstSplitAfterMs);
 
         try
         {
@@ -54,13 +68,18 @@ public sealed class SegmentedSpeechToText(
             {
                 all.Add(chunk);
                 current.Add(chunk);
-                if (gate.Process(chunk.Data.Span, chunk.Format.SampleRateHz,
-                        chunk.Format.SampleWidthBytes, chunk.Format.Channels) == SilenceGate.Decision.EndUtterance)
+                elapsed += ChunkDuration(chunk);
+                var decision = gate.Process(chunk.Data.Span, chunk.Format.SampleRateHz,
+                    chunk.Format.SampleWidthBytes, chunk.Format.Channels);
+                // Ignoring a decision does not disturb the gate: resumed speech resets its
+                // trailing-silence run, and continued silence re-raises EndUtterance on the next
+                // chunk past the floor.
+                if (decision == SilenceGate.Decision.EndUtterance && elapsed >= firstSplitAfter)
                 {
                     var closed = current;
                     current = new List<AudioChunk>();
                     gate.Reset();
-                    segments.Add(new Segment(closed, StartDecode(closed, options, slot, ct)));
+                    segments.Add(new Segment(closed, StartDecode(closed, options, slot, Previous(segments), ct)));
                 }
             }
         }
@@ -79,14 +98,17 @@ public sealed class SegmentedSpeechToText(
         {
             if (gate.SpeechElapsed >= minSpeech || segments.Count == 0)
             {
-                segments.Add(new Segment(current, StartDecode(current, options, slot, ct)));
+                segments.Add(new Segment(current, StartDecode(current, options, slot, Previous(segments), ct)));
             }
             else
             {
                 var prev = segments[^1];
                 ObserveAndDiscard(prev.Task);
                 var merged = prev.Audio.Concat(current).ToList();
-                segments[^1] = new Segment(merged, StartDecode(merged, options, slot, ct));
+                // Chains on the segment BEFORE the one this supersedes: prev's decode is being
+                // discarded, so its text is not context for the replacement.
+                var beforePrev = segments.Count > 1 ? segments[^2].Task : null;
+                segments[^1] = new Segment(merged, StartDecode(merged, options, slot, beforePrev, ct));
             }
         }
 
@@ -131,16 +153,27 @@ public sealed class SegmentedSpeechToText(
         }
     }
 
+    private static Task<TranscriptionResult>? Previous(List<Segment> segments) =>
+        segments.Count > 0 ? segments[^1].Task : null;
+
     private Task<TranscriptionResult> StartDecode(
-        IReadOnlyList<AudioChunk> chunks, TranscriptionOptions options, SemaphoreSlim slot, CancellationToken ct) =>
+        IReadOnlyList<AudioChunk> chunks, TranscriptionOptions options, SemaphoreSlim slot,
+        Task<TranscriptionResult>? previous, CancellationToken ct) =>
         Task.Run(async () =>
         {
+            // Awaited BEFORE the slot is taken: the previous decode may still be holding it, and
+            // taking it first would deadlock the chain at MaxInFlightDecodes = 1.
+            var prior = config.ChainContext && previous is not null
+                ? (await previous).Text
+                : null;
+
             var acquired = false;
             try
             {
                 await slot.WaitAsync(ct);
                 acquired = true;
-                return await inner.TranscribeAsync(ToAsyncEnumerable(chunks), options, ct);
+                return await inner.TranscribeAsync(
+                    ToAsyncEnumerable(chunks), options with { PriorText = prior }, ct);
             }
             finally
             {
@@ -165,6 +198,15 @@ public sealed class SegmentedSpeechToText(
         return pairs.Count > 0
             ? pairs.Sum(p => p.Weight * p.Value) / pairs.Sum(p => p.Weight)
             : null;
+    }
+
+    private static TimeSpan ChunkDuration(AudioChunk chunk)
+    {
+        var bytesPerSecond =
+            chunk.Format.SampleRateHz * chunk.Format.SampleWidthBytes * chunk.Format.Channels;
+        return bytesPerSecond == 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromSeconds((double)chunk.Data.Length / bytesPerSecond);
     }
 
     private static double DurationSeconds(IReadOnlyList<AudioChunk> chunks) =>

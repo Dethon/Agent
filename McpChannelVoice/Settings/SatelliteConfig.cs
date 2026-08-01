@@ -54,6 +54,13 @@ public record SatelliteConfig
     public double ResolveNoSpeechProbThreshold(double global) =>
         Stt?.OpenAi?.NoSpeechProbThreshold ?? global;
 
+    public double ResolveShortSpeechAvgLogProbThreshold(double global) =>
+        Stt?.OpenAi?.ShortSpeechAvgLogProbThreshold ?? global;
+
+    // Distinct from ResolveFullThresholdSpeechMs below, which is speaker verification's.
+    public int ResolveSttFullThresholdSpeechMs(int global) =>
+        Stt?.OpenAi?.FullThresholdSpeechMs ?? global;
+
     public int ResolveFloorWindowMs(WyomingClientSettings global) =>
         Gate?.FloorWindowMs ?? global.FloorWindowMs;
 
@@ -112,8 +119,11 @@ public record SttOverrides
 public record OpenAiSttOverrides
 {
     public string? Language { get; init; }
+    public string? Prompt { get; init; }
     public double? AvgLogProbThreshold { get; init; }
     public double? NoSpeechProbThreshold { get; init; }
+    public double? ShortSpeechAvgLogProbThreshold { get; init; }
+    public int? FullThresholdSpeechMs { get; init; }
 }
 
 public record TtsOverrides
