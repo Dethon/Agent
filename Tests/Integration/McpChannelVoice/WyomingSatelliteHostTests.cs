@@ -276,12 +276,12 @@ public class WyomingSatelliteHostTests
 
         var sawRunSatellite = new TaskCompletionSource();
 
-        var fakeSatellite = Task.Run(async () =>
+        var fakeSatellite = Task.Run((Func<Task?>)(async () =>
         {
             using var conn = await listener.AcceptTcpClientAsync(ct);
             await using var stream = conn.GetStream();
-            var reader = new WyomingReader(stream);
-            var writer = new WyomingWriter(stream);
+            var reader = new WyomingReader((Stream)stream);
+            var writer = new WyomingWriter((Stream)stream);
 
             var readLoop = Task.Run(async () =>
             {
@@ -305,7 +305,7 @@ public class WyomingSatelliteHostTests
             }), ct);
 
             var data = new JsonObject { ["rate"] = 16_000, ["width"] = 2, ["channels"] = 1 };
-            async Task Stream(short level, int chunks)
+            async Task stream(short level, int chunks)
             {
                 foreach (var _ in Enumerable.Range(0, chunks))
                 {
@@ -314,11 +314,11 @@ public class WyomingSatelliteHostTests
                 }
             }
 
-            await Stream(8000, 4);  // the command starts on the very first frame — no pre-roll gap
-            await Stream(2000, 8);  // a quieter clause: 12 dB under the peak, still far above the clamp
-            await Stream(0, 20);    // the user actually stops
+            await stream(8000, 4);  // the command starts on the very first frame — no pre-roll gap
+            await stream(2000, 8);  // a quieter clause: 12 dB under the peak, still far above the clamp
+            await stream(0, 20);    // the user actually stops
             await Task.Delay(TimeSpan.FromSeconds(5), ct);
-        }, ct);
+        }), ct);
 
         var chunksSeen = 0;
         var stt = new Mock<ISpeechToText>();

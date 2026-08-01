@@ -10,7 +10,7 @@ namespace Tests.Unit.WebChat.Client.State;
 
 public sealed class AgentSettingsEffectTests
 {
-    private static readonly AgentCatalogEntry Jack = new(
+    private static readonly AgentCatalogEntry _jack = new(
         "jack", "Jack", null,
         "openai/gpt-5.6-luna", "low",
         [new PatchableModel("openai/gpt-5.6-luna", "GPT Luna"), new PatchableModel("z-ai/glm-5.2", "GLM 5.2")],
@@ -28,7 +28,7 @@ public sealed class AgentSettingsEffectTests
         var dispatched = new List<IAction>();
         var dispatcher = CreateCapturingDispatcher(dispatched);
 
-        await AgentSettingsEffect.LoadAsync([Jack], storage, dispatcher);
+        await AgentSettingsEffect.LoadAsync([_jack], storage, dispatcher);
 
         dispatched.OfType<AgentSettingsLoaded>().ShouldHaveSingleItem()
             .ShouldBe(new AgentSettingsLoaded("jack", new AgentModelSettings("z-ai/glm-5.2", "low")));
@@ -41,7 +41,7 @@ public sealed class AgentSettingsEffectTests
         var dispatched = new List<IAction>();
         var dispatcher = CreateCapturingDispatcher(dispatched);
 
-        await AgentSettingsEffect.LoadAsync([Jack], storage, dispatcher);
+        await AgentSettingsEffect.LoadAsync([_jack], storage, dispatcher);
 
         dispatched.OfType<AgentSettingsLoaded>().ShouldHaveSingleItem()
             .ShouldBe(new AgentSettingsLoaded("jack", new AgentModelSettings("openai/gpt-5.6-luna", "low")));
