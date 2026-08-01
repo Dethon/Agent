@@ -57,7 +57,8 @@ public class TranscriptDispatcherTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var sut = new TranscriptDispatcher(
             emitter, publisher ?? Mock.Of<IMetricsPublisher>(), manager,
-            new VoiceCommandMatcher(commands ?? new CommandSettings()),
+            new LocalCommandDispatcher(
+                new VoiceCommandMatcher(commands ?? new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6,
             shortSpeechAvgLogProbThreshold: shortSpeechAvgLogProbThreshold,
             fullThresholdSpeechMs: fullThresholdSpeechMs,
@@ -276,7 +277,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()),
+            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
@@ -330,7 +331,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
-            new CapturingEmitter(), publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()),
+            new CapturingEmitter(), publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 
@@ -378,7 +379,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
-            new CapturingEmitter(), publisher.Object, manager, new VoiceCommandMatcher(new CommandSettings()),
+            new CapturingEmitter(), publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 

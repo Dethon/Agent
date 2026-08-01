@@ -1,10 +1,8 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services.LocalCommands;
-using McpChannelVoice.Services.WyomingProtocol;
 
 namespace McpChannelVoice.Services;
 
@@ -12,7 +10,7 @@ public sealed class TranscriptDispatcher(
     ChannelNotificationEmitter emitter,
     IMetricsPublisher publisher,
     VoiceConversationManager manager,
-    VoiceCommandMatcher matcher,
+    LocalCommandDispatcher localCommands,
     double avgLogProbThreshold,
     double noSpeechProbThreshold,
     double shortSpeechAvgLogProbThreshold,
@@ -64,25 +62,14 @@ public sealed class TranscriptDispatcher(
         // quality gate (garbage audio must not move a volume knob) and BEFORE GetOrCreateAsync,
         // which is a full create_conversation MCP round trip — matching first keeps the path fast
         // and keeps these out of conversation history.
-        if (matcher.Match(transcript.Text) is { } command)
+        if (await localCommands.TryHandleAsync(transcript.Text, session, ct) is { } command)
         {
-            var action = command switch
-            {
-                VoiceCommand.LocalVolumeUp => "up",
-                VoiceCommand.LocalVolumeDown => "down",
-                VoiceCommand.LocalMute => "mute",
-                VoiceCommand.LocalUnmute => "unmute",
-                _ => null
-            };
-
-            var sent = action is not null && await session.TrySendControlAsync(
-                WyomingEvent.Header("speaker-volume", new JsonObject { ["action"] = action }), ct);
-
             logger.LogInformation(
-                "Local command {Command} for {Satellite}: sent={Sent}", command, session.SatelliteId, sent);
+                "Local command {Command} for {Satellite}: sent={Sent}",
+                command.Command, session.SatelliteId, command.Sent);
 
             await PublishUtteranceEventAsync(
-                session, transcript, similarity, stats, sent ? "command" : "command_failed",
+                session, transcript, similarity, stats, command.Sent ? "command" : "command_failed",
                 manager.GetActiveConversationId(session.SatelliteId), ct);
 
             // False means "nothing reached the agent", which FollowUpConversation already turns into
