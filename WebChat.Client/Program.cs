@@ -19,6 +19,8 @@ builder.Services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
 builder.Services.AddScoped<ConnectionEventDispatcher>();
 
 // Connection services (ChatConnectionService is the concrete type needed by dependent services)
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IHubConnectionFactory, SignalRHubConnectionFactory>();
 builder.Services.AddScoped<ChatConnectionService>();
 builder.Services.AddScoped<IChatConnectionService>(sp => sp.GetRequiredService<ChatConnectionService>());
 

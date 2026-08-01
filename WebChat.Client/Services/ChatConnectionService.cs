@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.State.Hub;
@@ -6,52 +5,46 @@ using WebChat.Client.State.Hub;
 namespace WebChat.Client.Services;
 
 public sealed class ChatConnectionService(
-    ConfigService configService,
+    IHubConnectionFactory connectionFactory,
     ConnectionEventDispatcher connectionEventDispatcher,
-    NavigationManager navigationManager) : IChatConnectionService
+    TimeProvider timeProvider) : IChatConnectionService
 {
+    private const int MaxRebuildAttempts = 4;
     private static readonly TimeSpan _probeTimeout = TimeSpan.FromSeconds(1.5);
+    private static readonly TimeSpan _closedRetryDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan _rebuildAttemptTimeout = TimeSpan.FromSeconds(2.5);
+    private static readonly TimeSpan _rebuildRetryDelay = TimeSpan.FromMilliseconds(500);
 
     private readonly ConnectionEventDispatcher _connectionEventDispatcher = connectionEventDispatcher;
     private readonly SemaphoreSlim _reconnectLock = new(1, 1);
+    private IChatHubConnection? _connection;
     private bool _disposed;
     private bool _hasConnectedBefore;
 
-    public bool IsConnected => HubConnection?.State == HubConnectionState.Connected;
-    public bool IsReconnecting => HubConnection?.State == HubConnectionState.Reconnecting;
+    public bool IsConnected => _connection?.State == HubConnectionState.Connected;
+    public bool IsReconnecting => _connection?.State == HubConnectionState.Reconnecting;
 
-    public HubConnection? HubConnection { get; private set; }
+    public HubConnection? HubConnection => _connection?.Connection;
 
     public event Action? OnStateChanged;
     public event Func<Task>? OnReconnected;
     public event Action? OnReconnecting;
 
-    public async Task ConnectAsync()
+    public Task ConnectAsync() => ConnectAsync(CancellationToken.None);
+
+    private async Task ConnectAsync(CancellationToken cancellationToken)
     {
-        if (HubConnection is not null)
+        if (_connection is not null)
         {
             return;
         }
 
-        var config = await configService.GetConfigAsync();
-        var isHttps = navigationManager.BaseUri.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        var connection = await connectionFactory.CreateAsync();
+        _connection = connection;
 
-        // When on HTTPS (through reverse proxy), use same origin to go through the proxy
-        // This avoids mixed content issues and allows the proxy to route SignalR properly
-        var hubUrl = string.IsNullOrEmpty(config.AgentUrl) || isHttps
-            ? navigationManager.ToAbsoluteUri("/hubs/chat").ToString()
-            : $"{config.AgentUrl.TrimEnd('/')}/hubs/chat";
+        connection.Closed += OnConnectionClosed;
 
-        HubConnection = new HubConnectionBuilder()
-            .WithUrl(hubUrl)
-            .WithAutomaticReconnect(new AggressiveRetryPolicy())
-            .WithServerTimeout(TimeSpan.FromMinutes(6))
-            .WithKeepAliveInterval(TimeSpan.FromSeconds(10))
-            .Build();
-
-        HubConnection.Closed += OnConnectionClosed;
-
-        HubConnection.Reconnecting += _ =>
+        connection.Reconnecting += _ =>
         {
             _connectionEventDispatcher.HandleReconnecting();
             OnReconnecting?.Invoke();
@@ -59,7 +52,7 @@ public sealed class ChatConnectionService(
             return Task.CompletedTask;
         };
 
-        HubConnection.Reconnected += connectionId =>
+        connection.Reconnected += connectionId =>
         {
             _connectionEventDispatcher.HandleReconnected();
             OnStateChanged?.Invoke();
@@ -75,15 +68,15 @@ public sealed class ChatConnectionService(
         };
 
         _connectionEventDispatcher.HandleConnecting();
-        await HubConnection.StartAsync();
+        await connection.StartAsync(cancellationToken);
 
         // The service may have been disposed while StartAsync was in flight (e.g. the circuit
         // tore down mid-rebuild). Don't publish state or fire recovery into a dead store —
         // drop the just-started connection instead of leaking it.
         if (_disposed)
         {
-            await HubConnection.DisposeAsync();
-            HubConnection = null;
+            await connection.DisposeAsync();
+            _connection = null;
             return;
         }
 
@@ -122,7 +115,7 @@ public sealed class ChatConnectionService(
                 return;
             }
 
-            var action = ForegroundReconnectPolicy.Decide(HubConnection?.State);
+            var action = ForegroundReconnectPolicy.Decide(_connection?.State);
 
             // A reported-Connected connection may be a post-background zombie: the transport
             // is dead but no close event fired, so SignalR still thinks it's up. Verify with a
@@ -143,7 +136,7 @@ public sealed class ChatConnectionService(
 
     private async Task<bool> IsConnectionLiveAsync()
     {
-        var connection = HubConnection;
+        var connection = _connection;
         if (connection is null)
         {
             return false;
@@ -151,8 +144,8 @@ public sealed class ChatConnectionService(
 
         try
         {
-            using var cts = new CancellationTokenSource(_probeTimeout);
-            return await connection.InvokeAsync<bool>("Ping", cts.Token);
+            using var cts = new CancellationTokenSource(_probeTimeout, timeProvider);
+            return await connection.PingAsync(cts.Token);
         }
         catch
         {
@@ -170,69 +163,75 @@ public sealed class ChatConnectionService(
         // On mobile, the browser suspends JS when backgrounded, so SignalR's automatic
         // reconnect can't run. When the app resumes the transport may be dead and queued
         // retries fail at once, firing Closed. Wait briefly then rebuild from scratch.
-        await Task.Delay(TimeSpan.FromMilliseconds(500));
+        await Task.Delay(_closedRetryDelay, timeProvider);
         await ReconnectIfNeededAsync();
     }
 
     private async Task RebuildAsync()
     {
-        if (HubConnection is not null)
+        foreach (var attempt in Enumerable.Range(1, MaxRebuildAttempts))
         {
-            // Detach first: the connection we're tearing down dispatches its Closed callback
-            // fire-and-forget off the receive loop, so leaving it attached lets that stale
-            // callback later race the fresh connection (flip the UI to Disconnected over a live
-            // socket, or fire a redundant reconnect).
-            HubConnection.Closed -= OnConnectionClosed;
-            await HubConnection.DisposeAsync();
-            HubConnection = null;
+            await TearDownAsync();
 
-            // Drive the Disconnected transition deterministically and in order on this task
-            // before reconnecting. ReconnectionEffect only arms its reload on a
-            // Disconnected/Reconnecting status, so without this the topic/history/stream reload
-            // could be skipped when the new connection's Connected dispatch wins the race.
-            _connectionEventDispatcher.HandleClosed(null);
-        }
-
-        try
-        {
-            await ConnectAsync();
-        }
-        catch
-        {
-            // Still unreachable (e.g. offline). ConnectAsync leaves a non-null, never-started
-            // connection that won't auto-reconnect, so reset to a clean Disconnected state and
-            // let the online/visibility listeners retry on the next resume rather than getting
-            // stuck — and don't let the failure escape uncaught into OnPageVisible.
-            if (HubConnection is not null)
+            try
             {
-                HubConnection.Closed -= OnConnectionClosed;
-                await HubConnection.DisposeAsync();
-                HubConnection = null;
+                // Bound each attempt: right after an Android resume the radio may not be up
+                // yet, and an unbounded StartAsync can hang on a dead handshake for tens of
+                // seconds — the exact stall this rebuild exists to escape.
+                using var cts = new CancellationTokenSource(_rebuildAttemptTimeout, timeProvider);
+                await ConnectAsync(cts.Token);
+                return;
+            }
+            catch
+            {
+                if (_disposed)
+                {
+                    return;
+                }
             }
 
-            _connectionEventDispatcher.HandleClosed(null);
-            OnStateChanged?.Invoke();
+            if (attempt < MaxRebuildAttempts)
+            {
+                await Task.Delay(_rebuildRetryDelay, timeProvider);
+            }
         }
+
+        // Still unreachable (e.g. offline). ConnectAsync leaves a non-null, never-started
+        // connection that won't auto-reconnect, so reset to a clean Disconnected state and
+        // let the online/visibility listeners retry on the next resume rather than getting
+        // stuck — and don't let the failure escape uncaught into OnPageVisible.
+        await TearDownAsync();
+        OnStateChanged?.Invoke();
+    }
+
+    private async Task TearDownAsync()
+    {
+        if (_connection is null)
+        {
+            return;
+        }
+
+        // Detach first: the connection we're tearing down dispatches its Closed callback
+        // fire-and-forget off the receive loop, so leaving it attached lets that stale
+        // callback later race the fresh connection (flip the UI to Disconnected over a live
+        // socket, or fire a redundant reconnect).
+        _connection.Closed -= OnConnectionClosed;
+        await _connection.DisposeAsync();
+        _connection = null;
+
+        // Drive the Disconnected transition deterministically and in order on this task
+        // before reconnecting. ReconnectionEffect only arms its reload on a
+        // Disconnected/Reconnecting status, so without this the topic/history/stream reload
+        // could be skipped when the new connection's Connected dispatch wins the race.
+        _connectionEventDispatcher.HandleClosed(null);
     }
 
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
-        if (HubConnection is not null)
+        if (_connection is not null)
         {
-            await HubConnection.DisposeAsync();
+            await _connection.DisposeAsync();
         }
-    }
-}
-
-internal sealed class AggressiveRetryPolicy : IRetryPolicy
-{
-    public TimeSpan? NextRetryDelay(RetryContext retryContext)
-    {
-        // First retry is immediate for fast mobile resume; subsequent retries
-        // back off slightly to avoid hammering a temporarily unavailable server.
-        return retryContext.PreviousRetryCount == 0
-            ? TimeSpan.Zero
-            : TimeSpan.FromSeconds(1);
     }
 }
