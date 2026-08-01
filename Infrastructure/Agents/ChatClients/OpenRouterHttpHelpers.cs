@@ -57,7 +57,13 @@ internal static class OpenRouterHttpHelpers
         // Per-agent provider routing. Omitted entirely when unset: OpenRouter's balanced load
         // balancing has no explicit `sort` value and is only reachable by sending no `sort` and
         // no `order` at all.
-        if (BuildProviderNode(providerRouting) is { } provider)
+        //
+        // A pinned routing (e.g. `only: ["openai"]`) was chosen for the configured model's
+        // providers, not for whatever model a per-message override swaps in. Carrying it over
+        // can strand the request with no allowed provider for the overridden model, so override
+        // turns skip the configured routing entirely and fall back to OpenRouter's balanced
+        // default for that one turn.
+        if (string.IsNullOrWhiteSpace(modelOverride) && BuildProviderNode(providerRouting) is { } provider)
         {
             obj["provider"] = provider;
         }

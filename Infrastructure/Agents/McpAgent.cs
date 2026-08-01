@@ -258,9 +258,8 @@ public sealed class McpAgent : DisposableAgent
             .FirstOrDefault(c => c is not null);
 
         var configPatch = messageList
-            .Where(m => m.Role == ChatRole.User)
-            .Select(m => m.GetConfigPatch())
-            .LastOrDefault(p => p is not null);
+            .LastOrDefault(m => m.Role == ChatRole.User)
+            ?.GetConfigPatch();
 
         options ??= CreateRunOptions(session, conversationContext, configPatch);
 

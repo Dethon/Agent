@@ -423,6 +423,43 @@ public class OpenRouterHttpHelpersTests
         JsonNode.Parse(body)!["model"]!.GetValue<string>().ShouldBe("openai/gpt-5.6-luna");
     }
 
+    // A pinned `only`/`sort` was chosen for the configured model's providers. Stamping an
+    // overridden model onto that pinned routing can strand the request with no allowed
+    // provider (e.g. `only: ["openai"]` doesn't serve `z-ai/glm-5.2`), so an override turn must
+    // drop the configured routing entirely rather than carry it over.
+    [Fact]
+    public async Task PrepareRequestBodyAsync_WithProviderRoutingAndModelOverride_OmitsProviderKey()
+    {
+        // Arrange
+        var request = CreateRequest(BodyJson);
+        var routing = new ProviderRouting { Only = ["openai"] };
+
+        // Act
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
+            request, sessionId: null, providerRouting: routing, modelOverride: "z-ai/glm-5.2", CancellationToken.None);
+
+        // Assert
+        var obj = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject();
+        obj["model"]!.GetValue<string>().ShouldBe("z-ai/glm-5.2");
+        obj.ContainsKey("provider").ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task PrepareRequestBodyAsync_WithProviderRoutingAndNoModelOverride_KeepsProviderNode()
+    {
+        // Arrange
+        var request = CreateRequest(BodyJson);
+        var routing = new ProviderRouting { Only = ["openai"] };
+
+        // Act
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
+            request, sessionId: null, providerRouting: routing, modelOverride: null, CancellationToken.None);
+
+        // Assert
+        var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!;
+        provider["only"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["openai"]);
+    }
+
     private const string BodyJson =
         "{\"model\":\"anthropic/claude-sonnet-4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
 
