@@ -1,3 +1,5 @@
+using McpChannelVoice.Settings;
+
 namespace McpChannelVoice.Services.Stt;
 
 // Builds the initial prompt posted with one transcription. Whisper reads the prompt as text that
@@ -38,7 +40,8 @@ public static class WhisperPromptBuilder
         string.Join(' ', (text ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     // Keeps the END of the text (the most recent context) and starts it on a whole word, so a
-    // fragment never opens mid-syllable and mis-primes the decoder.
+    // fragment never opens mid-syllable and mis-primes the decoder. A word longer than the whole
+    // budget is dropped, not cut: no context primes better than wrong context.
     private static string Tail(string text, int budget)
     {
         if (text.Length <= budget)
@@ -46,10 +49,30 @@ public static class WhisperPromptBuilder
             return text;
         }
 
+        if (text[^(budget + 1)] == ' ')
+        {
+            return text[^budget..];
+        }
+
         var cut = text[^budget..];
         var space = cut.IndexOf(' ');
-        return space < 0 ? cut : cut[(space + 1)..];
+        return space < 0 ? "" : cut[(space + 1)..];
     }
 
     private static string? NullIfEmpty(string text) => text.Length == 0 ? null : text;
+
+    // Load-time check behind ConfigModule's warning: Build posts an over-budget template whole
+    // (it never truncates operator vocabulary), so whisper.cpp's tail-keeping truncation would
+    // silently eat its front — the exact failure the hub-side cap exists to prevent. Placeholders
+    // are unexpanded here, so this measures each template's minimum length.
+    public static IReadOnlyList<string> OverBudgetPromptSources(VoiceSettings settings)
+    {
+        var maxChars = settings.Stt.OpenAi.MaxPromptChars;
+        return new[] { (Path: "Stt:OpenAi:Prompt", Template: settings.Stt.OpenAi.Prompt) }
+            .Concat(settings.Satellites.Select(kv =>
+                (Path: $"Satellites:{kv.Key}:Stt:OpenAi:Prompt", Template: kv.Value.Stt?.OpenAi?.Prompt)))
+            .Where(s => Collapse(s.Template).Length > maxChars)
+            .Select(s => s.Path)
+            .ToList();
+    }
 }

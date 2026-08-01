@@ -1,4 +1,5 @@
 using McpChannelVoice.Services.Stt;
+using McpChannelVoice.Settings;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice.Stt;
@@ -65,6 +66,27 @@ public class WhisperPromptBuilderTests
     }
 
     [Fact]
+    public void Build_PriorTextWordLongerThanTheBudget_DropsItInsteadOfCuttingMidWord()
+    {
+        // Static is 6 chars; a 15-char cap leaves 8 for the prior text, and its only word is 19.
+        var prompt = WhisperPromptBuilder.Build("Manda.", null, null, "extraordinariamente", 15);
+
+        prompt.ShouldBe("Manda.");
+    }
+
+    [Fact]
+    public void Build_PriorTextOnlyWordLongerThanTheBudget_ReturnsNull()
+    {
+        WhisperPromptBuilder.Build(null, null, null, "extraordinariamente", 8).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Build_BudgetCutOnAWordBoundary_KeepsTheWholeWord()
+    {
+        WhisperPromptBuilder.Build(null, null, null, "uno dos", 3).ShouldBe("dos");
+    }
+
+    [Fact]
     public void Build_NothingToSay_ReturnsNull()
     {
         WhisperPromptBuilder.Build(null, "la cocina", "Valladolid", null, 700).ShouldBeNull();
@@ -75,5 +97,54 @@ public class WhisperPromptBuilderTests
     public void Build_TemplateThatResolvesToNothing_ReturnsNull()
     {
         WhisperPromptBuilder.Build("{room}", null, null, null, 700).ShouldBeNull();
+    }
+
+    [Fact]
+    public void OverBudgetPromptSources_GlobalPromptOverTheCap_NamesIt()
+    {
+        var settings = new VoiceSettings
+        {
+            Stt = new SttSettings
+            {
+                OpenAi = new OpenAiSttConfig { Prompt = new string('a', 20), MaxPromptChars = 10 }
+            }
+        };
+
+        WhisperPromptBuilder.OverBudgetPromptSources(settings).ShouldBe(["Stt:OpenAi:Prompt"]);
+    }
+
+    [Fact]
+    public void OverBudgetPromptSources_SatelliteOverrideOverTheCap_NamesItsPath()
+    {
+        var settings = new VoiceSettings
+        {
+            Stt = new SttSettings { OpenAi = new OpenAiSttConfig { MaxPromptChars = 10 } },
+            Satellites = new Dictionary<string, SatelliteConfig>
+            {
+                ["kitchen-01"] = new()
+                {
+                    Identity = "household",
+                    Room = "Kitchen",
+                    Stt = new SttOverrides { OpenAi = new OpenAiSttOverrides { Prompt = new string('b', 20) } }
+                }
+            }
+        };
+
+        WhisperPromptBuilder.OverBudgetPromptSources(settings)
+            .ShouldBe(["Satellites:kitchen-01:Stt:OpenAi:Prompt"]);
+    }
+
+    [Fact]
+    public void OverBudgetPromptSources_EverythingWithinTheCap_IsEmpty()
+    {
+        var settings = new VoiceSettings
+        {
+            Stt = new SttSettings
+            {
+                OpenAi = new OpenAiSttConfig { Prompt = "corto", MaxPromptChars = 700 }
+            }
+        };
+
+        WhisperPromptBuilder.OverBudgetPromptSources(settings).ShouldBeEmpty();
     }
 }
