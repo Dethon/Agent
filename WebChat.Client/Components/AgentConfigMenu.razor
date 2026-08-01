@@ -6,28 +6,56 @@
 
 @if (SelectedAgent is { PatchableModels.Count: > 0 } agent)
 {
-    <div class="agent-config">
-        <select class="agent-config-select" title="Model"
-                value="@CurrentModel(agent)" @onchange="e => SetModel(agent, e)">
-            @foreach (var model in agent.PatchableModels!)
+    @* A patch exists only while the selection differs from the agent's defaults, so the trigger
+       labels itself in exactly the case where a persisted override would otherwise be invisible. *@
+    var patch = OverrideFor(agent);
+
+    <div class="agent-config @(_open ? "open" : "")">
+        <button class="agent-config-trigger @(patch is null ? "" : "overridden")"
+                @onclick="Toggle" @onclick:stopPropagation="true"
+                aria-haspopup="dialog" aria-expanded="@_open"
+                title="@TriggerTitle(agent)">
+            <span class="agent-config-gear" aria-hidden="true">&#9881;</span>
+            @if (patch is not null)
             {
-                <option value="@model.Id">@model.Name</option>
+                <span class="agent-config-summary">@SummaryFor(agent, patch)</span>
             }
-        </select>
-        <select class="agent-config-select" title="Reasoning effort"
-                value="@CurrentEffort(agent)" @onchange="e => SetEffort(agent, e)">
-            @foreach (var effort in agent.PatchableReasoningEfforts ?? AgentConfigPatch.SupportedEfforts)
-            {
-                <option value="@effort">@effort</option>
-            }
-        </select>
+        </button>
+
+        @if (_open)
+        {
+            <div class="dropdown-backdrop" @onclick="Close"></div>
+            <div class="agent-config-menu" role="dialog" aria-label="Agent model and reasoning effort">
+                <label class="agent-config-row">
+                    <span class="agent-config-label">Model</span>
+                    <select class="agent-config-select"
+                            value="@CurrentModel(agent)" @onchange="e => SetModel(agent, e)">
+                        @foreach (var model in agent.PatchableModels!)
+                        {
+                            <option value="@model.Id">@model.Name</option>
+                        }
+                    </select>
+                </label>
+                <label class="agent-config-row">
+                    <span class="agent-config-label">Reasoning effort</span>
+                    <select class="agent-config-select"
+                            value="@CurrentEffort(agent)" @onchange="e => SetEffort(agent, e)">
+                        @foreach (var effort in agent.PatchableReasoningEfforts ?? AgentConfigPatch.SupportedEfforts)
+                        {
+                            <option value="@effort">@effort</option>
+                        }
+                    </select>
+                </label>
+            </div>
+        }
     </div>
 }
 
 @code {
     private IReadOnlyList<AgentCatalogEntry> _agents = [];
     private string? _selectedAgentId;
-    private IReadOnlyDictionary<string, AgentModelSettings> _byAgent = new Dictionary<string, AgentModelSettings>();
+    private AgentSettingsState _settings = AgentSettingsState.Initial;
+    private bool _open;
 
     private AgentCatalogEntry? SelectedAgent =>
         _agents.FirstOrDefault(a => a.Id == _selectedAgentId);
@@ -36,14 +64,34 @@
     {
         Subscribe(TopicsStore.StateObservable, s => s.Agents, a => _agents = a);
         Subscribe(TopicsStore.StateObservable, s => s.SelectedAgentId, id => _selectedAgentId = id);
-        Subscribe(SettingsStore.StateObservable, s => s.ByAgent, byAgent => _byAgent = byAgent);
+        Subscribe(SettingsStore.StateObservable, s => s, s => _settings = s);
     }
 
+    private void Toggle() => _open = !_open;
+
+    private void Close() => _open = false;
+
+    private AgentConfigPatch? OverrideFor(AgentCatalogEntry agent) =>
+        AgentSettingsSelectors.GetConfigPatch(_settings, _agents, agent.Id);
+
+    private string SummaryFor(AgentCatalogEntry agent, AgentConfigPatch patch) =>
+        string.Join(" · ", new[] { ModelNameFor(agent, patch.Model), patch.ReasoningEffort }
+            .Where(value => !string.IsNullOrWhiteSpace(value)));
+
+    private string TriggerTitle(AgentCatalogEntry agent) =>
+        $"Model: {ModelNameFor(agent, CurrentModel(agent)) ?? "default"} · " +
+        $"Reasoning effort: {CurrentEffort(agent) ?? "default"}";
+
+    private static string? ModelNameFor(AgentCatalogEntry agent, string? modelId) =>
+        modelId is null
+            ? null
+            : agent.PatchableModels?.FirstOrDefault(m => m.Id == modelId)?.Name ?? modelId;
+
     private string? CurrentModel(AgentCatalogEntry agent) =>
-        _byAgent.GetValueOrDefault(agent.Id)?.Model ?? agent.DefaultModel;
+        _settings.ByAgent.GetValueOrDefault(agent.Id)?.Model ?? agent.DefaultModel;
 
     private string? CurrentEffort(AgentCatalogEntry agent) =>
-        _byAgent.GetValueOrDefault(agent.Id)?.ReasoningEffort ?? agent.DefaultReasoningEffort;
+        _settings.ByAgent.GetValueOrDefault(agent.Id)?.ReasoningEffort ?? agent.DefaultReasoningEffort;
 
     private void SetModel(AgentCatalogEntry agent, ChangeEventArgs e) =>
         Dispatcher.Dispatch(new SetAgentModel(agent.Id, e.Value?.ToString()));

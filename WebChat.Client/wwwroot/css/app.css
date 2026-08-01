@@ -2309,9 +2309,9 @@ select:focus:not(:focus-visible) {
 
 .hearth-body { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .hearth-rail-head { padding: 0.75rem 0.75rem 0.5rem; }
-.hearth-search { padding: 0 0.75rem 0.5rem; }
+.hearth-search { display: flex; align-items: center; gap: 0.5rem; padding: 0 0.75rem 0.5rem; }
 .hearth-search-input {
-    width: 100%; padding: 0.5rem 0.75rem; border-radius: 10px;
+    flex: 1; min-width: 0; width: 100%; padding: 0.5rem 0.75rem; border-radius: 10px;
     background: var(--bg-tertiary); border: 1px solid var(--border-color);
     color: var(--text-primary); font-family: inherit; font-size: 0.85rem;
 }
@@ -2340,8 +2340,27 @@ select:focus:not(:focus-visible) {
     color: #fff; font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.7rem; flex: 0 0 auto; }
 
 /* agent config — model & reasoning-effort dropdowns, next to the agent selector */
-.agent-config { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
-.agent-config-select { flex: 1; min-width: 0; padding: 0.4rem 0.5rem; border-radius: 10px;
+/* Rarely changed, so it collapses to a gear beside the agent selector; it widens into a labelled
+   chip only while an override is active, since those persist across reloads. */
+.agent-config { position: relative; flex: 0 0 auto; display: inline-flex; max-width: 45%; }
+.agent-config-trigger { display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0;
+    padding: 0.35rem 0.5rem; border-radius: 999px;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    color: var(--text-muted); font-family: inherit; font-size: 0.75rem; font-weight: 600;
+    cursor: pointer; transition: color var(--transition-fast), background var(--transition-fast); }
+.agent-config-trigger:hover { color: var(--text-primary); }
+.agent-config-trigger.overridden { background: var(--accent-subtle); color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color)); }
+.agent-config-gear { font-size: 0.9rem; line-height: 1; }
+.agent-config-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-config-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; min-width: 220px;
+    display: flex; flex-direction: column; gap: 0.6rem; padding: 0.75rem;
+    background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 16px;
+    box-shadow: var(--shadow-lg); animation: comboDrop 0.14s ease-out; }
+.agent-config-row { display: flex; flex-direction: column; gap: 0.3rem; }
+.agent-config-label { font-size: 0.7rem; font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.04em; }
+.agent-config-select { padding: 0.4rem 0.5rem; border-radius: 10px;
     background: var(--bg-tertiary); border: 1px solid var(--border-color);
     color: var(--text-primary); font-family: inherit; font-size: 0.8rem; }
 .agent-activity-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
