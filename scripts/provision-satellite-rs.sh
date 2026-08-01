@@ -457,6 +457,12 @@ ASOUND
       if timeout 10 aplay -D speaker -r 22050 -c 1 -f S16_LE -t raw -d 1 /dev/zero 2>/dev/null; then
         amixer -c "${sndcard}" sset Nabu 100% unmute >/dev/null \
           || echo "WARNING: could not set the 'Nabu' master on card ${sndcard}"
+        # amixer APPLIES `unmute` only if the element actually has a switch and says nothing when
+        # it does not, so the line above cannot report a Volume/Switch pair that failed to merge.
+        # Read the state back instead: `[on]`/`[off]` in sget is the switch, and it is also exactly
+        # what the satellite parses at startup to seed the user's mute.
+        amixer -c "${sndcard}" sget Nabu 2>/dev/null | grep -qE '\[(on|off)\]' \
+          || echo "WARNING: the 'Nabu' master on card ${sndcard} has no mute switch — spoken volume will work, spoken mute will not"
         sudo alsactl store || true
       else
         echo "WARNING: could not open the softvol master (device busy?); the satellite will create the control on its first playback"
