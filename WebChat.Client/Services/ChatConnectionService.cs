@@ -123,10 +123,6 @@ public sealed class ChatConnectionService(
             }
 
             var action = ForegroundReconnectPolicy.Decide(HubConnection?.State);
-            if (action == ForegroundAction.NoOp)
-            {
-                return;
-            }
 
             // A reported-Connected connection may be a post-background zombie: the transport
             // is dead but no close event fired, so SignalR still thinks it's up. Verify with a
