@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
@@ -7,10 +8,10 @@ namespace Tests.Integration.WebChat.Client.Adapters;
 public sealed class HubConnectionMessagingService(HubConnection connection) : IChatMessagingService
 {
     public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
-        string? correlationId = null)
+        string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
         await foreach (var msg in connection.StreamAsync<ChatStreamMessage>("SendMessage", topicId, message,
-                           correlationId))
+                           correlationId, configPatch))
         {
             yield return msg;
         }
@@ -34,8 +35,9 @@ public sealed class HubConnectionMessagingService(HubConnection connection) : IC
         await connection.InvokeAsync("CancelTopic", topicId);
     }
 
-    public async Task<bool> EnqueueMessageAsync(string topicId, string message, string? correlationId = null)
+    public async Task<bool> EnqueueMessageAsync(
+        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
-        return await connection.InvokeAsync<bool>("EnqueueMessage", topicId, message, correlationId);
+        return await connection.InvokeAsync<bool>("EnqueueMessage", topicId, message, correlationId, configPatch);
     }
 }
