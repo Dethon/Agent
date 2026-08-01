@@ -604,6 +604,22 @@ mod tests {
         assert_eq!(log.lock().unwrap().clone(), vec!["wpctl set-mute SINK 1".to_string()]);
     }
 
+    /// The same teardown on the ALSA backend. `release_hold_detached` is the one path that builds
+    /// a command line outside `run()` — it cannot await the gate, so it spawns std::process
+    /// directly — which is exactly why the amixer shape it fires is worth pinning too.
+    #[tokio::test]
+    async fn alsa_release_hold_detached_applies_a_deferred_mute() {
+        let (log, vol) = alsa_probe(10);
+        vol.alert_hold().await.unwrap();
+        vol.set_user_mute(true).await.unwrap();
+        log.lock().unwrap().clear();
+
+        vol.release_hold_detached();
+
+        assert!(!vol.alert_held());
+        assert_eq!(log.lock().unwrap().clone(), vec!["amixer -c hat sset Master mute".to_string()]);
+    }
+
     /// With no hold outstanding there is nothing to restore, and writing anyway would let a
     /// teardown overwrite a sink state the satellite never changed.
     #[tokio::test]

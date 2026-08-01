@@ -57,7 +57,8 @@ pub struct Config {
     // Two ways to reach it, one per unit type: music units mix in PipeWire, so their master is its
     // sink, driven with wpctl (volume_sink). Voice-only units have no PipeWire and play raw ALSA,
     // so provisioning puts a software softvol in front of their output device and the satellite
-    // drives it with amixer (volume_mixer + volume_card, mirroring music_mixer/music_card).
+    // drives it with amixer (volume_mixer + volume_card, the same control/card pair shape as
+    // music_mixer/music_card — but validated rather than ignored when only half is given).
     // Mutually exclusive; all None = feature off.
     pub volume_sink: Option<String>,
     pub volume_mixer: Option<String>,

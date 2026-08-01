@@ -266,6 +266,14 @@ ssh "${SSHOPTS[@]}" "$host" MIC="${mic}" MUSIC_HUB="${MUSIC_HUB:-}" MUSIC_ROOM="
   # What the satellite's --snd-command actually opens. Same as the raw device unless the voice-only
   # branch below puts its softvol master in front of it.
   playdev="${snddev}"
+  # The voice-only master's simple-control name, and the ONE place it is written: the asound.conf
+  # elements, the amixer calls and the unit's --volume-mixer argument are all derived from it, so
+  # renaming it cannot leave the satellite driving a control that no longer exists.
+  volmixer="Nabu"
+  # Set ONLY once this unit really has a working softvol master. Everything downstream (the unit's
+  # volume flags) keys on this, so every way of not getting one — no card, or a chain that will not
+  # open — lands on the identical "no local volume control, plain plughw playback" outcome.
+  volume_ctl=""
   # A softvol CONTROL has to be stored on a real card, so pull the card name out of the device
   # string. Everything this script generates is `...CARD=<name>,DEV=0`; an explicit [mic-device]
   # in another form (hw:1,0) leaves nothing to hang a control on, and that unit then runs with no
@@ -416,11 +424,11 @@ DROPEOF
     #
     # The master is a software softvol because there is nothing else to turn: the MiniAmp (and amp
     # HATs generally) have no hardware volume, and PipeWire — which is what gives a music unit its
-    # master — is deliberately not installed here. `Nabu Volume` and `Nabu Switch` are one ALSA
-    # simple control ("Nabu"): the simple mixer merges a `<base> Volume` element with a `<base>
-    # Switch` one, which is what gives the satellite both a level and a mute on a plugin that
-    # provides only a single element each (a resolution-2 softvol IS the mute switch). Both sit in
-    # front of the real device, so EVERYTHING the satellite plays — replies, cues and alerts alike
+    # master — is deliberately not installed here. `<name> Volume` and `<name> Switch` are one ALSA
+    # simple control: the simple mixer merges a `<base> Volume` element with a `<base> Switch` one,
+    # which is what gives the satellite both a level and a mute on a plugin that provides only a
+    # single element each (a resolution-2 softvol IS the mute switch). Both sit in front of the
+    # real device, so EVERYTHING the satellite plays — replies, cues and alerts alike
     # (--alert-snd-command defaults to --snd-command) — passes through them. A distinctive base
     # name keeps the pair from merging with a hardware `Master` on some other output card.
     if [ -n "$sndcard" ]; then
@@ -428,7 +436,7 @@ DROPEOF
 pcm.speaker {
     type softvol
     slave.pcm "nabu_mute"
-    control { name "Nabu Volume" card "${sndcard}" }
+    control { name "${volmixer} Volume" card "${sndcard}" }
     min_dB -51.0
     max_dB 0.0
     resolution 256
@@ -437,11 +445,10 @@ pcm.speaker {
 pcm.nabu_mute {
     type softvol
     slave.pcm "${snddev}"
-    control { name "Nabu Switch" card "${sndcard}" }
+    control { name "${volmixer} Switch" card "${sndcard}" }
     resolution 2
 }
 ASOUND
-      playdev="speaker"
 
       # A softvol control only materializes on FIRST OPEN of its PCM, so open it once here (same
       # reason the music branch plays 1 s of silence through `tts`/`alert`) and re-assert the
@@ -451,21 +458,33 @@ ASOUND
       # silent speaker. Both are wiped by a reboot regardless: the control does not exist yet when
       # alsa-restore runs at boot, so softvol recreates it at its maximum on the first playback,
       # which is the same place this leaves it.
-      # Non-fatal, unlike the music branch: if the device is busy (a micclock feeder holding the
-      # mic card's own output, say) the satellite still creates the control itself on its first
-      # playback, and a half-provisioned unit is a worse outcome than an uncalibrated one.
-      if timeout 10 aplay -D speaker -r 22050 -c 1 -f S16_LE -t raw -d 1 /dev/zero 2>/dev/null; then
-        amixer -c "${sndcard}" sset Nabu 100% unmute >/dev/null \
-          || echo "WARNING: could not set the 'Nabu' master on card ${sndcard}"
+      #
+      # THIS OPEN IS THE GATE, not a calibration nicety: it is the only chance to find out whether
+      # the chain works on this hardware before the satellite depends on it. If it fails, revert to
+      # raw plughw. A unit installed with --snd-command pointing at a PCM that will not open has NO
+      # audio at all — playback errors are connection-fatal, so every cue and reply would drop the
+      # hub connection and Restart=always would churn — which is strictly worse than the plain
+      # working speaker this unit had before the feature existed. Losing the volume knob is not.
+      # The aplay error text is echoed rather than swallowed, because it is what distinguishes a
+      # busy device from a chain the card cannot negotiate. No retry: the realistic holder is the
+      # micclock feeder on a unit whose output IS the mic card, which is permanent, and which also
+      # blocks the satellite's own playback — a retry would only delay the same fallback.
+      if probe_err=$(timeout 10 aplay -D speaker -r 22050 -c 1 -f S16_LE -t raw -d 1 /dev/zero 2>&1 >/dev/null); then
+        playdev="speaker"
+        volume_ctl="${volmixer}"
+        amixer -c "${sndcard}" sset "${volmixer}" 100% unmute >/dev/null \
+          || echo "WARNING: could not set the '${volmixer}' master on card ${sndcard}"
         # amixer APPLIES `unmute` only if the element actually has a switch and says nothing when
         # it does not, so the line above cannot report a Volume/Switch pair that failed to merge.
         # Read the state back instead: `[on]`/`[off]` in sget is the switch, and it is also exactly
         # what the satellite parses at startup to seed the user's mute.
-        amixer -c "${sndcard}" sget Nabu 2>/dev/null | grep -qE '\[(on|off)\]' \
-          || echo "WARNING: the 'Nabu' master on card ${sndcard} has no mute switch — spoken volume will work, spoken mute will not"
+        amixer -c "${sndcard}" sget "${volmixer}" 2>/dev/null | grep -qE '\[(on|off)\]' \
+          || echo "WARNING: the '${volmixer}' master on card ${sndcard} has no mute switch — spoken volume will work, spoken mute will not"
         sudo alsactl store || true
       else
-        echo "WARNING: could not open the softvol master (device busy?); the satellite will create the control on its first playback"
+        echo "WARNING: the softvol master PCM would not open, so LOCAL VOLUME CONTROL IS DISABLED on this unit;"
+        echo "         playback falls back to ${snddev} and the satellite keeps working. aplay said: ${probe_err}"
+        sudo rm -f /etc/asound.conf
       fi
     else
       echo "WARNING: no ALSA card name in '${snddev}' — this unit gets no local speaker volume control"
@@ -477,8 +496,7 @@ ASOUND
   # the softvol master PCM when this unit has one), wake tuning -> the THRESHOLD/WAKE_WINDOW vars,
   # %i -> user. Music units additionally carry the pipewire.conf drop-in written above, which
   # overrides this ExecStart to route TTS/cues to PipeWire — it carries the same two tuning values,
-  # so tuning applies either way, and its own --volume-sink, so the --volume-card below is inert
-  # there.
+  # so tuning applies either way, plus its own --volume-sink.
   # Every substitution rewrites the ARGUMENT rather than matching a literal default value, so
   # changing the unit template's defaults can't silently break provisioning (the tuning seds used
   # to match `--threshold 0.7` / `--trigger-level 2` verbatim and would have gone quietly inert
@@ -486,11 +504,14 @@ ASOUND
   # trailing ` \` continuation intact. All are anchored to the continuation lines (leading
   # whitespace) so the header COMMENTS, which mention the same flags and carry their own `-D`
   # examples, are left alone.
-  # A unit with no card to hang a softvol on loses the two volume flags entirely: a --volume-mixer
-  # naming a control that does not exist is exactly the "beeps but moves nothing" failure this
-  # feature exists to remove.
-  volsed=(-e "/^[[:space:]]*--volume-card/ s#--volume-card [^ ]*#--volume-card ${sndcard}#")
-  [ -n "$sndcard" ] || volsed=(-e "/^[[:space:]]*--volume-mixer/d" -e "/^[[:space:]]*--volume-card/d")
+  # DEFAULT is to drop both volume flags: a --volume-mixer naming a control that does not exist is
+  # exactly the "beeps but moves nothing" failure this feature exists to remove, so a unit only
+  # gets them once $volume_ctl says it really has that control. Music units land here too — their
+  # drop-in supplies --volume-sink instead, and the two are mutually exclusive. The control NAME is
+  # rewritten like every other argument, so the unit file cannot drift from the asound.conf.
+  volsed=(-e "/^[[:space:]]*--volume-mixer/d" -e "/^[[:space:]]*--volume-card/d")
+  [ -z "$volume_ctl" ] || volsed=(-e "/^[[:space:]]*--volume-mixer/ s#--volume-mixer [^ ]*#--volume-mixer ${volume_ctl}#" \
+                                  -e "/^[[:space:]]*--volume-card/ s#--volume-card [^ ]*#--volume-card ${sndcard}#")
   sudo sed -e "/^[[:space:]]*--mic-command/ s#-D [^ ]*#-D ${dev}#" \
            -e "/^[[:space:]]*--snd-command/ s#-D [^ ]*#-D ${playdev}#" \
            -e "/^[[:space:]]*--threshold/ s#--threshold [^ ]*#--threshold ${THRESHOLD}#" \
