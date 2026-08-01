@@ -80,8 +80,8 @@ segmented answer never touch Idle. Two guards survive on top of that:
 ## Local speaker volume
 
 `volume.rs` drives the satellite's MASTER output level on the hub's `speaker-volume` event
-(protocol 1.8, actions `up`/`down`/`mute`/`unmute`/`alert-hold`/`alert-release`), stepping by
-`--volume-step` points (default 10). Master is deliberately not one of the `Music`/`TTS`/`Alert`
+(protocol 1.8, actions `up`/`down`/`mute`/`unmute`/`alert-hold`/`alert-release`), stepping on an
+equal-dB grid sized by `--volume-step` (default 10 → ten 5.1 dB steps across −51..0 dB). Master is deliberately not one of the `Music`/`TTS`/`Alert`
 softvols, which carry calibration and, in `Music`'s case, are rewritten by the ducker on every
 turn. Master and softvol multiply, so ducking is untouched by this feature.
 
@@ -96,17 +96,25 @@ through — reached with whatever tool the unit has:
   `--snd-command` at it. Software is not a shortcut: an amp HAT like the MiniAmp has no hardware
   volume control at all, so on this hardware every level is software anyway.
 
-**`--volume-step` is not the same size on both.** It is 10 points of whatever scale the tool
-moves. On PipeWire that is 10 % of a linear volume, roughly 1-2 dB near the top. On the ALSA
-softvol it is 10 % of the raw 0-255 range against a taper that is linear in dB from −51.0 to 0.0,
-so about 5.1 dB — a much bigger jump per command. Stepping down also bottoms out at −51 dB rather
-than at silence; only `mute` truly silences a voice-only unit.
+**`--volume-step` is the same size on both: an equal-dB step.** A step moves 51·step/100 dB
+(5.1 dB at the default 10) across a −51..0 dB range, so ten default steps span the whole range on
+either unit type and the same spoken command sounds like the same change everywhere. The ALSA
+softvol gets this for free — its taper is linear in dB from −51.0 to 0.0, so the relative
+`amixer … 10%±` of the raw 0-255 range IS that step. The PipeWire scale is cubic
+(`dB = 60·log10(display)`), so a blind relative `wpctl` bump would be ~2.7 dB near the top and
+~18 dB near the bottom; instead a step there is read → snap → write: `wpctl get-volume`, snap the
+level to the dB grid anchored at 0 dB, move one step, write it back absolutely
+(`volume.rs::db_linear_step`). Snapping keeps repeated commands drift-free and heals a sink
+someone moved by hand to the grid on the first command; a failed or unparsable read errors out
+(warn, no cue) rather than guessing a level. Stepping down bottoms out at −51 dB rather than at
+silence on both backends; only `mute` truly silences a unit.
 
 A softvol provides one element, so the voice-only master is a pair: `Nabu Volume` (level) and
 `Nabu Switch` (a resolution-2 softvol, which IS a mute switch). ALSA's simple mixer merges a
 `<base> Volume` element with a `<base> Switch` one, so both are the single control `Nabu` and
 `amixer sset Nabu 10%+` / `sset Nabu mute` drive them. `amixer` clamps a relative step to the
-control's own range, which is what `-l 1.0` does for `wpctl`. Unlike wireplumber, nothing persists
+control's own range, which is what the dB math's 0 dB ceiling does for the PipeWire write (the
+`-l 1.0` flag went with the relative command). Unlike wireplumber, nothing persists
 this across a reboot: the control does not exist when `alsa-restore` runs, so softvol recreates it
 at maximum on the satellite's first playback.
 

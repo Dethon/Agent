@@ -63,7 +63,7 @@ pub struct Config {
     pub volume_sink: Option<String>,
     pub volume_mixer: Option<String>,
     pub volume_card: Option<String>,
-    pub volume_step: u8,
+    pub volume_step: u8, // % of the −51..0 dB range per step: 10 → ten 5.1 dB steps, both backends
 }
 
 impl Default for Config {
