@@ -295,6 +295,12 @@ h1, h2, h3 {
     gap: 1rem;
 }
 
+/* Conversation name + time in the top bar — mobile only; the desktop rail already
+   shows which conversation is selected. */
+.header-conversation {
+    display: none;
+}
+
 .connection-status {
     display: flex;
     align-items: center;
@@ -2369,8 +2375,6 @@ select:focus:not(:focus-visible) {
 
 @keyframes emberPulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
 
-.hearth-peek-name.glow { text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
-
 /* Desktop: the Hearth IS a pinned left rail */
 @media (min-width: 768px) {
     .chat-layout { display: flex; flex-direction: row; }
@@ -2409,10 +2413,21 @@ select:focus:not(:focus-visible) {
     }
     .hearth-handle { width: 36px; height: 4px; border-radius: 3px; background: var(--border-color);
         border: none; position: absolute; top: 7px; left: 50%; transform: translateX(-50%); padding: 0; cursor: grab; }
-    .hearth-peek-current { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-    .hearth-peek-name { font-family: 'Fraunces', serif; font-weight: 600; color: var(--text-primary);
+    /* The conversation name and time live in the top bar here, so the peek row just needs
+       filler between the selectors and the trailing unread badge + new-chat button. */
+    .hearth-peek-spacer { flex: 1; min-width: 0; }
+
+    /* Connection state rides the peek bar as a bare dot, between the agent and model selectors. */
+    .hearth-peek .status-dot { flex: 0 0 auto; }
+    .header .connection-status { display: none; }
+
+    .header { gap: 0.75rem; }
+    .header-title { flex: 0 0 auto; }
+    .header-conversation { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .header-conversation-name { font-family: 'Fraunces', serif; font-weight: 600; color: var(--text-primary);
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .hearth-peek-time { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); }
+    .header-conversation-name.glow { text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
+    .header-conversation-time { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); }
 
     /* Peek-bar new-chat button (mobile) */
     .hearth-peek .hearth-new { flex-shrink: 0; width: 32px; height: 32px; border-radius: 10px; border: none;

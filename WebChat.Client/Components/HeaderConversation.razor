@@ -1,0 +1,29 @@
+@inherits StoreSubscriberComponent
+@inject TopicsStore TopicsStore
+@inject StreamingStore StreamingStore
+
+@if (Selected is { } topic)
+{
+    <div class="header-conversation">
+        <span class="header-conversation-name @(SelectedIsStreaming ? "glow" : "")">@topic.Name</span>
+        <span class="header-conversation-time">@FormatTime(topic.LastMessageAt ?? topic.CreatedAt)</span>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<StoredTopic> _topics = [];
+    private string? _selectedTopicId;
+    private IReadOnlySet<string> _streamingTopics = new HashSet<string>();
+
+    protected override void OnInitialized()
+    {
+        Subscribe(TopicsStore.StateObservable, s => s.Topics, t => _topics = t);
+        Subscribe(TopicsStore.StateObservable, s => s.SelectedTopicId, id => _selectedTopicId = id);
+        Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
+    }
+
+    private StoredTopic? Selected => _topics.FirstOrDefault(t => t.TopicId == _selectedTopicId);
+    private bool SelectedIsStreaming => _selectedTopicId is not null && _streamingTopics.Contains(_selectedTopicId);
+
+    private static string FormatTime(DateTime utc) => utc.ToLocalTime().ToString("MMM d, h:mm tt");
+}

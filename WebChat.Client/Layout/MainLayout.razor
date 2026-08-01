@@ -10,6 +10,7 @@
         <div class="header-title">
             <img src="/icon.svg?color=@(Uri.EscapeDataString(_accentColor))" alt="Agent" class="header-logo"/>
         </div>
+        <HeaderConversation />
         <div class="header-right">
             <div class="connection-status">
                 <span class="status-dot @(ConnectionService.IsConnected ? "connected" : "")"></span>

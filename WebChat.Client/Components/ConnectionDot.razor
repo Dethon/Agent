@@ -1,0 +1,20 @@
+@using WebChat.Client.Contracts
+@implements IDisposable
+@inject IChatConnectionService ConnectionService
+
+<span class="status-dot @(ConnectionService.IsConnected ? "connected" : "")"
+      role="status"
+      aria-label="@(ConnectionService.IsConnected ? "Connected" : "Disconnected")"
+      title="@(ConnectionService.IsConnected ? "Connected" : "Disconnected")"></span>
+
+@code {
+    protected override void OnInitialized()
+    {
+        ConnectionService.OnStateChanged += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        ConnectionService.OnStateChanged -= StateHasChanged;
+    }
+}
