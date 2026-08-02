@@ -1,3 +1,5 @@
+using Channels.Hosting;
+using Domain.DTOs.Channel;
 using McpChannelTelegram.Settings;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -109,23 +111,28 @@ public sealed class TelegramBotService(
 
         // Unlike ServiceBus (broker-level abandon/redeliver) or Schedule/Library (a durable record
         // that simply stays due), Telegram has no channel-level way to signal "try again later" back
-        // to the sender — so a stale HasActiveSessions must not gate this away. The emitter targets
-        // the well-known "channel-telegram" subscriber id and creates its queue on demand, so
-        // buffering holds unconditionally: through a disconnect (PruneIdle only evicts an empty,
-        // hour-idle subscriber), and even before the agent's first poll after a server restart or
-        // an idle eviction. A late reconnect still delivers, bounded only by the inbox capacity.
-        if (!notificationEmitter.HasActiveSessions)
+        // to the sender — so nothing here gates on liveness. The buffer-always policy targets the
+        // well-known "channel-telegram" subscriber id and creates its queue on demand, so buffering
+        // holds unconditionally: through a disconnect (PruneIdle only evicts an empty, hour-idle
+        // subscriber), and even before the agent's first poll after a server restart or an idle
+        // eviction. A late reconnect still delivers, bounded only by the inbox capacity. The emit's
+        // return value is read for the warning alone.
+        var live = await notificationEmitter.EmitAsync(
+            new ChannelMessageNotification
+            {
+                ConversationId = conversationId,
+                Sender = sender,
+                Content = message.Text,
+                AgentId = agentId,
+                Timestamp = DateTimeOffset.UtcNow
+            },
+            cancellationToken);
+
+        if (!live)
         {
             logger.LogWarning(
                 "No live channel_receive subscriber; buffering message from {Sender} for later delivery", sender);
         }
-
-        await notificationEmitter.EmitMessageNotificationAsync(
-            conversationId,
-            sender,
-            message.Text,
-            agentId: agentId,
-            cancellationToken);
 
         logger.LogDebug("Emitted message notification for conversation {ConversationId} from {Sender} (agent: {AgentId})",
             conversationId, sender, agentId);

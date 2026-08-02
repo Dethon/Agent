@@ -1,3 +1,4 @@
+using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
@@ -27,7 +28,8 @@ public class TelegramBotServiceTests : IDisposable
     public TelegramBotServiceTests()
     {
         _inbox = new ChannelInbox(_time);
-        _emitter = new ChannelNotificationEmitter(_inbox);
+        _emitter = new ChannelNotificationEmitter(
+            _inbox, DeliveryPolicy.BufferAlways, ChannelProtocol.ChannelClientNamePrefix + "telegram");
         var settings = new ChannelSettings
         {
             Bots = [new AgentBotConfig { AgentId = "jack", BotToken = "unused" }],

@@ -2,11 +2,11 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
+using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
 using McpChannelServiceBus.Modules;
-using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Modules;
 using McpChannelTelegram.Modules;
 using McpChannelVoice.Modules;
@@ -194,6 +194,45 @@ public class ChannelReceiveContractTests
             .ShouldContain(
                 ChannelProtocol.ReceiveTool,
                 $"{channelId} must expose {ChannelProtocol.ReceiveTool} from its own ConfigModule");
+    }
+
+    // The buffer-always target has to be the id McpChannelConnection derives for itself. If it is
+    // not, items pile into a queue nobody ever drains and nothing reports an error — the failure is
+    // completely silent. Pinned end to end through Telegram's real registration rather than by
+    // comparing two constants, so the match cannot drift on either side.
+    [Fact]
+    public async Task Telegram_BuffersForTheIdTheAgentConnectionDerives()
+    {
+        var port = TestPort.GetAvailable();
+        var app = await StartChannelServerAsync(
+            port,
+            services => services.ConfigureChannel(
+                new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] }));
+        await using var connection = new McpChannelConnection("telegram");
+        try
+        {
+            // Emitted before anything has ever polled: the cold-start window this policy exists for.
+            await app.Services.GetRequiredService<ChannelNotificationEmitter>().EmitAsync(
+                new ChannelMessageNotification
+                {
+                    ConversationId = "42:42",
+                    Sender = "user",
+                    Content = "buffered before the agent arrived"
+                });
+
+            await connection.ConnectAsync($"http://localhost:{port}/mcp", CancellationToken.None);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var received = await connection.Messages.FirstAsync(cts.Token);
+
+            received.Content.ShouldBe("buffered before the agent arrived");
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
     }
 
     [Fact]
