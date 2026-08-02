@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>14</LangVersion>
+    <RootNamespace>Channels.Hosting</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tests" />
+  </ItemGroup>
+
+  <!-- Domain + the MCP server package and nothing else. Infrastructure is deliberately absent:
+       McpChannelTelegram and McpChannelServiceBus reference Domain alone, and a reference here
+       would hand them Playwright, Redis, a printing library, Terminal.Gui and the agent stack as
+       transitive dependencies. Domain cannot host this code either — it references no DI or MCP
+       package on purpose. -->
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Domain\Domain.csproj" />
+  </ItemGroup>
+
+</Project>
