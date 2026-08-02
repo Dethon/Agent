@@ -15,7 +15,7 @@ Use plain language and short sentences, in replies and in docs. Avoid jargon and
 
 ## Build, Test & Format
 
-- `Tests/Unit` runs standalone. `Tests/Integration` needs the Docker services it touches (most need `redis`). E2E tests (`[Trait("Category", "E2E")]`) need the full compose stack up; set `PLAYWRIGHT_HEADLESS=false` to watch the browser.
+- `Tests/Unit` runs standalone. `Tests/Integration` and E2E tests (`[Trait("Category", "E2E")]`) need Docker, but their fixtures spin up the containers themselves (testcontainers for integration, the compose stack for E2E) — just run `dotnet test`; set `PLAYWRIGHT_HEADLESS=false` to watch the browser.
 - The pre-commit hook (`.githooks/pre-commit`, wired via `core.hooksPath`) runs `dotnet format` over staged `.cs` files and re-stages them **whole** — partial/hunk staging does not survive a commit; make the working tree match the commit you want.
 - `.editorconfig` sets `insert_final_newline = false`: `.cs` files have **no trailing newline**.
 
