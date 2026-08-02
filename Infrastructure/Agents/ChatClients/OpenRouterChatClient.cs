@@ -14,7 +14,7 @@ using OpenAI;
 
 namespace Infrastructure.Agents.ChatClients;
 
-public sealed class OpenRouterChatClient : IChatClient
+public sealed class OpenRouterChatClient : IMultiModelChatClient
 {
     private readonly IChatClient _client;
     private readonly HttpClient? _httpClient;
@@ -227,11 +227,15 @@ public sealed class OpenRouterChatClient : IChatClient
         return null;
     }
 
+    public string EffectiveModel => _modelOverrideBox.Value ?? _model;
+
     public object? GetService(Type serviceType, object? key = null)
     {
         return serviceType == typeof(ChatClientMetadata)
             ? Metadata
-            : _client.GetService(serviceType, key);
+            : serviceType.IsInstanceOfType(this)
+                ? this
+                : _client.GetService(serviceType, key);
     }
 
     public void Dispose()

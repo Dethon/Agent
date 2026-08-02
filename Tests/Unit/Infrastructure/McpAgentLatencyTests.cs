@@ -4,6 +4,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Infrastructure.Agents;
+using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Moq;
 using Shouldly;
@@ -91,8 +92,8 @@ public class McpAgentLatencyTests : IAsyncDisposable
     [Fact]
     public async Task RunStreaming_WithPatchedModel_EmitsLatencyWithPatchedModel()
     {
-        var chatClient = new Mock<IChatClient>();
-        chatClient
+        var inner = new Mock<IChatClient>();
+        inner
             .Setup(c => c.GetStreamingResponseAsync(
                 It.IsAny<IEnumerable<ChatMessage>>(),
                 It.IsAny<ChatOptions?>(),
@@ -102,17 +103,24 @@ public class McpAgentLatencyTests : IAsyncDisposable
                 new() { Role = ChatRole.Assistant, Contents = [new TextContent("hi")] }
             }.ToAsyncEnumerable());
 
+        // The chat client is the sole resolver of the patch whitelist; the agent discovers it
+        // through the decorator chain (production wraps it in ToolApprovalChatClient), so the
+        // wrapper is part of this test on purpose.
+        using var chatClient = new OpenRouterChatClient(
+            inner.Object, "anthropic/claude", patchableModelIds: ["z-ai/glm"]);
+        using var wrappedClient = new ToolApprovalChatClient(
+            chatClient, new Mock<IToolApprovalHandler>().Object);
+
         await using var agent = new McpAgent(
             [],
-            chatClient.Object,
+            wrappedClient,
             "test-agent",
             "",
             new Mock<IThreadStateStore>().Object,
             "test-user",
             metricsPublisher: _publisher.Object,
             model: "anthropic/claude",
-            conversationId: "conv1",
-            patchableModelIds: ["z-ai/glm"]);
+            conversationId: "conv1");
 
         var message = new ChatMessage(ChatRole.User, "hello");
         message.SetConfigPatch(new AgentConfigPatch { Model = "z-ai/glm" });

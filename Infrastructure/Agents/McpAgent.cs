@@ -37,7 +37,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly TimeProvider _timeProvider;
     private readonly IMetricsPublisher? _metricsPublisher;
     private readonly string? _model;
-    private readonly IReadOnlyList<string> _patchableModelIds;
+    private readonly IMultiModelChatClient? _effectiveModelSource;
     private readonly string? _conversationId;
     private readonly McpPromptCache? _promptCache;
 
@@ -46,6 +46,10 @@ public sealed class McpAgent : DisposableAgent
 
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
+
+    // The chat client is the sole resolver of per-message model patches; read its result back
+    // rather than re-resolving here, so latency can never disagree with what actually ran.
+    private string? EffectiveModel => _effectiveModelSource?.EffectiveModel ?? _model;
 
     public McpAgent(
         string[] endpoints,
@@ -65,8 +69,7 @@ public sealed class McpAgent : DisposableAgent
         IMetricsPublisher? metricsPublisher = null,
         string? model = null,
         string? conversationId = null,
-        McpPromptCache? promptCache = null,
-        IReadOnlyList<string>? patchableModelIds = null)
+        McpPromptCache? promptCache = null)
     {
         _endpoints = endpoints;
         _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
@@ -83,7 +86,7 @@ public sealed class McpAgent : DisposableAgent
         _timeProvider = timeProvider ?? TimeProvider.System;
         _metricsPublisher = metricsPublisher;
         _model = model;
-        _patchableModelIds = patchableModelIds ?? [];
+        _effectiveModelSource = chatClient.GetService(typeof(IMultiModelChatClient)) as IMultiModelChatClient;
         _conversationId = conversationId;
         _promptCache = promptCache;
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
@@ -131,7 +134,7 @@ public sealed class McpAgent : DisposableAgent
         await SafePublishLatencyAsync(LatencyStage.SessionWarmup, sw.ElapsedMilliseconds);
     }
 
-    private async Task SafePublishLatencyAsync(LatencyStage stage, long durationMs, string? model = null)
+    private async Task SafePublishLatencyAsync(LatencyStage stage, long durationMs)
     {
         if (_metricsPublisher is null)
         {
@@ -144,7 +147,7 @@ public sealed class McpAgent : DisposableAgent
             {
                 Stage = stage,
                 DurationMs = durationMs,
-                Model = model,
+                Model = stage is LatencyStage.LlmFirstToken or LatencyStage.LlmTotal ? EffectiveModel : null,
                 ConversationId = _conversationId
             });
         }
@@ -216,30 +219,12 @@ public sealed class McpAgent : DisposableAgent
         AgentSession? thread = null,
         AgentRunOptions? options = null,
         CancellationToken cancellationToken = default)
-    {
-        var messageList = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
-        return WithLlmLatencyAsync(
-            RunCoreStreamingInnerAsync(messageList, thread, options, cancellationToken),
-            ResolveEffectiveModel(messageList),
+        => WithLlmLatencyAsync(
+            RunCoreStreamingInnerAsync(messages, thread, options, cancellationToken),
             cancellationToken);
-    }
-
-    private string? ResolveEffectiveModel(IReadOnlyList<ChatMessage> messages)
-    {
-        if (_model is null)
-        {
-            return null;
-        }
-
-        var configPatch = messages
-            .LastOrDefault(m => m.Role == ChatRole.User)
-            ?.GetConfigPatch();
-        return OpenRouterChatClient.ResolveModelOverride(configPatch, _model, _patchableModelIds) ?? _model;
-    }
 
     private async IAsyncEnumerable<AgentResponseUpdate> WithLlmLatencyAsync(
         IAsyncEnumerable<AgentResponseUpdate> source,
-        string? model,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -251,7 +236,7 @@ public sealed class McpAgent : DisposableAgent
                 if (!firstEmitted)
                 {
                     firstEmitted = true;
-                    await SafePublishLatencyAsync(LatencyStage.LlmFirstToken, sw.ElapsedMilliseconds, model);
+                    await SafePublishLatencyAsync(LatencyStage.LlmFirstToken, sw.ElapsedMilliseconds);
                 }
                 yield return update;
             }
@@ -259,7 +244,7 @@ public sealed class McpAgent : DisposableAgent
         finally
         {
             sw.Stop();
-            await SafePublishLatencyAsync(LatencyStage.LlmTotal, sw.ElapsedMilliseconds, model);
+            await SafePublishLatencyAsync(LatencyStage.LlmTotal, sw.ElapsedMilliseconds);
         }
     }
 

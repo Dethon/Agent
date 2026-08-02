@@ -139,8 +139,7 @@ public sealed class MultiAgentFactory(
             metricsPublisher: agentPublisher,
             model: definition.Model,
             conversationId: agentKey.ConversationId,
-            promptCache: _promptCache,
-            patchableModelIds: openRouterConfig.PatchableModelIds);
+            promptCache: _promptCache);
     }
 
     private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
