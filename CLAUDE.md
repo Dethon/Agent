@@ -61,3 +61,17 @@ Each MCP server can expose a `filesystem://` resource (`vault`, `media`, `ha`, `
 Each mount is its own backend — **tools cannot reach across mounts**; data needed elsewhere must be copied there first. Backends implement `IFileSystemBackend` returning typed `FsResult<T>` (`Ok`/`Err`); besides disk-backed servers, `HaFileSystem`, `ScheduleFileSystem`, `PrinterQueueFileSystem` and `TimerFileSystem` are non-disk backends on the same contract. New filesystems need no agent changes.
 
 Globs support brace expansion (`GlobBraceExpander`): `**/*.{jpg,png}` = union of both patterns (lone/unbalanced `{...}` stay literal). All backends normalize glob entries to full virtual paths.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as tracked markdown under `.scratch/<feature-slug>/` — not GitHub Issues, despite the remote. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label string equal to its name, written as a `Status:` line in the issue file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `docs/adr/` at the root, plus a `CONTEXT.md` created lazily when a term needs pinning down. See `docs/agents/domain.md`.
