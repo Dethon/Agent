@@ -338,7 +338,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Allow up to 30 seconds for the hub to become reachable and the Blazor
         // client to complete the handshake.
-        var connectedDot = page.Locator(".status-dot.connected");
+        var connectedDot = page.Locator(".connection-status .status-dot.connected");
         await connectedDot.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
         (await connectedDot.IsVisibleAsync()).ShouldBeTrue();
     }
