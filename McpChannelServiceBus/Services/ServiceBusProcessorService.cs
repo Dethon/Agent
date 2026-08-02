@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
+using Channels.Hosting;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 
 namespace McpChannelServiceBus.Services;
 
@@ -48,19 +50,26 @@ public sealed class ServiceBusProcessorService(
             var sender = parsed.Sender ?? "service-bus";
             var agentId = parsed.AgentId ?? "default";
 
-            if (!notificationEmitter.HasActiveSessions)
+            // Gate-on-live: a false return means nothing was buffered, so abandoning here hands the
+            // prompt back to the broker whole. Settling it instead would defeat at-least-once
+            // redelivery for an item the in-process inbox can still lose.
+            var delivered = await notificationEmitter.EmitAsync(
+                new ChannelMessageNotification
+                {
+                    ConversationId = correlationId,
+                    Sender = sender,
+                    Content = parsed.Prompt,
+                    AgentId = agentId,
+                    Timestamp = DateTimeOffset.UtcNow
+                },
+                args.CancellationToken);
+
+            if (!delivered)
             {
                 logger.LogWarning("No active MCP sessions, abandoning message correlationId={CorrelationId}", correlationId);
                 await args.AbandonMessageAsync(args.Message);
                 return;
             }
-
-            await notificationEmitter.EmitMessageNotificationAsync(
-                correlationId,
-                sender,
-                parsed.Prompt,
-                agentId,
-                args.CancellationToken);
 
             await args.CompleteMessageAsync(args.Message);
             logger.LogDebug("Processed message correlationId={CorrelationId}", correlationId);

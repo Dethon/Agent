@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
+using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -23,7 +24,7 @@ public class ServiceBusProcessorServiceTests : IDisposable
     public ServiceBusProcessorServiceTests()
     {
         _inbox = new ChannelInbox(_time);
-        _emitter = new ChannelNotificationEmitter(_inbox);
+        _emitter = new ChannelNotificationEmitter(_inbox, DeliveryPolicy.GateOnLive);
 
         _processor
             .Setup(p => p.StartProcessingAsync(It.IsAny<CancellationToken>()))

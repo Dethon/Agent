@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Domain\Domain.csproj" />
+    <ProjectReference Include="..\Channels.Hosting\Channels.Hosting.csproj" />
   </ItemGroup>
 
   <ItemGroup>

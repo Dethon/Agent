@@ -1,9 +1,8 @@
 using Azure.Messaging.ServiceBus;
-using Domain.Channels;
+using Channels.Hosting;
 using McpChannelServiceBus.McpTools;
 using McpChannelServiceBus.Services;
 using McpChannelServiceBus.Settings;
-using ModelContextProtocol.Protocol;
 
 namespace McpChannelServiceBus.Modules;
 
@@ -26,8 +25,6 @@ public static class ConfigModule
 
         services
             .AddSingleton(settings)
-            .AddSingleton<ChannelInbox>()
-            .AddSingleton<ChannelNotificationEmitter>()
             .AddSingleton(serviceBusClient)
             .AddSingleton(serviceBusClient.CreateProcessor(settings.PromptQueueName))
             .AddSingleton(serviceBusClient.CreateSender(settings.ResponseQueueName))
@@ -40,31 +37,10 @@ public static class ConfigModule
             .WithHttpTransport()
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
-            .WithTools<McpChannelReceiveTool>()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
-                    // or the server shuts down. Mapping that to IsError would hand the pump an
-                    // error result to retry on; let it propagate as the abort it is.
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return new CallToolResult
-                    {
-                        IsError = true,
-                        Content = [new TextContentBlock { Text = ex.Message }]
-                    };
-                }
-            }));
+            // Gate-on-live, not broadcast: the processor abandons the broker message when nobody
+            // is listening, so at-least-once redelivery brings it back. Buffering it as well would
+            // leave a copy behind for every redelivery and fire the prompt more than once.
+            .AddChannelServer(DeliveryPolicy.GateOnLive);
 
         return services;
     }
