@@ -12,7 +12,7 @@ public class FileInfoTool(string rootPath)
                                          Works for files and directories; never fails on missing paths — returns exists=false instead.
                                          """;
 
-    protected FsResult<FsInfoResult> Run(string path)
+    public FsResult<FsInfoResult> Run(string path)
     {
         if (!_jail.TryResolve(path, out var fullPath))
         {

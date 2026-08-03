@@ -1,5 +1,5 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Bash;
 
@@ -13,7 +13,7 @@ public class ExecTool(ICommandRunner runner)
         Non-zero exit codes are returned in the result, not as errors.
         """;
 
-    protected Task<JsonNode> Run(
+    protected Task<FsResult<FsExecResult>> Run(
         string path,
         string command,
         int? timeoutSeconds,

@@ -14,7 +14,7 @@ public class BlobReadTool(string rootPath)
         Returns { contentBase64, eof, totalBytes }.
         """;
 
-    protected FsResult<FsBlobReadResult> Run(string path, long offset, int length)
+    public FsResult<FsBlobReadResult> Run(string path, long offset, int length)
     {
         if (!_jail.TryResolve(path, out var resolved))
         {

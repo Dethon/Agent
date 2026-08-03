@@ -26,7 +26,7 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
                                          Delete: include content in oldString, omit it from newString.
                                          """;
 
-    protected FsResult<FsEditResult> Run(string filePath, IReadOnlyList<TextEdit> edits)
+    public FsResult<FsEditResult> Run(string filePath, IReadOnlyList<TextEdit> edits)
     {
         if (edits is null || edits.Count == 0)
         {

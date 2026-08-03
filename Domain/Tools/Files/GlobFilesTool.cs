@@ -16,11 +16,11 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
                                          An empty result means nothing matched—refine the pattern.
                                          """;
 
-    protected const int FileResultCap = 200;
+    public const int FileResultCap = 200;
 
     private readonly PathJail _jail = new(libraryPath.BaseLibraryPath);
 
-    protected async Task<FsResult<FsGlobResult>> Run(string pattern, CancellationToken cancellationToken, string? basePath = null)
+    public async Task<FsResult<FsGlobResult>> Run(string pattern, CancellationToken cancellationToken, string? basePath = null)
     {
         if (string.IsNullOrWhiteSpace(pattern))
         {

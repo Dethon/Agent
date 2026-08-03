@@ -15,7 +15,7 @@ public class RemoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
                                          (resolved against the library root).
                                          """;
 
-    protected async Task<FsResult<FsRemoveResult>> Run(string path, CancellationToken cancellationToken)
+    public async Task<FsResult<FsRemoveResult>> Run(string path, CancellationToken cancellationToken)
     {
         if (path.Contains("..", StringComparison.Ordinal))
         {

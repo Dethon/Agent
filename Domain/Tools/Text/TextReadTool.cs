@@ -19,7 +19,7 @@ public class TextReadTool(string vaultPath, string[] allowedExtensions)
 
     private const int MaxReturnLines = 500;
 
-    protected FsResult<FsReadResult> Run(string filePath, int? offset = null, int? limit = null)
+    public FsResult<FsReadResult> Run(string filePath, int? offset = null, int? limit = null)
     {
         if (!ResolveExistingFile(filePath).TryGetValue(out var fullPath, out var error))
         {

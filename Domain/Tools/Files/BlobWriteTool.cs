@@ -13,7 +13,7 @@ public class BlobWriteTool(string rootPath)
         Returns { path, bytesWritten, totalBytes }.
         """;
 
-    protected FsResult<FsBlobWriteResult> Run(string path, string contentBase64, long offset, bool overwrite, bool createDirectories)
+    public FsResult<FsBlobWriteResult> Run(string path, string contentBase64, long offset, bool overwrite, bool createDirectories)
     {
         if (offset < 0)
         {

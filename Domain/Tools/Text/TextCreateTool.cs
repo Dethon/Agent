@@ -23,7 +23,7 @@ public class TextCreateTool(string vaultPath, string[] allowedExtensions)
                                          - Create config: filePath="config/settings.json", content="{\"key\": \"value\"}"
                                          """;
 
-    protected FsResult<FsCreateResult> Run(string filePath, string content, bool overwrite = false, bool createDirectories = true)
+    public FsResult<FsCreateResult> Run(string filePath, string content, bool overwrite = false, bool createDirectories = true)
     {
         if (!_jail.TryResolve(filePath, out var fullPath))
         {

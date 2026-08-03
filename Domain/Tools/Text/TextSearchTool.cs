@@ -37,7 +37,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     // back as an envelope, and one that backtracks catastrophically ends as a timeout.
     private static readonly TimeSpan _matchTimeout = TimeSpan.FromSeconds(1);
 
-    protected FsResult<FsSearchResult> Run(
+    public FsResult<FsSearchResult> Run(
         string query,
         bool regex = false,
         string? filePath = null,

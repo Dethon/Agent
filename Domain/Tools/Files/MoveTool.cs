@@ -17,7 +17,7 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
                                          The destination path must not exist. Parent directories are created automatically.
                                          """;
 
-    protected async Task<FsResult<FsMoveResult>> Run(string sourcePath, string destinationPath, CancellationToken ct)
+    public async Task<FsResult<FsMoveResult>> Run(string sourcePath, string destinationPath, CancellationToken ct)
     {
         if (Validate(sourcePath) is { } sourceError)
         {

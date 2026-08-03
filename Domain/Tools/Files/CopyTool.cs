@@ -13,7 +13,7 @@ public class CopyTool(string rootPath)
         Parent directories are created automatically when createDirectories=true (default).
         """;
 
-    protected FsResult<FsCopyResult> Run(string sourcePath, string destinationPath, bool overwrite, bool createDirectories)
+    public FsResult<FsCopyResult> Run(string sourcePath, string destinationPath, bool overwrite, bool createDirectories)
     {
         if (!_jail.TryResolve(sourcePath, out var src) || !_jail.TryResolve(destinationPath, out var dst))
         {

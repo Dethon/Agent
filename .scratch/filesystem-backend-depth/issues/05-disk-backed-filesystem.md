@@ -10,13 +10,13 @@ No server is migrated onto it here. Registration and wrapper deletion for the di
 
 **Blocked by:** 01, 04 — it derives from the base, and it composes tools that must already return the shared result type.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One class derives from the base and implements the operations a disk root supports.
-- [ ] It takes a root and an optional downloads overlay.
-- [ ] Constructed with an overlay, it serves the downloads view exactly as the library server does today.
-- [ ] Constructed without one, it behaves as the vault and sandbox roots do today.
-- [ ] Operations a disk root cannot perform are left unoverridden and return the unsupported envelope.
-- [ ] Containment is enforced through the single path jail.
-- [ ] Existing per-server description wording is preserved where it overrides the generic default.
-- [ ] No server registration changes; every server still builds and its tests pass.
+- [x] One class derives from the base and implements the operations a disk root supports.
+- [x] It takes a root and an optional downloads overlay.
+- [x] Constructed with an overlay, it serves the downloads view exactly as the library server does today.
+- [x] Constructed without one, it behaves as the vault and sandbox roots do today.
+- [x] Operations a disk root cannot perform are left unoverridden and return the unsupported envelope.
+- [x] Containment is enforced through the single path jail.
+- [x] Existing per-server description wording is preserved where it overrides the generic default.
+- [x] No server registration changes; every server still builds and its tests pass.
