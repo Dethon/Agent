@@ -72,8 +72,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .AddSingleton<IDownloadClient>(_ => QBittorrent.CreateClient())
             .AddSingleton<IFileSystemClient, LocalFileSystemClient>()
             .AddSingleton<DownloadsOverlay>()
-            .AddSingleton(sp => new DiskFileSystem(
-                MediaFilesystem.Name,
+            .AddSingleton(sp => new MediaLibraryDiskFileSystem(
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(LibraryPath),
                 sp.GetRequiredService<DownloadsOverlay>()))
@@ -92,7 +91,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
             }))
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
-            .AddFileSystemTools<DiskFileSystem>()
+            .AddFileSystemTools<MediaLibraryDiskFileSystem>()
             .WithResources<FileSystemResource>();
 
         var app = builder.Build();

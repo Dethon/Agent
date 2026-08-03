@@ -44,8 +44,7 @@ public static class ConfigModule
             .AddQBittorrentClient(settings)
             .AddFileSystemClient()
             .AddSingleton<DownloadsOverlay>()
-            .AddSingleton(sp => new DiskFileSystem(
-                MediaFilesystem.Name,
+            .AddSingleton(sp => new MediaLibraryDiskFileSystem(
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.BaseLibraryPath),
                 sp.GetRequiredService<DownloadsOverlay>()))
@@ -61,7 +60,7 @@ public static class ConfigModule
             // Gate-on-live: the completion watcher drops a routing entry only on a confirmed
             // delivery, so a disconnected-but-still-buffering subscriber must not read as delivered.
             .AddChannelServer(DeliveryPolicy.GateOnLive, errorResult: ToolResponse.Create)
-            .AddFileSystemTools<DiskFileSystem>()
+            .AddFileSystemTools<MediaLibraryDiskFileSystem>()
             .WithPrompts<McpSystemPrompt>()
             .WithResources<FileSystemResource>();
 

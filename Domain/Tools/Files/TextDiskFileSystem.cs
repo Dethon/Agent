@@ -43,8 +43,8 @@ public class TextDiskFileSystem(
         + "filePattern (e.g. *.md). Supports regex, maxResults, contextLines and outputMode "
         + "(content|filesOnly).";
 
-    protected override FsResult<FsReadResult> ReadFromDisk(string path, int? offset, int? limit) =>
-        _read.Run(path, offset, limit);
+    public override Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
+        Task.FromResult(_read.Run(path, offset, limit));
 
     public override Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite,
         bool createDirectories, CancellationToken ct) =>

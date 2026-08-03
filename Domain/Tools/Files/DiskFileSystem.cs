@@ -1,24 +1,22 @@
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
-using Domain.Tools.Downloads.Vfs;
 
 namespace Domain.Tools.Files;
 
 // A backend over a real directory on disk: the operations any disk root can perform, composed from
-// the disk tool classes. An optional downloads overlay layers virtual entries onto the same root —
-// the library's downloads view — which is why this stays a composition rather than a root-path
-// wrapper. Text create/edit/search are not here: a root without allowed text extensions cannot do
-// them, and capability is decided by which methods a backend overrides.
+// the disk tool classes. Nothing here knows about a particular mount — a root that also serves text
+// or runs commands or layers virtual entries on top says so by subclassing.
+//
+// Read is not here: reading bytes as text needs a rule about which files are text, and that rule is
+// what TextDiskFileSystem adds. A plain disk root advertises no fs_read, which is correct — the
+// registrar derives the surface from what is overridden.
 public class DiskFileSystem(
     string filesystemName,
     IFileSystemClient client,
-    LibraryPathConfig root,
-    DownloadsOverlay? downloads = null) : FileSystemBackendBase
+    LibraryPathConfig root) : FileSystemBackendBase
 {
     public override string FilesystemName => filesystemName;
-
-    protected LibraryPathConfig Root { get; } = root;
 
     private readonly GlobFilesTool _glob = new(client, root);
     private readonly MoveTool _move = new(client, root);
@@ -69,73 +67,31 @@ public class DiskFileSystem(
         + "(or, with overwrite=true, truncates) the file; later calls append at offset. "
         + "Returns { path, bytesWritten, totalBytes }.";
 
-    // The overlay owns downloads/<id>/status.json; everything else on the same root is a plain
-    // disk entry. A root without an overlay reads through the disk tools alone.
-    public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
-    {
-        var disk = await _glob.Run(pattern, ct, basePath);
-        if (downloads is null || !disk.TryGetValue(out var entries, out _))
-        {
-            return disk;
-        }
+    public override Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
+        _glob.Run(pattern, ct, basePath);
 
-        return new FsResult<FsGlobResult>.Ok(
-            Merge(entries, await downloads.GlobEntriesAsync(basePath, pattern, ct)));
-    }
+    public override Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
+        Task.FromResult(_info.Run(path));
 
-    public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
-    {
-        if (downloads is not null && await downloads.TryInfoAsync(path, ct) is { } overlay)
-        {
-            return overlay;
-        }
+    public override Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
+        _move.Run(sourcePath, destinationPath, ct);
 
-        return _info.Run(path);
-    }
-
-    public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
-    {
-        if (downloads is not null && await downloads.TryReadAsync(path, ct) is { } overlay)
-        {
-            return overlay;
-        }
-
-        return ReadFromDisk(path, offset, limit);
-    }
-
-    // A root with no text tooling has nothing to read as text beyond what the overlay serves.
-    protected virtual FsResult<FsReadResult> ReadFromDisk(string path, int? offset, int? limit) =>
-        FsError.Fail<FsReadResult>(ToolError.Codes.UnsupportedOperation,
-            $"fs_read on the {filesystemName} filesystem only reads {MediaFilesystem.DownloadsSubdir}/<id>/status.json.");
-
-    public override async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct)
-    {
-        if (VirtualPathRefusal<FsMoveResult>(sourcePath, destinationPath) is { } refusal)
-        {
-            return refusal;
-        }
-
-        return await _move.Run(sourcePath, destinationPath, ct);
-    }
-
-    public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
-        downloads is not null ? await downloads.DeleteAsync(path, ct) : await _remove.Run(path, ct);
+    public override Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
+        _remove.Run(path, ct);
 
     public override Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
-        Task.FromResult(VirtualPathRefusal<FsCopyResult>(sourcePath, destinationPath)
-            ?? _copy.Run(sourcePath, destinationPath, overwrite, createDirectories));
+        Task.FromResult(_copy.Run(sourcePath, destinationPath, overwrite, createDirectories));
 
     // A disk root has real random access, so the ranged blob tools go straight at it rather than
     // draining the chunk stream the base default would have to.
     public override Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
         string path, long offset, int length, CancellationToken ct) =>
-        Task.FromResult(VirtualPathRefusal<FsBlobReadResult>(path) ?? _blobRead.Run(path, offset, length));
+        Task.FromResult(_blobRead.Run(path, offset, length));
 
     public override Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
         string path, string contentBase64, long offset, bool overwrite, bool createDirectories, CancellationToken ct) =>
-        Task.FromResult(VirtualPathRefusal<FsBlobWriteResult>(path)
-            ?? _blobWrite.Run(path, contentBase64, offset, overwrite, createDirectories));
+        Task.FromResult(_blobWrite.Run(path, contentBase64, offset, overwrite, createDirectories));
 
     public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
         string path, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
@@ -188,30 +144,5 @@ public class DiskFileSystem(
                 throw new IOException(error.Message);
             }
         }
-    }
-
-    // status.json is a rendered view of live download state, not a file on disk: moving, copying or
-    // writing it would silently produce a stale snapshot under a name that looks live.
-    private FsResult<T>? VirtualPathRefusal<T>(params string[] paths) where T : class =>
-        downloads is not null && paths.Any(downloads.IsVirtualPath)
-            ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation,
-                "status.json is a virtual read-only file; read it with fs_read — it cannot be moved, copied, or written.")
-            : null;
-
-    private static FsGlobResult Merge(FsGlobResult disk, IReadOnlyList<string> virtualEntries)
-    {
-        var added = virtualEntries.Except(disk.Entries, StringComparer.Ordinal).ToList();
-        if (added.Count == 0)
-        {
-            return disk;
-        }
-
-        var combined = disk.Entries.Concat(added).ToList();
-        return new FsGlobResult
-        {
-            Entries = combined.Take(GlobFilesTool.FileResultCap).ToList(),
-            Truncated = disk.Truncated || combined.Count > GlobFilesTool.FileResultCap,
-            Total = disk.Total + added.Count
-        };
     }
 }

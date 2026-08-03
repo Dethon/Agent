@@ -5,7 +5,6 @@ using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Shouldly;
-using static Tests.Unit.Domain.Downloads.Vfs.DownloadFakes;
 
 namespace Tests.Unit.Domain.Tools.Files;
 
@@ -36,8 +35,8 @@ public class DiskFileSystemTests : IDisposable
         TextRoot().ShouldBeAssignableTo<IFileSystemBackend>();
     }
 
-    // A plain disk root has no text tooling, so create, edit and search are left unoverridden and
-    // the base answers them. That is what keeps /media from advertising operations it never had.
+    // A plain disk root has no text tooling, so read, create, edit and search are left unoverridden
+    // and the base answers them. That is what keeps /media from advertising operations it never had.
     [Fact]
     public async Task PlainRoot_TextOperations_ReturnUnsupported()
     {
@@ -138,41 +137,10 @@ public class DiskFileSystemTests : IDisposable
         readBack.ShouldBe(bytes);
     }
 
-    // The library's downloads view: an active download surfaces a virtual status.json that is not
-    // on disk, and the same call on a root without an overlay finds nothing.
+    // Reading bytes as text needs a rule about which files are text, and that rule is what the text
+    // shape adds. A plain disk root has none, so it does not read — and does not advertise fs_read.
     [Fact]
-    public async Task WithOverlay_ServesTheDownloadsView()
-    {
-        var overlay = BuildOverlay(_root, out var client, out _, out _);
-        client.Add(Item(42));
-        var fs = new DiskFileSystem("media", new LocalFileSystemClient(), new LibraryPathConfig(_root), overlay);
-
-        var read = (await fs.ReadAsync("downloads/42/status.json", null, null, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
-        read.Content.ShouldContain("42");
-
-        var glob = (await fs.GlobAsync("", "**/*", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
-        glob.Entries.ShouldContain("downloads/42/status.json");
-    }
-
-    [Fact]
-    public async Task WithOverlay_VirtualStatusFileCannotBeMovedOrCopied()
-    {
-        var overlay = BuildOverlay(_root, out var client, out _, out _);
-        client.Add(Item(42));
-        var fs = new DiskFileSystem("media", new LocalFileSystemClient(), new LibraryPathConfig(_root), overlay);
-
-        (await fs.MoveAsync("downloads/42/status.json", "elsewhere.json", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.UnsupportedOperation);
-        (await fs.CopyAsync("downloads/42/status.json", "elsewhere.json", false, true, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.UnsupportedOperation);
-    }
-
-    [Fact]
-    public async Task WithoutOverlay_ReadingAFileWithNoTextToolingIsUnsupported()
+    public async Task PlainRoot_DoesNotRead()
     {
         File.WriteAllText(Path.Combine(_root, "a.txt"), "abc");
 

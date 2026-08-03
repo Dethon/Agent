@@ -16,15 +16,14 @@ public class LibraryFsRoutingTests : IDisposable
     private readonly string _libraryRoot;
     private readonly FakeDownloadClient _client;
     private readonly RecordingFileSystemClient _fs;
-    private readonly DiskFileSystem _media;
+    private readonly MediaLibraryDiskFileSystem _media;
 
     public LibraryFsRoutingTests()
     {
         _libraryRoot = Path.Combine(Path.GetTempPath(), $"library-{Guid.NewGuid()}");
         Directory.CreateDirectory(_libraryRoot);
         var overlay = BuildOverlay(_libraryRoot, out _client, out _, out _fs);
-        _media = new DiskFileSystem(
-            MediaFilesystem.Name, _fs, new LibraryPathConfig(_libraryRoot), overlay);
+        _media = new MediaLibraryDiskFileSystem(_fs, new LibraryPathConfig(_libraryRoot), overlay);
     }
 
     public void Dispose()

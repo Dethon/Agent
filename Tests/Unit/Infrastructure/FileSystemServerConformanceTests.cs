@@ -1,6 +1,8 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Tools.Downloads.Vfs;
+using Domain.Tools.Files;
 using Domain.Tools.HomeAssistant.Vfs;
 using Domain.Tools.Printing.Vfs;
 using Domain.Tools.Scheduling.Vfs;
@@ -24,7 +26,10 @@ public class FileSystemServerConformanceTests
         { "timers", typeof(TimerFileSystem) },
         { "schedules", typeof(ScheduleFileSystem) },
         { "print-queue", typeof(PrinterQueueFileSystem) },
-        { "ha", typeof(HaFileSystem) }
+        { "ha", typeof(HaFileSystem) },
+        { "media", typeof(MediaLibraryDiskFileSystem) },
+        { "vault", typeof(TextDiskFileSystem) },
+        { "sandbox", typeof(SandboxFileSystem) }
     };
 
     [Theory]
@@ -84,6 +89,26 @@ public class FileSystemServerConformanceTests
                 "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit",
                 "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
             ], ignoreOrder: true);
+
+        // The media library reads only the overlay's status file and writes no text, so it keeps
+        // the plain disk surface plus read.
+        FileSystemServerTools.SupportedToolNames(typeof(MediaLibraryDiskFileSystem))
+            .ShouldBe([
+                "fs_read", "fs_info", "fs_glob", "fs_move", "fs_delete", "fs_copy",
+                "fs_blob_read", "fs_blob_write"
+            ], ignoreOrder: true);
+
+        FileSystemServerTools.SupportedToolNames(typeof(TextDiskFileSystem))
+            .ShouldBe([
+                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
+                "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
+            ], ignoreOrder: true);
+
+        // Exec is the one thing the sandbox has and the vault does not.
+        FileSystemServerTools.SupportedToolNames(typeof(SandboxFileSystem))
+            .ShouldBe(
+                [.. FileSystemServerTools.SupportedToolNames(typeof(TextDiskFileSystem)), "fs_exec"],
+                ignoreOrder: true);
     }
 
     // Capability is per operation, not per path. A backend that implements an operation and still
