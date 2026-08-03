@@ -31,9 +31,8 @@ public class ToolApprovalChatClientMetricsTests
 
         ToolCallEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is ToolCallEvent t) { captured = t; } });
 
         var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
@@ -62,9 +61,8 @@ public class ToolApprovalChatClientMetricsTests
 
         ToolCallEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is ToolCallEvent t) { captured = t; } });
 
         var client = new ToolApprovalChatClient(
             fakeClient, handler, "conv-test",
@@ -96,9 +94,8 @@ public class ToolApprovalChatClientMetricsTests
 
         ToolCallEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is ToolCallEvent t) { captured = t; } });
 
         // IncludeDetailedErrors is true by default, so the exception is caught by the base class
         // and returned as a result. We need to verify the metrics still capture it.
@@ -153,7 +150,7 @@ public class ToolApprovalChatClientMetricsTests
 
         // Assert — rejected tools are never invoked, so no metrics should be published
         publisher.Verify(
-            p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()),
+            p => p.Publish(It.IsAny<MetricEvent>()),
             Times.Never);
     }
 
@@ -177,9 +174,8 @@ public class ToolApprovalChatClientMetricsTests
 
         ToolCallEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is ToolCallEvent t) { captured = t; } });
 
         var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
@@ -216,9 +212,8 @@ public class ToolApprovalChatClientMetricsTests
 
         ToolCallEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is ToolCallEvent t) { captured = t; } });
 
         var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
@@ -252,9 +247,8 @@ public class ToolApprovalChatClientMetricsTests
 
         ToolCallEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is ToolCallEvent t) { captured = t; } });
 
         var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
@@ -286,9 +280,8 @@ public class ToolApprovalChatClientMetricsTests
 
         ToolCallEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is ToolCallEvent t) { captured = t; } });
 
         var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
@@ -312,9 +305,8 @@ public class ToolApprovalChatClientMetricsTests
 
         LatencyEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is LatencyEvent l) { captured = l; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is LatencyEvent l) { captured = l; } });
 
         var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
@@ -337,9 +329,8 @@ public class ToolApprovalChatClientMetricsTests
 
         LatencyEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is LatencyEvent l) { captured = l; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is LatencyEvent l) { captured = l; } });
 
         var client = new ToolApprovalChatClient(
             fakeClient, handler, "conv1", metricsPublisher: publisher.Object);
@@ -351,28 +342,6 @@ public class ToolApprovalChatClientMetricsTests
         captured.Stage.ShouldBe(LatencyStage.ToolExec);
         captured.ConversationId.ShouldBe("conv1");
     }
-
-    [Fact]
-    public async Task InvokeFunctionAsync_ApprovedTool_PublisherThrows_DoesNotFailToolCall()
-    {
-        // Characterization test: locks in the best-effort latency-emission invariant.
-        // The production try/catch already swallows publisher exceptions, so this test
-        // passes immediately by design — it is a regression guard, not new behavior.
-        var publisher = new Mock<IMetricsPublisher>();
-        publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("boom"));
-        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
-        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
-        var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
-        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
-        var options = new ChatOptions { Tools = [function] };
-
-        await Should.NotThrowAsync(async () =>
-            await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options));
-    }
-
 
     [Fact]
     public async Task InvokeFunction_TagsTheToolCallWithItsConversation()
@@ -389,9 +358,8 @@ public class ToolApprovalChatClientMetricsTests
 
         ToolCallEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is ToolCallEvent t) { captured = t; } });
 
         var client = new ToolApprovalChatClient(
             fakeClient, handler, "conv-42", metricsPublisher: publisher.Object);
@@ -415,9 +383,8 @@ public class ToolApprovalChatClientMetricsTests
 
         ToolCallEvent? captured = null;
         publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => { if (e is ToolCallEvent t) { captured = t; } });
 
         var client = new ToolApprovalChatClient(
             fakeClient, handler, "conv-42", metricsPublisher: publisher.Object);

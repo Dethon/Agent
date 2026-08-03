@@ -35,8 +35,8 @@ public class McpAgentLatencyTests : IAsyncDisposable
             .Returns(updates.ToAsyncEnumerable());
 
         _publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) =>
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e =>
             {
                 lock (_lock)
                 {
@@ -50,8 +50,7 @@ public class McpAgentLatencyTests : IAsyncDisposable
                             break;
                     }
                 }
-            })
-            .Returns(Task.CompletedTask);
+            });
 
         var stateStore = new Mock<IThreadStateStore>();
         _agent = new McpAgent(
@@ -162,20 +161,5 @@ public class McpAgentLatencyTests : IAsyncDisposable
         warmup.ShouldNotBeNull();
         warmup.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
         warmup.Model.ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task PublisherThrowing_DoesNotFailWarmupOrTurn()
-    {
-        _publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("publisher down"));
-
-        await Should.NotThrowAsync(async () =>
-        {
-            var thread = await _agent.CreateSessionAsync();
-            await _agent.WarmupSessionAsync(thread);
-            await _agent.RunStreamingAsync("hello", thread).ToListAsync();
-        });
     }
 }

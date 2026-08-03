@@ -1,7 +1,8 @@
 using Domain.Contracts;
-using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
+using Domain.Metrics;
+using Infrastructure.Metrics;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -27,6 +28,7 @@ public sealed class RedisChatMessageStore(
     }
 
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly IMetricsPublisher _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
 
     public override IReadOnlyList<string> StateKeys => [StateKey];
 
@@ -72,7 +74,7 @@ public sealed class RedisChatMessageStore(
 
         // The lock serializes concurrent same-conversation turns through the one-time
         // legacy migration in AppendMessagesAsync and preserves per-turn message ordering.
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        using var latency = _metricsPublisher.MeasureLatency(LatencyStage.HistoryStore, conversationId);
         await _lock.WaitAsync(cancellationToken);
         try
         {
@@ -81,24 +83,6 @@ public sealed class RedisChatMessageStore(
         finally
         {
             _lock.Release();
-        }
-        sw.Stop();
-
-        if (metricsPublisher is not null)
-        {
-            try
-            {
-                await metricsPublisher.PublishAsync(new LatencyEvent
-                {
-                    Stage = LatencyStage.HistoryStore,
-                    DurationMs = sw.ElapsedMilliseconds,
-                    ConversationId = conversationId
-                }, cancellationToken);
-            }
-            catch
-            {
-                // Best-effort; persistence already succeeded.
-            }
         }
     }
 }

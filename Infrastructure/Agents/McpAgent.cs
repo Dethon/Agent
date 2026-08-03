@@ -9,9 +9,11 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
+using Domain.Metrics;
 using Domain.Prompts;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
+using Infrastructure.Metrics;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -35,7 +37,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly ReasoningEffort? _reasoningEffort;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private readonly TimeProvider _timeProvider;
-    private readonly IMetricsPublisher? _metricsPublisher;
+    private readonly IMetricsPublisher _metricsPublisher;
     private readonly string? _model;
     private readonly IReadOnlyList<string> _patchableModelIds;
     private readonly string? _conversationId;
@@ -86,7 +88,7 @@ public sealed class McpAgent : DisposableAgent
         _domainPrompts = domainPrompts ?? [];
         _reasoningEffort = ParseEffort(reasoningEffort);
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _metricsPublisher = metricsPublisher;
+        _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _model = model;
         _patchableModelIds = patchableModelIds ?? [];
         _conversationId = conversationId;
@@ -130,33 +132,8 @@ public sealed class McpAgent : DisposableAgent
         // Pre-create the ThreadSession (MCP connections + tool discovery) so this
         // cost overlaps with first-message handling. The _syncLock in
         // GetOrCreateSessionAsync makes the subsequent RunStreaming reuse it.
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        using var latency = _metricsPublisher.MeasureLatency(LatencyStage.SessionWarmup, _conversationId);
         await GetOrCreateSessionAsync(thread, ct);
-        sw.Stop();
-        await SafePublishLatencyAsync(LatencyStage.SessionWarmup, sw.ElapsedMilliseconds);
-    }
-
-    private async Task SafePublishLatencyAsync(LatencyStage stage, long durationMs, string? model = null)
-    {
-        if (_metricsPublisher is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await _metricsPublisher.PublishAsync(new LatencyEvent
-            {
-                Stage = stage,
-                DurationMs = durationMs,
-                Model = model,
-                ConversationId = _conversationId
-            });
-        }
-        catch
-        {
-            // Latency emission is best-effort and must never affect a turn.
-        }
     }
 
     public override async ValueTask DisposeThreadSessionAsync(AgentSession thread)
@@ -235,24 +212,16 @@ public sealed class McpAgent : DisposableAgent
         string? effectiveModel,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        var firstEmitted = false;
-        try
+        using var total = _metricsPublisher.MeasureLatency(
+            LatencyStage.LlmTotal, _conversationId, model: effectiveModel);
+        // The first token is a point inside the total span, not a span of its own, so it ends the
+        // same measurement early rather than opening a second one.
+        var firstToken = _metricsPublisher.MeasureLatency(
+            LatencyStage.LlmFirstToken, _conversationId, model: effectiveModel);
+        await foreach (var update in source.WithCancellation(ct))
         {
-            await foreach (var update in source.WithCancellation(ct))
-            {
-                if (!firstEmitted)
-                {
-                    firstEmitted = true;
-                    await SafePublishLatencyAsync(LatencyStage.LlmFirstToken, sw.ElapsedMilliseconds, effectiveModel);
-                }
-                yield return update;
-            }
-        }
-        finally
-        {
-            sw.Stop();
-            await SafePublishLatencyAsync(LatencyStage.LlmTotal, sw.ElapsedMilliseconds, effectiveModel);
+            firstToken.Dispose();
+            yield return update;
         }
     }
 

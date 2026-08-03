@@ -9,6 +9,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using OpenAI;
 
@@ -22,7 +23,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly ConcurrentQueue<string> _reasoningQueue = new();
     private readonly ConcurrentQueue<decimal> _costQueue = new();
     private readonly ConcurrentQueue<long> _cachedTokenQueue = new();
-    private readonly IMetricsPublisher? _metricsPublisher;
+    private readonly IMetricsPublisher _metricsPublisher;
     private readonly int? _maxContextTokens;
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
@@ -40,7 +41,7 @@ public sealed class OpenRouterChatClient : IChatClient
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
-        _metricsPublisher = metricsPublisher;
+        _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _httpClient = CreateHttpClient(
             _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
@@ -57,7 +58,7 @@ public sealed class OpenRouterChatClient : IChatClient
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
-        _metricsPublisher = metricsPublisher;
+        _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _client = innerClient;
     }
@@ -150,9 +151,9 @@ public sealed class OpenRouterChatClient : IChatClient
             out var droppedCount, out var tokensBefore, out var tokensAfter,
             out var overflowDetected, fixedOverheadTokens: fixedOverhead);
 
-        if (overflowDetected && _metricsPublisher is not null)
+        if (overflowDetected)
         {
-            await _metricsPublisher.PublishAsync(new ContextTruncationEvent
+            _metricsPublisher.Publish(new ContextTruncationEvent
             {
                 Sender = sender ?? "unknown",
                 Model = effectiveModel,
@@ -160,7 +161,7 @@ public sealed class OpenRouterChatClient : IChatClient
                 EstimatedTokensBefore = tokensBefore,
                 EstimatedTokensAfter = tokensAfter,
                 MaxContextTokens = _maxContextTokens ?? 0
-            }, ct);
+            });
         }
 
         UsageContent? usage = null;
@@ -179,10 +180,10 @@ public sealed class OpenRouterChatClient : IChatClient
             yield return update;
         }
 
-        if (_metricsPublisher is not null && usage?.Details is not null)
+        if (usage?.Details is not null)
         {
             var cost = DrainCostQueue() ?? 0m;
-            await _metricsPublisher.PublishAsync(new TokenUsageEvent
+            _metricsPublisher.Publish(new TokenUsageEvent
             {
                 Sender = sender ?? "unknown",
                 Model = effectiveModel,
@@ -190,7 +191,7 @@ public sealed class OpenRouterChatClient : IChatClient
                 OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),
                 CachedInputTokens = DrainCachedTokenQueue() ?? ReadCachedInputTokens(usage.Details),
                 Cost = cost
-            }, ct);
+            });
         }
     }
 
