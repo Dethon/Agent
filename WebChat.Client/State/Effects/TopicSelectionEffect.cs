@@ -1,4 +1,5 @@
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -15,6 +16,7 @@ public sealed class TopicSelectionEffect : IDisposable
     private readonly ITopicService _topicService;
     private readonly IStreamResumeService _streamResumeService;
     private readonly IMessagePipeline _pipeline;
+    private readonly ILogger<TopicSelectionEffect> _logger;
 
     public TopicSelectionEffect(
         Dispatcher dispatcher,
@@ -23,7 +25,8 @@ public sealed class TopicSelectionEffect : IDisposable
         IChatSessionService sessionService,
         ITopicService topicService,
         IStreamResumeService streamResumeService,
-        IMessagePipeline pipeline)
+        IMessagePipeline pipeline,
+        ILogger<TopicSelectionEffect> logger)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
@@ -32,21 +35,18 @@ public sealed class TopicSelectionEffect : IDisposable
         _topicService = topicService;
         _streamResumeService = streamResumeService;
         _pipeline = pipeline;
+        _logger = logger;
 
-        dispatcher.RegisterHandler<SelectTopic>(HandleSelectTopic);
-    }
-
-    private void HandleSelectTopic(SelectTopic action)
-    {
-        if (action.TopicId is null)
+        dispatcher.RegisterHandler<SelectTopic>(action =>
         {
-            return;
-        }
-
-        _ = HandleSelectTopicAsync(action.TopicId);
+            if (action.TopicId is not null)
+            {
+                HandleSelectTopicAsync(action.TopicId).LogFaults(_logger, nameof(SelectTopic));
+            }
+        });
     }
 
-    private async Task HandleSelectTopicAsync(string topicId)
+    public async Task HandleSelectTopicAsync(string topicId)
     {
         var topic = _topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId);
         if (topic is null)
@@ -70,7 +70,9 @@ public sealed class TopicSelectionEffect : IDisposable
 
         await MarkTopicAsReadAsync(topic);
 
-        _ = _streamResumeService.TryResumeStreamAsync(topic);
+        // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean
+        // awaiting the conversation.
+        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, nameof(IStreamResumeService));
     }
 
     private async Task MarkTopicAsReadAsync(StoredTopic topic)

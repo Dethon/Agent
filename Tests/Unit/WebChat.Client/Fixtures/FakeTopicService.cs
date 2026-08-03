@@ -31,6 +31,10 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     public Exception? ThrowOnGetAllTopics { get; set; }
 
+    public Exception? ThrowOnGetHistory { get; set; }
+
+    public Exception? ThrowOnDeleteTopic { get; set; }
+
     public IReadOnlyList<TopicMetadata> SavedTopics => _savedTopics;
     public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
     public IReadOnlyList<string> JoinedSpaces => _joinedSpaces;
@@ -66,14 +70,25 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     public Task DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)
     {
-        _deletedTopicIds.Add(topicId);
         recorder?.Record($"delete:{topicId}");
+
+        if (ThrowOnDeleteTopic is not null)
+        {
+            return Task.FromException(ThrowOnDeleteTopic);
+        }
+
+        _deletedTopicIds.Add(topicId);
         return Task.CompletedTask;
     }
 
     public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
     {
         recorder?.Record($"history:{chatId}:{threadId}");
+
+        if (ThrowOnGetHistory is not null)
+        {
+            return Task.FromException<IReadOnlyList<ChatHistoryMessage>>(ThrowOnGetHistory);
+        }
 
         return Task.FromResult<IReadOnlyList<ChatHistoryMessage>>(
             _history.TryGetValue((chatId, threadId), out var h) ? h : []);

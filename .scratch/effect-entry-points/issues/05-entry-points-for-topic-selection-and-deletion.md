@@ -10,13 +10,13 @@ The topic-deletion effect is also rewritten by `webchat-slice-shape` tickets 05 
 
 **Blocked by:** 01 (fault logging).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Topic-selection work is reachable by calling a public method with a topic id and awaiting it.
-- [ ] Topic-deletion work is reachable by calling a public method and awaiting it.
-- [ ] Dispatching either action still runs the same work.
-- [ ] A fault in either effect is logged rather than discarded.
-- [ ] Selecting a topic marks it as read when it has unread messages, and does not write when it does not.
-- [ ] Deleting a topic removes it from the server and clears its messages locally.
-- [ ] Both effects have a test file that dispatches the action in at least one case, so the registration itself stays covered.
-- [ ] No production behaviour changes beyond the fault logging.
+- [x] Topic-selection work is reachable by calling a public method with a topic id and awaiting it.
+- [x] Topic-deletion work is reachable by calling a public method and awaiting it.
+- [x] Dispatching either action still runs the same work.
+- [x] A fault in either effect is logged rather than discarded.
+- [x] Selecting a topic marks it as read when it has unread messages, and does not write when it does not.
+- [x] Deleting a topic removes it from the server and clears its messages locally.
+- [x] Both effects have a test file that dispatches the action in at least one case, so the registration itself stays covered.
+- [x] No production behaviour changes beyond the fault logging.
