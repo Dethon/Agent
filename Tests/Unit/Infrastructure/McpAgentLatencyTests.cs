@@ -16,6 +16,7 @@ public class McpAgentLatencyTests : IAsyncDisposable
 {
     private readonly McpAgent _agent;
     private readonly List<LatencyEvent> _events = [];
+    private readonly List<TokenUsageEvent> _tokenEvents = [];
     private readonly Lock _lock = new();
     private readonly Mock<IMetricsPublisher> _publisher = new();
 
@@ -37,11 +38,16 @@ public class McpAgentLatencyTests : IAsyncDisposable
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
             .Callback<MetricEvent, CancellationToken>((e, _) =>
             {
-                if (e is LatencyEvent le)
+                lock (_lock)
                 {
-                    lock (_lock)
+                    switch (e)
                     {
-                        _events.Add(le);
+                        case LatencyEvent le:
+                            _events.Add(le);
+                            break;
+                        case TokenUsageEvent te:
+                            _tokenEvents.Add(te);
+                            break;
                     }
                 }
             })
@@ -100,13 +106,19 @@ public class McpAgentLatencyTests : IAsyncDisposable
                 It.IsAny<CancellationToken>()))
             .Returns(new List<ChatResponseUpdate>
             {
-                new() { Role = ChatRole.Assistant, Contents = [new TextContent("hi")] }
+                new() { Role = ChatRole.Assistant, Contents = [new TextContent("hi")] },
+                new()
+                {
+                    Role = ChatRole.Assistant,
+                    Contents = [new UsageContent(new UsageDetails { InputTokenCount = 10, OutputTokenCount = 5 })]
+                }
             }.ToAsyncEnumerable());
 
         // Production wraps the chat client in ToolApprovalChatClient, so the wrapper is part of
         // this test on purpose: the resolved model must reach the request through the decorator
         // chain on the turn's own options.
-        using var chatClient = new OpenRouterChatClient(inner.Object, "anthropic/claude");
+        using var chatClient = new OpenRouterChatClient(
+            inner.Object, "anthropic/claude", metricsPublisher: _publisher.Object);
         using var wrappedClient = new ToolApprovalChatClient(
             chatClient, new Mock<IToolApprovalHandler>().Object);
 
@@ -130,6 +142,13 @@ public class McpAgentLatencyTests : IAsyncDisposable
         var events = Snapshot();
         events.First(e => e.Stage == LatencyStage.LlmFirstToken).Model.ShouldBe("z-ai/glm");
         events.First(e => e.Stage == LatencyStage.LlmTotal).Model.ShouldBe("z-ai/glm");
+
+        // Cost and token usage are attributed to the model that produced them, not to the
+        // agent's configured model.
+        lock (_lock)
+        {
+            _tokenEvents.ShouldHaveSingleItem().Model.ShouldBe("z-ai/glm");
+        }
     }
 
     [Fact]

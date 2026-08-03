@@ -18,7 +18,7 @@ public class McpAgentConversationContextTests
     private static (McpAgent Agent, List<ChatOptions?> Captured, List<string> Logs) CreateAgent()
     {
         var captured = new List<ChatOptions?>();
-        var logProvider = new CapturingLoggerProvider();
+        var logProvider = new CapturingLoggerProvider(LogLevel.Error);
         var chatClient = new Mock<IChatClient>();
         chatClient
             .Setup(c => c.GetStreamingResponseAsync(
@@ -76,33 +76,5 @@ public class McpAgentConversationContextTests
         var options = captured.ShouldHaveSingleItem().ShouldNotBeNull();
         options.AdditionalProperties.ShouldNotBeNull();
         logs.ShouldContain(m => m.Contains(ChannelProtocol.ConversationContextMetaKey));
-    }
-
-    private sealed class CapturingLoggerProvider : ILoggerProvider
-    {
-        public List<string> Messages { get; } = [];
-
-        public ILogger CreateLogger(string categoryName) => new CapturingLogger(Messages);
-
-        public void Dispose()
-        {
-        }
-
-        private sealed class CapturingLogger(List<string> messages) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Error;
-
-            public void Log<TState>(
-                LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-                Func<TState, Exception?, string> formatter)
-            {
-                if (logLevel >= LogLevel.Error)
-                {
-                    messages.Add(formatter(state, exception));
-                }
-            }
-        }
     }
 }

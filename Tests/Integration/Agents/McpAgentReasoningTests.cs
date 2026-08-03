@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Unit;
 
 namespace Tests.Integration.Agents;
 
@@ -150,7 +151,7 @@ public class McpAgentReasoningTestsConfigPatch
         string? reasoningEffort = null)
     {
         var captured = new List<ChatOptions?>();
-        var logProvider = new CapturingWarningProvider();
+        var logProvider = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
         var chatClient = new Mock<IChatClient>();
         chatClient
             .Setup(c => c.GetStreamingResponseAsync(
@@ -284,33 +285,5 @@ public class McpAgentReasoningTestsConfigPatch
     public void TryParseEffort_UnknownValue_ReturnsNull()
     {
         McpAgent.TryParseEffort("turbo").ShouldBeNull();
-    }
-
-    private sealed class CapturingWarningProvider : ILoggerProvider
-    {
-        public List<string> Messages { get; } = [];
-
-        public ILogger CreateLogger(string categoryName) => new CapturingLogger(Messages);
-
-        public void Dispose()
-        {
-        }
-
-        private sealed class CapturingLogger(List<string> messages) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => logLevel == LogLevel.Warning;
-
-            public void Log<TState>(
-                LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-                Func<TState, Exception?, string> formatter)
-            {
-                if (logLevel == LogLevel.Warning)
-                {
-                    messages.Add(formatter(state, exception));
-                }
-            }
-        }
     }
 }

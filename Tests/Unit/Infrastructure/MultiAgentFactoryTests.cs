@@ -303,7 +303,7 @@ public sealed class MultiAgentFactoryTests
         CreateCapturingFactory(ProviderRouting? globalRouting, params AgentDefinition[] agents)
     {
         var captured = new List<ProviderRouting?>();
-        var logProvider = new CapturingLoggerProvider();
+        var logProvider = new CapturingLoggerProvider(LogLevel.Warning);
 
         var optionsMonitor = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
         optionsMonitor.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions { Agents = agents });
@@ -339,33 +339,5 @@ public sealed class MultiAgentFactoryTests
             });
 
         return (factory, captured, logProvider.Messages);
-    }
-
-    private sealed class CapturingLoggerProvider : ILoggerProvider
-    {
-        public List<string> Messages { get; } = [];
-
-        public ILogger CreateLogger(string categoryName) => new CapturingLogger(Messages);
-
-        public void Dispose()
-        {
-        }
-
-        private sealed class CapturingLogger(List<string> messages) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
-
-            public void Log<TState>(
-                LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-                Func<TState, Exception?, string> formatter)
-            {
-                if (logLevel >= LogLevel.Warning)
-                {
-                    messages.Add(formatter(state, exception));
-                }
-            }
-        }
     }
 }
