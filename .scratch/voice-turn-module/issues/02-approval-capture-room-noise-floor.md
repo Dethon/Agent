@@ -10,13 +10,13 @@ This is the only intended behaviour change in this spec.
 
 **Blocked by:** 01 — Per-satellite gate factory.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A failing test first: an approval capture on a satellite with a recorded room sample uses the capped floor, not the raw resolved threshold.
-- [ ] The approval capture obtains its gate from the factory instead of assembling a tracker inline.
-- [ ] The factory unit file asserts that a gate built for a capture and a gate built for an approval are identical, including the room cap.
-- [ ] The approval tool's unit file asserts the capture is built through the factory. It already builds a real service collection and calls the tool's entry point, so the factory is reachable by registration.
-- [ ] The approval capture keeps its chunk history, so wake arbitration can still ask it retrospectively what it heard during another satellite's wake-word span.
-- [ ] The comment recording why the approval mic needs that history survives.
+- [x] A failing test first: an approval capture on a satellite with a recorded room sample uses the capped floor, not the raw resolved threshold.
+- [x] The approval capture obtains its gate from the factory instead of assembling a tracker inline.
+- [x] The factory unit file asserts that a gate built for a capture and a gate built for an approval are identical, including the room cap.
+- [x] The approval tool's unit file asserts the capture is built through the factory. It already builds a real service collection and calls the tool's entry point, so the factory is reachable by registration.
+- [x] The approval capture keeps its chunk history, so wake arbitration can still ask it retrospectively what it heard during another satellite's wake-word span.
+- [x] The comment recording why the approval mic needs that history survives.
 
 **Accepted trade:** neither test drives real audio through an approval capture and observes the endpointing decision change. That would mean the two-thousand-line host integration file, which the channel-server plan is also rewriting. This pair pins the wiring and the resolution, not the acoustic outcome. Knowingly accepted; there is no follow-up ticket for it.

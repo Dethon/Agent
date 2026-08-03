@@ -60,7 +60,7 @@ public sealed class RequestApprovalTool
         }
 
         var stt = services.GetRequiredService<ISpeechToText>();
-        var wyoming = services.GetRequiredService<WyomingClientSettings>();
+        var gates = services.GetRequiredService<SilenceGateFactory>();
         var time = services.GetRequiredService<TimeProvider>();
 
         var toolList = string.Join(", ", p.Requests.Select(r => r.ToolName.Split("__").Last()));
@@ -75,7 +75,7 @@ public sealed class RequestApprovalTool
                 return "rejected";
             }
 
-            var answer = await CaptureAnswerAsync(session, stt, wyoming, settings, time, cancellationToken);
+            var answer = await CaptureAnswerAsync(session, stt, gates, settings, time, cancellationToken);
             if (answer is null)
             {
                 // Arbitration stole the turn mid-answer: the arbiter already re-armed this
@@ -162,7 +162,7 @@ public sealed class RequestApprovalTool
     // Returns null when arbitration abandoned the capture — distinct from an empty answer,
     // which re-prompts.
     private static async Task<string?> CaptureAnswerAsync(
-        SatelliteSession session, ISpeechToText stt, WyomingClientSettings wyoming,
+        SatelliteSession session, ISpeechToText stt, SilenceGateFactory gates,
         VoiceSettings settings, TimeProvider time, CancellationToken ct)
     {
         var followUp = settings.FollowUp;
@@ -171,19 +171,11 @@ public sealed class RequestApprovalTool
             await Task.Delay(followUp.PlaybackTailMs, ct); // echo guard after the prompt finishes
         }
 
-        var config = session.Config;
-        var capture = session.OpenCapture(new SilenceGate(
-            new AdaptiveLevelTracker(
-                config.ResolveRmsThreshold(wyoming),
-                config.ResolveEnterMarginDb(wyoming),
-                config.ResolveExitMarginDb(wyoming),
-                config.ResolvePeakDropDb(wyoming),
-                TimeSpan.FromMilliseconds(config.ResolveFloorWindowMs(wyoming)),
-                demoteMarginDb: config.ResolveDemoteMarginDb(wyoming)),
-            TimeSpan.FromMilliseconds(wyoming.TrailingSilenceMs),
-            TimeSpan.FromMilliseconds(wyoming.MaxUtteranceMs),
-            TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(wyoming)),
-            noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)),
+        // The same gate the wake turn the user is answering was endpointed against, room-noise cap
+        // included: a confirmation mic that behaved differently from the mic that heard the question
+        // cut people off mid-answer.
+        var capture = session.OpenCapture(
+            gates.Create(session.SatelliteId, session.Config),
             // The approval mic is an open capture like any wake turn's: Rule B must be able
             // to ask it what it heard during another satellite's wake-word span.
             new ChunkHistory(time, settings.Arbitration.HistorySpan));

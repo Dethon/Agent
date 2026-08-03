@@ -56,23 +56,31 @@ public class RequestApprovalToolTests : IDisposable
         _tts.Setup(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
             .Returns(Audio());
 
-        _services = new ServiceCollection()
-            .AddSingleton(_sessions)
-            .AddSingleton(_accumulator)
-            .AddSingleton(_manager)
-            .AddSingleton(_tts.Object)
-            .AddSingleton(new VoiceSettings
-            {
-                FollowUp = new FollowUpSettings { PlaybackTailMs = 0, WindowMs = 2000 }
-            })
-            .AddSingleton<ISpeechToText>(_stt.Object)
-            .AddSingleton(new WyomingClientSettings
+        _services = BuildServices(
+            new VoiceSettings { FollowUp = new FollowUpSettings { PlaybackTailMs = 0, WindowMs = 2000 } },
+            new WyomingClientSettings
             {
                 SilenceRmsThreshold = 500,
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            })
+            });
+    }
+
+    private IServiceProvider BuildServices(
+        VoiceSettings voice, WyomingClientSettings wyoming, Action<SilenceGateFactory>? seedRoomNoise = null)
+    {
+        var gates = new SilenceGateFactory(voice, wyoming, TimeProvider.System);
+        seedRoomNoise?.Invoke(gates);
+        return new ServiceCollection()
+            .AddSingleton(_sessions)
+            .AddSingleton(_accumulator)
+            .AddSingleton(_manager)
+            .AddSingleton(_tts.Object)
+            .AddSingleton(voice)
+            .AddSingleton<ISpeechToText>(_stt.Object)
+            .AddSingleton(wyoming)
+            .AddSingleton(gates)
             .AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>())
             .AddSingleton<ILogger<RequestApprovalTool>>(NullLogger<RequestApprovalTool>.Instance)
             .AddSingleton(TimeProvider.System)
@@ -135,6 +143,96 @@ public class RequestApprovalToolTests : IDisposable
 
     private static ToolApprovalRequest MakeRequest(string toolName = "mcp__lib__download") =>
         new(null, toolName, new Dictionary<string, object?>());
+
+    // An answer given in an audible room: the capture opens on the background itself (the prompt has
+    // just finished playing), the user speaks over it, then stops.
+    private Task FeedAnswerOverBackgroundAsync(CancellationToken ct) => Task.Run(async () =>
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            if (_session.HasActiveCapture)
+            {
+                foreach (var _ in Enumerable.Range(0, 5))
+                { _session.RouteAudio(Level(4000)); }   // the room, which the capture has to open on top of
+                _session.RouteAudio(Level(12_000));     // "sí, la de las tres"
+                _session.RouteAudio(Level(12_000));
+                _session.RouteAudio(Level(0));
+                _session.RouteAudio(Level(0));
+                await Task.Delay(60, ct);
+            }
+            else
+            {
+                await Task.Delay(10, ct);
+            }
+        }
+    }, ct);
+
+    // Constant-amplitude S16LE: for a flat signal the RMS is the amplitude itself.
+    private static AudioChunk Level(short amplitude)
+    {
+        var pcm = new byte[3200];
+        for (var i = 0; i < pcm.Length; i += 2)
+        {
+            pcm[i] = (byte)(amplitude & 0xFF);
+            pcm[i + 1] = (byte)(amplitude >> 8);
+        }
+        return new AudioChunk { Data = pcm, Format = AudioFormat.WyomingStandard };
+    }
+
+    // DemoteMarginDb above EnterMarginDb is what makes the capture-level accept bar bite: an answer
+    // whose peak does not stand clear of the floor is thrown away rather than transcribed.
+    private static WyomingClientSettings AudibleRoomSettings() => new()
+    {
+        SilenceRmsThreshold = 500,
+        TrailingSilenceMs = 200,
+        MaxUtteranceMs = 3000,
+        MinSpeechMs = 100,
+        DemoteMarginDb = 20
+    };
+
+    [Fact]
+    public async Task RequestMode_NoRoomSample_DiscardsTheAnswerAgainstAnInflatedFloor()
+    {
+        // The capture measures its background from its own first frames, which here are the room the
+        // user is already talking over. The floor freezes 10 dB under their voice, the answer fails
+        // the accept bar, and a "sí" the satellite plainly heard is discarded.
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
+        var services = BuildServices(
+            new VoiceSettings { FollowUp = new FollowUpSettings { PlaybackTailMs = 0, WindowMs = 2000 } },
+            AudibleRoomSettings());
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswerOverBackgroundAsync(feed.Token);
+
+        var result = await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("rejected");
+    }
+
+    [Fact]
+    public async Task RequestMode_WithARecordedRoomSample_HearsTheAnswer()
+    {
+        // Same room, same answer — but this satellite has produced a room reading recently, exactly
+        // as the wake turn the user is answering did. Capping the floor with it keeps the answer.
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
+        var services = BuildServices(
+            new VoiceSettings { FollowUp = new FollowUpSettings { PlaybackTailMs = 0, WindowMs = 2000 } },
+            AudibleRoomSettings(),
+            gates => gates.RecordRoomLevel("kitchen-01", 200));
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedAnswerOverBackgroundAsync(feed.Token);
+
+        var result = await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("approved");
+    }
 
     [Fact]
     public async Task NotifyMode_DoesNotSpeakOrWaitForResponse()
