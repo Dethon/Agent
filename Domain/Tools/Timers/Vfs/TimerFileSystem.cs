@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
@@ -16,9 +15,39 @@ namespace Domain.Tools.Timers.Vfs;
 // the alarm" works from any room or channel, not just by waking a targeted satellite.
 public sealed class TimerFileSystem(
     ITimerStore store, TimeProvider timeProvider, IAlertDismisser dismisser,
-    ISatelliteCatalog satellites) : IFileSystemBackend
+    ISatelliteCatalog satellites, TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
-    public string FilesystemName => "timers";
+    public override string FilesystemName => "timers";
+
+    protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
+
+    // The words the model reads about each operation, next to the behaviour they describe. They
+    // name the mount's real files, which is what makes the timers surface usable without a probe.
+    public override string DescribeGlob =>
+        "Lists timer filesystem entries matching a glob under basePath. `*` matches one "
+        + "path segment, `**` recurses, `?` one char, `{a,b}` brace alternation. A trailing slash "
+        + "(e.g. `*/`) lists directories only; otherwise files and directories both match, with "
+        + "directory results marked by a trailing slash.";
+
+    public override string DescribeInfo => "Get info about a timer filesystem path";
+
+    public override string DescribeRead => "Read a timer filesystem file (timer.json/status.json)";
+
+    public override string DescribeSearch =>
+        "Searches timer.json content across timers. Scope with path (a single timer); omit to "
+        + "search every timer. Supports regex, filePattern, maxResults, contextLines, and "
+        + "outputMode (content|filesOnly) like the other filesystems.";
+
+    public override string DescribeCreate =>
+        "Arm a timer: fs_create /<descriptive-id>/timer.json with JSON {durationSeconds, text?, target}";
+
+    public override string DescribeEdit => "Unsupported on timers (immutable) — kept for VFS surface completeness";
+
+    public override string DescribeDelete => "Cancel a timer by deleting its directory /<timerId>";
+
+    public override string DescribeExec =>
+        $"Silence every alert currently ringing: exec {TimerPath.DismissFileName} at the timers "
+        + "root. Not a shell — anything else returns exit 127.";
 
     private const string DismissHelp =
         "# Dismiss everything currently ringing (alarms and timers) on all satellites:\n"
@@ -33,14 +62,10 @@ public sealed class TimerFileSystem(
 
     private static readonly JsonSerializerOptions _parseOptions = new() { PropertyNameCaseInsensitive = true };
 
-    public async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
+    public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
         var all = await store.ListAsync(ct);
-        var prefix = string.IsNullOrEmpty(basePath?.Trim('/')) ? string.Empty : basePath.Trim('/') + "/";
-
-        var dirsOnly = pattern.EndsWith('/');
-        var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
-        var matches = GlobRegex.CompileMatcher(prefix + effectivePattern);
+        var (dirsOnly, matches) = GlobPrologue(basePath, pattern);
 
         var dirs = all.Select(t => t.Id).Where(matches).Select(id => $"/{id}/");
         if (dirsOnly)
@@ -59,7 +84,7 @@ public sealed class TimerFileSystem(
         return Glob(dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
     }
 
-    public async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
+    public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
         var exists = await NodeExistsAsync(node, ct);
@@ -72,7 +97,7 @@ public sealed class TimerFileSystem(
         });
     }
 
-    public async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
+    public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
         string content;
@@ -100,57 +125,35 @@ public sealed class TimerFileSystem(
         });
     }
 
-    public async Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,
+    public override async Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,
         string? directoryPath, string? filePattern, int maxResults, int contextLines,
         VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
-        var matcher = new Regex(regex ? query : Regex.Escape(query), RegexOptions.IgnoreCase);
         var scope = path ?? directoryPath;
 
+        // timer.json is the only searchable file per timer, so a filePattern either includes it
+        // (search the scoped timers) or excludes it entirely (nothing to search).
         var scoped = VfsContentSearch.MatchesFilePattern(filePattern, TimerPath.TimerFileName)
             ? await ScopeTimersAsync(scope, ct)
             : [];
 
-        var results = new List<FsSearchFileResult>();
-        var totalMatches = 0;
-        var filesWithMatches = 0;
-        var filesSearched = 0;
-        var truncated = false;
-
-        foreach (var timer in scoped)
-        {
-            if (totalMatches >= maxResults)
+        return await SearchNodesAsync(
+            scoped,
+            (timer, _) => ValueTask.FromResult<(string, string?)>(
+                ($"/{timer.Id}/{TimerPath.TimerFileName}", RenderSpec(timer))),
+            new FsSearchScan
             {
-                truncated = true;
-                break;
-            }
-            filesSearched++;
-            var lines = RenderSpec(timer).Split('\n');
-            var (matches, more) = VfsContentSearch.FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
-            truncated |= more;
-            if (matches.Count == 0)
-            {
-                continue;
-            }
-            filesWithMatches++;
-            totalMatches += matches.Count;
-            results.Add(VfsContentSearch.BuildFileResult($"/{timer.Id}/{TimerPath.TimerFileName}", matches, outputMode));
-        }
-
-        return new FsResult<FsSearchResult>.Ok(new FsSearchResult
-        {
-            Query = query,
-            Regex = regex,
-            Path = scope ?? "/",
-            FilesSearched = filesSearched,
-            FilesWithMatches = filesWithMatches,
-            TotalMatches = totalMatches,
-            Truncated = truncated,
-            Results = results
-        });
+                Query = query,
+                Regex = regex,
+                Path = scope ?? "/",
+                MaxResults = maxResults,
+                ContextLines = contextLines,
+                OutputMode = outputMode
+            },
+            ct);
     }
 
-    public async Task<FsResult<FsCreateResult>> CreateAsync(
+    public override async Task<FsResult<FsCreateResult>> CreateAsync(
         string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
@@ -203,13 +206,14 @@ public sealed class TimerFileSystem(
         });
     }
 
-    public async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
+    public override async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
         return node.Kind switch
         {
             TimerNodeKind.TimerFile when await GetTimerAsync(node, ct) is not null =>
-                Unsupported<FsEditResult>("Timers are immutable — delete the timer and create a new one."),
+                Fail<FsEditResult>(ToolError.Codes.UnsupportedOperation,
+                    "Timers are immutable — delete the timer and create a new one."),
             TimerNodeKind.StatusFile when await GetTimerAsync(node, ct) is not null =>
                 ReadOnly<FsEditResult>(path),
             TimerNodeKind.DismissFile => ReadOnly<FsEditResult>(path),
@@ -217,7 +221,7 @@ public sealed class TimerFileSystem(
         };
     }
 
-    public async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
+    public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
         if (node.Kind == TimerNodeKind.DismissFile)
@@ -240,15 +244,15 @@ public sealed class TimerFileSystem(
             : NotFound<FsRemoveResult>(path);
     }
 
-    public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsMoveResult>("The timers filesystem does not support move."));
+    public override Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsMoveResult>(VfsMoveTool.Name));
 
-    public async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    public override async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);
         if (node.Kind is not (TimerNodeKind.Root or TimerNodeKind.DismissFile))
         {
-            return Unsupported<FsExecResult>(
+            return Fail<FsExecResult>(ToolError.Codes.UnsupportedOperation,
                 $"exec is only supported at the timers root: exec {TimerPath.DismissFileName}");
         }
 
@@ -274,17 +278,6 @@ public sealed class TimerFileSystem(
                 " and ", dismissed.Select(d => $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\"")) + "\n";
         return Exec(stdout, "", 0, path);
     }
-
-    public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
-        bool overwrite, bool createDirectories, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsCopyResult>("The timers filesystem does not support copy."));
-
-    public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
-        throw new NotSupportedException("The timers filesystem does not support raw byte streaming.");
-
-    public Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
-        bool overwrite, bool createDirectories, CancellationToken ct) =>
-        throw new NotSupportedException("The timers filesystem does not support raw byte streaming.");
 
     private sealed record SpecDto
     {
@@ -430,26 +423,6 @@ public sealed class TimerFileSystem(
             Stdout = stdout, Stderr = stderr, ExitCode = exitCode,
             Truncated = false, TimedOut = false, DurationMs = 0, Cwd = cwd
         });
-
-    private static FsResult<FsGlobResult> Glob(IReadOnlyList<string> entries) =>
-        new FsResult<FsGlobResult>.Ok(new FsGlobResult
-        {
-            Entries = entries,
-            Truncated = false,
-            Total = entries.Count
-        });
-
-    private static FsResult<T> ReadOnly<T>(string path) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.UnsupportedOperation, $"{path} is read-only"));
-
-    private static FsResult<T> Invalid<T>(string message) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.InvalidArgument, message));
-
-    private static FsResult<T> NotFound<T>(string path) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.NotFound, $"Path not found: {path}"));
-
-    private static FsResult<T> Unsupported<T>(string message) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.UnsupportedOperation, message));
 
     private static FsResult<T> HubUnavailable<T>(string consequence) where T : class =>
         new FsResult<T>.Err(Error(ToolError.Codes.Unavailable,

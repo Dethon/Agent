@@ -12,12 +12,12 @@ Each of the four gets its own failing test first, in that backend's own existing
 
 **Blocked by:** 01 — the base must exist before anything can be reparented onto it.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] All four backends derive from the base and override only the operations they implement.
-- [ ] Each backend's copy of the envelope helpers, glob prologue and search template is deleted.
-- [ ] A search on schedules and on timers is bounded by the match timeout, and a pattern that cannot compile returns an invalid-argument envelope.
-- [ ] A print-queue glob honours the base path, and a trailing slash yields directories only.
-- [ ] A Home Assistant unsupported reply names the operation, with no C# method name in the text.
-- [ ] Per-server description text that names real files is preserved word for word: the schedules and timers file names, and Home Assistant's state file and shell-entry usage.
-- [ ] Each of the four changes is asserted in that backend's existing test file, and each test was seen to fail before the fix.
+- [x] All four backends derive from the base and override only the operations they implement.
+- [x] Each backend's copy of the envelope helpers, glob prologue and search template is deleted.
+- [x] A search on schedules and on timers is bounded by the match timeout, and a pattern that cannot compile returns an invalid-argument envelope.
+- [x] A print-queue glob honours the base path, and a trailing slash yields directories only.
+- [x] A Home Assistant unsupported reply names the operation, with no C# method name in the text.
+- [x] Per-server description text that names real files is preserved word for word: the schedules and timers file names, and Home Assistant's state file and shell-entry usage.
+- [x] Each of the four changes is asserted in that backend's existing test file, and each test was seen to fail before the fix.

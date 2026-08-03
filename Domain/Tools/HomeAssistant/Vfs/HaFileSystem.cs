@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
@@ -10,14 +9,41 @@ public sealed partial class HaFileSystem(
     HaCatalogProvider catalogProvider,
     Func<IHomeAssistantClient> clientFactory,
     TimeSpan? regexMatchTimeout = null,
-    Func<IMusicAssistantClient>? musicClientFactory = null) : IFileSystemBackend
+    Func<IMusicAssistantClient>? musicClientFactory = null) : FileSystemBackendBase
 {
-    public string FilesystemName => "ha";
+    public override string FilesystemName => "ha";
 
-    private readonly TimeSpan _regexMatchTimeout = regexMatchTimeout ?? TimeSpan.FromSeconds(1);
+    protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
+
+    // The words the model reads about each operation, next to the behaviour they describe. They
+    // name the mount's real files, which is what makes the Home Assistant surface usable.
+    public override string DescribeRead =>
+        "Reads a Home Assistant virtual file: state.json returns the entity's live state + "
+        + "attributes; a *.sh file returns its usage (same as --help).";
+
+    public override string DescribeInfo =>
+        "Returns metadata for a Home Assistant virtual path: exists, isDirectory. Cheap existence "
+        + "check before read/exec.";
+
+    public override string DescribeGlob =>
+        "Lists Home Assistant entities, areas, and action files matching a glob pattern. "
+        + "`*` matches one path segment, `**` recurses. A trailing slash lists directories only "
+        + "(domains, entities, areas — e.g. `*/`); otherwise files (`state.json`, `*.sh`) and "
+        + "directories both match, with directories returned with a trailing slash.";
+
+    public override string DescribeSearch =>
+        "Searches Home Assistant entity state files (entity_id, friendly_name, attributes). Scope "
+        + "with directoryPath (e.g. /ha/entities/light or /ha/areas/salon) or path (a single "
+        + "state.json); omit both to search every entity. Use to find e.g. everything currently 'on'.";
+
+    public override string DescribeExec =>
+        "Runs a Home Assistant action file (a service call). path is the entity directory CWD "
+        + "(e.g. /ha/entities/light/kitchen); command is an action file invocation like "
+        + "'turn_on.sh --brightness_pct 60'. Use '<service>.sh --help' to see arguments. This is "
+        + "NOT a shell — only *.sh action files run; anything else returns exit 127.";
 
     // Glob is uncapped: the result set is bounded by the home's entity count.
-    public async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
+    public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
         var catalog = await catalogProvider.GetAsync(ct);
         var hits = HaTree.Glob(catalog, basePath, pattern);
@@ -30,7 +56,7 @@ public sealed partial class HaFileSystem(
         });
     }
 
-    public async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
+    public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
         var catalog = await catalogProvider.GetAsync(ct);
         var node = HaVfsPath.Parse(path);
@@ -39,7 +65,7 @@ public sealed partial class HaFileSystem(
         return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = exists, Path = path, IsDirectory = exists ? isDir : null });
     }
 
-    public async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
+    public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
         var node = HaVfsPath.Parse(path);
         if (node.Kind is not (HaVfsKind.StateFile or HaVfsKind.ActionFile))
@@ -60,7 +86,7 @@ public sealed partial class HaFileSystem(
             : ReadAction(path, entityId, node.Service!, catalog);
     }
 
-    public async Task<FsResult<FsSearchResult>> SearchAsync(
+    public override async Task<FsResult<FsSearchResult>> SearchAsync(
         string query, bool regex, string? path, string? directoryPath, string? filePattern,
         int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
@@ -72,85 +98,26 @@ public sealed partial class HaFileSystem(
             Entities = await clientFactory().ListStatesAsync(ct)
         };
 
-        // A caller-supplied regex can be malformed or pathological; compile with a bounded match
-        // timeout (ReDoS insurance over small state strings) and surface a parse failure as a
-        // hinted envelope instead of a bare exception.
-        Regex matcher;
-        try
-        {
-            matcher = new Regex(regex ? query : Regex.Escape(query), RegexOptions.IgnoreCase, _regexMatchTimeout);
-        }
-        catch (ArgumentException ex)
-        {
-            return new FsResult<FsSearchResult>.Err(new ToolErrorResult
-            {
-                ErrorCode = ToolError.Codes.InvalidArgument,
-                Message = $"Invalid search pattern '{query}': {ex.Message}",
-                Retryable = false,
-                Hint = "Fix the regex, or set regex=false to match a literal string."
-            });
-        }
-
         // state.json is the only searchable file per entity, so a filePattern either includes it
         // (search the scoped entities) or excludes it entirely (nothing to search).
         var scoped = VfsContentSearch.MatchesFilePattern(filePattern, HaVfsPath.StateFileName)
             ? ScopeEntities(catalog, path, directoryPath)
             : [];
 
-        var results = new List<FsSearchFileResult>();
-        var totalMatches = 0;
-        var filesWithMatches = 0;
-        var filesSearched = 0;
-        var truncated = false;
-
-        // The matcher is bounded by _regexMatchTimeout; a pathological caller-supplied pattern trips
-        // it during IsMatch (not construction), so catch it here and return a hinted envelope rather
-        // than letting RegexMatchTimeoutException leak to the generic MCP boundary wrapper.
-        try
-        {
-            foreach (var entity in scoped)
+        return await SearchNodesAsync(
+            scoped,
+            (entity, _) => ValueTask.FromResult<(string, string?)>(
+                (CanonicalStatePath(entity), HaStateRenderer.ToJson(entity))),
+            new FsSearchScan
             {
-                if (totalMatches >= maxResults)
-                {
-                    // Cap reached with entities still unscanned — the result set is genuinely incomplete.
-                    truncated = true;
-                    break;
-                }
-                filesSearched++;
-                var lines = HaStateRenderer.ToJson(entity).Split('\n');
-                var (matches, more) = VfsContentSearch.FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
-                truncated |= more;
-                if (matches.Count == 0)
-                {
-                    continue;
-                }
-                filesWithMatches++;
-                totalMatches += matches.Count;
-                results.Add(VfsContentSearch.BuildFileResult(CanonicalStatePath(entity), matches, outputMode));
-            }
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            return new FsResult<FsSearchResult>.Err(new ToolErrorResult
-            {
-                ErrorCode = ToolError.Codes.Timeout,
-                Message = $"Search pattern '{query}' timed out while matching.",
-                Retryable = false,
-                Hint = "Simplify the regex (avoid nested quantifiers), or set regex=false to match a literal string."
-            });
-        }
-
-        return new FsResult<FsSearchResult>.Ok(new FsSearchResult
-        {
-            Query = query,
-            Regex = regex,
-            Path = path ?? directoryPath ?? string.Empty,
-            FilesSearched = filesSearched,
-            FilesWithMatches = filesWithMatches,
-            TotalMatches = totalMatches,
-            Truncated = truncated,
-            Results = results
-        });
+                Query = query,
+                Regex = regex,
+                Path = path ?? directoryPath ?? string.Empty,
+                MaxResults = maxResults,
+                ContextLines = contextLines,
+                OutputMode = outputMode
+            },
+            ct);
     }
 
     // Restricts the searched entity set to the requested scope: `path` (a single state file) or
@@ -264,39 +231,8 @@ public sealed partial class HaFileSystem(
         });
     }
 
-    // Home Assistant is a read + exec control surface: mutating a file, copying, and raw byte
-    // streaming have no meaning here, so these IFileSystemBackend members return unsupported.
-    public Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite,
-        bool createDirectories, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsCreateResult>(nameof(CreateAsync)));
-
-    public Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsEditResult>(nameof(EditAsync)));
-
-    public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsMoveResult>(nameof(MoveAsync)));
-
-    public Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsRemoveResult>(nameof(DeleteAsync)));
-
-    public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath, bool overwrite,
-        bool createDirectories, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsCopyResult>(nameof(CopyAsync)));
-
-    public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
-        throw new NotSupportedException("The Home Assistant filesystem does not support raw byte streaming.");
-
-    public Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
-        bool overwrite, bool createDirectories, CancellationToken ct) =>
-        throw new NotSupportedException("The Home Assistant filesystem does not support raw byte streaming.");
-
-    private static FsResult<T> Unsupported<T>(string operation) where T : class =>
-        new FsResult<T>.Err(new ToolErrorResult
-        {
-            ErrorCode = ToolError.Codes.UnsupportedOperation,
-            Message = $"The Home Assistant filesystem does not support '{operation}'.",
-            Retryable = false
-        });
+    // Home Assistant is a read + exec control surface: create, edit, move, delete, copy and raw
+    // byte streaming have no meaning here, so they are left unoverridden and the base answers them.
 
     private static FsResult<FsReadResult> NotFound(string path, string? canonicalName = null) =>
         new FsResult<FsReadResult>.Err(new ToolErrorResult

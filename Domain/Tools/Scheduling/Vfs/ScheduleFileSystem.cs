@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
@@ -12,9 +11,47 @@ public sealed class ScheduleFileSystem(
     IScheduleStore store,
     IAgentCatalog agents,
     ICronValidator cronValidator,
-    TimeProvider timeProvider) : IFileSystemBackend
+    TimeProvider timeProvider,
+    TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
-    public string FilesystemName => "schedules";
+    public override string FilesystemName => "schedules";
+
+    protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
+
+    // The words the model reads about each operation, next to the behaviour they describe. They
+    // name the mount's real files, which is what makes the schedules surface usable without a probe.
+    public override string DescribeGlob =>
+        "Lists schedule filesystem entries matching a glob under basePath. `*` matches one "
+        + "path segment, `**` recurses, `?` one char, `{a,b}` brace alternation. A trailing slash "
+        + "(e.g. `*/`) lists directories only; otherwise files and directories both match, with "
+        + "directory results marked by a trailing slash.";
+
+    public override string DescribeInfo => "Get info about a schedule filesystem path";
+
+    public override string DescribeRead =>
+        "Read a schedule filesystem file (schedule.json/status.json/agent_info.json/run_now.sh)";
+
+    public override string DescribeSearch =>
+        "Searches schedule.json content across schedules. Scope with directoryPath (e.g. /<agentId>) "
+        + "or path (a single schedule); omit both to search every schedule. Supports regex, "
+        + "filePattern, maxResults, contextLines, and outputMode (content|filesOnly) like the other "
+        + "filesystems.";
+
+    public override string DescribeCreate =>
+        "Create a schedule: fs_create /<agentId>/<descriptive-id>/schedule.json with JSON "
+        + "{prompt, cron|runAt, userId?, deliverTo?}";
+
+    public override string DescribeEdit => "Edit a schedule.json (prompt/timing/deliverTo)";
+
+    public override string DescribeDelete => "Delete a schedule directory";
+
+    public override string DescribeMove =>
+        "Reassign a schedule to another agent or rename it: move /<agent>/<id> to /<agent2>/<id2>";
+
+    public override string DescribeExec =>
+        "Run a schedule action. path is the schedule DIRECTORY (e.g. /jonas/my-schedule); command "
+        + "is 'run_now.sh' to fire it immediately. Not a shell — anything other than run_now.sh "
+        + "returns exit 127.";
 
     private static readonly JsonSerializerOptions _json = new()
     {
@@ -27,14 +64,10 @@ public sealed class ScheduleFileSystem(
     // Glob matches the same semantics as every other filesystem: the pattern (relative to basePath)
     // filters the schedule tree, `*`/`**`/`?`/`{a,b}` behave as documented, a trailing slash lists
     // directories only, and directory results are marked with a trailing slash.
-    public async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
+    public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
         var all = await store.ListAsync(ct);
-        var prefix = string.IsNullOrEmpty(basePath?.Trim('/')) ? string.Empty : basePath.Trim('/') + "/";
-
-        var dirsOnly = pattern.EndsWith('/');
-        var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
-        var matches = GlobRegex.CompileMatcher(prefix + effectivePattern);
+        var (dirsOnly, matches) = GlobPrologue(basePath, pattern);
 
         var dirs = ScheduleTree.Directories(agents, all).Where(matches).Select(p => $"/{p}/");
         if (dirsOnly)
@@ -46,7 +79,7 @@ public sealed class ScheduleFileSystem(
         return Glob(dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
     }
 
-    public async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
+    public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         var exists = await NodeExistsAsync(node, ct);
@@ -59,7 +92,7 @@ public sealed class ScheduleFileSystem(
         });
     }
 
-    public async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
+    public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         // offset/limit are unused: schedule files are small JSON blobs, always returned whole (Truncated = false).
@@ -94,11 +127,10 @@ public sealed class ScheduleFileSystem(
     // fs_search follows the standard VFS convention: it scans each schedule's searchable schedule.json
     // content line-by-line, honoring regex, scope (path/directoryPath), filePattern, maxResults,
     // contextLines, and the Content/FilesOnly output shape — identical to the file-backed backends.
-    public async Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,
+    public override async Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,
         string? directoryPath, string? filePattern, int maxResults, int contextLines,
         VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
-        var matcher = new Regex(regex ? query : Regex.Escape(query), RegexOptions.IgnoreCase);
         var scope = path ?? directoryPath;
 
         // schedule.json is the only searchable file per schedule, so a filePattern either includes it
@@ -107,43 +139,20 @@ public sealed class ScheduleFileSystem(
             ? await ScopeSchedulesAsync(scope, ct)
             : [];
 
-        var results = new List<FsSearchFileResult>();
-        var totalMatches = 0;
-        var filesWithMatches = 0;
-        var filesSearched = 0;
-        var truncated = false;
-
-        foreach (var schedule in scoped)
-        {
-            if (totalMatches >= maxResults)
+        return await SearchNodesAsync(
+            scoped,
+            (schedule, _) => ValueTask.FromResult<(string, string?)>(
+                ($"/{schedule.AgentId}/{schedule.Id}/{SchedulePath.ScheduleFileName}", RenderSpec(schedule))),
+            new FsSearchScan
             {
-                truncated = true;
-                break;
-            }
-            filesSearched++;
-            var lines = RenderSpec(schedule).Split('\n');
-            var (matches, more) = VfsContentSearch.FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
-            truncated |= more;
-            if (matches.Count == 0)
-            {
-                continue;
-            }
-            filesWithMatches++;
-            totalMatches += matches.Count;
-            results.Add(VfsContentSearch.BuildFileResult($"/{schedule.AgentId}/{schedule.Id}/schedule.json", matches, outputMode));
-        }
-
-        return new FsResult<FsSearchResult>.Ok(new FsSearchResult
-        {
-            Query = query,
-            Regex = regex,
-            Path = scope ?? "/",
-            FilesSearched = filesSearched,
-            FilesWithMatches = filesWithMatches,
-            TotalMatches = totalMatches,
-            Truncated = truncated,
-            Results = results
-        });
+                Query = query,
+                Regex = regex,
+                Path = scope ?? "/",
+                MaxResults = maxResults,
+                ContextLines = contextLines,
+                OutputMode = outputMode
+            },
+            ct);
     }
 
     // Restricts the searched set to the requested scope: a single schedule (file/dir path), one
@@ -205,14 +214,7 @@ public sealed class ScheduleFileSystem(
         _ => false
     };
 
-    private static FsResult<FsGlobResult> Glob(IReadOnlyList<string> entries) => new FsResult<FsGlobResult>.Ok(new FsGlobResult
-    {
-        Entries = entries,
-        Truncated = false,
-        Total = entries.Count
-    });
-
-    public async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
+    public override async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         if (node.Kind != ScheduleNodeKind.ScheduleFile || node.AgentId is null || node.ScheduleId is null)
@@ -265,7 +267,7 @@ public sealed class ScheduleFileSystem(
         });
     }
 
-    public async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
+    public override async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         if (node.Kind != ScheduleNodeKind.ScheduleFile)
@@ -319,7 +321,7 @@ public sealed class ScheduleFileSystem(
         });
     }
 
-    public async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct)
+    public override async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct)
     {
         var src = SchedulePath.Parse(sourcePath);
         var dst = SchedulePath.Parse(destinationPath);
@@ -357,7 +359,7 @@ public sealed class ScheduleFileSystem(
         });
     }
 
-    public async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
+    public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         if (node.Kind != ScheduleNodeKind.ScheduleDir)
@@ -377,7 +379,7 @@ public sealed class ScheduleFileSystem(
         });
     }
 
-    public async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    public override async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         if (node.Kind != ScheduleNodeKind.ScheduleDir || await GetScheduleAsync(node, ct) is not { } schedule)
@@ -396,18 +398,6 @@ public sealed class ScheduleFileSystem(
         await store.UpdateLastRunAsync(schedule.Id, null, DateTime.UtcNow, ct);
         return Exec($"queued '{schedule.Id}' to run now\n", "", 0, path);
     }
-
-    // The schedule control surface is not byte-backed: copy and raw chunk streaming are unsupported.
-    public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
-        bool overwrite, bool createDirectories, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsCopyResult>("The schedules filesystem does not support copy."));
-
-    public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
-        throw new NotSupportedException("The schedules filesystem does not support raw byte streaming.");
-
-    public Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
-        bool overwrite, bool createDirectories, CancellationToken ct) =>
-        throw new NotSupportedException("The schedules filesystem does not support raw byte streaming.");
 
     private static FsResult<FsExecResult> Exec(string stdout, string stderr, int exitCode, string cwd) =>
         new FsResult<FsExecResult>.Ok(new FsExecResult
@@ -514,18 +504,6 @@ public sealed class ScheduleFileSystem(
     // (status.json/agent_info.json/run_now.sh) that exists — rejected as read-only — or a genuine miss.
     private async Task<FsResult<T>> RejectWriteAsync<T>(ScheduleNode node, string path, CancellationToken ct) where T : class =>
         IsReadOnlyFile(node.Kind) && await NodeExistsAsync(node, ct) ? ReadOnly<T>(path) : NotFound<T>(path);
-
-    private static FsResult<T> ReadOnly<T>(string path) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.UnsupportedOperation, $"{path} is read-only"));
-
-    private static FsResult<T> Invalid<T>(string message) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.InvalidArgument, message));
-
-    private static FsResult<T> NotFound<T>(string path) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.NotFound, $"Path not found: {path}"));
-
-    private static FsResult<T> Unsupported<T>(string message) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.UnsupportedOperation, message));
 
     private static ToolErrorResult Error(string code, string message) =>
         new() { ErrorCode = code, Message = message, Retryable = false };

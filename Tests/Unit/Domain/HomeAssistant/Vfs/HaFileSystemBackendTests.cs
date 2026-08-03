@@ -39,6 +39,20 @@ public class HaFileSystemBackendTests
             .ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
     }
 
+    // The model calls text_create, so that is what an unsupported reply must name. Naming the C#
+    // method told it about a symbol it has no way to act on.
+    [Fact]
+    public async Task UnsupportedReply_NamesTheOperationTheModelCalled()
+    {
+        var fs = Build();
+
+        var error = (await fs.CreateAsync("entities/light/x/state.json", "{}", false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error;
+
+        error.Message.ShouldContain("text_create");
+        error.Message.ShouldNotContain("CreateAsync");
+    }
+
     [Fact]
     public async Task StreamingChunkApis_ThrowNotSupported()
     {

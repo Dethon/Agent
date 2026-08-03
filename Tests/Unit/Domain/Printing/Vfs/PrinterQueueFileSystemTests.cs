@@ -92,6 +92,34 @@ public class PrinterQueueFileSystemTests : IDisposable
         glob.Entries.ShouldContain("/notes.md");
     }
 
+    // basePath scopes the pattern on every other mount, and the glob tool advertises that to the
+    // model. The print queue is flat, so a basePath below the root matches nothing at all.
+    [Fact]
+    public async Task Glob_BasePathBelowTheRoot_ScopesThePatternAndMatchesNothing()
+    {
+        var fs = Build();
+        await fs.CreateAsync("report.txt", "hello", false, true, CancellationToken.None);
+
+        var glob = (await fs.GlobAsync("/subdir", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldBeEmpty();
+    }
+
+    // A trailing slash asks for directories only. The print queue has none, so the answer is empty
+    // rather than the file list the pattern would otherwise produce.
+    [Fact]
+    public async Task Glob_TrailingSlash_ReturnsDirectoriesOnly()
+    {
+        var fs = Build();
+        await fs.CreateAsync("report.txt", "hello", false, true, CancellationToken.None);
+
+        var glob = (await fs.GlobAsync("/", "*/", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task Create_DuplicateName_RequiresOverwrite()
     {

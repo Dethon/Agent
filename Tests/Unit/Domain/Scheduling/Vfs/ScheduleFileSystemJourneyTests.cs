@@ -467,6 +467,43 @@ public class ScheduleFileSystemJourneyTests
         err.Error.Message.ShouldContain("daylight-saving gap");
     }
 
+    [Fact]
+    public async Task Search_UncompilablePattern_ReturnsInvalidArgumentEnvelope()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule(), CancellationToken.None);
+        var fs = Build(store);
+
+        var result = await fs.SearchAsync(
+            "[unclosed", regex: true, null, null, null, 10, 0,
+            VfsTextSearchOutputMode.Content, CancellationToken.None);
+
+        var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+    }
+
+    // A caller-supplied pattern that backtracks catastrophically must end the search as a timeout
+    // envelope, not stall the turn. The match timeout is injected tiny so it trips deterministically.
+    [Fact]
+    public async Task Search_PathologicalRegex_ReturnsTimeoutEnvelope()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule(prompt: new string('a', 60)), CancellationToken.None);
+        var catalog = new MutableAgentCatalog();
+        catalog.Replace([new AgentCatalogEntry("jonas", "Jonas", "general")]);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        clock.SetLocalTimeZone(_testZone);
+        var fs = new ScheduleFileSystem(store, catalog, new CronValidator(), clock,
+            regexMatchTimeout: TimeSpan.FromMilliseconds(1));
+
+        var result = await fs.SearchAsync(
+            "(a+)+b", regex: true, null, null, null, 10, 0,
+            VfsTextSearchOutputMode.Content, CancellationToken.None);
+
+        var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.Timeout);
+    }
+
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> AsyncEmpty()
     {
         await Task.CompletedTask;
