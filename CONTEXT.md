@@ -16,6 +16,31 @@ The transport a metrics publisher drains into. Sending through a sink is a real
 network operation that may fail.
 _Avoid_: metrics backend, metrics transport, metrics exporter
 
+## Metrics dashboard
+
+**Metric family**:
+One kind of metric as the dashboard shows it: the events it lists, the breakdown it
+charts, and the choices the user has made about how to see them. Each family gets its
+own page, and a family is the unit anything about the dashboard is added or changed in.
+_Avoid_: metric type, metric category, page
+
+**Breakdown**:
+A metric family's numbers grouped by one dimension over one date range. It is what a
+family's chart draws, and a family only ever has one at a time — choosing differently
+replaces it.
+_Avoid_: grouping, chart data, aggregation
+
+**Dimension**:
+What a breakdown groups by: who sent it, which model, which stage, which satellite. It
+says how to split the numbers up and never what the numbers are.
+_Avoid_: group by, facet, axis
+
+**Aggregation**:
+How a set of durations is reduced to one number — the average, a percentile, the
+largest, or how many there were. It is a separate choice from which quantity is being
+measured, and where both apply they are chosen independently.
+_Avoid_: metric, statistic, rollup
+
 ## Chat client connection
 
 **Live connection**:

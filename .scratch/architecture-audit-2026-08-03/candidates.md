@@ -23,7 +23,7 @@ closed it.
 | 6 | `AddToolServer`, twin of `AddChannelServer` | Strong | McpServer* | Grilled → `.scratch/mcp-server-hosting/spec.md` + `docs/adr/0005-user-secrets-outrank-environment-variables.md` |
 | 7 | Two copies of "how to build an agent" | Strong | Infrastructure/Agents | Grilled → `.scratch/agent-spec/spec.md` |
 | 8 | The turn is not a value | Strong | Domain/Monitor | Grilled → `.scratch/conversation-group/spec.md` + `docs/adr/0006-a-group-is-anchored-and-built-by-its-first-turn.md` |
-| 9 | One breakdown descriptor, not seven pipelines | Worth exploring | Dashboard + Observability | Not grilled |
+| 9 | One breakdown descriptor, not seven pipelines | Worth exploring | Dashboard + Observability | Grilled → `.scratch/metric-family/spec.md` + `docs/adr/0007-a-metric-family-is-named-not-typed.md` |
 | 10 | Timers and schedules are the same backend | Worth exploring | Domain/Tools | Not grilled |
 | 11 | Dashboard re-implements WebChat's client | Worth exploring | Blazor clients | Not grilled |
 | 12 | The memory turn has no owner | Worth exploring | Domain/Memory | Not grilled |
@@ -46,6 +46,14 @@ onto an interface 2 then renames.
 
 Candidates 6 and 10 touch no file another candidate touches and can run at any
 point.
+
+Candidate 9 is sequenced BEFORE candidate 11, decided during its grilling. They contact
+in four places: both rewrite `MetricsHubEffect.StartAsync` and `MetricsHubEffectTests`,
+and 11 retypes two things 9's new module holds, `Store<TState>` and `LocalStorageService`.
+Candidate 9 shrinks that surface — the 41 `Storage.Get*/SetAsync` sites spread over eight
+pages collapse to one constructor, and `StartAsync` drops from ~123 lines to ~30 — so
+running 9 first means 11 retypes two references instead of forty-one. Candidate 9 has no
+dependency on candidate 2 and can start now; candidate 11 still waits on it.
 
 Candidate 7 is sequenced AFTER candidate 1, decided during its grilling: both
 rewrite the same lines inside `McpAgent`. Candidate 1 deletes `SafePublishLatencyAsync`,
@@ -580,15 +588,18 @@ rule holds when message 0 was a command".
 
 ## 9 — One breakdown descriptor, not seven pipelines
 
-**Strength:** Worth exploring.
+**Strength:** Worth exploring. **Grilled**, spec at `.scratch/metric-family/spec.md`,
+decision recorded as `docs/adr/0007-a-metric-family-is-named-not-typed.md`.
 
 **Files**
 
 - `Dashboard.Client/Effects/MetricsHubEffect.cs:31-139` — 280 lines, 7 `CancellationTokenSource` fields, 7 near-identical `Refresh*BreakdownAsync`
+- `Dashboard.Client/Effects/DataLoadEffect.cs` — 133 lines, an eighth copy of the same fan-out, missed by the survey. 11 injected stores, 19 parallel calls, and the page-load half of the aggregation-default bug
 - `Dashboard.Client/Services/MetricsApiService.cs:43-107` — 7 `Get*GroupedAsync`
-- `Observability/MetricsApiEndpoints.cs:94-237` — 238 lines, 7 `/x/by/{dimension}` maps, 22 copies of `from ?? today`
-- `Observability/Services/MetricsQueryService.cs:171-445` — 452 lines, 7 `Get*GroupedAsync`
-- `Dashboard.Client/Pages/{Tokens,Tools,Errors,Schedules,Memory,Latency,Voice}.razor`
+- `Observability/MetricsApiEndpoints.cs:94-237` — 238 lines, 7 `/x/by/{dimension}` maps, 22 copies of `from ?? today`, all calling `DateTime.UtcNow` directly even though `MetricsQueryService:26` already takes a `TimeProvider`
+- `Observability/Services/MetricsQueryService.cs:171-445` — 452 lines, 7 `Get*GroupedAsync`. **Out of scope**, see below
+- `Dashboard.Client/Pages/{Tokens,Tools,Errors,Schedules,Memory,Latency,Voice}.razor` — 41 `Storage.Get*/SetAsync` sites across these seven plus `Overview.razor`
+- `Domain/DTOs/Metrics/Enums/LatencyMetric.cs` — a reduction over durations, used as the "Metric" pill on latency and the "Aggregate" pill on voice
 
 **Friction**
 
@@ -599,7 +610,7 @@ silently reverting the user's selection in another. Every page repeats the same
 sequence: load saved prefs, subscribe, `SetDateRange`, `LoadAsync`, the three
 `On*Changed` handlers, persist, `ReloadBreakdown`.
 
-**Proposed deepening**
+**Proposed deepening (as surveyed)**
 
 One `MetricBreakdown<TDimension, TMetric>` descriptor per family carrying route
 segment, Redis key prefix, store and localStorage key prefix, with a single
@@ -608,13 +619,72 @@ null-to-empty mapping and preference persistence. The 7 effect methods become a
 table lookup, the 7 endpoint maps become one loop, the 7 pages become one
 `<BreakdownPage Descriptor=... />`.
 
+**Settled by grilling**
+
+*Scope narrowed.* Client-side, plus the endpoint date defaulting.
+`MetricsQueryService`'s grouping stays per-family: `GetTokenGroupedAsync` switches
+between two event streams by metric, `GetMemoryGroupedAsync` merges three and
+type-switches, `GetVoiceGroupedAsync` pre-filters by event kind. There is no shared
+shape to extract. `DataLoadEffect` comes in, and the family absorbs its raw-event
+load as well as the breakdown, taking it from 133 lines to roughly 35.
+
+*One descriptor, not one generic.* `BreakdownFamily` carries a name, a localStorage
+prefix and two delegates; `BreakdownFamily<TState>` adds the store handle. It is not
+generic over dimension and metric, because the seven families have four call shapes
+and the generic version fits three. The ADR records the rejected alternative and its
+price.
+
+*Redis key prefix dropped from the descriptor.* `Dashboard.Client` references Domain
+only and `Observability` references both, so a descriptor holding the Redis prefix and
+the localStorage prefix could only live in Domain, shipping the server's key layout
+into the WASM download.
+
+*Refresh coalesces rather than cancels.* Awaiting a refresh means the breakdown
+reflects state at or after the call; concurrent callers share the run and it re-runs
+once if state moved. There is no debounce in `Dashboard.Client` today, so the surveyed
+"CTS and debounce" would have been new behaviour with new lag. Cancelling a WASM
+`HttpClient` request does not stop the server, so today's cancel-stale makes a burst of
+twenty events cost twenty full Redis aggregations and read one. This is the candidate's
+only behaviour change, and it rewrites
+`MetricsHubEffectTests.cs:115 RapidEvents_CancelsStaleApiCallAndUsesFreshData`.
+
+*Refresh throws; callers apply the policy.* `MetricsHubEffect` wraps the table in one
+try/catch replacing seven; `DataLoadEffect` keeps its catch and its red connection dot.
+No behaviour change.
+
+*Pages keep their markup.* The surveyed `<BreakdownPage Descriptor=... />` was
+over-claimed: below the control header nothing is shared. Each page has its own KPI row,
+chart type and event table, `Memory` injects `MetricsStore` too, `Latency` draws a trend
+series, and the headers differ (group-by on 7, metric on 5, `DisabledValues` on 2, an
+extra Aggregate pill on Voice). A `<BreakdownControls>` wrapper owns the header,
+preference load/save and date derivation, with Voice's pill in an `ExtraControls`
+fragment. `Overview.razor` stays as it is; it has the time pill but no breakdown.
+
+*`DateRange` binder.* A record with `BindAsync` defaulting from `TimeProvider`, one
+parameter per endpoint. 22 `DateTime.UtcNow` calls become one, and the endpoints become
+time-testable like the query service already is. No OpenAPI in `Observability`, so
+hiding the query parameters behind a binder costs no tooling.
+
+*`LatencyMetric` renamed `Aggregation`.* Query-string names unchanged. It is never
+persisted, so the rename is value-safe. `VoiceMetric` keeps its name: it is pinned by
+integer value in Redis, and renaming it would pull 27 `new VoiceEvent` sites in
+`McpChannelVoice` into a Dashboard candidate.
+
+*Vocabulary.* `CONTEXT.md` gains a Metrics dashboard section: metric family, breakdown,
+dimension, aggregation.
+
 **How tests improve**
 
 Only `Tests/Unit/Dashboard.Client/MetricsApiServiceLatencyTests.cs` (41 lines)
 and `MetricsHubEffectTests.cs` (384 lines) touch this. The per-page preference
 and reload logic is reachable only through Playwright in `Tests/E2E/Dashboard/`.
-One parameterised test over the descriptor set covers all seven families,
+One parameterised test over the family table covers all seven families,
 including the six with no coverage.
+
+The wrapper's preference and date logic moves into a plain `BreakdownSession` class so
+it unit-tests with the existing xunit, Shouldly and fake `TimeProvider`. There is no
+bUnit in the repo and this candidate does not add it, so which pills render stays
+E2E-covered.
 
 ---
 
