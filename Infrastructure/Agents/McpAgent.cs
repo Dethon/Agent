@@ -214,8 +214,10 @@ public sealed class McpAgent : DisposableAgent
     {
         using var total = _metricsPublisher.MeasureLatency(
             LatencyStage.LlmTotal, _conversationId, model: effectiveModel);
-        // The first token is a point inside the total span, not a span of its own, so it ends the
-        // same measurement early rather than opening a second one.
+        // The first token is a point inside the total span, not a span of its own, so its scope is
+        // disposed on the first update rather than by a using. A stream that yields nothing never
+        // disposes it and publishes no first-token latency, which is what the old firstEmitted flag
+        // did too — there is no such thing as the first token of an empty stream.
         var firstToken = _metricsPublisher.MeasureLatency(
             LatencyStage.LlmFirstToken, _conversationId, model: effectiveModel);
         await foreach (var update in source.WithCancellation(ct))

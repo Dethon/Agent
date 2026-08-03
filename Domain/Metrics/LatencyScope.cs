@@ -18,6 +18,7 @@ public sealed class LatencyScope : IDisposable
     private readonly string? _model;
     private readonly TimeProvider _time;
     private readonly long _startedAt;
+    private long? _elapsedMs;
     private int _published;
 
     internal LatencyScope(
@@ -38,8 +39,11 @@ public sealed class LatencyScope : IDisposable
     }
 
     // Read this where a domain-specific event has to carry the same duration as the latency event,
-    // instead of running a second stopwatch alongside.
-    public long ElapsedMilliseconds => (long)_time.GetElapsedTime(_startedAt).TotalMilliseconds;
+    // instead of running a second stopwatch alongside. Reading it fixes the value, the way stopping
+    // a stopwatch did: the event published on disposal then carries the number the caller used,
+    // rather than one that also counts whatever the caller did after reading.
+    public long ElapsedMilliseconds =>
+        _elapsedMs ??= (long)_time.GetElapsedTime(_startedAt).TotalMilliseconds;
 
     public void Dispose()
     {

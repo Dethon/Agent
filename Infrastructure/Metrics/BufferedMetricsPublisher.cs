@@ -23,9 +23,13 @@ public sealed class BufferedMetricsPublisher : IMetricsPublisher, IAsyncDisposab
     {
         _sink = sink;
         _logger = logger;
+        // Wait, not DropWrite, even though the intent is to drop: under DropWrite, TryWrite discards
+        // the event and still returns true, so the warning below was unreachable and the one
+        // irrecoverable loss was silent. Under Wait, TryWrite refuses instead of blocking — the same
+        // event is dropped, and the caller finds out.
         _events = Channel.CreateBounded<MetricEvent>(new BoundedChannelOptions(capacity)
         {
-            FullMode = BoundedChannelFullMode.DropWrite,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = false
         });

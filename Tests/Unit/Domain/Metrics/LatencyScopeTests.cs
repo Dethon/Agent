@@ -55,9 +55,11 @@ public class LatencyScopeTests
     }
 
     // Four sites emit a domain-specific event carrying the same duration as their latency event.
-    // Reading it off the scope is what lets them drop their second stopwatch.
+    // Reading it off the scope is what lets them drop their second stopwatch — so the read has to
+    // fix the value, or the two events would disagree by however long the caller spent between
+    // reading it and leaving the block.
     [Fact]
-    public void ElapsedMilliseconds_ReadBeforeDispose_MatchesThePublishedDuration()
+    public void ElapsedMilliseconds_ReadBeforeDispose_IsTheDurationPublishedOnDispose()
     {
         long observed;
 
@@ -65,10 +67,22 @@ public class LatencyScopeTests
         {
             _clock.Advance(TimeSpan.FromMilliseconds(75));
             observed = scope.ElapsedMilliseconds;
+            _clock.Advance(TimeSpan.FromMilliseconds(400));
         }
 
         observed.ShouldBe(75);
-        _publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>().DurationMs.ShouldBe(observed);
+        _publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>().DurationMs.ShouldBe(75);
+    }
+
+    [Fact]
+    public void ElapsedMilliseconds_NeverRead_PublishesTheDurationAtDisposal()
+    {
+        using (_publisher.MeasureLatency(LatencyStage.MemoryRecall, "conv-1", time: _clock))
+        {
+            _clock.Advance(TimeSpan.FromMilliseconds(475));
+        }
+
+        _publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>().DurationMs.ShouldBe(475);
     }
 
     [Fact]

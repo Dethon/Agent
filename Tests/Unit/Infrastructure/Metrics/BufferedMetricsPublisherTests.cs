@@ -1,5 +1,6 @@
 using Domain.DTOs.Metrics;
 using Infrastructure.Metrics;
+using Microsoft.Extensions.Logging;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Metrics;
@@ -99,19 +100,24 @@ public class BufferedMetricsPublisherTests
         sink.Events.ShouldHaveSingleItem().ShouldBeOfType<ErrorEvent>().Message.ShouldBe("after");
     }
 
+    // Dropping at capacity is the one loss nothing downstream can recover, so it must not be
+    // silent — the warning is the only trace an operator gets.
     [Fact]
-    public async Task Publish_BufferFull_DropsWithoutThrowingOrBlocking()
+    public async Task Publish_BufferFull_DropsWithAWarningRatherThanThrowingOrBlocking()
     {
         var sink = new FakeSink
         {
             Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
         };
-        await using var publisher = new BufferedMetricsPublisher(sink, capacity: 1);
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var logger = new LoggerFactory([logs]).CreateLogger<BufferedMetricsPublisher>();
+        await using var publisher = new BufferedMetricsPublisher(sink, logger, capacity: 1);
 
         // The drain may have taken the first event and parked on the gate, so fill well past
         // capacity: every write beyond it drops rather than throwing or waiting for room.
         Should.NotThrow(() => Enumerable.Range(0, 10).ToList().ForEach(i => publisher.Publish(Event($"e{i}"))));
 
+        logs.Messages.ShouldContain(m => m.Contains("Metrics buffer full") && m.Contains(nameof(ErrorEvent)));
         sink.Gate.TrySetResult();
     }
 
