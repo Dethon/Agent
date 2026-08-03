@@ -25,7 +25,11 @@ public class VfsTextReadTool(IVirtualFileSystemRegistry registry)
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        var resolution = registry.Resolve(filePath);
+        if (!registry.Resolve(filePath).TryGetValue(out var resolution, out var unresolved))
+        {
+            return unresolved.ToNode();
+        }
+
         return (await resolution.Backend.ReadAsync(resolution.RelativePath, offset, limit, cancellationToken)).ToNode();
     }
 }

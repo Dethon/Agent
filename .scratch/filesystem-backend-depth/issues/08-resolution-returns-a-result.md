@@ -8,11 +8,11 @@ Resolution returns a result instead of throwing. An unmounted path becomes an er
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Resolution returns a result; no path input makes it throw.
-- [ ] An unmounted path yields an error envelope naming the path and the available mounts.
-- [ ] Every one of the ten tools the filesystem feature produces returns that envelope when given an unmounted path, asserted across all ten in the feature's existing test file.
-- [ ] No tool call site lets an exception escape for an unmounted path.
-- [ ] A mounted path resolves exactly as before, longest prefix first.
-- [ ] The tests were seen to fail before the change.
+- [x] Resolution returns a result; no path input makes it throw.
+- [x] An unmounted path yields an error envelope naming the path and the available mounts.
+- [x] Every one of the ten tools the filesystem feature produces returns that envelope when given an unmounted path, asserted across all ten in the feature's existing test file.
+- [x] No tool call site lets an exception escape for an unmounted path.
+- [x] A mounted path resolves exactly as before, longest prefix first.
+- [x] The tests were seen to fail before the change.

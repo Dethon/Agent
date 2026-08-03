@@ -17,7 +17,7 @@ public class VfsGlobFilesToolTests
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve(It.IsAny<string>()))
-            .Returns(new FileSystemResolution(backend.Object, relativePath, mountPoint));
+            .Returns(Resolved(backend.Object, relativePath, mountPoint));
 
         return new VfsGlobFilesTool(registry.Object);
     }
@@ -69,4 +69,9 @@ public class VfsGlobFilesToolTests
 
         Entries(result).ShouldBe(["/schedules/jonas/morning-news/"]);
     }
+
+    private static FsResult<FileSystemResolution> Resolved(
+        IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
+        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
+
 }

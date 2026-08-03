@@ -37,7 +37,11 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
     {
         if (filePath is not null)
         {
-            var fileResolution = registry.Resolve(filePath);
+            if (!registry.Resolve(filePath).TryGetValue(out var fileResolution, out var unresolvedFile))
+            {
+                return unresolvedFile.ToNode();
+            }
+
             return (await fileResolution.Backend.SearchAsync(
                 query, regex, fileResolution.RelativePath, null, filePattern,
                 maxResults, contextLines, outputMode, cancellationToken)).ToNode();
@@ -51,7 +55,11 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
                 retryable: false);
         }
 
-        var dirResolution = registry.Resolve(directoryPath);
+        if (!registry.Resolve(directoryPath).TryGetValue(out var dirResolution, out var unresolvedDir))
+        {
+            return unresolvedDir.ToNode();
+        }
+
         return (await dirResolution.Backend.SearchAsync(
             query, regex, null, dirResolution.RelativePath, filePattern,
             maxResults, contextLines, outputMode, cancellationToken)).ToNode();

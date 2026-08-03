@@ -27,7 +27,7 @@ public class VfsTextCreateToolTests
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve(It.IsAny<string>()))
-            .Returns<string>(path => new FileSystemResolution(backend.Object, path));
+            .Returns<string>(path => Resolved(backend.Object, path));
         registry.Setup(r => r.GetMounts())
             .Returns([new FileSystemMount("schedules", "/schedules", "Scheduled tasks")]);
         return (registry, backend);
@@ -90,4 +90,9 @@ public class VfsTextCreateToolTests
         properties.TryGetProperty("arguments", out _).ShouldBeFalse();
         properties.TryGetProperty("cancellationToken", out _).ShouldBeFalse();
     }
+
+    private static FsResult<FileSystemResolution> Resolved(
+        IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
+        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
+
 }

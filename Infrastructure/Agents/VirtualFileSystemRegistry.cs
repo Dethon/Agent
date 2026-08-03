@@ -1,5 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
+using Domain.Tools;
 
 namespace Infrastructure.Agents;
 
@@ -13,20 +15,27 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
         _mounts[mount.MountPoint] = (mount, backend);
     }
 
-    public FileSystemResolution Resolve(string virtualPath)
+    public FsResult<FileSystemResolution> Resolve(string virtualPath)
     {
         var match = _mounts
             .Where(m => virtualPath.StartsWith(m.Key, StringComparison.OrdinalIgnoreCase)
                 && (virtualPath.Length == m.Key.Length || virtualPath[m.Key.Length] == '/'))
             .OrderByDescending(m => m.Key.Length)
-            .Select(m => (FileSystemResolution?)new FileSystemResolution(
+            .Select(m => new FileSystemResolution(
                 m.Value.Backend,
                 virtualPath[m.Key.Length..].TrimStart('/'),
                 m.Key))
             .FirstOrDefault();
 
-        return match ?? throw new InvalidOperationException(
-            $"No filesystem mounted for path '{virtualPath}'. Available: {FormatMounts()}");
+        return match is not null
+            ? new FsResult<FileSystemResolution>.Ok(match)
+            : new FsResult<FileSystemResolution>.Err(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.InvalidArgument,
+                Message = $"No filesystem mounted for path '{virtualPath}'. Available: {FormatMounts()}",
+                Retryable = false,
+                Hint = "Virtual paths must start with a mount point; retry with one of the mounts listed."
+            });
     }
 
     public IReadOnlyList<FileSystemMount> GetMounts()

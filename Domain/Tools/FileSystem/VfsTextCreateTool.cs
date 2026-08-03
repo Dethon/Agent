@@ -32,7 +32,11 @@ public class VfsTextCreateTool(IVirtualFileSystemRegistry registry)
         AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
-        var resolution = registry.Resolve(filePath);
+        if (!registry.Resolve(filePath).TryGetValue(out var resolution, out var unresolved))
+        {
+            return unresolved.ToNode();
+        }
+
         var result = await resolution.Backend.CreateAsync(
             resolution.RelativePath, content, overwrite, createDirectories, cancellationToken);
 

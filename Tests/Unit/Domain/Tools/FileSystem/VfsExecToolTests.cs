@@ -21,7 +21,7 @@ public class VfsExecToolTests
     public async Task RunAsync_ResolvesPathAndCallsBackend()
     {
         _registry.Setup(r => r.Resolve("/sandbox/home/sandbox_user"))
-            .Returns(new FileSystemResolution(_backend.Object, "home/sandbox_user"));
+            .Returns(Resolved(_backend.Object, "home/sandbox_user"));
         _backend.Setup(b => b.ExecAsync("home/sandbox_user", "echo hi", null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsExecResult>.Ok(new FsExecResult
             {
@@ -38,7 +38,7 @@ public class VfsExecToolTests
     public async Task RunAsync_PassesTimeoutSecondsThrough()
     {
         _registry.Setup(r => r.Resolve("/sandbox"))
-            .Returns(new FileSystemResolution(_backend.Object, ""));
+            .Returns(Resolved(_backend.Object, ""));
         _backend.Setup(b => b.ExecAsync("", "sleep 1", 30, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsExecResult>.Ok(new FsExecResult
             {
@@ -55,7 +55,7 @@ public class VfsExecToolTests
     public async Task RunAsync_RootPath_PassesEmptyRelativePath()
     {
         _registry.Setup(r => r.Resolve("/sandbox"))
-            .Returns(new FileSystemResolution(_backend.Object, ""));
+            .Returns(Resolved(_backend.Object, ""));
         _backend.Setup(b => b.ExecAsync("", "pwd", null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsExecResult>.Ok(new FsExecResult
             {
@@ -76,4 +76,9 @@ public class VfsExecToolTests
         await Should.ThrowAsync<InvalidOperationException>(
             () => _tool.RunAsync("/unknown", "echo hi"));
     }
+
+    private static FsResult<FileSystemResolution> Resolved(
+        IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
+        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
+
 }

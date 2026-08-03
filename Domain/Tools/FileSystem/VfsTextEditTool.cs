@@ -32,7 +32,11 @@ public class VfsTextEditTool(IVirtualFileSystemRegistry registry)
         AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
-        var resolution = registry.Resolve(filePath);
+        if (!registry.Resolve(filePath).TryGetValue(out var resolution, out var unresolved))
+        {
+            return unresolved.ToNode();
+        }
+
         var result = await resolution.Backend.EditAsync(resolution.RelativePath, edits, cancellationToken);
 
         if (TextArg.EditsWereCoercedArg(arguments) && result.TryGetValue(out var value, out _))

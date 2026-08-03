@@ -21,7 +21,7 @@ public class VfsFileInfoToolTests
     public async Task RunAsync_ResolvesPathAndCallsBackend()
     {
         _registry.Setup(r => r.Resolve("/library/notes/todo.md"))
-            .Returns(new FileSystemResolution(_backend.Object, "notes/todo.md"));
+            .Returns(Resolved(_backend.Object, "notes/todo.md"));
         _backend.Setup(b => b.InfoAsync("notes/todo.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult
             {
@@ -39,7 +39,7 @@ public class VfsFileInfoToolTests
     public async Task RunAsync_NonExistentPath_ReturnsBackendResult()
     {
         _registry.Setup(r => r.Resolve("/vault/missing.md"))
-            .Returns(new FileSystemResolution(_backend.Object, "missing.md"));
+            .Returns(Resolved(_backend.Object, "missing.md"));
         _backend.Setup(b => b.InfoAsync("missing.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult
             {
@@ -50,4 +50,9 @@ public class VfsFileInfoToolTests
 
         result!["exists"]!.GetValue<bool>().ShouldBeFalse();
     }
+
+    private static FsResult<FileSystemResolution> Resolved(
+        IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
+        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
+
 }

@@ -33,9 +33,9 @@ public class VfsMoveToolCrossFsTests
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve("/vault/a.md"))
-            .Returns(new FileSystemResolution(src.Object, "a.md"));
+            .Returns(Resolved(src.Object, "a.md"));
         registry.Setup(r => r.Resolve("/sandbox/a.md"))
-            .Returns(new FileSystemResolution(dst.Object, "a.md"));
+            .Returns(Resolved(dst.Object, "a.md"));
 
         var tool = new VfsMoveTool(registry.Object);
         var result = await tool.RunAsync("/vault/a.md", "/sandbox/a.md");
@@ -62,9 +62,9 @@ public class VfsMoveToolCrossFsTests
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve("/vault/a.md"))
-            .Returns(new FileSystemResolution(backend.Object, "a.md"));
+            .Returns(Resolved(backend.Object, "a.md"));
         registry.Setup(r => r.Resolve("/vault/b.md"))
-            .Returns(new FileSystemResolution(backend.Object, "b.md"));
+            .Returns(Resolved(backend.Object, "b.md"));
 
         var tool = new VfsMoveTool(registry.Object);
         await tool.RunAsync("/vault/a.md", "/vault/b.md");
@@ -72,4 +72,9 @@ public class VfsMoveToolCrossFsTests
         backend.Verify(b => b.MoveAsync("a.md", "b.md", It.IsAny<CancellationToken>()), Times.Once);
         backend.Verify(b => b.ReadChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    private static FsResult<FileSystemResolution> Resolved(
+        IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
+        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
+
 }

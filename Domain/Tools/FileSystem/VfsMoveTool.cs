@@ -23,8 +23,15 @@ public class VfsMoveTool(IVirtualFileSystemRegistry registry)
         [Description("Create destination parent directories if missing (default: true)")] bool createDirectories = true,
         CancellationToken cancellationToken = default)
     {
-        var src = registry.Resolve(sourcePath);
-        var dst = registry.Resolve(destinationPath);
+        if (!registry.Resolve(sourcePath).TryGetValue(out var src, out var unresolvedSource))
+        {
+            return unresolvedSource.ToNode();
+        }
+
+        if (!registry.Resolve(destinationPath).TryGetValue(out var dst, out var unresolvedDestination))
+        {
+            return unresolvedDestination.ToNode();
+        }
 
         var infoResult = await src.Backend.InfoAsync(src.RelativePath, cancellationToken);
         if (!infoResult.TryGetValue(out var info, out var infoError))
