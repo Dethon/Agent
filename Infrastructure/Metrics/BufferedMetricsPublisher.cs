@@ -5,20 +5,23 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Metrics;
 
+// The only metrics publisher a host registers. Publishing is a channel write, so it cannot fail
+// and cannot block; the sink round trip happens on the drain reader, where a failure is logged
+// and the loop carries on.
 public sealed class BufferedMetricsPublisher : IMetricsPublisher, IAsyncDisposable
 {
-    private readonly IMetricsPublisher _inner;
+    private readonly IMetricSink _sink;
     private readonly ILogger<BufferedMetricsPublisher>? _logger;
     private readonly Channel<MetricEvent> _events;
     private readonly Task _drainTask;
     private int _disposed;
 
     public BufferedMetricsPublisher(
-        IMetricsPublisher inner,
+        IMetricSink sink,
         ILogger<BufferedMetricsPublisher>? logger = null,
         int capacity = 10_000)
     {
-        _inner = inner;
+        _sink = sink;
         _logger = logger;
         _events = Channel.CreateBounded<MetricEvent>(new BoundedChannelOptions(capacity)
         {
@@ -29,16 +32,26 @@ public sealed class BufferedMetricsPublisher : IMetricsPublisher, IAsyncDisposab
         _drainTask = Task.Run(DrainAsync);
     }
 
-    public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+    public void Publish(MetricEvent metricEvent)
     {
-        if (ct.IsCancellationRequested || Volatile.Read(ref _disposed) != 0)
+        if (Volatile.Read(ref _disposed) != 0)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         if (!_events.Writer.TryWrite(metricEvent))
         {
             _logger?.LogWarning("Metrics buffer full; dropping {EventType}", metricEvent.GetType().Name);
+        }
+    }
+
+    // Bridges callers that have not yet moved to Publish, keeping today's drop-on-cancelled-token
+    // until they do. Goes away with the awaitable half of the contract.
+    public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+    {
+        if (!ct.IsCancellationRequested)
+        {
+            Publish(metricEvent);
         }
 
         return Task.CompletedTask;
@@ -50,7 +63,7 @@ public sealed class BufferedMetricsPublisher : IMetricsPublisher, IAsyncDisposab
         {
             try
             {
-                await _inner.PublishAsync(metricEvent);
+                await _sink.SendAsync(metricEvent);
             }
             catch (Exception ex)
             {

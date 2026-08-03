@@ -1,4 +1,3 @@
-using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Infrastructure.Metrics;
 using Shouldly;
@@ -7,11 +6,13 @@ namespace Tests.Unit.Infrastructure.Metrics;
 
 public class BufferedMetricsPublisherTests
 {
-    private sealed class RecordingPublisher : IMetricsPublisher
+    private sealed class FakeSink : IMetricSink
     {
         private readonly List<MetricEvent> _events = [];
+        private readonly TaskCompletionSource _sent = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public TaskCompletionSource? Gate { get; set; }
-        public Exception? ToThrow { get; set; }
+        public Func<MetricEvent, Exception?> ThrowFor { get; set; } = _ => null;
 
         public IReadOnlyList<MetricEvent> Events
         {
@@ -24,22 +25,27 @@ public class BufferedMetricsPublisherTests
             }
         }
 
-        public async Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+        public Task Sent => _sent.Task;
+
+        public async Task SendAsync(MetricEvent metricEvent, CancellationToken ct = default)
         {
             if (Gate is not null)
             {
                 await Gate.Task;
             }
 
-            if (ToThrow is not null)
+            if (ThrowFor(metricEvent) is { } ex)
             {
-                throw ToThrow;
+                _sent.TrySetResult();
+                throw ex;
             }
 
             lock (_events)
             {
                 _events.Add(metricEvent);
             }
+
+            _sent.TrySetResult();
         }
     }
 
@@ -47,60 +53,77 @@ public class BufferedMetricsPublisherTests
         new() { Service = "test", ErrorType = "t", Message = msg };
 
     [Fact]
-    public async Task PublishAsync_InnerBlocked_ReturnsImmediately()
+    public async Task Publish_SinkBlocked_ReturnsWithoutWaiting()
     {
-        var inner = new RecordingPublisher
+        var sink = new FakeSink
         {
             Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
         };
-        await using var publisher = new BufferedMetricsPublisher(inner);
+        await using var publisher = new BufferedMetricsPublisher(sink);
 
-        var publish = publisher.PublishAsync(Event());
+        // Publish is void, so "did not wait" is only observable as the sink not having run yet
+        // while the gate is still closed.
+        publisher.Publish(Event());
 
-        publish.IsCompleted.ShouldBeTrue("hot-path publish must not wait on the inner publisher");
-        inner.Gate.TrySetResult();
+        sink.Events.ShouldBeEmpty();
+        sink.Gate.TrySetResult();
     }
 
     [Fact]
-    public async Task PublishAsync_InnerThrows_DoesNotPropagate()
+    public async Task Publish_SinkThrows_DoesNotEscape()
     {
-        var inner = new RecordingPublisher { ToThrow = new InvalidOperationException("redis down") };
-        await using var publisher = new BufferedMetricsPublisher(inner);
+        var sink = new FakeSink { ThrowFor = _ => new InvalidOperationException("redis down") };
+        await using var publisher = new BufferedMetricsPublisher(sink);
 
-        await Should.NotThrowAsync(() => publisher.PublishAsync(Event()));
+        Should.NotThrow(() => publisher.Publish(Event()));
+
+        await sink.Sent;
+    }
+
+    [Fact]
+    public async Task Publish_SinkThrowsOnOneEvent_LaterEventsStillDrain()
+    {
+        var sink = new FakeSink
+        {
+            ThrowFor = e => e is ErrorEvent { Message: "poison" }
+                ? new InvalidOperationException("redis down")
+                : null
+        };
+        var publisher = new BufferedMetricsPublisher(sink);
+
+        publisher.Publish(Event("poison"));
+        publisher.Publish(Event("after"));
+
         await publisher.DisposeAsync();
+
+        sink.Events.ShouldHaveSingleItem().ShouldBeOfType<ErrorEvent>().Message.ShouldBe("after");
     }
 
     [Fact]
-    public async Task PublishAsync_BufferFull_DropsWithoutThrowing()
+    public async Task Publish_BufferFull_DropsWithoutThrowingOrBlocking()
     {
-        var inner = new RecordingPublisher
+        var sink = new FakeSink
         {
             Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
         };
-        await using var publisher = new BufferedMetricsPublisher(inner, capacity: 1);
+        await using var publisher = new BufferedMetricsPublisher(sink, capacity: 1);
 
-        // First event may be consumed by the drain (blocked on the gate); fill until TryWrite drops.
-        foreach (var i in Enumerable.Range(0, 10))
-        {
-            await Should.NotThrowAsync(() => publisher.PublishAsync(Event($"e{i}")));
-        }
+        // The drain may have taken the first event and parked on the gate, so fill well past
+        // capacity: every write beyond it drops rather than throwing or waiting for room.
+        Should.NotThrow(() => Enumerable.Range(0, 10).ToList().ForEach(i => publisher.Publish(Event($"e{i}"))));
 
-        inner.Gate.TrySetResult();
+        sink.Gate.TrySetResult();
     }
 
     [Fact]
     public async Task DisposeAsync_FlushesPendingEvents()
     {
-        var inner = new RecordingPublisher();
-        var publisher = new BufferedMetricsPublisher(inner);
-        foreach (var i in Enumerable.Range(0, 100))
-        {
-            await publisher.PublishAsync(Event($"e{i}"));
-        }
+        var sink = new FakeSink();
+        var publisher = new BufferedMetricsPublisher(sink);
+        Enumerable.Range(0, 100).ToList().ForEach(i => publisher.Publish(Event($"e{i}")));
 
         await publisher.DisposeAsync();
 
-        inner.Events.Count.ShouldBe(100);
+        sink.Events.Count.ShouldBe(100);
     }
 }

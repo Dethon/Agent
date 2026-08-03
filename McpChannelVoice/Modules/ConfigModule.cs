@@ -35,7 +35,7 @@ public static class ConfigModule
             .AddSingleton(settings)
             .AddSingleton(new SatelliteRegistry(settings.Satellites))
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection))
-            .AddSingleton<IMetricsPublisher, RedisMetricsPublisher>()
+            .AddMetricsPublishing("mcp-channel-voice")
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
@@ -43,9 +43,7 @@ public static class ConfigModule
             .AddSingleton<Domain.Contracts.IThreadStateStore>(sp =>
                 new Infrastructure.StateManagers.RedisThreadStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(), TimeSpan.FromDays(30)))
-            .AddSingleton<Domain.Contracts.IConversationFactory, Infrastructure.Conversations.ConversationFactory>()
-            .AddHostedService(sp =>
-                new HeartbeatService(sp.GetRequiredService<IMetricsPublisher>(), "mcp-channel-voice"));
+            .AddSingleton<Domain.Contracts.IConversationFactory, Infrastructure.Conversations.ConversationFactory>();
 
         services
             .AddSingleton<SatelliteSessionRegistry>()

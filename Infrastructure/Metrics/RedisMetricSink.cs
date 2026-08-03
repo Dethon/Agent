@@ -1,11 +1,10 @@
 using System.Text.Json;
-using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using StackExchange.Redis;
 
 namespace Infrastructure.Metrics;
 
-public sealed class RedisMetricsPublisher(IConnectionMultiplexer redis) : IMetricsPublisher
+public sealed class RedisMetricSink(IConnectionMultiplexer redis) : IMetricSink
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -15,7 +14,7 @@ public sealed class RedisMetricsPublisher(IConnectionMultiplexer redis) : IMetri
     private static readonly RedisChannel _channel = RedisChannel.Literal("metrics:events");
     private readonly ISubscriber _subscriber = redis.GetSubscriber();
 
-    public async Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+    public async Task SendAsync(MetricEvent metricEvent, CancellationToken ct = default)
     {
         var json = JsonSerializer.Serialize(metricEvent, _jsonOptions);
         await _subscriber.PublishAsync(_channel, json);
