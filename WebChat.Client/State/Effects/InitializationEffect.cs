@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
-using WebChat.Client.Services;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
@@ -26,6 +26,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly IMessagePipeline _pipeline;
     private readonly SpaceStore _spaceStore;
+    private readonly ILogger<InitializationEffect> _logger;
 
     public InitializationEffect(
         Dispatcher dispatcher,
@@ -41,7 +42,8 @@ public sealed class InitializationEffect : IDisposable
         TopicsStore topicsStore,
         MessagesStore messagesStore,
         IMessagePipeline pipeline,
-        SpaceStore spaceStore)
+        SpaceStore spaceStore,
+        ILogger<InitializationEffect> logger)
     {
         _dispatcher = dispatcher;
         _connectionService = connectionService;
@@ -57,22 +59,15 @@ public sealed class InitializationEffect : IDisposable
         _messagesStore = messagesStore;
         _pipeline = pipeline;
         _spaceStore = spaceStore;
+        _logger = logger;
 
-        dispatcher.RegisterHandler<Initialize>(HandleInitialize);
-        dispatcher.RegisterHandler<SelectUser>(HandleSelectUser);
+        dispatcher.RegisterHandler<Initialize>(
+            _ => HandleInitializeAsync().LogFaults(_logger, nameof(Initialize)));
+        dispatcher.RegisterHandler<SelectUser>(
+            action => RegisterUserAsync(action.UserId).LogFaults(_logger, nameof(SelectUser)));
     }
 
-    private void HandleSelectUser(SelectUser action)
-    {
-        _ = RegisterUserAsync(action.UserId);
-    }
-
-    private void HandleInitialize(Initialize action)
-    {
-        _ = HandleInitializeAsync();
-    }
-
-    private async Task HandleInitializeAsync()
+    public async Task HandleInitializeAsync()
     {
         await _connectionService.ConnectAsync();
         _eventSubscriber.Subscribe();
@@ -99,7 +94,7 @@ public sealed class InitializationEffect : IDisposable
         // (agent list, topics). Push subscription still runs after space join so the
         // server can associate it with the space context. A slow pushManager.subscribe()
         // previously stalled the agent list ~30s by being awaited here.
-        _ = SubscribePushAsync();
+        SubscribePushAsync().LogFaults(_logger, nameof(SubscribePushAsync));
 
         // Re-register user on reconnection (after initial subscribe to avoid race)
         _connectionService.OnReconnected += () =>
@@ -139,13 +134,12 @@ public sealed class InitializationEffect : IDisposable
         var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 
-        foreach (var topic in topics)
-        {
-            _ = LoadTopicHistoryAsync(topic);
-        }
+        // Gathered rather than detached: awaiting first-load init has to mean history is in
+        // the store, or a caller that awaits it still races the messages it asked for.
+        await Task.WhenAll(topics.Select(LoadTopicHistoryAsync));
     }
 
-    private async Task RegisterUserAsync(string? userId = null)
+    public async Task RegisterUserAsync(string? userId = null)
     {
         userId ??= _userIdentityStore.State.SelectedUserId;
         if (!string.IsNullOrEmpty(userId) && _connectionService.HubConnection is not null)
@@ -181,7 +175,9 @@ public sealed class InitializationEffect : IDisposable
             await MarkTopicAsReadAsync(topic);
         }
 
-        _ = _streamResumeService.TryResumeStreamAsync(topic);
+        // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean
+        // awaiting the conversation.
+        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, nameof(IStreamResumeService));
     }
 
     private async Task MarkTopicAsReadAsync(StoredTopic topic)
