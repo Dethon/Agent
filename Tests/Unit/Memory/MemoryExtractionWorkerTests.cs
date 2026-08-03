@@ -160,9 +160,8 @@ public class MemoryExtractionWorkerTests
 
         MetricEvent? published = null;
         _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt => published = evt);
 
         var request = new MemoryExtractionRequest("user2", "thread-key-3", 0, null, null);
 
@@ -198,7 +197,7 @@ public class MemoryExtractionWorkerTests
                 It.IsAny<CancellationToken>()),
             Times.Never);
         _metricsPublisher.Verify(
-            p => p.PublishAsync(It.IsAny<MemoryExtractionEvent>(), It.IsAny<CancellationToken>()),
+            p => p.Publish(It.IsAny<MemoryExtractionEvent>()),
             Times.Never);
     }
 
@@ -217,9 +216,8 @@ public class MemoryExtractionWorkerTests
 
         MetricEvent? published = null;
         _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt => published = evt);
 
         var request = new MemoryExtractionRequest("user3", "thread-key-5", 0, null, null)
         {
@@ -292,9 +290,8 @@ public class MemoryExtractionWorkerTests
 
         MetricEvent? published = null;
         _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt => published = evt);
 
         var request = new MemoryExtractionRequest("user1", "gone", 0, "conv_1", null);
 

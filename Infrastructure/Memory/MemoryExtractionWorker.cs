@@ -68,7 +68,7 @@ public class MemoryExtractionWorker(
             storedCount = storeResults.Count(stored => stored);
 
             sw.Stop();
-            await metricsPublisher.PublishAsync(new MemoryExtractionEvent
+            metricsPublisher.Publish(new MemoryExtractionEvent
             {
                 DurationMs = sw.ElapsedMilliseconds,
                 CandidateCount = candidateCount,
@@ -76,17 +76,17 @@ public class MemoryExtractionWorker(
                 UserId = request.UserId,
                 AgentId = request.AgentId is not null ? agentDefinitionProvider.GetById(request.AgentId)?.Name ?? request.AgentId : null,
                 ConversationId = request.ConversationId
-            }, ct);
+            });
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Memory extraction failed for user {UserId}", request.UserId);
-            await metricsPublisher.PublishAsync(new ErrorEvent
+            metricsPublisher.Publish(new ErrorEvent
             {
                 Service = "memory",
                 ErrorType = ex.GetType().Name,
                 Message = $"Extraction failed: {ex.Message}"
-            }, ct);
+            });
         }
     }
 

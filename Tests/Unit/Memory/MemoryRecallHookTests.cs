@@ -139,9 +139,7 @@ public class MemoryRecallHookTests
         await _hook.EnrichAsync(message, "user1", null, null, session, CancellationToken.None);
 
         message.GetMemoryContext().ShouldBeNull();
-        _metricsPublisher.Verify(p => p.PublishAsync(
-            It.IsAny<MetricsDTOs.ErrorEvent>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+        _metricsPublisher.Verify(p => p.Publish(It.IsAny<MetricsDTOs.ErrorEvent>()), Times.Once);
     }
 
     [Fact]
@@ -161,15 +159,12 @@ public class MemoryRecallHookTests
 
         LatencyEvent? capturedLatency = null;
         _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<LatencyEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => capturedLatency = e as LatencyEvent)
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<LatencyEvent>()))
+            .Callback<MetricEvent>(e => capturedLatency = e as LatencyEvent);
 
         await _hook.EnrichAsync(message, "user1", "conv1", null, session, CancellationToken.None);
 
-        _metricsPublisher.Verify(p => p.PublishAsync(
-            It.IsAny<MetricsDTOs.MemoryRecallEvent>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+        _metricsPublisher.Verify(p => p.Publish(It.IsAny<MetricsDTOs.MemoryRecallEvent>()), Times.Once);
 
         capturedLatency.ShouldNotBeNull();
         capturedLatency.Stage.ShouldBe(LatencyStage.MemoryRecall);
@@ -205,7 +200,7 @@ public class MemoryRecallHookTests
             e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _metricsPublisher.Verify(
-            p => p.PublishAsync(It.IsAny<MetricsDTOs.MemoryRecallEvent>(), It.IsAny<CancellationToken>()),
+            p => p.Publish(It.IsAny<MetricsDTOs.MemoryRecallEvent>()),
             Times.Never);
     }
 

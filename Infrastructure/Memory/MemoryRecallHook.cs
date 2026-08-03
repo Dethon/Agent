@@ -1,10 +1,10 @@
-using System.Diagnostics;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Memory;
+using Domain.Metrics;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -47,7 +47,6 @@ public class MemoryRecallHook(
             }
         }
 
-        var sw = Stopwatch.StartNew();
         try
         {
             var messageText = message.Text;
@@ -55,6 +54,16 @@ public class MemoryRecallHook(
             {
                 return;
             }
+
+            // Opened here rather than where the stopwatch used to start, which was above the guard:
+            // the scope publishes on disposal, so opening it earlier would report a recall latency
+            // for a recall that never happened. The guard is a string emptiness check, so nothing
+            // measurable moves.
+            var agentName = agentId is not null
+                ? agentDefinitionProvider.GetById(agentId)?.Name ?? agentId
+                : null;
+            using var latency = metricsPublisher.MeasureLatency(
+                LatencyStage.MemoryRecall, conversationId, agentName);
 
             var (persisted, persistedCount, stateKey) = await TryFetchThreadAsync(thread);
             var anchorIndex = (int)persistedCount;
@@ -87,7 +96,7 @@ public class MemoryRecallHook(
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Failed to update access timestamps for user {UserId}", userId);
-                    await metricsPublisher.PublishAsync(new ErrorEvent
+                    metricsPublisher.Publish(new ErrorEvent
                     {
                         Service = "memory",
                         ErrorType = ex.GetType().Name,
@@ -102,39 +111,26 @@ public class MemoryRecallHook(
                     FallbackContent = messageText
                 }, ct);
 
-            sw.Stop();
-            await metricsPublisher.PublishAsync(new MemoryRecallEvent
+            // Same duration as the latency event the scope publishes, taken off the scope rather
+            // than from a second stopwatch.
+            metricsPublisher.Publish(new MemoryRecallEvent
             {
-                DurationMs = sw.ElapsedMilliseconds,
+                DurationMs = latency.ElapsedMilliseconds,
                 MemoryCount = memories.Count,
                 UserId = userId,
                 ConversationId = conversationId,
-                AgentId = agentId is not null ? agentDefinitionProvider.GetById(agentId)?.Name ?? agentId : null
-            }, ct);
-            try
-            {
-                await metricsPublisher.PublishAsync(new LatencyEvent
-                {
-                    Stage = LatencyStage.MemoryRecall,
-                    DurationMs = sw.ElapsedMilliseconds,
-                    ConversationId = conversationId,
-                    AgentId = agentId is not null ? agentDefinitionProvider.GetById(agentId)?.Name ?? agentId : null
-                }, ct);
-            }
-            catch
-            {
-                // Latency emission is best-effort and must never fail or slow a recall.
-            }
+                AgentId = agentName
+            });
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Memory recall failed for user {UserId}", userId);
-            await metricsPublisher.PublishAsync(new ErrorEvent
+            metricsPublisher.Publish(new ErrorEvent
             {
                 Service = "memory",
                 ErrorType = ex.GetType().Name,
                 Message = $"Recall failed: {ex.Message}"
-            }, ct);
+            });
         }
     }
 
