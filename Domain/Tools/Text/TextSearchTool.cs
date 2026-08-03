@@ -30,16 +30,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
                                          - Search markdown files: query="config", filePattern="*.md"
                                          """;
 
-    private record SearchParams(string Query, Regex? Pattern, int ContextLines, int MaxResults);
-
-    private record FileMatch(string File, IReadOnlyList<MatchResult> Matches);
-
-    private record MatchResult(
-        int LineNumber,
-        string Text,
-        string? Section,
-        IReadOnlyList<string>? ContextBefore,
-        IReadOnlyList<string>? ContextAfter);
+    private sealed record Scan(string Query, Regex? Pattern, int ContextLines, int MaxResults, SearchOutputMode OutputMode);
 
     protected JsonNode Run(
         string query,
@@ -51,163 +42,147 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         int contextLines = 1,
         SearchOutputMode outputMode = SearchOutputMode.Content)
     {
-        var searchParams = new SearchParams(
+        var scan = new Scan(
             query,
             regex ? new Regex(query, RegexOptions.IgnoreCase) : null,
             contextLines,
-            maxResults);
+            maxResults,
+            outputMode);
 
-        if (filePath is not null)
-        {
-            return RunSingleFileSearch(filePath, query, regex, searchParams, outputMode);
-        }
+        return filePath is not null
+            ? FsResultContract.ToNode(SearchOneFile(filePath, regex, scan))
+            : FsResultContract.ToNode(SearchDirectory(directoryPath, filePattern, regex, scan));
+    }
 
+    private FsSearchResult SearchOneFile(string filePath, bool regex, Scan scan)
+    {
+        var fullPath = ValidateAndResolvePath(filePath);
+        var matches = MatchesIn(fullPath, scan, scan.MaxResults);
+
+        return Build(filePath, regex, scan, filesSearched: 1, matches.Count == 0
+            ? []
+            : [BuildFileResult(ToRelativePath(fullPath), matches, scan.OutputMode)], matches.Count);
+    }
+
+    private FsSearchResult SearchDirectory(string directoryPath, string? filePattern, bool regex, Scan scan)
+    {
         var fullPath = ResolvePath(directoryPath);
-
         if (!Directory.Exists(fullPath))
         {
             throw new DirectoryNotFoundException($"Directory not found: {directoryPath}");
         }
 
-        var files = EnumerateAllowedFiles(fullPath, filePattern);
-        var (results, filesSearched) = SearchFiles(files, searchParams);
-        var totalMatches = results.Sum(r => r.Matches.Count);
-
-        return BuildResultJson(query, regex, directoryPath, filesSearched, results, totalMatches, maxResults,
-            outputMode);
-    }
-
-    private JsonNode RunSingleFileSearch(string filePath, string query, bool regex, SearchParams searchParams,
-        SearchOutputMode outputMode)
-    {
-        var fullPath = ValidateAndResolvePath(filePath);
-
-        var matches = SearchSingleFile(fullPath, searchParams, searchParams.MaxResults);
-        var results = matches.Count > 0
-            ? [new FileMatch(ToRelativePath(fullPath), matches)]
-            : new List<FileMatch>();
-
-        return BuildResultJson(query, regex, filePath, 1, results, matches.Count, searchParams.MaxResults, outputMode);
-    }
-
-    private IEnumerable<string> EnumerateAllowedFiles(string fullPath, string? filePattern)
-    {
-        return Directory
-            .EnumerateFiles(fullPath, filePattern ?? "*", SearchOption.AllDirectories)
-            .Where(IsAllowedExtension);
-    }
-
-    private bool IsAllowedExtension(string filePath)
-    {
-        return AllowedExtensions.Contains(Path.GetExtension(filePath).ToLowerInvariant());
-    }
-
-    private (List<FileMatch> Results, int FilesSearched) SearchFiles(
-        IEnumerable<string> files, SearchParams searchParams)
-    {
-        var results = new List<FileMatch>();
+        var results = new List<FsSearchFileResult>();
         var filesSearched = 0;
         var totalMatches = 0;
 
-        foreach (var file in files)
+        foreach (var file in EnumerateAllowedFiles(fullPath, filePattern))
         {
             filesSearched++;
-            var remaining = searchParams.MaxResults - totalMatches;
+            var remaining = scan.MaxResults - totalMatches;
             if (remaining <= 0)
             {
                 break;
             }
 
-            var matches = SearchSingleFile(file, searchParams, remaining);
+            var matches = MatchesIn(file, scan, remaining);
             if (matches.Count == 0)
             {
                 continue;
             }
 
-            results.Add(new FileMatch(ToRelativePath(file), matches));
+            results.Add(BuildFileResult(ToRelativePath(file), matches, scan.OutputMode));
             totalMatches += matches.Count;
         }
 
-        return (results, filesSearched);
+        return Build(directoryPath, regex, scan, filesSearched, results, totalMatches);
     }
 
-    private static IReadOnlyList<MatchResult> SearchSingleFile(string filePath, SearchParams searchParams,
-        int maxMatches)
+    private static FsSearchResult Build(
+        string path, bool regex, Scan scan, int filesSearched,
+        IReadOnlyList<FsSearchFileResult> results, int totalMatches) =>
+        new()
+        {
+            Query = scan.Query,
+            Regex = regex,
+            Path = path,
+            FilesSearched = filesSearched,
+            FilesWithMatches = results.Count,
+            TotalMatches = totalMatches,
+            Truncated = totalMatches >= scan.MaxResults,
+            Results = results
+        };
+
+    private static FsSearchFileResult BuildFileResult(
+        string file, IReadOnlyList<FsSearchMatch> matches, SearchOutputMode outputMode) =>
+        outputMode == SearchOutputMode.FilesOnly
+            ? new FsSearchFileResult { File = file, MatchCount = matches.Count }
+            : new FsSearchFileResult { File = file, Matches = matches };
+
+    private IEnumerable<string> EnumerateAllowedFiles(string fullPath, string? filePattern) =>
+        Directory
+            .EnumerateFiles(fullPath, filePattern ?? "*", SearchOption.AllDirectories)
+            .Where(IsAllowedExtension);
+
+    private bool IsAllowedExtension(string filePath) =>
+        AllowedExtensions.Contains(Path.GetExtension(filePath).ToLowerInvariant());
+
+    // An unreadable file is not a failure of the search — skip it and keep scanning the rest.
+    private static IReadOnlyList<FsSearchMatch> MatchesIn(string filePath, Scan scan, int maxMatches)
     {
+        string[] lines;
         try
         {
-            var lines = File.ReadAllLines(filePath);
-            return FindMatchesInLines(lines, searchParams, maxMatches).ToList();
+            lines = File.ReadAllLines(filePath);
         }
         catch
         {
             return [];
         }
-    }
 
-    private static IEnumerable<MatchResult> FindMatchesInLines(
-        string[] lines, SearchParams searchParams, int maxMatches)
-    {
         return lines
             .Select((text, index) => (Text: text, Index: index))
-            .Where(line => IsMatchingLine(line.Text, searchParams))
+            .Where(line => IsMatchingLine(line.Text, scan))
             .Take(maxMatches)
-            .Select(line => CreateMatchResult(lines, line.Index, searchParams.ContextLines));
-    }
-
-    private static bool IsMatchingLine(string line, SearchParams searchParams)
-    {
-        return searchParams.Pattern?.IsMatch(line) ??
-               line.Contains(searchParams.Query, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static MatchResult CreateMatchResult(string[] lines, int index, int contextLines)
-    {
-        return new MatchResult(
-            LineNumber: index + 1,
-            Text: Truncate(lines[index], 200),
-            Section: FindNearestHeading(lines, index),
-            ContextBefore: contextLines > 0 ? GetContextBefore(lines, index, contextLines) : null,
-            ContextAfter: contextLines > 0 ? GetContextAfter(lines, index, contextLines) : null);
-    }
-
-    private static IReadOnlyList<string> GetContextBefore(string[] lines, int index, int count)
-    {
-        return lines
-            .Take(index)
-            .TakeLast(count)
-            .Select(l => Truncate(l, 100))
+            .Select(line => BuildMatch(lines, line.Index, scan.ContextLines))
             .ToList();
     }
 
-    private static IReadOnlyList<string> GetContextAfter(string[] lines, int index, int count)
+    private static bool IsMatchingLine(string line, Scan scan) =>
+        scan.Pattern?.IsMatch(line) ?? line.Contains(scan.Query, StringComparison.OrdinalIgnoreCase);
+
+    private static FsSearchMatch BuildMatch(string[] lines, int index, int contextLines)
     {
-        return lines
-            .Skip(index + 1)
-            .Take(count)
-            .Select(l => Truncate(l, 100))
-            .ToList();
+        var before = contextLines > 0 ? Context(lines.Take(index).TakeLast(contextLines)) : [];
+        var after = contextLines > 0 ? Context(lines.Skip(index + 1).Take(contextLines)) : [];
+
+        return new FsSearchMatch
+        {
+            Line = index + 1,
+            Text = Truncate(lines[index], 200),
+            Section = FindNearestHeading(lines, index),
+            Context = before.Count > 0 || after.Count > 0
+                ? new FsSearchContext { Before = before, After = after }
+                : null
+        };
     }
 
-    private static string? FindNearestHeading(string[] lines, int lineIndex)
-    {
-        return lines
+    private static IReadOnlyList<string> Context(IEnumerable<string> lines) =>
+        lines.Select(l => Truncate(l, 100)).ToList();
+
+    private static string? FindNearestHeading(string[] lines, int lineIndex) =>
+        lines
             .Take(lineIndex + 1)
             .Reverse()
             .FirstOrDefault(l => l.StartsWith('#'))
             ?.TrimStart('#')
             .Trim();
-    }
 
-    private static string Truncate(string text, int maxLength)
-    {
-        return text.Length > maxLength ? text[..maxLength] + "..." : text;
-    }
+    private static string Truncate(string text, int maxLength) =>
+        text.Length > maxLength ? text[..maxLength] + "..." : text;
 
-    private string ToRelativePath(string fullPath)
-    {
-        return Path.GetRelativePath(VaultPath, fullPath).Replace('\\', '/');
-    }
+    private string ToRelativePath(string fullPath) =>
+        Path.GetRelativePath(VaultPath, fullPath).Replace('\\', '/');
 
     // A search path is always vault-relative: a leading '/' means the vault root, not the OS root.
     // Containment is then decided by the one jail, like every other disk tool.
@@ -217,55 +192,5 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         return Jail.Guard(string.IsNullOrEmpty(normalized)
             ? Jail.Root
             : Path.GetFullPath(Path.Combine(Jail.Root, normalized)));
-    }
-
-    private static JsonNode BuildResultJson(
-        string query,
-        bool regex,
-        string path,
-        int filesSearched,
-        List<FileMatch> results,
-        int totalMatches,
-        int maxResults,
-        SearchOutputMode outputMode)
-    {
-        return FsResultContract.ToNode(new FsSearchResult
-        {
-            Query = query,
-            Regex = regex,
-            Path = path,
-            FilesSearched = filesSearched,
-            FilesWithMatches = results.Count,
-            TotalMatches = totalMatches,
-            Truncated = totalMatches >= maxResults,
-            Results = results.Select(r => ToFileResult(r, outputMode)).ToList()
-        });
-    }
-
-    private static FsSearchFileResult ToFileResult(FileMatch fileMatch, SearchOutputMode outputMode) =>
-        outputMode == SearchOutputMode.FilesOnly
-            ? new FsSearchFileResult { File = fileMatch.File, MatchCount = fileMatch.Matches.Count }
-            : new FsSearchFileResult
-            {
-                File = fileMatch.File,
-                Matches = fileMatch.Matches.Select(ToMatch).ToList()
-            };
-
-    private static FsSearchMatch ToMatch(MatchResult match)
-    {
-        var hasContext = match.ContextBefore?.Count > 0 || match.ContextAfter?.Count > 0;
-        return new FsSearchMatch
-        {
-            Line = match.LineNumber,
-            Text = match.Text,
-            Section = match.Section,
-            Context = hasContext
-                ? new FsSearchContext
-                {
-                    Before = match.ContextBefore ?? [],
-                    After = match.ContextAfter ?? []
-                }
-                : null
-        };
     }
 }
