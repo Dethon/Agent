@@ -182,7 +182,7 @@ public sealed class MultiAgentFactoryTests
             new ProviderRouting { Sort = ProviderSort.Price, Ignore = ["chutes"] });
 
         factory.CreateSubAgent(
-            RoutedSubAgent(subRouting), _approvalHandler.Object, [], "user1");
+            RoutedSubAgent(subRouting), _approvalHandler.Object, "conv-1", [], "user1");
 
         captured.Single().ShouldBe(subRouting);
         captured.Single()!.Ignore.ShouldBeNull();
@@ -194,7 +194,7 @@ public sealed class MultiAgentFactoryTests
         var globalRouting = new ProviderRouting { Sort = ProviderSort.Price };
         var (factory, captured, _) = CreateCapturingFactory(globalRouting);
 
-        factory.CreateSubAgent(RoutedSubAgent(null), _approvalHandler.Object, [], "user1");
+        factory.CreateSubAgent(RoutedSubAgent(null), _approvalHandler.Object, "conv-1", [], "user1");
 
         captured.Single().ShouldBe(globalRouting);
     }
@@ -204,7 +204,7 @@ public sealed class MultiAgentFactoryTests
     {
         var (factory, captured, _) = CreateCapturingFactory(null);
 
-        factory.CreateSubAgent(RoutedSubAgent(null), _approvalHandler.Object, [], "user1");
+        factory.CreateSubAgent(RoutedSubAgent(null), _approvalHandler.Object, "conv-1", [], "user1");
 
         captured.Single().ShouldBeNull();
     }
@@ -240,7 +240,7 @@ public sealed class MultiAgentFactoryTests
         var routing = new ProviderRouting { Order = ["deepinfra"] };
         var (factory, _, logs) = CreateCapturingFactory(null);
 
-        factory.CreateSubAgent(RoutedSubAgent(routing), _approvalHandler.Object, [], "user1");
+        factory.CreateSubAgent(RoutedSubAgent(routing), _approvalHandler.Object, "conv-1", [], "user1");
 
         logs.ShouldContain(m => m.Contains("subagent-worker") && m.Contains("sticky routing"));
     }

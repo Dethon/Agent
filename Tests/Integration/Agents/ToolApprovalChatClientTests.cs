@@ -45,7 +45,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         // Arrange
         var innerClient = CreateLlmClient();
         var rejectingHandler = new TestApprovalHandler(result: ToolApprovalResult.Rejected);
-        var approvalClient = new ToolApprovalChatClient(innerClient, rejectingHandler);
+        var approvalClient = new ToolApprovalChatClient(innerClient, rejectingHandler, "conv-test");
 
         var agent = CreateAgent(approvalClient);
 
@@ -75,7 +75,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         // Arrange
         var innerClient = CreateLlmClient();
         var approvingHandler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
-        var approvalClient = new ToolApprovalChatClient(innerClient, approvingHandler);
+        var approvalClient = new ToolApprovalChatClient(innerClient, approvingHandler, "conv-test");
 
         var agent = CreateAgent(approvalClient);
 
@@ -108,7 +108,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         var rejectingHandler = new TestApprovalHandler(result: ToolApprovalResult.Rejected);
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
-            rejectingHandler,
+            rejectingHandler, "conv-test",
             whitelistPatterns: ["*__fs_*"]);
 
         var agent = CreateAgent(approvalClient);
@@ -142,7 +142,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         var approvingHandler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
-            approvingHandler,
+            approvingHandler, "conv-test",
             whitelistPatterns: ["*__fs_glob"]);
 
         var agent = CreateAgent(approvalClient);
@@ -178,6 +178,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         public List<IReadOnlyList<ToolApprovalRequest>> RequestedApprovals { get; } = [];
 
         public Task<ToolApprovalResult> RequestApprovalAsync(
+            string conversationId,
             IReadOnlyList<ToolApprovalRequest> requests,
             CancellationToken cancellationToken)
         {
@@ -186,6 +187,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         }
 
         public Task NotifyAutoApprovedAsync(
+            string conversationId,
             IReadOnlyList<ToolApprovalRequest> requests,
             CancellationToken cancellationToken)
         {

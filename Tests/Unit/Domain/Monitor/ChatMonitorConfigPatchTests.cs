@@ -26,7 +26,6 @@ public class ChatMonitorConfigPatchTests
         var monitor = new ChatMonitor(
             [signalr],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,

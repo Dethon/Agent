@@ -17,7 +17,6 @@ namespace Domain.Monitor;
 public class ChatMonitor(
     IReadOnlyList<IChannelConnection> channels,
     IAgentFactory agentFactory,
-    Func<IChannelConnection, string, IToolApprovalHandler> approvalHandlerFactory,
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
     IMemoryRecallHook? memoryRecallHook,
@@ -30,7 +29,7 @@ public class ChatMonitor(
         AgentResponseUpdate Update, IReadOnlyList<DeliveryTarget> Targets, FirstReplyTracker? Tracker);
 
     private sealed record GroupAnchors(
-        IReadOnlyList<DeliveryTarget> Targets, IToolApprovalHandler ApprovalHandler, AgentKey DeliveryKey);
+        IReadOnlyList<DeliveryTarget> Targets, IChannelConnection ApprovalChannel, AgentKey DeliveryKey);
 
     // Everything a turn needs that is fixed for the whole conversation group.
     private sealed record TurnScope(
@@ -81,7 +80,7 @@ public class ChatMonitor(
         var first = await group.FirstAsync(ct);
         var anchors = await ResolveGroupAnchorsAsync(first, agentKey, ct);
         await using var agent = agentFactory.Create(
-            anchors.DeliveryKey, first.Message.Sender, first.Message.AgentId, anchors.ApprovalHandler);
+            anchors.DeliveryKey, first.Message.Sender, first.Message.AgentId, anchors.ApprovalChannel);
         var context = threadResolver.Resolve(agentKey);
         var thread = await GetOrRestoreThread(agent, anchors.DeliveryKey, ct);
 
@@ -213,8 +212,7 @@ public class ChatMonitor(
         var (deliveryChannel, deliveryKey) = targets.Count > 0
             ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, first.Message.AgentId))
             : (first.Channel, agentKey);
-        var approvalHandler = approvalHandlerFactory(deliveryChannel, deliveryKey.ConversationId);
-        return new GroupAnchors(targets, approvalHandler, deliveryKey);
+        return new GroupAnchors(targets, deliveryChannel, deliveryKey);
     }
 
     private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(

@@ -24,6 +24,9 @@ public class ChatMonitorDeliveryIdentityTests
 {
     private static readonly AgentKey MintedKey = new("7:9", "jonas");
 
+    private static readonly ToolApprovalRequest AnyRequest =
+        new(null, "some_tool", new Dictionary<string, object?>());
+
     [Fact]
     public async Task Monitor_ScheduledMessageMintingConversation_BuildsTheWholeTurnFromTheMintedId()
     {
@@ -51,7 +54,6 @@ public class ChatMonitorDeliveryIdentityTests
         var monitor = new ChatMonitor(
             [scheduling, webchat],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher(published),
             null,
@@ -59,9 +61,18 @@ public class ChatMonitorDeliveryIdentityTests
 
         await monitor.Monitor(CancellationToken.None);
 
-        agentFactory.CreatedKeys.ShouldHaveSingleItem().ShouldBe(MintedKey);
+        var created = agentFactory.Created.ShouldHaveSingleItem();
+        created.Key.ShouldBe(MintedKey);
         fakeAgent.RestoredSessionKeys.ShouldHaveSingleItem().ShouldBe(MintedKey.ToString());
         FirstReplyOf(published).ConversationId.ShouldBe(MintedKey.ConversationId);
+
+        // The approval route the turn was built with reaches the minted channel under the
+        // minted id — the conversation the answer lands in, not the scheduling origin
+        // (which auto-approves silently and would hide the tool calls from the user).
+        await created.ApprovalHandler.NotifyAutoApprovedAsync(
+            created.Key.ConversationId, [AnyRequest], CancellationToken.None);
+        webchat.NotifyAutoApprovedCalls.ShouldHaveSingleItem()
+            .ConversationId.ShouldBe(MintedKey.ConversationId);
     }
 
     [Fact]
@@ -79,7 +90,6 @@ public class ChatMonitorDeliveryIdentityTests
         var monitor = new ChatMonitor(
             [webchat],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher(published),
             null,
@@ -88,7 +98,7 @@ public class ChatMonitorDeliveryIdentityTests
         await monitor.Monitor(CancellationToken.None);
 
         var ownKey = new AgentKey("42:13", "jonas");
-        agentFactory.CreatedKeys.ShouldHaveSingleItem().ShouldBe(ownKey);
+        agentFactory.Created.ShouldHaveSingleItem().Key.ShouldBe(ownKey);
         fakeAgent.RestoredSessionKeys.ShouldHaveSingleItem().ShouldBe(ownKey.ToString());
         FirstReplyOf(published).ConversationId.ShouldBe(ownKey.ConversationId);
     }

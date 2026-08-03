@@ -65,8 +65,6 @@ public static class InjectorModule
             return services
                 .AddSingleton<IReadOnlyList<IChannelConnection>>(sp =>
                     sp.GetServices<IChannelConnection>().ToList())
-                .AddSingleton<Func<IChannelConnection, string, IToolApprovalHandler>>(
-                    _ => (ch, convId) => new ChannelToolApprovalHandler(ch, convId))
                 .AddSingleton<ChatMonitor>()
                 .AddHostedService<ChatMonitoring>()
                 .AddHostedService(sp =>

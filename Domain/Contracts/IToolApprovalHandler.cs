@@ -4,8 +4,13 @@ namespace Domain.Contracts;
 
 public interface IToolApprovalHandler
 {
-    Task<ToolApprovalResult> RequestApprovalAsync(IReadOnlyList<ToolApprovalRequest> requests,
+    Task<ToolApprovalResult> RequestApprovalAsync(
+        string conversationId,
+        IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken);
 
-    Task NotifyAutoApprovedAsync(IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken);
+    Task NotifyAutoApprovedAsync(
+        string conversationId,
+        IReadOnlyList<ToolApprovalRequest> requests,
+        CancellationToken cancellationToken);
 }

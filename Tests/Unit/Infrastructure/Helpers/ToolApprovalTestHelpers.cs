@@ -8,19 +8,24 @@ internal sealed class TestApprovalHandler(ToolApprovalResult result) : IToolAppr
 {
     public List<IReadOnlyList<ToolApprovalRequest>> RequestedApprovals { get; } = [];
     public List<IReadOnlyList<ToolApprovalRequest>> AutoApprovedNotifications { get; } = [];
+    public List<string> ConversationIds { get; } = [];
 
     public Task<ToolApprovalResult> RequestApprovalAsync(
+        string conversationId,
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
+        ConversationIds.Add(conversationId);
         RequestedApprovals.Add(requests);
         return Task.FromResult(result);
     }
 
     public Task NotifyAutoApprovedAsync(
+        string conversationId,
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
+        ConversationIds.Add(conversationId);
         AutoApprovedNotifications.Add(requests);
         return Task.CompletedTask;
     }

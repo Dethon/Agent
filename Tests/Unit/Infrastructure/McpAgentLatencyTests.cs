@@ -120,7 +120,7 @@ public class McpAgentLatencyTests : IAsyncDisposable
         using var chatClient = new OpenRouterChatClient(
             inner.Object, "anthropic/claude", metricsPublisher: _publisher.Object);
         using var wrappedClient = new ToolApprovalChatClient(
-            chatClient, new Mock<IToolApprovalHandler>().Object);
+            chatClient, new Mock<IToolApprovalHandler>().Object, "conv-test");
 
         await using var agent = new McpAgent(
             [],

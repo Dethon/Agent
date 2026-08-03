@@ -43,6 +43,7 @@ public sealed class MultiAgentFactory(
     public DisposableAgent CreateSubAgent(
         SubAgentDefinition definition,
         IToolApprovalHandler approvalHandler,
+        string conversationId,
         string[] whitelistPatterns,
         string userId)
     {
@@ -59,6 +60,7 @@ public sealed class MultiAgentFactory(
         var effectiveClient = new ToolApprovalChatClient(
             chatClient,
             approvalHandler,
+            conversationId,
             whitelistPatterns,
             agentPublisher);
 
@@ -66,7 +68,7 @@ public sealed class MultiAgentFactory(
             .Where(f => !f.Equals("subagents", StringComparison.OrdinalIgnoreCase));
 
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, whitelistPatterns, userId),
+            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, conversationId, whitelistPatterns, userId),
             UserId: userId,
             ConversationContextProvider: () => ConversationContextMeta.Current);
         var domainTools = domainToolRegistry
@@ -107,10 +109,12 @@ public sealed class MultiAgentFactory(
         var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
 
         var name = $"{definition.Name}-{agentKey.ConversationId}";
-        var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, agentPublisher, agentKey.ConversationId);
+        var effectiveClient = new ToolApprovalChatClient(
+            chatClient, approvalHandler, agentKey.ConversationId, definition.WhitelistPatterns, agentPublisher);
 
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, definition.WhitelistPatterns, userId),
+            SubAgentFactory: def => CreateSubAgent(
+                def, approvalHandler, agentKey.ConversationId, definition.WhitelistPatterns, userId),
             UserId: userId,
             ConversationContextProvider: () => ConversationContextMeta.Current);
         var domainTools = domainToolRegistry

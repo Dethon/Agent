@@ -4,7 +4,7 @@ using JetBrains.Annotations;
 namespace Domain.Contracts;
 
 [PublicAPI]
-public interface IChannelConnection
+public interface IChannelConnection : IToolApprovalHandler
 {
     string ChannelId { get; }
 
@@ -21,16 +21,6 @@ public interface IChannelConnection
         ReplyContentType contentType,
         bool isComplete,
         string? messageId,
-        CancellationToken ct);
-
-    Task<ToolApprovalResult> RequestApprovalAsync(
-        string conversationId,
-        IReadOnlyList<ToolApprovalRequest> requests,
-        CancellationToken ct);
-
-    Task NotifyAutoApprovedAsync(
-        string conversationId,
-        IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken ct);
 
     Task<string?> CreateConversationAsync(

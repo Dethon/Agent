@@ -25,7 +25,7 @@ public class ToolApprovalChatClientTests
         var fakeClient = new FakeChatClient();
         fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
-        var client = new ToolApprovalChatClient(fakeClient, handler);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test");
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -35,6 +35,31 @@ public class ToolApprovalChatClientTests
         handler.RequestedApprovals.ShouldNotBeEmpty();
         handler.RequestedApprovals[0][0].ToolName.ShouldBe("mcp__server__TestTool");
         invoked.ShouldBeTrue("Tool should have been invoked after approval");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InvokeFunctionAsync_RoutesTheCall_UnderItsOwnConversationId(bool whitelisted)
+    {
+        // The id the client stamps its metrics with is the id it routes approvals to.
+        // One string, one meaning: approvals and metrics cannot name different
+        // conversations. Whitelisted tools take the auto-approval notice instead of the
+        // approval request, and both carry the same id.
+        var handler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
+        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
+
+        var client = new ToolApprovalChatClient(
+            fakeClient, handler, "7:9",
+            whitelistPatterns: whitelisted ? ["mcp__server__*"] : null);
+
+        await client.GetResponseAsync(
+            [new ChatMessage(ChatRole.User, "test")], new ChatOptions { Tools = [function] });
+
+        handler.ConversationIds.ShouldHaveSingleItem().ShouldBe("7:9");
     }
 
     [Theory]
@@ -55,7 +80,7 @@ public class ToolApprovalChatClientTests
         var fakeClient = new FakeChatClient();
         fakeClient.SetNextResponse(CreateToolCallResponse(callToolName, "call1"));
 
-        var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: [whitelistPattern]);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", whitelistPatterns: [whitelistPattern]);
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -81,7 +106,7 @@ public class ToolApprovalChatClientTests
         var fakeClient = new FakeChatClient();
         fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
-        var client = new ToolApprovalChatClient(fakeClient, handler);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test");
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -124,7 +149,7 @@ public class ToolApprovalChatClientTests
             ("mcp__trusted-server__WhitelistedTool", "call1"),
             ("mcp__untrusted-server__NonWhitelistedTool", "call2")));
 
-        var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: ["mcp__trusted-server__*"]);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", whitelistPatterns: ["mcp__trusted-server__*"]);
         var options = new ChatOptions { Tools = [whitelistedFunc, nonWhitelistedFunc] };
 
         // Act
@@ -152,7 +177,7 @@ public class ToolApprovalChatClientTests
 
         var fakeClient = new FakeChatClient();
         fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
-        var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: ["mcp__server__TestTool"]);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", whitelistPatterns: ["mcp__server__TestTool"]);
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -178,11 +203,11 @@ public class ToolApprovalChatClientTests
         public int NotifyCalls;
 
         public Task<ToolApprovalResult> RequestApprovalAsync(
-            IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+            string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
             => Task.FromResult(ToolApprovalResult.Rejected);
 
         public async Task NotifyAutoApprovedAsync(
-            IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+            string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref NotifyCalls);
             await gate;

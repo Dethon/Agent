@@ -125,15 +125,15 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
-    public List<AgentKey> CreatedKeys { get; } = [];
+    public List<(AgentKey Key, IToolApprovalHandler ApprovalHandler)> Created { get; } = [];
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
-        CreatedKeys.Add(agentKey);
+        Created.Add((agentKey, approvalHandler));
         return agent;
     }
 
-    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, IToolApprovalHandler approvalHandler, string[] whitelistPatterns, string userId)
+    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, IToolApprovalHandler approvalHandler, string conversationId, string[] whitelistPatterns, string userId)
         => throw new NotImplementedException();
 }
 
@@ -258,7 +258,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -292,7 +291,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -320,7 +318,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -348,7 +345,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -377,7 +373,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel1, channel2],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -432,7 +427,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [voice, webchat],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -480,7 +474,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -509,7 +502,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             metricsPublisher.Object,
             null,
@@ -546,17 +538,10 @@ public class ChatMonitorTests
         signalr.Complete();
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
-        (string ChannelId, string ConversationId)? captured = null;
-        Func<IChannelConnection, string, IToolApprovalHandler> factory = (ch, cid) =>
-        {
-            captured = (ch.ChannelId, cid);
-            return new Mock<IToolApprovalHandler>().Object;
-        };
 
         var monitor = new ChatMonitor(
             [scheduling, signalr],
             agentFactory,
-            factory,
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -564,9 +549,9 @@ public class ChatMonitorTests
 
         await monitor.Monitor(CancellationToken.None);
 
-        captured.ShouldNotBeNull();
-        captured.Value.ChannelId.ShouldBe("signalr");
-        captured.Value.ConversationId.ShouldBe("minted-signalr");
+        var created = agentFactory.Created.ShouldHaveSingleItem();
+        created.ApprovalHandler.ShouldBeSameAs(signalr);
+        created.Key.ConversationId.ShouldBe("minted-signalr");
     }
 
     [Fact]
@@ -598,7 +583,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -630,7 +614,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -665,7 +648,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -711,7 +693,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel1, channel2],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -757,7 +738,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [origin, targetA, targetB],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -791,7 +771,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             metrics.Object,
             null,
@@ -821,7 +800,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             metrics.Object,
             null,
@@ -866,7 +844,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [library, signalr],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -894,7 +871,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -930,7 +906,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [scheduling, signalr],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,

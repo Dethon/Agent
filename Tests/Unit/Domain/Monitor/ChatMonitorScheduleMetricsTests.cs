@@ -109,7 +109,6 @@ public class ChatMonitorScheduleMetricsTests
         IReadOnlyList<IChannelConnection> channels, Mock<IMetricsPublisher> metricsPublisher) => new(
         channels,
         MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
-        MonitorTestMocks.CreateApprovalHandlerFactory(),
         MonitorTestMocks.CreateThreadResolver(),
         metricsPublisher.Object,
         null,

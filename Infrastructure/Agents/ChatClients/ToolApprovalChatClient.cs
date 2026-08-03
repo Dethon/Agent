@@ -15,17 +15,18 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly ToolPatternMatcher _patternMatcher;
     private readonly HashSet<string> _dynamicallyApproved;
     private readonly IMetricsPublisher? _metricsPublisher;
-    private readonly string? _conversationId;
+    private readonly string _conversationId;
 
     public ToolApprovalChatClient(
         IChatClient innerClient,
         IToolApprovalHandler approvalHandler,
+        string conversationId,
         IEnumerable<string>? whitelistPatterns = null,
-        IMetricsPublisher? metricsPublisher = null,
-        string? conversationId = null)
+        IMetricsPublisher? metricsPublisher = null)
         : base(innerClient)
     {
         ArgumentNullException.ThrowIfNull(approvalHandler);
+        ArgumentNullException.ThrowIfNull(conversationId);
         _approvalHandler = approvalHandler;
         _patternMatcher = new ToolPatternMatcher(whitelistPatterns);
         _dynamicallyApproved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -53,13 +54,15 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             // The notification is display-only; overlapping it with the invocation keeps a
             // channel round trip off the tool's critical path. A notify failure still
             // surfaces, but no longer prevents the tool from executing.
-            var notifyTask = _approvalHandler.NotifyAutoApprovedAsync([request], cancellationToken);
+            var notifyTask = _approvalHandler.NotifyAutoApprovedAsync(
+                _conversationId, [request], cancellationToken);
             var invokeTask = InvokeWithMetricsAsync(context, toolName, cancellationToken).AsTask();
             await Task.WhenAll(notifyTask, invokeTask);
             return await invokeTask;
         }
 
-        var result = await _approvalHandler.RequestApprovalAsync([request], cancellationToken);
+        var result = await _approvalHandler.RequestApprovalAsync(
+            _conversationId, [request], cancellationToken);
 
         switch (result)
         {

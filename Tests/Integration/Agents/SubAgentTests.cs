@@ -63,14 +63,14 @@ public class SubAgentTests(RedisFixture redisFixture)
 
         var approvalHandler = new AutoApproveHandler();
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => factory.CreateSubAgent(def, approvalHandler, ["domain__subagents__*"], "test-user"));
+            SubAgentFactory: def => factory.CreateSubAgent(def, approvalHandler, "conv-1", ["domain__subagents__*"], "test-user"));
 
         var toolFeature = new SubAgentToolFeature(registryOptions);
 
         var llmClient = new OpenRouterChatClient(
             openRouterConfig.ApiUrl, openRouterConfig.ApiKey, "google/gemini-2.5-flash");
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(5));
-        using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, ["domain__subagents__*"]);
+        using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, "conv-test", ["domain__subagents__*"]);
 
         await using var agent = new McpAgent(
             [],
@@ -121,7 +121,7 @@ public class SubAgentTests(RedisFixture redisFixture)
         var server = redisFixture.Connection.GetServer(redisFixture.Connection.GetEndPoints()[0]);
         var keysBefore = server.Keys(pattern: "*").ToList();
 
-        await using var agent = factory.CreateSubAgent(subAgentDef, approvalHandler, [], "test-user");
+        await using var agent = factory.CreateSubAgent(subAgentDef, approvalHandler, "conv-1", [], "test-user");
         var userMessage = new ChatMessage(ChatRole.User, "Say done");
         var response = await agent.RunStreamingAsync(
                 [userMessage], cancellationToken: cts.Token)
@@ -142,11 +142,11 @@ public class SubAgentTests(RedisFixture redisFixture)
 file sealed class AutoApproveHandler : IToolApprovalHandler
 {
     public Task<ToolApprovalResult> RequestApprovalAsync(
-        IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
         => Task.FromResult(ToolApprovalResult.Approved);
 
     public Task NotifyAutoApprovedAsync(
-        IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
         => Task.CompletedTask;
 }
 

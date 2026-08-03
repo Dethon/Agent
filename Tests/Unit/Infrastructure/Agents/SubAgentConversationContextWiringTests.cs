@@ -106,6 +106,7 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
                     McpServerEndpoints = []
                 },
                 approvalHandler,
+                "conv-1",
                 [],
                 "fran");
         }

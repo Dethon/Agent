@@ -35,7 +35,7 @@ public class ToolApprovalChatClientMetricsTests
             .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
-        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -67,7 +67,7 @@ public class ToolApprovalChatClientMetricsTests
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(
-            fakeClient, handler,
+            fakeClient, handler, "conv-test",
             whitelistPatterns: ["mcp__server__*"],
             metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
@@ -102,7 +102,7 @@ public class ToolApprovalChatClientMetricsTests
 
         // IncludeDetailedErrors is true by default, so the exception is caught by the base class
         // and returned as a result. We need to verify the metrics still capture it.
-        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -126,7 +126,7 @@ public class ToolApprovalChatClientMetricsTests
         var fakeClient = new FakeChatClient();
         fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
-        var client = new ToolApprovalChatClient(fakeClient, handler);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test");
         var options = new ChatOptions { Tools = [function] };
 
         // Act & Assert
@@ -145,7 +145,7 @@ public class ToolApprovalChatClientMetricsTests
         var fakeClient = new FakeChatClient();
         fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
-        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -181,7 +181,7 @@ public class ToolApprovalChatClientMetricsTests
             .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
-        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -220,7 +220,7 @@ public class ToolApprovalChatClientMetricsTests
             .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
-        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -256,7 +256,7 @@ public class ToolApprovalChatClientMetricsTests
             .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
-        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -290,7 +290,7 @@ public class ToolApprovalChatClientMetricsTests
             .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
-        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -316,7 +316,7 @@ public class ToolApprovalChatClientMetricsTests
             .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is LatencyEvent l) { captured = l; } })
             .Returns(Task.CompletedTask);
 
-        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
         await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
@@ -342,7 +342,7 @@ public class ToolApprovalChatClientMetricsTests
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(
-            fakeClient, handler, metricsPublisher: publisher.Object, conversationId: "conv1");
+            fakeClient, handler, "conv1", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
         await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
@@ -366,7 +366,7 @@ public class ToolApprovalChatClientMetricsTests
         var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
         var fakeClient = new FakeChatClient();
         fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
-        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
         await Should.NotThrowAsync(async () =>
@@ -394,7 +394,7 @@ public class ToolApprovalChatClientMetricsTests
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(
-            fakeClient, handler, metricsPublisher: publisher.Object, conversationId: "conv-42");
+            fakeClient, handler, "conv-42", metricsPublisher: publisher.Object);
 
         await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], new ChatOptions { Tools = [function] });
 
@@ -420,7 +420,7 @@ public class ToolApprovalChatClientMetricsTests
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(
-            fakeClient, handler, metricsPublisher: publisher.Object, conversationId: "conv-42");
+            fakeClient, handler, "conv-42", metricsPublisher: publisher.Object);
 
         await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], new ChatOptions { Tools = [function] });
 
