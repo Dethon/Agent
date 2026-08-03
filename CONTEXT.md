@@ -59,6 +59,20 @@ connection, where ordinary start-up does that work with the extra steps the firs
 connection needs.
 _Avoid_: reconnection handler, resubscribe, rehydrate
 
+**Hub call**:
+Something the client asks the server to do over the live connection and waits on:
+fetching topics, sending a message, answering an approval. It goes in the opposite
+direction to a server push, and unlike a push it can only happen while the
+connection is live.
+_Avoid_: invoke, request, RPC, server call
+
+**Not live**:
+The answer a hub call gives when it could not be made, because the client was
+between connections or still getting one up. It is one of the two things any hub
+call can come back with, the other being the server's own answer, and it never
+means the server said no.
+_Avoid_: disconnected, offline, failed, null
+
 ## Voice satellite
 
 **Satellite connection**:

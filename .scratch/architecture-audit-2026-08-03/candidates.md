@@ -19,7 +19,7 @@ closed it.
 | 2 | The rebuild loses its event handlers | Strong | WebChat.Client | Grilled → `.scratch/chat-live-connection/spec.md` |
 | 3 | The satellite connection has no module | Strong | McpChannelVoice | Grilled → `.scratch/satellite-connection-module/spec.md` |
 | 4 | Playback has no outcome | Strong | McpChannelVoice | Grilled → `.scratch/playback-outcome/spec.md` + `docs/adr/0003-playback-settles-by-outcome.md` |
-| 5 | The hub call surface leaks the connection | Strong | WebChat.Client | Not grilled |
+| 5 | The hub call surface leaks the connection | Strong | WebChat.Client | Grilled → `.scratch/hub-call-surface/spec.md` + `docs/adr/0004-hub-calls-answer-or-say-not-live.md` |
 | 6 | `AddToolServer`, twin of `AddChannelServer` | Strong | McpServer* | Not grilled |
 | 7 | Two copies of "how to build an agent" | Strong | Infrastructure/Agents | Not grilled |
 | 8 | The turn is not a value | Strong | Domain/Monitor | Not grilled |
@@ -38,6 +38,11 @@ cross-cutting deepening.
 
 Take 2 before 11. The shared Blazor seam in 11 should be extracted from the
 deepened connection in 2, or Dashboard inherits the rebind hole.
+
+Take 5 after 2, decided during its grilling: 2 renames the module, adds the receive
+verb to `IChatHubConnection` and gives its fake a handler registry, and keeps the raw
+accessor deliberately for 5 to remove. Running 5 first would write the send verbs
+onto an interface 2 then renames.
 
 Candidates 6 and 10 touch no file another candidate touches and can run at any
 point.
@@ -281,7 +286,16 @@ parameterised test rather than being re-proved per producer. The spin-waits in
 
 ## 5 — The hub call surface leaks the connection
 
-**Strength:** Strong.
+**Strength:** Strong. **Grilled**, spec at `.scratch/hub-call-surface/spec.md`. The
+open question below — queue, throw, or a documented default — was settled: every hub
+call returns either the server's answer or `NotLive`, and the result travels to the
+effects. Recorded as `docs/adr/0004-hub-calls-answer-or-say-not-live.md`. The
+grilling found the friction to be three live defects, not friction: the sidebar wipe
+at `AgentSelectionEffect.cs:84`, the vanished message at `SendMessageEffect.cs:93`,
+and the stream that starts and says nothing at `StreamingService.cs:43`. It also
+found the guard incomplete — it covers the null window but not the connecting or
+reconnecting states — and the three integration adapters to be unreferenced dead
+code. Sequenced after candidate 2.
 
 **Files**
 
