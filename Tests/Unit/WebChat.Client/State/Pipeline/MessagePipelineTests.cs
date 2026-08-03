@@ -128,7 +128,7 @@ public sealed class MessagePipelineTests
     }
 
     [Fact]
-    public void ClearTopic_ResetsFinalizedState()
+    public void ClearMessages_ResetsFinalizedState()
     {
         // Arrange - load history to populate finalized IDs
         var history = new List<ChatHistoryMessage>
@@ -139,23 +139,24 @@ public sealed class MessagePipelineTests
         _pipeline.GetSnapshot("topic-1").FinalizedCount.ShouldBe(1);
 
         // Act
-        _pipeline.ClearTopic("topic-1");
+        _dispatcher.Dispatch(new ClearMessages("topic-1"));
 
         // Assert - finalized state should be reset
         _pipeline.GetSnapshot("topic-1").FinalizedCount.ShouldBe(0);
     }
 
     [Fact]
-    public void ClearTopic_AllowsReprocessingOfSameMessageIds()
+    public void ClearMessages_AllowsReprocessingOfSameMessageIds()
     {
         // Arrange - finalize a message
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _pipeline.AccumulateChunk("topic-1", "msg-1", "Content", null, null);
         _pipeline.FinalizeMessage("topic-1", "msg-1");
 
-        _pipeline.ClearTopic("topic-1");
+        _dispatcher.Dispatch(new ClearMessages("topic-1"));
 
         // Act - same message ID should now be processable again
+        _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _pipeline.AccumulateChunk("topic-1", "msg-1", "New content", null, null);
         _pipeline.FinalizeMessage("topic-1", "msg-1");
 

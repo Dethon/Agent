@@ -39,7 +39,13 @@ public sealed class StreamingServiceTests : IDisposable
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         _agentSettingsStore = new AgentSettingsStore(_dispatcher);
         _service = new StreamingService(
-            _messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore, _agentSettingsStore);
+            _messagingService,
+            _dispatcher,
+            _topicService,
+            _topicsStore,
+            _messagesStore,
+            _streamingStore,
+            _agentSettingsStore);
     }
 
     public void Dispose()
@@ -389,6 +395,49 @@ public sealed class StreamingServiceTests : IDisposable
         {
             _toastStore.State.Toasts.ShouldBeEmpty();
         }
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_MessageIdCommittedByAnEarlierStream_UpdatesTheExistingMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "first", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+        await _service.StreamResponseAsync(topic, "test");
+
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "first and more", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = MessagesFor(topic.TopicId);
+        messages.Count.ShouldBe(1);
+        messages[0].Content.ShouldBe("first and more");
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_MessageIdPresentFromHistory_UpdatesTheExistingMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, [
+            new ChatMessageModel { Role = "assistant", Content = "partial", MessageId = "msg-1" }
+        ]));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "partial and the rest", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = MessagesFor(topic.TopicId);
+        messages.Count.ShouldBe(1);
+        messages[0].Content.ShouldBe("partial and the rest");
     }
 
     #endregion

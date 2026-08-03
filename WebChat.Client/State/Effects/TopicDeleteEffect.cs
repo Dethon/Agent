@@ -55,9 +55,9 @@ public sealed class TopicDeleteEffect : IDisposable
                 action.ThreadId.Value);
         }
 
-        // Clear cached messages and pipeline state so re-created topics reload from server
+        // Clear cached messages so re-created topics reload from server; the same action drops
+        // the topic's finalized message ids, which is all the pipeline ever tracked.
         _dispatcher.Dispatch(new ClearMessages(action.TopicId));
-        _pipeline.ClearTopic(action.TopicId);
 
         if (_topicsStore.State.SelectedTopicId == action.TopicId)
         {

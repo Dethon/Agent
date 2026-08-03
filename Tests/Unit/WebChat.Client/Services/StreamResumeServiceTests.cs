@@ -39,7 +39,13 @@ public sealed class StreamResumeServiceTests : IDisposable
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         _agentSettingsStore = new AgentSettingsStore(_dispatcher);
         var streamingService = new StreamingService(
-            _messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore, _agentSettingsStore);
+            _messagingService,
+            _dispatcher,
+            _topicService,
+            _topicsStore,
+            _messagesStore,
+            _streamingStore,
+            _agentSettingsStore);
         var pipeline = new MessagePipeline(_dispatcher, _messagesStore, _streamingStore,
             NullLogger<MessagePipeline>.Instance);
         _resumeService = new StreamResumeService(

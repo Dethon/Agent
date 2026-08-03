@@ -13,7 +13,6 @@ public sealed class MessagePipeline(
     ILogger<MessagePipeline> logger)
     : IMessagePipeline
 {
-    private readonly Dictionary<string, HashSet<string>> _finalizedByTopic = new();
     private readonly Dictionary<string, string> _pendingUserMessages = new();
     private readonly Lock _lock = new();
 
@@ -44,15 +43,12 @@ public sealed class MessagePipeline(
     public void AccumulateChunk(string topicId, string? messageId,
         string? content, string? reasoning, string? toolCalls)
     {
-        lock (_lock)
+        if (IsFinalized(topicId, messageId))
         {
-            if (!ShouldProcess(topicId, messageId))
-            {
-                logger.LogDebug(
-                    "Pipeline.AccumulateChunk: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
-                    topicId, messageId);
-                return;
-            }
+            logger.LogDebug(
+                "Pipeline.AccumulateChunk: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
+                topicId, messageId);
+            return;
         }
 
         logger.LogDebug(
@@ -64,24 +60,12 @@ public sealed class MessagePipeline(
 
     public void FinalizeMessage(string topicId, string? messageId)
     {
-        lock (_lock)
+        if (IsFinalized(topicId, messageId))
         {
-            if (!string.IsNullOrEmpty(messageId))
-            {
-                if (!_finalizedByTopic.TryGetValue(topicId, out var finalized))
-                {
-                    finalized = new HashSet<string>();
-                    _finalizedByTopic[topicId] = finalized;
-                }
-
-                if (!finalized.Add(messageId))
-                {
-                    logger.LogDebug(
-                        "Pipeline.FinalizeMessage: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
-                        topicId, messageId);
-                    return;
-                }
-            }
+            logger.LogDebug(
+                "Pipeline.FinalizeMessage: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
+                topicId, messageId);
+            return;
         }
 
         logger.LogDebug(
@@ -118,20 +102,7 @@ public sealed class MessagePipeline(
             Timestamp = h.Timestamp
         }).ToList();
 
-        lock (_lock)
-        {
-            if (!_finalizedByTopic.TryGetValue(topicId, out var finalized))
-            {
-                finalized = new HashSet<string>();
-                _finalizedByTopic[topicId] = finalized;
-            }
-
-            foreach (var msg in chatMessages.Where(m => !string.IsNullOrEmpty(m.MessageId)))
-            {
-                finalized.Add(msg.MessageId!);
-            }
-        }
-
+        // MessagesLoaded records every message id it carries, so the finalized set follows.
         logger.LogDebug(
             "Pipeline.LoadHistory: topic={TopicId}, count={Count}",
             topicId, chatMessages.Count);
@@ -191,16 +162,6 @@ public sealed class MessagePipeline(
         dispatcher.Dispatch(new ResetStreamingContent(topicId));
     }
 
-    public void ClearTopic(string topicId)
-    {
-        lock (_lock)
-        {
-            _finalizedByTopic.Remove(topicId);
-        }
-
-        logger.LogDebug("Pipeline.ClearTopic: topic={TopicId}", topicId);
-    }
-
     public bool WasSentByThisClient(string? correlationId)
     {
         if (string.IsNullOrEmpty(correlationId))
@@ -216,25 +177,18 @@ public sealed class MessagePipeline(
 
     public PipelineSnapshot GetSnapshot(string topicId)
     {
+        var streamingId = streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId)?.CurrentMessageId;
+        var finalizedCount = FinalizedIds(topicId)?.Count ?? 0;
+
         lock (_lock)
         {
-            var streamingContent = streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
-            var streamingId = streamingContent?.CurrentMessageId;
-            var finalizedCount = _finalizedByTopic.GetValueOrDefault(topicId)?.Count ?? 0;
-            var pendingCount = _pendingUserMessages.Count;
-
-            return new PipelineSnapshot(streamingId, finalizedCount, pendingCount);
+            return new PipelineSnapshot(streamingId, finalizedCount, _pendingUserMessages.Count);
         }
     }
 
-    private bool ShouldProcess(string topicId, string? messageId)
-    {
-        if (string.IsNullOrEmpty(messageId))
-        {
-            return true;
-        }
+    private bool IsFinalized(string topicId, string? messageId) =>
+        !string.IsNullOrEmpty(messageId) && FinalizedIds(topicId)?.Contains(messageId) == true;
 
-        return !_finalizedByTopic.TryGetValue(topicId, out var finalized) ||
-               !finalized.Contains(messageId);
-    }
+    private IReadOnlySet<string>? FinalizedIds(string topicId) =>
+        messagesStore.State.FinalizedMessageIdsByTopic.GetValueOrDefault(topicId);
 }

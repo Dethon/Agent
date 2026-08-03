@@ -18,6 +18,7 @@ public sealed class StreamingService(
     IDispatcher dispatcher,
     ITopicService topicService,
     TopicsStore topicsStore,
+    MessagesStore messagesStore,
     StreamingStore streamingStore,
     AgentSettingsStore agentSettingsStore) : IStreamingService
 {
@@ -141,7 +142,6 @@ public sealed class StreamingService(
         // chunks for an already-committed MessageId through UpdateMessage (merging the bubble
         // in place) instead of a fresh AddMessage that AddMessageWithDedup would drop.
         var stash = new Dictionary<string, MessageAccumulator>();
-        var committed = new HashSet<string>();
 
         try
         {
@@ -250,7 +250,7 @@ public sealed class StreamingService(
                 // For an already-committed MessageId revisited mid-stream, update its bubble in
                 // place; the live streaming buffer is only used for the current uncommitted
                 // accumulator, preserving the single-live-bubble look in the contiguous case.
-                if (currentMessageId is not null && committed.Contains(currentMessageId))
+                if (currentMessageId is not null && isCommitted(currentMessageId))
                 {
                     dispatcher.Dispatch(new UpdateMessage(topic.TopicId, currentMessageId, streamingMessage));
                 }
@@ -304,19 +304,20 @@ public sealed class StreamingService(
                 return;
             }
 
-            if (mid is not null && committed.Contains(mid))
+            if (mid is not null && isCommitted(mid))
             {
                 dispatcher.Dispatch(new UpdateMessage(topic.TopicId, mid, message));
             }
             else
             {
+                // AddMessage records mid in the messages state, so the next read sees it committed.
                 dispatcher.Dispatch(new AddMessage(topic.TopicId, message, mid));
-                if (mid is not null)
-                {
-                    committed.Add(mid);
-                }
             }
         }
+
+        bool isCommitted(string messageId) =>
+            messagesStore.State.FinalizedMessageIdsByTopic
+                .GetValueOrDefault(topic.TopicId)?.Contains(messageId) == true;
     }
 
     private readonly record struct MessageAccumulator(
