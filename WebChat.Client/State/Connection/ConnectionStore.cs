@@ -1,5 +1,15 @@
 namespace WebChat.Client.State.Connection;
 
+public record ConnectionConnecting : IAction;
+
+public record ConnectionConnected : IAction;
+
+public record ConnectionReconnecting : IAction;
+
+public record ConnectionReconnected : IAction;
+
+public record ConnectionClosed(string? Error) : IAction;
+
 public sealed class ConnectionStore : IDisposable
 {
     private readonly Store<ConnectionState> _store;
@@ -8,16 +18,7 @@ public sealed class ConnectionStore : IDisposable
     {
         _store = new Store<ConnectionState>(ConnectionState.Initial);
 
-        dispatcher.RegisterHandler<ConnectionConnecting>(action =>
-            _store.Dispatch(action, ConnectionReducers.Reduce));
-        dispatcher.RegisterHandler<ConnectionConnected>(action =>
-            _store.Dispatch(action, ConnectionReducers.Reduce));
-        dispatcher.RegisterHandler<ConnectionReconnecting>(action =>
-            _store.Dispatch(action, ConnectionReducers.Reduce));
-        dispatcher.RegisterHandler<ConnectionReconnected>(action =>
-            _store.Dispatch(action, ConnectionReducers.Reduce));
-        dispatcher.RegisterHandler<ConnectionClosed>(action =>
-            _store.Dispatch(action, ConnectionReducers.Reduce));
+        dispatcher.RegisterCatchAll(action => _store.Dispatch(action, Reduce));
     }
 
     public ConnectionState State => _store.State;
@@ -25,4 +26,42 @@ public sealed class ConnectionStore : IDisposable
     public IObservable<ConnectionState> StateObservable => _store.StateObservable;
 
     public void Dispose() => _store.Dispose();
+
+    private static ConnectionState Reduce(ConnectionState state, IAction action) => action switch
+    {
+        ConnectionConnecting => state with
+        {
+            Status = ConnectionStatus.Connecting
+        },
+
+        ConnectionConnected => state with
+        {
+            Status = ConnectionStatus.Connected,
+            LastConnected = DateTime.UtcNow,
+            ReconnectAttempts = 0,
+            Error = null
+        },
+
+        ConnectionReconnecting => state with
+        {
+            Status = ConnectionStatus.Reconnecting,
+            ReconnectAttempts = state.ReconnectAttempts + 1
+        },
+
+        ConnectionReconnected => state with
+        {
+            Status = ConnectionStatus.Connected,
+            LastConnected = DateTime.UtcNow,
+            ReconnectAttempts = 0,
+            Error = null
+        },
+
+        ConnectionClosed a => state with
+        {
+            Status = ConnectionStatus.Disconnected,
+            Error = a.Error
+        },
+
+        _ => state
+    };
 }
