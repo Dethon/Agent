@@ -20,13 +20,16 @@ public static class ScheduleFirePlanner
             .ToList();
         var origin = new MessageOrigin(MessageOriginKind.Schedule, schedule.Id);
 
-        var payload = ScheduleNotificationEmitter.BuildPayload(
-            conversationId: $"sched-{schedule.Id}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
-            sender: "scheduler",
-            content: schedule.Prompt,
-            agentId: schedule.AgentId,
-            replyTo: replyTo,
-            origin: origin);
+        var payload = new ChannelMessageNotification
+        {
+            ConversationId = $"sched-{schedule.Id}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
+            Sender = "scheduler",
+            Content = schedule.Prompt,
+            AgentId = schedule.AgentId,
+            ReplyTo = replyTo,
+            Origin = origin,
+            Timestamp = DateTimeOffset.UtcNow
+        };
 
         var deleteAfterFire = schedule.CronExpression is null;
         return new FirePlan(payload, nextRun, deleteAfterFire);

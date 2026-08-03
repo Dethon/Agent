@@ -1,5 +1,5 @@
+using Channels.Hosting;
 using Domain.Agents;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.Prompts;
 using Domain.Tools.Scheduling.Vfs;
@@ -34,11 +34,6 @@ public static class ConfigModule
     public static IServiceCollection ConfigureScheduling(this IServiceCollection services, SchedulingSettings settings)
     {
         services
-            .AddSingleton<ChannelInbox>()
-            .AddSingleton<ScheduleNotificationEmitter>()
-            .AddSingleton<IScheduleNotificationEmitter>(sp => sp.GetRequiredService<ScheduleNotificationEmitter>());
-
-        services
             .AddSingleton(settings)
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
             .AddSingleton<IScheduleStore, RedisScheduleStore>()
@@ -57,7 +52,10 @@ public static class ConfigModule
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
-            .WithTools<McpChannelReceiveTool>()
+            // Gate-on-live: the dispatcher deletes or advances a schedule only on a confirmed
+            // delivery, so buffering on a failed emit would keep the record *and* leave a duplicate
+            // behind — the schedule would fire twice.
+            .AddChannelServer(DeliveryPolicy.GateOnLive, errorResult: ToolResponse.Create)
             .WithTools<FsGlobTool>()
             .WithTools<FsInfoTool>()
             .WithTools<FsReadTool>()
@@ -68,27 +66,7 @@ public static class ConfigModule
             .WithTools<FsMoveTool>()
             .WithTools<FsExecTool>()
             .WithResources<FileSystemResource>()
-            .WithPrompts<McpSystemPrompt>()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
-                    // or the server shuts down. Mapping that to IsError would hand the pump an
-                    // error result to retry on; let it propagate as the abort it is.
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return ToolResponse.Create(ex);
-                }
-            }));
+            .WithPrompts<McpSystemPrompt>();
 
         return services;
     }

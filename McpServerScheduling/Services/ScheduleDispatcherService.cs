@@ -1,3 +1,4 @@
+using Channels.Hosting;
 using Domain.Contracts;
 using McpServerScheduling.Settings;
 using Microsoft.Extensions.Hosting;
@@ -8,7 +9,7 @@ namespace McpServerScheduling.Services;
 public sealed class ScheduleDispatcherService(
     IScheduleStore store,
     ICronValidator cronValidator,
-    IScheduleNotificationEmitter emitter,
+    ChannelNotificationEmitter emitter,
     SchedulingSettings settings,
     ILogger<ScheduleDispatcherService> logger,
     TimeProvider timeProvider) : BackgroundService
@@ -40,11 +41,6 @@ public sealed class ScheduleDispatcherService(
 
     internal async Task DispatchDueAsync(CancellationToken ct)
     {
-        if (!emitter.HasActiveSessions)
-        {
-            return;
-        }
-
         var now = timeProvider.GetUtcNow();
         var due = await store.GetDueSchedulesAsync(now.UtcDateTime, ct);
         foreach (var schedule in due)

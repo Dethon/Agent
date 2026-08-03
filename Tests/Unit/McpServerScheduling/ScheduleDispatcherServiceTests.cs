@@ -1,3 +1,5 @@
+using Channels.Hosting;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -73,16 +75,20 @@ public class ScheduleDispatcherServiceTests
         store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    // Gate-on-live is what keeps this safe. With nobody listening the emit buffers nothing and
+    // reports false, so the schedule stays due for the next tick — and there is no duplicate
+    // sitting in the inbox to fire alongside it when the agent comes back.
     [Fact]
-    public async Task DispatchDueAsync_NoActiveSessions_DoesNotQueryStore()
+    public async Task DispatchDueAsync_NoLiveSubscriber_LeavesTheScheduleDueAndBuffersNothing()
     {
-        var store = new Mock<IScheduleStore>();
-        var emitter = new Mock<IScheduleNotificationEmitter>();
-        emitter.SetupGet(e => e.HasActiveSessions).Returns(false);
+        var inbox = new ChannelInbox();
+        var store = StoreWithDue(OneShot());
 
-        await BuildDispatcher(store.Object, emitter.Object).DispatchDueAsync(CancellationToken.None);
+        await BuildDispatcher(store.Object, new ChannelNotificationEmitter(inbox, DeliveryPolicy.GateOnLive))
+            .DispatchDueAsync(CancellationToken.None);
 
-        store.Verify(s => s.GetDueSchedulesAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+        store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
     }
 
     [Theory]
@@ -109,17 +115,24 @@ public class ScheduleDispatcherServiceTests
         return store;
     }
 
-    private static IScheduleNotificationEmitter Emitter(bool delivers)
+    private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "scheduling";
+
+    // A real inbox and the real emitter rather than a mock: "delivers" is expressed the way
+    // production expresses it — whether anyone has actually polled — so the test cannot claim a
+    // combination the shared emitter would never produce.
+    private static ChannelNotificationEmitter Emitter(bool delivers)
     {
-        var emitter = new Mock<IScheduleNotificationEmitter>();
-        emitter.SetupGet(e => e.HasActiveSessions).Returns(true);
-        emitter.Setup(e => e.EmitAsync(It.IsAny<ChannelMessageNotification>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(delivers);
-        return emitter.Object;
+        var inbox = new ChannelInbox();
+        if (delivers)
+        {
+            inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None).GetAwaiter().GetResult();
+        }
+
+        return new ChannelNotificationEmitter(inbox, DeliveryPolicy.GateOnLive);
     }
 
     private static ScheduleDispatcherService BuildDispatcher(
-        IScheduleStore store, IScheduleNotificationEmitter emitter, ICronValidator? cron = null, TimeProvider? clock = null) =>
+        IScheduleStore store, ChannelNotificationEmitter emitter, ICronValidator? cron = null, TimeProvider? clock = null) =>
         new(
             store,
             cron ?? new Mock<ICronValidator>().Object,
