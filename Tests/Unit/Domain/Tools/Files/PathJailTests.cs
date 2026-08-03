@@ -30,6 +30,16 @@ public class PathJailTests : IDisposable
         jail.Root.ShouldBe(Path.GetFullPath(_root));
     }
 
+    // The sandbox mounts the container root itself, where the root already ends in a separator.
+    [Fact]
+    public void Contains_WhenTheRootIsTheFilesystemRoot_PathsUnderItAreInside()
+    {
+        var jail = new PathJail(Path.GetPathRoot(Path.GetTempPath())!);
+
+        jail.Contains(Path.GetTempPath()).ShouldBeTrue();
+        jail.TryResolve(Path.Combine(Path.GetTempPath(), "note.md"), out _).ShouldBeTrue();
+    }
+
     [Fact]
     public void Contains_TheRootItself_IsInside()
     {

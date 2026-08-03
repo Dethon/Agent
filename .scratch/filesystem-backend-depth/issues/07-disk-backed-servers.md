@@ -10,11 +10,11 @@ The conformance test extends to every filesystem server. After this ticket, no s
 
 **Blocked by:** 05, 06 — the backend they register from, and the registrar they register through.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Vault, sandbox, library and printer's blob tools register through the registrar, one server per commit.
-- [ ] All remaining filesystem wrapper files are deleted; roughly sixty-four in total across this ticket and 06.
-- [ ] The library's downloads view behaves exactly as before.
-- [ ] The conformance test covers every filesystem server, and every one passes.
-- [ ] The tool names and descriptions each server advertises are unchanged for every surviving operation.
-- [ ] The integration tests over hosted vault, library and sandbox servers pass unchanged.
+- [x] Vault, sandbox, library and printer's blob tools register through the registrar, one server per commit.
+- [x] All remaining filesystem wrapper files are deleted; roughly sixty-four in total across this ticket and 06.
+- [x] The library's downloads view behaves exactly as before.
+- [x] The conformance test covers every filesystem server, and every one passes.
+- [x] The tool names and descriptions each server advertises are unchanged for every surviving operation.
+- [x] The integration tests over hosted vault, library and sandbox servers pass unchanged.

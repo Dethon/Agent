@@ -16,7 +16,11 @@ public sealed class PathJail
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-        _rootWithSeparator = Root + Path.DirectorySeparatorChar;
+        // A root that is itself the filesystem root already ends in a separator; appending another
+        // would make every path under it look outside.
+        _rootWithSeparator = Root.EndsWith(Path.DirectorySeparatorChar)
+            ? Root
+            : Root + Path.DirectorySeparatorChar;
     }
 
     public string Root { get; }

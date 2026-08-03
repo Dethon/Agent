@@ -197,16 +197,15 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             cancellationToken: CancellationToken.None);
         GetTextContent(readResult).ShouldContain(id.ToString());
 
-        // Assert - the removed 'downloads' filesystem name is rejected
-        var staleResult = await client.CallToolAsync(
+        // Assert - a path the overlay does not own is unsupported, whatever the caller sends
+        var otherResult = await client.CallToolAsync(
             "fs_read",
             new Dictionary<string, object?>
             {
-                ["path"] = $"downloads/{id}/status.json",
-                ["filesystem"] = "downloads"
+                ["path"] = $"downloads/{id}/payload.mkv"
             },
             cancellationToken: CancellationToken.None);
-        GetTextContent(staleResult).ShouldContain("unsupported_operation");
+        GetTextContent(otherResult).ShouldContain("unsupported_operation");
 
         // Act - deleting the download dir cancels the torrent and drops the routing entry
         var deleteResult = await client.CallToolAsync(

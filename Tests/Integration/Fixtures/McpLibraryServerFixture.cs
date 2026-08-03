@@ -2,6 +2,7 @@ using System.Net;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
+using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
@@ -71,6 +72,11 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .AddSingleton<IDownloadClient>(_ => QBittorrent.CreateClient())
             .AddSingleton<IFileSystemClient, LocalFileSystemClient>()
             .AddSingleton<DownloadsOverlay>()
+            .AddSingleton(sp => new DiskFileSystem(
+                MediaFilesystem.Name,
+                sp.GetRequiredService<IFileSystemClient>(),
+                new LibraryPathConfig(LibraryPath),
+                sp.GetRequiredService<DownloadsOverlay>()))
             .AddMcpServer()
             .WithHttpTransport()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
@@ -86,11 +92,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
             }))
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsReadTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsInfoTool>()
+            .AddFileSystemTools<DiskFileSystem>()
             .WithResources<FileSystemResource>();
 
         var app = builder.Build();

@@ -2,6 +2,7 @@ using Channels.Hosting;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
+using Domain.Tools.Files;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using McpServerLibrary.McpPrompts;
@@ -29,6 +30,16 @@ public static class ConfigModule
         return settings ?? throw new InvalidOperationException("Settings not found");
     }
 
+    // The filesystem tools resolve their backend when the tool list is built, which reaches the
+    // Redis-backed store. Retry in the background instead of failing server construction outright
+    // when Redis happens to be slow to come up.
+    private static ConfigurationOptions RedisOptions(string connectionString)
+    {
+        var options = ConfigurationOptions.Parse(connectionString);
+        options.AbortOnConnectFail = false;
+        return options;
+    }
+
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
         services
@@ -36,13 +47,18 @@ public static class ConfigModule
             .AddSingleton(settings)
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.BaseLibraryPath))
-            .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
+            .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(RedisOptions(settings.RedisConnectionString)))
             .AddSingleton<IDownloadRoutingStore, RedisDownloadRoutingStore>()
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
             .AddFileSystemClient()
             .AddSingleton<DownloadsOverlay>()
+            .AddSingleton(sp => new DiskFileSystem(
+                MediaFilesystem.Name,
+                sp.GetRequiredService<IFileSystemClient>(),
+                new LibraryPathConfig(settings.BaseLibraryPath),
+                sp.GetRequiredService<DownloadsOverlay>()))
             .AddHostedService<DownloadCompletionWatcher>()
             .AddMcpServer()
             .WithHttpTransport()
@@ -55,14 +71,7 @@ public static class ConfigModule
             // Gate-on-live: the completion watcher drops a routing entry only on a confirmed
             // delivery, so a disconnected-but-still-buffering subscriber must not read as delivered.
             .AddChannelServer(DeliveryPolicy.GateOnLive, errorResult: ToolResponse.Create)
-            .WithTools<FsGlobTool>()
-            .WithTools<FsReadTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsCopyTool>()
-            .WithTools<FsBlobReadTool>()
-            .WithTools<FsBlobWriteTool>()
+            .AddFileSystemTools<DiskFileSystem>()
             .WithPrompts<McpSystemPrompt>()
             .WithResources<FileSystemResource>();
 

@@ -3,9 +3,9 @@ using System.Net;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.Tools.Config;
+using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Utils;
-using McpServerVault.McpTools;
 using McpServerVault.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -68,6 +68,11 @@ public class MultiFileSystemFixture : IAsyncLifetime
             .AddSingleton(settings)
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.VaultPath))
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
+            .AddSingleton(sp => new TextDiskFileSystem(
+                "vault",
+                sp.GetRequiredService<IFileSystemClient>(),
+                new LibraryPathConfig(settings.VaultPath),
+                settings.AllowedExtensions))
             .AddMcpServer()
             .WithHttpTransport()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
@@ -81,17 +86,7 @@ public class MultiFileSystemFixture : IAsyncLifetime
                     return ToolResponse.Create(ex);
                 }
             }))
-            .WithTools<FsReadTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsCopyTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsBlobReadTool>()
-            .WithTools<FsBlobWriteTool>();
+            .AddFileSystemTools<TextDiskFileSystem>();
 
         addResources(mcpBuilder);
 

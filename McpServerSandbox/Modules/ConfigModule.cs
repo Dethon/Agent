@@ -1,11 +1,11 @@
 using Domain.Contracts;
 using Domain.Tools.Config;
+using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Bash;
 using Infrastructure.Utils;
 using McpServerSandbox.McpPrompts;
 using McpServerSandbox.McpResources;
-using McpServerSandbox.McpTools;
 using McpServerSandbox.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,6 +41,12 @@ public static class ConfigModule
                 OutputCapBytes = settings.OutputCapBytes
             })
             .AddSingleton<ICommandRunner, BashRunner>()
+            .AddSingleton(sp => new SandboxFileSystem(
+                "sandbox",
+                sp.GetRequiredService<IFileSystemClient>(),
+                new LibraryPathConfig(settings.ContainerRoot),
+                settings.AllowedExtensions,
+                sp.GetRequiredService<ICommandRunner>()))
             .AddMcpServer()
             .WithHttpTransport()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
@@ -56,18 +62,7 @@ public static class ConfigModule
                     return ToolResponse.Create(ex);
                 }
             }))
-            .WithTools<FsReadTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsExecTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsCopyTool>()
-            .WithTools<FsBlobReadTool>()
-            .WithTools<FsBlobWriteTool>()
+            .AddFileSystemTools<SandboxFileSystem>()
             .WithResources<FileSystemResource>()
             .WithPrompts<McpSystemPrompt>();
 

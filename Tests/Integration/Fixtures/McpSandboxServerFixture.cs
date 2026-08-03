@@ -2,11 +2,11 @@ using System.Net;
 using System.Runtime.InteropServices;
 using Domain.Contracts;
 using Domain.Tools.Config;
+using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Bash;
 using Infrastructure.Utils;
 using McpServerSandbox.McpResources;
-using McpServerSandbox.McpTools;
 using McpServerSandbox.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -61,6 +61,12 @@ public class McpSandboxServerFixture : IAsyncLifetime
                 OutputCapBytes = settings.OutputCapBytes
             })
             .AddSingleton<ICommandRunner, BashRunner>()
+            .AddSingleton(sp => new SandboxFileSystem(
+                "sandbox",
+                sp.GetRequiredService<IFileSystemClient>(),
+                new LibraryPathConfig(settings.ContainerRoot),
+                settings.AllowedExtensions,
+                sp.GetRequiredService<ICommandRunner>()))
             .AddMcpServer()
             .WithHttpTransport()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
@@ -74,14 +80,7 @@ public class McpSandboxServerFixture : IAsyncLifetime
                     return ToolResponse.Create(ex);
                 }
             }))
-            .WithTools<FsReadTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsExecTool>()
+            .AddFileSystemTools<SandboxFileSystem>()
             .WithResources<FileSystemResource>();
 
         var app = builder.Build();

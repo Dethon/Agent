@@ -31,11 +31,21 @@ public static class ConfigModule
                ?? throw new InvalidOperationException("Settings not found");
     }
 
+    // The filesystem tools resolve their backend when the tool list is built, which reaches the
+    // Redis-backed store. Retry in the background instead of failing server construction outright
+    // when Redis happens to be slow to come up.
+    private static ConfigurationOptions RedisOptions(string connectionString)
+    {
+        var options = ConfigurationOptions.Parse(connectionString);
+        options.AbortOnConnectFail = false;
+        return options;
+    }
+
     public static IServiceCollection ConfigureScheduling(this IServiceCollection services, SchedulingSettings settings)
     {
         services
             .AddSingleton(settings)
-            .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
+            .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(RedisOptions(settings.RedisConnectionString)))
             .AddSingleton<IScheduleStore, RedisScheduleStore>()
             .AddSingleton<ICronValidator, CronValidator>()
             .AddSingleton(TimeProvider.System)

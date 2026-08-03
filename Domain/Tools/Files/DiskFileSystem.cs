@@ -126,6 +126,17 @@ public class DiskFileSystem(
         Task.FromResult(VirtualPathRefusal<FsCopyResult>(sourcePath, destinationPath)
             ?? _copy.Run(sourcePath, destinationPath, overwrite, createDirectories));
 
+    // A disk root has real random access, so the ranged blob tools go straight at it rather than
+    // draining the chunk stream the base default would have to.
+    public override Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
+        string path, long offset, int length, CancellationToken ct) =>
+        Task.FromResult(VirtualPathRefusal<FsBlobReadResult>(path) ?? _blobRead.Run(path, offset, length));
+
+    public override Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
+        string path, string contentBase64, long offset, bool overwrite, bool createDirectories, CancellationToken ct) =>
+        Task.FromResult(VirtualPathRefusal<FsBlobWriteResult>(path)
+            ?? _blobWrite.Run(path, contentBase64, offset, overwrite, createDirectories));
+
     public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
         string path, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
