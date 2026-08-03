@@ -6,11 +6,11 @@ Add one `Task` extension that takes a logger and attaches a continuation running
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A task that faults produces a log entry naming the exception.
-- [ ] A task that completes normally produces no log entry.
-- [ ] A task that is already faulted when the helper is called still produces a log entry.
-- [ ] The helper does not throw and does not block the calling thread.
-- [ ] The behaviour is covered by a new unit test file written before the helper exists.
-- [ ] No existing effect changes in this ticket.
+- [x] A task that faults produces a log entry naming the exception.
+- [x] A task that completes normally produces no log entry.
+- [x] A task that is already faulted when the helper is called still produces a log entry.
+- [x] The helper does not throw and does not block the calling thread.
+- [x] The behaviour is covered by a new unit test file written before the helper exists.
+- [x] No existing effect changes in this ticket.

@@ -29,6 +29,8 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         return this;
     }
 
+    public Exception? ThrowOnGetAllTopics { get; set; }
+
     public IReadOnlyList<TopicMetadata> SavedTopics => _savedTopics;
     public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
     public IReadOnlyList<string> JoinedSpaces => _joinedSpaces;
@@ -36,6 +38,11 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
     {
         recorder?.Record($"topics:{agentId}");
+
+        if (ThrowOnGetAllTopics is not null)
+        {
+            return Task.FromException<IReadOnlyList<TopicMetadata>>(ThrowOnGetAllTopics);
+        }
 
         return Task.FromResult<IReadOnlyList<TopicMetadata>>(
             _seededTopics.Concat(_savedTopics)

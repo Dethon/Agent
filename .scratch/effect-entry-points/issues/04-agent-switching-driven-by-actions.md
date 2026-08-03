@@ -8,13 +8,13 @@ Register for the set-agents action as well as the select-agent one. The topics r
 
 **Blocked by:** 01 (fault logging).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Agent-change work is reachable by calling a public method with an agent id and awaiting it.
-- [ ] The first agent selection after construction loads nothing.
-- [ ] A second selection for a different agent clears the chat session, persists the choice, and reloads that agent's topics.
-- [ ] Selecting the agent that is already selected does nothing.
-- [ ] A refreshed agent catalog that drops the selected agent reaches the same path and empties the topic list.
-- [ ] Topics that are mid-stream keep their local messages rather than reloading history.
-- [ ] The store subscription and the disposable it produced are gone, and the effect no longer needs to dispose one.
-- [ ] A fault in the agent-change work is logged rather than discarded.
+- [x] Agent-change work is reachable by calling a public method with an agent id and awaiting it.
+- [x] The first agent selection after construction loads nothing.
+- [x] A second selection for a different agent clears the chat session, persists the choice, and reloads that agent's topics.
+- [x] Selecting the agent that is already selected does nothing.
+- [x] A refreshed agent catalog that drops the selected agent reaches the same path and empties the topic list.
+- [x] Topics that are mid-stream keep their local messages rather than reloading history.
+- [x] The store subscription and the disposable it produced are gone, and the effect no longer needs to dispose one.
+- [x] A fault in the agent-change work is logged rather than discarded.

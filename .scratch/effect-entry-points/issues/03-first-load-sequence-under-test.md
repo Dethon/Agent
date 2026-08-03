@@ -8,14 +8,14 @@ Awaiting the method means first load is finished, with one exception: the per-to
 
 **Blocked by:** 01 (fault logging), 02 (interfaces for config and push).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The initialization work is reachable by calling a public method and awaiting it.
-- [ ] Dispatching the initialize action still runs the same work, and a fault in it is logged.
-- [ ] A test asserts the order of the first-load steps, not merely that each one happened.
-- [ ] Awaiting the method means every topic's history is in the store.
-- [ ] Awaiting the method does not wait on push subscription or on stream resume.
-- [ ] A space slug the config service does not recognise dispatches the invalid-space action and retries with the fallback slug.
-- [ ] An empty agent list ends initialization without selecting an agent or loading topics.
-- [ ] A saved agent id that is no longer in the catalog falls back to the first agent and persists that choice.
-- [ ] The effect is constructed in the test with no Blazor JS runtime.
+- [x] The initialization work is reachable by calling a public method and awaiting it.
+- [x] Dispatching the initialize action still runs the same work, and a fault in it is logged.
+- [x] A test asserts the order of the first-load steps, not merely that each one happened.
+- [x] Awaiting the method means every topic's history is in the store.
+- [x] Awaiting the method does not wait on push subscription or on stream resume.
+- [x] A space slug the config service does not recognise dispatches the invalid-space action and retries with the fallback slug.
+- [x] An empty agent list ends initialization without selecting an agent or loading topics.
+- [x] A saved agent id that is no longer in the catalog falls back to the first agent and persists that choice.
+- [x] The effect is constructed in the test with no Blazor JS runtime.

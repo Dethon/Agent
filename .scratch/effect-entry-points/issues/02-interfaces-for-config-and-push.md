@@ -10,11 +10,11 @@ No behaviour changes. This is a prefactor that makes tickets 03 and 06 possible.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Every consumer of the config service depends on the interface, not the class.
-- [ ] Every consumer of the browser push service depends on the interface, not the class.
-- [ ] Both interfaces are registered so the app resolves the existing concrete implementations unchanged.
-- [ ] The browser push interface does not share a name with the server-side notification contract.
-- [ ] The existing push service tests still pass without modification.
-- [ ] The app starts, connects, resolves its space and loads its agent list exactly as before.
+- [x] Every consumer of the config service depends on the interface, not the class.
+- [x] Every consumer of the browser push service depends on the interface, not the class.
+- [x] Both interfaces are registered so the app resolves the existing concrete implementations unchanged.
+- [x] The browser push interface does not share a name with the server-side notification contract.
+- [x] The existing push service tests still pass without modification.
+- [x] The app starts, connects, resolves its space and loads its agent list exactly as before.
