@@ -43,7 +43,7 @@ public class AnnouncementService(
                 // offline error carries the same context fields as the online announce metrics.
                 var offlineConfig = registry.GetById(id);
                 outcomes.Add(new AnnouncementOutcome { Id = id, Status = "offline" });
-                await SafePublishAsync(new VoiceEvent
+                metrics.Publish(new VoiceEvent
                 {
                     Metric = VoiceMetric.AnnounceError,
                     SatelliteId = id,
@@ -51,7 +51,7 @@ public class AnnouncementService(
                     Identity = offlineConfig?.Identity,
                     Priority = request.Priority.ToString(),
                     Outcome = "offline"
-                }, ct);
+                });
                 continue;
             }
 
@@ -64,33 +64,35 @@ public class AnnouncementService(
                 Label: $"announce:{announcementId}",
                 Priority: request.Priority,
                 Audio: tts.SynthesizeAsync(request.Text, options, ct),
-                OnStarted: async _ =>
+                OnStarted: _ =>
                 {
-                    await metrics.PublishAsync(new VoiceEvent
+                    metrics.Publish(new VoiceEvent
                     {
                         Metric = VoiceMetric.AnnouncePlayed,
                         SatelliteId = id,
                         Room = session.Config.Room,
                         Identity = session.Config.Identity,
                         Priority = request.Priority.ToString()
-                    }, ct);
+                    });
+                    return Task.CompletedTask;
                 },
-                OnPreempted: async _ =>
+                OnPreempted: _ =>
                 {
-                    await metrics.PublishAsync(new VoiceEvent
+                    metrics.Publish(new VoiceEvent
                     {
                         Metric = VoiceMetric.AnnouncePreemptedReply,
                         SatelliteId = id,
                         Room = session.Config.Room,
                         Identity = session.Config.Identity,
                         Priority = request.Priority.ToString()
-                    }, ct);
+                    });
+                    return Task.CompletedTask;
                 });
 
             var accepted = await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
             outcomes.Add(new AnnouncementOutcome { Id = id, Status = accepted ? "queued" : "dropped" });
 
-            await SafePublishAsync(new VoiceEvent
+            metrics.Publish(new VoiceEvent
             {
                 Metric = accepted ? VoiceMetric.AnnounceQueued : VoiceMetric.AnnounceError,
                 SatelliteId = id,
@@ -98,7 +100,7 @@ public class AnnouncementService(
                 Identity = session.Config.Identity,
                 Priority = request.Priority.ToString(),
                 Outcome = accepted ? "queued" : "dropped"
-            }, ct);
+            });
         }
 
         logger.LogInformation("Announce {Id} -> {N} targets ({Status})",
@@ -106,19 +108,5 @@ public class AnnouncementService(
             string.Join(",", outcomes.Select(o => $"{o.Id}={o.Status}")));
 
         return new AnnounceResponse { AnnouncementId = announcementId, Satellites = outcomes };
-    }
-
-    // A transient metrics-publisher failure must not abort the announce fan-out (and 500 the caller),
-    // so per-target metric publishes are best-effort, mirroring WyomingSatelliteHost.SafePublishAsync.
-    private async Task SafePublishAsync(VoiceEvent evt, CancellationToken ct)
-    {
-        try
-        {
-            await metrics.PublishAsync(evt, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to publish announce metric {Metric}", evt.Metric);
-        }
     }
 }

@@ -288,32 +288,21 @@ public sealed class SendReplyTool
         // spans below need — see the OnFirstAudio gate.
         var dispatchedAtStamp = isReply ? session.Turn.TryConsumeDispatchedAt() : null;
 
-        // Taken before the publish below and used as its end bound, so the round trip ends exactly
-        // where the queue wait begins: the publish is itself an awaited Redis round trip, and stamping
-        // afterwards left its cost in no span at all on every turn.
+        // The end bound of the agent round trip and the start of the queue wait, so the two spans
+        // meet exactly.
         var enqueuedAt = time.GetTimestamp();
 
         if (dispatchedAtStamp is { } dispatchedAt)
         {
-            try
+            metrics.Publish(new VoiceEvent
             {
-                await metrics.PublishAsync(new VoiceEvent
-                {
-                    Metric = VoiceMetric.AgentRoundTripMs,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
-                    DurationMs = (long)time.GetElapsedTime(dispatchedAt, enqueuedAt).TotalMilliseconds,
-                    ConversationId = conversationId
-                }, ct);
-            }
-            catch (Exception ex)
-            {
-                // A metrics-publisher blip must not fault this call before the reply job below is
-                // even built — that would leave the user's answer unspoken and the turn handshake
-                // unsettled until the ~120s ReplyTimeoutMs.
-                logger.LogWarning(ex, "Failed to publish AgentRoundTripMs metric");
-            }
+                Metric = VoiceMetric.AgentRoundTripMs,
+                SatelliteId = session.SatelliteId,
+                Room = session.Config.Room,
+                Identity = session.Config.Identity,
+                DurationMs = (long)time.GetElapsedTime(dispatchedAt, enqueuedAt).TotalMilliseconds,
+                ConversationId = conversationId
+            });
         }
 
         // A reply segment's synthesis starts NOW rather than when the loop reaches it: the loop is
@@ -346,9 +335,8 @@ public sealed class SendReplyTool
                 // ReplyTimeoutMs. Settles Spoken when earlier audio reached the satellite, which is
                 // what an alarm cutting into a reply looks like.
                 //
-                // Released BEFORE the publish, and the publish is guarded: the playback loop swallows
-                // a throwing OnPreempted, so a metrics blip here used to leak the slot for good and
-                // wedge the mic for the full timeout.
+                // Released BEFORE anything else: the playback loop swallows a throwing OnPreempted,
+                // so a slot leaked here would wedge the mic for the full timeout.
                 segment.Fail();
 
                 // A job the loop cancels BEFORE its first pull never touches its audio, so the
@@ -367,21 +355,14 @@ public sealed class SendReplyTool
                     return;
                 }
 
-                try
+                metrics.Publish(new VoiceEvent
                 {
-                    await metrics.PublishAsync(new VoiceEvent
-                    {
-                        Metric = VoiceMetric.AnnouncePreemptedReply,
-                        SatelliteId = session.SatelliteId,
-                        Room = session.Config.Room,
-                        Identity = session.Config.Identity,
-                        ConversationId = conversationId
-                    }, ct);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to publish AnnouncePreemptedReply metric");
-                }
+                    Metric = VoiceMetric.AnnouncePreemptedReply,
+                    SatelliteId = session.SatelliteId,
+                    Room = session.Config.Room,
+                    Identity = session.Config.Identity,
+                    ConversationId = conversationId
+                });
             },
             // The reply is several sentence jobs now, so a drain resolves this SEGMENT; the turn only
             // settles once every started segment has drained and the agent's stream has ended.
@@ -417,14 +398,14 @@ public sealed class SendReplyTool
             // narration the user hears IS the reply starting; anchoring at the later answer would
             // also leave the queue-wait and TTS spans measured against a different job than the
             // turn spans, and the decomposition would stop summing.
-            OnFirstAudio: async timing =>
+            OnFirstAudio: timing =>
             {
                 if (!segment.IsFirst)
                 {
-                    return;
+                    return Task.CompletedTask;
                 }
 
-                await metrics.PublishAsync(new VoiceEvent
+                metrics.Publish(new VoiceEvent
                 {
                     Metric = VoiceMetric.TtsLatencyMs,
                     SatelliteId = session.SatelliteId,
@@ -432,13 +413,13 @@ public sealed class SendReplyTool
                     Identity = session.Config.Identity,
                     DurationMs = (long)timing.SinceSynthesisStart.TotalMilliseconds,
                     ConversationId = conversationId
-                }, ct);
+                });
 
                 // Anchored on this job alone (its own enqueue stamp), so it is valid for every reply
                 // regardless of what preceded it.
                 if (timing.QueueWait is { } queueWait)
                 {
-                    await metrics.PublishAsync(new VoiceEvent
+                    metrics.Publish(new VoiceEvent
                     {
                         Metric = VoiceMetric.ReplyQueueWaitMs,
                         SatelliteId = session.SatelliteId,
@@ -446,7 +427,7 @@ public sealed class SendReplyTool
                         Identity = session.Config.Identity,
                         DurationMs = (long)queueWait.TotalMilliseconds,
                         ConversationId = conversationId
-                    }, ct);
+                    });
                 }
 
                 // The two below are anchored on the TURN (MarkTurnStart / MarkSpeechEnd), which is
@@ -458,12 +439,12 @@ public sealed class SendReplyTool
                 // stamp is the proof that what is being answered is a transcript this hub dispatched.
                 if (dispatchedAtStamp is null)
                 {
-                    return;
+                    return Task.CompletedTask;
                 }
 
                 if (timing.SinceTurnStart is { } turn)
                 {
-                    await metrics.PublishAsync(new VoiceEvent
+                    metrics.Publish(new VoiceEvent
                     {
                         Metric = VoiceMetric.WakeToFirstAudioMs,
                         SatelliteId = session.SatelliteId,
@@ -471,12 +452,12 @@ public sealed class SendReplyTool
                         Identity = session.Config.Identity,
                         DurationMs = (long)turn.TotalMilliseconds,
                         ConversationId = conversationId
-                    }, ct);
+                    });
                 }
 
                 if (timing.SinceSpeechEnd is { } sinceSpeech)
                 {
-                    await metrics.PublishAsync(new VoiceEvent
+                    metrics.Publish(new VoiceEvent
                     {
                         Metric = VoiceMetric.SpeechEndToFirstAudioMs,
                         SatelliteId = session.SatelliteId,
@@ -484,8 +465,10 @@ public sealed class SendReplyTool
                         Identity = session.Config.Identity,
                         DurationMs = (long)sinceSpeech.TotalMilliseconds,
                         ConversationId = conversationId
-                    }, ct);
+                    });
                 }
+
+                return Task.CompletedTask;
             });
 
         // Counted before the enqueue so the job cannot drain against a segment that was never

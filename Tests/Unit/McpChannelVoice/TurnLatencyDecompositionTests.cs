@@ -76,9 +76,8 @@ public class TurnLatencyDecompositionTests
             .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) => SynthesizeAsync());
 
         var metrics = new Mock<IMetricsPublisher>();
-        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask)
-            .Callback<MetricEvent, CancellationToken>((e, _) =>
+        metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e =>
             {
                 if (e is VoiceEvent v)
                 {

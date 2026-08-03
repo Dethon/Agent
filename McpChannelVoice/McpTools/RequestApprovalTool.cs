@@ -84,24 +84,15 @@ public sealed class RequestApprovalTool
             }
             var parsed = ApprovalGrammarParser.Parse(answer);
 
-            try
+            metrics.Publish(new VoiceEvent
             {
-                await metrics.PublishAsync(new VoiceEvent
-                {
-                    Metric = VoiceMetric.ApprovalResolved,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
-                    Outcome = parsed.ToString(),
-                    ConversationId = p.ConversationId
-                }, default);
-            }
-            catch (Exception ex)
-            {
-                // A metrics-publisher blip must not discard an already-decided approval.
-                services.GetService<ILogger<RequestApprovalTool>>()?
-                    .LogWarning(ex, "Failed to publish ApprovalResolved metric");
-            }
+                Metric = VoiceMetric.ApprovalResolved,
+                SatelliteId = session.SatelliteId,
+                Room = session.Config.Room,
+                Identity = session.Config.Identity,
+                Outcome = parsed.ToString(),
+                ConversationId = p.ConversationId
+            });
 
             switch (parsed)
             {

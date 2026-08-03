@@ -59,7 +59,7 @@ public class SendReplyToolTests
         _services = BuildServices(new VoiceSettings());
     }
 
-    private IServiceProvider BuildServices(VoiceSettings settings, VoiceMetric? failOn = null)
+    private IServiceProvider BuildServices(VoiceSettings settings)
     {
         var delivery = new VoiceDeliveryRegistry(
             new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5),
@@ -67,21 +67,14 @@ public class SendReplyToolTests
             NullLogger<VoiceDeliveryRegistry>.Instance);
 
         var metrics = new Mock<IMetricsPublisher>();
-        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Returns<MetricEvent, CancellationToken>((e, _) =>
+        metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e =>
             {
                 if (e is VoiceEvent v)
                 {
-                    // Redis is reachable or it is not; RedisMetricsPublisher has no internal catch,
-                    // so a blip surfaces to whatever awaited the publish.
-                    if (failOn is { } metric && v.Metric == metric)
-                    {
-                        return Task.FromException(new InvalidOperationException("redis unreachable"));
-                    }
                     lock (_published)
                     { _published.Add(v); }
                 }
-                return Task.CompletedTask;
             });
 
         return new ServiceCollection()
@@ -449,15 +442,14 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_AgentRoundTripPublishCost_LandsInTheQueueWaitRatherThanNoSpan()
     {
-        // The AgentRoundTripMs publish is itself an awaited Redis round trip. EnqueuedAt used to be
-        // stamped AFTER it, so that time belonged to no span and the decomposition silently lost a
-        // slice on every turn. EnqueuedAt is now taken first and the round trip measured TO it, making
-        // the two spans exactly adjacent. Modelled by a publisher that costs fake time.
+        // EnqueuedAt used to be stamped AFTER the AgentRoundTripMs publish, so whatever that publish
+        // cost belonged to no span and the decomposition silently lost a slice on every turn.
+        // EnqueuedAt is taken first and the round trip measured TO it, making the two spans exactly
+        // adjacent. Modelled by a publisher that costs fake time.
         const int publishMs = 50;
         var metrics = new Mock<IMetricsPublisher>();
-        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask)
-            .Callback<MetricEvent, CancellationToken>((e, _) =>
+        metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e =>
             {
                 if (e is VoiceEvent v)
                 {
@@ -503,46 +495,6 @@ public class SendReplyToolTests
         roundTrip.ShouldBe(2000);
         queueWait.ShouldBe(400 + publishMs); // the publish's own cost is inside the queue wait
         (roundTrip + queueWait + tts).ShouldBe(whole);
-    }
-
-    [Fact]
-    public async Task McpRun_AgentRoundTripPublishThrows_StillSpeaksTheReplyAndResolvesTheTurn()
-    {
-        // A metrics-publisher blip on AgentRoundTripMs must not fault this call before the reply
-        // job is even built — that would leave the answer unspoken and the turn handshake
-        // unsettled until the ~120s ReplyTimeoutMs.
-        _session.Turn.Reset();
-        _session.Turn.MarkDispatched(_clock.GetTimestamp());
-        var turn = _session.Turn.AwaitSpoken();
-
-        var throwingMetrics = new Mock<IMetricsPublisher>();
-        throwingMetrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        throwingMetrics.Setup(m => m.PublishAsync(
-                It.Is<MetricEvent>(e => (e as VoiceEvent)!.Metric == VoiceMetric.AgentRoundTripMs),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("redis blip"));
-
-        var services = new ServiceCollection()
-            .AddSingleton(_sessions)
-            .AddSingleton(_accumulator)
-            .AddSingleton(_manager)
-            .AddSingleton(_tts.Object)
-            .AddSingleton(throwingMetrics.Object)
-            .AddSingleton(new VoiceSettings())
-            .AddSingleton<ILogger<SendReplyTool>>(NullLogger<SendReplyTool>.Instance)
-            .AddSingleton<TimeProvider>(_clock)
-            .BuildServiceProvider();
-
-        await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", services);
-        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, services);
-
-        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.CompletePlayback();
-        var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
-
-        spoke.ShouldBeTrue(); // the metrics blip did not prevent the reply job from being built and spoken
     }
 
     [Fact]
@@ -754,38 +706,6 @@ public class SendReplyToolTests
         // conversation ends and wake re-arms rather than opening a follow-up window over the alarm
         // that cut in.
         (await turn.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task McpRun_PreemptedSegmentAndMetricsPublishThrows_StillSettlesTheTurn()
-    {
-        // The AnnouncePreemptedReply publish sits ahead of the segment release, and the playback
-        // loop swallows a throwing OnPreempted — so a Redis blip during a preemption used to leak
-        // the slot permanently and wedge the mic for the full ReplyTimeoutMs.
-        var playing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _tts.Setup(t => t.SynthesizeAsync(
-                It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
-            .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) => Gated());
-
-        var services = BuildServices(new VoiceSettings(),
-            failOn: VoiceMetric.AnnouncePreemptedReply);
-
-        _session.Turn.Reset();
-        _session.Turn.MarkDispatched(_clock.GetTimestamp());
-        var turn = _session.Turn.AwaitSpoken();
-        var pump = _session.RunPlaybackLoopAsync(
-            async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
-            CancellationToken.None, _clock);
-
-        await SendReplyTool.McpRun(_conversationId, "Hola mundo", ReplyContentType.Text, false, "m-1", services);
-        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, services);
-
-        await playing.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        _session.PreemptCurrent();
-        _session.CompletePlayback();
-        await pump.WaitAsync(TimeSpan.FromSeconds(10));
-
-        await Should.NotThrowAsync(async () => await turn.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]

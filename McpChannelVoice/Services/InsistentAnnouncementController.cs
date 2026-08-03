@@ -38,14 +38,14 @@ public sealed class InsistentAnnouncementController(
         var announcementId = Guid.NewGuid().ToString("N");
 
         var offlineIds = targetIds.Where(id => sessions.Get(id) is null).ToList();
-        await Task.WhenAll(offlineIds.Select(id => SafePublishAsync(new VoiceEvent
+        offlineIds.ForEach(id => metrics.Publish(new VoiceEvent
         {
             Metric = VoiceMetric.AlarmOffline,
             SatelliteId = id,
             Room = registry.GetById(id)?.Room,
             Identity = registry.GetById(id)?.Identity,
             Outcome = "offline"
-        })));
+        }));
 
         if (offlineIds.Count == targetIds.Count)
         {
@@ -128,11 +128,11 @@ public sealed class InsistentAnnouncementController(
                 {
                     session.PreemptCurrent();
                 }
-                await SafePublishAsync(AlarmEvent(VoiceMetric.AlarmAcknowledged, targetIds, round));
+                metrics.Publish(AlarmEvent(VoiceMetric.AlarmAcknowledged, targetIds, round));
             }
             else
             {
-                await SafePublishAsync(AlarmEvent(VoiceMetric.AlarmUnacknowledged, targetIds, round));
+                metrics.Publish(AlarmEvent(VoiceMetric.AlarmUnacknowledged, targetIds, round));
 
                 // The alert is finished — take it out of the registry before the potentially slow
                 // escalation webhook so a wake during the POST can't dismiss a dead alarm into snooze
@@ -192,14 +192,18 @@ public sealed class InsistentAnnouncementController(
             // approval prompts and wake announcements share it and must stay at voice level.
             Alert: true,
             Audio: Replay(buffered, gain),
-            OnStarted: _ => SafePublishAsync(new VoiceEvent
+            OnStarted: _ =>
             {
-                Metric = VoiceMetric.AnnouncePlayed,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
-                Priority = AnnouncePriority.High.ToString()
-            }),
+                metrics.Publish(new VoiceEvent
+                {
+                    Metric = VoiceMetric.AnnouncePlayed,
+                    SatelliteId = session.SatelliteId,
+                    Room = session.Config.Room,
+                    Identity = session.Config.Identity,
+                    Priority = AnnouncePriority.High.ToString()
+                });
+                return Task.CompletedTask;
+            },
             OnPreempted: _ => Task.CompletedTask);
 
     private IEnumerable<SatelliteSession> OnlineSessions(IEnumerable<string> targetIds) =>
@@ -225,18 +229,6 @@ public sealed class InsistentAnnouncementController(
             yield return chunk with { Data = PcmGain.Apply(chunk.Data, gain) };
         }
         await Task.CompletedTask;
-    }
-
-    private async Task SafePublishAsync(VoiceEvent evt)
-    {
-        try
-        {
-            await metrics.PublishAsync(evt, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to publish alarm metric {Metric}", evt.Metric);
-        }
     }
 
     // Ack-gated escalation: an unacknowledged ALARM (never a timer) is handed to HA via webhook so an
