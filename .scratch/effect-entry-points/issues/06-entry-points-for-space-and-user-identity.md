@@ -10,14 +10,14 @@ The diffs should be nothing but the signature and the fault log.
 
 **Blocked by:** 01 (fault logging), 02 (interfaces for config and push).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Space-switching work is reachable by calling a public method with a slug and awaiting it.
-- [ ] User-identity work is reachable by calling a public method and awaiting it.
-- [ ] Dispatching either action still runs the same work.
-- [ ] A fault in either effect is logged rather than discarded.
-- [ ] Switching to a slug the config service does not recognise does not leave the app joined to it.
-- [ ] Choosing a user persists the choice so it survives a reload.
-- [ ] Both effects are constructed in their tests with no `HttpClient` and no Blazor JS runtime.
-- [ ] Both effects have a test file that dispatches the action in at least one case.
-- [ ] No production behaviour changes beyond the fault logging.
+- [x] Space-switching work is reachable by calling a public method with a slug and awaiting it.
+- [x] User-identity work is reachable by calling a public method and awaiting it.
+- [x] Dispatching either action still runs the same work.
+- [x] A fault in either effect is logged rather than discarded.
+- [x] Switching to a slug the config service does not recognise does not leave the app joined to it.
+- [x] Choosing a user persists the choice so it survives a reload.
+- [x] Both effects are constructed in their tests with no `HttpClient` and no Blazor JS runtime.
+- [x] Both effects have a test file that dispatches the action in at least one case.
+- [x] No production behaviour changes beyond the fault logging.

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using WebChat.Client.Contracts;
-using WebChat.Client.Services;
+using WebChat.Client.Extensions;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Topics;
@@ -15,6 +15,7 @@ public sealed class SpaceEffect : IDisposable
     private readonly IConfigService _configService;
     private readonly NavigationManager _navigationManager;
     private readonly IPushSubscriptionService _pushNotificationService;
+    private readonly ILogger<SpaceEffect> _logger;
     private readonly IDisposable _handlerRegistration;
     private string _previousSlug = "default";
 
@@ -24,7 +25,8 @@ public sealed class SpaceEffect : IDisposable
         IChatConnectionService connectionService,
         IConfigService configService,
         NavigationManager navigationManager,
-        IPushSubscriptionService pushNotificationService)
+        IPushSubscriptionService pushNotificationService,
+        ILogger<SpaceEffect> logger)
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
@@ -32,19 +34,17 @@ public sealed class SpaceEffect : IDisposable
         _configService = configService;
         _navigationManager = navigationManager;
         _pushNotificationService = pushNotificationService;
+        _logger = logger;
 
-        _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(HandleSelectSpace);
+        _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(
+            action => HandleSelectSpaceAsync(action.Slug).LogFaults(_logger, nameof(SelectSpace)));
     }
 
-    private void HandleSelectSpace(SelectSpace action)
+    public async Task HandleSelectSpaceAsync(string slug)
     {
         var previousSlug = _previousSlug;
-        _previousSlug = action.Slug;
-        _ = HandleSelectSpaceAsync(action.Slug, previousSlug);
-    }
+        _previousSlug = slug;
 
-    private async Task HandleSelectSpaceAsync(string slug, string previousSlug)
-    {
         if (slug == previousSlug)
         {
             return;

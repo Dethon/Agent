@@ -12,6 +12,10 @@ public sealed class FakeConfigService(CallRecorder? recorder = null) : IConfigSe
 
     public int ConfigCalls { get; private set; }
 
+    public Exception? ThrowOnGetConfig { get; set; }
+
+    public Exception? ThrowOnGetSpace { get; set; }
+
     public FakeConfigService WithSpace(string slug, string name = "Main", string accentColor = "#112233")
     {
         _spaces[slug] = new SpaceConfig(slug, name, accentColor);
@@ -23,12 +27,16 @@ public sealed class FakeConfigService(CallRecorder? recorder = null) : IConfigSe
     public Task<AppConfig> GetConfigAsync()
     {
         ConfigCalls++;
-        return Task.FromResult(Config);
+        return ThrowOnGetConfig is null
+            ? Task.FromResult(Config)
+            : Task.FromException<AppConfig>(ThrowOnGetConfig);
     }
 
     public Task<SpaceConfig?> GetSpaceAsync(string slug)
     {
         recorder?.Record($"space:{slug}");
-        return Task.FromResult(_spaces.GetValueOrDefault(slug));
+        return ThrowOnGetSpace is null
+            ? Task.FromResult(_spaces.GetValueOrDefault(slug))
+            : Task.FromException<SpaceConfig?>(ThrowOnGetSpace);
     }
 }
