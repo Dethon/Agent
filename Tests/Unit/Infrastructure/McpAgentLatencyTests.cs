@@ -103,11 +103,10 @@ public class McpAgentLatencyTests : IAsyncDisposable
                 new() { Role = ChatRole.Assistant, Contents = [new TextContent("hi")] }
             }.ToAsyncEnumerable());
 
-        // The chat client is the sole resolver of the patch whitelist; the agent discovers it
-        // through the decorator chain (production wraps it in ToolApprovalChatClient), so the
-        // wrapper is part of this test on purpose.
-        using var chatClient = new OpenRouterChatClient(
-            inner.Object, "anthropic/claude", patchableModelIds: ["z-ai/glm"]);
+        // Production wraps the chat client in ToolApprovalChatClient, so the wrapper is part of
+        // this test on purpose: the resolved model must reach the request through the decorator
+        // chain on the turn's own options.
+        using var chatClient = new OpenRouterChatClient(inner.Object, "anthropic/claude");
         using var wrappedClient = new ToolApprovalChatClient(
             chatClient, new Mock<IToolApprovalHandler>().Object);
 
@@ -120,7 +119,8 @@ public class McpAgentLatencyTests : IAsyncDisposable
             "test-user",
             metricsPublisher: _publisher.Object,
             model: "anthropic/claude",
-            conversationId: "conv1");
+            conversationId: "conv1",
+            patchableModelIds: ["z-ai/glm"]);
 
         var message = new ChatMessage(ChatRole.User, "hello");
         message.SetConfigPatch(new AgentConfigPatch { Model = "z-ai/glm" });

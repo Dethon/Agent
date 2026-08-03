@@ -17,7 +17,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -37,7 +37,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -57,7 +57,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -75,7 +75,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -93,7 +93,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
 
         // Assert
         // The messages array is untouched; the request now also carries usage:{include:true},
@@ -113,7 +113,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "jack:123:456", null, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "jack:123:456", null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -130,7 +130,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -147,7 +147,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "  ", null, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "  ", null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -165,7 +165,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(json);
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "jack:123:456", null, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "jack:123:456", null, CancellationToken.None);
 
         // Assert
         var resultJson = await request.Content!.ReadAsStringAsync();
@@ -193,7 +193,7 @@ public class OpenRouterHttpHelpersTests
         };
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, CancellationToken.None);
 
         // Assert
         var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!;
@@ -227,7 +227,7 @@ public class OpenRouterHttpHelpersTests
         };
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, CancellationToken.None);
 
         // Assert
         var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!.AsObject();
@@ -250,7 +250,7 @@ public class OpenRouterHttpHelpersTests
         };
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, CancellationToken.None);
 
         // Assert
         var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!.AsObject();
@@ -278,7 +278,7 @@ public class OpenRouterHttpHelpersTests
         };
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, CancellationToken.None);
 
         // Assert
         JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject()
@@ -296,7 +296,7 @@ public class OpenRouterHttpHelpersTests
 
         // Act
         await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, null, new ProviderRouting { Sort = sort }, null, CancellationToken.None);
+            request, null, new ProviderRouting { Sort = sort }, CancellationToken.None);
 
         // Assert
         JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!["sort"]!
@@ -311,7 +311,7 @@ public class OpenRouterHttpHelpersTests
 
         // Act
         await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, null, new ProviderRouting { Sort = ProviderSort.Latency }, null, CancellationToken.None);
+            request, null, new ProviderRouting { Sort = ProviderSort.Latency }, CancellationToken.None);
 
         // Assert
         var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!.AsObject();
@@ -333,7 +333,7 @@ public class OpenRouterHttpHelpersTests
         var request = CreateRequest(BodyJson);
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
 
         // Assert
         JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject()
@@ -348,7 +348,7 @@ public class OpenRouterHttpHelpersTests
 
         // Act
         await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, null, new ProviderRouting(), null, CancellationToken.None);
+            request, null, new ProviderRouting(), CancellationToken.None);
 
         // Assert
         JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject()
@@ -363,7 +363,7 @@ public class OpenRouterHttpHelpersTests
         var routing = new ProviderRouting { Sort = ProviderSort.Price, Order = [], Only = [], Ignore = [] };
 
         // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, null, CancellationToken.None);
+        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, routing, CancellationToken.None);
 
         // Assert
         var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!.AsObject();
@@ -382,7 +382,7 @@ public class OpenRouterHttpHelpersTests
 
         // Act
         await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, "nabu:123:456", new ProviderRouting { Sort = ProviderSort.Latency }, null,
+            request, "nabu:123:456", new ProviderRouting { Sort = ProviderSort.Latency },
             CancellationToken.None);
 
         // Assert
@@ -391,73 +391,6 @@ public class OpenRouterHttpHelpersTests
         obj["session_id"]!.GetValue<string>().ShouldBe("nabu:123:456");
         obj["provider"]!["sort"]!.GetValue<string>().ShouldBe("latency");
         obj["usage"]!["include"]!.GetValue<bool>().ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task PrepareRequestBodyAsync_WithModelOverride_StampsModel()
-    {
-        // Arrange
-        var request = CreateRequest("""{"model":"openai/gpt-5.6-luna","messages":[]}""");
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, sessionId: null, providerRouting: null, modelOverride: "z-ai/glm-5.2", CancellationToken.None);
-
-        // Assert
-        var body = await request.Content!.ReadAsStringAsync();
-        JsonNode.Parse(body)!["model"]!.GetValue<string>().ShouldBe("z-ai/glm-5.2");
-    }
-
-    [Fact]
-    public async Task PrepareRequestBodyAsync_NoModelOverride_KeepsOriginalModel()
-    {
-        // Arrange
-        var request = CreateRequest("""{"model":"openai/gpt-5.6-luna","messages":[]}""");
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, sessionId: null, providerRouting: null, modelOverride: null, CancellationToken.None);
-
-        // Assert
-        var body = await request.Content!.ReadAsStringAsync();
-        JsonNode.Parse(body)!["model"]!.GetValue<string>().ShouldBe("openai/gpt-5.6-luna");
-    }
-
-    // Provider routing is a deployment constraint, not a per-model preference: it is enforced
-    // on every turn, override or not. A whitelist entry no configured routing can serve is a
-    // config error to fix in `patchableModels`/`providerRouting`, not something to route around.
-    [Fact]
-    public async Task PrepareRequestBodyAsync_WithProviderRoutingAndModelOverride_KeepsProviderNode()
-    {
-        // Arrange
-        var request = CreateRequest(BodyJson);
-        var routing = new ProviderRouting { Ignore = ["azure", "azure/eu"] };
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, sessionId: null, providerRouting: routing, modelOverride: "z-ai/glm-5.2", CancellationToken.None);
-
-        // Assert
-        var obj = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject();
-        obj["model"]!.GetValue<string>().ShouldBe("z-ai/glm-5.2");
-        obj["provider"]!["ignore"]!.AsArray().Select(n => n!.GetValue<string>())
-            .ShouldBe(["azure", "azure/eu"]);
-    }
-
-    [Fact]
-    public async Task PrepareRequestBodyAsync_WithProviderRoutingAndNoModelOverride_KeepsProviderNode()
-    {
-        // Arrange
-        var request = CreateRequest(BodyJson);
-        var routing = new ProviderRouting { Only = ["openai"] };
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-            request, sessionId: null, providerRouting: routing, modelOverride: null, CancellationToken.None);
-
-        // Assert
-        var provider = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["provider"]!;
-        provider["only"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["openai"]);
     }
 
     private const string BodyJson =

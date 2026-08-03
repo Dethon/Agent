@@ -14,7 +14,7 @@ using OpenAI;
 
 namespace Infrastructure.Agents.ChatClients;
 
-public sealed class OpenRouterChatClient : IMultiModelChatClient
+public sealed class OpenRouterChatClient : IChatClient
 {
     private readonly IChatClient _client;
     private readonly HttpClient? _httpClient;
@@ -26,8 +26,6 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
     private readonly int? _maxContextTokens;
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
-    private readonly IReadOnlyList<string> _patchableModelIds;
-    private readonly ModelOverrideBox _modelOverrideBox;
 
     public OpenRouterChatClient(
         string endpoint,
@@ -38,18 +36,14 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
         string? sessionId = null,
         TimeProvider? timeProvider = null,
         ProviderRouting? providerRouting = null,
-        HttpMessageHandler? transportHandler = null,
-        IReadOnlyList<string>? patchableModelIds = null)
+        HttpMessageHandler? transportHandler = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _patchableModelIds = patchableModelIds ?? [];
-        _modelOverrideBox = new ModelOverrideBox();
         _httpClient = CreateHttpClient(
-            _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, _modelOverrideBox,
-            transportHandler);
+            _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
     }
@@ -59,15 +53,12 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
         string model,
         int? maxContextTokens = null,
         IMetricsPublisher? metricsPublisher = null,
-        TimeProvider? timeProvider = null,
-        IReadOnlyList<string>? patchableModelIds = null)
+        TimeProvider? timeProvider = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _patchableModelIds = patchableModelIds ?? [];
-        _modelOverrideBox = new ModelOverrideBox();
         _client = innerClient;
     }
 
@@ -144,12 +135,10 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
             return newMessage;
         }).ToList();
 
-        var modelOverride = ResolveModelOverride(
-            transformedMessages.LastOrDefault(m => m.Role == ChatRole.User)?.GetConfigPatch(),
-            _model,
-            _patchableModelIds);
-        _modelOverrideBox.Value = modelOverride;
-        var effectiveModel = modelOverride ?? _model;
+        // The model a per-message config patch resolved to rides this request's own options
+        // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on
+        // and a concurrent turn has nothing shared to overwrite.
+        var effectiveModel = options?.ModelId ?? _model;
 
         var sender = transformedMessages
             .LastOrDefault(m => m.Role == ChatRole.User)
@@ -226,8 +215,6 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
 
         return null;
     }
-
-    public string EffectiveModel => _modelOverrideBox.Value ?? _model;
 
     public object? GetService(Type serviceType, object? key = null)
     {
@@ -334,32 +321,13 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
 
     internal static SocketsHttpHandler SharedHandler => _sharedHandler;
 
-    internal sealed class ModelOverrideBox
-    {
-        public volatile string? Value;
-    }
-
-    internal static string? ResolveModelOverride(
-        AgentConfigPatch? patch, string configuredModel, IReadOnlyList<string> patchableModelIds)
-    {
-        if (patch?.Model is not { } model || string.Equals(model, configuredModel, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        // Return the whitelist's own casing, not the patch's: OpenRouter model IDs are lowercase
-        // slugs, and stamping the patch's casing verbatim can turn a valid override into a
-        // model-not-found error.
-        return patchableModelIds.FirstOrDefault(id => string.Equals(id, model, StringComparison.OrdinalIgnoreCase));
-    }
-
     private static HttpClient CreateHttpClient(
         ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
         ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting,
-        ModelOverrideBox overrideBox, HttpMessageHandler? transportHandler = null)
+        HttpMessageHandler? transportHandler = null)
     {
         var handler = new ReasoningHandler(
-            reasoningQueue, costQueue, cachedQueue, sessionId, providerRouting, overrideBox)
+            reasoningQueue, costQueue, cachedQueue, sessionId, providerRouting)
         {
             InnerHandler = transportHandler ?? _sharedHandler
         };
@@ -368,8 +336,7 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
 
     private sealed class ReasoningHandler(
         ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting,
-        ModelOverrideBox overrideBox)
+        ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting)
         : DelegatingHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -377,7 +344,7 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
             CancellationToken cancellationToken)
         {
             await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-                request, sessionId, providerRouting, overrideBox.Value, cancellationToken);
+                request, sessionId, providerRouting, cancellationToken);
             var response = await base.SendAsync(request, cancellationToken);
 
             if (response.Content.Headers.ContentType?.MediaType?.Equals("text/event-stream",

@@ -6,6 +6,7 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -136,14 +137,19 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
     }
 }
 
-// Runs without Docker: a fake IChatClient captures the ChatOptions McpAgent builds, so the
-// per-turn ConfigPatch override on _reasoningEffort can be asserted without a live OpenRouter
-// call or a Redis-backed IThreadStateStore.
+// Runs without Docker: a fake IChatClient captures the ChatOptions McpAgent builds, so both
+// halves of the ConfigPatch — reasoning effort and model — can be asserted on what the agent
+// actually produces, without a live OpenRouter call or a Redis-backed IThreadStateStore.
 public class McpAgentReasoningTestsConfigPatch
 {
-    private static (McpAgent Agent, List<ChatOptions?> Captured) CreateAgent(string? reasoningEffort)
+    private const string ConfiguredModel = "openai/gpt-5.6-luna";
+    private static readonly string[] _whitelist = ["openai/gpt-5.6-luna", "z-ai/glm-5.2"];
+
+    private static (McpAgent Agent, List<ChatOptions?> Captured, List<string> Warnings) CreateAgent(
+        string? reasoningEffort = null)
     {
         var captured = new List<ChatOptions?>();
+        var logProvider = new CapturingWarningProvider();
         var chatClient = new Mock<IChatClient>();
         chatClient
             .Setup(c => c.GetStreamingResponseAsync(
@@ -164,46 +170,131 @@ public class McpAgentReasoningTestsConfigPatch
             "",
             new Mock<IThreadStateStore>().Object,
             "fran",
-            reasoningEffort: reasoningEffort);
+            loggerFactory: LoggerFactory.Create(b => b.AddProvider(logProvider)),
+            reasoningEffort: reasoningEffort,
+            model: ConfiguredModel,
+            patchableModelIds: _whitelist);
 
-        return (agent, captured);
+        return (agent, captured, logProvider.Messages);
+    }
+
+    private static async Task<(ChatOptions Options, List<string> Warnings)> RunWithPatchAsync(
+        AgentConfigPatch? patch, string? reasoningEffort = null)
+    {
+        var (agent, captured, warnings) = CreateAgent(reasoningEffort);
+        await using var _ = agent;
+
+        var userMessage = new ChatMessage(ChatRole.User, "hi");
+        if (patch is not null)
+        {
+            userMessage.SetConfigPatch(patch);
+        }
+
+        await agent.RunStreamingAsync([userMessage]).ToListAsync();
+
+        return (captured.ShouldHaveSingleItem().ShouldNotBeNull(), warnings);
     }
 
     [Fact]
     public async Task RunStreaming_UserMessageWithEffortPatch_OverridesConfiguredEffort()
     {
-        var (agent, captured) = CreateAgent("low");
-        await using var _ = agent;
+        var (options, warnings) = await RunWithPatchAsync(
+            new AgentConfigPatch { ReasoningEffort = "high" }, reasoningEffort: "low");
 
-        var userMessage = new ChatMessage(ChatRole.User, "hi");
-        userMessage.SetConfigPatch(new AgentConfigPatch { ReasoningEffort = "high" });
-
-        await agent.RunStreamingAsync([userMessage]).ToListAsync();
-
-        var capturedOptions = captured.ShouldHaveSingleItem().ShouldNotBeNull();
-        capturedOptions.Reasoning.ShouldNotBeNull();
-        capturedOptions.Reasoning.Effort.ShouldBe(ReasoningEffort.High);
+        options.Reasoning.ShouldNotBeNull();
+        options.Reasoning.Effort.ShouldBe(ReasoningEffort.High);
+        warnings.ShouldBeEmpty();
     }
 
     [Fact]
-    public async Task RunStreaming_UserMessageWithInvalidEffortPatch_FallsBackToConfigured()
+    public async Task RunStreaming_UserMessageWithInvalidEffortPatch_FallsBackToConfiguredAndWarns()
     {
-        var (agent, captured) = CreateAgent("low");
-        await using var _ = agent;
+        var (options, warnings) = await RunWithPatchAsync(
+            new AgentConfigPatch { ReasoningEffort = "turbo" }, reasoningEffort: "low");
 
-        var userMessage = new ChatMessage(ChatRole.User, "hi");
-        userMessage.SetConfigPatch(new AgentConfigPatch { ReasoningEffort = "turbo" });
+        options.Reasoning.ShouldNotBeNull();
+        options.Reasoning.Effort.ShouldBe(ReasoningEffort.Low);
+        warnings.ShouldContain(m => m.Contains("reasoningEffort") && m.Contains("turbo") && m.Contains("Low"));
+    }
 
-        await agent.RunStreamingAsync([userMessage]).ToListAsync();
+    [Fact]
+    public async Task RunStreaming_WhitelistedModelPatch_PutsItOnTheTurnOptions()
+    {
+        var (options, warnings) = await RunWithPatchAsync(new AgentConfigPatch { Model = "z-ai/glm-5.2" });
 
-        var capturedOptions = captured.ShouldHaveSingleItem().ShouldNotBeNull();
-        capturedOptions.Reasoning.ShouldNotBeNull();
-        capturedOptions.Reasoning.Effort.ShouldBe(ReasoningEffort.Low);
+        options.ModelId.ShouldBe("z-ai/glm-5.2");
+        warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RunStreaming_NonWhitelistedModelPatch_KeepsConfiguredModelAndWarns()
+    {
+        var (options, warnings) = await RunWithPatchAsync(new AgentConfigPatch { Model = "evil/model" });
+
+        options.ModelId.ShouldBeNull();
+        warnings.ShouldContain(m => m.Contains("model") && m.Contains("evil/model") && m.Contains(ConfiguredModel));
+    }
+
+    [Fact]
+    public async Task RunStreaming_ModelPatchMatchingConfiguredModel_IsNotAnOverride()
+    {
+        var (options, warnings) = await RunWithPatchAsync(new AgentConfigPatch { Model = ConfiguredModel });
+
+        options.ModelId.ShouldBeNull();
+        warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RunStreaming_WithoutPatch_LeavesTheModelUnset()
+    {
+        var (options, warnings) = await RunWithPatchAsync(null);
+
+        options.ModelId.ShouldBeNull();
+        warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RunStreaming_ModelPatchInDifferentCasing_UsesTheWhitelistCanonicalCasing()
+    {
+        // Provider model ids are lowercase slugs; echoing the caller's casing can turn a valid
+        // override into a model-not-found error.
+        var (options, warnings) = await RunWithPatchAsync(new AgentConfigPatch { Model = "Z-AI/GLM-5.2" });
+
+        options.ModelId.ShouldBe("z-ai/glm-5.2");
+        warnings.ShouldBeEmpty();
     }
 
     [Fact]
     public void TryParseEffort_UnknownValue_ReturnsNull()
     {
         McpAgent.TryParseEffort("turbo").ShouldBeNull();
+    }
+
+    private sealed class CapturingWarningProvider : ILoggerProvider
+    {
+        public List<string> Messages { get; } = [];
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(Messages);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(List<string> messages) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => logLevel == LogLevel.Warning;
+
+            public void Log<TState>(
+                LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (logLevel == LogLevel.Warning)
+                {
+                    messages.Add(formatter(state, exception));
+                }
+            }
+        }
     }
 }

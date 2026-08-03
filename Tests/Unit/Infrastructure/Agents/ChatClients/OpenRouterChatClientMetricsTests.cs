@@ -207,15 +207,12 @@ public class OpenRouterChatClientMetricsTests : IDisposable
         captured.CachedInputTokens.ShouldBe(13800);
     }
 
+    // The model a config patch resolved to arrives on the request's own ChatOptions, so token
+    // usage is attributed to the model that produced it without the client re-resolving anything.
     [Fact]
-    public async Task GetStreamingResponseAsync_WithPatchedModel_PublishesPatchedModel()
+    public async Task GetStreamingResponseAsync_WithModelIdOnOptions_PublishesThatModel()
     {
-        using var sut = new OpenRouterChatClient(
-            _innerClient.Object, "test-model", metricsPublisher: _publisher.Object,
-            patchableModelIds: ["patched-model"]);
-
         var userMessage = new ChatMessage(ChatRole.User, "hello");
-        userMessage.SetConfigPatch(new AgentConfigPatch { Model = "patched-model" });
 
         var usageDetails = new UsageDetails { InputTokenCount = 100, OutputTokenCount = 50 };
         _innerClient
@@ -232,41 +229,11 @@ public class OpenRouterChatClientMetricsTests : IDisposable
             .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as TokenUsageEvent ?? captured)
             .Returns(Task.CompletedTask);
 
-        await sut.GetStreamingResponseAsync([userMessage]).ToListAsync();
+        await _sut.GetStreamingResponseAsync(
+            [userMessage], new ChatOptions { ModelId = "patched-model" }).ToListAsync();
 
         captured.ShouldNotBeNull();
         captured.Model.ShouldBe("patched-model");
-    }
-
-    [Fact]
-    public async Task GetStreamingResponseAsync_WithNonWhitelistedPatchModel_PublishesConfiguredModel()
-    {
-        using var sut = new OpenRouterChatClient(
-            _innerClient.Object, "test-model", metricsPublisher: _publisher.Object,
-            patchableModelIds: ["patched-model"]);
-
-        var userMessage = new ChatMessage(ChatRole.User, "hello");
-        userMessage.SetConfigPatch(new AgentConfigPatch { Model = "evil/model" });
-
-        var usageDetails = new UsageDetails { InputTokenCount = 100, OutputTokenCount = 50 };
-        _innerClient
-            .Setup(c => c.GetStreamingResponseAsync(
-                It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions?>(), It.IsAny<CancellationToken>()))
-            .Returns(new List<ChatResponseUpdate>
-            {
-                new() { Role = ChatRole.Assistant, Contents = [new UsageContent(usageDetails)] }
-            }.ToAsyncEnumerable());
-
-        TokenUsageEvent? captured = null;
-        _publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as TokenUsageEvent ?? captured)
-            .Returns(Task.CompletedTask);
-
-        await sut.GetStreamingResponseAsync([userMessage]).ToListAsync();
-
-        captured.ShouldNotBeNull();
-        captured.Model.ShouldBe("test-model");
     }
 
     [Fact]
