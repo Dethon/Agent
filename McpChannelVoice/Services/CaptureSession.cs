@@ -3,16 +3,21 @@ using McpChannelVoice.Services.WyomingProtocol;
 
 namespace McpChannelVoice.Services;
 
-// The microphone for one connection: opening it, closing it and reading its statistics at exactly
-// that moment, and the two events that tell the satellite what its indicator should show.
+// The microphone for one connection's turn-taking: opening it, closing it and reading its
+// statistics at exactly that moment, and the two events that tell the satellite what its indicator
+// should show.
 //
-// Opening a capture and recording what it taught us about the room are one operation here, so a new
-// call site cannot do the first and forget the second.
+// Closing a capture and recording what it taught us about the room are one operation here, so a new
+// turn-taking path cannot do the first and forget the second. The approval mic is a separate,
+// one-shot capture that does not come through here; it takes its gate from the same factory.
 public sealed class CaptureSession(
     SatelliteSession session,
     SilenceGateFactory gates,
     TimeProvider time,
     TimeSpan historySpan,
+    // Called with isFollowUp as each capture opens. The wake turn is the one the connection host
+    // acts on: it is where the satellite's stashed wake metadata is consumed, and a follow-up has no
+    // wake of its own.
     Action<bool> onOpened)
 {
     public UtteranceCapture Open(bool isFollowUp)
@@ -56,9 +61,10 @@ public sealed class CaptureSession(
         SendIndicatorAsync("listening-started", ct);
 
     // Both events are indicator-only by contract: a failed write must never cost the user the
-    // utterance or the window it was announcing, so it goes through the session's best-effort
-    // writer rather than throwing. Cancellation is still the caller's to see — that is the
-    // connection tearing down, not an indicator failing.
+    // utterance or the window it was announcing, so they go through the session's best-effort
+    // writer, which reports failure as false rather than throwing. An already-cancelled connection
+    // still stops the loop here; a cancellation raised mid-write is swallowed with everything else,
+    // and the loop's next await on the same token throws instead.
     private Task SendIndicatorAsync(string type, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
