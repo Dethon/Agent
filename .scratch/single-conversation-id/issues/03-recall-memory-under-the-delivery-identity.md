@@ -10,9 +10,9 @@ Nothing inside the recall hook changes. Its own tests already cover what it does
 
 **Blocked by:** 01 — Resolve the delivery identity once and build the turn from it.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A schedule fire that mints a WebChat conversation passes the minted id to the memory recall hook, asserted in the delivery-identity unit file from ticket 01
-- [ ] A plain WebChat message still passes its own conversation id
-- [ ] The recall hook's own tests and behaviour are unchanged
-- [ ] `dotnet test Tests/Unit` passes
+- [x] A schedule fire that mints a WebChat conversation passes the minted id to the memory recall hook, asserted in the delivery-identity unit file from ticket 01
+- [x] A plain WebChat message still passes its own conversation id
+- [x] The recall hook's own tests and behaviour are unchanged
+- [x] `dotnet test Tests/Unit` passes

@@ -14,13 +14,28 @@ Do not change how messages are grouped, and do not change where chat history is 
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A schedule fire whose reply target has a null conversation id, prompting the fake WebChat channel to mint one, constructs its agent from the minted id
-- [ ] The same fire restores its thread under the minted id (existing behaviour, must not regress)
-- [ ] The same fire publishes its first-reply latency event with the minted id
-- [ ] A plain WebChat message with no reply targets keeps using its own conversation id for all of the above
-- [ ] The target-or-message fallback is computed in exactly one place and the anchors carry the result
-- [ ] The group key still drives message grouping and the thread resolver's context, cancel and clear
-- [ ] The existing persistence-key unit file is renamed for the broader subject and holds the assertions above; the unit-test fake agent factory records the key it was handed
-- [ ] `dotnet test Tests/Unit` passes
+- [x] A schedule fire whose reply target has a null conversation id, prompting the fake WebChat channel to mint one, constructs its agent from the minted id
+- [x] The same fire restores its thread under the minted id (existing behaviour, must not regress)
+- [x] The same fire publishes its first-reply latency event with the minted id
+- [x] A plain WebChat message with no reply targets keeps using its own conversation id for all of the above
+- [x] The target-or-message fallback is computed in exactly one place and the anchors carry the result
+- [x] The group key still drives message grouping and the thread resolver's context, cancel and clear
+- [x] The existing persistence-key unit file is renamed for the broader subject and holds the assertions above; the unit-test fake agent factory records the key it was handed
+- [x] `dotnet test Tests/Unit` passes
+
+## Comments
+
+**On "the fallback is computed in exactly one place".** The three copies inside
+`ChatMonitor` — the approval binding, the persistence key and the first-reply
+attribution — are now one, and `GroupAnchors.DeliveryKey` carries the result.
+
+`DeliveryTargetResolver.BuildConversationContext` was left alone. The spec counts it
+as a fourth copy and says folding it in would not change its value, but that is not
+quite right: it runs on the *per-turn* targets, not the group's, and it picks a
+`(channelId, conversationId)` pair rather than an id. Folding it into the group
+anchors would change the reply target handed to the LLM for a later message arriving
+from a different channel — it would name the group's channel while the reply itself
+still goes back to the message's own origin. That is a behaviour change the spec puts
+out of scope, so the expression stays where it is and stays per-turn.

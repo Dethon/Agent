@@ -12,12 +12,12 @@ Every fake and mock approval handler in the unit and integration suites gains th
 
 **Blocked by:** 01 — Resolve the delivery identity once and build the turn from it. Both rewrite the group-anchors resolution and the same unit test file, and this ticket's approval binding consumes the single identity ticket 01 produces.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A schedule fire that mints a WebChat conversation routes its approval requests and auto-approval notices to the minted channel and id, asserted in the delivery-identity unit file from ticket 01
-- [ ] The tool-approval-handler contract takes the conversation id on both methods and the channel connection inherits them rather than redeclaring them
-- [ ] The approval adapter class, the monitor's approval-handler factory parameter and its DI registration no longer exist
-- [ ] The approval chat client requires a conversation id and uses it for both the approval and the auto-approval call
-- [ ] A sub-agent's tool-call and tool-execution events carry the parent turn's delivery conversation id instead of null
-- [ ] The existing approval chat client unit files pass unchanged in behaviour
-- [ ] `dotnet test Tests/Unit` passes
+- [x] A schedule fire that mints a WebChat conversation routes its approval requests and auto-approval notices to the minted channel and id, asserted in the delivery-identity unit file from ticket 01
+- [x] The tool-approval-handler contract takes the conversation id on both methods and the channel connection inherits them rather than redeclaring them
+- [x] The approval adapter class, the monitor's approval-handler factory parameter and its DI registration no longer exist
+- [x] The approval chat client requires a conversation id and uses it for both the approval and the auto-approval call
+- [x] A sub-agent's tool-call and tool-execution events carry the parent turn's delivery conversation id instead of null
+- [x] The existing approval chat client unit files pass unchanged in behaviour
+- [x] `dotnet test Tests/Unit` passes
