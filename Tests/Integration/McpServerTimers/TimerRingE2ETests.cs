@@ -99,6 +99,7 @@ public class TimerRingE2ETests
         // to activate it and the whole test dies at StartAsync before reaching any assertion.
         builder.Services.AddSingleton(settings.Arbitration);
         builder.Services.AddSingleton<WakeArbiter>();
+        builder.Services.AddSingleton<SilenceGateFactory>();
         builder.Services.AddHostedService<WyomingSatelliteHost>();
 
         var app = builder.Build();
