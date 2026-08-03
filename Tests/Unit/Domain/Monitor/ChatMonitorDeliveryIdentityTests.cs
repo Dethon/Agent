@@ -50,13 +50,14 @@ public class ChatMonitorDeliveryIdentityTests
         var fakeAgent = ReplyingAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
         var published = new List<MetricEvent>();
+        var recallHook = new RecordingRecallHook();
 
         var monitor = new ChatMonitor(
             [scheduling, webchat],
             agentFactory,
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher(published),
-            null,
+            recallHook,
             new Mock<ILogger<ChatMonitor>>().Object);
 
         await monitor.Monitor(CancellationToken.None);
@@ -65,6 +66,9 @@ public class ChatMonitorDeliveryIdentityTests
         created.Key.ShouldBe(MintedKey);
         fakeAgent.RestoredSessionKeys.ShouldHaveSingleItem().ShouldBe(MintedKey.ToString());
         FirstReplyOf(published).ConversationId.ShouldBe(MintedKey.ConversationId);
+        // Recall provenance is durable: a memory extracted here records its source
+        // conversation, and that has to be one somebody can still open months later.
+        recallHook.ConversationIds.ShouldHaveSingleItem().ShouldBe(MintedKey.ConversationId);
 
         // The approval route the turn was built with reaches the minted channel under the
         // minted id — the conversation the answer lands in, not the scheduling origin
@@ -86,13 +90,14 @@ public class ChatMonitorDeliveryIdentityTests
         var fakeAgent = ReplyingAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
         var published = new List<MetricEvent>();
+        var recallHook = new RecordingRecallHook();
 
         var monitor = new ChatMonitor(
             [webchat],
             agentFactory,
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher(published),
-            null,
+            recallHook,
             new Mock<ILogger<ChatMonitor>>().Object);
 
         await monitor.Monitor(CancellationToken.None);
@@ -101,6 +106,24 @@ public class ChatMonitorDeliveryIdentityTests
         agentFactory.Created.ShouldHaveSingleItem().Key.ShouldBe(ownKey);
         fakeAgent.RestoredSessionKeys.ShouldHaveSingleItem().ShouldBe(ownKey.ToString());
         FirstReplyOf(published).ConversationId.ShouldBe(ownKey.ConversationId);
+        recallHook.ConversationIds.ShouldHaveSingleItem().ShouldBe(ownKey.ConversationId);
+    }
+
+    private sealed class RecordingRecallHook : IMemoryRecallHook
+    {
+        public List<string?> ConversationIds { get; } = [];
+
+        public Task EnrichAsync(
+            ChatMessage message,
+            string userId,
+            string? conversationId,
+            string? agentId,
+            AgentSession thread,
+            CancellationToken ct)
+        {
+            ConversationIds.Add(conversationId);
+            return Task.CompletedTask;
+        }
     }
 
     private static FakeAiAgent ReplyingAgent()

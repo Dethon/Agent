@@ -34,6 +34,7 @@ public class ChatMonitor(
     // Everything a turn needs that is fixed for the whole conversation group.
     private sealed record TurnScope(
         AgentKey AgentKey,
+        AgentKey DeliveryKey,
         IReadOnlyList<DeliveryTarget> Targets,
         DisposableAgent Agent,
         AgentSession Thread,
@@ -95,7 +96,7 @@ public class ChatMonitor(
         // outlives the agent and the order of operations is well-defined.
         var warmup = agent.WarmupSessionAsync(thread, linkedCt);
 
-        var scope = new TurnScope(agentKey, anchors.Targets, agent, thread, warmup);
+        var scope = new TurnScope(agentKey, anchors.DeliveryKey, anchors.Targets, agent, thread, warmup);
         var aiResponses = RunTurnsSequentiallyAsync(group.Prepend(first), scope, linkedCt);
 
         await foreach (var turn in aiResponses.WithCancellation(ct))
@@ -237,7 +238,7 @@ public class ChatMonitor(
         {
             await _targetResolver.AnnounceTurnStartAsync(targets, x.Message, skipMinted: index == 0, ct);
         }
-        var userMessage = await BuildUserMessageAsync(x.Message, targets, scope.Thread, ct);
+        var userMessage = await BuildUserMessageAsync(x.Message, targets, scope, ct);
 
         await scope.Warmup;
         return StreamAgentTurn(scope.Agent, scope.Thread, userMessage, x.Message, targets, tracker, ct);
@@ -263,7 +264,7 @@ public class ChatMonitor(
     }
 
     private async Task<ChatMessage> BuildUserMessageAsync(
-        ChannelMessage message, IReadOnlyList<DeliveryTarget> targets, AgentSession thread, CancellationToken ct)
+        ChannelMessage message, IReadOnlyList<DeliveryTarget> targets, TurnScope scope, CancellationToken ct)
     {
         var userMessage = new ChatMessage(ChatRole.User, message.Content);
         userMessage.SetSenderId(message.Sender);
@@ -275,7 +276,11 @@ public class ChatMonitor(
         userMessage.SetConversationContext(DeliveryTargetResolver.BuildConversationContext(message, targets));
         if (memoryRecallHook is not null)
         {
-            await memoryRecallHook.EnrichAsync(userMessage, message.Sender, message.ConversationId, message.AgentId, thread, ct);
+            // The delivery identity again, not the message's own: recall stamps durable
+            // provenance on any memory extracted from this turn, so the source it names
+            // has to be a conversation that can still be opened.
+            await memoryRecallHook.EnrichAsync(
+                userMessage, message.Sender, scope.DeliveryKey.ConversationId, message.AgentId, scope.Thread, ct);
         }
 
         return userMessage;
