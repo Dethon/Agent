@@ -35,7 +35,7 @@ public class TranscriptDispatcherTests
             }
         };
 
-    private static (TranscriptDispatcher Sut, VoiceConversationManager Manager, CapturingEmitter Emitter) Build(
+    private static (TranscriptDispatcher Sut, VoiceConversationManager Manager, VoiceInboxProbe Emitter) Build(
         CommandSettings? commands = null, IMetricsPublisher? publisher = null,
         double shortSpeechAvgLogProbThreshold = -1.4, int fullThresholdSpeechMs = 2000)
     {
@@ -53,10 +53,10 @@ public class TranscriptDispatcherTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var sut = new TranscriptDispatcher(
-            emitter, publisher ?? Mock.Of<IMetricsPublisher>(), manager,
+            emitter.Emitter, publisher ?? Mock.Of<IMetricsPublisher>(), manager,
             new LocalCommandDispatcher(
                 new VoiceCommandMatcher(commands ?? new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6,
@@ -89,11 +89,11 @@ public class TranscriptDispatcherTests
         convo.ShouldNotBeNull();
         manager.ResolveSatelliteId(convo).ShouldBe("kitchen-01");
 
-        emitter.Captured.Count.ShouldBe(1);
-        emitter.Captured[0].ConversationId.ShouldBe(convo);
-        emitter.Captured[0].Content.ShouldBe("what time is it");
-        emitter.Captured[0].Sender.ShouldBe("household");
-        emitter.Captured[0].AgentId.ShouldBe("agent-1");
+        emitter.Messages.Count.ShouldBe(1);
+        emitter.Messages[0].ConversationId.ShouldBe(convo);
+        emitter.Messages[0].Content.ShouldBe("what time is it");
+        emitter.Messages[0].Sender.ShouldBe("household");
+        emitter.Messages[0].AgentId.ShouldBe("agent-1");
     }
 
     [Fact]
@@ -104,8 +104,8 @@ public class TranscriptDispatcherTests
         await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.8, "fran", default);
 
-        emitter.Captured.Count.ShouldBe(1);
-        emitter.Captured[0].Sender.ShouldBe("fran"); // conclusive identity drives per-person memory
+        emitter.Messages.Count.ShouldBe(1);
+        emitter.Messages[0].Sender.ShouldBe("fran"); // conclusive identity drives per-person memory
     }
 
     [Fact]
@@ -116,8 +116,8 @@ public class TranscriptDispatcherTests
         await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
-        emitter.Captured.Count.ShouldBe(1);
-        emitter.Captured[0].Sender.ShouldBe("household"); // doubtful/absent -> satellite default
+        emitter.Messages.Count.ShouldBe(1);
+        emitter.Messages[0].Sender.ShouldBe("household"); // doubtful/absent -> satellite default
     }
 
     [Fact]
@@ -128,8 +128,8 @@ public class TranscriptDispatcherTests
         await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
-        emitter.Captured.Count.ShouldBe(1);
-        emitter.Captured[0].Location.ShouldBe("Kitchen");
+        emitter.Messages.Count.ShouldBe(1);
+        emitter.Messages[0].Location.ShouldBe("Kitchen");
     }
 
     [Fact]
@@ -143,8 +143,8 @@ public class TranscriptDispatcherTests
         await sut.DispatchAsync(
             session, new TranscriptionResult { Text = "what's the weather", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
-        emitter.Captured.Count.ShouldBe(1);
-        emitter.Captured[0].Location.ShouldBe("Kitchen (Madrid, Spain)");
+        emitter.Messages.Count.ShouldBe(1);
+        emitter.Messages[0].Location.ShouldBe("Kitchen (Madrid, Spain)");
     }
 
     [Fact]
@@ -155,8 +155,8 @@ public class TranscriptDispatcherTests
         await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "what time is it", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
-        emitter.Captured.Count.ShouldBe(1);
-        emitter.Captured[0].SatelliteId.ShouldBe("kitchen-01");
+        emitter.Messages.Count.ShouldBe(1);
+        emitter.Messages[0].SatelliteId.ShouldBe("kitchen-01");
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public class TranscriptDispatcherTests
 
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public class TranscriptDispatcherTests
 
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
     }
 
     [Fact]
@@ -195,7 +195,7 @@ public class TranscriptDispatcherTests
 
         ok.ShouldBeTrue();
         manager.GetActiveConversationId("kitchen-01").ShouldNotBeNull();
-        emitter.Captured.Count.ShouldBe(1);
+        emitter.Messages.Count.ShouldBe(1);
     }
 
     [Fact]
@@ -209,7 +209,7 @@ public class TranscriptDispatcherTests
             "agent-1", null, null, null, default);
 
         ok.ShouldBeTrue();
-        emitter.Captured.Count.ShouldBe(1);
+        emitter.Messages.Count.ShouldBe(1);
     }
 
     private static SatelliteSession SessionWithSttOverrides(OpenAiSttOverrides overrides) =>
@@ -231,7 +231,7 @@ public class TranscriptDispatcherTests
 
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
     }
 
     [Fact]
@@ -245,7 +245,7 @@ public class TranscriptDispatcherTests
 
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
     }
 
     [Fact]
@@ -260,7 +260,7 @@ public class TranscriptDispatcherTests
             "agent-1", null, null, null, default);
 
         ok.ShouldBeTrue();
-        emitter.Captured.Count.ShouldBe(1);
+        emitter.Messages.Count.ShouldBe(1);
     }
 
     [Fact]
@@ -270,21 +270,21 @@ public class TranscriptDispatcherTests
         var manager = new VoiceConversationManager(
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var published = new List<MetricEvent>();
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
             .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "   ", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
         ok.ShouldBeFalse();
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
         factory.Verify(
             f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()),
@@ -305,9 +305,9 @@ public class TranscriptDispatcherTests
         await sut.DispatchAsync(
             session, new TranscriptionResult { Text = "thanks", Confidence = 0.9 }, "agent-1", null, null, null, default);
 
-        emitter.Captured.Count.ShouldBe(2);
-        emitter.Captured[0].DismissedAlert.ShouldBe("alarm \"trash\"");
-        emitter.Captured[1].DismissedAlert.ShouldBeNull(); // consumed by the first dispatch
+        emitter.Messages.Count.ShouldBe(2);
+        emitter.Messages[0].DismissedAlert.ShouldBe("alarm \"trash\"");
+        emitter.Messages[1].DismissedAlert.ShouldBeNull(); // consumed by the first dispatch
     }
 
     [Fact]
@@ -331,7 +331,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
-            new CapturingEmitter(), publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+            new VoiceInboxProbe().Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 
@@ -379,7 +379,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
             .Returns(Task.CompletedTask);
         var sut = new TranscriptDispatcher(
-            new CapturingEmitter(), publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+            new VoiceInboxProbe().Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 
@@ -428,7 +428,7 @@ public class TranscriptDispatcherTests
         written.Count.ShouldBe(1);
         written[0].Type.ShouldBe("speaker-volume");
         written[0].Data["action"]!.GetValue<string>().ShouldBe("up");
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
     }
 
@@ -497,7 +497,7 @@ public class TranscriptDispatcherTests
 
         dispatched.ShouldBeFalse();
         written.ShouldBeEmpty();
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
     }
 
     [Fact]
@@ -510,7 +510,7 @@ public class TranscriptDispatcherTests
             "agent-1", null, null, null, default);
 
         dispatched.ShouldBeFalse();
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
     }
 
     // "sube el volumen" without the local marker is a Music Assistant request and belongs to the
@@ -529,8 +529,8 @@ public class TranscriptDispatcherTests
 
         dispatched.ShouldBeTrue();
         written.ShouldBeEmpty();
-        emitter.Captured.Count.ShouldBe(1);
-        emitter.Captured[0].Content.ShouldBe("sube el volumen");
+        emitter.Messages.Count.ShouldBe(1);
+        emitter.Messages[0].Content.ShouldBe("sube el volumen");
     }
 
     [Fact]
@@ -544,7 +544,7 @@ public class TranscriptDispatcherTests
             "agent-1", stats, null, null, CancellationToken.None);
 
         dispatched.ShouldBeTrue();
-        emitter.Captured.Count.ShouldBe(1);
+        emitter.Messages.Count.ShouldBe(1);
     }
 
     [Fact]
@@ -558,7 +558,7 @@ public class TranscriptDispatcherTests
             "agent-1", stats, null, null, CancellationToken.None);
 
         dispatched.ShouldBeFalse();
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
     }
 
     [Fact]
@@ -572,7 +572,7 @@ public class TranscriptDispatcherTests
             "agent-1", stats, null, null, CancellationToken.None);
 
         dispatched.ShouldBeFalse();
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
     }
 
     [Fact]
@@ -585,6 +585,6 @@ public class TranscriptDispatcherTests
             "agent-1", null, null, null, CancellationToken.None);
 
         dispatched.ShouldBeFalse();
-        emitter.Captured.ShouldBeEmpty();
+        emitter.Messages.ShouldBeEmpty();
     }
 }

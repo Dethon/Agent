@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Unit.McpChannelVoice;
 
 namespace Tests.Integration.McpChannelVoice;
 
@@ -146,7 +147,7 @@ public class WakeArbitrationHostTests
     }
 
     private sealed record Hub(
-        WyomingSatelliteHost Host, RecordingEmitter Emitter, RecordingMetrics Metrics);
+        WyomingSatelliteHost Host, VoiceInboxProbe Emitter, RecordingMetrics Metrics);
 
     private static Hub BuildHub(FakeSatelliteServer satA, FakeSatelliteServer satB)
     {
@@ -170,7 +171,7 @@ public class WakeArbitrationHostTests
             Arbitration = new ArbitrationSettings { WindowMs = ArbitrationWindowMs }
         };
 
-        var emitter = new RecordingEmitter();
+        var emitter = new VoiceInboxProbe();
         var metrics = new RecordingMetrics();
         var factory = new Mock<IConversationFactory>();
         var minted = 0;
@@ -188,7 +189,7 @@ public class WakeArbitrationHostTests
             factory.Object, new ReplyTextAccumulator(), TimeProvider.System,
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, metrics, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System,
+            emitter.Emitter, metrics, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System,
             NullLogger<TranscriptDispatcher>.Instance);
         var arbiter = new WakeArbiter(
             voiceSettings.Arbitration, manager, metrics, TimeProvider.System,
@@ -263,47 +264,6 @@ public class WakeArbitrationHostTests
         }
     }
 
-    // Locked, unlike the single-satellite CapturingEmitter: two connections can reach the emitter
-    // concurrently here, and an unsynchronized List would corrupt exactly when the feature is
-    // broken — turning the failure this test exists to catch into an unrelated crash.
-    private sealed class RecordingEmitter : ChannelNotificationEmitter
-    {
-        private readonly List<ChannelMessageNotification> _messages = [];
-        private readonly Lock _gate = new();
-
-        public RecordingEmitter() : base(new ChannelInbox()) { }
-
-        public IReadOnlyList<ChannelMessageNotification> Messages
-        {
-            get
-            {
-                lock (_gate)
-                {
-                    return _messages.ToArray();
-                }
-            }
-        }
-
-        public override Task EmitMessageNotificationAsync(
-            string conversationId, string sender, string content, string? agentId, string? location,
-            string? satelliteId, string? dismissedAlert, CancellationToken ct = default)
-        {
-            lock (_gate)
-            {
-                _messages.Add(new ChannelMessageNotification
-                {
-                    ConversationId = conversationId,
-                    Sender = sender,
-                    Content = content,
-                    AgentId = agentId,
-                    Location = location,
-                    SatelliteId = satelliteId,
-                    DismissedAlert = dismissedAlert
-                });
-            }
-            return Task.CompletedTask;
-        }
-    }
 
     private sealed class RecordingMetrics : IMetricsPublisher
     {

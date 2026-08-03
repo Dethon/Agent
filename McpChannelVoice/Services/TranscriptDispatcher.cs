@@ -1,4 +1,6 @@
+using Channels.Hosting;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
@@ -89,14 +91,21 @@ public sealed class TranscriptDispatcher(
         // the satellite's default identity. Telemetry below keeps Identity = the satellite identity.
         var sender = identifiedSpeaker ?? session.Config.Identity;
 
-        await emitter.EmitMessageNotificationAsync(
-            conversationId,
-            sender,
-            transcript.Text,
-            agentId,
-            session.Config.DisplayLocation,
-            session.SatelliteId,
-            dismissedAlert,
+        // Location, SatelliteId and DismissedAlert are ordinary named properties on the shared
+        // payload. Two of them are adjacent optional strings, which a positional call could
+        // transpose with no compiler complaint.
+        await emitter.EmitAsync(
+            new ChannelMessageNotification
+            {
+                ConversationId = conversationId,
+                Sender = sender,
+                Content = transcript.Text,
+                AgentId = agentId,
+                Location = session.Config.DisplayLocation,
+                SatelliteId = session.SatelliteId,
+                DismissedAlert = dismissedAlert,
+                Timestamp = DateTimeOffset.UtcNow
+            },
             ct);
 
         await PublishUtteranceEventAsync(session, transcript, similarity, stats, "dispatched", conversationId, ct);

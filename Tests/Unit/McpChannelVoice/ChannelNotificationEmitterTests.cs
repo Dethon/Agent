@@ -1,55 +1,45 @@
+using Channels.Hosting;
 using Domain.Channels;
-using McpChannelVoice.Services;
-using Microsoft.Extensions.DependencyInjection;
+using Domain.DTOs.Channel;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
 
+// This channel's own payload shape: the room location, satellite id and dismissed-alert marker it
+// is the only channel to populate. Two of them are adjacent optional strings, which is why they
+// ride the shared payload as named properties. Liveness and buffering are pinned once at the
+// policy seam (Tests/Unit/Channels.Hosting/DeliveryPolicyTests.cs).
 public class ChannelNotificationEmitterTests
 {
+    private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "voice";
+
     [Fact]
-    public async Task EmitMessageNotificationAsync_EnqueuesMessageItemForPollingSubscriber()
+    public async Task EmitAsync_CarriesTheVoiceSpecificFields()
     {
         var inbox = new ChannelInbox();
-        var sut = new ChannelNotificationEmitter(inbox);
-        await inbox.ReceiveAsync("channel-voice", TimeSpan.Zero, CancellationToken.None);
+        var sut = new ChannelNotificationEmitter(inbox, DeliveryPolicy.Broadcast);
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
-        await sut.EmitMessageNotificationAsync(
-            "conv-1", "user", "hola", "nabu", "Kitchen", "kitchen-01", "alarm \"Take out the trash\"");
+        await sut.EmitAsync(new ChannelMessageNotification
+        {
+            ConversationId = "conv-1",
+            Sender = "fran",
+            Content = "que hora es",
+            AgentId = "nabu",
+            Location = "Kitchen (Madrid, Spain)",
+            SatelliteId = "kitchen-01",
+            DismissedAlert = "alarm \"Take out the trash\"",
+            Timestamp = DateTimeOffset.UtcNow
+        });
 
-        var items = await inbox.ReceiveAsync("channel-voice", TimeSpan.Zero, CancellationToken.None);
+        var items = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
         items.Count.ShouldBe(1);
         items[0].Kind.ShouldBe(ChannelInboxItemKind.Message);
         items[0].Message!.ConversationId.ShouldBe("conv-1");
-        items[0].Message!.Sender.ShouldBe("user");
-        items[0].Message!.Content.ShouldBe("hola");
-        items[0].Message!.AgentId.ShouldBe("nabu");
-        items[0].Message!.Location.ShouldBe("Kitchen");
+        items[0].Message!.Sender.ShouldBe("fran");
+        items[0].Message!.Content.ShouldBe("que hora es");
+        items[0].Message!.Location.ShouldBe("Kitchen (Madrid, Spain)");
         items[0].Message!.SatelliteId.ShouldBe("kitchen-01");
         items[0].Message!.DismissedAlert.ShouldBe("alarm \"Take out the trash\"");
-    }
-
-    [Fact]
-    public async Task HasActiveSessions_FollowsInboxSubscribers()
-    {
-        var inbox = new ChannelInbox();
-        var sut = new ChannelNotificationEmitter(inbox);
-
-        sut.HasActiveSessions.ShouldBeFalse();
-
-        await inbox.ReceiveAsync("channel-voice", TimeSpan.Zero, CancellationToken.None);
-
-        sut.HasActiveSessions.ShouldBeTrue();
-    }
-
-    [Fact]
-    public void Emitter_IsConstructibleFromTheRegisteredInbox()
-    {
-        var provider = new ServiceCollection()
-            .AddSingleton<ChannelInbox>()
-            .AddSingleton<ChannelNotificationEmitter>()
-            .BuildServiceProvider();
-
-        Should.NotThrow(() => provider.GetRequiredService<ChannelNotificationEmitter>());
     }
 }

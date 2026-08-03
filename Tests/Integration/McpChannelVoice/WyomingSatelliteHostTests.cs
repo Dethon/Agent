@@ -17,6 +17,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
+using Tests.Unit.McpChannelVoice;
 
 namespace Tests.Integration.McpChannelVoice;
 
@@ -28,28 +29,6 @@ public class WyomingSatelliteHostTests
     private static WakeArbiter Arbiter(VoiceConversationManager conversations) =>
         new(new ArbitrationSettings(), conversations, Mock.Of<IMetricsPublisher>(),
             TimeProvider.System, NullLogger<WakeArbiter>.Instance);
-
-    private sealed class CapturingEmitter : ChannelNotificationEmitter
-    {
-        public TaskCompletionSource<ChannelMessageNotification> Tcs { get; } = new();
-        public CapturingEmitter() : base(new ChannelInbox()) { }
-        public override Task EmitMessageNotificationAsync(
-            string conversationId, string sender, string content, string? agentId, string? location,
-            string? satelliteId, string? dismissedAlert, CancellationToken ct = default)
-        {
-            Tcs.TrySetResult(new ChannelMessageNotification
-            {
-                ConversationId = conversationId,
-                Sender = sender,
-                Content = content,
-                AgentId = agentId,
-                Location = location,
-                SatelliteId = satelliteId,
-                DismissedAlert = dismissedAlert
-            });
-            return Task.CompletedTask;
-        }
-    }
 
     private static byte[] Pcm(short value, int bytes = 3200)
     {
@@ -191,7 +170,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -206,7 +185,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -239,7 +218,7 @@ public class WyomingSatelliteHostTests
 
         await host.StartAsync(ct);
 
-        var msg = await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        var msg = await emitter.FirstAsync(TimeSpan.FromSeconds(10), ct);
         msg.Content.ShouldBe("hola");
         msg.ConversationId.ShouldNotBeNullOrWhiteSpace();
         msg.Sender.ShouldBe("household");
@@ -335,7 +314,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "baja el volumen al diez por ciento", Language = "es" };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -350,7 +329,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
             ["office-01"] = new()
@@ -377,7 +356,7 @@ public class WyomingSatelliteHostTests
 
         await host.StartAsync(ct);
 
-        var msg = await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        var msg = await emitter.FirstAsync(TimeSpan.FromSeconds(10), ct);
         msg.Content.ShouldBe("baja el volumen al diez por ciento");
         // The whole command reached STT: 12 spoken chunks plus the trailing run that ended it. An
         // uncapped floor endpoints inside the quieter clause (or drops the turn as no-speech).
@@ -479,7 +458,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publishedEvents = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
@@ -505,7 +484,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System,
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System,
             NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
@@ -536,7 +515,7 @@ public class WyomingSatelliteHostTests
 
         await host.StartAsync(ct);
 
-        await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        await emitter.FirstAsync(TimeSpan.FromSeconds(10), ct);
         await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
 
         VoiceEvent[] wakes;
@@ -627,7 +606,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -646,7 +625,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -685,7 +664,7 @@ public class WyomingSatelliteHostTests
             { await Task.Delay(20, ct); }
         }
 
-        (await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(20), ct)).Content.ShouldBe("hola");
+        (await emitter.FirstAsync(TimeSpan.FromSeconds(20), ct)).Content.ShouldBe("hola");
         await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
 
         long? stamp = null;
@@ -775,7 +754,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -790,7 +769,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -828,7 +807,7 @@ public class WyomingSatelliteHostTests
 
         await host.StartAsync(ct);
 
-        var msg = await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        var msg = await emitter.FirstAsync(TimeSpan.FromSeconds(10), ct);
         msg.Content.ShouldBe("hola");
         msg.Sender.ShouldBe("fran"); // conclusive identity routed into Sender, not "household"
 
@@ -917,7 +896,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publishedEvents = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
@@ -943,7 +922,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1006,7 +985,7 @@ public class WyomingSatelliteHostTests
         tail!.DurationMs.ShouldBe(200);
         tail.EndReason.ShouldBe("trailing_silence");
 
-        emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
+        emitter.Messages.ShouldBeEmpty(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1092,9 +1071,7 @@ public class WyomingSatelliteHostTests
         }, ct);
 
         // Two dispatched utterances expected: the wake turn, then the late-arriving follow-up.
-        var dispatched = new List<string>();
-        var bothDispatched = new TaskCompletionSource();
-        var emitter = new CollectingEmitter(dispatched, bothDispatched, expected: 2);
+        var emitter = new VoiceInboxProbe();
 
         var stt = new Mock<ISpeechToText>();
         stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
@@ -1126,7 +1103,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1147,7 +1124,7 @@ public class WyomingSatelliteHostTests
         await host.StartAsync(ct);
 
         // Wake turn dispatched -> simulate the agent's spoken reply so the follow-up window opens.
-        await WaitForCountAsync(dispatched, 1, TimeSpan.FromSeconds(10));
+        await emitter.WaitForCountAsync(1, TimeSpan.FromSeconds(10), ct);
         sessions.Get("kitchen-01").ShouldNotBeNull();
         sessions.Get("kitchen-01")!.SignalTurnSpoken();
 
@@ -1157,8 +1134,8 @@ public class WyomingSatelliteHostTests
         // The late-arriving speech must still reach the agent: a capture with zero
         // gate-classified speech at the early mark must never be early-rejected, so the mic stays
         // open for the speaker who is about to talk.
-        await bothDispatched.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
-        dispatched.Count.ShouldBe(2);
+        await emitter.WaitForCountAsync(2, TimeSpan.FromSeconds(15), ct);
+        emitter.Messages.Count.ShouldBe(2);
 
         publishedEvents.Any(e => e.Metric == VoiceMetric.UtteranceRejected && e.Outcome == "unknown_speaker_early")
             .ShouldBeFalse();
@@ -1235,7 +1212,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publishedEvents = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
@@ -1261,7 +1238,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1321,7 +1298,7 @@ public class WyomingSatelliteHostTests
         verify.Similarity.ShouldBe(0.213); // GatedToneVerifier's fixed Rejected similarity for an unknown tone
         publishedEvents.ShouldNotContain(e => e.Metric == VoiceMetric.SpeakerVerifyMs);
 
-        emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
+        emitter.Messages.ShouldBeEmpty(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1394,7 +1371,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("metrics backbone down"));
@@ -1411,7 +1388,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1452,7 +1429,7 @@ public class WyomingSatelliteHostTests
 
         stt.Verify(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
                                           It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()), Times.Never());
-        emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
+        emitter.Messages.ShouldBeEmpty(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1523,7 +1500,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("metrics backbone down"));
@@ -1540,7 +1517,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1576,7 +1553,7 @@ public class WyomingSatelliteHostTests
 
         stt.Verify(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
                                           It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()), Times.Never());
-        emitter.Tcs.Task.IsCompleted.ShouldBeFalse(); // no message notification reached the agent
+        emitter.Messages.ShouldBeEmpty(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1655,9 +1632,7 @@ public class WyomingSatelliteHostTests
             await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
         }, ct);
 
-        var dispatched = new List<string>();
-        var bothDispatched = new TaskCompletionSource();
-        var emitter = new CollectingEmitter(dispatched, bothDispatched, expected: 2);
+        var emitter = new VoiceInboxProbe();
 
         var stt = new Mock<ISpeechToText>();
         stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
@@ -1678,7 +1653,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1693,7 +1668,7 @@ public class WyomingSatelliteHostTests
         await host.StartAsync(ct);
 
         // First utterance dispatched -> simulate the agent's spoken reply so the follow-up window opens.
-        await WaitForCountAsync(dispatched, 1, TimeSpan.FromSeconds(10));
+        await emitter.WaitForCountAsync(1, TimeSpan.FromSeconds(10), ct);
         sawTranscript.Task.IsCompleted.ShouldBeFalse(); // transcript deferred (no re-arm yet)
         sessions.Get("kitchen-01").ShouldNotBeNull();
         sessions.Get("kitchen-01")!.SignalTurnSpoken();
@@ -1704,8 +1679,8 @@ public class WyomingSatelliteHostTests
         streamFollowUp.TrySetResult();
 
         // Second utterance must be dispatched WITHOUT a second run-pipeline (wake-free follow-up).
-        await bothDispatched.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
-        dispatched.Count.ShouldBe(2);
+        await emitter.WaitForCountAsync(2, TimeSpan.FromSeconds(15), ct);
+        emitter.Messages.Count.ShouldBe(2);
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1777,8 +1752,7 @@ public class WyomingSatelliteHostTests
         }, ct);
 
         // Only the first utterance should dispatch; the silent follow-up must NOT.
-        var dispatched = new List<string>();
-        var emitter = new CollectingEmitter(dispatched, new TaskCompletionSource(), expected: 99);
+        var emitter = new VoiceInboxProbe();
 
         var stt = new Mock<ISpeechToText>();
         stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
@@ -1799,7 +1773,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1814,7 +1788,7 @@ public class WyomingSatelliteHostTests
         await host.StartAsync(ct);
 
         // First utterance dispatched -> simulate the agent's spoken reply so the follow-up window opens.
-        await WaitForCountAsync(dispatched, 1, TimeSpan.FromSeconds(10));
+        await emitter.WaitForCountAsync(1, TimeSpan.FromSeconds(10), ct);
         sawTranscript.Task.IsCompleted.ShouldBeFalse(); // transcript deferred (no re-arm yet)
         sessions.Get("kitchen-01").ShouldNotBeNull();
         sessions.Get("kitchen-01")!.SignalTurnSpoken();
@@ -1826,7 +1800,7 @@ public class WyomingSatelliteHostTests
         // The no-speech timeout fires -> EndConversation writes the closing (empty) transcript to re-arm.
         var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
         transcriptText.ShouldBe("");
-        dispatched.Count.ShouldBe(1); // the silent follow-up was never dispatched
+        emitter.Messages.Count.ShouldBe(1); // the silent follow-up was never dispatched
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1880,8 +1854,7 @@ public class WyomingSatelliteHostTests
             await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
         }, ct);
 
-        var dispatched = new List<string>();
-        var emitter = new CollectingEmitter(dispatched, new TaskCompletionSource(), expected: 99);
+        var emitter = new VoiceInboxProbe();
 
         var stt = new Mock<ISpeechToText>();
         stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
@@ -1902,7 +1875,7 @@ public class WyomingSatelliteHostTests
                 return new ConversationCreation(identity, topic);
             });
         var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -1920,7 +1893,7 @@ public class WyomingSatelliteHostTests
         // transcript instead of holding the mic open until the max-utterance cap, and never dispatch.
         var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(8), ct);
         transcriptText.ShouldBe("");
-        dispatched.Count.ShouldBe(0);
+        emitter.Messages.Count.ShouldBe(0);
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1998,7 +1971,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -2013,7 +1986,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -2047,7 +2020,7 @@ public class WyomingSatelliteHostTests
 
         await host.StartAsync(ct);
 
-        await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), ct); // utterance dispatched
+        await emitter.FirstAsync(TimeSpan.FromSeconds(10), ct); // utterance dispatched
         await WaitForConditionAsync(() => alertCts.IsCancellationRequested, TimeSpan.FromSeconds(5));
         alertCts.IsCancellationRequested.ShouldBeTrue(); // the alert was acknowledged
 
@@ -2113,7 +2086,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "", Language = "es", Confidence = 0.0 };
                 });
 
-        var emitter = new CapturingEmitter();
+        var emitter = new VoiceInboxProbe();
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -2128,7 +2101,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -2198,19 +2171,4 @@ public class WyomingSatelliteHostTests
         }
     }
 
-    private sealed class CollectingEmitter(List<string> sink, TaskCompletionSource done, int expected)
-        : ChannelNotificationEmitter(new ChannelInbox())
-    {
-        public override Task EmitMessageNotificationAsync(
-            string conversationId, string sender, string content, string? agentId, string? location, string? satelliteId, string? dismissedAlert, CancellationToken ct = default)
-        {
-            lock (sink)
-            {
-                sink.Add(content);
-                if (sink.Count >= expected)
-                { done.TrySetResult(); }
-            }
-            return Task.CompletedTask;
-        }
-    }
 }

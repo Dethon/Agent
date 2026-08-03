@@ -1,5 +1,5 @@
+using Channels.Hosting;
 using Domain.Agents;
-using Domain.Channels;
 using Domain.Contracts;
 using Infrastructure.Metrics;
 using McpChannelVoice.McpTools;
@@ -7,7 +7,6 @@ using McpChannelVoice.Services;
 using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Settings;
-using ModelContextProtocol.Protocol;
 using StackExchange.Redis;
 
 namespace McpChannelVoice.Modules;
@@ -34,8 +33,6 @@ public static class ConfigModule
 
         services
             .AddSingleton(settings)
-            .AddSingleton<ChannelInbox>()
-            .AddSingleton<ChannelNotificationEmitter>()
             .AddSingleton(new SatelliteRegistry(settings.Satellites))
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection))
             .AddSingleton<IMetricsPublisher, RedisMetricsPublisher>()
@@ -168,31 +165,9 @@ public static class ConfigModule
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
             .WithTools<CreateConversationTool>()
-            .WithTools<McpChannelReceiveTool>()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
-                    // or the server shuts down. Mapping that to IsError would hand the pump an
-                    // error result to retry on; let it propagate as the abort it is.
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return new CallToolResult
-                    {
-                        IsError = true,
-                        Content = [new TextContentBlock { Text = ex.Message }]
-                    };
-                }
-            }));
+            // Broadcast: a subscriber that is idle but not yet pruned still receives, so a brief
+            // agent gap does not lose an utterance the user would otherwise have to repeat.
+            .AddChannelServer(DeliveryPolicy.Broadcast);
 
         return services;
     }
