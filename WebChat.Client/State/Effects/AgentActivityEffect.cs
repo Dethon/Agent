@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Domain.DTOs.Channel;
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.State.AgentActivity;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
@@ -26,7 +27,8 @@ public sealed class AgentActivityEffect : IDisposable
         StreamingStore streamingStore,
         AgentActivityStore activityStore,
         ITopicService topicService,
-        SpaceStore spaceStore)
+        SpaceStore spaceStore,
+        ILogger<AgentActivityEffect> logger)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
@@ -34,15 +36,20 @@ public sealed class AgentActivityEffect : IDisposable
         _topicService = topicService;
         _spaceStore = spaceStore;
 
-        _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(HandleSetAgents);
+        _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(
+            action => MapAllAgentTopicsAsync(action.Agents).LogFaults(logger, nameof(SetAgents)));
         _selectAgentRegistration = dispatcher.RegisterHandler<SelectAgent>(
-            action => _dispatcher.Dispatch(new ClearAgentUnseenActivity(action.AgentId)));
+            action => ClearUnseenActivity(action.AgentId));
+
+        // Stays observable-driven: the activity mapping this feeds is derived from streaming
+        // state, and there is no action that means "a stream finished for another agent".
         _streamingSubscription = streamingStore.StateObservable.Subscribe(HandleStreamingChange);
     }
 
-    private void HandleSetAgents(SetAgents action) => _ = MapAllAgentTopicsAsync(action.Agents);
+    public void ClearUnseenActivity(string agentId) =>
+        _dispatcher.Dispatch(new ClearAgentUnseenActivity(agentId));
 
-    private async Task MapAllAgentTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
+    public async Task MapAllAgentTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {
         var slug = _spaceStore.State.CurrentSlug;
         var map = new Dictionary<string, string>();

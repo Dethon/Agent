@@ -6,12 +6,12 @@ This effect is a hybrid and only converts partially. Its streaming subscription 
 
 **Blocked by:** 01 (fault logging).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The topic-mapping work is reachable by calling a public method with an agent list and awaiting it.
-- [ ] The clear-unseen-activity work is reachable by calling a public method with an agent id.
-- [ ] Dispatching either action still runs the same work.
-- [ ] A fault in the topic-mapping work is logged rather than discarded.
-- [ ] Awaiting the mapping method means every agent's topics are attributed.
-- [ ] The streaming subscription and its disposal are unchanged.
-- [ ] The effect has a test file that dispatches each action in at least one case.
+- [x] The topic-mapping work is reachable by calling a public method with an agent list and awaiting it.
+- [x] The clear-unseen-activity work is reachable by calling a public method with an agent id.
+- [x] Dispatching either action still runs the same work.
+- [x] A fault in the topic-mapping work is logged rather than discarded.
+- [x] Awaiting the mapping method means every agent's topics are attributed.
+- [x] The streaming subscription and its disposal are unchanged.
+- [x] The effect has a test file that dispatches each action in at least one case.

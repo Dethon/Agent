@@ -1,6 +1,6 @@
 # Spec — Effect Entry Points
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 
