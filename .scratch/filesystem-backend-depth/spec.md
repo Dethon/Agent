@@ -1,6 +1,6 @@
 # Spec — Give the Filesystem Backend an Implementation
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 
