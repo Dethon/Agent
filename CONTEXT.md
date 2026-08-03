@@ -41,12 +41,18 @@ largest, or how many there were. It is a separate choice from which quantity is 
 measured, and where both apply they are chosen independently.
 _Avoid_: metric, statistic, rollup
 
-## Chat client connection
+## Client live connection
+
+These terms apply to both browser clients, the chat client and the metrics
+dashboard. They share the vocabulary and not the code: each client has its own
+implementation, and `docs/adr/0008-the-two-browser-clients-stay-separate.md`
+records why. Terms marked _chat client only_ describe something the dashboard
+does not have.
 
 **Live connection**:
-The client's single ongoing link to the chat hub. It outlives any one transport
+The client's single ongoing link to its hub. It outlives any one transport
 instance: it survives being torn down and built again, and while it is live the
-client both receives server pushes and can call the server.
+client receives server pushes.
 _Avoid_: connection service, hub client, socket
 
 **Hub connection**:
@@ -72,26 +78,34 @@ _Avoid_: connected event, online
 
 **Connection epoch**:
 How many times the client has become live. Two epochs being different is the only
-reliable way to tell that an interruption happened, because a fast rebuild can
-start and finish without anyone observing a disconnected state in between.
+reliable way to tell that an interruption happened, because a recovery can start
+and finish without anyone observing a disconnected state in between.
 _Avoid_: generation, connection id, sequence number
 
-**Session recovery**:
+**Catch-up**:
+Re-reading whatever arrived while the client was not listening, so that what is on
+screen is true again. It is needed because a hub only pushes what happens while
+someone is attached and never replays a gap. It never runs on the first
+connection, where ordinary start-up loads the same data.
+_Avoid_: reload, refresh, resync, backfill
+
+**Session recovery** (chat client only):
 The work that has to happen every time the client becomes live again for the
 server to treat it as the same user in the same space: identifying the user,
 rejoining the space, re-sending the push subscription. It never runs on the first
 connection, where ordinary start-up does that work with the extra steps the first
-connection needs.
+connection needs. It re-establishes an identity and is a separate job from
+catch-up, which re-reads data.
 _Avoid_: reconnection handler, resubscribe, rehydrate
 
-**Hub call**:
+**Hub call** (chat client only):
 Something the client asks the server to do over the live connection and waits on:
 fetching topics, sending a message, answering an approval. It goes in the opposite
 direction to a server push, and unlike a push it can only happen while the
 connection is live.
 _Avoid_: invoke, request, RPC, server call
 
-**Not live**:
+**Not live** (chat client only):
 The answer a hub call gives when it could not be made, because the client was
 between connections or still getting one up. It is one of the two things any hub
 call can come back with, the other being the server's own answer, and it never

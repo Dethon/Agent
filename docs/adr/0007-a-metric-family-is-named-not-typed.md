@@ -91,6 +91,9 @@ the aggregation-default bug documented at `MetricsApiService.cs:100-102` happene
   page. It is query-string only and never persisted, so the rename is value-safe.
   `VoiceMetric` keeps its name: it is persisted by integer value in Redis and its
   members are pinned.
-- Sequenced before candidate 11, the shared Blazor client seam. Candidate 11 retypes
-  `Store<TState>` and `LocalStorageService`, which this change reduces from 41 call
-  sites across eight pages to two: the family record and the session constructor.
+- Sequenced before candidate 11. That candidate was surveyed as a shared Blazor client
+  seam and regrilled into a dashboard live-connection fix;
+  `docs/adr/0008-the-two-browser-clients-stay-separate.md` records why the sharing half
+  was dropped. The sequencing survives the reframing: this change rewrites
+  `MetricsHubEffect.StartAsync`, `DataLoadEffect` and `MetricsHubEffectTests`, and the
+  family table is what candidate 11's catch-up walks.

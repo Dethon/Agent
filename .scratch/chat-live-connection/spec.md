@@ -259,12 +259,12 @@ because the epoch moved.
 
 ### Placement
 
-Everything stays in the WebChat client project. Extracting a shared Blazor
-connection seam is candidate 11's work, and it should be extracted from this
-module once there is a second real consumer. The dashboard's metrics hub client
-is not that consumer today: it has no rebuild, no probe, no session recovery, no
-space and no user identity, and relies on the transport's built-in automatic
-reconnect.
+Everything stays in the WebChat client project. There is no shared Blazor
+connection seam and there will not be one: candidate 11's grilling reached the same
+conclusion this section did from the other side, and
+`docs/adr/0008-the-two-browser-clients-stay-separate.md` records it. The dashboard's
+metrics hub client has no rebuild, no probe, no session recovery, no space and no
+user identity; it gets its own live-connection module rather than adopting this one.
 
 ## Testing Decisions
 
@@ -331,9 +331,11 @@ to the hub connection abstraction, introducing a gateway that owns the
 disconnected decision, and deleting the duplicated integration adapters are all
 that candidate's work.
 
-Candidate 11, the shared Blazor client seam. This spec makes that extraction
-possible by giving it something coherent to extract; it does not perform it, and
-the dashboard's hub client is not modified.
+Candidate 11, the dashboard's live connection. Nothing in the dashboard client is
+modified here. That candidate was surveyed as a shared Blazor seam extracted from
+this module; its grilling rejected the sharing and reframed it as a separate fix to
+the dashboard's own connection, which this spec mirrors in naming and test structure
+but shares no code with.
 
 The connection store reducer's direct use of the system clock. It violates the
 project's testable-time rule and sits in a reducer this spec edits, but fixing it
@@ -351,8 +353,9 @@ actions.
 The defect and the extraction are not separable in this spec, by decision. A
 minimal patch exists — unbind and rebind around the recovery step in the
 initialization effect — and it is testable today. It was rejected because it
-leaves the caller obligation in place, and candidate 11 would then copy that
-obligation into a shared seam.
+leaves the caller obligation in place. That reasoning stands on its own; the
+original supporting argument — that candidate 11 would copy the obligation into a
+shared seam — no longer applies, since there is no shared seam.
 
 The candidate document's note that "a red test for the missing behaviour is
 enough" and its note that the assertion is "unwritable today" cannot both hold.

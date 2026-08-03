@@ -24,8 +24,10 @@ Preference keys do not move. A family's preference prefix is its name followed b
 which is already the convention every page uses, so every choice a user has saved
 survives.
 
-Do not introduce a storage interface. The shared Blazor client work that follows this
-feature brings one, and adding a second now would only have to be replaced.
+Do not introduce a storage interface. The concrete service is testable through a fake
+JavaScript runtime, so an interface would buy nothing, and
+`docs/adr/0008-the-two-browser-clients-stay-separate.md` rules out sharing the chat
+client's.
 
 **Blocked by:** 05 — the page reloads through the family, and calls a page-load effect
 that ticket rewrites.

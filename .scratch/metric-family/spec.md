@@ -150,9 +150,9 @@ thing.
 29. As a developer, I want a family able to declare which metric choices are currently
     unavailable, so that the tools and memory pages keep disabling the pills that do not
     apply.
-30. As a developer, I want this change to shrink the surface of the shared Blazor client
-    work that follows it, so that candidate 11 retypes two references rather than
-    forty-one call sites.
+30. As a developer, I want this change to shrink the surface of the dashboard
+    live-connection work that follows it, so that candidate 11 adds catch-up as a walk
+    of the family table rather than a second eleven-store fan-out.
 
 ## Implementation Decisions
 
@@ -254,8 +254,9 @@ real. Every new behaviour tests through it.
 
 **One fake is added, at the other edge.** A dictionary-backed JavaScript runtime fake,
 so the local storage service stays real and the session type can be tested with a real
-family and a fake time provider. This deliberately introduces no storage interface;
-candidate 11 brings the shared one.
+family and a fake time provider. This deliberately introduces no storage interface, and
+none is coming: `docs/adr/0008-the-two-browser-clients-stay-separate.md` rules out
+sharing the chat client's.
 
 **The endpoint date default gets a narrow seam.** The binder is tested directly against
 a request context carrying query values and a fake time provider, covering both values
@@ -304,9 +305,11 @@ lengthen its waits.
 - **Renaming the voice event-kind enum**, which is persisted by value and would pull the
   voice channel server into a dashboard change.
 - **A Blazor component testing library.** Not added.
-- **The shared Blazor client library** — the store, the dispatcher, local storage and the
-  connection seam shared with the chat client. That is candidate 11, and it waits on
-  candidate 2.
+- **The dashboard's live connection** — its retry policy, its initial-start loop, its
+  catch-up after an outage and its status indicator. That is candidate 11, and it waits
+  on this change and on candidate 2. It was surveyed as a shared Blazor client library;
+  `docs/adr/0008-the-two-browser-clients-stay-separate.md` records why that half was
+  dropped.
 - **A debounce.** There is none today and none is added; coalescing achieves the same
   reduction in server work without adding lag.
 - **Route shapes and query parameter names.** Unchanged, so no client or endpoint
@@ -316,14 +319,13 @@ lengthen its waits.
 
 ## Further Notes
 
-This change is sequenced **before** candidate 11, the shared Blazor client. They contact
-in four places: both rewrite the live-update effect's subscription block and its test
-file, and candidate 11 retypes the store base and the local storage service, which this
-change holds in two places. Running this first collapses the forty-one storage call
-sites spread over eight pages into one constructor, and shrinks the subscription block
-from roughly one hundred and twenty lines to thirty, so candidate 11 retypes two
-references instead of forty-one call sites. This change has no dependency on candidate 2
-and can start immediately.
+This change is sequenced **before** candidate 11, the dashboard's live connection. They
+contact in three places: both rewrite the live-update effect's subscription block and
+its test file, and candidate 11's catch-up reloads through the page-load effect, which
+this change turns from eleven injected stores into a walk of the family table. Running
+this first shrinks the subscription block from roughly one hundred and twenty lines to
+thirty and gives catch-up one call to make instead of nineteen. This change has no
+dependency on candidate 2 and can start immediately.
 
 It touches no file that candidates 1, 10 or 12 touch. Those are all on the publishing
 side of observability; this is entirely on the reading side.

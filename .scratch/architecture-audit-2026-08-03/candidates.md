@@ -24,8 +24,8 @@ closed it.
 | 7 | Two copies of "how to build an agent" | Strong | Infrastructure/Agents | Grilled → `.scratch/agent-spec/spec.md` |
 | 8 | The turn is not a value | Strong | Domain/Monitor | Grilled → `.scratch/conversation-group/spec.md` + `docs/adr/0006-a-group-is-anchored-and-built-by-its-first-turn.md` |
 | 9 | One breakdown descriptor, not seven pipelines | Worth exploring | Dashboard + Observability | Grilled → `.scratch/metric-family/spec.md` + `docs/adr/0007-a-metric-family-is-named-not-typed.md` |
-| 10 | Timers and schedules are the same backend | Worth exploring | Domain/Tools | Not grilled |
-| 11 | Dashboard re-implements WebChat's client | Worth exploring | Blazor clients | Not grilled |
+| 10 | Timers and schedules are the same backend | Rejected | Domain/Tools | Grilled → closed, no change |
+| 11 | Dashboard re-implements WebChat's client | Reframed | Dashboard.Client | Grilled → sharing rejected, `docs/adr/0008-the-two-browser-clients-stay-separate.md`; reframed → `.scratch/dashboard-live-connection/spec.md` |
 | 12 | The memory turn has no owner | Worth exploring | Domain/Memory | Not grilled |
 
 Candidates 1 and 2 are live defects, verified against the code. The rest are
@@ -36,24 +36,29 @@ friction.
 Take 1 first: it is the only candidate that is both a live defect and a
 cross-cutting deepening.
 
-Take 2 before 11. The shared Blazor seam in 11 should be extracted from the
-deepened connection in 2, or Dashboard inherits the rebind hole.
+Take 2 before 11, decided during 11's grilling. The original reason — extract the
+shared Blazor seam from the deepened connection in 2 — died with the sharing premise.
+The reason now is weaker but still holds: nothing is shared, but 2 is the worked
+example 11 mirrors in naming, module shape and test structure, and doing them in the
+other order means writing the second one twice.
 
 Take 5 after 2, decided during its grilling: 2 renames the module, adds the receive
 verb to `IChatHubConnection` and gives its fake a handler registry, and keeps the raw
 accessor deliberately for 5 to remove. Running 5 first would write the send verbs
 onto an interface 2 then renames.
 
-Candidates 6 and 10 touch no file another candidate touches and can run at any
-point.
+Candidate 6 touches no file another candidate touches and can run at any point.
+Candidate 10 was closed during grilling and is not scheduled.
 
-Candidate 9 is sequenced BEFORE candidate 11, decided during its grilling. They contact
-in four places: both rewrite `MetricsHubEffect.StartAsync` and `MetricsHubEffectTests`,
-and 11 retypes two things 9's new module holds, `Store<TState>` and `LocalStorageService`.
-Candidate 9 shrinks that surface — the 41 `Storage.Get*/SetAsync` sites spread over eight
-pages collapse to one constructor, and `StartAsync` drops from ~123 lines to ~30 — so
-running 9 first means 11 retypes two references instead of forty-one. Candidate 9 has no
-dependency on candidate 2 and can start now; candidate 11 still waits on it.
+Candidate 9 is sequenced BEFORE candidate 11, decided during 9's grilling and
+confirmed during 11's. Two of the four original contact points were the retyping of
+`Store<TState>` and `LocalStorageService`, which the reframing removed. The other two
+stand and are enough: both rewrite `MetricsHubEffect.StartAsync` and
+`MetricsHubEffectTests`. A third appeared during 11's grilling — 11's catch-up reloads
+through `DataLoadEffect`, which candidate 9 rewrites from 133 lines and eleven injected
+stores down to a walk of the family table. Written before 9, catch-up gets written
+twice. Candidate 9 has no dependency on candidate 2 and can start now; candidate 11
+waits on both.
 
 Candidate 7 is sequenced AFTER candidate 1, decided during its grilling: both
 rewrite the same lines inside `McpAgent`. Candidate 1 deletes `SafePublishLatencyAsync`,
@@ -690,7 +695,9 @@ E2E-covered.
 
 ## 10 — Timers and schedules are the same backend
 
-**Strength:** Worth exploring.
+**Strength:** Rejected during grilling on 2026-08-03. Closed with no change. The
+verdict and its evidence are at the end of this section; the original write-up is
+kept as written so the argument can be re-read if someone reopens it.
 
 **Files**
 
@@ -739,11 +746,53 @@ and exists half moves to one shared test over a fake record store, leaving the
 per-backend suites to test only what actually differs: arming and validation
 versus cron, DST and reassign.
 
+**Verdict — rejected, 2026-08-03**
+
+Closed with no code change. Both arguments the candidate rests on are weaker than
+the write-up claims.
+
+The duplication is smaller than the correspondence table suggests. Byte-identical
+across the two files: the `Error` factory, the `Exec` envelope, `ParseSpec`,
+`ToZone` and the created envelope — roughly 40 to 50 lines out of 938. The rest of
+the table is same-shape, different-content. `NodeExistsAsync`, `ScopeXAsync`, glob
+and read all switch over per-backend node enums, and the two trees are not the same
+depth: timers are `/<id>/{timer,status}.json` plus a root-level `dismiss.sh`, while
+schedules are `/<agentId>/<scheduleId>/{schedule,status}.json` plus `run_now.sh`
+plus an `agent_info.json` at the agent level. A shared class would first have to
+unify those node models behind an optional owner level and two sets of extra files,
+which costs about what it saves. Exec compounds it: timers exec at the mount root,
+schedules exec on the record directory.
+
+The test argument does not hold at all. `ScheduleFileSystemJourneyTests` makes 10
+glob/info calls; `TimerFileSystemJourneyTests` makes 1. There is no timer traversal
+suite to consolidate. The only literally duplicated tests are
+`Search_UncompilablePattern` and `Search_PathologicalRegex`, and both already
+exercise `FileSystemBackendBase`, not either backend.
+
+Two facts found while grilling, worth keeping whether or not this ever reopens:
+
+- An intermediate class is compatible with capability-by-override.
+  `FileSystemServerTools.Overrides` only checks
+  `DeclaringType != typeof(FileSystemBackendBase)`, and
+  `DiskFileSystem → TextDiskFileSystem → SandboxFileSystem` already relies on that.
+  The consequence is that whatever an intermediate overrides is advertised for every
+  subclass, and a subclass cannot opt back out.
+- The third `Error` copy could not have been fixed by lifting onto
+  `FileSystemBackendBase` as proposed: `DownloadsOverlay` is a plain class, not a
+  backend. Separately, `FsError.AlreadyExists<T>` already exists and both backends
+  bypass it by hand-rolling `Error(ToolError.Codes.AlreadyExists, …)`, because
+  `FileSystemBackendBase` never exposed it.
+
 ---
 
 ## 11 — Dashboard re-implements WebChat's client
 
-**Strength:** Worth exploring. Take candidate 2 first.
+**Strength:** Reframed during grilling on 2026-08-03. The sharing half was rejected
+and recorded as `docs/adr/0008-the-two-browser-clients-stay-separate.md`. What
+survives is a dashboard live-connection candidate, spec at
+`.scratch/dashboard-live-connection/spec.md`, summarised under **Verdict** at the end
+of this section. The original survey is kept as written so the argument can be
+re-read. Sequenced after candidates 9 and 2.
 
 **Files**
 
@@ -782,6 +831,91 @@ otherwise asserted only by `Tests/E2E/Dashboard/DashboardRealTimeE2ETests.cs` (9
 lines, real Playwright and real Redis). Sharing the seam hands Dashboard the
 208-line `ChatConnectionServiceTests` suite and lets the E2E test shrink to a
 smoke check.
+
+**Verdict — reframed, 2026-08-03**
+
+The sharing argument was rejected and the reasons are in
+`docs/adr/0008-the-two-browser-clients-stay-separate.md`. In short: the two
+`Store<TState>` classes are used incompatibly, so the deletion test fails; the
+reference-equality guard could never fire in Dashboard because every dashboard
+reducer allocates; the two `LocalStorageService` classes are a union rather than a
+duplicate; and the two connections need disjoint things. What is genuinely identical
+is `IAction`, one line.
+
+Three defects found while grilling, all verified against the code, all real, and none
+of them about sharing.
+
+**`MetricsHubService.cs:16` uses a bare `.WithAutomaticReconnect()`.** The ASP.NET
+Core docs give that overload delays of 0, 2, 10 and 30 seconds and then it stops
+permanently. Any outage past roughly 42 seconds kills the dashboard's live feed for
+good — an agent container restart is enough, no mobile backgrounding required.
+
+**A failed initial start is unrecoverable, not merely un-retried.**
+`MetricsHubEffect.StartAsync` sets `_started = true` at `:149`, before registering
+handlers and before `await hub.StartAsync()` at `:263`. `MainLayout.razor:42`
+swallows the exception. A second call returns at the guard, so the transport is never
+started. The same docs confirm `WithAutomaticReconnect` never retries an initial
+start under any policy, so the retry loop has to be written by hand.
+
+**A reconnect catches nothing up.** `OnReconnected` at `:246` only flips the
+connection flag. `Observability/Hubs/MetricsHub.cs` is an empty `Hub` with no
+`OnConnectedAsync`, so the server never replays a gap. Every event missed during an
+outage stays missing from the stores and the breakdowns until the user changes a pill
+or reloads the page, under a green Live dot. WebChat has `ReconnectionEffect` for
+exactly this; Dashboard has no counterpart.
+
+Also confirmed: only `Overview.razor:30-31` renders a connection indicator. The other
+eight pages show stale numbers with no signal at all.
+
+**Settled by grilling**
+
+*Recovery is a retry policy that never gives up*, backing off to a steady interval —
+0, 2, 10, 30, then 30 forever. No JS interop, no `visibilityHelper`, no foreground
+policy, no rebuild path. The half-open-zombie case that `ForegroundReconnectPolicy`
+exists for in WebChat is not covered, and that is accepted: it needs a probe verb and
+a rebuild, and the dashboard's dominant failure is an agent restart rather than an
+Android freeze.
+
+*The module retries its own initial start* on the same schedule and never gives up, so
+opening the dashboard during a restart works. The `_started` latch bug goes with it.
+
+*Catch-up runs on every recovery and is skipped on the first connect*, where page load
+already loads the same data. It reloads for the range held in the stores, which after
+candidate 9 is the family table.
+
+*A connection epoch on `ConnectionState`*, an int incremented on becoming live,
+matching candidate 2's term. Honest note: the race the epoch closes in WebChat — a
+rebuild completing before anyone observed a disconnected state — does not exist here,
+because SignalR always raises `Reconnecting` before `Reconnected` and there is no
+rebuild. Its value in Dashboard is shared vocabulary and a reload rule assertable
+against the store rather than through the effect.
+
+*The status indicator moves into `MainLayout`* so all nine pages show it, and the
+state widens from `bool IsConnected` to Live / Reconnecting / Connecting. `Overview`
+drops its local dot and reads the store. With a policy that never gives up there is no
+permanent dead state, so the useful distinction is between trying and never having
+been up.
+
+*`IMetricsHubConnection` with one generic receive verb*, plus lifecycle events and
+start, replacing the 14 `virtual` members and the `protected` parameterless
+constructor that exist only so `MetricsHubEffectTests` can subclass the concrete
+class. Same complaint as candidate 7's `chatClientFactory`: a test hook cut through
+the seam. No factory: without a rebuild there is never a second connection instance.
+
+*A `MetricsLiveConnection` module* owns the ordered sequence — build, bind, start,
+publish status, catch up. `MetricsHubEffect` keeps only the event-to-store mapping it
+shares with candidate 9's family table.
+
+*Vocabulary.* `CONTEXT.md`'s "Chat client connection" section was renamed "Client live
+connection" and its six client-agnostic terms reworded to cover both clients;
+session recovery, hub call and not live are marked chat-client-only. New term
+**catch-up**, kept distinct from session recovery because one re-reads data and the
+other re-establishes an identity.
+
+**Out of scope, moved to Noted**
+
+The unselective page subscriptions. See the entry below; the diagnosis in the survey
+above is wrong and the corrected one is there.
 
 ---
 
@@ -848,6 +982,22 @@ Today the only way to test the `[Memory context]` contract is through
 ## Noted, not carded
 
 Smaller, or better folded into a candidate above.
+
+**Dashboard pages re-render on every dispatch.** Found while grilling candidate 11,
+and it replaces that candidate's diagnosis, which was wrong. Every dashboard page
+subscribes to a whole store observable with no selector and no `DistinctUntilChanged`
+— `Dashboard.Client/Pages/Tokens.razor:108`, `Overview.razor:99`, and the same shape
+on the other seven — then recomputes its aggregates and calls `StateHasChanged`. A
+live event costs two renders, because the handler appends the event and then sets the
+breakdown, and each render re-runs `s.Events.Sum(...)` three times over the full list
+and redraws the chart. WebChat avoids this with
+`WebChat.Client/State/StoreSubscriberComponent.cs:12-34`, which selects a slice and
+applies `DistinctUntilChanged`. Candidate 11 attributed the cost to the missing
+reference-equality guard on `Dashboard.Client/State/Store.cs`; that guard could never
+fire there, because every dashboard reducer is bound to one action and always
+allocates. It would be dead code. The fix is a select-then-distinct subscription
+helper on the pages, not a change to the store. No reported symptom, so this is a
+finding rather than a card.
 
 **The alert routing rule, restated in six places.** The timer/alarm/schedule
 decision and the four-hour ceiling appear in `Domain/Prompts/TimerPrompt.cs:21-38`
