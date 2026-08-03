@@ -244,9 +244,6 @@ public sealed class TimerFileSystem(
             : NotFound<FsRemoveResult>(path);
     }
 
-    public override Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsMoveResult>(VfsMoveTool.Name));
-
     public override async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var node = TimerPath.Parse(path);

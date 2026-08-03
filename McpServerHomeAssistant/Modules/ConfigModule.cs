@@ -5,7 +5,6 @@ using Infrastructure.Extensions;
 using Infrastructure.Utils;
 using McpServerHomeAssistant.McpPrompts;
 using McpServerHomeAssistant.McpResources;
-using McpServerHomeAssistant.McpTools;
 using McpServerHomeAssistant.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -65,11 +64,7 @@ public static class ConfigModule
                         return ToolResponse.Create(ex);
                     }
                 }))
-                .WithTools<FsGlobTool>()
-                .WithTools<FsInfoTool>()
-                .WithTools<FsReadTool>()
-                .WithTools<FsSearchTool>()
-                .WithTools<FsExecTool>()
+                .AddFileSystemTools<HaFileSystem>()
                 .WithResources<FileSystemResource>()
                 .WithPrompts<McpSystemPrompt>();
 

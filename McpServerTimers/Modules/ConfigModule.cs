@@ -5,7 +5,6 @@ using Infrastructure.Timers;
 using Infrastructure.Utils;
 using McpServerTimers.McpPrompts;
 using McpServerTimers.McpResources;
-using McpServerTimers.McpTools;
 using McpServerTimers.Services;
 using McpServerTimers.Settings;
 using Microsoft.Extensions.Configuration;
@@ -58,15 +57,7 @@ public static class ConfigModule
         services
             .AddMcpServer()
             .WithHttpTransport()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsReadTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsExecTool>()
+            .AddFileSystemTools<TimerFileSystem>()
             .WithResources<FileSystemResource>()
             .WithPrompts<TimersSystemPrompt>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>

@@ -56,15 +56,7 @@ public static class ConfigModule
             // delivery, so buffering on a failed emit would keep the record *and* leave a duplicate
             // behind — the schedule would fire twice.
             .AddChannelServer(DeliveryPolicy.GateOnLive, errorResult: ToolResponse.Create)
-            .WithTools<FsGlobTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsReadTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsExecTool>()
+            .AddFileSystemTools<ScheduleFileSystem>()
             .WithResources<FileSystemResource>()
             .WithPrompts<McpSystemPrompt>();
 

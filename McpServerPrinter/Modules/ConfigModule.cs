@@ -6,7 +6,6 @@ using Infrastructure.Printing;
 using Infrastructure.Utils;
 using McpServerPrinter.McpPrompts;
 using McpServerPrinter.McpResources;
-using McpServerPrinter.McpTools;
 using McpServerPrinter.Services;
 using McpServerPrinter.Settings;
 using Microsoft.Extensions.Configuration;
@@ -56,16 +55,7 @@ public static class ConfigModule
         services
             .AddMcpServer()
             .WithHttpTransport()
-            .WithTools<FsReadTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsCopyTool>()
-            .WithTools<FsBlobReadTool>()
-            .WithTools<FsBlobWriteTool>()
+            .AddFileSystemTools<PrinterQueueFileSystem>()
             .WithResources<FileSystemResource>()
             .WithPrompts<McpSystemPrompt>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>

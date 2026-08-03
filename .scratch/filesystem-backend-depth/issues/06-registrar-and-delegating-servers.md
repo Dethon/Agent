@@ -14,13 +14,13 @@ The conformance test lands here, covering these four servers. It is the point of
 
 **Blocked by:** 01, 02 — the registrar reflects over overrides, so the backends must already be reparented for an override to mean anything.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A registrar registers an `fs_*` tool for exactly the operations a given backend overrides.
-- [ ] Timers no longer overrides move; the tool, its description and the advertised capability are all gone.
-- [ ] Timers, scheduling, Home Assistant and printer's delegating tools register through the registrar, with their wrapper files deleted, one server per commit.
-- [ ] Descriptions come from the backend hooks and are unchanged for every surviving operation, including the per-server text that names real files.
-- [ ] A conformance test asserts, per server, that advertised tool names equal overridden operations equal published capabilities.
-- [ ] The timers move case was seen to fail that test before the override was removed.
-- [ ] A test pins that capability is per operation: a backend that overrides an operation and refuses some paths still advertises it.
-- [ ] The disk-backed servers are untouched and still register by hand.
+- [x] A registrar registers an `fs_*` tool for exactly the operations a given backend overrides.
+- [x] Timers no longer overrides move; the tool, its description and the advertised capability are all gone.
+- [x] Timers, scheduling, Home Assistant and printer's delegating tools register through the registrar, with their wrapper files deleted, one server per commit.
+- [x] Descriptions come from the backend hooks and are unchanged for every surviving operation, including the per-server text that names real files.
+- [x] A conformance test asserts, per server, that advertised tool names equal overridden operations equal published capabilities.
+- [x] The timers move case was seen to fail that test before the override was removed.
+- [x] A test pins that capability is per operation: a backend that overrides an operation and refuses some paths still advertises it.
+- [x] The disk-backed servers are untouched and still register by hand.

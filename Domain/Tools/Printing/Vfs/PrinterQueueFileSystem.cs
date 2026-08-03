@@ -6,6 +6,7 @@ using Domain.DTOs.FileSystem;
 using Domain.DTOs.Printing;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
+using Domain.Tools.Printing;
 
 namespace Domain.Tools.Printing.Vfs;
 
@@ -41,6 +42,76 @@ public sealed class PrinterQueueFileSystem(
         "Remove a document from the print queue, cancelling its print job if it has already been submitted.";
 
     public override string DescribeCopy => "Copy a queued document to another name in the print queue.";
+
+    public override string DescribeBlobRead =>
+        "Read a chunk of a queued document's raw bytes as base64. Returns { contentBase64, eof, totalBytes }.";
+
+    public override string DescribeBlobWrite =>
+        "Write a chunk of raw bytes (base64) to a queued document. offset=0 starts it; the document "
+        + "prints once writes go quiet.";
+
+    // Only /print-queue/<filename> holds raw bytes, and the spool reads and writes ranges directly,
+    // so both blob operations answer from it rather than draining the chunk stream.
+    public override async Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
+        string path, long offset, int length, CancellationToken ct)
+    {
+        var node = PrinterQueuePath.Parse(path);
+        if (node.Kind != PrinterNodeKind.DocumentFile)
+        {
+            return FsError.NotFound<FsBlobReadResult>(path);
+        }
+
+        var (bytes, eof, total) = await spool.ReadBytesAsync(node.FileName!, offset, length, ct);
+        return new FsResult<FsBlobReadResult>.Ok(new FsBlobReadResult
+        {
+            ContentBase64 = Convert.ToBase64String(bytes),
+            Eof = eof,
+            TotalBytes = total
+        });
+    }
+
+    public override async Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
+        string path, string contentBase64, long offset, bool overwrite, bool createDirectories, CancellationToken ct)
+    {
+        var node = PrinterQueuePath.Parse(path);
+        if (node.Kind != PrinterNodeKind.DocumentFile)
+        {
+            return Invalid<FsBlobWriteResult>($"Cannot write to '{path}'. Write documents to /print-queue/<filename>.");
+        }
+
+        var fileName = node.FileName!;
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(contentBase64);
+        }
+        catch (FormatException ex)
+        {
+            return Invalid<FsBlobWriteResult>($"contentBase64 is not valid base64: {ex.Message}");
+        }
+
+        // The first chunk carries the file header; reject formats the printer cannot render before
+        // anything is spooled, so unsupported files fail the copy instead of printing as gibberish.
+        if (offset == 0)
+        {
+            var format = PrintableContent.DetectFormat(bytes);
+            if (!PrintableContent.IsSupported(format, supportedFormats))
+            {
+                return Fail<FsBlobWriteResult>(ToolError.Codes.UnsupportedOperation,
+                    $"'{fileName}' looks like '{format}', which this printer cannot render. Supported formats: {supportedFormats}.",
+                    hint: "Convert it to a supported format first (e.g. export an image as JPEG).");
+            }
+        }
+
+        await spool.WriteBytesAsync(fileName, "application/octet-stream", bytes, offset, overwrite, ct);
+        var entry = await spool.GetAsync(fileName, ct);
+        return new FsResult<FsBlobWriteResult>.Ok(new FsBlobWriteResult
+        {
+            Path = path,
+            BytesWritten = bytes.Length,
+            TotalBytes = entry?.SizeBytes ?? bytes.Length
+        });
+    }
 
     private static readonly JsonSerializerOptions _json = new()
     {

@@ -66,6 +66,57 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     public const string BlobReadOperation = "blob_read";
     public const string BlobWriteOperation = "blob_write";
 
+    // The two byte-streaming operations as the wire sees them: ranged rather than streamed,
+    // because one MCP call carries one chunk. These are not a thirteenth and fourteenth operation
+    // — capability still comes from the chunk methods above — only the shape the tools take. The
+    // defaults drive the stream, and a backend with real random access overrides them.
+    public virtual async Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
+        string path, long offset, int length, CancellationToken ct)
+    {
+        var all = new List<byte>();
+        await foreach (var chunk in ReadChunksAsync(path, ct))
+        {
+            all.AddRange(chunk.ToArray());
+        }
+
+        var from = (int)Math.Clamp(offset, 0, all.Count);
+        var take = Math.Clamp(length, 0, all.Count - from);
+        return new FsResult<FsBlobReadResult>.Ok(new FsBlobReadResult
+        {
+            ContentBase64 = Convert.ToBase64String(all.GetRange(from, take).ToArray()),
+            Eof = from + take >= all.Count,
+            TotalBytes = all.Count
+        });
+    }
+
+    public virtual async Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
+        string path, string contentBase64, long offset, bool overwrite, bool createDirectories, CancellationToken ct)
+    {
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(contentBase64);
+        }
+        catch (FormatException ex)
+        {
+            return Invalid<FsBlobWriteResult>($"contentBase64 is not valid base64: {ex.Message}");
+        }
+
+        var written = await WriteChunksAsync(path, One(bytes), overwrite, createDirectories, ct);
+        return new FsResult<FsBlobWriteResult>.Ok(new FsBlobWriteResult
+        {
+            Path = path,
+            BytesWritten = bytes.Length,
+            TotalBytes = written
+        });
+    }
+
+    private static async IAsyncEnumerable<ReadOnlyMemory<byte>> One(ReadOnlyMemory<byte> bytes)
+    {
+        await Task.CompletedTask;
+        yield return bytes;
+    }
+
     public virtual string DescribeRead => "Read a text file from this filesystem.";
     public virtual string DescribeInfo => "Get metadata for a path: exists, isDirectory, size, lastModified.";
     public virtual string DescribeCreate => "Create a file in this filesystem.";
