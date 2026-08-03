@@ -4,6 +4,7 @@ using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
+using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Domain.Contracts;
@@ -51,6 +52,37 @@ public class FileSystemOperationsTests
     {
         FileSystemToolFeature.AllToolKeys.ShouldBe(
             FileSystemOperations.All.Where(o => o.ToolKey is not null).Select(o => o.ToolKey!),
+            ignoreOrder: true);
+    }
+
+    // The registrar wires each operation to a tool signature separately, because the signatures
+    // differ; this is what stops that second table drifting from the one list.
+    [Fact]
+    public void Registrar_WiresEveryOperationInTheOneList()
+    {
+        foreach (var operation in FileSystemOperations.All)
+        {
+            FileSystemServerTools.HasWiring(operation.ToolName)
+                .ShouldBeTrue($"{operation.ToolName} has no tool signature in the registrar");
+        }
+    }
+
+    // The tool feature builds each domain tool separately for the same reason — two of them need
+    // custom argument coercion — so the same guard applies to its factory array.
+    [Fact]
+    public void ToolFeature_ProducesEveryModelFacingOperation()
+    {
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.GetMounts()).Returns([]);
+
+        var produced = new FileSystemToolFeature(registry.Object)
+            .GetTools(new global::Domain.DTOs.FeatureConfig())
+            .Select(t => t.Name);
+
+        produced.ShouldBe(
+            FileSystemOperations.All
+                .Where(o => o.Capability is not null)
+                .Select(o => $"domain__filesystem__{o.Capability}"),
             ignoreOrder: true);
     }
 

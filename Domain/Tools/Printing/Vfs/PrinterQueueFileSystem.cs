@@ -19,29 +19,23 @@ public sealed class PrinterQueueFileSystem(
     public override string FilesystemName => "print-queue";
 
     // The words the model reads about each operation, next to the behaviour they describe.
-    public override string DescribeRead =>
-        "Read a queued document as text, or /print-queue/status.json for the queue's print state.";
+    public override string DescribeRead => "Read a queued document's text, or read status.json for the queue state.";
 
-    public override string DescribeInfo =>
-        "Returns metadata for a print-queue path: exists, isDirectory, size, lastModified.";
+    public override string DescribeInfo => "Get metadata for a queued document or the queue root.";
 
-    public override string DescribeGlob =>
-        "Lists queued documents and status.json matching a glob pattern. The print queue is flat, "
-        + "so a trailing slash (directories only) matches nothing.";
+    public override string DescribeGlob => "List queued documents (plus status.json) matching a glob pattern.";
 
-    public override string DescribeSearch =>
-        "Searches the text content of queued documents. Binary documents are skipped.";
+    public override string DescribeSearch => "Search the text content of queued documents.";
 
-    public override string DescribeCreate =>
-        "Queue a text document for printing: fs_create /print-queue/<filename> with its content.";
+    public override string DescribeCreate => "Queue a new text document for printing at /print-queue/<filename>.";
 
     public override string DescribeEdit =>
-        "Edit a queued text document. Editing resets the job, so an already-submitted print is cancelled first.";
+        "Edit a queued text document; cancels the old job and re-queues the new version.";
 
-    public override string DescribeDelete =>
-        "Remove a document from the print queue, cancelling its print job if it has already been submitted.";
+    public override string DescribeDelete => "Remove a queued document. Cancels it if it has not finished printing.";
 
-    public override string DescribeCopy => "Copy a queued document to another name in the print queue.";
+    public override string DescribeCopy =>
+        "Duplicate a queued document under a new name (queues another print job).";
 
     public override string DescribeBlobRead =>
         "Read a chunk of a queued document's raw bytes as base64. Returns { contentBase64, eof, totalBytes }.";
@@ -324,10 +318,6 @@ public sealed class PrinterQueueFileSystem(
             },
             ct);
     }
-
-    public override Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
-        Task.FromResult(Fail<FsMoveResult>(ToolError.Codes.UnsupportedOperation,
-            "The print queue does not support move. Copy a document into /print-queue to print it."));
 
     public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {

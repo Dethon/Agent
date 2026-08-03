@@ -30,16 +30,6 @@ public static class ConfigModule
         return settings ?? throw new InvalidOperationException("Settings not found");
     }
 
-    // The filesystem tools resolve their backend when the tool list is built, which reaches the
-    // Redis-backed store. Retry in the background instead of failing server construction outright
-    // when Redis happens to be slow to come up.
-    private static ConfigurationOptions RedisOptions(string connectionString)
-    {
-        var options = ConfigurationOptions.Parse(connectionString);
-        options.AbortOnConnectFail = false;
-        return options;
-    }
-
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
         services
@@ -47,7 +37,7 @@ public static class ConfigModule
             .AddSingleton(settings)
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.BaseLibraryPath))
-            .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(RedisOptions(settings.RedisConnectionString)))
+            .AddSingleton<IConnectionMultiplexer>(_ => RedisConnection.ConnectResiliently(settings.RedisConnectionString))
             .AddSingleton<IDownloadRoutingStore, RedisDownloadRoutingStore>()
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
             .AddJacketClient(settings)

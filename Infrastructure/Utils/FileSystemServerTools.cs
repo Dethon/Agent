@@ -22,6 +22,10 @@ public static class FileSystemServerTools
         Func<FileSystemBackendBase, string> Describe,
         Func<FileSystemBackendBase, Delegate> Handler);
 
+    // Every operation in the one list must say how it reaches the wire, or registration would
+    // throw at startup instead of failing a test. Asserted by FileSystemOperationsTests.
+    public static bool HasWiring(string toolName) => _wiring.ContainsKey(toolName);
+
     // How each operation reaches the wire. The operations themselves — their names, their backend
     // methods — come from the one list; this only adds the tool signature and the description hook.
     private static readonly IReadOnlyDictionary<string, Wiring> _wiring = new Dictionary<string, Wiring>(StringComparer.Ordinal)

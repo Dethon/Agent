@@ -7,6 +7,13 @@ paths:
 
 MCP tools wrap Domain tools and expose them via Model Context Protocol.
 
+**Filesystem tools are the exception: never write one.** An `fs_*` tool is registered by
+`AddFileSystemTools<TBackend>()` (`Infrastructure/Utils/FileSystemServerTools.cs`) for exactly the
+operations `TBackend` overrides on `FileSystemBackendBase`, and its description comes from that
+backend's `Describe*` hook. Hand-writing one would let a server advertise an operation its backend
+does not implement, which is the drift the registrar exists to make unrepresentable. See CLAUDE.md's
+"Virtual Filesystem Architecture".
+
 ## Structure
 
 Each MCP tool should:

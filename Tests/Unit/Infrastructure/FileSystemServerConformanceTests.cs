@@ -54,13 +54,15 @@ public class FileSystemServerConformanceTests
     // The lie this feature removes: timers registered fs_move from a method whose own description
     // said the operation was unsupported, so the prompt promised the model an operation that could
     // only fail. Nothing overrides move now, so nothing can advertise it.
-    [Fact]
-    public void Timers_DoesNotAdvertiseMove()
+    [Theory]
+    [InlineData(typeof(TimerFileSystem))]
+    [InlineData(typeof(PrinterQueueFileSystem))]
+    public void AMountThatNeverImplementedMove_DoesNotAdvertiseIt(Type backendType)
     {
-        FileSystemServerTools.SupportedToolNames(typeof(TimerFileSystem)).ShouldNotContain("fs_move");
-        McpFileSystemDiscovery
-            .DeriveCapabilities(FileSystemServerTools.SupportedToolNames(typeof(TimerFileSystem)))
-            .ShouldNotContain("move");
+        var advertised = FileSystemServerTools.SupportedToolNames(backendType);
+
+        advertised.ShouldNotContain("fs_move");
+        McpFileSystemDiscovery.DeriveCapabilities(advertised).ShouldNotContain("move");
     }
 
     [Fact]
@@ -79,7 +81,7 @@ public class FileSystemServerConformanceTests
 
         FileSystemServerTools.SupportedToolNames(typeof(PrinterQueueFileSystem))
             .ShouldBe([
-                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
+                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit",
                 "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
             ], ignoreOrder: true);
     }
