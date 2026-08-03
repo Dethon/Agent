@@ -22,12 +22,12 @@ public class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logger)
 
         foreach (var error in update.Contents.OfType<ErrorContent>())
         {
-            await metricsPublisher.PublishAsync(new ErrorEvent
+            metricsPublisher.Publish(new ErrorEvent
             {
                 Service = "agent",
                 ErrorType = error.ErrorCode ?? "Unknown",
                 Message = error.Message
-            }, ct);
+            });
         }
 
         return deliveredContent;
@@ -52,12 +52,12 @@ public class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logger)
             // would also suppress its schedule-execution metric).
             logger.LogWarning(ex, "Failed to deliver reply to {ChannelId}; skipping target",
                 target.Channel.ChannelId);
-            await metricsPublisher.PublishAsync(new ErrorEvent
+            metricsPublisher.Publish(new ErrorEvent
             {
                 Service = "agent",
                 ErrorType = ex.GetType().Name,
                 Message = ex.Message
-            }, ct);
+            });
             return false;
         }
     }

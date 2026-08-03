@@ -137,9 +137,8 @@ public class ChatMonitorDeliveryIdentityTests
     private static IMetricsPublisher CapturingPublisher(List<MetricEvent> published)
     {
         var metrics = new Mock<IMetricsPublisher>();
-        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback((MetricEvent e, CancellationToken _) => { lock (published) { published.Add(e); } })
-            .Returns(Task.CompletedTask);
+        metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
+            .Callback((MetricEvent e) => { lock (published) { published.Add(e); } });
         return metrics.Object;
     }
 

@@ -1,8 +1,13 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Monitor;
+using Infrastructure.Metrics;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
@@ -83,6 +88,77 @@ public class ChatMonitorScheduleMetricsTests
         evt.Success.ShouldBeTrue();
     }
 
+    // A behaviour change, not a refactor. The turn's token used to be handed to every publish, and
+    // BufferedMetricsPublisher drops an event whose token is already cancelled — so a turn the user
+    // gave up on silently lost the one event that says how long it ran. The real buffered publisher
+    // is used here because that drop is the thing under test; a recording publisher would ignore
+    // the token and stay green either way.
+    [Fact]
+    public async Task Monitor_ScheduledMessage_TurnCancelledMidRun_StillRecordsItsMetrics()
+    {
+        var scheduledMessage = ScheduledMessage();
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", scheduledMessage);
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var context = threadResolver.Resolve(new AgentKey("fire-1", "jonas"));
+
+        var sink = new RecordingSink();
+        var publisher = new BufferedMetricsPublisher(sink);
+
+        // Deliver a reply chunk (so first-reply latency has something to complete on) and then
+        // cancel the turn from inside it, exactly as the stop button does.
+        var agent = new FakeAiAgent
+        {
+            UpdatesToYield = [new AgentResponseUpdate { Contents = [new TextContent("partial")] }],
+            TurnGate = _ =>
+            {
+                context.Cts.Cancel();
+                return Task.CompletedTask;
+            }
+        };
+
+        var monitor = new ChatMonitor(
+            [scheduling],
+            MonitorTestMocks.CreateAgentFactory(agent),
+            threadResolver,
+            publisher,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        await monitor.Monitor(CancellationToken.None);
+        await publisher.DisposeAsync();
+
+        sink.Events.OfType<ScheduleExecutionEvent>().ShouldHaveSingleItem()
+            .ScheduleId.ShouldBe("morning-news");
+        sink.Events.OfType<LatencyEvent>()
+            .ShouldContain(e => e.Stage == LatencyStage.FirstReply);
+    }
+
+    private sealed class RecordingSink : IMetricSink
+    {
+        private readonly List<MetricEvent> _events = [];
+
+        public IReadOnlyList<MetricEvent> Events
+        {
+            get
+            {
+                lock (_events)
+                {
+                    return [.. _events];
+                }
+            }
+        }
+
+        public Task SendAsync(MetricEvent metricEvent, CancellationToken ct = default)
+        {
+            lock (_events)
+            {
+                _events.Add(metricEvent);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
     private static ChannelMessage ScheduledMessage(params ReplyTarget[] replyTo) => new()
     {
         ConversationId = "fire-1",
@@ -99,9 +175,8 @@ public class ChatMonitorScheduleMetricsTests
         var published = new List<MetricEvent>();
         metricsPublisher = new Mock<IMetricsPublisher>();
         metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(published.Add);
         return published;
     }
 

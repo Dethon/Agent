@@ -8,6 +8,7 @@ using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
+using Domain.Metrics;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -26,7 +27,7 @@ public class ChatMonitor(
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
 
     private sealed record TurnUpdate(
-        AgentResponseUpdate Update, IReadOnlyList<DeliveryTarget> Targets, FirstReplyTracker? Tracker);
+        AgentResponseUpdate Update, IReadOnlyList<DeliveryTarget> Targets, LatencyScope? FirstReply);
 
     private sealed record GroupAnchors(
         IReadOnlyList<DeliveryTarget> Targets, IChannelConnection ApprovalChannel, AgentKey DeliveryKey);
@@ -64,7 +65,7 @@ public class ChatMonitor(
         catch (Exception ex)
         {
             logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
-            await metricsPublisher.PublishAsync(new ErrorEvent
+            metricsPublisher.Publish(new ErrorEvent
             {
                 Service = "agent",
                 ErrorType = ex.GetType().Name,
@@ -102,9 +103,12 @@ public class ChatMonitor(
         await foreach (var turn in aiResponses.WithCancellation(ct))
         {
             var deliveredContent = await _replyDispatcher.DeliverUpdateAsync(turn.Update, turn.Targets, ct);
-            if (deliveredContent && turn.Tracker?.TryComplete() is { } firstReplyMs)
+            if (deliveredContent)
             {
-                await PublishFirstReplyLatencyAsync(firstReplyMs, anchors.DeliveryKey.ConversationId, ct);
+                // Ends the span on the first delivered chunk; the scope publishes at most once, so
+                // every later chunk of the same turn is a no-op. A turn that delivers nothing
+                // never disposes it and records no first-reply latency.
+                turn.FirstReply?.Dispose();
             }
 
             yield return true;
@@ -223,10 +227,11 @@ public class ChatMonitor(
         CancellationToken ct)
     {
         // FirstReply times "message arrival → first delivered reply chunk":
-        // started before target resolution, memory recall, session warmup, and
+        // opened before target resolution, memory recall, session warmup, and
         // the turn-start announce for agent-initiated messages, so the
         // measurement includes every stage the user actually waits on.
-        var tracker = new FirstReplyTracker();
+        var firstReply = metricsPublisher.MeasureLatency(
+            LatencyStage.FirstReply, scope.DeliveryKey.ConversationId);
         var targets = await ResolveTurnTargetsAsync(x, index, scope.Targets, ct);
         // Agent-initiated turns (downloads, schedules) land in conversations
         // with no live stream on the receiving channel; announce the turn so
@@ -241,7 +246,7 @@ public class ChatMonitor(
         var userMessage = await BuildUserMessageAsync(x.Message, targets, scope, ct);
 
         await scope.Warmup;
-        return StreamAgentTurn(scope.Agent, scope.Thread, userMessage, x.Message, targets, tracker, ct);
+        return StreamAgentTurn(scope.Agent, scope.Thread, userMessage, x.Message, targets, firstReply, ct);
     }
 
     // Deliver each message's reply to the channel that actually sent it. The
@@ -292,7 +297,7 @@ public class ChatMonitor(
         ChatMessage userMessage,
         ChannelMessage message,
         IReadOnlyList<DeliveryTarget> targets,
-        FirstReplyTracker tracker,
+        LatencyScope firstReply,
         CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -305,28 +310,19 @@ public class ChatMonitor(
             .OnCompletion(
                 seed: false,
                 fold: (faulted, pair) => faulted || pair.Item1.Contents.OfType<ErrorContent>().Any(),
-                onCompletion: async (faulted, completionCt) =>
+                onCompletion: (faulted, _) =>
                 {
                     var error = faulted ? "Agent run reported an error" : null;
                     var evt = ScheduleExecutionEvent.FromMessage(message, stopwatch.ElapsedMilliseconds, !faulted, error);
                     if (evt is not null)
                     {
-                        await metricsPublisher.PublishAsync(evt, completionCt);
+                        metricsPublisher.Publish(evt);
                     }
+
+                    return ValueTask.CompletedTask;
                 },
                 ct)
-            .Select(pair => new TurnUpdate(pair.Item1, targets, tracker));
-    }
-
-    private async Task PublishFirstReplyLatencyAsync(
-        long firstReplyMs, string deliveryConversationId, CancellationToken ct)
-    {
-        await metricsPublisher.PublishAsync(new LatencyEvent
-        {
-            Stage = LatencyStage.FirstReply,
-            DurationMs = firstReplyMs,
-            ConversationId = deliveryConversationId
-        }, ct);
+            .Select(pair => new TurnUpdate(pair.Item1, targets, firstReply));
     }
 
     private static ValueTask<AgentSession> GetOrRestoreThread(

@@ -511,12 +511,11 @@ public class ChatMonitorTests
         await monitor.Monitor(CancellationToken.None);
 
         // Assert
-        metricsPublisher.Verify(p => p.PublishAsync(
+        metricsPublisher.Verify(p => p.Publish(
             It.Is<ErrorEvent>(e =>
                 e.Service == "agent" &&
                 e.ErrorType == nameof(HttpRequestException) &&
-                e.Message.Contains("422 Unprocessable Entity")),
-            It.IsAny<CancellationToken>()), Times.Once);
+                e.Message.Contains("422 Unprocessable Entity"))), Times.Once);
     }
 
     [Fact]
@@ -764,9 +763,8 @@ public class ChatMonitorTests
         };
         var published = new List<MetricEvent>();
         var metrics = new Mock<IMetricsPublisher>();
-        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback((MetricEvent e, CancellationToken _) => { lock (published) { published.Add(e); } })
-            .Returns(Task.CompletedTask);
+        metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
+            .Callback((MetricEvent e) => { lock (published) { published.Add(e); } });
 
         var monitor = new ChatMonitor(
             [channel],
@@ -793,9 +791,8 @@ public class ChatMonitorTests
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var published = new List<MetricEvent>();
         var metrics = new Mock<IMetricsPublisher>();
-        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback((MetricEvent e, CancellationToken _) => { lock (published) { published.Add(e); } })
-            .Returns(Task.CompletedTask);
+        metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
+            .Callback((MetricEvent e) => { lock (published) { published.Add(e); } });
 
         var monitor = new ChatMonitor(
             [channel],
