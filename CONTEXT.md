@@ -146,3 +146,38 @@ A job being heard all the way to its end. It means the satellite finished playin
 not that the hub finished sending — the hub is always done sending first, because the
 satellite plays at real time.
 _Avoid_: completion, finish, flush
+
+## MCP server hosting
+
+**MCP host**:
+The three things every MCP server in the repo has, whatever else it does: its own
+settings available to everything it registers, a server, and an HTTP transport.
+_Avoid_: server host, web host, bootstrap
+
+**Tool server**:
+An MCP server that offers the agent things to call — tools, prompts, filesystem
+mounts — and nothing the agent can be pushed from. It only ever answers.
+_Avoid_: mcp server, backend server, resource server
+
+**Channel server**:
+An MCP server the agent can be pushed from. A person or an event reaches the agent
+through it, and a reply comes back the same way.
+_Avoid_: transport server, gateway
+
+**Dual-role server**:
+A server that is both at once: it offers the agent tools and it can also raise
+something with the agent unprompted. Its channel-protocol tools are hidden from the
+model.
+_Avoid_: hybrid server, mixed server
+
+**Outbound surface**:
+A channel server's ability to carry a reply back to a person. Direction is named from
+the agent's side, so a reply travelling agent → channel → person is outbound. A
+dual-role server that only ever raises alerts has no outbound surface: it accepts the
+reply and drops it.
+_Avoid_: inbound surface, reply channel, delivery path
+
+**Mount identity**:
+The one name a filesystem mount is known by. Its resource address, its mount point
+and the name it publishes to the agent all come from it, so they cannot disagree.
+_Avoid_: mount name, filesystem name, mount point

@@ -20,7 +20,7 @@ closed it.
 | 3 | The satellite connection has no module | Strong | McpChannelVoice | Grilled → `.scratch/satellite-connection-module/spec.md` |
 | 4 | Playback has no outcome | Strong | McpChannelVoice | Grilled → `.scratch/playback-outcome/spec.md` + `docs/adr/0003-playback-settles-by-outcome.md` |
 | 5 | The hub call surface leaks the connection | Strong | WebChat.Client | Grilled → `.scratch/hub-call-surface/spec.md` + `docs/adr/0004-hub-calls-answer-or-say-not-live.md` |
-| 6 | `AddToolServer`, twin of `AddChannelServer` | Strong | McpServer* | Not grilled |
+| 6 | `AddToolServer`, twin of `AddChannelServer` | Strong | McpServer* | Grilled → `.scratch/mcp-server-hosting/spec.md` + `docs/adr/0005-user-secrets-outrank-environment-variables.md` |
 | 7 | Two copies of "how to build an agent" | Strong | Infrastructure/Agents | Not grilled |
 | 8 | The turn is not a value | Strong | Domain/Monitor | Not grilled |
 | 9 | One breakdown descriptor, not seven pipelines | Worth exploring | Dashboard + Observability | Not grilled |
@@ -341,7 +341,20 @@ guards become one test of the gateway. The three integration adapters delete.
 
 ## 6 — `AddToolServer`, twin of `AddChannelServer`
 
-**Strength:** Strong.
+**Strength:** Strong. **Grilled**, spec at `.scratch/mcp-server-hosting/spec.md`. The
+open question below — one documented answer on nested sections — was settled by probe:
+the plain `config.Get<T>()` binds nested sections from environment variables exactly as
+the explicit re-bind does, so `McpServerWebSearch:30-35` is redundant code to delete,
+not a disagreement to resolve. The grilling found three more things the survey missed:
+the `?? throw new InvalidOperationException("Settings not found")` guard is unreachable
+in all 13 copies; `AddUserSecrets<Program>()` is a silent no-op on the 5 servers with no
+`UserSecretsId`; and the source order is load-bearing and unrecorded — user secrets are
+added last so they outrank the empty `.env` placeholders, recorded as
+`docs/adr/0005-user-secrets-outrank-environment-variables.md`. It also found the count
+wrong in the other direction: the `AddSingleton(settings).AddMcpServer().WithHttpTransport()`
+prologue is 13 copies, not 9, because every channel server has it too. The spec therefore
+splits `AddMcpHost` (all 13) from `AddToolServer` (the 9), renames `Channels.Hosting` to
+`Mcp.Hosting`, and shares one call-tool filter between both calls.
 
 **Files**
 
