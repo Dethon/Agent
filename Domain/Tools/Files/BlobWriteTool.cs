@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
@@ -14,11 +13,27 @@ public class BlobWriteTool(string rootPath)
         Returns { path, bytesWritten, totalBytes }.
         """;
 
-    protected JsonNode Run(string path, string contentBase64, long offset, bool overwrite, bool createDirectories)
+    protected FsResult<FsBlobWriteResult> Run(string path, string contentBase64, long offset, bool overwrite, bool createDirectories)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offset);
-        var resolved = _jail.Resolve(path);
-        var bytes = Convert.FromBase64String(contentBase64);
+        if (offset < 0)
+        {
+            return FsError.Invalid<FsBlobWriteResult>("offset must not be negative.");
+        }
+
+        if (!_jail.TryResolve(path, out var resolved))
+        {
+            return FsError.Invalid<FsBlobWriteResult>(_jail.DeniedMessage);
+        }
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(contentBase64);
+        }
+        catch (FormatException ex)
+        {
+            return FsError.Invalid<FsBlobWriteResult>($"contentBase64 is not valid base64: {ex.Message}");
+        }
 
         if (createDirectories)
         {
@@ -33,7 +48,7 @@ public class BlobWriteTool(string rootPath)
         {
             if (File.Exists(resolved) && !overwrite)
             {
-                throw new IOException($"File already exists: {path}");
+                return FsError.AlreadyExists<FsBlobWriteResult>($"File already exists: {path}");
             }
             File.WriteAllBytes(resolved, bytes);
         }
@@ -44,12 +59,11 @@ public class BlobWriteTool(string rootPath)
             stream.Write(bytes, 0, bytes.Length);
         }
 
-        var info = new FileInfo(resolved);
-        return FsResultContract.ToNode(new FsBlobWriteResult
+        return new FsResult<FsBlobWriteResult>.Ok(new FsBlobWriteResult
         {
             Path = path,
             BytesWritten = bytes.Length,
-            TotalBytes = info.Length
+            TotalBytes = new FileInfo(resolved).Length
         });
     }
 }

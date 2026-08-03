@@ -52,42 +52,42 @@ public class PathJailTests : IDisposable
     }
 
     [Fact]
-    public void Resolve_RelativePath_IsCombinedWithTheRoot()
+    public void TryResolve_RelativePath_IsCombinedWithTheRoot()
     {
-        _jail.Resolve("docs/note.md").ShouldBe(Path.Combine(_jail.Root, "docs", "note.md"));
+        Resolved("docs/note.md").ShouldBe(Path.Combine(_jail.Root, "docs", "note.md"));
     }
 
     [Fact]
-    public void Resolve_AbsolutePathInsideTheRoot_IsAccepted()
+    public void TryResolve_AbsolutePathInsideTheRoot_IsAccepted()
     {
         var inside = Path.Combine(_jail.Root, "note.md");
 
-        _jail.Resolve(inside).ShouldBe(inside);
+        Resolved(inside).ShouldBe(inside);
     }
 
     // A path reached through a relative segment is judged by where it lands, not how it is spelt.
     [Fact]
-    public void Resolve_RelativeSegmentThatStaysInside_IsAccepted()
+    public void TryResolve_RelativeSegmentThatStaysInside_IsAccepted()
     {
-        _jail.Resolve("docs/../note.md").ShouldBe(Path.Combine(_jail.Root, "note.md"));
+        Resolved("docs/../note.md").ShouldBe(Path.Combine(_jail.Root, "note.md"));
     }
 
     [Fact]
-    public void Resolve_RelativeSegmentThatEscapes_IsRefused()
+    public void TryResolve_RelativeSegmentThatEscapes_IsRefused()
     {
-        Should.Throw<UnauthorizedAccessException>(() => _jail.Resolve("../elsewhere/note.md"));
+        _jail.TryResolve("../elsewhere/note.md", out _).ShouldBeFalse();
     }
 
     [Fact]
-    public void Resolve_AbsolutePathOutsideTheRoot_IsRefused()
-    {
-        Should.Throw<UnauthorizedAccessException>(() => _jail.Resolve("/etc/passwd"));
-    }
-
-    [Fact]
-    public void TryResolve_OutsideTheRoot_ReturnsFalseWithoutThrowing()
+    public void TryResolve_AbsolutePathOutsideTheRoot_ReturnsFalseWithoutThrowing()
     {
         _jail.TryResolve("/etc/passwd", out var full).ShouldBeFalse();
         full.ShouldBeNull();
+    }
+
+    private string Resolved(string path)
+    {
+        _jail.TryResolve(path, out var full).ShouldBeTrue();
+        return full!;
     }
 }

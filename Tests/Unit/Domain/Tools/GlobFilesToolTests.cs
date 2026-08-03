@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Moq;
@@ -61,36 +62,32 @@ public class GlobFilesToolTests
     [InlineData("")]
     [InlineData(" ")]
     [InlineData(null)]
-    public async Task Run_WithEmptyPattern_ThrowsArgumentException(string? pattern)
+    public async Task Run_WithEmptyPattern_ReturnsInvalidArgument(string? pattern)
     {
-        await Should.ThrowAsync<ArgumentException>(
-            () => _tool.TestRun(pattern!, CancellationToken.None));
+        await ShouldBeInvalid(() => _tool.TestRun(pattern!, CancellationToken.None));
     }
 
     [Theory]
     [InlineData("../etc/passwd")]
     [InlineData("foo/../../bar")]
     [InlineData("..")]
-    public async Task Run_WithDotDotPattern_ThrowsArgumentException(string pattern)
+    public async Task Run_WithDotDotPattern_ReturnsInvalidArgument(string pattern)
     {
-        await Should.ThrowAsync<ArgumentException>(
-            () => _tool.TestRun(pattern, CancellationToken.None));
+        await ShouldBeInvalid(() => _tool.TestRun(pattern, CancellationToken.None));
     }
 
     [Fact]
-    public async Task Run_WithAbsolutePathOutsideBasePath_ThrowsArgumentException()
+    public async Task Run_WithAbsolutePathOutsideBasePath_ReturnsInvalidArgument()
     {
-        await Should.ThrowAsync<ArgumentException>(
-            () => _tool.TestRun("/other/path/**/*.pdf", CancellationToken.None));
+        await ShouldBeInvalid(() => _tool.TestRun("/other/path/**/*.pdf", CancellationToken.None));
     }
 
     // /library-backup is a different directory from /library, and a prefix match without a
     // separator used to admit it and then hand the client a '../' pattern.
     [Fact]
-    public async Task Run_WithAbsolutePathInASiblingOfBasePath_ThrowsArgumentException()
+    public async Task Run_WithAbsolutePathInASiblingOfBasePath_ReturnsInvalidArgument()
     {
-        await Should.ThrowAsync<ArgumentException>(
-            () => _tool.TestRun("/library-backup/**/*.pdf", CancellationToken.None));
+        await ShouldBeInvalid(() => _tool.TestRun("/library-backup/**/*.pdf", CancellationToken.None));
     }
 
     [Fact]
@@ -125,19 +122,26 @@ public class GlobFilesToolTests
     [Theory]
     [InlineData("../etc")]
     [InlineData("foo/../bar")]
-    public async Task Run_WithBasePathContainingDotDot_ThrowsArgumentException(string basePath)
+    public async Task Run_WithBasePathContainingDotDot_ReturnsInvalidArgument(string basePath)
     {
-        await Should.ThrowAsync<ArgumentException>(
-            () => _tool.TestRun("**/*", basePath, CancellationToken.None));
+        await ShouldBeInvalid(() => _tool.TestRun("**/*", basePath, CancellationToken.None));
+    }
+
+    private static async Task ShouldBeInvalid(Func<Task<JsonNode>> call)
+    {
+        var result = await call();
+
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
     }
 
     private class TestableGlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         : GlobFilesTool(client, libraryPath)
     {
-        public Task<JsonNode> TestRun(string pattern, CancellationToken cancellationToken)
-            => Run(pattern, cancellationToken);
+        public async Task<JsonNode> TestRun(string pattern, CancellationToken cancellationToken)
+            => (await Run(pattern, cancellationToken)).ToNode();
 
-        public Task<JsonNode> TestRun(string pattern, string basePath, CancellationToken cancellationToken)
-            => Run(pattern, cancellationToken, basePath);
+        public async Task<JsonNode> TestRun(string pattern, string basePath, CancellationToken cancellationToken)
+            => (await Run(pattern, cancellationToken, basePath)).ToNode();
     }
 }

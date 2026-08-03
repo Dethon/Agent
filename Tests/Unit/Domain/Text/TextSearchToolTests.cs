@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs;
 using Domain.Tools.Text;
 using Shouldly;
 
@@ -193,14 +194,14 @@ public class TextSearchToolTests : IDisposable
         CreateTestFile("doc1.md", "Hello World\nHello again");
         CreateTestFile("doc2.md", "Hello there");
 
-        var filesOnlyResult = _tool.TestRun("Hello", outputMode: SearchOutputMode.FilesOnly);
+        var filesOnlyResult = _tool.TestRun("Hello", outputMode: VfsTextSearchOutputMode.FilesOnly);
 
         filesOnlyResult["filesWithMatches"]!.GetValue<int>().ShouldBe(2);
         var firstResult = filesOnlyResult["results"]!.AsArray()[0]!;
         firstResult["matchCount"]!.GetValue<int>().ShouldBeGreaterThan(0);
         firstResult.AsObject().ContainsKey("matches").ShouldBeFalse();
 
-        var contentResult = _tool.TestRun("Hello", outputMode: SearchOutputMode.Content);
+        var contentResult = _tool.TestRun("Hello", outputMode: VfsTextSearchOutputMode.Content);
 
         var contentFirstResult = contentResult["results"]!.AsArray()[0]!;
         contentFirstResult["matches"]!.AsArray().Count.ShouldBeGreaterThan(0);
@@ -229,9 +230,9 @@ public class TextSearchToolTests : IDisposable
             string directoryPath = "/",
             int maxResults = 50,
             int contextLines = 1,
-            SearchOutputMode outputMode = SearchOutputMode.Content)
+            VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content)
         {
-            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines, outputMode);
+            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines, outputMode).ToNode();
         }
     }
 }

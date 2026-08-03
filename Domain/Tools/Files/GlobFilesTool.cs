@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
@@ -21,47 +20,59 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
 
     private readonly PathJail _jail = new(libraryPath.BaseLibraryPath);
 
-    protected async Task<JsonNode> Run(string pattern, CancellationToken cancellationToken, string? basePath = null) =>
-        FsResultContract.ToNode(await RunCore(pattern, cancellationToken, basePath));
-
-    protected async Task<FsGlobResult> RunCore(string pattern, CancellationToken cancellationToken, string? basePath = null)
+    protected async Task<FsResult<FsGlobResult>> Run(string pattern, CancellationToken cancellationToken, string? basePath = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
-
-        if (pattern.Contains(".."))
+        if (string.IsNullOrWhiteSpace(pattern))
         {
-            throw new ArgumentException("Pattern must not contain '..' segments", nameof(pattern));
+            return FsError.Invalid<FsGlobResult>("Pattern must not be empty.");
+        }
+
+        if (pattern.Contains("..") || basePath?.Contains("..") == true)
+        {
+            return FsError.Invalid<FsGlobResult>("Pattern and basePath must not contain '..' segments.");
         }
 
         if (Path.IsPathRooted(pattern))
         {
             if (!_jail.Contains(pattern.TrimEnd('/')))
             {
-                throw new ArgumentException("Absolute pattern must be under the library root", nameof(pattern));
+                return FsError.Invalid<FsGlobResult>("Absolute pattern must be under the mount root.");
             }
 
             var dirsOnly = pattern.EndsWith('/');
-            pattern = Path.GetRelativePath(_jail.Root, pattern).TrimEnd('/');
-            if (dirsOnly)
-            {
-                pattern += "/";
-            }
+            pattern = Path.GetRelativePath(_jail.Root, pattern).TrimEnd('/') + (dirsOnly ? "/" : "");
         }
 
-        var matcherRoot = ResolveMatcherRoot(basePath);
-        var result = await client.Glob(matcherRoot, pattern, cancellationToken);
+        var matcherRoot = string.IsNullOrEmpty(basePath)
+            ? _jail.Root
+            : Path.GetFullPath(Path.Combine(_jail.Root, basePath.TrimStart('/')));
+
+        if (!_jail.Contains(matcherRoot))
+        {
+            return FsError.Invalid<FsGlobResult>("basePath must resolve under the mount root.");
+        }
+
+        string[] result;
+        try
+        {
+            result = await client.Glob(matcherRoot, pattern, cancellationToken);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return FsError.NotFound<FsGlobResult>(basePath ?? matcherRoot);
+        }
 
         // Return entries relative to the mount root (the disk client yields absolute paths). The
         // agent-side VFS tool re-prefixes the mount point, so every filesystem speaks one format.
         var relative = result.Select(p => ToMountRelative(_jail.Root, p)).ToArray();
         var capped = relative.Length > FileResultCap;
 
-        return new FsGlobResult
+        return new FsResult<FsGlobResult>.Ok(new FsGlobResult
         {
             Entries = capped ? relative.Take(FileResultCap).ToArray() : relative,
             Truncated = capped,
             Total = relative.Length
-        };
+        });
     }
 
     private static string ToMountRelative(string baseRoot, string absolute)
@@ -69,24 +80,5 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
         var isDirectory = absolute.EndsWith('/');
         var relative = Path.GetRelativePath(baseRoot, absolute.TrimEnd('/')).Replace('\\', '/');
         return isDirectory ? relative + "/" : relative;
-    }
-
-    private string ResolveMatcherRoot(string? basePath)
-    {
-        if (string.IsNullOrEmpty(basePath))
-        {
-            return libraryPath.BaseLibraryPath;
-        }
-
-        if (basePath.Contains(".."))
-        {
-            throw new ArgumentException("basePath must not contain '..' segments", nameof(basePath));
-        }
-
-        var canonRoot = Path.GetFullPath(Path.Combine(_jail.Root, basePath.TrimStart('/')));
-
-        return _jail.Contains(canonRoot)
-            ? canonRoot
-            : throw new ArgumentException("basePath must resolve under the library root", nameof(basePath));
     }
 }

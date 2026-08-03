@@ -1,6 +1,6 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Domain.Tools.Config;
 
 namespace Domain.Tools.Files;
@@ -15,40 +15,41 @@ public class RemoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
                                          (resolved against the library root).
                                          """;
 
-    protected async Task<JsonNode> Run(string path, CancellationToken cancellationToken)
+    protected async Task<FsResult<FsRemoveResult>> Run(string path, CancellationToken cancellationToken)
     {
-        path = ResolveAndValidatePath(path);
+        if (path.Contains("..", StringComparison.Ordinal))
+        {
+            return FsError.Invalid<FsRemoveResult>($"{nameof(RemoveTool)} path must not contain '..' segments.");
+        }
 
-        var trashPath = await client.MoveToTrash(path, cancellationToken);
-        return FsResultContract.ToNode(new FsRemoveResult
+        path = Path.IsPathRooted(path) ? path : Path.Combine(libraryPath.BaseLibraryPath, path);
+        var canonical = Path.GetFullPath(path);
+
+        if (!_jail.Contains(canonical))
+        {
+            return FsError.Invalid<FsRemoveResult>($"""
+                                                    {nameof(RemoveTool)} path must be within the library.
+                                                    Resolved path '{canonical}' is not under library path '{_jail.Root}'.
+                                                    """);
+        }
+
+        string trashPath;
+        try
+        {
+            trashPath = await client.MoveToTrash(path, cancellationToken);
+        }
+        catch (IOException ex)
+        {
+            // The client signals a missing path this way; the model needs the code, not the type.
+            return FsError.Fail<FsRemoveResult>(ToolError.Codes.NotFound, ex.Message);
+        }
+
+        return new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
         {
             Status = "success",
             Message = "Moved to trash",
             OriginalPath = path,
             TrashPath = trashPath
         });
-    }
-
-    private string ResolveAndValidatePath(string path)
-    {
-        if (path.Contains("..", StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                $"{nameof(RemoveTool)} path must not contain '..' segments.");
-        }
-
-        if (!Path.IsPathRooted(path))
-        {
-            path = Path.Combine(libraryPath.BaseLibraryPath, path);
-        }
-
-        var canonicalFilePath = Path.GetFullPath(path);
-
-        return !_jail.Contains(canonicalFilePath)
-            ? throw new ArgumentException($"""
-                                           {nameof(RemoveTool)} path must be within the library.
-                                           Resolved path '{canonicalFilePath}' is not under library path '{_jail.Root}'.
-                                           """)
-            : path;
     }
 }

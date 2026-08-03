@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
@@ -14,14 +13,16 @@ public class CopyTool(string rootPath)
         Parent directories are created automatically when createDirectories=true (default).
         """;
 
-    protected JsonNode Run(string sourcePath, string destinationPath, bool overwrite, bool createDirectories)
+    protected FsResult<FsCopyResult> Run(string sourcePath, string destinationPath, bool overwrite, bool createDirectories)
     {
-        var src = _jail.Resolve(sourcePath);
-        var dst = _jail.Resolve(destinationPath);
+        if (!_jail.TryResolve(sourcePath, out var src) || !_jail.TryResolve(destinationPath, out var dst))
+        {
+            return FsError.Invalid<FsCopyResult>(_jail.DeniedMessage);
+        }
 
         if (!File.Exists(src) && !Directory.Exists(src))
         {
-            throw new IOException($"Source path does not exist: {sourcePath}");
+            return FsError.NotFound<FsCopyResult>(sourcePath);
         }
 
         if (createDirectories)
@@ -33,28 +34,24 @@ public class CopyTool(string rootPath)
             }
         }
 
-        long bytes;
-        if (File.Exists(src))
+        var isFile = File.Exists(src);
+        if (!overwrite && (isFile ? File.Exists(dst) : Directory.Exists(dst)))
         {
-            if (File.Exists(dst) && !overwrite)
-            {
-                throw new IOException($"Destination already exists: {destinationPath}");
-            }
+            return FsError.AlreadyExists<FsCopyResult>($"Destination already exists: {destinationPath}");
+        }
 
+        long bytes;
+        if (isFile)
+        {
             File.Copy(src, dst, overwrite);
             bytes = new FileInfo(dst).Length;
         }
         else
         {
-            if (Directory.Exists(dst) && !overwrite)
-            {
-                throw new IOException($"Destination already exists: {destinationPath}");
-            }
-
             bytes = CopyDirectoryRecursive(src, dst, overwrite);
         }
 
-        return FsResultContract.ToNode(new FsCopyResult
+        return new FsResult<FsCopyResult>.Ok(new FsCopyResult
         {
             Status = "copied",
             Source = sourcePath,

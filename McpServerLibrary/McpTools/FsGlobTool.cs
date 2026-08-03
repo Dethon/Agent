@@ -29,9 +29,14 @@ public class FsGlobTool(
             return ToolResponse.Create(error);
         }
 
-        var disk = await RunCore(pattern, cancellationToken, basePath);
+        var disk = await Run(pattern, cancellationToken, basePath);
+        if (!disk.TryGetValue(out var diskEntries, out _))
+        {
+            return ToolResponse.Create(disk);
+        }
+
         var virtualEntries = await downloads.GlobEntriesAsync(basePath, pattern, cancellationToken);
-        return ToolResponse.Create(FsResultContract.ToNode(Merge(disk, virtualEntries)));
+        return ToolResponse.Create(new FsResult<FsGlobResult>.Ok(Merge(diskEntries, virtualEntries)));
     }
 
     private static FsGlobResult Merge(FsGlobResult disk, IReadOnlyList<string> virtualEntries)

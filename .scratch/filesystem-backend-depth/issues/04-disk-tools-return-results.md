@@ -12,13 +12,13 @@ The exception-to-envelope conversion at the boundary is **not** deleted wholesal
 
 **Blocked by:** 03 — the containment check must be one thing before thirteen tools are rewritten around it.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] All thirteen disk tools return the shared result type; none throws on an expected failure.
-- [ ] Each error case maps to the envelope the base defines for it, and no code path invents a new code.
-- [ ] The existing per-tool test files keep their cases, with envelope assertions replacing exception assertions.
-- [ ] Each tool was rewritten behind its existing tests before its return type changed, in separate commits.
-- [ ] The domain's duplicate search-output enumeration is deleted; one enumeration remains.
-- [ ] Exception-type mapping arms specific to filesystem failures are removed.
-- [ ] The catch-all filter and the rest of the mapping still serve non-filesystem tools, and the non-filesystem servers still build and pass.
-- [ ] The integration tests over hosted vault, library and sandbox servers pass unchanged.
+- [x] All thirteen disk tools return the shared result type; none throws on an expected failure.
+- [x] Each error case maps to the envelope the base defines for it, and no code path invents a new code.
+- [x] The existing per-tool test files keep their cases, with envelope assertions replacing exception assertions.
+- [x] Each tool was rewritten behind its existing tests before its return type changed, in separate commits.
+- [x] The domain's duplicate search-output enumeration is deleted; one enumeration remains.
+- [x] Exception-type mapping arms specific to filesystem failures are removed.
+- [x] The catch-all filter and the rest of the mapping still serve non-filesystem tools, and the non-filesystem servers still build and pass.
+- [x] The integration tests over hosted vault, library and sandbox servers pass unchanged.

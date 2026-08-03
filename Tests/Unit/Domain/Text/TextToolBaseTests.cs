@@ -1,3 +1,5 @@
+using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Domain.Tools.Text;
 using Shouldly;
 
@@ -24,26 +26,25 @@ public class TextToolBaseTests : IDisposable
     }
 
     [Fact]
-    public void ValidateAndResolvePath_ValidFile_ReturnsFullPath()
+    public void ResolveExistingFile_ValidFile_ReturnsFullPath()
     {
         var filePath = CreateTestFile("test.md", "content");
 
-        var result = _tool.TestValidateAndResolvePath("test.md");
+        _tool.TestResolveExistingFile("test.md").TryGetValue(out var resolved, out _).ShouldBeTrue();
 
-        result.ShouldBe(filePath);
+        resolved.ShouldBe(filePath);
     }
 
     [Fact]
-    public void ValidateAndResolvePath_PathOutsideVault_ThrowsException()
+    public void ResolveExistingFile_PathOutsideVault_ReturnsInvalidArgument()
     {
-        Should.Throw<UnauthorizedAccessException>(() =>
-            _tool.TestValidateAndResolvePath("/etc/passwd"));
+        ErrorFor("/etc/passwd").ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
     }
 
     // A directory whose name merely extends the vault's is a different directory, and a prefix
     // match without a separator used to let it through.
     [Fact]
-    public void ValidateAndResolvePath_SiblingDirectoryWithVaultPrefix_ThrowsException()
+    public void ResolveExistingFile_SiblingDirectoryWithVaultPrefix_ReturnsInvalidArgument()
     {
         var sibling = _testDir + "-evil";
         Directory.CreateDirectory(sibling);
@@ -51,8 +52,7 @@ public class TextToolBaseTests : IDisposable
         {
             File.WriteAllText(Path.Combine(sibling, "secret.md"), "leak");
 
-            Should.Throw<UnauthorizedAccessException>(() =>
-                _tool.TestValidateAndResolvePath(Path.Combine(sibling, "secret.md")));
+            ErrorFor(Path.Combine(sibling, "secret.md")).ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
         }
         finally
         {
@@ -61,22 +61,26 @@ public class TextToolBaseTests : IDisposable
     }
 
     [Fact]
-    public void ValidateAndResolvePath_FileNotFound_ThrowsException()
+    public void ResolveExistingFile_FileNotFound_ReturnsNotFound()
     {
-        Should.Throw<FileNotFoundException>(() =>
-            _tool.TestValidateAndResolvePath("nonexistent.md"));
+        ErrorFor("nonexistent.md").ErrorCode.ShouldBe(ToolError.Codes.NotFound);
     }
 
     [Fact]
-    public void ValidateAndResolvePath_DisallowedExtension_ThrowsException()
+    public void ResolveExistingFile_DisallowedExtension_ReturnsInvalidArgument()
     {
-        var filePath = Path.Combine(_testDir, "test.exe");
-        File.WriteAllText(filePath, "content");
+        File.WriteAllText(Path.Combine(_testDir, "test.exe"), "content");
 
-        var ex = Should.Throw<ArgumentException>(() =>
-            _tool.TestValidateAndResolvePath("test.exe"));
+        var error = ErrorFor("test.exe");
 
-        ex.Message.ShouldContain("not allowed");
+        error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+        error.Message.ShouldContain("not allowed");
+    }
+
+    private ToolErrorResult ErrorFor(string filePath)
+    {
+        _tool.TestResolveExistingFile(filePath).TryGetValue(out _, out var error).ShouldBeFalse();
+        return error!;
     }
 
     private string CreateTestFile(string name, string content)
@@ -89,9 +93,6 @@ public class TextToolBaseTests : IDisposable
     private class TestableTextTool(string vaultPath, string[] allowedExtensions)
         : TextToolBase(vaultPath, allowedExtensions)
     {
-        public string TestValidateAndResolvePath(string filePath)
-        {
-            return ValidateAndResolvePath(filePath);
-        }
+        public FsResult<string> TestResolveExistingFile(string filePath) => ResolveExistingFile(filePath);
     }
 }

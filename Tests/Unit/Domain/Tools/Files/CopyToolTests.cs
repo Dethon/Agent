@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Tools;
 using Domain.Tools.Files;
 using Shouldly;
 
@@ -37,13 +38,13 @@ public class CopyToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_DestinationExistsAndOverwriteFalse_Throws()
+    public void Run_DestinationExistsAndOverwriteFalse_ReturnsAlreadyExists()
     {
         File.WriteAllText(Path.Combine(_root, "src.txt"), "x");
         File.WriteAllText(Path.Combine(_root, "dst.txt"), "y");
 
-        Should.Throw<IOException>(() =>
-            _tool.TestRun("src.txt", "dst.txt", overwrite: false, createDirectories: true));
+        _tool.TestRun("src.txt", "dst.txt", overwrite: false, createDirectories: true)
+            .ShouldBeError(ToolError.Codes.AlreadyExists);
     }
 
     [Fact]
@@ -71,14 +72,14 @@ public class CopyToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_PathOutsideRoot_Throws()
+    public void Run_PathOutsideRoot_ReturnsInvalidArgument()
     {
-        Should.Throw<UnauthorizedAccessException>(() =>
-            _tool.TestRun("../escape.txt", "dst.txt", overwrite: false, createDirectories: true));
+        _tool.TestRun("../escape.txt", "dst.txt", overwrite: false, createDirectories: true)
+            .ShouldBeError(ToolError.Codes.InvalidArgument);
     }
 
     [Fact]
-    public void Run_PathToSiblingDirectoryWithRootPrefix_Throws()
+    public void Run_PathToSiblingDirectoryWithRootPrefix_ReturnsInvalidArgument()
     {
         var sibling = _root + "-evil";
         Directory.CreateDirectory(sibling);
@@ -88,8 +89,8 @@ public class CopyToolTests : IDisposable
             var rootName = Path.GetFileName(_root);
             var malicious = $"../{rootName}-evil/secret.txt";
 
-            Should.Throw<UnauthorizedAccessException>(() =>
-                _tool.TestRun(malicious, "dst.txt", overwrite: false, createDirectories: true));
+            _tool.TestRun(malicious, "dst.txt", overwrite: false, createDirectories: true)
+                .ShouldBeError(ToolError.Codes.InvalidArgument);
         }
         finally
         {
@@ -104,6 +105,6 @@ public class CopyToolTests : IDisposable
     private class TestableCopyTool(string root) : CopyTool(root)
     {
         public JsonNode TestRun(string source, string destination, bool overwrite, bool createDirectories)
-            => Run(source, destination, overwrite, createDirectories);
+            => Run(source, destination, overwrite, createDirectories).ToNode();
     }
 }

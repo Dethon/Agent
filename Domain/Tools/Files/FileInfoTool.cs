@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
@@ -10,41 +9,42 @@ public class FileInfoTool(string rootPath)
     protected const string Description = """
                                          Returns metadata about a path: exists, isDirectory, size (files only), and lastModified.
                                          Use as a cheap guard before read/edit/move/delete to avoid errors on missing paths.
-                                         Works for files and directories; never throws on missing paths — returns exists=false instead.
+                                         Works for files and directories; never fails on missing paths — returns exists=false instead.
                                          """;
 
-    protected JsonNode Run(string path)
+    protected FsResult<FsInfoResult> Run(string path)
     {
-        var fullPath = _jail.Resolve(path);
-
-        var fileExists = File.Exists(fullPath);
-        var dirExists = !fileExists && Directory.Exists(fullPath);
-
-        if (!fileExists && !dirExists)
+        if (!_jail.TryResolve(path, out var fullPath))
         {
-            return FsResultContract.ToNode(new FsInfoResult { Exists = false, Path = fullPath });
+            return FsError.Invalid<FsInfoResult>(_jail.DeniedMessage);
         }
 
-        if (dirExists)
+        if (File.Exists(fullPath))
         {
-            var dirInfo = new DirectoryInfo(fullPath);
-            return FsResultContract.ToNode(new FsInfoResult
+            var info = new FileInfo(fullPath);
+            return Ok(new FsInfoResult
+            {
+                Exists = true,
+                Path = fullPath,
+                IsDirectory = false,
+                Size = info.Length,
+                LastModified = info.LastWriteTimeUtc.ToString("O")
+            });
+        }
+
+        if (Directory.Exists(fullPath))
+        {
+            return Ok(new FsInfoResult
             {
                 Exists = true,
                 Path = fullPath,
                 IsDirectory = true,
-                LastModified = dirInfo.LastWriteTimeUtc.ToString("O")
+                LastModified = new DirectoryInfo(fullPath).LastWriteTimeUtc.ToString("O")
             });
         }
 
-        var info = new FileInfo(fullPath);
-        return FsResultContract.ToNode(new FsInfoResult
-        {
-            Exists = true,
-            Path = fullPath,
-            IsDirectory = false,
-            Size = info.Length,
-            LastModified = info.LastWriteTimeUtc.ToString("O")
-        });
+        return Ok(new FsInfoResult { Exists = false, Path = fullPath });
     }
+
+    private static FsResult<FsInfoResult> Ok(FsInfoResult value) => new FsResult<FsInfoResult>.Ok(value);
 }

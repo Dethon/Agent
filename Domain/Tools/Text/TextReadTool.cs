@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Text;
@@ -20,38 +19,28 @@ public class TextReadTool(string vaultPath, string[] allowedExtensions)
 
     private const int MaxReturnLines = 500;
 
-    protected JsonNode Run(string filePath, int? offset = null, int? limit = null)
+    protected FsResult<FsReadResult> Run(string filePath, int? offset = null, int? limit = null)
     {
-        var fullPath = ValidateAndResolvePath(filePath);
+        if (!ResolveExistingFile(filePath).TryGetValue(out var fullPath, out var error))
+        {
+            return new FsResult<FsReadResult>.Err(error);
+        }
+
         var allLines = File.ReadAllLines(fullPath);
-        var totalLines = allLines.Length;
-
-        var startIndex = (offset ?? 1) - 1;
-        if (startIndex < 0)
-        {
-            startIndex = 0;
-        }
-
-        if (startIndex > allLines.Length)
-        {
-            startIndex = allLines.Length;
-        }
+        var startIndex = Math.Clamp((offset ?? 1) - 1, 0, allLines.Length);
 
         var remainingLines = allLines.Skip(startIndex).ToArray();
-        var requestedLimit = limit ?? remainingLines.Length;
-        var effectiveLimit = Math.Min(requestedLimit, MaxReturnLines);
+        var effectiveLimit = Math.Min(limit ?? remainingLines.Length, MaxReturnLines);
         var selectedLines = remainingLines.Take(effectiveLimit).ToArray();
         var truncated = remainingLines.Length > effectiveLimit;
 
-        var numberedLines = selectedLines
-            .Select((line, i) => $"{startIndex + i + 1}: {line}");
-        var content = string.Join("\n", numberedLines);
+        var content = string.Join("\n", selectedLines.Select((line, i) => $"{startIndex + i + 1}: {line}"));
 
-        return FsResultContract.ToNode(new FsReadResult
+        return new FsResult<FsReadResult>.Ok(new FsReadResult
         {
             FilePath = fullPath,
             Content = content,
-            TotalLines = totalLines,
+            TotalLines = allLines.Length,
             Truncated = truncated,
             Suggestion = truncated
                 ? $"File has more content. Use offset={startIndex + effectiveLimit + 1} to continue reading."

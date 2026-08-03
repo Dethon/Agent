@@ -94,26 +94,16 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
         "Write a chunk of raw bytes (base64) at the given offset. offset=0 creates or truncates.";
 
     protected FsResult<T> Unsupported<T>(string operation) where T : class =>
-        Fail<T>(ToolError.Codes.UnsupportedOperation, UnsupportedMessage(operation));
+        FsError.Fail<T>(ToolError.Codes.UnsupportedOperation, UnsupportedMessage(operation));
 
-    protected static FsResult<T> NotFound<T>(string path) where T : class =>
-        Fail<T>(ToolError.Codes.NotFound, $"Path not found: {path}");
+    protected static FsResult<T> NotFound<T>(string path) where T : class => FsError.NotFound<T>(path);
 
-    protected static FsResult<T> Invalid<T>(string message) where T : class =>
-        Fail<T>(ToolError.Codes.InvalidArgument, message);
+    protected static FsResult<T> Invalid<T>(string message) where T : class => FsError.Invalid<T>(message);
 
-    protected static FsResult<T> ReadOnly<T>(string path) where T : class =>
-        Fail<T>(ToolError.Codes.UnsupportedOperation, $"{path} is read-only");
+    protected static FsResult<T> ReadOnly<T>(string path) where T : class => FsError.ReadOnly<T>(path);
 
     protected static FsResult<T> Fail<T>(string code, string message, bool retryable = false, string? hint = null)
-        where T : class =>
-        new FsResult<T>.Err(new ToolErrorResult
-        {
-            ErrorCode = code,
-            Message = message,
-            Retryable = retryable,
-            Hint = hint
-        });
+        where T : class => FsError.Fail<T>(code, message, retryable, hint);
 
     // Applies the two glob conventions the tool advertises to the model and every mount must
     // honour: basePath scopes the pattern, and a trailing slash asks for directories only.
@@ -126,20 +116,8 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
         return (dirsOnly, GlobRegex.CompileMatcher(prefix + effectivePattern));
     }
 
-    protected FsResult<Regex> CompileSearchRegex(string query, bool regex)
-    {
-        try
-        {
-            return new FsResult<Regex>.Ok(
-                new Regex(regex ? query : Regex.Escape(query), RegexOptions.IgnoreCase, SearchMatchTimeout));
-        }
-        catch (ArgumentException ex)
-        {
-            return Fail<Regex>(ToolError.Codes.InvalidArgument,
-                $"Invalid search pattern '{query}': {ex.Message}",
-                hint: "Fix the regex, or set regex=false to match a literal string.");
-        }
-    }
+    protected FsResult<Regex> CompileSearchRegex(string query, bool regex) =>
+        SearchRegex.Compile(query, regex, SearchMatchTimeout);
 
     // The scan every backend used to reimplement: walk the scoped nodes, stop at maxResults, count
     // files searched and matched, and report a truncation. `render` returns the path to report and
@@ -193,9 +171,7 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
         }
         catch (RegexMatchTimeoutException)
         {
-            return Fail<FsSearchResult>(ToolError.Codes.Timeout,
-                $"Search pattern '{scan.Query}' timed out while matching.",
-                hint: "Simplify the regex (avoid nested quantifiers), or set regex=false to match a literal string.");
+            return new FsResult<FsSearchResult>.Err(SearchRegex.TimedOut(scan.Query));
         }
 
         return new FsResult<FsSearchResult>.Ok(new FsSearchResult

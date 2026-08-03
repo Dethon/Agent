@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
@@ -15,14 +14,21 @@ public class BlobReadTool(string rootPath)
         Returns { contentBase64, eof, totalBytes }.
         """;
 
-    protected JsonNode Run(string path, long offset, int length)
+    protected FsResult<FsBlobReadResult> Run(string path, long offset, int length)
     {
-        var resolved = _jail.Resolve(path);
-        ArgumentOutOfRangeException.ThrowIfNegative(offset);
-        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        if (!_jail.TryResolve(path, out var resolved))
+        {
+            return FsError.Invalid<FsBlobReadResult>(_jail.DeniedMessage);
+        }
+
+        if (offset < 0 || length < 0)
+        {
+            return FsError.Invalid<FsBlobReadResult>("offset and length must not be negative.");
+        }
+
         if (!File.Exists(resolved))
         {
-            throw new FileNotFoundException($"File not found: {path}");
+            return FsError.NotFound<FsBlobReadResult>(path);
         }
 
         var info = new FileInfo(resolved);
@@ -48,11 +54,10 @@ public class BlobReadTool(string rootPath)
             }
         }
 
-        var eof = offset + actuallyRead >= info.Length;
-        return FsResultContract.ToNode(new FsBlobReadResult
+        return new FsResult<FsBlobReadResult>.Ok(new FsBlobReadResult
         {
             ContentBase64 = Convert.ToBase64String(buffer, 0, actuallyRead),
-            Eof = eof,
+            Eof = offset + actuallyRead >= info.Length,
             TotalBytes = info.Length
         });
     }

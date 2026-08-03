@@ -21,6 +21,8 @@ public sealed class PathJail
 
     public string Root { get; }
 
+    public string DeniedMessage => $"Access denied: path must be within {Root}";
+
     public bool Contains(string fullPath) =>
         fullPath.Equals(Root, _comparison) || fullPath.StartsWith(_rootWithSeparator, _comparison);
 
@@ -41,11 +43,4 @@ public sealed class PathJail
         return fullPath is not null;
     }
 
-    public string Resolve(string path) => Guard(Combine(path));
-
-    // For a caller that builds the full path its own way and only needs the containment decision.
-    public string Guard(string fullPath) =>
-        Contains(fullPath)
-            ? fullPath
-            : throw new UnauthorizedAccessException($"Access denied: path must be within {Root}");
 }

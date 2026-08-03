@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Tools;
 using Domain.Tools.Files;
 using Shouldly;
 
@@ -50,13 +51,13 @@ public class BlobWriteToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_OffsetZeroOverwriteFalseAndExists_Throws()
+    public void Run_OffsetZeroOverwriteFalseAndExists_ReturnsAlreadyExists()
     {
         File.WriteAllBytes(Path.Combine(_root, "out.bin"), new byte[] { 1 });
         var b64 = Convert.ToBase64String(new byte[] { 9 });
 
-        Should.Throw<IOException>(() =>
-            _tool.TestRun("out.bin", b64, offset: 0, overwrite: false, createDirectories: true));
+        _tool.TestRun("out.bin", b64, offset: 0, overwrite: false, createDirectories: true)
+            .ShouldBeError(ToolError.Codes.AlreadyExists);
     }
 
     [Fact]
@@ -81,7 +82,7 @@ public class BlobWriteToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_PathToSiblingDirectoryWithRootPrefix_Throws()
+    public void Run_PathToSiblingDirectoryWithRootPrefix_ReturnsInvalidArgument()
     {
         var sibling = _root + "-evil";
         Directory.CreateDirectory(sibling);
@@ -91,8 +92,8 @@ public class BlobWriteToolTests : IDisposable
             var malicious = $"../{rootName}-evil/out.bin";
             var b64 = Convert.ToBase64String(new byte[] { 1 });
 
-            Should.Throw<UnauthorizedAccessException>(() =>
-                _tool.TestRun(malicious, b64, offset: 0, overwrite: false, createDirectories: true));
+            _tool.TestRun(malicious, b64, offset: 0, overwrite: false, createDirectories: true)
+                .ShouldBeError(ToolError.Codes.InvalidArgument);
         }
         finally
         {
@@ -104,12 +105,12 @@ public class BlobWriteToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_NegativeOffset_Throws()
+    public void Run_NegativeOffset_ReturnsInvalidArgument()
     {
         var b64 = Convert.ToBase64String(new byte[] { 1 });
 
-        Should.Throw<ArgumentOutOfRangeException>(() =>
-            _tool.TestRun("out.bin", b64, offset: -1, overwrite: false, createDirectories: true));
+        _tool.TestRun("out.bin", b64, offset: -1, overwrite: false, createDirectories: true)
+            .ShouldBeError(ToolError.Codes.InvalidArgument);
     }
 
     [Fact]
@@ -147,6 +148,6 @@ public class BlobWriteToolTests : IDisposable
     private class TestableBlobWriteTool(string root) : BlobWriteTool(root)
     {
         public JsonNode TestRun(string path, string contentBase64, long offset, bool overwrite, bool createDirectories)
-            => Run(path, contentBase64, offset, overwrite, createDirectories);
+            => Run(path, contentBase64, offset, overwrite, createDirectories).ToNode();
     }
 }

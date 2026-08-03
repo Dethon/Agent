@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Tools;
 using Domain.Tools.Files;
 using Shouldly;
 
@@ -64,9 +65,9 @@ public class BlobReadToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_MissingFile_Throws()
+    public void Run_MissingFile_ReturnsNotFound()
     {
-        Should.Throw<FileNotFoundException>(() => _tool.TestRun("missing.bin", 0, 100));
+        _tool.TestRun("missing.bin", 0, 100).ShouldBeError(ToolError.Codes.NotFound);
     }
 
     [Fact]
@@ -94,16 +95,15 @@ public class BlobReadToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_NegativeLength_Throws()
+    public void Run_NegativeLength_ReturnsInvalidArgument()
     {
         File.WriteAllBytes(Path.Combine(_root, "blob.bin"), new byte[10]);
 
-        Should.Throw<ArgumentOutOfRangeException>(() =>
-            _tool.TestRun("blob.bin", offset: 0, length: -1));
+        _tool.TestRun("blob.bin", offset: 0, length: -1).ShouldBeError(ToolError.Codes.InvalidArgument);
     }
 
     [Fact]
-    public void Run_PathToSiblingDirectoryWithRootPrefix_Throws()
+    public void Run_PathToSiblingDirectoryWithRootPrefix_ReturnsInvalidArgument()
     {
         var sibling = _root + "-evil";
         Directory.CreateDirectory(sibling);
@@ -113,8 +113,7 @@ public class BlobReadToolTests : IDisposable
             var rootName = Path.GetFileName(_root);
             var malicious = $"../{rootName}-evil/secret.bin";
 
-            Should.Throw<UnauthorizedAccessException>(() =>
-                _tool.TestRun(malicious, 0, 100));
+            _tool.TestRun(malicious, 0, 100).ShouldBeError(ToolError.Codes.InvalidArgument);
         }
         finally
         {
@@ -128,6 +127,6 @@ public class BlobReadToolTests : IDisposable
     private class TestableBlobReadTool(string root) : BlobReadTool(root)
     {
         public JsonNode TestRun(string path, long offset, int length)
-            => Run(path, offset, length);
+            => Run(path, offset, length).ToNode();
     }
 }

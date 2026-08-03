@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 
@@ -27,15 +26,18 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
                                          Delete: include content in oldString, omit it from newString.
                                          """;
 
-    protected JsonNode Run(string filePath, IReadOnlyList<TextEdit> edits)
+    protected FsResult<FsEditResult> Run(string filePath, IReadOnlyList<TextEdit> edits)
     {
-        ArgumentNullException.ThrowIfNull(edits);
-        if (edits.Count == 0)
+        if (edits is null || edits.Count == 0)
         {
-            throw new ArgumentException("edits must contain at least one entry.", nameof(edits));
+            return FsError.Invalid<FsEditResult>("edits must contain at least one entry.");
         }
 
-        var fullPath = ValidateAndResolvePath(filePath);
+        if (!ResolveExistingFile(filePath).TryGetValue(out var fullPath, out var resolveError))
+        {
+            return new FsResult<FsEditResult>.Err(resolveError);
+        }
+
         var content = File.ReadAllText(fullPath);
 
         var perEditResults = new List<FsEditDetail>();
@@ -48,18 +50,14 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
             if (positions.Count == 0)
             {
                 var suggestion = FindCaseInsensitiveSuggestion(content, edit.OldString);
-                if (suggestion is not null)
-                {
-                    throw new ArgumentException(
-                        $"Text '{Truncate(edit.OldString, 100)}' not found (case-sensitive). Did you mean '{Truncate(suggestion, 100)}'?");
-                }
-
-                throw new ArgumentException($"Text '{Truncate(edit.OldString, 100)}' not found in file.");
+                return FsError.Invalid<FsEditResult>(suggestion is not null
+                    ? $"Text '{Truncate(edit.OldString, 100)}' not found (case-sensitive). Did you mean '{Truncate(suggestion, 100)}'?"
+                    : $"Text '{Truncate(edit.OldString, 100)}' not found in file.");
             }
 
             if (!edit.ReplaceAll && positions.Count > 1)
             {
-                throw new ArgumentException(
+                return FsError.Invalid<FsEditResult>(
                     $"Found {positions.Count} occurrences of the specified text. Provide more surrounding context in oldString to disambiguate, or set replaceAll=true.");
             }
 
@@ -84,7 +82,7 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
         File.WriteAllText(tempPath, content);
         File.Move(tempPath, fullPath, overwrite: true);
 
-        return FsResultContract.ToNode(new FsEditResult
+        return new FsResult<FsEditResult>.Ok(new FsEditResult
         {
             Status = "success",
             FilePath = fullPath,

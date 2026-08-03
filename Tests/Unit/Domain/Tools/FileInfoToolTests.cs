@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Tools;
 using Domain.Tools.Files;
 using Shouldly;
 
@@ -62,13 +63,13 @@ public class FileInfoToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_PathOutsideRoot_ThrowsUnauthorized()
+    public void Run_PathOutsideRoot_ReturnsInvalidArgument()
     {
         var outsidePath = Path.Combine(Path.GetTempPath(), $"outside-{Guid.NewGuid()}.md");
         File.WriteAllText(outsidePath, "x");
         try
         {
-            Should.Throw<UnauthorizedAccessException>(() => _tool.TestRun(outsidePath));
+            _tool.TestRun(outsidePath).ShouldBeError(ToolError.Codes.InvalidArgument);
         }
         finally
         {
@@ -77,7 +78,7 @@ public class FileInfoToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_SiblingDirectoryWithRootPrefix_ThrowsUnauthorized()
+    public void Run_SiblingDirectoryWithRootPrefix_ReturnsInvalidArgument()
     {
         var sibling = _testDir + "-evil";
         Directory.CreateDirectory(sibling);
@@ -86,7 +87,7 @@ public class FileInfoToolTests : IDisposable
             var leakTarget = Path.Combine(sibling, "secret.md");
             File.WriteAllText(leakTarget, "shh");
 
-            Should.Throw<UnauthorizedAccessException>(() => _tool.TestRun(leakTarget));
+            _tool.TestRun(leakTarget).ShouldBeError(ToolError.Codes.InvalidArgument);
         }
         finally
         {
@@ -110,6 +111,6 @@ public class FileInfoToolTests : IDisposable
 
     private class TestableFileInfoTool(string rootPath) : FileInfoTool(rootPath)
     {
-        public JsonNode TestRun(string path) => Run(path);
+        public JsonNode TestRun(string path) => Run(path).ToNode();
     }
 }

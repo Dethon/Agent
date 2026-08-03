@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Infrastructure.Clients;
@@ -52,7 +53,7 @@ public class RemoveToolTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Run_WithPathContainingDoubleDot_ThrowsArgumentException(bool isAbsolute)
+    public async Task Run_WithPathContainingDoubleDot_ReturnsInvalidArgument(bool isAbsolute)
     {
         // Arrange
         var tool = CreateTool();
@@ -61,16 +62,15 @@ public class RemoveToolTests
             : Path.Combine("..", "etc", "passwd");
 
         // Act & Assert
-        var exception = await Should.ThrowAsync<ArgumentException>(async () =>
-            await tool.TestRun(maliciousPath, CancellationToken.None));
-
-        exception.Message.ShouldContain("must not contain '..'");
+        (await tool.TestRun(maliciousPath, CancellationToken.None))
+            .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>()
+            .ShouldContain("must not contain '..'");
         _fileSystemClientMock.Verify(m => m.MoveToTrash(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
     [Fact]
-    public async Task Run_WithPathOutsideLibrary_ThrowsArgumentException()
+    public async Task Run_WithPathOutsideLibrary_ReturnsInvalidArgument()
     {
         // Arrange
         var tool = CreateTool();
@@ -79,10 +79,9 @@ public class RemoveToolTests
             : "/other/folder/file.txt";
 
         // Act & Assert
-        var exception = await Should.ThrowAsync<ArgumentException>(async () =>
-            await tool.TestRun(outsidePath, CancellationToken.None));
-
-        exception.Message.ShouldContain("must be within the library");
+        (await tool.TestRun(outsidePath, CancellationToken.None))
+            .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>()
+            .ShouldContain("must be within the library");
         _fileSystemClientMock.Verify(m => m.MoveToTrash(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -115,9 +114,9 @@ public class RemoveToolTests
         LibraryPathConfig libraryPath)
         : RemoveTool(client, libraryPath)
     {
-        public Task<JsonNode> TestRun(string path, CancellationToken ct)
+        public async Task<JsonNode> TestRun(string path, CancellationToken ct)
         {
-            return Run(path, ct);
+            return (await Run(path, ct)).ToNode();
         }
     }
 }

@@ -1,6 +1,7 @@
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Text;
 
@@ -30,9 +31,13 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
                                          - Search markdown files: query="config", filePattern="*.md"
                                          """;
 
-    private sealed record Scan(string Query, Regex? Pattern, int ContextLines, int MaxResults, SearchOutputMode OutputMode);
+    private sealed record Scan(string Query, Regex Pattern, int ContextLines, int MaxResults, VfsTextSearchOutputMode OutputMode);
 
-    protected JsonNode Run(
+    // The same bounded matcher every other filesystem uses: a pattern that cannot compile comes
+    // back as an envelope, and one that backtracks catastrophically ends as a timeout.
+    private static readonly TimeSpan _matchTimeout = TimeSpan.FromSeconds(1);
+
+    protected FsResult<FsSearchResult> Run(
         string query,
         bool regex = false,
         string? filePath = null,
@@ -40,23 +45,34 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         string directoryPath = "/",
         int maxResults = 50,
         int contextLines = 1,
-        SearchOutputMode outputMode = SearchOutputMode.Content)
+        VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content)
     {
-        var scan = new Scan(
-            query,
-            regex ? new Regex(query, RegexOptions.IgnoreCase) : null,
-            contextLines,
-            maxResults,
-            outputMode);
+        if (!SearchRegex.Compile(query, regex, _matchTimeout).TryGetValue(out var pattern, out var patternError))
+        {
+            return new FsResult<FsSearchResult>.Err(patternError);
+        }
 
-        return filePath is not null
-            ? FsResultContract.ToNode(SearchOneFile(filePath, regex, scan))
-            : FsResultContract.ToNode(SearchDirectory(directoryPath, filePattern, regex, scan));
+        var scan = new Scan(query, pattern, contextLines, maxResults, outputMode);
+
+        try
+        {
+            return filePath is not null
+                ? SearchOneFile(filePath, regex, scan)
+                : SearchDirectory(directoryPath, filePattern, regex, scan);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return new FsResult<FsSearchResult>.Err(SearchRegex.TimedOut(query));
+        }
     }
 
-    private FsSearchResult SearchOneFile(string filePath, bool regex, Scan scan)
+    private FsResult<FsSearchResult> SearchOneFile(string filePath, bool regex, Scan scan)
     {
-        var fullPath = ValidateAndResolvePath(filePath);
+        if (!ResolveExistingFile(filePath).TryGetValue(out var fullPath, out var resolveError))
+        {
+            return new FsResult<FsSearchResult>.Err(resolveError);
+        }
+
         var matches = MatchesIn(fullPath, scan, scan.MaxResults);
 
         return Build(filePath, regex, scan, filesSearched: 1, matches.Count == 0
@@ -64,12 +80,11 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             : [BuildFileResult(ToRelativePath(fullPath), matches, scan.OutputMode)], matches.Count);
     }
 
-    private FsSearchResult SearchDirectory(string directoryPath, string? filePattern, bool regex, Scan scan)
+    private FsResult<FsSearchResult> SearchDirectory(string directoryPath, string? filePattern, bool regex, Scan scan)
     {
-        var fullPath = ResolvePath(directoryPath);
-        if (!Directory.Exists(fullPath))
+        if (!ResolveDirectory(directoryPath).TryGetValue(out var fullPath, out var resolveError))
         {
-            throw new DirectoryNotFoundException($"Directory not found: {directoryPath}");
+            return new FsResult<FsSearchResult>.Err(resolveError);
         }
 
         var results = new List<FsSearchFileResult>();
@@ -98,10 +113,10 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         return Build(directoryPath, regex, scan, filesSearched, results, totalMatches);
     }
 
-    private static FsSearchResult Build(
+    private static FsResult<FsSearchResult> Build(
         string path, bool regex, Scan scan, int filesSearched,
         IReadOnlyList<FsSearchFileResult> results, int totalMatches) =>
-        new()
+        new FsResult<FsSearchResult>.Ok(new FsSearchResult
         {
             Query = scan.Query,
             Regex = regex,
@@ -111,11 +126,11 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             TotalMatches = totalMatches,
             Truncated = totalMatches >= scan.MaxResults,
             Results = results
-        };
+        });
 
     private static FsSearchFileResult BuildFileResult(
-        string file, IReadOnlyList<FsSearchMatch> matches, SearchOutputMode outputMode) =>
-        outputMode == SearchOutputMode.FilesOnly
+        string file, IReadOnlyList<FsSearchMatch> matches, VfsTextSearchOutputMode outputMode) =>
+        outputMode == VfsTextSearchOutputMode.FilesOnly
             ? new FsSearchFileResult { File = file, MatchCount = matches.Count }
             : new FsSearchFileResult { File = file, Matches = matches };
 
@@ -127,7 +142,8 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     private bool IsAllowedExtension(string filePath) =>
         AllowedExtensions.Contains(Path.GetExtension(filePath).ToLowerInvariant());
 
-    // An unreadable file is not a failure of the search — skip it and keep scanning the rest.
+    // An unreadable file is not a failure of the search — skip it and keep scanning the rest. Only
+    // the read is guarded: a match timeout must reach the caller as its own envelope.
     private static IReadOnlyList<FsSearchMatch> MatchesIn(string filePath, Scan scan, int maxMatches)
     {
         string[] lines;
@@ -135,7 +151,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         {
             lines = File.ReadAllLines(filePath);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return [];
         }
@@ -148,8 +164,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             .ToList();
     }
 
-    private static bool IsMatchingLine(string line, Scan scan) =>
-        scan.Pattern?.IsMatch(line) ?? line.Contains(scan.Query, StringComparison.OrdinalIgnoreCase);
+    private static bool IsMatchingLine(string line, Scan scan) => scan.Pattern.IsMatch(line);
 
     private static FsSearchMatch BuildMatch(string[] lines, int index, int contextLines)
     {
@@ -186,11 +201,20 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
 
     // A search path is always vault-relative: a leading '/' means the vault root, not the OS root.
     // Containment is then decided by the one jail, like every other disk tool.
-    private string ResolvePath(string path)
+    private FsResult<string> ResolveDirectory(string path)
     {
         var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        return Jail.Guard(string.IsNullOrEmpty(normalized)
+        var fullPath = string.IsNullOrEmpty(normalized)
             ? Jail.Root
-            : Path.GetFullPath(Path.Combine(Jail.Root, normalized)));
+            : Path.GetFullPath(Path.Combine(Jail.Root, normalized));
+
+        if (!Jail.Contains(fullPath))
+        {
+            return FsError.Invalid<string>(Jail.DeniedMessage);
+        }
+
+        return Directory.Exists(fullPath)
+            ? new FsResult<string>.Ok(fullPath)
+            : FsError.NotFound<string>(path);
     }
 }

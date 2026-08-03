@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs;
 using Domain.Tools.Text;
 using Infrastructure.Utils;
 using McpServerSandbox.Settings;
@@ -24,8 +25,8 @@ public class FsSearchTool(McpSettings settings)
         string outputMode = "content")
     {
         var searchOutputMode = outputMode.Equals("filesOnly", StringComparison.OrdinalIgnoreCase)
-            ? SearchOutputMode.FilesOnly
-            : SearchOutputMode.Content;
+            ? VfsTextSearchOutputMode.FilesOnly
+            : VfsTextSearchOutputMode.Content;
 
         var effectiveDirectoryPath = directoryPath ?? "/";
 
