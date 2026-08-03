@@ -139,6 +139,9 @@ public static class ConfigModule
 
         services.AddHostedService<WyomingSatelliteHost>();
         services.AddSingleton(settings.WyomingClient);
+        // One per process: it owns the per-satellite room-noise memory, which is deliberately keyed
+        // by satellite so it outlives any single connection.
+        services.AddSingleton<SilenceGateFactory>();
         services.AddSingleton(settings.Arbitration);
 
         services.AddSingleton<ReplyTextAccumulator>();

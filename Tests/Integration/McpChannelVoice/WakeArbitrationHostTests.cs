@@ -196,9 +196,13 @@ public class WakeArbitrationHostTests
             voiceSettings.Arbitration, manager, metrics, TimeProvider.System,
             NullLogger<WakeArbiter>.Instance);
 
+        var wyoming =
+            voiceSettings.WyomingClient;
+        var voice =
+            voiceSettings;
         var host = new WyomingSatelliteHost(
-            voiceSettings.WyomingClient,
-            voiceSettings,
+            wyoming,
+            voice,
             new SatelliteRegistry(voiceSettings.Satellites),
             new SatelliteSessionRegistry(),
             manager,
@@ -208,6 +212,7 @@ public class WakeArbitrationHostTests
             metrics,
             TimeProvider.System,
             arbiter,
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         return new Hub(host, emitter, metrics);

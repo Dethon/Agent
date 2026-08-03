@@ -12,12 +12,12 @@ Nothing observable changes in this ticket. The approval site still builds its ow
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A gate factory is registered for the process and holds the per-satellite room-noise memory, keyed so it outlives any single connection.
-- [ ] The factory resolves per-satellite endpointing overrides against the global settings, and applies the room-noise cap so it can only ever lower the floor.
-- [ ] The wake and follow-up capture obtains its gate from the factory rather than assembling a tracker inline.
-- [ ] The room sample taken when a capture closes is recorded through the factory; the connection host no longer holds room-noise state.
-- [ ] A new unit file pins the resolution: per-satellite overrides beat the globals, and a recorded room sample lowers a later gate's floor.
-- [ ] The existing room-noise coverage in the host integration file passes unchanged — that is what says the move changed nothing.
-- [ ] The comment explaining why a capture cannot measure the background it opens on top of moves with the code it describes.
+- [x] A gate factory is registered for the process and holds the per-satellite room-noise memory, keyed so it outlives any single connection.
+- [x] The factory resolves per-satellite endpointing overrides against the global settings, and applies the room-noise cap so it can only ever lower the floor.
+- [x] The wake and follow-up capture obtains its gate from the factory rather than assembling a tracker inline.
+- [x] The room sample taken when a capture closes is recorded through the factory; the connection host no longer holds room-noise state.
+- [x] A new unit file pins the resolution: per-satellite overrides beat the globals, and a recorded room sample lowers a later gate's floor.
+- [x] The existing room-noise coverage in the host integration file passes unchanged — that is what says the move changed nothing.
+- [x] The comment explaining why a capture cannot measure the background it opens on top of moves with the code it describes.

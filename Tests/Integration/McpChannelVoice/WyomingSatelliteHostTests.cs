@@ -202,7 +202,7 @@ public class WyomingSatelliteHostTests
             }
         });
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -210,11 +210,16 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            },
-            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
+            };
+        var voice =
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -342,7 +347,7 @@ public class WyomingSatelliteHostTests
             }
         });
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -350,10 +355,15 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 10_000,
                 MinSpeechMs = 100
-            },
-            new VoiceSettings { AgentId = "nabu", FollowUp = new FollowUpSettings { Enabled = false } },
+            };
+        var voice =
+            new VoiceSettings { AgentId = "nabu", FollowUp = new FollowUpSettings { Enabled = false } };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, new SatelliteSessionRegistry(), manager, stt.Object, dispatcher, new ActiveAlertRegistry(),
-            publisher.Object, TimeProvider.System, Arbiter(manager), NullLogger<WyomingSatelliteHost>.Instance);
+            publisher.Object, TimeProvider.System, Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -499,7 +509,7 @@ public class WyomingSatelliteHostTests
             }
         });
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -507,11 +517,16 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            },
-            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
+            };
+        var voice =
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -639,7 +654,7 @@ public class WyomingSatelliteHostTests
             }
         });
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -647,11 +662,16 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            },
-            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
+            };
+        var voice =
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -783,7 +803,7 @@ public class WyomingSatelliteHostTests
             }
         });
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -791,7 +811,8 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            },
+            };
+        var voice =
             // EarlyVerifyMs = 0 keeps the fake off the early-close path; only the terminal verify
             // (which yields the identity) drives this test.
             new VoiceSettings
@@ -799,10 +820,14 @@ public class WyomingSatelliteHostTests
                 AgentId = "mycroft",
                 FollowUp = new FollowUpSettings { Enabled = false },
                 SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = 0 }
-            },
+            };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance,
             new IdentifyingVerifier("fran"));
 
@@ -936,7 +961,7 @@ public class WyomingSatelliteHostTests
             }
         });
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -944,11 +969,16 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            },
-            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
+            };
+        var voice =
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance,
             new RejectingVerifier());
 
@@ -1111,15 +1141,20 @@ public class WyomingSatelliteHostTests
             ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", WakeWord = "hey_jarvis", Address = $"tcp://127.0.0.1:{port}" }
         });
 
-        var host = new WyomingSatelliteHost(
-            new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 },
+        var wyoming =
+            new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 };
+        var voice =
             new VoiceSettings
             {
                 AgentId = "mycroft",
                 FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 },
                 SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = earlyVerifyMs }
-            },
-            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager), NullLogger<WyomingSatelliteHost>.Instance,
+            };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System), NullLogger<WyomingSatelliteHost>.Instance,
             new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000));
 
         await host.StartAsync(ct);
@@ -1252,7 +1287,7 @@ public class WyomingSatelliteHostTests
             }
         });
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -1260,16 +1295,21 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            },
+            };
+        var voice =
             new VoiceSettings
             {
                 AgentId = "mycroft",
                 FollowUp = new FollowUpSettings { Enabled = false },
                 SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = earlyVerifyMs }
-            },
+            };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance,
             new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000));
 
@@ -1402,7 +1442,7 @@ public class WyomingSatelliteHostTests
             }
         });
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -1410,16 +1450,21 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            },
+            };
+        var voice =
             new VoiceSettings
             {
                 AgentId = "mycroft",
                 FollowUp = new FollowUpSettings { Enabled = false },
                 SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = earlyVerifyMs }
-            },
+            };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance,
             new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000));
 
@@ -1531,7 +1576,7 @@ public class WyomingSatelliteHostTests
             }
         });
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -1539,11 +1584,16 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            },
-            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
+            };
+        var voice =
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance,
             new RejectingVerifier());
 
@@ -1661,10 +1711,15 @@ public class WyomingSatelliteHostTests
             ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", WakeWord = "hey_jarvis", Address = $"tcp://127.0.0.1:{port}" }
         });
 
+        var wyoming =
+            new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 };
+        var voice =
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 } };
         var host = new WyomingSatelliteHost(
-            new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 },
-            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 } },
-            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager), NullLogger<WyomingSatelliteHost>.Instance);
+            wyoming,
+            voice,
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -1781,10 +1836,15 @@ public class WyomingSatelliteHostTests
             ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", WakeWord = "hey_jarvis", Address = $"tcp://127.0.0.1:{port}" }
         });
 
+        var wyoming =
+            new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 };
+        var voice =
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 } };
         var host = new WyomingSatelliteHost(
-            new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 },
-            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 } },
-            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager), NullLogger<WyomingSatelliteHost>.Instance);
+            wyoming,
+            voice,
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -1883,10 +1943,15 @@ public class WyomingSatelliteHostTests
             ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", WakeWord = "hey_jarvis", Address = $"tcp://127.0.0.1:{port}" }
         });
 
+        var wyoming =
+            new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 };
+        var voice =
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 } };
         var host = new WyomingSatelliteHost(
-            new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 },
-            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 } },
-            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager), NullLogger<WyomingSatelliteHost>.Instance);
+            wyoming,
+            voice,
+            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -2004,7 +2069,7 @@ public class WyomingSatelliteHostTests
         using var alertCts = new CancellationTokenSource();
         alerts.Register(new AlertHandle(alertCts, ["kitchen-01"], "test alert", AnnounceKind.Alarm));
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -2012,11 +2077,16 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            },
-            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
+            };
+        var voice =
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, sessions, manager, stt.Object, dispatcher, alerts, publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -2119,7 +2189,7 @@ public class WyomingSatelliteHostTests
         using var alertCts = new CancellationTokenSource();
         alerts.Register(new AlertHandle(alertCts, ["kitchen-01"], "test alert", AnnounceKind.Alarm));
 
-        var host = new WyomingSatelliteHost(
+        var wyoming =
             new WyomingClientSettings
             {
                 ReconnectDelaySeconds = 1,
@@ -2127,11 +2197,16 @@ public class WyomingSatelliteHostTests
                 TrailingSilenceMs = 200,
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
-            },
-            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } },
+            };
+        var voice =
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } };
+        var host = new WyomingSatelliteHost(
+            wyoming,
+            voice,
             registry, sessions, manager, stt.Object, dispatcher, alerts, publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
+            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
