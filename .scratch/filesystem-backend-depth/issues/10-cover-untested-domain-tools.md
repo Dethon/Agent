@@ -6,9 +6,9 @@ Search is the one with real branching and the reason this is worth its own ticke
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The read tool has a test file alongside its existing siblings, covering a successful read and a not-found path.
-- [ ] The remove tool has one, covering a successful removal and a not-found path.
-- [ ] The search tool has one, covering the file-path branch, the directory-path branch, and the invalid-argument case when neither is given.
-- [ ] Each test asserts the envelope the tool returns, not the internals of the backend behind it.
+- [x] The read tool has a test file alongside its existing siblings, covering a successful read and a not-found path.
+- [x] The remove tool has one, covering a successful removal and a not-found path.
+- [x] The search tool has one, covering the file-path branch, the directory-path branch, and the invalid-argument case when neither is given.
+- [x] Each test asserts the envelope the tool returns, not the internals of the backend behind it.
