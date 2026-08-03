@@ -72,9 +72,8 @@ public class TranscriptDispatcherTests
     {
         var published = new List<MetricEvent>();
         var publisher = new Mock<IMetricsPublisher>();
-        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
-            .Returns(Task.CompletedTask);
+        publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => published.Add(e));
         return (publisher, published);
     }
 
@@ -275,9 +274,8 @@ public class TranscriptDispatcherTests
         var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var published = new List<MetricEvent>();
         var publisher = new Mock<IMetricsPublisher>();
-        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
-            .Returns(Task.CompletedTask);
+        publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => published.Add(e));
         var sut = new TranscriptDispatcher(
             emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
@@ -329,9 +327,8 @@ public class TranscriptDispatcherTests
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var published = new List<MetricEvent>();
         var publisher = new Mock<IMetricsPublisher>();
-        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
-            .Returns(Task.CompletedTask);
+        publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => published.Add(e));
         var sut = new TranscriptDispatcher(
             new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast).Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
@@ -377,9 +374,8 @@ public class TranscriptDispatcherTests
             NullLogger<VoiceConversationManager>.Instance);
         var published = new List<MetricEvent>();
         var publisher = new Mock<IMetricsPublisher>();
-        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
-            .Returns(Task.CompletedTask);
+        publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e => published.Add(e));
         var sut = new TranscriptDispatcher(
             new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast).Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),

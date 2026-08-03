@@ -164,24 +164,18 @@ public sealed class WyomingSatelliteHost(
                     WyomingEvent.Header("audio-start", BuildAudioStart(format, alert)), sct),
                 onAudioStop: sct => client.WriteAsync(
                     WyomingEvent.Header("audio-stop", new JsonObject { ["timestamp"] = 0 }), sct),
-                onError: async (job, ex) =>
+                onError: (_, ex) =>
                 {
-                    try
+                    metrics.Publish(new VoiceEvent
                     {
-                        await metrics.PublishAsync(new VoiceEvent
-                        {
-                            Metric = VoiceMetric.TtsError,
-                            SatelliteId = id,
-                            Room = config.Room,
-                            Identity = config.Identity,
-                            Error = ex.Message,
-                            ConversationId = conversationManager.GetActiveConversationId(id)
-                        }, ct);
-                    }
-                    catch (Exception mex)
-                    {
-                        logger.LogWarning(mex, "Failed to publish TtsError metric for {Id} ({Label})", id, job.Label);
-                    }
+                        Metric = VoiceMetric.TtsError,
+                        SatelliteId = id,
+                        Room = config.Room,
+                        Identity = config.Identity,
+                        Error = ex.Message,
+                        ConversationId = conversationManager.GetActiveConversationId(id)
+                    });
+                    return Task.CompletedTask;
                 }), ct);
 
             var followUp = voiceSettings.FollowUp with
@@ -375,7 +369,7 @@ public sealed class WyomingSatelliteHost(
         var verification = await speakerVerifier.VerifyAsync(
             capture.BufferedAudio, stats.SpeechMs, session.Config, ct, enforceMinSpeech: true);
         sw.Stop();
-        await PublishVerifyLatencyAsync(
+        PublishVerifyLatency(
             VoiceMetric.SpeakerVerifyEarlyMs, session, sw.ElapsedMilliseconds, verification.Similarity, "early");
         if (verification.Decision != SpeakerDecision.Rejected)
         {
@@ -385,20 +379,19 @@ public sealed class WyomingSatelliteHost(
         logger.LogInformation(
             "Early-rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
             session.SatelliteId, verification.Similarity);
-        await PublishUnknownSpeakerAsync(session, stats, verification.Similarity, "unknown_speaker_early");
+        PublishUnknownSpeaker(session, stats, verification.Similarity, "unknown_speaker_early");
         return true;
     }
 
     // Verification runs before the STT stopwatch starts, so without this the ONNX embedding is pure
-    // invisible latency. Diagnostic only: routed through SafePublishAsync because EarlyRejectAsync
-    // is awaited from the conversation loop with no catch above it. The two passes report under
+    // invisible latency. The two passes report under
     // DIFFERENT metrics — the final inline pass (SpeakerVerifyMs) is additive within the turn
     // decomposition, while the early pass (SpeakerVerifyEarlyMs) runs concurrently with the user
     // still speaking and overlaps the utterance, so averaging them together is meaningless. Outcome
     // still carries "early"/"final" for readers that want it in one place.
-    private Task PublishVerifyLatencyAsync(
+    private void PublishVerifyLatency(
         VoiceMetric metric, SatelliteSession session, long elapsedMs, double? similarity, string outcome) =>
-        SafePublishAsync(new VoiceEvent
+        metrics.Publish(new VoiceEvent
         {
             Metric = metric,
             SatelliteId = session.SatelliteId,
@@ -410,12 +403,10 @@ public sealed class WyomingSatelliteHost(
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
         });
 
-    // Rejection telemetry is diagnostic, not part of the turn contract: this is awaited from the
-    // conversation loop (EarlyRejectAsync has no catch above it), so a metrics-backbone outage must
-    // be swallowed here or it faults the loop and wedges the satellite until reconnect.
-    private Task PublishUnknownSpeakerAsync(
+    // Rejection telemetry is diagnostic, not part of the turn contract.
+    private void PublishUnknownSpeaker(
         SatelliteSession session, CaptureStats stats, double? similarity, string outcome) =>
-        SafePublishAsync(new VoiceEvent
+        metrics.Publish(new VoiceEvent
         {
             Metric = VoiceMetric.UtteranceRejected,
             SatelliteId = session.SatelliteId,
@@ -443,7 +434,7 @@ public sealed class WyomingSatelliteHost(
             // exact and immune to scheduling jitter. Published unconditionally — including on the
             // paths that go on to drop the transcript — because tuning TrailingSilenceMs needs the
             // rejected captures too.
-            await SafePublishAsync(new VoiceEvent
+            metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.EndpointTailMs,
                 SatelliteId = session.SatelliteId,
@@ -468,7 +459,7 @@ public sealed class WyomingSatelliteHost(
                     capture.BufferedAudio, capture.Stats.SpeechMs, session.Config, ct,
                     enforceMinSpeech: !isFollowUp);
                 verifySw.Stop();
-                await PublishVerifyLatencyAsync(
+                PublishVerifyLatency(
                     VoiceMetric.SpeakerVerifyMs, session, verifySw.ElapsedMilliseconds,
                     verification.Value.Similarity, "final");
                 if (verification.Value.Decision == SpeakerDecision.Rejected)
@@ -476,7 +467,7 @@ public sealed class WyomingSatelliteHost(
                     logger.LogInformation(
                         "Rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
                         session.SatelliteId, verification.Value.Similarity);
-                    await PublishUnknownSpeakerAsync(
+                    PublishUnknownSpeaker(
                         session, capture.Stats, verification.Value.Similarity, "unknown_speaker");
                     return false;
                 }
@@ -504,7 +495,7 @@ public sealed class WyomingSatelliteHost(
             var result = await speechToText.TranscribeAsync(capture.Audio, options, ct);
             sw.Stop();
 
-            await metrics.PublishAsync(new VoiceEvent
+            metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.SttLatencyMs,
                 SatelliteId = session.SatelliteId,
@@ -512,7 +503,7 @@ public sealed class WyomingSatelliteHost(
                 Identity = session.Config.Identity,
                 DurationMs = sw.ElapsedMilliseconds,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-            }, ct);
+            });
 
             if (isFollowUp)
             {
@@ -545,7 +536,7 @@ public sealed class WyomingSatelliteHost(
         catch (Exception ex)
         {
             logger.LogError(ex, "Transcription failed for {Id}", session.SatelliteId);
-            await metrics.PublishAsync(new VoiceEvent
+            metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.SttError,
                 SatelliteId = session.SatelliteId,
@@ -553,7 +544,7 @@ public sealed class WyomingSatelliteHost(
                 Identity = session.Config.Identity,
                 Error = ex.Message,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-            }, ct);
+            });
             return false;
         }
     }
@@ -588,7 +579,7 @@ public sealed class WyomingSatelliteHost(
     private void PublishVoiceMetric(
         VoiceMetric metric, SatelliteSession session, CaptureStats? stats = null,
         double? wakeRms = null, double? wakeScore = null) =>
-        _ = SafePublishAsync(new VoiceEvent
+        metrics.Publish(new VoiceEvent
         {
             Metric = metric,
             SatelliteId = session.SatelliteId,
@@ -603,18 +594,6 @@ public sealed class WyomingSatelliteHost(
             WakeScore = wakeScore,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
         });
-
-    private async Task SafePublishAsync(VoiceEvent evt)
-    {
-        try
-        {
-            await metrics.PublishAsync(evt, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to publish voice metric {Metric}", evt.Metric);
-        }
-    }
 
     private static async Task WritePlaybackFrameAsync(WyomingClient client, AudioChunk chunk, CancellationToken ct)
     {

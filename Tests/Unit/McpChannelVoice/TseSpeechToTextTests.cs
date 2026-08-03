@@ -51,21 +51,20 @@ public class TseSpeechToTextTests
     private sealed class RecordingMetrics : IMetricsPublisher
     {
         public readonly List<VoiceEvent> Events = [];
-        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+
+        public void Publish(MetricEvent metricEvent)
         {
             if (metricEvent is VoiceEvent voice)
             {
                 Events.Add(voice);
             }
+        }
 
+        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+        {
+            Publish(metricEvent);
             return Task.CompletedTask;
         }
-    }
-
-    private sealed class ThrowingMetrics : IMetricsPublisher
-    {
-        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default) =>
-            throw new InvalidOperationException("metrics sink unavailable");
     }
 
     // Preserves frame boundaries (unlike RecordingInner, which flattens to one byte blob) so
@@ -297,23 +296,6 @@ public class TseSpeechToTextTests
 
         inner.ReceivedPayload.ShouldBeNull();
         metrics.Events.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task MetricsPublishFailureDoesNotStopInner()
-    {
-        var extractedPcm = new byte[] { 40, 41, 42, 43 };
-        var reply = WavCodec.Encode([new AudioChunk { Data = extractedPcm, Format = AudioFormat.WyomingStandard }]);
-        var inner = new RecordingInner();
-        var client = new StubClient(reply);
-        var audit = new TseAuditTrail(null, 1, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance);
-        var settings = new TseSettings { Mode = TseMode.Auto, NoiseFloorThreshold = 400 };
-        var stt = TseSpeechToText.Wrap(inner, settings, client, audit, new ThrowingMetrics(), NullLoggerFactory.Instance);
-
-        var result = await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
-
-        result.Text.ShouldBe("ok");
-        inner.ReceivedPayload.ShouldBe(extractedPcm);
     }
 
     // The seam the task-level fakes always paper over: a REAL SegmentedSpeechToText as the

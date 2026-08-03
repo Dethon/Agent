@@ -206,7 +206,7 @@ public sealed class WakeArbiter(
             // late decision that never happened.
             var transfer = conversations.TransferBinding(
                 holderId, winner.Claim.SatelliteId, winner.Claim.ReceivedAt);
-            await PublishAsync(transfer is BindingTransfer.DeclinedStale
+            Publish(transfer is BindingTransfer.DeclinedStale
                 ? new VoiceEvent
                 {
                     Metric = VoiceMetric.WakeSuppressed,
@@ -245,7 +245,7 @@ public sealed class WakeArbiter(
         }
         // Metric before the wire write, for the same reason the steal transfers first: the abort is
         // already irreversible, so the record of what happened must not hinge on reaching the peer.
-        await PublishAsync(new VoiceEvent
+        Publish(new VoiceEvent
         {
             Metric = VoiceMetric.WakeSuppressed,
             SatelliteId = claim.SatelliteId,
@@ -299,7 +299,7 @@ public sealed class WakeArbiter(
                 "Re-arm write to satellite {Id} timed out after {TimeoutMs}ms — its connection is "
                 + "still up but it stays in streaming mode and will not wake again until it reconnects",
                 handle.Session.SatelliteId, ReArmWriteTimeoutMs);
-            await PublishAsync(new VoiceEvent
+            Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.WakeSuppressed,
                 SatelliteId = handle.Session.SatelliteId,
@@ -317,15 +317,5 @@ public sealed class WakeArbiter(
         }
     }
 
-    private async Task PublishAsync(VoiceEvent evt)
-    {
-        try
-        {
-            await metrics.PublishAsync(evt, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to publish {Metric}", evt.Metric);
-        }
-    }
+    private void Publish(VoiceEvent evt) => metrics.Publish(evt);
 }

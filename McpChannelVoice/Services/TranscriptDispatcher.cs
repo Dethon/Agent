@@ -54,9 +54,9 @@ public sealed class TranscriptDispatcher(
                 transcript.AvgLogProb,
                 transcript.NoSpeechProb);
 
-            await PublishUtteranceEventAsync(
+            PublishUtteranceEvent(
                 session, transcript, similarity, stats, "dropped",
-                manager.GetActiveConversationId(session.SatelliteId), ct);
+                manager.GetActiveConversationId(session.SatelliteId));
             return false;
         }
 
@@ -70,9 +70,9 @@ public sealed class TranscriptDispatcher(
                 "Local command {Command} for {Satellite}: sent={Sent}",
                 command.Command, session.SatelliteId, command.Sent);
 
-            await PublishUtteranceEventAsync(
+            PublishUtteranceEvent(
                 session, transcript, similarity, stats, command.Sent ? "command" : "command_failed",
-                manager.GetActiveConversationId(session.SatelliteId), ct);
+                manager.GetActiveConversationId(session.SatelliteId));
 
             // False means "nothing reached the agent", which FollowUpConversation already turns into
             // EndConversation — the satellite gets its closing transcript and re-arms. No new
@@ -108,21 +108,20 @@ public sealed class TranscriptDispatcher(
             },
             ct);
 
-        await PublishUtteranceEventAsync(session, transcript, similarity, stats, "dispatched", conversationId, ct);
+        PublishUtteranceEvent(session, transcript, similarity, stats, "dispatched", conversationId);
         return true;
     }
 
     // Every UtteranceTranscribed publish shares this shape; only the outcome label and the
     // conversation id (active vs. newly created vs. none) differ per call site.
-    private Task PublishUtteranceEventAsync(
+    private void PublishUtteranceEvent(
         SatelliteSession session,
         TranscriptionResult transcript,
         double? similarity,
         CaptureStats? stats,
         string outcome,
-        string? conversationId,
-        CancellationToken ct) =>
-        publisher.PublishAsync(
+        string? conversationId) =>
+        publisher.Publish(
             new VoiceEvent
             {
                 Metric = VoiceMetric.UtteranceTranscribed,
@@ -141,6 +140,5 @@ public sealed class TranscriptDispatcher(
                 TrailingRms = stats?.TrailingRms,
                 EndReason = stats?.EndReason,
                 ConversationId = conversationId
-            },
-            ct);
+            });
 }

@@ -38,7 +38,7 @@ public sealed class TseSpeechToText(
         var skip = SkipReason(options);
         if (skip is not null)
         {
-            await PublishAsync(VoiceMetric.TseSkipped, options, outcome: skip);
+            Publish(VoiceMetric.TseSkipped, options, outcome: skip);
             return await inner.TranscribeAsync(Replay(chunks), options, ct);
         }
 
@@ -51,7 +51,7 @@ public sealed class TseSpeechToText(
         {
             var outcome = reply.Rejected ? "rejected" : "unavailable";
             logger.LogWarning("TSE sidecar {Outcome} for {Speaker}; raw audio proceeds", outcome, options.TargetSpeaker);
-            await PublishAsync(VoiceMetric.TseFailed, options, outcome, durationMs: stopwatch.ElapsedMilliseconds);
+            Publish(VoiceMetric.TseFailed, options, outcome, durationMs: stopwatch.ElapsedMilliseconds);
             return await inner.TranscribeAsync(Replay(chunks), options, ct);
         }
 
@@ -63,19 +63,19 @@ public sealed class TseSpeechToText(
         catch (InvalidDataException ex)
         {
             logger.LogWarning(ex, "TSE reply malformed for {Speaker}; raw audio proceeds", options.TargetSpeaker);
-            await PublishAsync(VoiceMetric.TseFailed, options, outcome: "malformed", durationMs: stopwatch.ElapsedMilliseconds);
+            Publish(VoiceMetric.TseFailed, options, outcome: "malformed", durationMs: stopwatch.ElapsedMilliseconds);
             return await inner.TranscribeAsync(Replay(chunks), options, ct);
         }
 
         if (extracted.Data.Length == 0)
         {
             logger.LogWarning("TSE reply empty for {Speaker}; raw audio proceeds", options.TargetSpeaker);
-            await PublishAsync(VoiceMetric.TseFailed, options, outcome: "empty", durationMs: stopwatch.ElapsedMilliseconds);
+            Publish(VoiceMetric.TseFailed, options, outcome: "empty", durationMs: stopwatch.ElapsedMilliseconds);
             return await inner.TranscribeAsync(Replay(chunks), options, ct);
         }
 
-        await PublishAsync(VoiceMetric.TseInvoked, options, outcome: "ok");
-        await PublishAsync(VoiceMetric.TseLatencyMs, options, durationMs: stopwatch.ElapsedMilliseconds);
+        Publish(VoiceMetric.TseInvoked, options, outcome: "ok");
+        Publish(VoiceMetric.TseLatencyMs, options, durationMs: stopwatch.ElapsedMilliseconds);
         audit.Record(
             options.TargetSpeaker!, options.SatelliteId, options.NoiseFloorRms,
             stopwatch.ElapsedMilliseconds, mixture, reply.Wav);
@@ -116,9 +116,9 @@ public sealed class TseSpeechToText(
         : settings.Mode == TseMode.Auto && (options.NoiseFloorRms ?? 0) < settings.NoiseFloorThreshold ? "quiet"
         : null;
 
-    private Task PublishAsync(
+    private void Publish(
         VoiceMetric metric, TranscriptionOptions options, string? outcome = null, long? durationMs = null) =>
-        SafePublishAsync(new VoiceEvent
+        metrics.Publish(new VoiceEvent
         {
             Metric = metric,
             SatelliteId = options.SatelliteId,
@@ -128,23 +128,6 @@ public sealed class TseSpeechToText(
             DurationMs = durationMs,
             FloorRms = options.NoiseFloorRms
         });
-
-    // Metrics are diagnostic, not part of the fail-open contract: a publish failure must
-    // never abort the turn. Always publishes with CancellationToken.None (matching the
-    // WyomingSatelliteHost.SafePublishAsync precedent) so this catch-all can never mask a
-    // genuine caller-requested cancellation of the turn itself — that only ever surfaces
-    // from audio enumeration, client.ExtractAsync, or inner.TranscribeAsync observing ct.
-    private async Task SafePublishAsync(VoiceEvent evt)
-    {
-        try
-        {
-            await metrics.PublishAsync(evt, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to publish voice metric {Metric}", evt.Metric);
-        }
-    }
 
     private static async IAsyncEnumerable<AudioChunk> Replay(IReadOnlyList<AudioChunk> chunks)
     {
