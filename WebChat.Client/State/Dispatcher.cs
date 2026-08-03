@@ -2,39 +2,48 @@ namespace WebChat.Client.State;
 
 public sealed class Dispatcher : IDispatcher
 {
-    private readonly Dictionary<Type, List<Action<IAction>>> _handlers = new();
+    private readonly List<Registration> _registrations = [];
 
     public IDisposable RegisterHandler<TAction>(Action<TAction> handler) where TAction : IAction
     {
-        var actionType = typeof(TAction);
-        if (!_handlers.TryGetValue(actionType, out var handlerList))
-        {
-            handlerList = [];
-            _handlers[actionType] = handlerList;
-        }
-
-        Action<IAction> wrapped = action => handler((TAction)action);
-        handlerList.Add(wrapped);
-        return new HandlerRegistration(handlerList, wrapped);
+        ArgumentNullException.ThrowIfNull(handler);
+        return Register(typeof(TAction), action => handler((TAction)action));
     }
 
-    private sealed class HandlerRegistration(List<Action<IAction>> list, Action<IAction> handler) : IDisposable
+    public IDisposable RegisterCatchAll(Action<IAction> handler)
     {
-        public void Dispose() => list.Remove(handler);
+        ArgumentNullException.ThrowIfNull(handler);
+        return Register(actionType: null, handler);
     }
 
     public void Dispatch<TAction>(TAction action) where TAction : IAction
     {
         ArgumentNullException.ThrowIfNull(action);
 
-        if (!_handlers.TryGetValue(typeof(TAction), out var handlerList))
-        {
-            return;
-        }
+        // Snapshot first: a handler may register or dispose a registration while it runs.
+        var handlers = _registrations
+            .Where(r => r.ActionType is null || r.ActionType == typeof(TAction))
+            .Select(r => r.Handler)
+            .ToList();
 
-        foreach (var handler in handlerList)
+        foreach (var handler in handlers)
         {
             handler(action);
         }
+    }
+
+    private IDisposable Register(Type? actionType, Action<IAction> handler)
+    {
+        var registration = new Registration(actionType, handler);
+        _registrations.Add(registration);
+        return new HandlerRegistration(_registrations, registration);
+    }
+
+    private sealed record Registration(Type? ActionType, Action<IAction> Handler);
+
+    private sealed class HandlerRegistration(List<Registration> registrations, Registration registration)
+        : IDisposable
+    {
+        public void Dispose() => registrations.Remove(registration);
     }
 }

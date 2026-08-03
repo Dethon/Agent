@@ -24,6 +24,14 @@ public sealed class Store<TState> : IDisposable where TState : class
         where TAction : IAction
     {
         var newState = reducer(State, action);
+
+        // A reducer falling through to its `_ => state` arm hands back the instance it was
+        // given; `with` always allocates, so reference equality separates the two exactly.
+        if (ReferenceEquals(newState, State))
+        {
+            return;
+        }
+
         _subject.OnNext(newState);
     }
 
