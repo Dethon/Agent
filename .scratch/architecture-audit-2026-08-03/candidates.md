@@ -22,7 +22,7 @@ closed it.
 | 5 | The hub call surface leaks the connection | Strong | WebChat.Client | Grilled → `.scratch/hub-call-surface/spec.md` + `docs/adr/0004-hub-calls-answer-or-say-not-live.md` |
 | 6 | `AddToolServer`, twin of `AddChannelServer` | Strong | McpServer* | Grilled → `.scratch/mcp-server-hosting/spec.md` + `docs/adr/0005-user-secrets-outrank-environment-variables.md` |
 | 7 | Two copies of "how to build an agent" | Strong | Infrastructure/Agents | Grilled → `.scratch/agent-spec/spec.md` |
-| 8 | The turn is not a value | Strong | Domain/Monitor | Not grilled |
+| 8 | The turn is not a value | Strong | Domain/Monitor | Grilled → `.scratch/conversation-group/spec.md` + `docs/adr/0006-a-group-is-anchored-and-built-by-its-first-turn.md` |
 | 9 | One breakdown descriptor, not seven pipelines | Worth exploring | Dashboard + Observability | Not grilled |
 | 10 | Timers and schedules are the same backend | Worth exploring | Domain/Tools | Not grilled |
 | 11 | Dashboard re-implements WebChat's client | Worth exploring | Blazor clients | Not grilled |
@@ -52,6 +52,12 @@ rewrite the same lines inside `McpAgent`. Candidate 1 deletes `SafePublishLatenc
 makes publishing void and non-null and replaces both turn stopwatches with a latency
 scope; running it first means candidate 7 folds an already-correct class into the
 spec, and candidate 1's accounting of untouched test construction sites still holds.
+
+Candidate 8 is sequenced AFTER candidate 1, decided during its grilling, on the same
+argument as candidate 7: candidate 1's ticket 03 rewrites the monitor's publish sites
+against today's layout, and candidate 8 moves those lines into a new module. Candidate
+8 also contacts candidate 12, which lists `ChatMonitor.cs:282` — that call moves into
+the new module, so 12 must re-derive its file references after 8 lands.
 
 Candidate 3 unblocks the voice half of candidate 1: the spans that candidate 1
 wants under test are only reachable through the hosted service today.
@@ -500,7 +506,28 @@ so they do not run by default.
 
 ## 8 — The turn is not a value
 
-**Strength:** Strong.
+**Strength:** Strong. **Grilled**, spec at `.scratch/conversation-group/spec.md`,
+decision recorded as
+`docs/adr/0006-a-group-is-anchored-and-built-by-its-first-turn.md`. Sequenced AFTER
+candidate 1, for the same reason candidate 7 is: candidate 1's
+`issues/03-migrate-the-chat-monitor.md` rewrites the exact publish sites this
+candidate relocates and asserts the existing monitor tests pass unchanged, so
+landing 8 first would force a re-spec of an already-ticketed piece of work. The
+grilling settled the open shape: the `int index` is deleted rather than renamed to
+`IsGroupOpener`, because a group anchors on its first *turn* instead of its first
+*message*, which makes "the anchor message" and "the first queued turn" the same
+message by construction. It also found `DeliveryTarget.Minted` to be the real
+source of the `skipMinted` correction — the flag goes stale on reused anchors, and
+redefining it as per-turn truth deletes the parameter. Two things the survey below
+overstates: the unawaited warmup task does not outlive the agent (warmup takes
+`McpAgent._syncLock` before the dispatch loop is reached, so `DisposeAsync` always
+waits behind it), and the eager order's documented reason survives the change —
+warmup still overlaps the announce and memory recall, losing only its overlap with
+a string switch. One constraint the survey missed: the thread context and its
+`group.Complete` callback must stay eager, because `ChatThreadResolver.ClearAsync`
+only deletes persisted state when it finds a live context. Contact with candidate
+12: `ChatMonitor.cs:282` moves into the new module, so 12's line references go
+stale if 8 lands first.
 
 **Files**
 

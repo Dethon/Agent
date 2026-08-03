@@ -73,6 +73,36 @@ call can come back with, the other being the server's own answer, and it never
 means the server said no.
 _Avoid_: disconnected, offline, failed, null
 
+## Conversation
+
+**Turn**:
+One message the agent answers, and everything that comes back from it. It is what
+waits its place in a conversation, what decides where its replies go, and what
+reports how long the answer took. A conversation runs one at a time.
+_Avoid_: message, request, exchange, prompt
+
+**Chat command**:
+A message that steers the conversation instead of being answered by it. It never
+reaches the agent and produces no reply, so it is not a turn. It also never waits
+behind one: stopping a turn is itself a command, and it is useless unless it arrives
+while the turn it stops is still running.
+_Avoid_: control message, instruction, slash command
+
+**Conversation group**:
+Every message for one conversation and one agent, taken as a single thing. The
+agent, the history it restored and the conversation its replies land in belong to
+the group rather than to any one turn, and none of it exists until the group's first
+turn does — a group that only ever carries commands builds nothing.
+_Avoid_: session, thread, conversation
+
+**Delivery identity**:
+The conversation a turn's replies actually land in, which is not always the one its
+message came from. Everything the turn produces is filed under it: the history it
+appends to, the approvals it raises, the events it reports. The rule is to name a
+conversation someone can open, so a scheduled task fires under the conversation it
+delivered into and not under the schedule.
+_Avoid_: conversation id, target conversation, delivery key
+
 ## Voice satellite
 
 **Satellite connection**:
