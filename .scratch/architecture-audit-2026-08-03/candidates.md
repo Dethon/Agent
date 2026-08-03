@@ -21,7 +21,7 @@ closed it.
 | 4 | Playback has no outcome | Strong | McpChannelVoice | Grilled → `.scratch/playback-outcome/spec.md` + `docs/adr/0003-playback-settles-by-outcome.md` |
 | 5 | The hub call surface leaks the connection | Strong | WebChat.Client | Grilled → `.scratch/hub-call-surface/spec.md` + `docs/adr/0004-hub-calls-answer-or-say-not-live.md` |
 | 6 | `AddToolServer`, twin of `AddChannelServer` | Strong | McpServer* | Grilled → `.scratch/mcp-server-hosting/spec.md` + `docs/adr/0005-user-secrets-outrank-environment-variables.md` |
-| 7 | Two copies of "how to build an agent" | Strong | Infrastructure/Agents | Not grilled |
+| 7 | Two copies of "how to build an agent" | Strong | Infrastructure/Agents | Grilled → `.scratch/agent-spec/spec.md` |
 | 8 | The turn is not a value | Strong | Domain/Monitor | Not grilled |
 | 9 | One breakdown descriptor, not seven pipelines | Worth exploring | Dashboard + Observability | Not grilled |
 | 10 | Timers and schedules are the same backend | Worth exploring | Domain/Tools | Not grilled |
@@ -46,6 +46,12 @@ onto an interface 2 then renames.
 
 Candidates 6 and 10 touch no file another candidate touches and can run at any
 point.
+
+Candidate 7 is sequenced AFTER candidate 1, decided during its grilling: both
+rewrite the same lines inside `McpAgent`. Candidate 1 deletes `SafePublishLatencyAsync`,
+makes publishing void and non-null and replaces both turn stopwatches with a latency
+scope; running it first means candidate 7 folds an already-correct class into the
+spec, and candidate 1's accounting of untouched test construction sites still holds.
 
 Candidate 3 unblocks the voice half of candidate 1: the spans that candidate 1
 wants under test are only reachable through the hosted service today.
@@ -470,6 +476,14 @@ argument.
 
 Decide during grilling whether the metrics asymmetry is intended. If it is, it
 should be a named field. If it is not, this candidate fixes a second defect.
+
+Grilled. Three claims above were checked against the code and are wrong: subagents
+already emit token, tool-call and tool-exec events; `SessionWarmup` is unreachable
+for a subagent and `HistoryStore` times a null store, so the real gap is
+`LlmFirstToken` and `LlmTotal`; and the coverage-gap note below is wrong, because
+`Tests/Unit/Infrastructure/McpAgentLatencyTests.cs` and two sibling unit test files
+cover `McpAgent`'s turn behaviour against a mocked `IChatClient`. See
+`.scratch/agent-spec/spec.md`.
 
 **How tests improve**
 

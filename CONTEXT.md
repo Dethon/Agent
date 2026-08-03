@@ -181,3 +181,21 @@ _Avoid_: inbound surface, reply channel, delivery path
 The one name a filesystem mount is known by. Its resource address, its mount point
 and the name it publishes to the agent all come from it, so they cannot disagree.
 _Avoid_: mount name, filesystem name, mount point
+
+## Agents
+
+**Agent definition**:
+The configured description of an agent. It is long-lived and shared, and says
+nothing about any one conversation.
+_Avoid_: agent config, agent profile
+
+**Agent spec**:
+Everything needed to build one running agent, resolved from a definition at the
+moment it is built. It carries the conversation it belongs to and the identities it
+will report under, so no two running agents share one.
+_Avoid_: agent options, agent config, agent definition
+
+**Subagent**:
+An agent that another agent spawns for one task. It keeps no history, and it runs
+under the parent's conversation because it acts on the parent's behalf.
+_Avoid_: child agent, worker, nested agent
