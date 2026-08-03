@@ -63,9 +63,11 @@ These three preserve today's behaviour exactly. `Broadcast` and `GateOnLive` dif
 
 | server | policy | today |
 |---|---|---|
-| SignalR, Voice, ServiceBus | `Broadcast` | `inbox.Enqueue` |
+| SignalR, Voice | `Broadcast` | `inbox.Enqueue` |
 | Telegram | `BufferAlways` | `inbox.EnqueueFor` |
-| Library, Scheduling | `GateOnLive` | liveness check then `Enqueue` |
+| Library, Scheduling, ServiceBus | `GateOnLive` | liveness check then `Enqueue` |
+
+ServiceBus moved from `Broadcast` to `GateOnLive` during implementation: it already checks liveness *before* emitting and abandons the broker message on false, so broadcasting would buffer a copy that every redelivery duplicates.
 
 ## Tasks
 

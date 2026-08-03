@@ -61,9 +61,9 @@ Behaviour across all six existing servers is unchanged. This is a consolidation,
 
 **Delivery policy is a required argument with no default.** It has three values, which together preserve every existing server's behaviour:
 
-- *Broadcast* — always enqueue. Subscribers that are idle but not yet pruned still receive the item. Used by the signal-relay, voice and service-bus servers.
+- *Broadcast* — always enqueue. Subscribers that are idle but not yet pruned still receive the item. Used by the signal-relay and voice servers.
 - *Buffer-always* — enqueue targeted at a known subscriber id, creating that subscriber's queue on demand so an item arriving before the agent's first poll is buffered rather than fanned out to nobody. Used by the Telegram server, which has no transport-level way to tell a sender to retry.
-- *Gate-on-live* — enqueue only when a live subscriber exists; otherwise nothing is buffered. Used by the scheduling and library servers, whose callers delete or advance a record only when delivery is confirmed, and which would otherwise both keep the record and leave a buffered duplicate behind.
+- *Gate-on-live* — enqueue only when a live subscriber exists; otherwise nothing is buffered. Used by the scheduling, library and service-bus servers, whose callers settle a durable record only when delivery is confirmed, and which would otherwise both keep the record and leave a buffered duplicate behind. (The service-bus assignment was corrected during implementation: liveness is only knowable after the emit, so broadcast would leave a buffered copy behind every abandoned broker message.)
 
 The distinction between broadcast and gate-on-live is exactly the no-live-subscriber case. That distinction previously existed only as a difference between which enqueue method a developer had copied.
 

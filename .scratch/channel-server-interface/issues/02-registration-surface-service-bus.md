@@ -12,15 +12,15 @@ After this ticket the service-bus project no longer contains its own copy of the
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A single registration call takes a delivery policy and wires the inbox, the transport tool, the error filter and the emitter.
-- [ ] The registration call extends the model-context-protocol server builder.
-- [ ] The delivery policy argument is required; omitting it does not compile.
-- [ ] A long-poll cancellation still propagates rather than becoming an error result.
-- [ ] Any other tool exception is still logged and returned as an error result.
-- [ ] The service-bus channel is registered through the shared call with the broadcast policy.
-- [ ] The service-bus channel's own transport tool, error filter and emitter are deleted from its project.
-- [ ] The service-bus processor still abandons a broker message when no live subscriber exists, and still completes it when one does — behaviour unchanged.
-- [ ] The service-bus channel's existing tests pass, with its emitter test narrowed to its own payload shape and its liveness assertions removed.
-- [ ] The existing channel conformance theory still passes for all six servers.
+- [x] A single registration call takes a delivery policy and wires the inbox, the transport tool, the error filter and the emitter.
+- [x] The registration call extends the model-context-protocol server builder.
+- [x] The delivery policy argument is required; omitting it does not compile.
+- [x] A long-poll cancellation still propagates rather than becoming an error result.
+- [x] Any other tool exception is still logged and returned as an error result.
+- [x] The service-bus channel is registered through the shared call with the gate-on-live policy (see the deviation note in ticket 08: broadcast would buffer a duplicate on every abandoned broker message).
+- [x] The service-bus channel's own transport tool, error filter and emitter are deleted from its project.
+- [x] The service-bus processor still abandons a broker message when no live subscriber exists, and still completes it when one does — behaviour unchanged.
+- [x] The service-bus channel's existing tests pass, with its emitter test narrowed to its own payload shape and its liveness assertions removed.
+- [x] The existing channel conformance theory still passes for all six servers.

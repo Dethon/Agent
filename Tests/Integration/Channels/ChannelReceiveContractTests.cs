@@ -60,19 +60,34 @@ public class ChannelReceiveContractTests
     // pin the SDK's transport defaults rather than the options each module actually passes to
     // WithHttpTransport. Later channel migrations append exactly one row; the test bodies are
     // written once and never copied.
-    public static TheoryData<string, Action<IServiceCollection>> Servers => new()
-    {
-        {
+    //
+    // The declared delivery policy is part of the row, so this table is the single place where
+    // "this is a channel server, and this is the policy it chose" is verified against the real
+    // registration. That is the check that would have caught all three rounds of the
+    // stale-subscriber defect: every one of them was a server buffering differently from what its
+    // caller assumed, and none of them was visible anywhere but inside the emitter.
+    //
+    // Broadcast for the two chat-shaped transports whose callers cannot retry; gate-on-live for
+    // the three whose callers settle a durable record on a confirmed delivery — a schedule, a
+    // routing entry, a broker message — and would otherwise keep the record *and* leave a buffered
+    // duplicate behind; buffer-always for the one transport with no way to tell a sender to try
+    // again later.
+    private static IReadOnlyList<(string ChannelId, Action<IServiceCollection> Configure, DeliveryPolicy Policy)>
+        Registrations =>
+    [
+        (
             "signalr",
             services => services.ConfigureChannel(
-                new SignalRSettings.ChannelSettings { RedisConnectionString = UnreachableRedis })
-        },
-        {
+                new SignalRSettings.ChannelSettings { RedisConnectionString = UnreachableRedis }),
+            DeliveryPolicy.Broadcast
+        ),
+        (
             "telegram",
             services => services.ConfigureChannel(
-                new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] })
-        },
-        {
+                new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] }),
+            DeliveryPolicy.BufferAlways
+        ),
+        (
             "servicebus",
             services => services.ConfigureChannel(
                 new ServiceBusSettings.ChannelSettings
@@ -80,24 +95,27 @@ public class ChannelReceiveContractTests
                     ServiceBusConnectionString = FakeServiceBusConnectionString,
                     PromptQueueName = "prompts",
                     ResponseQueueName = "responses"
-                })
-        },
-        {
+                }),
+            DeliveryPolicy.GateOnLive
+        ),
+        (
             "voice",
             // ConfigureVoiceChannel's IConnectionMultiplexer registration is a lazy factory (unlike
             // SignalR's eager Connect), and nothing in this registration-only test resolves it, so
             // no live/fake Redis endpoint is needed — defaults are enough, exactly as ConfigModuleTests
             // already relies on for the rest of the voice DI graph.
-            services => services.ConfigureVoiceChannel(new VoiceSettings.VoiceSettings())
-        },
-        {
+            services => services.ConfigureVoiceChannel(new VoiceSettings.VoiceSettings()),
+            DeliveryPolicy.Broadcast
+        ),
+        (
             "scheduling",
             // Same lazy IConnectionMultiplexer factory as voice — never resolved here, so the
             // connection string just needs to satisfy the required property.
             services => services.ConfigureScheduling(
-                new SchedulingSettings.SchedulingSettings { RedisConnectionString = "unused" })
-        },
-        {
+                new SchedulingSettings.SchedulingSettings { RedisConnectionString = "unused" }),
+            DeliveryPolicy.GateOnLive
+        ),
+        (
             "library",
             // ConfigureMcp's IConnectionMultiplexer registration is the same lazy factory pattern,
             // and AddJacketClient/AddQBittorrentClient only register typed HttpClients (no eager
@@ -112,9 +130,28 @@ public class ChannelReceiveContractTests
                 DownloadLocation = "/downloads",
                 BaseLibraryPath = "/media",
                 RedisConnectionString = "unused"
-            })
-        }
-    };
+            }),
+            DeliveryPolicy.GateOnLive
+        )
+    ];
+
+    public static TheoryData<string, Action<IServiceCollection>> Servers =>
+        Registrations.Aggregate(
+            new TheoryData<string, Action<IServiceCollection>>(),
+            (data, row) =>
+            {
+                data.Add(row.ChannelId, row.Configure);
+                return data;
+            });
+
+    public static TheoryData<string, Action<IServiceCollection>, DeliveryPolicy> ServerPolicies =>
+        Registrations.Aggregate(
+            new TheoryData<string, Action<IServiceCollection>, DeliveryPolicy>(),
+            (data, row) =>
+            {
+                data.Add(row.ChannelId, row.Configure, row.Policy);
+                return data;
+            });
 
     [Theory]
     [MemberData(nameof(Servers))]
@@ -194,6 +231,20 @@ public class ChannelReceiveContractTests
             .ShouldContain(
                 ChannelProtocol.ReceiveTool,
                 $"{channelId} must expose {ChannelProtocol.ReceiveTool} from its own ConfigModule");
+    }
+
+    [Theory]
+    [MemberData(nameof(ServerPolicies))]
+    public void ChannelServerRegistration_DeclaresItsDeliveryPolicy(
+        string channelId, Action<IServiceCollection> configureChannel, DeliveryPolicy expected)
+    {
+        var services = new ServiceCollection();
+        configureChannel(services);
+
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<ChannelNotificationEmitter>().Policy
+            .ShouldBe(expected, $"{channelId} must register with the {expected} delivery policy");
     }
 
     // The buffer-always target has to be the id McpChannelConnection derives for itself. If it is

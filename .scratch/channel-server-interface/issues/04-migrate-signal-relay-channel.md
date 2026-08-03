@@ -10,13 +10,13 @@ This channel computes a liveness property today that nothing in production reads
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The signal-relay channel is registered through the shared call with the broadcast policy.
-- [ ] The per-message config patch still rides an outbound message notification end to end.
-- [ ] The notification is built with named properties at the call site.
-- [ ] The channel's unread liveness property is gone, not reimplemented.
-- [ ] The signal-relay project no longer contains its own transport tool, error filter or emitter.
-- [ ] The channel's emitter test is narrowed to its own payload shape, covering the config patch field; its liveness assertions are removed.
-- [ ] Existing tests covering agent-initiated streaming and conversation creation still pass.
-- [ ] The existing channel conformance theory still passes.
+- [x] The signal-relay channel is registered through the shared call with the broadcast policy.
+- [x] The per-message config patch still rides an outbound message notification end to end.
+- [x] The notification is built with named properties at the call site.
+- [x] The channel's unread liveness property is gone, not reimplemented.
+- [x] The signal-relay project no longer contains its own transport tool, error filter or emitter.
+- [x] The channel's emitter test is narrowed to its own payload shape, covering the config patch field; its liveness assertions are removed.
+- [x] Existing tests covering agent-initiated streaming and conversation creation still pass.
+- [x] The existing channel conformance theory still passes.

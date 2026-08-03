@@ -12,17 +12,17 @@ This channel computes a liveness property that nothing in production reads. It d
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The voice channel is registered through the shared call with the broadcast policy.
-- [ ] The room location, satellite id and dismissed-alert fields still ride an outbound notification, set as named properties.
-- [ ] The emitter subclass is gone from the test tree; those tests construct a real inbox and drain it.
-- [ ] The wake-arbitration tests remain correct with two connections emitting concurrently.
-- [ ] The channel's unread liveness property is gone, not reimplemented.
-- [ ] The voice project no longer contains its own transport tool, error filter or emitter.
-- [ ] The voice emitter test is narrowed to its own payload shape; its liveness assertions are removed.
-- [ ] The full voice integration suite passes, including the satellite host and wake-arbitration files.
-- [ ] The existing channel conformance theory still passes.
+- [x] The voice channel is registered through the shared call with the broadcast policy.
+- [x] The room location, satellite id and dismissed-alert fields still ride an outbound notification, set as named properties.
+- [x] The emitter subclass is gone from the test tree; those tests construct a real inbox and drain it.
+- [x] The wake-arbitration tests remain correct with two connections emitting concurrently.
+- [x] The channel's unread liveness property is gone, not reimplemented.
+- [x] The voice project no longer contains its own transport tool, error filter or emitter.
+- [x] The voice emitter test is narrowed to its own payload shape; its liveness assertions are removed.
+- [x] The full voice integration suite passes, including the satellite host and wake-arbitration files.
+- [x] The existing channel conformance theory still passes.
 
 ## Comments
 

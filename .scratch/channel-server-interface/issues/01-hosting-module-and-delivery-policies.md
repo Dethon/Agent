@@ -16,16 +16,16 @@ The new module lives in its own project that references the domain project and t
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A new project exists referencing only the domain project and the model-context-protocol server package; the solution builds.
-- [ ] A delivery-policy type names the three policies.
-- [ ] An emitter takes a built message notification and returns whether a live subscriber was present.
-- [ ] The emitter has a matching member for cancel notifications.
-- [ ] The emitter is sealed.
-- [ ] Under broadcast, an item reaches a subscriber that is idle but not yet pruned.
-- [ ] Under gate-on-live with no live subscriber, nothing is buffered and the call reports false.
-- [ ] Under buffer-always with no subscriber yet, the queue is created on demand and the item is retrievable by the first poll that arrives.
-- [ ] Under every policy, the return value reflects live-subscriber presence, independently of whether anything was buffered.
-- [ ] Buffer-always requires a subscriber id; the other two policies reject one. Validated at registration, not at first emit.
-- [ ] All six existing channel servers still build and their tests still pass — nothing consumes the new module yet.
+- [x] A new project exists referencing only the domain project and the model-context-protocol server package; the solution builds.
+- [x] A delivery-policy type names the three policies.
+- [x] An emitter takes a built message notification and returns whether a live subscriber was present.
+- [x] The emitter has a matching member for cancel notifications.
+- [x] The emitter is sealed.
+- [x] Under broadcast, an item reaches a subscriber that is idle but not yet pruned.
+- [x] Under gate-on-live with no live subscriber, nothing is buffered and the call reports false.
+- [x] Under buffer-always with no subscriber yet, the queue is created on demand and the item is retrievable by the first poll that arrives.
+- [x] Under every policy, the return value reflects live-subscriber presence, independently of whether anything was buffered.
+- [x] Buffer-always requires a subscriber id; the other two policies reject one. Validated at registration, not at first emit.
+- [x] All six existing channel servers still build and their tests still pass — nothing consumes the new module yet.

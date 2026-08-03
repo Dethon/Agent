@@ -4,9 +4,17 @@ WORKDIR /src
 
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN dotnet restore "Infrastructure/Infrastructure.csproj"
+COPY ["Channels.Hosting/Channels.Hosting.csproj", "Channels.Hosting/"]
+RUN dotnet restore "Infrastructure/Infrastructure.csproj" \
+    && dotnet restore "Channels.Hosting/Channels.Hosting.csproj"
 
 COPY ["Domain/", "Domain/"]
 COPY ["Infrastructure/", "Infrastructure/"]
+COPY ["Channels.Hosting/", "Channels.Hosting/"]
 ARG BUILD_CONFIGURATION=Release
-RUN dotnet build "Infrastructure/Infrastructure.csproj" -c $BUILD_CONFIGURATION --no-restore
+# Every channel server publishes with BuildProjectReferences=false, so the projects they reference
+# have to be built here. Channels.Hosting references Domain and the MCP server package only — it
+# must never gain Infrastructure, or the two channel servers that depend on Domain alone inherit
+# Infrastructure's whole stack.
+RUN dotnet build "Infrastructure/Infrastructure.csproj" -c $BUILD_CONFIGURATION --no-restore \
+    && dotnet build "Channels.Hosting/Channels.Hosting.csproj" -c $BUILD_CONFIGURATION --no-restore

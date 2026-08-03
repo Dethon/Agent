@@ -10,14 +10,14 @@ This server's notification-emitter interface is removed on the same grounds as t
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The library server is registered through the shared call with the gate-on-live policy.
-- [ ] With no live subscriber, emitting buffers nothing and reports false.
-- [ ] The download watcher still drops its routing entry only on a confirmed delivery.
-- [ ] Tool sessions still never register as channel subscribers, with no client-name filter added.
-- [ ] The server's notification-emitter interface is deleted and its consumer takes the concrete emitter.
-- [ ] The library project no longer contains its own transport tool, error filter or emitter.
-- [ ] The server's channel-protocol tools remain hidden from the language model.
-- [ ] The server's filesystem and search tools are unaffected.
-- [ ] The existing channel conformance theory still passes.
+- [x] The library server is registered through the shared call with the gate-on-live policy.
+- [x] With no live subscriber, emitting buffers nothing and reports false.
+- [x] The download watcher still drops its routing entry only on a confirmed delivery.
+- [x] Tool sessions still never register as channel subscribers, with no client-name filter added.
+- [x] The server's notification-emitter interface is deleted and its consumer takes the concrete emitter.
+- [x] The library project no longer contains its own transport tool, error filter or emitter.
+- [x] The server's channel-protocol tools remain hidden from the language model.
+- [x] The server's filesystem and search tools are unaffected.
+- [x] The existing channel conformance theory still passes.

@@ -137,11 +137,11 @@ public class ChannelInboxTests
 
         inbox.EnqueueFor(Subscriber, Message("c1"));
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+        inbox.HasLiveSubscriber().ShouldBeFalse();
 
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeTrue();
+        inbox.HasLiveSubscriber().ShouldBeTrue();
     }
 
     [Fact]
@@ -332,7 +332,7 @@ public class ChannelInboxTests
         var inbox = new ChannelInbox(new FakeTimeProvider());
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeTrue();
+        inbox.HasLiveSubscriber().ShouldBeTrue();
     }
 
     [Fact]
@@ -340,7 +340,7 @@ public class ChannelInboxTests
     {
         var inbox = new ChannelInbox(new FakeTimeProvider());
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+        inbox.HasLiveSubscriber().ShouldBeFalse();
     }
 
     [Fact]
@@ -350,9 +350,9 @@ public class ChannelInboxTests
         var inbox = new ChannelInbox(time);
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
-        time.Advance(TimeSpan.FromSeconds(61));
+        time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+        inbox.HasLiveSubscriber().ShouldBeFalse();
     }
 
     // A subscriber is stamped when its poll *starts*, so the longest legitimate quiet gap is a
@@ -373,7 +373,7 @@ public class ChannelInboxTests
                 ChannelProtocol.DefaultReceiveWaitMs + ChannelProtocol.MaxReceiveRetryBackoffMs)
             + TimeSpan.FromSeconds(5));
 
-        inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness).ShouldBeTrue();
+        inbox.HasLiveSubscriber().ShouldBeTrue();
     }
 
     // The exact regression this method exists to close: PruneIdle keeps a subscriber that is
@@ -389,9 +389,9 @@ public class ChannelInboxTests
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
         inbox.Enqueue(Message("c1"));
-        time.Advance(TimeSpan.FromSeconds(61));
+        time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+        inbox.HasLiveSubscriber().ShouldBeFalse();
 
         // ...while the subscriber itself is very much still there: the buffered item is delivered
         // on the next poll. "Not live" must not be read as "evicted" — the two answers are

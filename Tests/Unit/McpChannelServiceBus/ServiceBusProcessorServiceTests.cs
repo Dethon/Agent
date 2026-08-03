@@ -135,14 +135,15 @@ public class ServiceBusProcessorServiceTests : IDisposable
 
     // Regression: a subscriber that registered once and then went quiet (the agent's channel
     // connection dropped) is not evicted by PruneIdle until it has been both empty and idle for a
-    // full hour, so HasActiveSessions stayed true long after nobody was actually polling. That let
-    // this settle (complete) the broker message instead of abandoning it — defeating Service Bus's
+    // full hour, so a liveness check that only asked whether a subscriber existed stayed true long
+    // after nobody was actually polling. That let this settle (complete) the broker message
+    // instead of abandoning it — defeating Service Bus's
     // at-least-once redelivery, since the buffered item can still be lost with the in-process inbox.
     [Fact]
     public async Task ProcessMessage_SubscriberWentStaleWithoutRepolling_AbandonsMessage()
     {
         await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
-        _time.Advance(ChannelProtocol.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
+        _time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
         var receiver = new Mock<ServiceBusReceiver>();
         receiver

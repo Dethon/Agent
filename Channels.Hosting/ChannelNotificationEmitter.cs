@@ -35,7 +35,7 @@ public sealed class ChannelNotificationEmitter
 
     private bool Deliver(ChannelInboxItem item)
     {
-        var live = _inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness);
+        var live = _inbox.HasLiveSubscriber();
         switch (_policy)
         {
             case DeliveryPolicy.GateOnLive when !live:

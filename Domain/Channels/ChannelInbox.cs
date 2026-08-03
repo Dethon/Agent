@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.DTOs.Channel;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Channels;
@@ -17,18 +18,24 @@ public sealed class ChannelInbox(
     private readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
     private readonly int _capacity = ValidateCapacity(capacity);
 
+    // How long a subscriber still counts as "someone is actually listening" after its last poll.
+    // Sized to the worst legitimate quiet gap rather than a round number: a subscriber is stamped
+    // when its poll *starts*, so a healthy pump can go a fully held poll plus one failed call's
+    // worst-case backoff between touches, and the margin absorbs network and scheduling slop past
+    // that boundary. Internal, and not a parameter: six emitters passing their own value is what
+    // let six near-miss variants exist and be fixed three separate times.
+    internal static readonly TimeSpan LiveSubscriberFreshness = TimeSpan.FromMilliseconds(
+        ChannelProtocol.DefaultReceiveWaitMs + ChannelProtocol.MaxReceiveRetryBackoffMs + 15_000);
+
     // The only liveness question this type answers, and deliberately so. "Is there bookkeeping for
     // this id" is true for up to an hour after a subscriber goes quiet — precisely so a channel
     // outage doesn't discard what was buffered during it (see PruneIdle) — which makes it the wrong
-    // question for a caller about to act on "delivery": gating a destructive action (deleting a
-    // schedule, dropping a routing entry) on it would treat an item merely sitting in an idle buffer
-    // as delivered. HasLiveSubscriber asks whether *someone actually polled recently*; a subscriber
-    // holding items but not repolling does not count, which is the case this method exists to
-    // distinguish. A near-miss twin of this method is how that distinction gets lost again.
-    public bool HasLiveSubscriber(TimeSpan freshness)
+    // question for a caller about to act on "delivery". This one asks whether *someone actually
+    // polled recently*; a subscriber holding items but not repolling does not count.
+    public bool HasLiveSubscriber()
     {
         PruneIdle();
-        var cutoff = _timeProvider.GetUtcNow() - freshness;
+        var cutoff = _timeProvider.GetUtcNow() - LiveSubscriberFreshness;
         return _subscribers.Values.Any(subscriber => subscriber.IsLiveSince(cutoff));
     }
 

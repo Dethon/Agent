@@ -10,12 +10,12 @@ The Telegram bot service currently only warns when nobody is listening; it does 
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The Telegram channel is registered through the shared call with the buffer-always policy and its subscriber id.
-- [ ] A test asserts the emitter's target subscriber id equals the id the agent's channel connection derives, so a mismatch cannot pass silently.
-- [ ] A message arriving before any poll is buffered and delivered to the first poll that arrives.
-- [ ] The bot service still emits the message when nobody is listening, and still warns.
-- [ ] The Telegram project no longer contains its own transport tool, error filter or emitter.
-- [ ] The Telegram emitter test is narrowed to its own payload shape; its liveness assertions are removed.
-- [ ] The existing channel conformance theory still passes.
+- [x] The Telegram channel is registered through the shared call with the buffer-always policy and its subscriber id.
+- [x] A test asserts the emitter's target subscriber id equals the id the agent's channel connection derives, so a mismatch cannot pass silently.
+- [x] A message arriving before any poll is buffered and delivered to the first poll that arrives.
+- [x] The bot service still emits the message when nobody is listening, and still warns.
+- [x] The Telegram project no longer contains its own transport tool, error filter or emitter.
+- [x] The Telegram emitter test is narrowed to its own payload shape; its liveness assertions are removed.
+- [x] The existing channel conformance theory still passes.

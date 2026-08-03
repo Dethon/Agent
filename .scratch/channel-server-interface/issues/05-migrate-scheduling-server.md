@@ -8,13 +8,13 @@ This server's notification-emitter interface is removed as part of the migration
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The scheduling server is registered through the shared call with the gate-on-live policy.
-- [ ] With no live subscriber, emitting buffers nothing and reports false.
-- [ ] The dispatcher still deletes or advances a schedule only on a confirmed delivery.
-- [ ] A failed delivery leaves no buffered duplicate behind, so the schedule fires once when it next succeeds.
-- [ ] The server's notification-emitter interface is deleted and its consumer takes the concrete emitter.
-- [ ] The scheduling project no longer contains its own transport tool, error filter or emitter.
-- [ ] The server's channel-protocol tools remain hidden from the language model.
-- [ ] The existing channel conformance theory still passes.
+- [x] The scheduling server is registered through the shared call with the gate-on-live policy.
+- [x] With no live subscriber, emitting buffers nothing and reports false.
+- [x] The dispatcher still deletes or advances a schedule only on a confirmed delivery.
+- [x] A failed delivery leaves no buffered duplicate behind, so the schedule fires once when it next succeeds.
+- [x] The server's notification-emitter interface is deleted and its consumer takes the concrete emitter.
+- [x] The scheduling project no longer contains its own transport tool, error filter or emitter.
+- [x] The server's channel-protocol tools remain hidden from the language model.
+- [x] The existing channel conformance theory still passes.
