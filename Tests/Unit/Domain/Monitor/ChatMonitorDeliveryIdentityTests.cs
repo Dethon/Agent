@@ -1,0 +1,119 @@
+using Domain.Agents;
+using Domain.Contracts;
+using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
+using Domain.Monitor;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+using Moq;
+using Shouldly;
+using Tests.Unit.Domain;
+using Xunit;
+
+namespace Tests.Unit.Domain.Monitor;
+
+// One turn has one conversation id. A schedule fire carries a synthetic ConversationId
+// ("sched-...") and a ReplyTo entry with a null ConversationId, prompting the target
+// channel to mint a fresh WebChat conversation. Everything the turn produces — the agent
+// it is built from, the chat history it restores, and the events it publishes — must name
+// the minted conversation, because that is the one an operator can open.
+public class ChatMonitorDeliveryIdentityTests
+{
+    private static readonly AgentKey MintedKey = new("7:9", "jonas");
+
+    [Fact]
+    public async Task Monitor_ScheduledMessageMintingConversation_BuildsTheWholeTurnFromTheMintedId()
+    {
+        var scheduleMessage = new ChannelMessage
+        {
+            ConversationId = "sched-morning-news-12345",
+            Content = "do the thing",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "jonas",
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "morning-news"),
+            ReplyTo = [new ReplyTarget("webchat", null)]
+        };
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", scheduleMessage);
+        var webchat = new FakeChannelConnection
+        {
+            ChannelId = "webchat",
+            ConversationIdToReturn = MintedKey.ConversationId
+        };
+        webchat.Complete();
+        var fakeAgent = ReplyingAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+        var published = new List<MetricEvent>();
+
+        var monitor = new ChatMonitor(
+            [scheduling, webchat],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            MonitorTestMocks.CreateThreadResolver(),
+            CapturingPublisher(published),
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        agentFactory.CreatedKeys.ShouldHaveSingleItem().ShouldBe(MintedKey);
+        fakeAgent.RestoredSessionKeys.ShouldHaveSingleItem().ShouldBe(MintedKey.ToString());
+        FirstReplyOf(published).ConversationId.ShouldBe(MintedKey.ConversationId);
+    }
+
+    [Fact]
+    public async Task Monitor_WebChatMessageWithoutReplyTo_BuildsTheWholeTurnFromItsOwnConversationId()
+    {
+        // The common path: no ReplyTo, so the delivery identity is the message's own
+        // conversation id. This is the case that already works and must not regress.
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "42:13", channelId: "webchat", agentId: "jonas");
+        var webchat = MonitorTestMocks.CreateChannel("webchat", message);
+        var fakeAgent = ReplyingAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+        var published = new List<MetricEvent>();
+
+        var monitor = new ChatMonitor(
+            [webchat],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            MonitorTestMocks.CreateThreadResolver(),
+            CapturingPublisher(published),
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        var ownKey = new AgentKey("42:13", "jonas");
+        agentFactory.CreatedKeys.ShouldHaveSingleItem().ShouldBe(ownKey);
+        fakeAgent.RestoredSessionKeys.ShouldHaveSingleItem().ShouldBe(ownKey.ToString());
+        FirstReplyOf(published).ConversationId.ShouldBe(ownKey.ConversationId);
+    }
+
+    private static FakeAiAgent ReplyingAgent()
+    {
+        return new FakeAiAgent
+        {
+            UpdatesToYield = [new AgentResponseUpdate { Contents = [new TextContent("done")] }]
+        };
+    }
+
+    private static IMetricsPublisher CapturingPublisher(List<MetricEvent> published)
+    {
+        var metrics = new Mock<IMetricsPublisher>();
+        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback((MetricEvent e, CancellationToken _) => { lock (published) { published.Add(e); } })
+            .Returns(Task.CompletedTask);
+        return metrics.Object;
+    }
+
+    private static LatencyEvent FirstReplyOf(List<MetricEvent> published)
+    {
+        return published.OfType<LatencyEvent>()
+            .Where(e => e.Stage == LatencyStage.FirstReply)
+            .ShouldHaveSingleItem();
+    }
+}

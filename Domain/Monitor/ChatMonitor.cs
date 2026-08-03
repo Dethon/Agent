@@ -30,7 +30,7 @@ public class ChatMonitor(
         AgentResponseUpdate Update, IReadOnlyList<DeliveryTarget> Targets, FirstReplyTracker? Tracker);
 
     private sealed record GroupAnchors(
-        IReadOnlyList<DeliveryTarget> Targets, IToolApprovalHandler ApprovalHandler, AgentKey PersistenceKey);
+        IReadOnlyList<DeliveryTarget> Targets, IToolApprovalHandler ApprovalHandler, AgentKey DeliveryKey);
 
     // Everything a turn needs that is fixed for the whole conversation group.
     private sealed record TurnScope(
@@ -80,9 +80,10 @@ public class ChatMonitor(
     {
         var first = await group.FirstAsync(ct);
         var anchors = await ResolveGroupAnchorsAsync(first, agentKey, ct);
-        await using var agent = agentFactory.Create(agentKey, first.Message.Sender, first.Message.AgentId, anchors.ApprovalHandler);
+        await using var agent = agentFactory.Create(
+            anchors.DeliveryKey, first.Message.Sender, first.Message.AgentId, anchors.ApprovalHandler);
         var context = threadResolver.Resolve(agentKey);
-        var thread = await GetOrRestoreThread(agent, anchors.PersistenceKey, ct);
+        var thread = await GetOrRestoreThread(agent, anchors.DeliveryKey, ct);
 
         context.RegisterCompletionCallback(group.Complete);
 
@@ -103,7 +104,7 @@ public class ChatMonitor(
             var deliveredContent = await _replyDispatcher.DeliverUpdateAsync(turn.Update, turn.Targets, ct);
             if (deliveredContent && turn.Tracker?.TryComplete() is { } firstReplyMs)
             {
-                await PublishFirstReplyLatencyAsync(firstReplyMs, turn.Targets, agentKey, ct);
+                await PublishFirstReplyLatencyAsync(firstReplyMs, anchors.DeliveryKey.ConversationId, ct);
             }
 
             yield return true;
@@ -188,31 +189,32 @@ public class ChatMonitor(
         }
     }
 
-    // Resolve delivery targets BEFORE binding the approval handler and restoring
-    // the thread. Two reasons:
-    // 1) The persistence key for chat-history must match the first delivery
-    //    target's conversation id — otherwise, when a target is minted (e.g. a
-    //    schedule fire with a null ReplyTo conversationId), history persists
-    //    under the synthetic group id while the receiving channel (WebChat)
-    //    reads history keyed on the minted id and sees an empty conversation.
-    // 2) The approval handler must route to the delivery target's channel, not
-    //    the origin. Schedule/ServiceBus channels auto-approve silently, so
-    //    binding to the origin would hide tool calls from the user in WebChat.
-    // These first-message targets anchor the group-level persistence key and
-    // approval handler; per-message reply delivery is resolved separately in
-    // ResolveTurnTargetsAsync.
+    // Resolve delivery targets BEFORE anything downstream, because the turn's whole
+    // identity comes out of them. The delivery identity is the first delivery target's
+    // conversation id, or the message's own when nothing resolved, and it is the id
+    // everything the turn produces is filed under: the agent is built from it, chat
+    // history restores under it, approvals route to it, and every event it publishes is
+    // stamped with it. The rule is "name the conversation the reply actually landed in".
+    // A schedule fire delivers into a minted WebChat conversation, so filing any of that
+    // under the synthetic scheduling id would name a conversation nobody can open — and
+    // for chat history it is worse than a label: WebChat reads history keyed on the
+    // minted id and would see an empty conversation.
+    //
+    // The approval channel follows the same anchor, not the origin. Schedule/ServiceBus
+    // channels auto-approve silently, so binding approvals to the origin would hide tool
+    // calls from the user in WebChat.
+    //
+    // These first-message targets anchor the group; per-message reply delivery is
+    // resolved separately in ResolveTurnTargetsAsync.
     private async Task<GroupAnchors> ResolveGroupAnchorsAsync(
         (IChannelConnection Channel, ChannelMessage Message) first, AgentKey agentKey, CancellationToken ct)
     {
         var targets = await _targetResolver.ResolveAsync(first.Message, first.Channel, ct);
-        var (approvalChannel, approvalConversationId) = targets.Count > 0
-            ? (targets[0].Channel, targets[0].ConversationId)
-            : (first.Channel, first.Message.ConversationId);
-        var approvalHandler = approvalHandlerFactory(approvalChannel, approvalConversationId);
-        var persistenceKey = targets.Count > 0
-            ? new AgentKey(targets[0].ConversationId, first.Message.AgentId)
-            : agentKey;
-        return new GroupAnchors(targets, approvalHandler, persistenceKey);
+        var (deliveryChannel, deliveryKey) = targets.Count > 0
+            ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, first.Message.AgentId))
+            : (first.Channel, agentKey);
+        var approvalHandler = approvalHandlerFactory(deliveryChannel, deliveryKey.ConversationId);
+        return new GroupAnchors(targets, approvalHandler, deliveryKey);
     }
 
     private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(
@@ -314,17 +316,13 @@ public class ChatMonitor(
     }
 
     private async Task PublishFirstReplyLatencyAsync(
-        long firstReplyMs, IReadOnlyList<DeliveryTarget> targets, AgentKey agentKey, CancellationToken ct)
+        long firstReplyMs, string deliveryConversationId, CancellationToken ct)
     {
         await metricsPublisher.PublishAsync(new LatencyEvent
         {
             Stage = LatencyStage.FirstReply,
             DurationMs = firstReplyMs,
-            // Attribute the event to where the reply actually landed (same idiom as
-            // the persistence key in ResolveGroupAnchorsAsync): a scheduled fire
-            // delivers to minted target conversations, not the scheduling channel's
-            // own conversation id.
-            ConversationId = targets.Count > 0 ? targets[0].ConversationId : agentKey.ConversationId
+            ConversationId = deliveryConversationId
         }, ct);
     }
 

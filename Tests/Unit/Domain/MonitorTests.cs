@@ -125,8 +125,11 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
+    public List<AgentKey> CreatedKeys { get; } = [];
+
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
+        CreatedKeys.Add(agentKey);
         return agent;
     }
 
@@ -223,7 +226,7 @@ internal static class MonitorTestMocks
         return new FakeAiAgent();
     }
 
-    public static IAgentFactory CreateAgentFactory(FakeAiAgent agent)
+    public static FakeAgentFactory CreateAgentFactory(FakeAiAgent agent)
     {
         return new FakeAgentFactory(agent);
     }
