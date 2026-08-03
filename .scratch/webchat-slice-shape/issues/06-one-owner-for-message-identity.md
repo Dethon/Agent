@@ -44,3 +44,22 @@ of having one owner.
 **No test needed editing for the widened behaviour.** The two new
 `StreamingService` tests are the widening; every existing stream and message
 test passed unchanged.
+
+**Two more divergences checked and left alone, both unreachable in production.**
+
+`FinalizeMessage` no longer records an id when there is no streaming content to
+commit, so in principle a later chunk for that id would not be guarded. Both
+call sites — `SendMessageEffect.cs:117` and `HubEventDispatcher.cs:124` — test
+`currentContent?.HasContent == true` before calling, and nothing dispatches
+between that test and the pipeline's own read of the same store. A no-content
+finalize is reachable only from a direct test call.
+
+`MessagesLoaded` replaces a topic's finalized set where the old dictionary
+unioned into it, so the registry can now shrink. Every `LoadHistory` caller is
+guarded by `MessagesByTopic.ContainsKey(topicId)` being false, and the two
+dictionaries are only ever written together, so the set it replaces is empty.
+The unguarded path is `ReconnectionEffect`, which dispatches `MessagesLoaded`
+with the server's history after a reconnect: there the same action also replaces
+the message list, so an id that disappears takes its message with it. Under the
+old code that combination was the bug — the dictionary said finalized while the
+state held no such message, and it could never come back.
