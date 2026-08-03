@@ -1,4 +1,29 @@
+using Domain.DTOs.Channel;
+using WebChat.Client.Models;
+
 namespace WebChat.Client.State.Topics;
+
+public record LoadTopics : IAction;
+
+public record TopicsLoaded(IReadOnlyList<StoredTopic> Topics) : IAction;
+
+public record SelectTopic(string? TopicId) : IAction;
+
+public record AddTopic(StoredTopic Topic) : IAction;
+
+public record UpdateTopic(StoredTopic Topic) : IAction;
+
+public record RemoveTopic(string TopicId, string? AgentId = null, long? ChatId = null, long? ThreadId = null) : IAction;
+
+public record SetAgents(IReadOnlyList<AgentCatalogEntry> Agents) : IAction;
+
+public record SelectAgent(string AgentId) : IAction;
+
+public record TopicsError(string Message) : IAction;
+
+public record CreateNewTopic : IAction;
+
+public record Initialize : IAction;
 
 public sealed class TopicsStore : IDisposable
 {
@@ -8,35 +33,7 @@ public sealed class TopicsStore : IDisposable
     {
         _store = new Store<TopicsState>(TopicsState.Initial);
 
-        dispatcher.RegisterHandler<LoadTopics>(action =>
-            _store.Dispatch(action, TopicsReducers.Reduce));
-
-        dispatcher.RegisterHandler<TopicsLoaded>(action =>
-            _store.Dispatch(action, TopicsReducers.Reduce));
-
-        dispatcher.RegisterHandler<SelectTopic>(action =>
-            _store.Dispatch(action, TopicsReducers.Reduce));
-
-        dispatcher.RegisterHandler<AddTopic>(action =>
-            _store.Dispatch(action, TopicsReducers.Reduce));
-
-        dispatcher.RegisterHandler<UpdateTopic>(action =>
-            _store.Dispatch(action, TopicsReducers.Reduce));
-
-        dispatcher.RegisterHandler<RemoveTopic>(action =>
-            _store.Dispatch(action, TopicsReducers.Reduce));
-
-        dispatcher.RegisterHandler<SetAgents>(action =>
-            _store.Dispatch(action, TopicsReducers.Reduce));
-
-        dispatcher.RegisterHandler<SelectAgent>(action =>
-            _store.Dispatch(action, TopicsReducers.Reduce));
-
-        dispatcher.RegisterHandler<TopicsError>(action =>
-            _store.Dispatch(action, TopicsReducers.Reduce));
-
-        dispatcher.RegisterHandler<CreateNewTopic>(action =>
-            _store.Dispatch(action, TopicsReducers.Reduce));
+        dispatcher.RegisterCatchAll(action => _store.Dispatch(action, Reduce));
     }
 
     public TopicsState State => _store.State;
@@ -44,4 +41,80 @@ public sealed class TopicsStore : IDisposable
     public IObservable<TopicsState> StateObservable => _store.StateObservable;
 
     public void Dispose() => _store.Dispose();
+
+    private static TopicsState Reduce(TopicsState state, IAction action) => action switch
+    {
+        LoadTopics => state with
+        {
+            IsLoading = true,
+            Error = null
+        },
+
+        TopicsLoaded a => state with
+        {
+            Topics = a.Topics,
+            IsLoading = false,
+            Error = null
+        },
+
+        SelectTopic a => state with
+        {
+            SelectedTopicId = a.TopicId
+        },
+
+        AddTopic a => state.Topics.Any(t => t.TopicId == a.Topic.TopicId)
+            ? state
+            : state with
+            {
+                Topics = state.Topics.Append(a.Topic).ToList(),
+                Error = null
+            },
+
+        UpdateTopic a => state with
+        {
+            Topics = state.Topics
+                .Select(t => t.TopicId == a.Topic.TopicId ? a.Topic : t)
+                .ToList(),
+            Error = null
+        },
+
+        RemoveTopic a => state with
+        {
+            Topics = state.Topics
+                .Where(t => t.TopicId != a.TopicId)
+                .ToList(),
+            SelectedTopicId = state.SelectedTopicId == a.TopicId ? null : state.SelectedTopicId,
+            Error = null
+        },
+
+        SetAgents a => state with
+        {
+            Agents = a.Agents,
+            // A live catalog refresh may drop the selected agent; fall back to the first
+            // available (or null when empty) so the UI never points at a ghost agent.
+            SelectedAgentId = state.SelectedAgentId is not null && a.Agents.All(ag => ag.Id != state.SelectedAgentId)
+                ? a.Agents.FirstOrDefault()?.Id
+                : state.SelectedAgentId,
+            Error = null
+        },
+
+        SelectAgent a => state with
+        {
+            SelectedAgentId = a.AgentId,
+            SelectedTopicId = null
+        },
+
+        TopicsError a => state with
+        {
+            Error = a.Message,
+            IsLoading = false
+        },
+
+        CreateNewTopic => state with
+        {
+            SelectedTopicId = null
+        },
+
+        _ => state
+    };
 }
