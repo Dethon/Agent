@@ -4,11 +4,6 @@ public static class ConnectionReducers
 {
     public static ConnectionState Reduce(ConnectionState state, IAction action) => action switch
     {
-        ConnectionStatusChanged a => state with
-        {
-            Status = a.Status
-        },
-
         ConnectionConnecting => state with
         {
             Status = ConnectionStatus.Connecting
@@ -39,11 +34,6 @@ public static class ConnectionReducers
         ConnectionClosed a => state with
         {
             Status = ConnectionStatus.Disconnected,
-            Error = a.Error
-        },
-
-        ConnectionError a => state with
-        {
             Error = a.Error
         },
 

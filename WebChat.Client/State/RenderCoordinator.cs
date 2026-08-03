@@ -20,7 +20,7 @@ public sealed class RenderCoordinator : IDisposable
         ArgumentNullException.ThrowIfNull(topicId);
 
         return _streamingStore.StateObservable
-            .Select(StreamingSelectors.SelectStreamingContent(topicId))
+            .Select(state => state.StreamingByTopic.GetValueOrDefault(topicId))
             .Sample(_renderInterval)
             .DistinctUntilChanged();
     }
@@ -31,7 +31,7 @@ public sealed class RenderCoordinator : IDisposable
         ArgumentNullException.ThrowIfNull(topicId);
 
         return _streamingStore.StateObservable
-            .Select(StreamingSelectors.SelectIsStreaming(topicId))
+            .Select(state => state.StreamingTopics.Contains(topicId))
             .Sample(_renderInterval)
             .DistinctUntilChanged();
     }

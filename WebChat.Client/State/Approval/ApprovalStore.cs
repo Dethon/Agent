@@ -10,8 +10,6 @@ public sealed class ApprovalStore : IDisposable
 
         dispatcher.RegisterHandler<ShowApproval>(action =>
             _store.Dispatch(action, ApprovalReducers.Reduce));
-        dispatcher.RegisterHandler<ApprovalResponding>(action =>
-            _store.Dispatch(action, ApprovalReducers.Reduce));
         dispatcher.RegisterHandler<ApprovalResolved>(action =>
             _store.Dispatch(action, ApprovalReducers.Reduce));
         dispatcher.RegisterHandler<ClearApproval>(action =>

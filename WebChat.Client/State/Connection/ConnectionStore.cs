@@ -8,8 +8,6 @@ public sealed class ConnectionStore : IDisposable
     {
         _store = new Store<ConnectionState>(ConnectionState.Initial);
 
-        dispatcher.RegisterHandler<ConnectionStatusChanged>(action =>
-            _store.Dispatch(action, ConnectionReducers.Reduce));
         dispatcher.RegisterHandler<ConnectionConnecting>(action =>
             _store.Dispatch(action, ConnectionReducers.Reduce));
         dispatcher.RegisterHandler<ConnectionConnected>(action =>
@@ -19,8 +17,6 @@ public sealed class ConnectionStore : IDisposable
         dispatcher.RegisterHandler<ConnectionReconnected>(action =>
             _store.Dispatch(action, ConnectionReducers.Reduce));
         dispatcher.RegisterHandler<ConnectionClosed>(action =>
-            _store.Dispatch(action, ConnectionReducers.Reduce));
-        dispatcher.RegisterHandler<ConnectionError>(action =>
             _store.Dispatch(action, ConnectionReducers.Reduce));
     }
 

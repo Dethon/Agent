@@ -7,12 +7,7 @@ public static class ApprovalReducers
         ShowApproval show => new ApprovalState
         {
             CurrentRequest = show.Request,
-            TopicId = show.TopicId,
-            IsResponding = false
-        },
-        ApprovalResponding => state with
-        {
-            IsResponding = true
+            TopicId = show.TopicId
         },
         ApprovalResolved => ApprovalState.Initial,
         ClearApproval => ApprovalState.Initial,
