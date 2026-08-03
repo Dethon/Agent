@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -30,6 +31,17 @@ public class ChatMonitor(
 
     private sealed record GroupAnchors(
         IReadOnlyList<DeliveryTarget> Targets, IToolApprovalHandler ApprovalHandler, AgentKey PersistenceKey);
+
+    // Everything a turn needs that is fixed for the whole conversation group.
+    private sealed record TurnScope(
+        AgentKey AgentKey,
+        IReadOnlyList<DeliveryTarget> Targets,
+        DisposableAgent Agent,
+        AgentSession Thread,
+        Task Warmup);
+
+    private sealed record PendingTurn(
+        (IChannelConnection Channel, ChannelMessage Message) Source, int Index);
 
     public async Task Monitor(CancellationToken cancellationToken)
     {
@@ -83,8 +95,8 @@ public class ChatMonitor(
         // outlives the agent and the order of operations is well-defined.
         var warmup = agent.WarmupSessionAsync(thread, linkedCt);
 
-        var aiResponses = RunTurnsSequentiallyAsync(
-            group.Prepend(first), agentKey, anchors.Targets, agent, thread, warmup, linkedCt);
+        var scope = new TurnScope(agentKey, anchors.Targets, agent, thread, warmup);
+        var aiResponses = RunTurnsSequentiallyAsync(group.Prepend(first), scope, linkedCt);
 
         await foreach (var turn in aiResponses.WithCancellation(ct))
         {
@@ -105,23 +117,74 @@ public class ChatMonitor(
     // queues (drained per update and per response, so two interleaved streams on one client
     // cross-attribute each other's values). Reintroducing concurrency here re-breaks all
     // three. Different conversations and the fan-out across delivery targets stay concurrent.
+    //
+    // Commands do NOT queue: /cancel is how the stop button reaches the monitor, so it has to
+    // reach threadResolver while the turn it stops is still running. Reading messages in a
+    // separate loop keeps commands immediate and turns sequential.
     private async IAsyncEnumerable<TurnUpdate> RunTurnsSequentiallyAsync(
         IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
-        AgentKey agentKey,
-        IReadOnlyList<DeliveryTarget> groupTargets,
-        DisposableAgent agent,
-        AgentSession thread,
-        Task warmup,
+        TurnScope scope,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var index = 0;
-        await foreach (var x in messages.IgnoreCancellation(ct))
+        var pending = Channel.CreateUnbounded<PendingTurn>();
+        var reader = DispatchCommandsAndQueueTurnsAsync(messages, scope.AgentKey, pending.Writer, ct);
+
+        try
         {
-            var turn = await RunTurnAsync(x, index++, agentKey, groupTargets, agent, thread, warmup, ct);
-            await foreach (var update in turn.IgnoreCancellation(ct))
+            await foreach (var (x, index) in pending.Reader.ReadAllAsync(ct).IgnoreCancellation(ct))
             {
-                yield return update;
+                var turn = await RunTurnAsync(x, index, scope, ct);
+                await foreach (var update in turn.IgnoreCancellation(ct))
+                {
+                    yield return update;
+                }
             }
+        }
+        finally
+        {
+            await reader;
+        }
+    }
+
+    // The index counts every message in the group, commands included, because
+    // ResolveTurnTargetsAsync reads index 0 as "the message the group anchors were resolved
+    // from".
+    private async Task DispatchCommandsAndQueueTurnsAsync(
+        IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
+        AgentKey agentKey,
+        ChannelWriter<PendingTurn> writer,
+        CancellationToken ct)
+    {
+        var index = 0;
+        try
+        {
+            await foreach (var x in messages.IgnoreCancellation(ct))
+            {
+                switch (ChatCommandParser.Parse(x.Message.Content))
+                {
+                    case ChatCommand.Clear:
+                        await threadResolver.ClearAsync(agentKey);
+                        break;
+                    case ChatCommand.Cancel:
+                        threadResolver.Cancel(agentKey);
+                        break;
+                    default:
+                        await writer.WriteAsync(new PendingTurn(x, index), ct);
+                        break;
+                }
+
+                index++;
+            }
+
+            writer.TryComplete();
+        }
+        catch (OperationCanceledException)
+        {
+            writer.TryComplete();
+        }
+        catch (Exception ex)
+        {
+            writer.TryComplete(ex);
         }
     }
 
@@ -155,29 +218,15 @@ public class ChatMonitor(
     private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(
         (IChannelConnection Channel, ChannelMessage Message) x,
         int index,
-        AgentKey agentKey,
-        IReadOnlyList<DeliveryTarget> groupTargets,
-        DisposableAgent agent,
-        AgentSession thread,
-        Task warmup,
+        TurnScope scope,
         CancellationToken ct)
     {
-        switch (ChatCommandParser.Parse(x.Message.Content))
-        {
-            case ChatCommand.Clear:
-                await threadResolver.ClearAsync(agentKey);
-                return AsyncEnumerable.Empty<TurnUpdate>();
-            case ChatCommand.Cancel:
-                threadResolver.Cancel(agentKey);
-                return AsyncEnumerable.Empty<TurnUpdate>();
-        }
-
         // FirstReply times "message arrival → first delivered reply chunk":
         // started before target resolution, memory recall, session warmup, and
         // the turn-start announce for agent-initiated messages, so the
         // measurement includes every stage the user actually waits on.
         var tracker = new FirstReplyTracker();
-        var targets = await ResolveTurnTargetsAsync(x, index, groupTargets, ct);
+        var targets = await ResolveTurnTargetsAsync(x, index, scope.Targets, ct);
         // Agent-initiated turns (downloads, schedules) land in conversations
         // with no live stream on the receiving channel; announce the turn so
         // the channel can set one up before reply chunks arrive. Targets the
@@ -188,10 +237,10 @@ public class ChatMonitor(
         {
             await _targetResolver.AnnounceTurnStartAsync(targets, x.Message, skipMinted: index == 0, ct);
         }
-        var userMessage = await BuildUserMessageAsync(x.Message, targets, thread, ct);
+        var userMessage = await BuildUserMessageAsync(x.Message, targets, scope.Thread, ct);
 
-        await warmup;
-        return StreamAgentTurn(agent, thread, userMessage, x.Message, targets, tracker, ct);
+        await scope.Warmup;
+        return StreamAgentTurn(scope.Agent, scope.Thread, userMessage, x.Message, targets, tracker, ct);
     }
 
     // Deliver each message's reply to the channel that actually sent it. The

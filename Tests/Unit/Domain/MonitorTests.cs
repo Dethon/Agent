@@ -27,7 +27,7 @@ internal sealed class FakeAiAgent : DisposableAgent
     public TaskCompletionSource WarmupSignaled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TimeSpan WarmupDelay { get; init; }
     public TimeSpan TurnDelay { get; init; }
-    public Func<Task>? TurnGate { get; init; }
+    public Func<CancellationToken, Task>? TurnGate { get; init; }
     public ConcurrentQueue<string> Events { get; } = new();
     public ConcurrentQueue<string> RestoredSessionKeys { get; } = new();
     public ConcurrentQueue<IReadOnlyList<ChatMessage>> ReceivedMessages { get; } = new();
@@ -94,7 +94,7 @@ internal sealed class FakeAiAgent : DisposableAgent
 
         if (TurnGate is not null)
         {
-            await TurnGate();
+            await TurnGate(cancellationToken);
         }
 
         if (TurnDelay > TimeSpan.Zero)
@@ -640,6 +640,40 @@ public class ChatMonitorTests
     }
 
     [Fact]
+    public async Task Monitor_CancelArrivingDuringATurn_CancelsTheRunningTurn()
+    {
+        // /cancel is how the WebChat stop button reaches the monitor (channel/cancel becomes a
+        // message with this content). Serialising turns must not queue it behind the turn it
+        // exists to stop: the turn here never ends on its own.
+        var channel = new FakeChannelConnection();
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "a long one"));
+        // The cancel is written from inside the turn, so it strictly arrives while that turn
+        // is running rather than racing it at startup.
+        var fakeAgent = new FakeAiAgent
+        {
+            TurnGate = ct =>
+            {
+                channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "/cancel"));
+                channel.Complete();
+                return Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            }
+        };
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        fakeAgent.Events.ToArray().ShouldBe(["warmup", "run"]);
+    }
+
+    [Fact]
     public async Task Monitor_MessagesInDifferentConversations_RunTurnsConcurrently()
     {
         // Both turns block until BOTH have started. Concurrent conversations release the
@@ -649,7 +683,7 @@ public class ChatMonitorTests
         var timedOut = false;
         var fakeAgent = new FakeAiAgent
         {
-            TurnGate = async () =>
+            TurnGate = async _ =>
             {
                 if (Interlocked.Increment(ref started) >= 2)
                 {
