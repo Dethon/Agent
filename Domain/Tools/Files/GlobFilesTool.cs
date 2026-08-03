@@ -19,6 +19,8 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
 
     protected const int FileResultCap = 200;
 
+    private readonly PathJail _jail = new(libraryPath.BaseLibraryPath);
+
     protected async Task<JsonNode> Run(string pattern, CancellationToken cancellationToken, string? basePath = null) =>
         FsResultContract.ToNode(await RunCore(pattern, cancellationToken, basePath));
 
@@ -33,13 +35,13 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
 
         if (Path.IsPathRooted(pattern))
         {
-            if (!pattern.StartsWith(libraryPath.BaseLibraryPath, StringComparison.Ordinal))
+            if (!_jail.Contains(pattern.TrimEnd('/')))
             {
                 throw new ArgumentException("Absolute pattern must be under the library root", nameof(pattern));
             }
 
             var dirsOnly = pattern.EndsWith('/');
-            pattern = Path.GetRelativePath(libraryPath.BaseLibraryPath, pattern).TrimEnd('/');
+            pattern = Path.GetRelativePath(_jail.Root, pattern).TrimEnd('/');
             if (dirsOnly)
             {
                 pattern += "/";
@@ -51,8 +53,7 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
 
         // Return entries relative to the mount root (the disk client yields absolute paths). The
         // agent-side VFS tool re-prefixes the mount point, so every filesystem speaks one format.
-        var baseRoot = Path.GetFullPath(libraryPath.BaseLibraryPath);
-        var relative = result.Select(p => ToMountRelative(baseRoot, p)).ToArray();
+        var relative = result.Select(p => ToMountRelative(_jail.Root, p)).ToArray();
         var capped = relative.Length > FileResultCap;
 
         return new FsGlobResult
@@ -82,15 +83,10 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             throw new ArgumentException("basePath must not contain '..' segments", nameof(basePath));
         }
 
-        var combined = Path.Combine(libraryPath.BaseLibraryPath, basePath.TrimStart('/'));
-        var canonRoot = Path.GetFullPath(combined);
-        var canonBase = Path.GetFullPath(libraryPath.BaseLibraryPath);
+        var canonRoot = Path.GetFullPath(Path.Combine(_jail.Root, basePath.TrimStart('/')));
 
-        if (!canonRoot.StartsWith(canonBase, StringComparison.Ordinal))
-        {
-            throw new ArgumentException("basePath must resolve under the library root", nameof(basePath));
-        }
-
-        return canonRoot;
+        return _jail.Contains(canonRoot)
+            ? canonRoot
+            : throw new ArgumentException("basePath must resolve under the library root", nameof(basePath));
     }
 }

@@ -1,20 +1,17 @@
+using Domain.Tools.Files;
+
 namespace Domain.Tools.Text;
 
 public abstract class TextToolBase(string vaultPath, string[] allowedExtensions)
 {
+    protected PathJail Jail { get; } = new(vaultPath);
+
     protected string VaultPath => vaultPath;
     protected string[] AllowedExtensions => allowedExtensions;
 
     protected string ValidateAndResolvePath(string filePath)
     {
-        var fullPath = Path.IsPathRooted(filePath)
-            ? Path.GetFullPath(filePath)
-            : Path.GetFullPath(Path.Combine(vaultPath, filePath));
-
-        if (!fullPath.StartsWith(vaultPath, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
-        }
+        var fullPath = Jail.Resolve(filePath);
 
         if (!File.Exists(fullPath))
         {

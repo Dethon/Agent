@@ -209,16 +209,14 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         return Path.GetRelativePath(VaultPath, fullPath).Replace('\\', '/');
     }
 
+    // A search path is always vault-relative: a leading '/' means the vault root, not the OS root.
+    // Containment is then decided by the one jail, like every other disk tool.
     private string ResolvePath(string path)
     {
         var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var fullPath = string.IsNullOrEmpty(normalized)
-            ? VaultPath
-            : Path.GetFullPath(Path.Combine(VaultPath, normalized));
-
-        return fullPath.StartsWith(VaultPath, StringComparison.OrdinalIgnoreCase)
-            ? fullPath
-            : throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
+        return Jail.Guard(string.IsNullOrEmpty(normalized)
+            ? Jail.Root
+            : Path.GetFullPath(Path.Combine(Jail.Root, normalized)));
     }
 
     private static JsonNode BuildResultJson(

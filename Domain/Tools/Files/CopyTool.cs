@@ -5,9 +5,7 @@ namespace Domain.Tools.Files;
 
 public class CopyTool(string rootPath)
 {
-    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
+    private readonly PathJail _jail = new(rootPath);
 
     protected const string Description = """
         Copies a file or directory within this filesystem.
@@ -18,8 +16,8 @@ public class CopyTool(string rootPath)
 
     protected JsonNode Run(string sourcePath, string destinationPath, bool overwrite, bool createDirectories)
     {
-        var src = ResolveAndValidate(sourcePath);
-        var dst = ResolveAndValidate(destinationPath);
+        var src = _jail.Resolve(sourcePath);
+        var dst = _jail.Resolve(destinationPath);
 
         if (!File.Exists(src) && !Directory.Exists(src))
         {
@@ -77,25 +75,5 @@ public class CopyTool(string rootPath)
         var dirBytes = Directory.EnumerateDirectories(source).Sum(d =>
             CopyDirectoryRecursive(d, Path.Combine(destination, Path.GetFileName(d)), overwrite));
         return fileBytes + dirBytes;
-    }
-
-    private string ResolveAndValidate(string path)
-    {
-        var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var fullPath = Path.IsPathRooted(path)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(rootPath, normalized));
-
-        var canonicalRoot = Path.GetFullPath(rootPath);
-        var rootWithSep = canonicalRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? canonicalRoot
-            : canonicalRoot + Path.DirectorySeparatorChar;
-
-        if (fullPath.Equals(canonicalRoot, _pathComparison) ||
-            fullPath.StartsWith(rootWithSep, _pathComparison))
-        {
-            return fullPath;
-        }
-        throw new UnauthorizedAccessException($"Access denied: path must be within {canonicalRoot}");
     }
 }

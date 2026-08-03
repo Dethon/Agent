@@ -7,9 +7,7 @@ namespace Domain.Tools.Files;
 
 public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
-    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
+    private readonly PathJail _jail = new(libraryPath.BaseLibraryPath);
 
     protected const string Description = """
                                          Moves and/or renames a file or directory.
@@ -48,13 +46,12 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         }
 
         var canonicalPath = Path.GetFullPath(path);
-        var canonicalLibraryPath = Path.GetFullPath(libraryPath.BaseLibraryPath);
 
-        if (!canonicalPath.StartsWith(canonicalLibraryPath, _pathComparison))
+        if (!_jail.Contains(canonicalPath))
         {
             throw new ArgumentException($"""
                                          {nameof(MoveTool)} path must be within the library.
-                                         Resolved path '{canonicalPath}' is not under library path '{canonicalLibraryPath}'.
+                                         Resolved path '{canonicalPath}' is not under library path '{_jail.Root}'.
                                          """);
         }
 

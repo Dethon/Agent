@@ -5,9 +5,7 @@ namespace Domain.Tools.Files;
 
 public class FileInfoTool(string rootPath)
 {
-    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
+    private readonly PathJail _jail = new(rootPath);
 
     protected const string Description = """
                                          Returns metadata about a path: exists, isDirectory, size (files only), and lastModified.
@@ -17,20 +15,7 @@ public class FileInfoTool(string rootPath)
 
     protected JsonNode Run(string path)
     {
-        var fullPath = Path.IsPathRooted(path)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(rootPath, path));
-
-        var canonicalRoot = Path.GetFullPath(rootPath);
-        var rootWithSep = canonicalRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? canonicalRoot
-            : canonicalRoot + Path.DirectorySeparatorChar;
-
-        if (!fullPath.Equals(canonicalRoot, _pathComparison) &&
-            !fullPath.StartsWith(rootWithSep, _pathComparison))
-        {
-            throw new UnauthorizedAccessException($"Access denied: path must be within {canonicalRoot}");
-        }
+        var fullPath = _jail.Resolve(path);
 
         var fileExists = File.Exists(fullPath);
         var dirExists = !fileExists && Directory.Exists(fullPath);

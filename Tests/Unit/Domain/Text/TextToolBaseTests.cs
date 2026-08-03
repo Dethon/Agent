@@ -40,6 +40,26 @@ public class TextToolBaseTests : IDisposable
             _tool.TestValidateAndResolvePath("/etc/passwd"));
     }
 
+    // A directory whose name merely extends the vault's is a different directory, and a prefix
+    // match without a separator used to let it through.
+    [Fact]
+    public void ValidateAndResolvePath_SiblingDirectoryWithVaultPrefix_ThrowsException()
+    {
+        var sibling = _testDir + "-evil";
+        Directory.CreateDirectory(sibling);
+        try
+        {
+            File.WriteAllText(Path.Combine(sibling, "secret.md"), "leak");
+
+            Should.Throw<UnauthorizedAccessException>(() =>
+                _tool.TestValidateAndResolvePath(Path.Combine(sibling, "secret.md")));
+        }
+        finally
+        {
+            Directory.Delete(sibling, true);
+        }
+    }
+
     [Fact]
     public void ValidateAndResolvePath_FileNotFound_ThrowsException()
     {

@@ -84,6 +84,15 @@ public class GlobFilesToolTests
             () => _tool.TestRun("/other/path/**/*.pdf", CancellationToken.None));
     }
 
+    // /library-backup is a different directory from /library, and a prefix match without a
+    // separator used to admit it and then hand the client a '../' pattern.
+    [Fact]
+    public async Task Run_WithAbsolutePathInASiblingOfBasePath_ThrowsArgumentException()
+    {
+        await Should.ThrowAsync<ArgumentException>(
+            () => _tool.TestRun("/library-backup/**/*.pdf", CancellationToken.None));
+    }
+
     [Fact]
     public async Task Run_OverCap_ReturnsTruncatedObject()
     {

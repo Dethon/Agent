@@ -5,9 +5,7 @@ namespace Domain.Tools.Files;
 
 public class BlobWriteTool(string rootPath)
 {
-    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
+    private readonly PathJail _jail = new(rootPath);
 
     protected const string Description = """
         Writes a chunk of raw bytes (base64-encoded) to a file at the given offset.
@@ -19,7 +17,7 @@ public class BlobWriteTool(string rootPath)
     protected JsonNode Run(string path, string contentBase64, long offset, bool overwrite, bool createDirectories)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
-        var resolved = ResolveAndValidate(path);
+        var resolved = _jail.Resolve(path);
         var bytes = Convert.FromBase64String(contentBase64);
 
         if (createDirectories)
@@ -53,25 +51,5 @@ public class BlobWriteTool(string rootPath)
             BytesWritten = bytes.Length,
             TotalBytes = info.Length
         });
-    }
-
-    private string ResolveAndValidate(string path)
-    {
-        var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var fullPath = Path.IsPathRooted(path)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(rootPath, normalized));
-
-        var canonicalRoot = Path.GetFullPath(rootPath);
-        var rootWithSep = canonicalRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? canonicalRoot
-            : canonicalRoot + Path.DirectorySeparatorChar;
-
-        if (fullPath.Equals(canonicalRoot, _pathComparison) ||
-            fullPath.StartsWith(rootWithSep, _pathComparison))
-        {
-            return fullPath;
-        }
-        throw new UnauthorizedAccessException($"Access denied: path must be within {canonicalRoot}");
     }
 }

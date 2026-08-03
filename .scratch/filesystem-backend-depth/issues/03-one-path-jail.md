@@ -8,12 +8,12 @@ Return types and call shapes are unchanged; the tools still throw here. Making t
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One value type decides containment, built from the canonical root.
-- [ ] All eight hand-written copies of the check are gone.
-- [ ] A path whose prefix matches the root but is not followed by a separator is refused.
-- [ ] One comparison rule applies, and the operating-system-conditional branches are gone.
-- [ ] A path legitimately inside the root is still accepted, including one reached through a relative segment.
-- [ ] The existing per-tool test files cover the refusal and the acceptance, and the tests were seen to fail before the fix.
-- [ ] The tools' return types are unchanged; no wrapper or server needs editing.
+- [x] One value type decides containment, built from the canonical root.
+- [x] All eight hand-written copies of the check are gone.
+- [x] A path whose prefix matches the root but is not followed by a separator is refused.
+- [x] One comparison rule applies, and the operating-system-conditional branches are gone.
+- [x] A path legitimately inside the root is still accepted, including one reached through a relative segment.
+- [x] The existing per-tool test files cover the refusal and the acceptance, and the tests were seen to fail before the fix.
+- [x] The tools' return types are unchanged; no wrapper or server needs editing.

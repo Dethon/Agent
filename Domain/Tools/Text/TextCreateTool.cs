@@ -1,10 +1,13 @@
 using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
+using Domain.Tools.Files;
 
 namespace Domain.Tools.Text;
 
 public class TextCreateTool(string vaultPath, string[] allowedExtensions)
 {
+    private readonly PathJail _jail = new(vaultPath);
+
     protected const string Description = """
                                          Creates a new text or markdown file in the vault.
 
@@ -23,7 +26,7 @@ public class TextCreateTool(string vaultPath, string[] allowedExtensions)
 
     protected JsonNode Run(string filePath, string content, bool overwrite = false, bool createDirectories = true)
     {
-        var fullPath = ResolvePath(filePath);
+        var fullPath = _jail.Resolve(filePath);
         ValidateExtension(fullPath);
         if (!overwrite)
         {
@@ -78,18 +81,6 @@ public class TextCreateTool(string vaultPath, string[] allowedExtensions)
     private string ToRelativePath(string fullPath)
     {
         return Path.GetRelativePath(vaultPath, fullPath).Replace('\\', '/');
-    }
-
-    private string ResolvePath(string filePath)
-    {
-        var normalized = filePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var fullPath = Path.IsPathRooted(filePath)
-            ? Path.GetFullPath(filePath)
-            : Path.GetFullPath(Path.Combine(vaultPath, normalized));
-
-        return fullPath.StartsWith(vaultPath, StringComparison.OrdinalIgnoreCase)
-            ? fullPath
-            : throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
     }
 
     private static string FormatFileSize(long bytes)

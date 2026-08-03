@@ -7,9 +7,7 @@ public class BlobReadTool(string rootPath)
 {
     public const int MaxChunkSizeBytes = 256 * 1024;
 
-    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
+    private readonly PathJail _jail = new(rootPath);
 
     protected const string Description = """
         Reads a chunk of raw bytes from a file as base64. Used by the agent's cross-filesystem
@@ -19,7 +17,7 @@ public class BlobReadTool(string rootPath)
 
     protected JsonNode Run(string path, long offset, int length)
     {
-        var resolved = ResolveAndValidate(path);
+        var resolved = _jail.Resolve(path);
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
         ArgumentOutOfRangeException.ThrowIfNegative(length);
         if (!File.Exists(resolved))
@@ -57,25 +55,5 @@ public class BlobReadTool(string rootPath)
             Eof = eof,
             TotalBytes = info.Length
         });
-    }
-
-    private string ResolveAndValidate(string path)
-    {
-        var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var fullPath = Path.IsPathRooted(path)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(rootPath, normalized));
-
-        var canonicalRoot = Path.GetFullPath(rootPath);
-        var rootWithSep = canonicalRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? canonicalRoot
-            : canonicalRoot + Path.DirectorySeparatorChar;
-
-        if (fullPath.Equals(canonicalRoot, _pathComparison) ||
-            fullPath.StartsWith(rootWithSep, _pathComparison))
-        {
-            return fullPath;
-        }
-        throw new UnauthorizedAccessException($"Access denied: path must be within {canonicalRoot}");
     }
 }
