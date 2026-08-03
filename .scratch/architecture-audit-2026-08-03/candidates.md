@@ -18,7 +18,7 @@ closed it.
 | 1 | Metrics publishing has no module | Strong | cross-cutting | Grilled → `.scratch/metrics-publishing-module/spec.md` |
 | 2 | The rebuild loses its event handlers | Strong | WebChat.Client | Grilled → `.scratch/chat-live-connection/spec.md` |
 | 3 | The satellite connection has no module | Strong | McpChannelVoice | Grilled → `.scratch/satellite-connection-module/spec.md` |
-| 4 | Playback has no outcome | Strong | McpChannelVoice | Not grilled |
+| 4 | Playback has no outcome | Strong | McpChannelVoice | Grilled → `.scratch/playback-outcome/spec.md` + `docs/adr/0003-playback-settles-by-outcome.md` |
 | 5 | The hub call surface leaks the connection | Strong | WebChat.Client | Not grilled |
 | 6 | `AddToolServer`, twin of `AddChannelServer` | Strong | McpServer* | Not grilled |
 | 7 | Two copies of "how to build an agent" | Strong | Infrastructure/Agents | Not grilled |
@@ -45,8 +45,16 @@ point.
 Candidate 3 unblocks the voice half of candidate 1: the spans that candidate 1
 wants under test are only reachable through the hosted service today.
 
-Candidates 4 and the noted `SendReplyTool` item overlap. Grill 4 first and see
-what is left.
+Candidate 4 is sequenced AFTER candidate 3, decided during its grilling: the
+`Discarded` outcome is settled by the satellite connection's drain phase, which
+candidate 3's spec is what creates.
+
+Candidates 4 and the noted `SendReplyTool` item overlapped; 4 has been grilled and
+took the smaller half. Claimed by 4: the three segment-release paths, the three
+prefetch-disposal paths, and the per-satellite voice fallback duplicated at four
+sites. Left for the noted item: the eight service-locator lookups at `:37-52` and the
+private statics threading nine or ten parameters, whose fix is a reply-speaker module
+holding them as fields.
 
 Rerun the cross-candidate contact check before adding a candidate, the same way
 `.scratch/README.md` records for the previous batch.
@@ -728,7 +736,9 @@ lookups at `:37-52`, private statics threading nine or ten parameters at
 `session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice` is duplicated at
 `:273`, `RequestApprovalTool.cs:124` and `:140`, `AnnouncementService.cs:58-60`.
 The static-plus-`IServiceProvider` shape is a repo-wide convention and should
-stay; the module inside it should come out. Overlaps candidate 4.
+stay; the module inside it should come out. Candidate 4 claims the voice fallback
+(one resolver on the satellite session) and the disposal duty; what stays here is the
+service-locator lookups and the parameter threading.
 
 **The capture is a shared mutable field.** `SatelliteSession.cs:155-178` exposes
 `OpenCapture`, `CloseCapture`, `HasActiveCapture`, `RouteAudio`, `EndCapture`,

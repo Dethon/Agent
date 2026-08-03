@@ -91,3 +91,44 @@ _Avoid_: first turn, initial capture
 A turn the hub opens by itself after a reply, with the microphone live and no wake
 word. It has no wake announcement of its own and never will.
 _Avoid_: continuation, second turn
+
+## Satellite playback
+
+**Playback queue**:
+The one place audio waits its turn to be heard on a satellite. Only one thing is
+audible at a time, so everything anyone wants spoken there — a reply, an
+announcement, an alarm, a prompt, an earcon — goes through it and is heard in the
+order it accepted them.
+_Avoid_: playback loop, audio channel, speaker
+
+**Playback job**:
+One stretch of audio handed to the queue to be heard as a unit, along with what kind
+of thing it is. The kind is what the queue reads to decide how much of that kind it
+will hold at once and how it is treated on the way out.
+_Avoid_: playback item, utterance, segment
+
+**Playback outcome**:
+The single fact about a job that ends it. Every job accepted or turned away gets
+exactly one, and never more: it was heard to the end, it was cut short, it broke, it
+was turned away, or the connection died before it could be heard. Whoever queued the
+job learns it from that one fact and nothing else.
+_Avoid_: playback result, callback, completion
+
+**Refusal**:
+The queue declining a job outright, so it never waits and is never heard. A refusal
+is an outcome like any other, not a failure — the caller is told why, and the three
+reasons are that the satellite is gone, that the queue already holds as much of that
+kind as it will, and that a low-priority job arrived while anything was queued.
+_Avoid_: rejection, drop, error
+
+**Preemption**:
+A high-priority job cutting the line. Everything already queued when it arrived is
+cut short as well, not just whatever was audible at that moment, so an alarm is heard
+next rather than after the rest of an answer.
+_Avoid_: cancellation, interruption, barge-in
+
+**Drain**:
+A job being heard all the way to its end. It means the satellite finished playing,
+not that the hub finished sending — the hub is always done sending first, because the
+satellite plays at real time.
+_Avoid_: completion, finish, flush
