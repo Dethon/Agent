@@ -1,7 +1,8 @@
 # Architecture audit — 2026-08-03
 
-Twelve deepening candidates from the second architecture review. This file is the
-survey output, not a plan. Nothing here has been grilled yet.
+Twelve deepening candidates from the second architecture review. This file was the
+survey output, not a plan. All twelve have now been grilled; each candidate's Status
+row says where it went, and the body records what survived.
 
 Each candidate becomes its own `.scratch/<slug>/` folder once it goes through
 `/grill-with-docs` → `/to-spec` → `/to-tickets`. Until then this is the only
@@ -26,7 +27,7 @@ closed it.
 | 9 | One breakdown descriptor, not seven pipelines | Worth exploring | Dashboard + Observability | Grilled → `.scratch/metric-family/spec.md` + `docs/adr/0007-a-metric-family-is-named-not-typed.md` |
 | 10 | Timers and schedules are the same backend | Rejected | Domain/Tools | Grilled → closed, no change |
 | 11 | Dashboard re-implements WebChat's client | Reframed | Dashboard.Client | Grilled → sharing rejected, `docs/adr/0008-the-two-browser-clients-stay-separate.md`; reframed → `.scratch/dashboard-live-connection/spec.md` |
-| 12 | The memory turn has no owner | Worth exploring | Domain/Memory | Not grilled |
+| 12 | The memory turn has no owner | Worth exploring | Domain/Memory | Grilled → `.scratch/turn-rendering/spec.md`; reframed, one claim withdrawn |
 
 Candidates 1 and 2 are live defects, verified against the code. The rest are
 friction.
@@ -69,8 +70,19 @@ spec, and candidate 1's accounting of untouched test construction sites still ho
 Candidate 8 is sequenced AFTER candidate 1, decided during its grilling, on the same
 argument as candidate 7: candidate 1's ticket 03 rewrites the monitor's publish sites
 against today's layout, and candidate 8 moves those lines into a new module. Candidate
-8 also contacts candidate 12, which lists `ChatMonitor.cs:282` — that call moves into
-the new module, so 12 must re-derive its file references after 8 lands.
+8 also contacts candidate 12, but not for the reason first recorded here: the recall
+call at `ChatMonitor.cs:282` does not move, and what changes is the signature of the
+private method holding it. Candidate 8's ticket 02 makes the monitor's private per-turn
+methods take a turn record, and `BuildUserMessageAsync` is one of them — which is where
+candidate 12 hangs its anchor-ordering test.
+
+Candidate 12 is sequenced AFTER candidates 1 and 8, decided during its grilling.
+Candidate 1's ticket 05 rewrites `MemoryRecallHook`'s stopwatch and publish structure
+and drops `Async` suffixes from methods that lose their awaits; candidate 12 edits the
+same file for the feature gate and the anchor. Candidate 8 settles the signature the
+ordering test attaches to. Neither contact is deep, but going first in either case
+means writing the same lines twice. Candidate 8 already waits on 1, so this adds no
+new dependency edge.
 
 Candidate 3 unblocks the voice half of candidate 1: the spans that candidate 1
 wants under test are only reachable through the hosted service today.
@@ -921,18 +933,23 @@ above is wrong and the corrected one is there.
 
 ## 12 — The memory turn has no owner
 
-**Strength:** Worth exploring.
+**Strength:** Worth exploring. Grilled → `.scratch/turn-rendering/spec.md`. The
+proposed single module did not survive; three of the four friction claims did, and
+the scope widened past memory. Body below rewritten to match what was settled.
 
 **Files**
 
-- `Domain/Monitor/ChatMonitor.cs:282`
+- `Domain/Monitor/ChatMonitor.cs:266-287` (`BuildUserMessageAsync`, the recall call at `:282`)
 - `Infrastructure/Memory/MemoryRecallHook.cs:59-60` (anchor), `:78`, `:99-103`, `:41-48` (feature gate)
-- `Domain/Extensions/ChatMessageExtensions.cs:13`, `:137`
-- `Infrastructure/Agents/ChatClients/OpenRouterChatClient.cs:126-133`, `:322-337` (`FormatMemoryContext`, private static)
-- `Domain/Memory/MemoryExtractionQueue.cs`
+- `Domain/Extensions/ChatMessageExtensions.cs:13`, `:126-145`
+- `Infrastructure/Agents/ChatClients/OpenRouterChatClient.cs:82-136` (the whole clone-and-prepend transform), `:296-311` (`FormatMemoryContext`, private static)
 - `Infrastructure/Memory/MemoryExtractionWorker.cs:108-130`, `:46-53` (feature gate)
 - `Domain/Memory/ConversationWindowRenderer.cs:23-32`
 - `Domain/Prompts/MemoryPrompts.cs:9`, `:29`, `:70` — 149 lines, zero tests
+- `Infrastructure/Agents/ChatClients/RedisChatMessageStore.cs:69` (what actually gets persisted)
+
+Two references in the original card had drifted: `FormatMemoryContext` is at `:296-311`,
+not `:322-337`. `Domain/Memory/MemoryExtractionQueue.cs` was listed and is not involved.
 
 **Friction**
 
@@ -941,41 +958,67 @@ Three unexpressed invariants span this chain.
 `anchorIndex = persistedCount` at `MemoryRecallHook.cs:59-60` is correct only
 because `ChatMonitor` calls `EnrichAsync` before the turn is persisted.
 `MemoryExtractionRequest.AnchorIndex` is a bare `int` that says nothing about
-this.
+this. If the order ever changed, the extraction window would take the current
+message out of the persisted thread *and* append `FallbackContent`, handing the
+extractor the same turn twice with the real one labelled `[context -1]`. Nothing
+would go red.
 
 `MemoryExtractionWorker.BuildExtractionWindowAsync` appends `FallbackContent`
 last at `:124-127` purely so `ConversationWindowRenderer` labels it `[CURRENT]`
 at `:26-28`, which is what `MemoryPrompts.ExtractionSystemPrompt` promises the
-model at `:29` and `:70`. Three modules, no shared contract.
+model at `:29` and `:70`. Three modules, no shared contract. Both mechanical ends
+do have tests — `MemoryExtractionWorkerDriftTests` and `ConversationWindowRendererTests`
+— so what is unpinned is only the link to the prompt constant.
 
 `MemoryPrompts.FeatureSystemPrompt:9` tells the model to look for a
 `[Memory context]` block that is produced by a private static in an unrelated
-adapter, `OpenRouterChatClient.FormatMemoryContext`. Memory silently vanishes
-behind any other `IChatClient`.
+adapter, `OpenRouterChatClient.FormatMemoryContext`. The card's "memory silently
+vanishes behind any other `IChatClient`" does not apply — `OpenRouterChatClient` is
+the only implementation in the repo. What stands is that the block has no test
+anywhere and is reachable only by driving the chat client.
+
+The slicing rule is a private method on a `BackgroundService`, so four of the ten
+tests in `MemoryExtractionWorkerTests` (`:240`, `:288`, `:317`, `:380`) each stand up
+a fake extractor, embedding service, store, thread store, metrics publisher and agent
+definition provider to assert a `Take`/`TakeLast`.
 
 The feature gate is copy-pasted at `MemoryRecallHook.cs:41-48` and
-`MemoryExtractionWorker.cs:46-53`, and is simply absent from
-`MemoryDreamingService`, which consolidates for every user regardless.
+`MemoryExtractionWorker.cs:46-53`, fail-open on both a null and an unknown agent id
+with neither copy saying so.
 
-**Proposed deepening**
+**Withdrawn: the missing gate in `MemoryDreamingService`.** The gate is per agent;
+dreaming iterates users from `store.GetAllUserIdsAsync` and has no agent to check. A
+user only reaches that list if memories were stored for them, which required an agent
+with memory enabled, and consolidating memories that already exist is correct however
+many agents can read them back. There is no global `Memory:Enabled` flag either — a
+switch like that is a separate candidate, not this one. Do not re-raise.
 
-A `Domain/Memory/MemoryTurn` module owning the vocabulary behind a small
-interface: `Anchor(long persistedCount)` returning a named type,
-`BuildWindow(thread, anchor, fallback)`, `RenderWindow(window)` (today's
-`ConversationWindowRenderer`) and `RenderRecallBlock(MemoryContext)`, moving
-`FormatMemoryContext` out of `OpenRouterChatClient` so the block the prompt
-promises and the block a client emits are the same function. Plus one
-`MemoryFeatureGate` the three services share.
+**Deepening as settled**
 
-Interface shape is open. Worth design-it-twice.
+Not one module. Two chains that touch only through `MemoryExtractionRequest`, which
+already exists, so they split by the prompt each satisfies: an `ExtractionWindow`
+(pure `Build` plus `Render`, absorbing `ConversationWindowRenderer`) paired with
+`ExtractionSystemPrompt`, and a `RecallBlock` renderer paired with
+`FeatureSystemPrompt`. `FormatMemoryContext` moves out of the adapter, and with it the
+whole clone-and-prepend transform: one `UserMessageDecorator` owns everything
+prepended to an outgoing user turn — sender, location, satellite, timestamp,
+dismissed alert and the recall block. The anchor becomes a named value whose factory
+states its precondition, pinned by a `ChatMonitor` ordering test. One feature-gate
+extension replaces both copies.
+
+**Examined and accepted, no change.** Memory context is persisted on the message
+(`RedisChatMessageStore.cs:69` stores `RequestMessages`) while the rendered block is
+not, so every request re-renders a block for each historical user turn that carries
+context. `ChatMessageSerializationTests.cs:157-166` pins that as deliberate for prompt
+caching. It also rules out rendering the block at the recall hook: that would put the
+text into the persisted message, which the extraction worker reads back.
 
 **How tests improve**
 
-`Domain/Prompts/MemoryPrompts.cs` is referenced by zero tests today. With
-`MemoryTurn`, one test asserts the round trip: window → render → the markers the
-extraction prompt names, and recall block → the marker the feature prompt names.
-Today the only way to test the `[Memory context]` contract is through
-`OpenRouterChatClient`, which needs an HTTP transport.
+`Domain/Prompts/MemoryPrompts.cs` is referenced by zero tests today. Marker
+cross-checks on both renderer seams give it its first coverage. The twelve prefix
+tests in `OpenRouterChatClientPrefixTests` drop Moq and the client, the four window
+tests drop six fakes each, and the recall block becomes testable without a transport.
 
 ---
 
@@ -1097,8 +1140,9 @@ Candidate 2's defect fix does not need grilling: the root cause is confirmed, so
 a red `/tdd` test for "a server push still reaches the store after a rebuild" is
 enough. The module extraction is separate and does need grilling.
 
-Candidates 3, 4 and 12 propose modules whose interface could go several ways.
-Run `/codebase-design`'s design-it-twice inside the grilling for those.
+Candidates 3, 4 and 12 proposed modules whose interface could go several ways.
+Design-it-twice inside the grilling earned its keep on 12: the proposed single module
+turned out to be two chains that touch only through a record that already existed.
 
 After `/to-tickets` on this batch, write the cross-candidate ordering the way
 `.scratch/README.md` does for the previous batch. No individual ticket can
