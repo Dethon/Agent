@@ -16,7 +16,7 @@ closed it.
 | # | Candidate | Strength | Area | Status |
 |---|---|---|---|---|
 | 1 | Metrics publishing has no module | Strong | cross-cutting | Grilled → `.scratch/metrics-publishing-module/spec.md` |
-| 2 | The rebuild loses its event handlers | Strong | WebChat.Client | Not grilled |
+| 2 | The rebuild loses its event handlers | Strong | WebChat.Client | Grilled → `.scratch/chat-live-connection/spec.md` |
 | 3 | The satellite connection has no module | Strong | McpChannelVoice | Not grilled |
 | 4 | Playback has no outcome | Strong | McpChannelVoice | Not grilled |
 | 5 | The hub call surface leaks the connection | Strong | WebChat.Client | Not grilled |
