@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
@@ -17,7 +16,8 @@ public sealed class LatencyScope : IDisposable
     private readonly string? _conversationId;
     private readonly string? _agentId;
     private readonly string? _model;
-    private readonly long _startedAt = Stopwatch.GetTimestamp();
+    private readonly TimeProvider _time;
+    private readonly long _startedAt;
     private int _published;
 
     internal LatencyScope(
@@ -25,18 +25,21 @@ public sealed class LatencyScope : IDisposable
         LatencyStage stage,
         string? conversationId,
         string? agentId,
-        string? model)
+        string? model,
+        TimeProvider time)
     {
         _publisher = publisher;
         _stage = stage;
         _conversationId = conversationId;
         _agentId = agentId;
         _model = model;
+        _time = time;
+        _startedAt = time.GetTimestamp();
     }
 
     // Read this where a domain-specific event has to carry the same duration as the latency event,
     // instead of running a second stopwatch alongside.
-    public long ElapsedMilliseconds => (long)Stopwatch.GetElapsedTime(_startedAt).TotalMilliseconds;
+    public long ElapsedMilliseconds => (long)_time.GetElapsedTime(_startedAt).TotalMilliseconds;
 
     public void Dispose()
     {
@@ -63,6 +66,7 @@ public static class LatencyScopeExtensions
         LatencyStage stage,
         string? conversationId = null,
         string? agentId = null,
-        string? model = null) =>
-        new(publisher, stage, conversationId, agentId, model);
+        string? model = null,
+        TimeProvider? time = null) =>
+        new(publisher, stage, conversationId, agentId, model, time ?? TimeProvider.System);
 }

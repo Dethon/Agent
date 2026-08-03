@@ -45,18 +45,6 @@ public sealed class BufferedMetricsPublisher : IMetricsPublisher, IAsyncDisposab
         }
     }
 
-    // Bridges callers that have not yet moved to Publish, keeping today's drop-on-cancelled-token
-    // until they do. Goes away with the awaitable half of the contract.
-    public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
-    {
-        if (!ct.IsCancellationRequested)
-        {
-            Publish(metricEvent);
-        }
-
-        return Task.CompletedTask;
-    }
-
     private async Task DrainAsync()
     {
         await foreach (var metricEvent in _events.Reader.ReadAllAsync())

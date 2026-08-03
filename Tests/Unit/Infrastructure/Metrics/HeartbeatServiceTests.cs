@@ -30,11 +30,6 @@ public class HeartbeatServiceTests
             }
         }
 
-        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
-        {
-            Publish(metricEvent);
-            return Task.CompletedTask;
-        }
     }
 
     [Fact]

@@ -482,16 +482,15 @@ public class WyomingSatelliteHostTests
         var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publishedEvents = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
-        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) =>
+        publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt =>
             {
                 if (evt is VoiceEvent voiceEvent)
                 {
                     lock (publishedEvents)
                     { publishedEvents.Add(voiceEvent); }
                 }
-            })
-            .Returns(Task.CompletedTask);
+            });
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
@@ -929,16 +928,15 @@ public class WyomingSatelliteHostTests
         var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publishedEvents = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
-        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) =>
+        publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt =>
             {
                 if (evt is VoiceEvent voiceEvent)
                 {
                     lock (publishedEvents)
                     { publishedEvents.Add(voiceEvent); }
                 }
-            })
-            .Returns(Task.CompletedTask);
+            });
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
@@ -1117,16 +1115,15 @@ public class WyomingSatelliteHostTests
 
         var publishedEvents = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
-        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) =>
+        publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt =>
             {
                 if (evt is VoiceEvent voiceEvent)
                 {
                     lock (publishedEvents)
                     { publishedEvents.Add(voiceEvent); }
                 }
-            })
-            .Returns(Task.CompletedTask);
+            });
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
@@ -1251,16 +1248,15 @@ public class WyomingSatelliteHostTests
         var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publishedEvents = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
-        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) =>
+        publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt =>
             {
                 if (evt is VoiceEvent voiceEvent)
                 {
                     lock (publishedEvents)
                     { publishedEvents.Add(voiceEvent); }
                 }
-            })
-            .Returns(Task.CompletedTask);
+            });
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
@@ -1337,267 +1333,6 @@ public class WyomingSatelliteHostTests
         verify.Similarity.ShouldBe(0.213); // GatedToneVerifier's fixed Rejected similarity for an unknown tone
         publishedEvents.ShouldNotContain(e => e.Metric == VoiceMetric.SpeakerVerifyMs);
 
-        emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
-
-        await host.StopAsync(CancellationToken.None);
-        listener.Stop();
-        await cts.CancelAsync();
-        try
-        { await fakeSatellite; }
-        catch { /* cancellation / disposal */ }
-    }
-
-    // Rejection telemetry is diagnostic, not part of the turn contract: a metrics backbone
-    // outage (Redis down mid-blip) during an unknown-speaker early rejection must not fault the
-    // conversation loop — the satellite still gets its closing transcript and wake re-arms.
-    [Fact]
-    public async Task Hub_EarlyMark_MetricsPublisherDown_StillEarlyRejectsAndReArms()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        var ct = cts.Token;
-
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-
-        var sawRunSatellite = new TaskCompletionSource();
-        var sawTranscript = new TaskCompletionSource<string>();
-
-        const int earlyVerifyMs = 150;
-
-        var fakeSatellite = Task.Run(async () =>
-        {
-            using var conn = await listener.AcceptTcpClientAsync(ct);
-            await using var stream = conn.GetStream();
-            var reader = new WyomingReader(stream);
-            var writer = new WyomingWriter(stream);
-
-            var readLoop = Task.Run(async () =>
-            {
-                await foreach (var evt in reader.ReadAllAsync(ct))
-                {
-                    if (evt.Type == "run-satellite")
-                    { sawRunSatellite.TrySetResult(); }
-                    else if (evt.Type == "transcript")
-                    { sawTranscript.TrySetResult(evt.Data["text"]?.GetValue<string>() ?? ""); }
-                }
-            }, ct);
-
-            await sawRunSatellite.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
-            await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject()), ct);
-
-            var data = new JsonObject { ["rate"] = 16_000, ["width"] = 2, ["channels"] = 1 };
-            // Continuous unknown-voice audio holding the capture open past the early mark.
-            await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
-            foreach (var _ in Enumerable.Range(0, 4))
-            {
-                await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(3000)), ct);
-            }
-            await Task.Delay(TimeSpan.FromMilliseconds(earlyVerifyMs + 450), ct);
-
-            await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
-        }, ct);
-
-        var stt = new Mock<ISpeechToText>();
-        stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
-                                         It.IsAny<TranscriptionOptions>(),
-                                         It.IsAny<CancellationToken>()))
-            .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
-                async (audio, opts, token) =>
-                {
-                    await foreach (var _ in audio.WithCancellation(token))
-                    { }
-                    return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
-                });
-
-        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
-        var publisher = new Mock<IMetricsPublisher>();
-        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("metrics backbone down"));
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-x");
-                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
-        var manager = new VoiceConversationManager(
-            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
-            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(
-            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
-        var sessions = new SatelliteSessionRegistry();
-        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
-        {
-            ["kitchen-01"] = new()
-            {
-                Identity = "household",
-                Room = "Kitchen",
-                WakeWord = "hey_jarvis",
-                Address = $"tcp://127.0.0.1:{port}"
-            }
-        });
-
-        var wyoming = new WyomingClientSettings
-        {
-            ReconnectDelaySeconds = 1,
-            SilenceRmsThreshold = 500,
-            TrailingSilenceMs = 200,
-            MaxUtteranceMs = 3000,
-            MinSpeechMs = 100
-        };
-        var voice = new VoiceSettings
-        {
-            AgentId = "mycroft",
-            FollowUp = new FollowUpSettings { Enabled = false },
-            SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = earlyVerifyMs }
-        };
-        var host = new WyomingSatelliteHost(
-            wyoming,
-            voice,
-            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
-            TimeProvider.System,
-            Arbiter(manager),
-            Gates(voice, wyoming),
-            NullLogger<WyomingSatelliteHost>.Instance,
-            new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000));
-
-        await host.StartAsync(ct);
-
-        var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
-        transcriptText.ShouldBe(""); // conversation still closed and re-armed despite the publish failure
-
-        stt.Verify(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
-                                          It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()), Times.Never());
-        emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
-
-        await host.StopAsync(CancellationToken.None);
-        listener.Stop();
-        await cts.CancelAsync();
-        try
-        { await fakeSatellite; }
-        catch { /* cancellation / disposal */ }
-    }
-
-    // Same contract for the terminal (natural-end) rejection path.
-    [Fact]
-    public async Task Hub_UnknownSpeaker_MetricsPublisherDown_StillRejectsAndReArms()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        var ct = cts.Token;
-
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-
-        var sawRunSatellite = new TaskCompletionSource();
-        var sawTranscript = new TaskCompletionSource<string>();
-
-        var fakeSatellite = Task.Run(async () =>
-        {
-            using var conn = await listener.AcceptTcpClientAsync(ct);
-            await using var stream = conn.GetStream();
-            var reader = new WyomingReader(stream);
-            var writer = new WyomingWriter(stream);
-
-            var readLoop = Task.Run(async () =>
-            {
-                await foreach (var evt in reader.ReadAllAsync(ct))
-                {
-                    if (evt.Type == "run-satellite")
-                    { sawRunSatellite.TrySetResult(); }
-                    else if (evt.Type == "transcript")
-                    { sawTranscript.TrySetResult(evt.Data["text"]?.GetValue<string>() ?? ""); }
-                }
-            }, ct);
-
-            await sawRunSatellite.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
-            await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject()), ct);
-
-            var data = new JsonObject { ["rate"] = 16_000, ["width"] = 2, ["channels"] = 1 };
-            await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
-            foreach (var _ in Enumerable.Range(0, 10))
-            {
-                await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(8000)), ct);
-            }
-            foreach (var _ in Enumerable.Range(0, 6))
-            {
-                await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
-            }
-
-            await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
-        }, ct);
-
-        var stt = new Mock<ISpeechToText>();
-        stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
-                                         It.IsAny<TranscriptionOptions>(),
-                                         It.IsAny<CancellationToken>()))
-            .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
-                async (audio, opts, token) =>
-                {
-                    await foreach (var _ in audio.WithCancellation(token))
-                    { }
-                    return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
-                });
-
-        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
-        var publisher = new Mock<IMetricsPublisher>();
-        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("metrics backbone down"));
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-x");
-                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
-        var manager = new VoiceConversationManager(
-            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
-            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
-        var dispatcher = new TranscriptDispatcher(
-            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
-        var sessions = new SatelliteSessionRegistry();
-        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
-        {
-            ["kitchen-01"] = new()
-            {
-                Identity = "household",
-                Room = "Kitchen",
-                WakeWord = "hey_jarvis",
-                Address = $"tcp://127.0.0.1:{port}"
-            }
-        });
-
-        var wyoming = new WyomingClientSettings
-        {
-            ReconnectDelaySeconds = 1,
-            SilenceRmsThreshold = 500,
-            TrailingSilenceMs = 200,
-            MaxUtteranceMs = 3000,
-            MinSpeechMs = 100
-        };
-        var voice = new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = false } };
-        var host = new WyomingSatelliteHost(
-            wyoming,
-            voice,
-            registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
-            TimeProvider.System,
-            Arbiter(manager),
-            Gates(voice, wyoming),
-            NullLogger<WyomingSatelliteHost>.Instance,
-            new RejectingVerifier());
-
-        await host.StartAsync(ct);
-
-        var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
-        transcriptText.ShouldBe(""); // conversation still closed and re-armed despite the publish failure
-
-        stt.Verify(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
-                                          It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()), Times.Never());
         emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);

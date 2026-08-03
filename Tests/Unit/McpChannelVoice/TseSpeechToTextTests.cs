@@ -60,11 +60,6 @@ public class TseSpeechToTextTests
             }
         }
 
-        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
-        {
-            Publish(metricEvent);
-            return Task.CompletedTask;
-        }
     }
 
     // Preserves frame boundaries (unlike RecordingInner, which flattens to one byte blob) so

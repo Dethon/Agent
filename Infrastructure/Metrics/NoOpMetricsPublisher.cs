@@ -16,6 +16,4 @@ public sealed class NoOpMetricsPublisher : IMetricsPublisher
     public void Publish(MetricEvent metricEvent)
     {
     }
-
-    public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default) => Task.CompletedTask;
 }

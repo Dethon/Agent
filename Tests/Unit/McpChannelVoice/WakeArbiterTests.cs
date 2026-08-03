@@ -20,11 +20,10 @@ public class WakeArbiterTests
     private sealed class ListPublisher : IMetricsPublisher
     {
         public readonly List<MetricEvent> Events = [];
-        public Task PublishAsync(MetricEvent evt, CancellationToken ct)
+        public void Publish(MetricEvent evt)
         {
             lock (Events)
             { Events.Add(evt); }
-            return Task.CompletedTask;
         }
     }
 

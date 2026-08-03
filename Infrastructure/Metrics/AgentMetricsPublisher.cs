@@ -7,7 +7,4 @@ public sealed class AgentMetricsPublisher(IMetricsPublisher inner, string agentI
 {
     public void Publish(MetricEvent metricEvent) =>
         inner.Publish(metricEvent with { AgentId = agentId });
-
-    public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default) =>
-        inner.PublishAsync(metricEvent with { AgentId = agentId }, ct);
 }

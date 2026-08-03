@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Metrics;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
 namespace Tests.Unit.Domain.Metrics;
@@ -13,29 +14,24 @@ public class LatencyScopeTests
         public readonly List<MetricEvent> Events = [];
 
         public void Publish(MetricEvent metricEvent) => Events.Add(metricEvent);
-
-        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
-        {
-            Publish(metricEvent);
-            return Task.CompletedTask;
-        }
     }
+
+    private readonly RecordingPublisher _publisher = new();
+    private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
 
     [Fact]
     public void Dispose_MeasuredBlockReturns_PublishesOneLatencyEvent()
     {
-        var publisher = new RecordingPublisher();
-
-        using (publisher.MeasureLatency(LatencyStage.ToolExec, "conv-1", "agent-1"))
+        using (_publisher.MeasureLatency(LatencyStage.ToolExec, "conv-1", "agent-1", time: _clock))
         {
-            Thread.Sleep(5);
+            _clock.Advance(TimeSpan.FromMilliseconds(120));
         }
 
-        var latency = publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>();
+        var latency = _publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>();
         latency.Stage.ShouldBe(LatencyStage.ToolExec);
         latency.ConversationId.ShouldBe("conv-1");
         latency.AgentId.ShouldBe("agent-1");
-        latency.DurationMs.ShouldBeGreaterThanOrEqualTo(5);
+        latency.DurationMs.ShouldBe(120);
     }
 
     // The duplicated per-branch emission this replaces existed because a tool call has to be
@@ -43,19 +39,19 @@ public class LatencyScopeTests
     [Fact]
     public void Dispose_MeasuredBlockThrows_PublishesAndLetsTheExceptionOut()
     {
-        var publisher = new RecordingPublisher();
-
         var thrown = Should.Throw<InvalidOperationException>(() =>
         {
-            using (publisher.MeasureLatency(LatencyStage.ToolExec, "conv-1"))
+            using (_publisher.MeasureLatency(LatencyStage.ToolExec, "conv-1", time: _clock))
             {
+                _clock.Advance(TimeSpan.FromMilliseconds(40));
                 throw new InvalidOperationException("tool blew up");
             }
         });
 
         thrown.Message.ShouldBe("tool blew up");
-        publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>()
-            .Stage.ShouldBe(LatencyStage.ToolExec);
+        var latency = _publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>();
+        latency.Stage.ShouldBe(LatencyStage.ToolExec);
+        latency.DurationMs.ShouldBe(40);
     }
 
     // Four sites emit a domain-specific event carrying the same duration as their latency event.
@@ -63,31 +59,28 @@ public class LatencyScopeTests
     [Fact]
     public void ElapsedMilliseconds_ReadBeforeDispose_MatchesThePublishedDuration()
     {
-        var publisher = new RecordingPublisher();
         long observed;
 
-        using (var scope = publisher.MeasureLatency(LatencyStage.MemoryRecall, "conv-1"))
+        using (var scope = _publisher.MeasureLatency(LatencyStage.MemoryRecall, "conv-1", time: _clock))
         {
-            Thread.Sleep(10);
+            _clock.Advance(TimeSpan.FromMilliseconds(75));
             observed = scope.ElapsedMilliseconds;
         }
 
-        var published = publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>().DurationMs;
-        observed.ShouldBeGreaterThanOrEqualTo(10);
-        published.ShouldBeGreaterThanOrEqualTo(observed);
-        (published - observed).ShouldBeLessThan(100);
+        observed.ShouldBe(75);
+        _publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>().DurationMs.ShouldBe(observed);
     }
 
     [Fact]
     public void Dispose_CalledTwice_PublishesOnce()
     {
-        var publisher = new RecordingPublisher();
-        var scope = publisher.MeasureLatency(LatencyStage.LlmTotal, "conv-1", model: "anthropic/claude");
+        var scope = _publisher.MeasureLatency(
+            LatencyStage.LlmTotal, "conv-1", model: "anthropic/claude", time: _clock);
 
         scope.Dispose();
         scope.Dispose();
 
-        publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>()
+        _publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>()
             .Model.ShouldBe("anthropic/claude");
     }
 }

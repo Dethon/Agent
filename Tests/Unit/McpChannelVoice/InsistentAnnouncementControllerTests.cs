@@ -21,14 +21,13 @@ public class InsistentAnnouncementControllerTests
         {
             get { lock (_events) { return _events.ToList(); } }
         }
-        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+        public void Publish(MetricEvent metricEvent)
         {
             if (metricEvent is VoiceEvent v)
             {
                 lock (_events)
                 { _events.Add(v); }
             }
-            return Task.CompletedTask;
         }
     }
 

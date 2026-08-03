@@ -288,7 +288,7 @@ public class WakeArbitrationHostTests
             }
         }
 
-        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+        public void Publish(MetricEvent metricEvent)
         {
             if (metricEvent is VoiceEvent voice)
             {
@@ -297,7 +297,6 @@ public class WakeArbitrationHostTests
                     _events.Add(voice);
                 }
             }
-            return Task.CompletedTask;
         }
     }
 }
