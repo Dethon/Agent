@@ -1,7 +1,7 @@
 # Architecture audit — candidate index and implementation order
 
 Seven candidates from the architecture review of 2026-08-02. Each has a `plan.md`,
-a `spec.md` and numbered tickets under `issues/`. 43 tickets in total.
+a `spec.md` and numbered tickets under `issues/`. 44 tickets in total.
 
 Ordering inside a candidate is the `**Blocked by:**` line in each ticket, and the
 `NN-` filename prefix lists them blockers-first. This file records the ordering
@@ -9,7 +9,7 @@ Ordering inside a candidate is the `**Blocked by:**` line in each ticket, and th
 
 | Candidate | Review | Tickets | Area |
 |---|---|---|---|
-| `voice-turn-module` | 1 and 7 | 5 | Voice session and turn state |
+| `voice-turn-module` | 1 and 7 | 6 | Voice session and turn state |
 | `channel-server-interface` | 2 | 8 | Channel server registration |
 | `filesystem-backend-depth` | 3 | 10 | Virtual filesystem backends |
 | `config-patch-once` | 4 | 4 | Per-message model and effort override |

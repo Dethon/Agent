@@ -165,6 +165,12 @@ The turn-start and speech-end latency anchors, which stay on the session.
 
 **Test-file collision.** The host and wake-arbitration integration files are also rewritten by the channel-server plan's ticket seven. The host file is 2,215 lines. Whichever lands second rebases onto the first. Do not run the two in parallel.
 
+**Found during implementation, deferred to ticket 06.** The approval capture reads the
+room-noise memory after ticket 02 but never writes to it: it closes in the tool rather than
+through the capture module, so the sample every other capture records is dropped. That is the
+write side of the same memory, a second behaviour change, and it was already true before this
+spec started — so it is its own ticket rather than a correction to ticket 02.
+
 **The hazard comments are load-bearing.** Every comment in the extracted code explaining a race describes a bug that happened. They move with the code they describe. Deleting one is a regression, not a cleanup.
 
 **Naming proximity.** A unit file already exists whose name begins with the same words as the new module but which tests turn latency decomposition, not turn state. Pick the new file's name so the two are told apart at a glance.
