@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Channels.Hosting;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -172,12 +173,16 @@ public sealed class ChatHub(
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
 
-        await notificationEmitter.EmitMessageNotificationAsync(
-            $"{session.ChatId}:{session.ThreadId}",
-            userId,
-            message,
-            session.AgentId,
-            configPatch,
+        await notificationEmitter.EmitAsync(
+            new ChannelMessageNotification
+            {
+                ConversationId = $"{session.ChatId}:{session.ThreadId}",
+                Sender = userId,
+                Content = message,
+                AgentId = session.AgentId,
+                ConfigPatch = configPatch,
+                Timestamp = DateTimeOffset.UtcNow
+            },
             cancellationToken);
 
         // Stream responses back to the browser — the loop ends when the channel completes
@@ -215,12 +220,15 @@ public sealed class ChatHub(
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
 
-        await notificationEmitter.EmitMessageNotificationAsync(
-            $"{session.ChatId}:{session.ThreadId}",
-            userId,
-            message,
-            session.AgentId,
-            configPatch);
+        await notificationEmitter.EmitAsync(new ChannelMessageNotification
+        {
+            ConversationId = $"{session.ChatId}:{session.ThreadId}",
+            Sender = userId,
+            Content = message,
+            AgentId = session.AgentId,
+            ConfigPatch = configPatch,
+            Timestamp = DateTimeOffset.UtcNow
+        });
 
         return true;
     }
@@ -229,9 +237,12 @@ public sealed class ChatHub(
     {
         if (sessionService.TryGetSession(topicId, out var session) && session is not null)
         {
-            await notificationEmitter.EmitCancelNotificationAsync(
-                $"{session.ChatId}:{session.ThreadId}",
-                session.AgentId);
+            await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
+            {
+                ConversationId = $"{session.ChatId}:{session.ThreadId}",
+                AgentId = session.AgentId,
+                Timestamp = DateTimeOffset.UtcNow
+            });
         }
 
         streamService.CancelStream(topicId);
@@ -254,7 +265,12 @@ public sealed class ChatHub(
 
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
-        await notificationEmitter.EmitCancelNotificationAsync($"{chatId}:{threadId}", agentId);
+        await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
+        {
+            ConversationId = $"{chatId}:{threadId}",
+            AgentId = agentId,
+            Timestamp = DateTimeOffset.UtcNow
+        });
 
         sessionService.EndSession(topicId);
         streamService.CancelStream(topicId);

@@ -1,5 +1,5 @@
+using Channels.Hosting;
 using Domain.Agents;
-using Domain.Channels;
 using Domain.Contracts;
 using Infrastructure.Clients.Push;
 using Infrastructure.Conversations;
@@ -7,7 +7,6 @@ using Infrastructure.StateManagers;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
-using ModelContextProtocol.Protocol;
 using StackExchange.Redis;
 
 namespace McpChannelSignalR.Modules;
@@ -35,8 +34,6 @@ public static class ConfigModule
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
-            .AddSingleton<ChannelInbox>()
-            .AddSingleton<ChannelNotificationEmitter>()
             .AddSingleton<RedisStateService>()
             .AddSingleton(TimeProvider.System)
             .AddSingleton<IThreadStateStore>(sp =>
@@ -78,31 +75,9 @@ public static class ConfigModule
             .WithTools<RequestApprovalTool>()
             .WithTools<CreateConversationTool>()
             .WithTools<RegisterAgentsTool>()
-            .WithTools<McpChannelReceiveTool>()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
-                    // or the server shuts down. Mapping that to IsError would hand the pump an
-                    // error result to retry on; let it propagate as the abort it is.
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return new CallToolResult
-                    {
-                        IsError = true,
-                        Content = [new TextContentBlock { Text = ex.Message }]
-                    };
-                }
-            }));
+            // Broadcast: a subscriber that is idle but not yet pruned still receives, so a brief
+            // agent gap does not lose a message the browser has already been told was sent.
+            .AddChannelServer(DeliveryPolicy.Broadcast);
 
         return services;
     }
