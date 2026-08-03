@@ -19,7 +19,7 @@ public static class ChannelServerExtensions
         Func<Exception, CallToolResult>? errorResult = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        ChannelDelivery.ValidateSubscriberId(policy, subscriberId);
+        DeliveryPolicyRules.ValidateSubscriberId(policy, subscriberId);
 
         builder.Services
             .AddSingleton<ChannelInbox>()

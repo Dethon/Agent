@@ -19,8 +19,8 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     private static readonly TimeSpan _minBackoff = TimeSpan.FromSeconds(1);
 
-    // Shared with the liveness contract, not a local tuning knob: LiveSubscriberFreshness is sized
-    // to a fully held poll plus exactly one of these worst-case pauses, so raising the ceiling
+    // Shared with the liveness contract, not a local tuning knob: ChannelInbox's freshness window
+    // is sized to a fully held poll plus exactly one of these worst-case pauses, so raising the ceiling
     // here without raising the freshness window makes channel servers misread a retrying pump as
     // a disconnected agent.
     private static readonly TimeSpan _maxBackoff =

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json.Nodes;
+using Channels.Hosting;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.Conversations;
@@ -17,7 +18,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
-using Tests.Unit.McpChannelVoice;
+using Tests.Unit.Channels.Hosting;
 
 namespace Tests.Integration.McpChannelVoice;
 
@@ -170,7 +171,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -314,7 +315,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "baja el volumen al diez por ciento", Language = "es" };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -458,7 +459,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publishedEvents = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
@@ -606,7 +607,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -754,7 +755,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -896,7 +897,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publishedEvents = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
@@ -985,7 +986,7 @@ public class WyomingSatelliteHostTests
         tail!.DurationMs.ShouldBe(200);
         tail.EndReason.ShouldBe("trailing_silence");
 
-        emitter.Messages.ShouldBeEmpty(); // no message notification reached the agent
+        emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1071,7 +1072,7 @@ public class WyomingSatelliteHostTests
         }, ct);
 
         // Two dispatched utterances expected: the wake turn, then the late-arriving follow-up.
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
 
         var stt = new Mock<ISpeechToText>();
         stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
@@ -1124,7 +1125,7 @@ public class WyomingSatelliteHostTests
         await host.StartAsync(ct);
 
         // Wake turn dispatched -> simulate the agent's spoken reply so the follow-up window opens.
-        await emitter.WaitForCountAsync(1, TimeSpan.FromSeconds(10), ct);
+        await emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), ct);
         sessions.Get("kitchen-01").ShouldNotBeNull();
         sessions.Get("kitchen-01")!.SignalTurnSpoken();
 
@@ -1134,8 +1135,8 @@ public class WyomingSatelliteHostTests
         // The late-arriving speech must still reach the agent: a capture with zero
         // gate-classified speech at the early mark must never be early-rejected, so the mic stays
         // open for the speaker who is about to talk.
-        await emitter.WaitForCountAsync(2, TimeSpan.FromSeconds(15), ct);
-        emitter.Messages.Count.ShouldBe(2);
+        await emitter.ReceivedAtLeastAsync(2, TimeSpan.FromSeconds(15), ct);
+        emitter.Received().Count.ShouldBe(2);
 
         publishedEvents.Any(e => e.Metric == VoiceMetric.UtteranceRejected && e.Outcome == "unknown_speaker_early")
             .ShouldBeFalse();
@@ -1212,7 +1213,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publishedEvents = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
@@ -1298,7 +1299,7 @@ public class WyomingSatelliteHostTests
         verify.Similarity.ShouldBe(0.213); // GatedToneVerifier's fixed Rejected similarity for an unknown tone
         publishedEvents.ShouldNotContain(e => e.Metric == VoiceMetric.SpeakerVerifyMs);
 
-        emitter.Messages.ShouldBeEmpty(); // no message notification reached the agent
+        emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1371,7 +1372,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("metrics backbone down"));
@@ -1429,7 +1430,7 @@ public class WyomingSatelliteHostTests
 
         stt.Verify(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
                                           It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()), Times.Never());
-        emitter.Messages.ShouldBeEmpty(); // no message notification reached the agent
+        emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1500,7 +1501,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publisher = new Mock<IMetricsPublisher>();
         publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("metrics backbone down"));
@@ -1553,7 +1554,7 @@ public class WyomingSatelliteHostTests
 
         stt.Verify(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
                                           It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()), Times.Never());
-        emitter.Messages.ShouldBeEmpty(); // no message notification reached the agent
+        emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1632,7 +1633,7 @@ public class WyomingSatelliteHostTests
             await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
         }, ct);
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
 
         var stt = new Mock<ISpeechToText>();
         stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
@@ -1668,7 +1669,7 @@ public class WyomingSatelliteHostTests
         await host.StartAsync(ct);
 
         // First utterance dispatched -> simulate the agent's spoken reply so the follow-up window opens.
-        await emitter.WaitForCountAsync(1, TimeSpan.FromSeconds(10), ct);
+        await emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), ct);
         sawTranscript.Task.IsCompleted.ShouldBeFalse(); // transcript deferred (no re-arm yet)
         sessions.Get("kitchen-01").ShouldNotBeNull();
         sessions.Get("kitchen-01")!.SignalTurnSpoken();
@@ -1679,8 +1680,8 @@ public class WyomingSatelliteHostTests
         streamFollowUp.TrySetResult();
 
         // Second utterance must be dispatched WITHOUT a second run-pipeline (wake-free follow-up).
-        await emitter.WaitForCountAsync(2, TimeSpan.FromSeconds(15), ct);
-        emitter.Messages.Count.ShouldBe(2);
+        await emitter.ReceivedAtLeastAsync(2, TimeSpan.FromSeconds(15), ct);
+        emitter.Received().Count.ShouldBe(2);
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1752,7 +1753,7 @@ public class WyomingSatelliteHostTests
         }, ct);
 
         // Only the first utterance should dispatch; the silent follow-up must NOT.
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
 
         var stt = new Mock<ISpeechToText>();
         stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
@@ -1788,7 +1789,7 @@ public class WyomingSatelliteHostTests
         await host.StartAsync(ct);
 
         // First utterance dispatched -> simulate the agent's spoken reply so the follow-up window opens.
-        await emitter.WaitForCountAsync(1, TimeSpan.FromSeconds(10), ct);
+        await emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), ct);
         sawTranscript.Task.IsCompleted.ShouldBeFalse(); // transcript deferred (no re-arm yet)
         sessions.Get("kitchen-01").ShouldNotBeNull();
         sessions.Get("kitchen-01")!.SignalTurnSpoken();
@@ -1800,7 +1801,7 @@ public class WyomingSatelliteHostTests
         // The no-speech timeout fires -> EndConversation writes the closing (empty) transcript to re-arm.
         var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
         transcriptText.ShouldBe("");
-        emitter.Messages.Count.ShouldBe(1); // the silent follow-up was never dispatched
+        emitter.Received().Count.ShouldBe(1); // the silent follow-up was never dispatched
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1854,7 +1855,7 @@ public class WyomingSatelliteHostTests
             await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
         }, ct);
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
 
         var stt = new Mock<ISpeechToText>();
         stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
@@ -1893,7 +1894,7 @@ public class WyomingSatelliteHostTests
         // transcript instead of holding the mic open until the max-utterance cap, and never dispatch.
         var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(8), ct);
         transcriptText.ShouldBe("");
-        emitter.Messages.Count.ShouldBe(0);
+        emitter.Received().Count.ShouldBe(0);
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();
@@ -1971,7 +1972,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -2086,7 +2087,7 @@ public class WyomingSatelliteHostTests
                     return new TranscriptionResult { Text = "", Language = "es", Confidence = 0.0 };
                 });
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publisher = new Mock<IMetricsPublisher>();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))

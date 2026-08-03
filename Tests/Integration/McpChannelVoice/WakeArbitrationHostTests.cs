@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Channels.Hosting;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.Conversations;
@@ -15,7 +16,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
-using Tests.Unit.McpChannelVoice;
+using Tests.Unit.Channels.Hosting;
 
 namespace Tests.Integration.McpChannelVoice;
 
@@ -72,9 +73,9 @@ public class WakeArbitrationHostTests
             satB.CountOf("transcript").ShouldBe(0); // suppression is silent: no done cue on the loser
             satA.CountOf("pause-satellite").ShouldBe(0);
 
-            hub.Emitter.Messages.Count.ShouldBe(1);
-            hub.Emitter.Messages[0].SatelliteId.ShouldBe("a");
-            hub.Emitter.Messages[0].Content.ShouldBe("hola");
+            hub.Emitter.Received().Count.ShouldBe(1);
+            hub.Emitter.Received()[0].SatelliteId.ShouldBe("a");
+            hub.Emitter.Received()[0].Content.ShouldBe("hola");
 
             // Pins WHY B went quiet. Without this the assertions above would also pass if B had lost
             // to Rule B (leak) or simply stalled; only Rule A's loudness comparison reports this.
@@ -130,8 +131,8 @@ public class WakeArbitrationHostTests
             satB.CountOf("pause-satellite").ShouldBe(0); // the challenger keeps its turn
             satA.CountOf("transcript").ShouldBe(0);      // the robbed holder is silenced, not done-cued
 
-            hub.Emitter.Messages.Count.ShouldBe(1);
-            hub.Emitter.Messages[0].SatelliteId.ShouldBe("b");
+            hub.Emitter.Received().Count.ShouldBe(1);
+            hub.Emitter.Received()[0].SatelliteId.ShouldBe("b");
 
             // The discriminator: a Rule A loss would report WakeSuppressed/lost_loudness against A.
             // Only the steal path publishes WakeHandoff, and only it names the displaced holder.
@@ -147,7 +148,7 @@ public class WakeArbitrationHostTests
     }
 
     private sealed record Hub(
-        WyomingSatelliteHost Host, VoiceInboxProbe Emitter, RecordingMetrics Metrics);
+        WyomingSatelliteHost Host, ChannelInboxProbe Emitter, RecordingMetrics Metrics);
 
     private static Hub BuildHub(FakeSatelliteServer satA, FakeSatelliteServer satB)
     {
@@ -171,7 +172,7 @@ public class WakeArbitrationHostTests
             Arbitration = new ArbitrationSettings { WindowMs = ArbitrationWindowMs }
         };
 
-        var emitter = new VoiceInboxProbe();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var metrics = new RecordingMetrics();
         var factory = new Mock<IConversationFactory>();
         var minted = 0;

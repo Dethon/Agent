@@ -8,7 +8,7 @@ namespace Tests.Unit.McpServerScheduling;
 // This server's own payload shape. The gate-on-live behaviour it depends on is pinned once at the
 // policy seam (Tests/Unit/Channels.Hosting/DeliveryPolicyTests.cs), and what the dispatcher does
 // with a false return is pinned in ScheduleDispatcherServiceTests.
-public class ScheduleNotificationEmitterTests
+public class SchedulePayloadTests
 {
     private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "scheduling";
 

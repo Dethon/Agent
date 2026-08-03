@@ -8,7 +8,7 @@ namespace Tests.Unit.McpServerLibrary;
 // This server's own payload shape. The gate-on-live behaviour it depends on is pinned once at the
 // policy seam (Tests/Unit/Channels.Hosting/DeliveryPolicyTests.cs), and what the watcher does with
 // a false return is pinned in DownloadCompletionWatcherTests.
-public class DownloadNotificationEmitterTests
+public class DownloadCompletionPayloadTests
 {
     private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "library";
 

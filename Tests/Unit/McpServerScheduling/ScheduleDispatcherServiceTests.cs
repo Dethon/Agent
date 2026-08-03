@@ -1,5 +1,4 @@
 using Channels.Hosting;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -10,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
+using Tests.Unit.Channels.Hosting;
 using Xunit;
 
 namespace Tests.Unit.McpServerScheduling;
@@ -23,7 +23,7 @@ public class ScheduleDispatcherServiceTests
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero));
         clock.SetLocalTimeZone(zone);
         var store = StoreWithDue(Recurring());
-        var emitter = Emitter(delivers: true);
+        var emitter = Probe(delivers: true);
 
         await BuildDispatcher(store.Object, emitter, new CronValidator(), clock).DispatchDueAsync(CancellationToken.None);
 
@@ -39,7 +39,7 @@ public class ScheduleDispatcherServiceTests
     {
         var oneShot = OneShot();
         var store = StoreWithDue(oneShot);
-        var emitter = Emitter(delivers: false);
+        var emitter = Probe(delivers: false);
 
         await BuildDispatcher(store.Object, emitter).DispatchDueAsync(CancellationToken.None);
 
@@ -54,7 +54,7 @@ public class ScheduleDispatcherServiceTests
     public async Task DispatchDueAsync_WhenEmitSucceeds_DeletesOneShotSchedule()
     {
         var store = StoreWithDue(OneShot());
-        var emitter = Emitter(delivers: true);
+        var emitter = Probe(delivers: true);
 
         await BuildDispatcher(store.Object, emitter).DispatchDueAsync(CancellationToken.None);
 
@@ -69,7 +69,7 @@ public class ScheduleDispatcherServiceTests
         var cron = new Mock<ICronValidator>();
         cron.Setup(c => c.GetNextOccurrence("0 8 * * *", It.IsAny<DateTimeOffset>(), It.IsAny<TimeZoneInfo>())).Returns(next);
 
-        await BuildDispatcher(store.Object, Emitter(delivers: true), cron.Object).DispatchDueAsync(CancellationToken.None);
+        await BuildDispatcher(store.Object, Probe(delivers: true), cron.Object).DispatchDueAsync(CancellationToken.None);
 
         store.Verify(s => s.UpdateLastRunAsync("daily", It.IsAny<DateTime?>(), next, It.IsAny<CancellationToken>()), Times.Once);
         store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -81,14 +81,13 @@ public class ScheduleDispatcherServiceTests
     [Fact]
     public async Task DispatchDueAsync_NoLiveSubscriber_LeavesTheScheduleDueAndBuffersNothing()
     {
-        var inbox = new ChannelInbox();
         var store = StoreWithDue(OneShot());
+        var probe = Probe(delivers: false);
 
-        await BuildDispatcher(store.Object, new ChannelNotificationEmitter(inbox, DeliveryPolicy.GateOnLive))
-            .DispatchDueAsync(CancellationToken.None);
+        await BuildDispatcher(store.Object, probe).DispatchDueAsync(CancellationToken.None);
 
         store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
+        probe.Received().ShouldBeEmpty();
     }
 
     [Theory]
@@ -115,28 +114,18 @@ public class ScheduleDispatcherServiceTests
         return store;
     }
 
-    private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "scheduling";
-
     // A real inbox and the real emitter rather than a mock: "delivers" is expressed the way
     // production expresses it — whether anyone has actually polled — so the test cannot claim a
     // combination the shared emitter would never produce.
-    private static ChannelNotificationEmitter Emitter(bool delivers)
-    {
-        var inbox = new ChannelInbox();
-        if (delivers)
-        {
-            inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None).GetAwaiter().GetResult();
-        }
-
-        return new ChannelNotificationEmitter(inbox, DeliveryPolicy.GateOnLive);
-    }
+    private static ChannelInboxProbe Probe(bool delivers) =>
+        new("scheduling", DeliveryPolicy.GateOnLive, live: delivers);
 
     private static ScheduleDispatcherService BuildDispatcher(
-        IScheduleStore store, ChannelNotificationEmitter emitter, ICronValidator? cron = null, TimeProvider? clock = null) =>
+        IScheduleStore store, ChannelInboxProbe emitter, ICronValidator? cron = null, TimeProvider? clock = null) =>
         new(
             store,
             cron ?? new Mock<ICronValidator>().Object,
-            emitter,
+            emitter.Emitter,
             new SchedulingSettings { RedisConnectionString = "x", DefaultDeliverTo = ["signalr"] },
             new Mock<ILogger<ScheduleDispatcherService>>().Object,
             clock ?? TimeProvider.System);

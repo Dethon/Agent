@@ -19,7 +19,7 @@ public sealed class ChannelNotificationEmitter
     public ChannelNotificationEmitter(ChannelInbox inbox, DeliveryPolicy policy, string? subscriberId = null)
     {
         ArgumentNullException.ThrowIfNull(inbox);
-        ChannelDelivery.ValidateSubscriberId(policy, subscriberId);
+        DeliveryPolicyRules.ValidateSubscriberId(policy, subscriberId);
         _inbox = inbox;
         _policy = policy;
         _subscriberId = subscriberId;

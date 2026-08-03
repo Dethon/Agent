@@ -1,6 +1,6 @@
 namespace Channels.Hosting;
 
-internal static class ChannelDelivery
+internal static class DeliveryPolicyRules
 {
     // Checked where the policy is chosen rather than at first emit. A buffer-always id that does
     // not match what the agent's channel connection derives buffers into a queue nobody drains,

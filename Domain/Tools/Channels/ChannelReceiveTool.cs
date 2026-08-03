@@ -14,7 +14,7 @@ public class ChannelReceiveTool(ChannelInbox inbox)
     protected const string SubscriberIdDescription = "Stable subscriber id, e.g. channel-signalr";
     protected const string MaxWaitMsDescription = "How long to hold the request open, in milliseconds";
 
-    // Clamped, not just conventionally short today: ChannelProtocol.LiveSubscriberFreshness
+    // Clamped, not just conventionally short today: ChannelInbox.LiveSubscriberFreshness
     // gives a subscriber headroom for one fully held poll plus one retry backoff on the
     // assumption that no single poll holds the request open longer than DefaultReceiveWaitMs
     // (a subscriber is stamped when its poll *starts* — see ChannelInbox.Subscriber's own doc

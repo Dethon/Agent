@@ -1,11 +1,11 @@
 using Channels.Hosting;
-using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpServerLibrary.Services;
 using McpServerLibrary.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
+using Tests.Unit.Channels.Hosting;
 using Tests.Unit.Domain.Downloads.Vfs;
 using Xunit;
 
@@ -22,9 +22,9 @@ public class DownloadCompletionWatcherTests
 
         await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
 
-        var items = await emitter.DrainAsync();
+        var items = emitter.Received();
         items.Count.ShouldBe(1);
-        items[0].Message!.ConversationId.ShouldBe("conv-42");
+        items[0].ConversationId.ShouldBe("conv-42");
         routing.Entries.ShouldBeEmpty();
     }
 
@@ -37,7 +37,7 @@ public class DownloadCompletionWatcherTests
 
         await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
 
-        (await emitter.DrainAsync()).ShouldBeEmpty();
+        emitter.Received().ShouldBeEmpty();
         routing.Entries.Count.ShouldBe(1);
     }
 
@@ -52,7 +52,7 @@ public class DownloadCompletionWatcherTests
 
         await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
 
-        (await emitter.DrainAsync()).ShouldBeEmpty();
+        emitter.Received().ShouldBeEmpty();
         routing.Entries.Count.ShouldBe(1);
     }
 
@@ -64,13 +64,13 @@ public class DownloadCompletionWatcherTests
 
         await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
 
-        (await emitter.DrainAsync()).ShouldBeEmpty();
+        emitter.Received().ShouldBeEmpty();
         routing.Entries.ShouldBeEmpty();
     }
 
-    private static (DownloadFakes.FakeDownloadClient, DownloadFakes.FakeRoutingStore, InboxProbe) Build(
+    private static (DownloadFakes.FakeDownloadClient, DownloadFakes.FakeRoutingStore, ChannelInboxProbe) Build(
         bool live = true) =>
-        (new DownloadFakes.FakeDownloadClient(), new DownloadFakes.FakeRoutingStore(), new InboxProbe(live));
+        (new DownloadFakes.FakeDownloadClient(), new DownloadFakes.FakeRoutingStore(), new ChannelInboxProbe("library", DeliveryPolicy.GateOnLive, live));
 
     private static DownloadRouting Routing(int id) => new()
     {
@@ -80,7 +80,7 @@ public class DownloadCompletionWatcherTests
     };
 
     private static DownloadCompletionWatcher Watcher(
-        DownloadFakes.FakeDownloadClient client, DownloadFakes.FakeRoutingStore routing, InboxProbe emitter) =>
+        DownloadFakes.FakeDownloadClient client, DownloadFakes.FakeRoutingStore routing, ChannelInboxProbe emitter) =>
         new(routing, client, emitter.Emitter, Settings(), NullLogger<DownloadCompletionWatcher>.Instance);
 
     private static McpSettings Settings() => new()
@@ -91,28 +91,4 @@ public class DownloadCompletionWatcherTests
         BaseLibraryPath = "/media",
         RedisConnectionString = "unused"
     };
-
-    // A real inbox behind the real emitter rather than a substitute for it, so what these tests
-    // observe is what a subscriber would actually receive. "Live" is expressed the way production
-    // expresses it — whether anyone has polled.
-    private sealed class InboxProbe
-    {
-        private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "library";
-        private readonly ChannelInbox _inbox = new();
-
-        public InboxProbe(bool live)
-        {
-            if (live)
-            {
-                _inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None).GetAwaiter().GetResult();
-            }
-
-            Emitter = new ChannelNotificationEmitter(_inbox, DeliveryPolicy.GateOnLive);
-        }
-
-        public ChannelNotificationEmitter Emitter { get; }
-
-        public Task<IReadOnlyList<ChannelInboxItem>> DrainAsync() =>
-            _inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
-    }
 }

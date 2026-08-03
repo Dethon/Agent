@@ -46,7 +46,10 @@ The scope guard is only needed by tools that cache per-caller state across calls
 
 ## Error Handling
 
-Error handling is centralized via `AddCallToolFilter` in each server's `ConfigModule.cs`. Do NOT add try/catch blocks in individual tool methods — exceptions propagate to the global filter which logs and returns `ToolResponse.Create(ex)`.
+Error handling is centralized in one call-tool filter. Do NOT add try/catch blocks in individual tool methods — exceptions propagate to the filter, which logs and returns an error result.
+
+- **Channel servers** get the filter from `AddChannelServer` (`Channels.Hosting`), which states the rule once: an `OperationCanceledException` propagates as the abort it is, because a long poll ends in cancellation whenever the agent hangs up, and mapping that to an error result would hand the pump something to retry on. Anything else becomes an error result. The two dual-role servers pass `errorResult: ToolResponse.Create` so they keep their own envelope shape, which lives in Infrastructure and cannot be referenced from `Channels.Hosting`.
+- **Non-channel servers** still register `AddCallToolFilter` in their own `ConfigModule.cs`, returning `ToolResponse.Create(ex)`.
 
 ## Key Points
 

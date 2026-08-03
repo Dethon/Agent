@@ -37,8 +37,27 @@ Deletion counts, recorded per the last acceptance criterion:
 | 4 emitter test subclasses (`CapturingEmitter` x2, `CollectingEmitter`, `RecordingEmitter`) | 1 `VoiceInboxProbe` over a real inbox |
 | 1 public `LiveSubscriberFreshness` constant every emitter passed in | internal to `ChannelInbox`, no parameter |
 
-**Deviation from the plan.** The service-bus channel is registered gate-on-live, not the broadcast
-the plan's table named. With liveness only available as the emit's return value the check happens
+**Deviation 2 — the two dual-role servers do more work while the agent is down.** `HasActiveSessions`
+was not only a liveness answer on the scheduling and library servers; both read it as a cheap
+early-out at the top of their sweep, before touching any store. Removing the property removes the
+early-out, because liveness is now knowable only after an emit. Consequences, all while no agent is
+connected:
+
+- `ScheduleDispatcherService` queries Redis for due schedules every tick, and logs one
+  "No active session received schedule" warning per due schedule per tick. No store mutation
+  changes — the emit still gates deletion and advancement.
+- `DownloadCompletionWatcher` calls `store.ListAsync` and `client.GetDownloadItems` (a real
+  qBittorrent round trip) every sweep. One observable change beyond load: a routing entry whose
+  download has vanished from the client is now removed while the agent is offline, where before it
+  survived until the agent returned. That entry could never have been delivered — its download is
+  gone — so nothing reaches a user either way, but it is a change and it is recorded here rather
+  than left implicit.
+
+Restoring the early-outs would mean keeping a liveness property on two servers, which is exactly
+what this ticket's second acceptance criterion forbids. Taken deliberately.
+
+**Deviation 1 — the service-bus policy.** The service-bus channel is registered gate-on-live, not
+the broadcast the plan's table named. With liveness only available as the emit's return value the check happens
 after the enqueue, so broadcast would buffer a copy *and* abandon the broker message — every
 redelivery leaving another copy behind. Gate-on-live reproduces today's behaviour exactly: nothing
 buffered, false returned, message abandoned and redelivered once. Confirmed with the author before
