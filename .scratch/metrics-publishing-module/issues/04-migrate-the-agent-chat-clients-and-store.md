@@ -12,7 +12,7 @@ Let synchronousness travel outward as in the other migration tickets.
 
 **Blocked by:** 01, 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Every publish site in these four types uses the void call and passes no cancellation token.
 - [ ] The agent's safe-latency helper is gone.

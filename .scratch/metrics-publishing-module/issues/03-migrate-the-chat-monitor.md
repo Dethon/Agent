@@ -10,7 +10,7 @@ Let synchronousness travel outward from each site. Any method left with no await
 
 **Blocked by:** 01, 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] A cancelled turn records its schedule-execution event. Asserted as a test, since this is a behaviour change rather than a refactor.
 - [ ] A cancelled turn records its first-reply latency.

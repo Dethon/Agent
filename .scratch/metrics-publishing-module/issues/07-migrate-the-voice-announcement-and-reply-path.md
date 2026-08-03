@@ -12,7 +12,7 @@ Leave the single-use dispatch stamp and the segment-token release exactly where 
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Every publish site in these four types uses the void call.
 - [ ] The two named safe-publish helpers on this path are gone.

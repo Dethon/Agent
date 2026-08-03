@@ -12,7 +12,7 @@ This ticket is the expand half of an expand–contract sequence, so nothing else
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] A host registration theory boots each host's real registration module and asserts the resolved metrics publisher is the buffered one. Written first, and seen to fail against today's voice wiring.
 - [ ] A metric sink contract exists in the infrastructure layer, sending an event asynchronously and permitted to throw.

@@ -12,7 +12,7 @@ Let synchronousness travel outward as in the other migration tickets. The fire-a
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Every publish site in the satellite host, the noise-extraction decorator, the transcript dispatcher and the wake arbiter uses the void call.
 - [ ] The three named safe-publish helpers on this path are gone.

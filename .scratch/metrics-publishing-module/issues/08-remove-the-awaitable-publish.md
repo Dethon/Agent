@@ -10,7 +10,7 @@ Rewrite the observability rule file, which describes the current shape and is th
 
 **Blocked by:** 02, 03, 04, 05, 06, 07.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] The metrics publisher contract exposes one void publish method and nothing else.
 - [ ] The default implementation added in ticket 01 is gone.

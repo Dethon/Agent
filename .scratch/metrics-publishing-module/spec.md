@@ -1,6 +1,6 @@
 # Spec — Metrics Publishing Module
 
-Status: ready-for-agent
+Status: done
 
 Grilled from candidate 1 of `.scratch/architecture-audit-2026-08-03/candidates.md`,
 which holds the exact file and line evidence for every claim below. Decision

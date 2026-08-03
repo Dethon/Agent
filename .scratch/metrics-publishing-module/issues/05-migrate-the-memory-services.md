@@ -8,7 +8,7 @@ The recall hook also emits a recall event carrying the same duration as its late
 
 **Blocked by:** 01, 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Every publish site in the memory services uses the void call and passes no cancellation token.
 - [ ] The recall hook's inline catch block around its latency publish is gone.

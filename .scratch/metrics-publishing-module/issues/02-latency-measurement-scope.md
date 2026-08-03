@@ -12,7 +12,7 @@ One behaviour to be deliberate about: the scope publishes when it is disposed, i
 
 **Blocked by:** 01 — needs the void publish method to exist.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] A scope type is opened from a metrics publisher, naming the latency stage and the conversation and agent identifiers.
 - [ ] Disposing it publishes exactly one latency event carrying that stage and the measured duration.
