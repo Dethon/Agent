@@ -31,6 +31,11 @@ public class WyomingSatelliteHostTests
         new(new ArbitrationSettings(), conversations, Mock.Of<IMetricsPublisher>(),
             TimeProvider.System, NullLogger<WakeArbiter>.Instance);
 
+    // Gate resolution and the per-satellite room-noise memory live in one place now, so a test
+    // builds the same factory the process would rather than assembling a tracker of its own.
+    private static SilenceGateFactory Gates(VoiceSettings voice, WyomingClientSettings wyoming) =>
+        new(voice, wyoming, TimeProvider.System);
+
     // Stands in for the agent answering: one reply segment queued, played, and the stream ended.
     // That is the route SendReplyTool takes, so what the test proves and what production does are
     // the same thing — there is no signal-the-turn shortcut to take instead.
@@ -228,7 +233,7 @@ public class WyomingSatelliteHostTests
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -372,7 +377,7 @@ public class WyomingSatelliteHostTests
             voice,
             registry, new SatelliteSessionRegistry(), manager, stt.Object, dispatcher, new ActiveAlertRegistry(),
             publisher.Object, TimeProvider.System, Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System), NullLogger<WyomingSatelliteHost>.Instance);
+            Gates(voice, wyoming), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -535,7 +540,7 @@ public class WyomingSatelliteHostTests
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -680,7 +685,7 @@ public class WyomingSatelliteHostTests
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -836,7 +841,7 @@ public class WyomingSatelliteHostTests
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance,
             new IdentifyingVerifier("fran"));
 
@@ -987,7 +992,7 @@ public class WyomingSatelliteHostTests
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance,
             new RejectingVerifier());
 
@@ -1163,7 +1168,7 @@ public class WyomingSatelliteHostTests
             wyoming,
             voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System), NullLogger<WyomingSatelliteHost>.Instance,
+            Gates(voice, wyoming), NullLogger<WyomingSatelliteHost>.Instance,
             new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000));
 
         await host.StartAsync(ct);
@@ -1318,7 +1323,7 @@ public class WyomingSatelliteHostTests
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance,
             new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000));
 
@@ -1473,7 +1478,7 @@ public class WyomingSatelliteHostTests
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance,
             new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000));
 
@@ -1602,7 +1607,7 @@ public class WyomingSatelliteHostTests
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance,
             new RejectingVerifier());
 
@@ -1728,7 +1733,7 @@ public class WyomingSatelliteHostTests
             wyoming,
             voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System), NullLogger<WyomingSatelliteHost>.Instance);
+            Gates(voice, wyoming), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -1853,7 +1858,7 @@ public class WyomingSatelliteHostTests
             wyoming,
             voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System), NullLogger<WyomingSatelliteHost>.Instance);
+            Gates(voice, wyoming), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -1960,7 +1965,7 @@ public class WyomingSatelliteHostTests
             wyoming,
             voice,
             registry, sessions, manager, stt.Object, dispatcher, new ActiveAlertRegistry(), publisher.Object, TimeProvider.System, Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System), NullLogger<WyomingSatelliteHost>.Instance);
+            Gates(voice, wyoming), NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
 
@@ -2095,7 +2100,7 @@ public class WyomingSatelliteHostTests
             registry, sessions, manager, stt.Object, dispatcher, alerts, publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);
@@ -2215,7 +2220,7 @@ public class WyomingSatelliteHostTests
             registry, sessions, manager, stt.Object, dispatcher, alerts, publisher.Object,
             TimeProvider.System,
             Arbiter(manager),
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);

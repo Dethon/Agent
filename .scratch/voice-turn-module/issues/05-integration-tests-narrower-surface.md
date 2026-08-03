@@ -8,12 +8,12 @@ This is a separate ticket because it is the only part of this spec that collides
 
 **Blocked by:** 03 — VoiceTurn, the segment token, and the reply-tool collapse. 04 — CaptureSession and the coordinator rewrite.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The three places that settle a turn by signalling directly drive the real path instead.
-- [ ] The integration files reach captures, gates and the turn through their modules, not through hand-assembled state.
-- [ ] The room-noise coverage in the host file still passes, unchanged in intent from before ticket 01.
-- [ ] Wake arbitration coverage is unaffected: a capture opened through the capture module still carries the chunk history that rule B needs.
-- [ ] No test asserts on a field that this spec made private.
+- [x] The three places that settle a turn by signalling directly drive the real path instead.
+- [x] The integration files reach captures, gates and the turn through their modules, not through hand-assembled state.
+- [x] The room-noise coverage in the host file still passes, unchanged in intent from before ticket 01.
+- [x] Wake arbitration coverage is unaffected: a capture opened through the capture module still carries the chunk history that rule B needs.
+- [x] No test asserts on a field that this spec made private.
 
 **Sequencing.** The host integration file is 2,215 lines and the wake-arbitration file is also rewritten by the channel-server plan's ticket 07, which touches both. Whichever lands second rebases onto the first. Do not run the two in parallel.

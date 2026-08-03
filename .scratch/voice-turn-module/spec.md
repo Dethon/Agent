@@ -1,6 +1,6 @@
 # Spec — Concentrate the Voice Turn
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

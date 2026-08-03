@@ -150,6 +150,11 @@ public class WakeArbitrationHostTests
     private sealed record Hub(
         WyomingSatelliteHost Host, ChannelInboxProbe Emitter, RecordingMetrics Metrics);
 
+    // Gate resolution and the per-satellite room-noise memory live in one place now, so a test
+    // builds the same factory the process would rather than assembling a tracker of its own.
+    private static SilenceGateFactory Gates(VoiceSettings voice, WyomingClientSettings wyoming) =>
+        new(voice, wyoming, TimeProvider.System);
+
     private static Hub BuildHub(FakeSatelliteServer satA, FakeSatelliteServer satB)
     {
         var voiceSettings = new VoiceSettings
@@ -212,7 +217,7 @@ public class WakeArbitrationHostTests
             metrics,
             TimeProvider.System,
             arbiter,
-            new SilenceGateFactory(voice, wyoming, TimeProvider.System),
+            Gates(voice, wyoming),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         return new Hub(host, emitter, metrics);
