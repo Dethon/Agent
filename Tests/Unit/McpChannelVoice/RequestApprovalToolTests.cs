@@ -72,6 +72,12 @@ public class RequestApprovalToolTests : IDisposable
     {
         var gates = new SilenceGateFactory(voice, wyoming, TimeProvider.System);
         seedRoomNoise?.Invoke(gates);
+        return BuildServices(voice, wyoming, gates);
+    }
+
+    private IServiceProvider BuildServices(
+        VoiceSettings voice, WyomingClientSettings wyoming, SilenceGateFactory gates)
+    {
         return new ServiceCollection()
             .AddSingleton(_sessions)
             .AddSingleton(_accumulator)
@@ -189,6 +195,97 @@ public class RequestApprovalToolTests : IDisposable
         MinSpeechMs = 100,
         DemoteMarginDb = 20
     };
+
+    // A prompt nobody answers: the mic hears only the room for its whole window.
+    private Task FeedRoomToneAsync(CancellationToken ct) => Task.Run(async () =>
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            if (_session.HasActiveCapture)
+            {
+                _session.RouteAudio(Level(90));
+                await Task.Delay(10, ct);
+            }
+            else
+            {
+                await Task.Delay(10, ct);
+            }
+        }
+    }, ct);
+
+    private static double FloorOfNextGateFor(SilenceGateFactory gates, SatelliteSession session)
+    {
+        var next = gates.Create(session.SatelliteId, session.Config);
+        // One loud frame, so the gate's own measurement is well above anything remembered — what is
+        // left is whatever the memory caps it to.
+        var chunk = Level(4000);
+        next.Process(chunk.Data.Span, chunk.Format.SampleRateHz,
+            chunk.Format.SampleWidthBytes, chunk.Format.Channels);
+        return next.FloorRms;
+    }
+
+    [Fact]
+    public async Task RequestMode_UnansweredPrompt_LeavesItsRoomReadingForTheNextCapture()
+    {
+        // The approval mic reads the room-noise memory but never wrote to it: a conversation that
+        // ran wake turn -> approval -> approval contributed one sample where it should contribute
+        // three, so a satellite used mostly for approvals arrived at its next wake turn with an
+        // expired memory and an uncapped floor — the state the room cap exists to avoid.
+        var voice = new VoiceSettings { FollowUp = new FollowUpSettings { PlaybackTailMs = 0, WindowMs = 500 } };
+        var wyoming = new WyomingClientSettings
+        {
+            SilenceRmsThreshold = 500,
+            TrailingSilenceMs = 200,
+            MaxUtteranceMs = 3000,
+            MinSpeechMs = 100
+        };
+        var gates = new SilenceGateFactory(voice, wyoming, TimeProvider.System);
+        var services = BuildServices(voice, wyoming, gates);
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedRoomToneAsync(feed.Token);
+
+        var result = await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("rejected"); // nobody answered
+
+        FloorOfNextGateFor(gates, _session).ShouldBe(90, tolerance: 5);
+    }
+
+    [Fact]
+    public async Task RequestMode_AnswerCaptureAbortedByArbiter_LeavesNoRoomReading()
+    {
+        // Arbitration took the turn away mid-answer, so this capture never established what silence
+        // sounded like. Recording it would cap every later capture with a measurement that was never
+        // made.
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
+        var voice = new VoiceSettings { FollowUp = new FollowUpSettings { PlaybackTailMs = 0, WindowMs = 2000 } };
+        var wyoming = new WyomingClientSettings
+        {
+            SilenceRmsThreshold = 500,
+            TrailingSilenceMs = 200,
+            MaxUtteranceMs = 3000,
+            MinSpeechMs = 100
+        };
+        var gates = new SilenceGateFactory(voice, wyoming, TimeProvider.System);
+        var services = BuildServices(voice, wyoming, gates);
+
+        var run = RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], services);
+
+        while (!_session.HasActiveCapture)
+        { await Task.Delay(10); }
+        _session.RouteAudio(Level(90));
+        _session.TryAbortCapture().ShouldBeTrue();
+
+        (await run).ShouldBe("rejected");
+
+        // Uncapped: the next gate reads its own measurement of the loud frame, not a remembered one.
+        FloorOfNextGateFor(gates, _session).ShouldBeGreaterThan(1000);
+    }
 
     [Fact]
     public async Task RequestMode_NoRoomSample_DiscardsTheAnswerAgainstAnInflatedFloor()

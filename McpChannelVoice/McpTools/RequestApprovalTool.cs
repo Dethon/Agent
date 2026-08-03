@@ -190,6 +190,10 @@ public sealed class RequestApprovalTool
             // Always close the capture, even if the wait is cancelled, so a cancelled approval
             // doesn't leave a dangling mic capture routing audio into a dead turn.
             session.CloseCapture();
+            // And pay back into the memory this capture's gate read from. A prompt nobody answers
+            // spends its whole window listening to the room, which is the reading the next capture
+            // needs most; the factory decides whether a capture measured anything worth keeping.
+            gates.RecordCaptureClose(session.SatelliteId, capture.Stats);
         }
 
         if (outcome == CaptureOutcome.Abandoned)
