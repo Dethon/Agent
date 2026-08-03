@@ -16,10 +16,10 @@ The reasoning effort is the half that never had rejection tests. It gets them he
 
 **Blocked by:** 02 — both fields must resolve in one place before they can share a rejection path.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A refused model override logs a warning naming the field, the rejected value and the fallback, and the turn still runs on the configured model.
-- [ ] An unparseable reasoning effort does the same, and the turn still runs on the configured effort.
-- [ ] The caught-and-discarded exception path for the effort no longer swallows the failure silently.
-- [ ] Both warnings are asserted at the agent seam, alongside the resolution cases from 02.
-- [ ] A valid override on either field logs no warning.
+- [x] A refused model override logs a warning naming the field, the rejected value and the fallback, and the turn still runs on the configured model.
+- [x] An unparseable reasoning effort does the same, and the turn still runs on the configured effort.
+- [x] The caught-and-discarded exception path for the effort no longer swallows the failure silently.
+- [x] Both warnings are asserted at the agent seam, alongside the resolution cases from 02.
+- [x] A valid override on either field logs no warning.

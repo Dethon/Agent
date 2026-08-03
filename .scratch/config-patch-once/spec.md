@@ -1,6 +1,6 @@
 # Spec — Resolve the Config Patch Once
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

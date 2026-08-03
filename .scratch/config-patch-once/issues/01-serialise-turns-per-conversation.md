@@ -15,10 +15,10 @@ Neither is fixed here. Serialising makes both correct in practice; anyone reintr
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Two messages queued for one conversation produce non-overlapping turn windows, asserted by a test written before the change and watched to fail.
-- [ ] The existing multi-target fan-out concurrency test still passes unchanged.
-- [ ] Different conversations still run concurrently.
-- [ ] A comment at the serialisation point names the three pieces of shared state that now depend on it.
-- [ ] Both assertions — this axis serialises, that axis does not — live in the same test file, so the trade is visible in one place.
+- [x] Two messages queued for one conversation produce non-overlapping turn windows, asserted by a test written before the change and watched to fail.
+- [x] The existing multi-target fan-out concurrency test still passes unchanged.
+- [x] Different conversations still run concurrently.
+- [x] A comment at the serialisation point names the three pieces of shared state that now depend on it.
+- [x] Both assertions — this axis serialises, that axis does not — live in the same test file, so the trade is visible in one place.

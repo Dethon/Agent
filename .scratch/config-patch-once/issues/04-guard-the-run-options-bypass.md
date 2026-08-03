@@ -8,9 +8,9 @@ The bypass is not removed. Non-channel callers exist, and this ticket is about t
 
 **Blocked by:** 02 — the patch must be among the things the bypass skips before the guard can describe what is lost.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A run with externally supplied options is surfaced rather than accepted silently.
-- [ ] A test covers that path, which today has none.
-- [ ] A normal turn, where the agent builds its own options, is unaffected and emits nothing new.
-- [ ] The bypass still works — the run proceeds with the caller's options.
+- [x] A run with externally supplied options is surfaced rather than accepted silently.
+- [x] A test covers that path, which today has none.
+- [x] A normal turn, where the agent builds its own options, is unaffected and emits nothing new.
+- [x] The bypass still works — the run proceeds with the caller's options.

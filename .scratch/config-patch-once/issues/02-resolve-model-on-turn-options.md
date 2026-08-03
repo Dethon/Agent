@@ -16,15 +16,15 @@ Provider routing is untouched. It is enforced on every turn including model-over
 
 **Blocked by:** None — can start immediately. Independent of 01; this is the ticket that fixes the reported race.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A user message carrying a whitelisted model override produces that model in the outgoing request body, asserted against parsed JSON captured from a real transport handler, with a real agent over a real chat client.
-- [ ] Deleting the line that applies the patch to the turn's options fails that test.
-- [ ] The whitelist rules are asserted through the options the agent produces: whitelisted override applied, non-whitelisted refused, patch matching the configured model treated as no override, absent patch, case-insensitive match returning the whitelist's canonical casing.
-- [ ] The standalone test file for the resolution helper is deleted once its cases are re-expressed at the agent seam.
-- [ ] The mutable override holder and its volatile field are gone.
-- [ ] The effective-model report derives from the turn's options rather than ambient state.
-- [ ] Latency and token-usage events stamp the model the measured request actually used; the existing tests covering that attribution still pass.
-- [ ] The whitelist reaches the agent from application composition, and no chat-client constructor still takes it.
-- [ ] A turn with no patch is unchanged: the configured model governs and no model is stamped that was not stamped before.
-- [ ] Nothing in the request body's provider-routing node changes.
+- [x] A user message carrying a whitelisted model override produces that model in the outgoing request body, asserted against parsed JSON captured from a real transport handler, with a real agent over a real chat client.
+- [x] Deleting the line that applies the patch to the turn's options fails that test.
+- [x] The whitelist rules are asserted through the options the agent produces: whitelisted override applied, non-whitelisted refused, patch matching the configured model treated as no override, absent patch, case-insensitive match returning the whitelist's canonical casing.
+- [x] The standalone test file for the resolution helper is deleted once its cases are re-expressed at the agent seam.
+- [x] The mutable override holder and its volatile field are gone.
+- [x] The effective-model report derives from the turn's options rather than ambient state.
+- [x] Latency and token-usage events stamp the model the measured request actually used; the existing tests covering that attribution still pass.
+- [x] The whitelist reaches the agent from application composition, and no chat-client constructor still takes it.
+- [x] A turn with no patch is unchanged: the configured model governs and no model is stamped that was not stamped before.
+- [x] Nothing in the request body's provider-routing node changes.
