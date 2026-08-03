@@ -1,3 +1,4 @@
+using WebChat.Client.Contracts;
 using WebChat.Client.Services;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentActivity;
@@ -38,6 +39,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<RenderCoordinator>();
 
             services.AddScoped<ConfigService>();
+            services.AddScoped<IConfigService>(sp => sp.GetRequiredService<ConfigService>());
 
             return services;
         }

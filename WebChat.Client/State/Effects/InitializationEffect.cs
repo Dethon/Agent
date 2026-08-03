@@ -16,11 +16,11 @@ public sealed class InitializationEffect : IDisposable
     private readonly IChatConnectionService _connectionService;
     private readonly IAgentService _agentService;
     private readonly ITopicService _topicService;
-    private readonly ConfigService _configService;
+    private readonly IConfigService _configService;
     private readonly ILocalStorageService _localStorage;
     private readonly ISignalREventSubscriber _eventSubscriber;
     private readonly IStreamResumeService _streamResumeService;
-    private readonly PushNotificationService _pushNotificationService;
+    private readonly IPushSubscriptionService _pushNotificationService;
     private readonly UserIdentityStore _userIdentityStore;
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
@@ -32,11 +32,11 @@ public sealed class InitializationEffect : IDisposable
         IChatConnectionService connectionService,
         IAgentService agentService,
         ITopicService topicService,
-        ConfigService configService,
+        IConfigService configService,
         ILocalStorageService localStorage,
         ISignalREventSubscriber eventSubscriber,
         IStreamResumeService streamResumeService,
-        PushNotificationService pushNotificationService,
+        IPushSubscriptionService pushNotificationService,
         UserIdentityStore userIdentityStore,
         TopicsStore topicsStore,
         MessagesStore messagesStore,

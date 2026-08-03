@@ -8,6 +8,7 @@ namespace WebChat.Client.Services;
 public record PushSubscriptionResult(string Endpoint, string P256dh, string Auth, string? OldEndpoint = null);
 
 public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatConnectionService connectionService)
+    : IPushSubscriptionService
 {
     public async Task<bool> RequestAndSubscribeAsync(string vapidPublicKey)
     {

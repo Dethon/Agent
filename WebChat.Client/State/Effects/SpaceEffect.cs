@@ -12,9 +12,9 @@ public sealed class SpaceEffect : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
     private readonly IChatConnectionService _connectionService;
-    private readonly ConfigService _configService;
+    private readonly IConfigService _configService;
     private readonly NavigationManager _navigationManager;
-    private readonly PushNotificationService _pushNotificationService;
+    private readonly IPushSubscriptionService _pushNotificationService;
     private readonly IDisposable _handlerRegistration;
     private string _previousSlug = "default";
 
@@ -22,9 +22,9 @@ public sealed class SpaceEffect : IDisposable
         Dispatcher dispatcher,
         ITopicService topicService,
         IChatConnectionService connectionService,
-        ConfigService configService,
+        IConfigService configService,
         NavigationManager navigationManager,
-        PushNotificationService pushNotificationService)
+        IPushSubscriptionService pushNotificationService)
     {
         _dispatcher = dispatcher;
         _topicService = topicService;

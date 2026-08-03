@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Shouldly;
-using WebChat.Client.Services;
+using WebChat.Client.Models;
 
 namespace Tests.Unit.WebChat.Client.Services;
 

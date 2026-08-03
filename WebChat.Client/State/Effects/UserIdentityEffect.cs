@@ -9,13 +9,13 @@ namespace WebChat.Client.State.Effects;
 public sealed class UserIdentityEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly ConfigService _configService;
+    private readonly IConfigService _configService;
     private readonly ILocalStorageService _localStorage;
     private const string StorageKey = "selectedUserId";
 
     public UserIdentityEffect(
         Dispatcher dispatcher,
-        ConfigService configService,
+        IConfigService configService,
         ILocalStorageService localStorage)
     {
         _dispatcher = dispatcher;

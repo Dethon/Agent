@@ -1,10 +1,11 @@
 using System.Net.Http.Json;
 using Domain.DTOs.WebChat;
+using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.Services;
 
-public sealed class ConfigService(HttpClient httpClient)
+public sealed class ConfigService(HttpClient httpClient) : IConfigService
 {
     private AppConfig? _config;
 
@@ -26,5 +27,3 @@ public sealed class ConfigService(HttpClient httpClient)
         }
     }
 }
-
-public record AppConfig(string? AgentUrl, UserConfig[]? Users, string? VapidPublicKey = null);

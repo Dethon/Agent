@@ -5,7 +5,7 @@ using WebChat.Client.Contracts;
 namespace WebChat.Client.Services;
 
 public sealed class SignalRHubConnectionFactory(
-    ConfigService configService,
+    IConfigService configService,
     NavigationManager navigationManager) : IHubConnectionFactory
 {
     public async Task<IChatHubConnection> CreateAsync()
