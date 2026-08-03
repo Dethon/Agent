@@ -15,7 +15,7 @@ closed it.
 
 | # | Candidate | Strength | Area | Status |
 |---|---|---|---|---|
-| 1 | Metrics publishing has no module | Strong | cross-cutting | Not grilled |
+| 1 | Metrics publishing has no module | Strong | cross-cutting | Grilled → `.scratch/metrics-publishing-module/spec.md` |
 | 2 | The rebuild loses its event handlers | Strong | WebChat.Client | Not grilled |
 | 3 | The satellite connection has no module | Strong | McpChannelVoice | Not grilled |
 | 4 | Playback has no outcome | Strong | McpChannelVoice | Not grilled |
@@ -61,7 +61,11 @@ must know, including ordering rules and error modes, not just the signature.
 
 ## 1 — Metrics publishing has no module
 
-**Strength:** Strong. **Live defect.**
+**Strength:** Strong. **Live defect.** **Grilled**, spec at
+`.scratch/metrics-publishing-module/spec.md`. The open design question below was
+settled: `IMetricsPublisher` becomes `void Publish(MetricEvent)` and transports
+implement a separate sink, rather than a `BestEffort` decorator over the async
+signature. Recorded as `docs/adr/0002-metrics-publishing-is-fire-and-forget.md`.
 
 **Files**
 
