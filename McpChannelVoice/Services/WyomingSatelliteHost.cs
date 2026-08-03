@@ -192,7 +192,7 @@ public sealed class WyomingSatelliteHost(
             // Bound to a non-nullable local for the Task.Run lambda below: the nullable `coordinator`
             // field exists only so the finally can null-conditionally Dispose it, and the compiler
             // can't narrow a captured nullable field's null-state across a lambda boundary.
-            var builtCoordinator = BuildCoordinator(id, config, client, session, followUp);
+            var builtCoordinator = BuildCoordinator(session, client, followUp);
             coordinator = builtCoordinator;
             conversationTask = Task.Run(() => builtCoordinator.RunAsync(ct), ct);
 
@@ -301,51 +301,34 @@ public sealed class WyomingSatelliteHost(
     }
 
     private FollowUpConversation BuildCoordinator(
-        string id, SatelliteConfig config, WyomingClient client, SatelliteSession session, FollowUpSettings followUp)
+        SatelliteSession session, WyomingClient client, FollowUpSettings followUp)
     {
+        var capture = new CaptureSession(
+            session, gates, time, voiceSettings.Arbitration.HistorySpan,
+            onOpened: isFollowUp =>
+            {
+                if (isFollowUp)
+                {
+                    // A follow-up has no wake of its own, so consuming the stash here would either
+                    // report nothing or, worse, attribute the wake turn's loudness to it.
+                    return;
+                }
+                // On-device wake started this conversation; the read loop stashed what the satellite
+                // reported about it, and this is the single-use consumer.
+                var wake = session.TryConsumeWakeSignal();
+                PublishVoiceMetric(VoiceMetric.WakeTriggered, session,
+                    wakeRms: wake?.Rms, wakeScore: wake?.Score);
+            });
+
         return new FollowUpConversation(followUp, time)
         {
-            OpenCapture = isFollowUp =>
-            {
-                session.MarkTurnStart(time.GetTimestamp()); // turn opens here; loop reports turn -> first-audio
-                if (!isFollowUp)
-                {
-                    // on-device wake started this conversation; the read loop stashed what the
-                    // satellite reported about it, and this is the single-use consumer. Only the
-                    // wake turn: a follow-up has no wake of its own, so consuming there would either
-                    // report nothing or, worse, attribute the wake turn's loudness to it.
-                    var wake = session.TryConsumeWakeSignal();
-                    PublishVoiceMetric(VoiceMetric.WakeTriggered, session,
-                        wakeRms: wake?.Rms, wakeScore: wake?.Score);
-                }
-                return session.OpenCapture(
-                    gates.Create(id, config),
-                    // Rule B asks an already-open capture, retrospectively, what it heard during
-                    // another satellite's wake-word span — so every capture has to remember.
-                    new ChunkHistory(time, voiceSettings.Arbitration.HistorySpan));
-            },
-            CloseCapture = capture =>
-            {
-                session.CloseCapture();
-                gates.RecordCaptureClose(id, capture.Stats);
-                // Stamped here rather than inside the session so it uses the host's TimeProvider —
-                // the same instance handed to RunPlaybackLoopAsync, which reads it back. The frozen
-                // endpointing tail rewinds the close to the instant the user actually stopped
-                // talking; read here, at the close, because it is the last point where the tail is
-                // known to be the one the gate ended on.
-                session.MarkSpeechEnd(time.GetTimestamp(), capture.Stats.TrailingSilenceMs, time);
-            },
-            TranscribeAndDispatch = (capture, isFollowUp, token) =>
-                TranscribeAndDispatchAsync(session, capture, isFollowUp, token),
+            Capture = capture,
+            Turn = session.Turn,
+            TranscribeAndDispatch = (utterance, isFollowUp, token) =>
+                TranscribeAndDispatchAsync(session, utterance, isFollowUp, token),
             EnqueueChime = token => EnqueueChimeAsync(session, token),
             EndConversation = token => client.WriteAsync(
                 WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), token),
-            SpeechStopped = token => client.WriteAsync(
-                WyomingEvent.Header("voice-stopped", new JsonObject()), token),
-            ListeningStarted = token => client.WriteAsync(
-                WyomingEvent.Header("listening-started", new JsonObject()), token),
-            ResetTurn = session.Turn.Reset,
-            AwaitReply = session.Turn.AwaitSpoken,
             OnFollowUpWindow = token =>
             {
                 PublishVoiceMetric(VoiceMetric.FollowUpWindowOpened, session);
@@ -364,7 +347,7 @@ public sealed class WyomingSatelliteHost(
                 return Task.CompletedTask;
             },
             EarlyVerifyMs = speakerVerifier is null ? 0 : voiceSettings.SpeakerVerification.EarlyVerifyMs,
-            EarlyReject = (capture, token) => EarlyRejectAsync(session, capture, token)
+            EarlyReject = (utterance, token) => EarlyRejectAsync(session, utterance, token)
         };
     }
 

@@ -10,13 +10,13 @@ The eighty-four line initialiser becomes wiring for two modules and the callback
 
 **Blocked by:** 01 — Per-satellite gate factory. 03 — VoiceTurn, the segment token, and the reply-tool collapse.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One module owns the capture lifecycle for a connection: open, close, speech-stopped, listening-started.
-- [ ] Closing freezes the gate statistics at the close and records the room sample and the speech-end anchor at that instant.
-- [ ] The module obtains its gates from the factory; no gate is assembled inline anywhere in the connection path.
-- [ ] The loop's injected surface drops to about ten members, five mandatory, with the capture module and the turn replacing six.
-- [ ] The loop's existing unit file passes: its coverage of every loop exit — abandoned, no-speech, undispatched, reply timeout, max turns — is the regression net for this rewrite.
-- [ ] A failure writing either satellite indicator event still never costs the user the utterance or the window it was announcing; both are indicator-only by contract.
-- [ ] The integration files get the minimal edit needed to stay green; restructuring them is ticket 05.
-- [ ] The comments recording why speech-stopped and listening-started are best-effort, and why the speech-end anchor is rewound by the frozen tail, move with the code.
+- [x] One module owns the capture lifecycle for a connection: open, close, speech-stopped, listening-started.
+- [x] Closing freezes the gate statistics at the close and records the room sample and the speech-end anchor at that instant.
+- [x] The module obtains its gates from the factory; no gate is assembled inline anywhere in the connection path.
+- [x] The loop's injected surface drops to about ten members, five mandatory, with the capture module and the turn replacing six.
+- [x] The loop's existing unit file passes: its coverage of every loop exit — abandoned, no-speech, undispatched, reply timeout, max turns — is the regression net for this rewrite.
+- [x] A failure writing either satellite indicator event still never costs the user the utterance or the window it was announcing; both are indicator-only by contract.
+- [x] The integration files get the minimal edit needed to stay green; restructuring them is ticket 05.
+- [x] The comments recording why speech-stopped and listening-started are best-effort, and why the speech-end anchor is rewound by the frozen tail, move with the code.
