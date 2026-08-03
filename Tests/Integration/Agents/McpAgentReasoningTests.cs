@@ -4,6 +4,7 @@ using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.StateManagers;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -262,6 +263,21 @@ public class McpAgentReasoningTestsConfigPatch
 
         options.ModelId.ShouldBe("z-ai/glm-5.2");
         warnings.ShouldBeEmpty();
+    }
+
+    // A caller supplying its own options skips the agent's instructions, tools, reasoning effort
+    // and config patch. The capability stays; the silence does not.
+    [Fact]
+    public async Task RunStreaming_WithCallerSuppliedOptions_RunsThemAndWarns()
+    {
+        var (agent, captured, warnings) = CreateAgent();
+        await using var _ = agent;
+
+        var supplied = new ChatClientAgentRunOptions(new ChatOptions { ModelId = "caller/model" });
+        await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hi")], options: supplied).ToListAsync();
+
+        captured.ShouldHaveSingleItem().ShouldNotBeNull().ModelId.ShouldBe("caller/model");
+        warnings.ShouldContain(m => m.Contains("AgentRunOptions"));
     }
 
     [Fact]

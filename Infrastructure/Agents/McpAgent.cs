@@ -284,8 +284,16 @@ public sealed class McpAgent : DisposableAgent
     // it never disappears silently either.
     private TurnConfig ResolveTurnConfig(IReadOnlyList<ChatMessage> messages, AgentRunOptions? suppliedOptions)
     {
+        // A caller-supplied option set replaces everything CreateRunOptions would have built:
+        // instructions, tools, reasoning effort and the config patch. Non-channel callers
+        // (harnesses, benchmarks) legitimately do this, so it stays possible — but an agent
+        // running stripped of what makes it that agent must not look like a normal turn.
         if (suppliedOptions is not null)
         {
+            _logger?.LogWarning(
+                "Agent '{AgentName}' ran with caller-supplied AgentRunOptions; this turn uses none of " +
+                "its instructions, tools, reasoning effort or config patch",
+                _name);
             return new TurnConfig(
                 (suppliedOptions as ChatClientAgentRunOptions)?.ChatOptions?.ModelId, null);
         }
