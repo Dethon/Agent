@@ -58,3 +58,36 @@ rejoining the space, re-sending the push subscription. It never runs on the firs
 connection, where ordinary start-up does that work with the extra steps the first
 connection needs.
 _Avoid_: reconnection handler, resubscribe, rehydrate
+
+## Voice satellite
+
+**Satellite connection**:
+One run of the hub's link to a satellite, from the moment it dials to the moment
+it has finished unwinding. It is the thing that runs: nothing outside it holds a
+reference to it, and a drop ends it for good — the next attempt is a new one.
+_Avoid_: satellite session, link, socket
+
+**Satellite session**:
+The satellite as something the rest of the hub can address. Callers that have
+nothing to do with the wire — a reply being spoken, an announcement, an alarm —
+find it by satellite id and use it to queue audio, send a control event or read
+the current turn. It lives exactly as long as one satellite connection, but it is
+reached from the outside rather than run.
+_Avoid_: satellite connection, satellite state
+
+**Wake announcement**:
+What the satellite tells the hub when its own wake detection fires: how loud the
+wake word was, how confident it was, what triggered it, and how loud the room was
+just before. Every part of it is optional, because it comes from a peer with no
+schema and older firmware sends none of it.
+_Avoid_: wake signal, wake event, wake metadata
+
+**Wake turn**:
+The turn a wake announcement opens. It is the only turn whose loudness is worth
+recording, because it is the only one the user announced by speaking the wake word.
+_Avoid_: first turn, initial capture
+
+**Follow-up turn**:
+A turn the hub opens by itself after a reply, with the microphone live and no wake
+word. It has no wake announcement of its own and never will.
+_Avoid_: continuation, second turn
