@@ -1,3 +1,4 @@
+using Channels.Hosting;
 using Domain.Contracts;
 using Domain.DTOs;
 using McpServerLibrary.Settings;
@@ -9,7 +10,7 @@ namespace McpServerLibrary.Services;
 public sealed class DownloadCompletionWatcher(
     IDownloadRoutingStore store,
     IDownloadClient client,
-    IDownloadNotificationEmitter emitter,
+    ChannelNotificationEmitter emitter,
     McpSettings settings,
     ILogger<DownloadCompletionWatcher> logger) : BackgroundService
 {
@@ -35,11 +36,6 @@ public sealed class DownloadCompletionWatcher(
 
     internal async Task SweepAsync(CancellationToken ct)
     {
-        if (!emitter.HasActiveSessions)
-        {
-            return;
-        }
-
         var entries = await store.ListAsync(ct);
         if (entries.Count == 0)
         {

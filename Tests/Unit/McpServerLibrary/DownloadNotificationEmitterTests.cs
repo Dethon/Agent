@@ -1,95 +1,60 @@
+using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
-using McpServerLibrary.Services;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
 namespace Tests.Unit.McpServerLibrary;
 
+// This server's own payload shape. The gate-on-live behaviour it depends on is pinned once at the
+// policy seam (Tests/Unit/Channels.Hosting/DeliveryPolicyTests.cs), and what the watcher does with
+// a false return is pinned in DownloadCompletionWatcherTests.
 public class DownloadNotificationEmitterTests
 {
+    private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "library";
+
     [Fact]
-    public async Task EmitAsync_WithASubscriber_EnqueuesMessageItemAndReturnsTrue()
+    public async Task EmitAsync_CarriesTheDownloadCompletionFields()
     {
         var inbox = new ChannelInbox();
-        var sut = new DownloadNotificationEmitter(inbox);
-        await inbox.ReceiveAsync("channel-library", TimeSpan.Zero, CancellationToken.None);
+        var sut = new ChannelNotificationEmitter(inbox, DeliveryPolicy.GateOnLive);
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
-        var delivered = await sut.EmitAsync(Payload());
+        var delivered = await sut.EmitAsync(new ChannelMessageNotification
+        {
+            ConversationId = "conv-1",
+            Sender = "fran",
+            Content = "[download-complete] done",
+            AgentId = "jack",
+            ReplyTo = [new ReplyTarget("signalr", "conv-1")],
+            Timestamp = DateTimeOffset.UtcNow
+        });
 
         delivered.ShouldBeTrue();
-        var items = await inbox.ReceiveAsync("channel-library", TimeSpan.Zero, CancellationToken.None);
+        var items = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
         items.Count.ShouldBe(1);
         items[0].Kind.ShouldBe(ChannelInboxItemKind.Message);
         items[0].Message!.ConversationId.ShouldBe("conv-1");
         items[0].Message!.Sender.ShouldBe("fran");
         items[0].Message!.Content.ShouldBe("[download-complete] done");
+        items[0].Message!.ReplyTo!.Single().ChannelId.ShouldBe("signalr");
     }
 
+    // Only the agent's channel connection ever long-polls this dual-role server; its per-conversation
+    // tool sessions never poll, so nothing here filters by client name and the distinction stays
+    // structural. A tool session that never polls simply never counts as live.
     [Fact]
-    public async Task EmitAsync_NoSubscribers_ReturnsFalseWithoutEnqueuing()
+    public async Task EmitAsync_WithOnlyToolSessionsAndNoPoller_ReportsNobodyListening()
     {
         var inbox = new ChannelInbox();
-        var sut = new DownloadNotificationEmitter(inbox);
+        var sut = new ChannelNotificationEmitter(inbox, DeliveryPolicy.GateOnLive);
 
-        var delivered = await sut.EmitAsync(Payload());
+        (await sut.EmitAsync(new ChannelMessageNotification
+        {
+            ConversationId = "conv-1",
+            Sender = "fran",
+            Content = "[download-complete] done"
+        })).ShouldBeFalse();
 
-        delivered.ShouldBeFalse();
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
     }
-
-    [Fact]
-    public async Task HasActiveSessions_FollowsInboxSubscribers()
-    {
-        var inbox = new ChannelInbox();
-        var sut = new DownloadNotificationEmitter(inbox);
-
-        sut.HasActiveSessions.ShouldBeFalse();
-
-        await inbox.ReceiveAsync("channel-library", TimeSpan.Zero, CancellationToken.None);
-
-        sut.HasActiveSessions.ShouldBeTrue();
-    }
-
-    // The regression this test pins: PruneIdle keeps a subscriber that is holding items alive for
-    // up to an hour so a channel outage survives (see ChannelInboxTests), but a stale buffered
-    // subscriber must not be mistaken for "someone is listening" here — DownloadCompletionWatcher
-    // removes the routing entry only when EmitAsync reports true, so a false-true here would drop
-    // the durable routing record in exchange for an in-memory buffer that dies on the next restart.
-    [Fact]
-    public async Task EmitAsync_SubscriberWentStaleWhileStillBufferingAnItem_ReturnsFalse()
-    {
-        var time = new FakeTimeProvider();
-        var inbox = new ChannelInbox(time);
-        var sut = new DownloadNotificationEmitter(inbox);
-        await inbox.ReceiveAsync("channel-library", TimeSpan.Zero, CancellationToken.None);
-
-        (await sut.EmitAsync(Payload())).ShouldBeTrue();
-
-        // The agent's channel connection drops and never repolls; the subscriber keeps buffering
-        // (nothing evicts it — it still holds the item above), but nobody is actually listening.
-        time.Advance(TimeSpan.FromMinutes(2));
-
-        sut.HasActiveSessions.ShouldBeFalse();
-        (await sut.EmitAsync(Payload())).ShouldBeFalse();
-    }
-
-    [Fact]
-    public void Emitter_IsConstructibleFromTheRegisteredInbox()
-    {
-        var provider = new ServiceCollection()
-            .AddSingleton<ChannelInbox>()
-            .AddSingleton<DownloadNotificationEmitter>()
-            .BuildServiceProvider();
-
-        Should.NotThrow(() => provider.GetRequiredService<DownloadNotificationEmitter>());
-    }
-
-    private static ChannelMessageNotification Payload() => new()
-    {
-        ConversationId = "conv-1",
-        Sender = "fran",
-        Content = "[download-complete] done",
-        Timestamp = DateTimeOffset.UtcNow
-    };
 }

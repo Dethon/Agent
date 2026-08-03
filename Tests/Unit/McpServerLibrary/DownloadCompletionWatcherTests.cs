@@ -1,3 +1,5 @@
+using Channels.Hosting;
+using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpServerLibrary.Services;
@@ -20,8 +22,9 @@ public class DownloadCompletionWatcherTests
 
         await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
 
-        emitter.Emitted.Count.ShouldBe(1);
-        emitter.Emitted[0].ConversationId.ShouldBe("conv-42");
+        var items = await emitter.DrainAsync();
+        items.Count.ShouldBe(1);
+        items[0].Message!.ConversationId.ShouldBe("conv-42");
         routing.Entries.ShouldBeEmpty();
     }
 
@@ -34,22 +37,22 @@ public class DownloadCompletionWatcherTests
 
         await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
 
-        emitter.Emitted.ShouldBeEmpty();
+        (await emitter.DrainAsync()).ShouldBeEmpty();
         routing.Entries.Count.ShouldBe(1);
     }
 
+    // Gate-on-live: with nobody listening the emit buffers nothing and reports false, so the
+    // routing entry stays for the retry and no duplicate alert is waiting behind it.
     [Fact]
-    public async Task Sweep_EmitFails_RetainsEntryForRetry()
+    public async Task Sweep_NoLiveSubscriber_RetainsEntryAndBuffersNothing()
     {
-        var (client, routing, emitter) = Build();
-        emitter.EmitResult = false;
+        var (client, routing, emitter) = Build(live: false);
         client.Add(DownloadFakes.Item(42, DownloadState.Completed));
         routing.Entries.Add(Routing(42));
 
         await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
 
-        emitter.Emitted.Count.ShouldBe(1);
-        emitter.Emitted[0].ConversationId.ShouldBe("conv-42");
+        (await emitter.DrainAsync()).ShouldBeEmpty();
         routing.Entries.Count.ShouldBe(1);
     }
 
@@ -61,26 +64,13 @@ public class DownloadCompletionWatcherTests
 
         await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
 
-        emitter.Emitted.ShouldBeEmpty();
+        (await emitter.DrainAsync()).ShouldBeEmpty();
         routing.Entries.ShouldBeEmpty();
     }
 
-    [Fact]
-    public async Task Sweep_NoActiveSessions_DoesNotTouchAnything()
-    {
-        var (client, routing, emitter) = Build();
-        emitter.HasActiveSessions = false;
-        client.Add(DownloadFakes.Item(42, DownloadState.Completed));
-        routing.Entries.Add(Routing(42));
-
-        await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
-
-        emitter.Emitted.ShouldBeEmpty();
-        routing.Entries.Count.ShouldBe(1);
-    }
-
-    private static (DownloadFakes.FakeDownloadClient, DownloadFakes.FakeRoutingStore, FakeEmitter) Build() =>
-        (new DownloadFakes.FakeDownloadClient(), new DownloadFakes.FakeRoutingStore(), new FakeEmitter());
+    private static (DownloadFakes.FakeDownloadClient, DownloadFakes.FakeRoutingStore, InboxProbe) Build(
+        bool live = true) =>
+        (new DownloadFakes.FakeDownloadClient(), new DownloadFakes.FakeRoutingStore(), new InboxProbe(live));
 
     private static DownloadRouting Routing(int id) => new()
     {
@@ -90,8 +80,8 @@ public class DownloadCompletionWatcherTests
     };
 
     private static DownloadCompletionWatcher Watcher(
-        DownloadFakes.FakeDownloadClient client, DownloadFakes.FakeRoutingStore routing, FakeEmitter emitter) =>
-        new(routing, client, emitter, Settings(), NullLogger<DownloadCompletionWatcher>.Instance);
+        DownloadFakes.FakeDownloadClient client, DownloadFakes.FakeRoutingStore routing, InboxProbe emitter) =>
+        new(routing, client, emitter.Emitter, Settings(), NullLogger<DownloadCompletionWatcher>.Instance);
 
     private static McpSettings Settings() => new()
     {
@@ -102,16 +92,27 @@ public class DownloadCompletionWatcherTests
         RedisConnectionString = "unused"
     };
 
-    private sealed class FakeEmitter : IDownloadNotificationEmitter
+    // A real inbox behind the real emitter rather than a substitute for it, so what these tests
+    // observe is what a subscriber would actually receive. "Live" is expressed the way production
+    // expresses it — whether anyone has polled.
+    private sealed class InboxProbe
     {
-        public bool HasActiveSessions { get; set; } = true;
-        public bool EmitResult { get; set; } = true;
-        public List<ChannelMessageNotification> Emitted { get; } = new();
+        private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "library";
+        private readonly ChannelInbox _inbox = new();
 
-        public Task<bool> EmitAsync(ChannelMessageNotification payload, CancellationToken ct = default)
+        public InboxProbe(bool live)
         {
-            Emitted.Add(payload);
-            return Task.FromResult(EmitResult);
+            if (live)
+            {
+                _inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None).GetAwaiter().GetResult();
+            }
+
+            Emitter = new ChannelNotificationEmitter(_inbox, DeliveryPolicy.GateOnLive);
         }
+
+        public ChannelNotificationEmitter Emitter { get; }
+
+        public Task<IReadOnlyList<ChannelInboxItem>> DrainAsync() =>
+            _inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
     }
 }

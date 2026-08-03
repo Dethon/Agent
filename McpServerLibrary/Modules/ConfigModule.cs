@@ -1,4 +1,4 @@
-using Domain.Channels;
+using Channels.Hosting;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
@@ -34,9 +34,6 @@ public static class ConfigModule
         services
             .AddMemoryCache()
             .AddSingleton(settings)
-            .AddSingleton<ChannelInbox>()
-            .AddSingleton<DownloadNotificationEmitter>()
-            .AddSingleton<IDownloadNotificationEmitter>(sp => sp.GetRequiredService<DownloadNotificationEmitter>())
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.BaseLibraryPath))
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
@@ -49,33 +46,15 @@ public static class ConfigModule
             .AddHostedService<DownloadCompletionWatcher>()
             .AddMcpServer()
             .WithHttpTransport()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
-                    // or the server shuts down. Mapping that to IsError would hand the pump an
-                    // error result to retry on; let it propagate as the abort it is.
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return ToolResponse.Create(ex);
-                }
-            }))
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
             // Channel-protocol tools (invoked by the agent's channel connection, hidden from the LLM)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
-            .WithTools<McpChannelReceiveTool>()
+            // Gate-on-live: the completion watcher drops a routing entry only on a confirmed
+            // delivery, so a disconnected-but-still-buffering subscriber must not read as delivered.
+            .AddChannelServer(DeliveryPolicy.GateOnLive, errorResult: ToolResponse.Create)
             .WithTools<FsGlobTool>()
             .WithTools<FsReadTool>()
             .WithTools<FsDeleteTool>()
