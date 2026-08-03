@@ -16,5 +16,5 @@ Register for the set-agents action as well as the select-agent one. The topics r
 - [x] Selecting the agent that is already selected does nothing.
 - [x] A refreshed agent catalog that drops the selected agent reaches the same path and empties the topic list.
 - [x] Topics that are mid-stream keep their local messages rather than reloading history.
-- [x] The store subscription and the disposable it produced are gone, and the effect no longer needs to dispose one.
+- [x] The store subscription and the disposable it produced are gone. (The effect still implements `IDisposable`: it now disposes its two handler registrations instead, which is what `SpaceEffect` and `AgentActivityEffect` already do.)
 - [x] A fault in the agent-change work is logged rather than discarded.

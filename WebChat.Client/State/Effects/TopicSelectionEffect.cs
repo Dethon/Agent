@@ -72,7 +72,7 @@ public sealed class TopicSelectionEffect : IDisposable
 
         // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean
         // awaiting the conversation.
-        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, nameof(IStreamResumeService));
+        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, "stream resume");
     }
 
     private async Task MarkTopicAsReadAsync(StoredTopic topic)

@@ -110,7 +110,7 @@ public sealed class AgentSelectionEffect : IDisposable
     // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean awaiting
     // the conversation.
     private void ResumeStream(StoredTopic topic) =>
-        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, nameof(IStreamResumeService));
+        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, "stream resume");
 
     public void Dispose()
     {

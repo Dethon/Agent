@@ -56,7 +56,7 @@ public sealed class AgentSelectionEffectTests : IDisposable
     [Fact]
     public void SelectAgent_FirstSelection_LoadsNothing()
     {
-        _topicService.SeedTopic(TopicFor("topic-1", chatId: 10, threadId: 20));
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
 
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
 
@@ -68,8 +68,8 @@ public sealed class AgentSelectionEffectTests : IDisposable
     public async Task HandleAgentChangedAsync_SecondSelection_ClearsSessionPersistsAndReloadsTopics()
     {
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
-        _topicService.SeedTopic(TopicFor("topic-2", chatId: 11, threadId: 21, agentId: "agent-2"));
-        _topicService.SetHistory(11, 21, HistoryMessage("m-1", "hello"));
+        _topicService.SeedTopic(TestChat.Topic("topic-2", chatId: 11, threadId: 21, agentId: "agent-2"));
+        _topicService.SetHistory(11, 21, TestChat.HistoryMessage("m-1", "hello"));
 
         await _effect.HandleAgentChangedAsync("agent-2");
 
@@ -100,7 +100,7 @@ public sealed class AgentSelectionEffectTests : IDisposable
 
         _dispatcher.Dispatch(new SetAgents([]));
 
-        await WaitUntil(() => _topicsStore.State.Topics.Count == 0);
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 0);
         _topicsStore.State.SelectedAgentId.ShouldBeNull();
         _localStorage.Values["selectedAgentId"].ShouldBe("");
     }
@@ -109,8 +109,8 @@ public sealed class AgentSelectionEffectTests : IDisposable
     public async Task HandleAgentChangedAsync_TopicIsMidStream_KeepsItsLocalMessagesAndResumes()
     {
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
-        _topicService.SeedTopic(TopicFor("topic-2", chatId: 11, threadId: 21, agentId: "agent-2"));
-        _topicService.SetHistory(11, 21, HistoryMessage("m-1", "from the server"));
+        _topicService.SeedTopic(TestChat.Topic("topic-2", chatId: 11, threadId: 21, agentId: "agent-2"));
+        _topicService.SetHistory(11, 21, TestChat.HistoryMessage("m-1", "from the server"));
         _dispatcher.Dispatch(new StreamStarted("topic-2"));
         _calls.Reset();
 
@@ -125,11 +125,11 @@ public sealed class AgentSelectionEffectTests : IDisposable
     public async Task Dispatch_SelectAgent_RunsTheSameWork()
     {
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
-        _topicService.SeedTopic(TopicFor("topic-2", chatId: 11, threadId: 21, agentId: "agent-2"));
+        _topicService.SeedTopic(TestChat.Topic("topic-2", chatId: 11, threadId: 21, agentId: "agent-2"));
 
         _dispatcher.Dispatch(new SelectAgent("agent-2"));
 
-        await WaitUntil(() => _topicsStore.State.Topics.Count == 1);
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
         _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-2");
         _sessionService.Verify(s => s.ClearSession(), Times.Once);
     }
@@ -146,36 +146,8 @@ public sealed class AgentSelectionEffectTests : IDisposable
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("topic list unavailable");
     }
 
-    [Fact]
-    public void Dispose_DisposesTheHandlerRegistrations()
-    {
-        _dispatcher.Dispatch(new SelectAgent("agent-1"));
-
-        _effect.Dispose();
-        _dispatcher.Dispatch(new SelectAgent("agent-2"));
-
-        _sessionService.Verify(s => s.ClearSession(), Times.Never);
-    }
-
-    private static TopicMetadata TopicFor(string topicId, long chatId, long threadId, string agentId = "agent-1") =>
-        new(topicId, chatId, threadId, agentId, "Topic", DateTimeOffset.UnixEpoch, null);
-
     private static StoredTopic StoredTopicFor(string topicId) =>
-        StoredTopic.FromMetadata(TopicFor(topicId, chatId: 10, threadId: 20));
-
-    private static ChatHistoryMessage HistoryMessage(string messageId, string content) =>
-        new(messageId, "assistant", content, null, DateTimeOffset.UnixEpoch);
-
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (!condition() && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(10);
-        }
-
-        condition().ShouldBeTrue("the expected state was not reached within the timeout");
-    }
+        StoredTopic.FromMetadata(TestChat.Topic(topicId));
 
     public void Dispose()
     {

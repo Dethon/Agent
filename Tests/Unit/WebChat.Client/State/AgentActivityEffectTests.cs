@@ -45,8 +45,8 @@ public sealed class AgentActivityEffectTests : IDisposable
     [Fact]
     public async Task MapAllAgentTopicsAsync_Called_AttributesEveryAgentsTopics()
     {
-        _topicService.SeedTopic(TopicFor("topic-1", "agent-1"));
-        _topicService.SeedTopic(TopicFor("topic-2", "agent-2"));
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _topicService.SeedTopic(TestChat.Topic("topic-2", agentId: "agent-2"));
 
         await _effect.MapAllAgentTopicsAsync([_agentOne, _agentTwo]);
 
@@ -57,11 +57,11 @@ public sealed class AgentActivityEffectTests : IDisposable
     [Fact]
     public async Task Dispatch_SetAgents_RunsTheSameWork()
     {
-        _topicService.SeedTopic(TopicFor("topic-1", "agent-1"));
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
 
         _dispatcher.Dispatch(new SetAgents([_agentOne]));
 
-        await WaitUntil(() => _activityStore.State.TopicToAgent.ContainsKey("topic-1"));
+        await TestChat.Eventually(() => _activityStore.State.TopicToAgent.ContainsKey("topic-1"));
         _activityStore.State.TopicToAgent["topic-1"].ShouldBe("agent-1");
     }
 
@@ -99,7 +99,7 @@ public sealed class AgentActivityEffectTests : IDisposable
     [Fact]
     public async Task StreamCompletes_ForAnUnselectedAgent_MarksUnseenActivity()
     {
-        _topicService.SeedTopic(TopicFor("topic-2", "agent-2"));
+        _topicService.SeedTopic(TestChat.Topic("topic-2", agentId: "agent-2"));
         await _effect.MapAllAgentTopicsAsync([_agentTwo]);
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
 
@@ -112,7 +112,7 @@ public sealed class AgentActivityEffectTests : IDisposable
     [Fact]
     public async Task StreamCompletes_ForTheSelectedAgent_MarksNothing()
     {
-        _topicService.SeedTopic(TopicFor("topic-1", "agent-1"));
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
         await _effect.MapAllAgentTopicsAsync([_agentOne]);
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
 
@@ -120,20 +120,6 @@ public sealed class AgentActivityEffectTests : IDisposable
         _dispatcher.Dispatch(new StreamCompleted("topic-1"));
 
         _activityStore.State.AgentsWithUnseenActivity.ShouldBeEmpty();
-    }
-
-    private static TopicMetadata TopicFor(string topicId, string agentId) =>
-        new(topicId, 10, 20, agentId, "Topic", DateTimeOffset.UnixEpoch, null);
-
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (!condition() && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(10);
-        }
-
-        condition().ShouldBeTrue("the expected state was not reached within the timeout");
     }
 
     public void Dispose()

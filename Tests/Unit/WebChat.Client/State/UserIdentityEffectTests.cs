@@ -73,7 +73,7 @@ public sealed class UserIdentityEffectTests : IDisposable
 
         _dispatcher.Dispatch(new Initialize());
 
-        await WaitUntil(() => _userIdentityStore.State.AvailableUsers.Count == 1);
+        await TestChat.Eventually(() => _userIdentityStore.State.AvailableUsers.Count == 1);
         _userIdentityStore.State.AvailableUsers.Single().Id.ShouldBe("alice");
     }
 
@@ -82,7 +82,7 @@ public sealed class UserIdentityEffectTests : IDisposable
     {
         _dispatcher.Dispatch(new SelectUser("alice"));
 
-        await WaitUntil(() => _localStorage.Values.ContainsKey("selectedUserId"));
+        await TestChat.Eventually(() => _localStorage.Values.ContainsKey("selectedUserId"));
         _localStorage.Values["selectedUserId"].ShouldBe("alice");
     }
 
@@ -99,17 +99,6 @@ public sealed class UserIdentityEffectTests : IDisposable
 
     private void GivenUsers(params string[] userIds) =>
         _configService.Config = new AppConfig(null, userIds.Select(id => new UserConfig(id, "")).ToArray());
-
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (!condition() && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(10);
-        }
-
-        condition().ShouldBeTrue("the expected state was not reached within the timeout");
-    }
 
     public void Dispose()
     {

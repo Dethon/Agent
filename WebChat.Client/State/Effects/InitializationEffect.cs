@@ -94,7 +94,7 @@ public sealed class InitializationEffect : IDisposable
         // (agent list, topics). Push subscription still runs after space join so the
         // server can associate it with the space context. A slow pushManager.subscribe()
         // previously stalled the agent list ~30s by being awaited here.
-        SubscribePushAsync().LogFaults(_logger, nameof(SubscribePushAsync));
+        SubscribePushAsync().LogFaults(_logger, "push subscription");
 
         // Re-register user on reconnection (after initial subscribe to avoid race)
         _connectionService.OnReconnected += () =>
@@ -177,7 +177,7 @@ public sealed class InitializationEffect : IDisposable
 
         // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean
         // awaiting the conversation.
-        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, nameof(IStreamResumeService));
+        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, "stream resume");
     }
 
     private async Task MarkTopicAsReadAsync(StoredTopic topic)

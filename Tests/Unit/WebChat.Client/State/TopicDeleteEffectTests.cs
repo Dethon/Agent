@@ -112,7 +112,7 @@ public sealed class TopicDeleteEffectTests : IDisposable
 
         _dispatcher.Dispatch(new RemoveTopic("topic-1", "agent-1", 10, 20));
 
-        await WaitUntil(() => _topicService.DeletedTopicIds.Contains("topic-1"));
+        await TestChat.Eventually(() => _topicService.DeletedTopicIds.Contains("topic-1"));
         _messagesStore.State.MessagesByTopic.ShouldNotContainKey("topic-1");
     }
 
@@ -144,17 +144,6 @@ public sealed class TopicDeleteEffectTests : IDisposable
             new ChatMessageModel { Role = "assistant", Content = "hello", MessageId = "m-1" }
         ]));
         _calls.Reset();
-    }
-
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (!condition() && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(10);
-        }
-
-        condition().ShouldBeTrue("the expected state was not reached within the timeout");
     }
 
     public void Dispose()

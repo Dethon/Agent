@@ -81,7 +81,7 @@ public sealed class InitializationEffectTests : IDisposable
     {
         _configService.WithSpace("default");
         _agentService.Agents = [_agentOne];
-        _topicService.SeedTopic(TopicFor("topic-1", chatId: 10, threadId: 20));
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
         _dispatcher.Dispatch(new SelectUser("user-1"));
         _calls.Reset();
 
@@ -108,10 +108,10 @@ public sealed class InitializationEffectTests : IDisposable
     {
         _configService.WithSpace("default");
         _agentService.Agents = [_agentOne];
-        _topicService.SeedTopic(TopicFor("topic-1", chatId: 10, threadId: 20));
-        _topicService.SeedTopic(TopicFor("topic-2", chatId: 11, threadId: 21));
-        _topicService.SetHistory(10, 20, HistoryMessage("m-1", "first"));
-        _topicService.SetHistory(11, 21, HistoryMessage("m-2", "second"));
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _topicService.SeedTopic(TestChat.Topic("topic-2", chatId: 11, threadId: 21));
+        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "first"));
+        _topicService.SetHistory(11, 21, TestChat.HistoryMessage("m-2", "second"));
 
         await _effect.HandleInitializeAsync();
 
@@ -140,8 +140,8 @@ public sealed class InitializationEffectTests : IDisposable
         _configService.WithSpace("default");
         _streamResumeService.BlockUntilReleased = true;
         _agentService.Agents = [_agentOne];
-        _topicService.SeedTopic(TopicFor("topic-1", chatId: 10, threadId: 20));
-        _topicService.SetHistory(10, 20, HistoryMessage("m-1", "first"));
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "first"));
 
         await _effect.HandleInitializeAsync();
 
@@ -220,7 +220,7 @@ public sealed class InitializationEffectTests : IDisposable
 
         _dispatcher.Dispatch(new Initialize());
 
-        await WaitUntil(() => _topicsStore.State.SelectedAgentId == "agent-1");
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
         _connectionService.ConnectCalls.ShouldBe(1);
         _eventSubscriber.IsSubscribed.ShouldBeTrue();
     }
@@ -246,23 +246,6 @@ public sealed class InitializationEffectTests : IDisposable
         await Should.NotThrowAsync(() => _effect.RegisterUserAsync());
 
         _calls.Calls.ShouldBe(["register-user"]);
-    }
-
-    private static TopicMetadata TopicFor(string topicId, long chatId, long threadId, string agentId = "agent-1") =>
-        new(topicId, chatId, threadId, agentId, "Topic", DateTimeOffset.UnixEpoch, null);
-
-    private static ChatHistoryMessage HistoryMessage(string messageId, string content) =>
-        new(messageId, "assistant", content, null, DateTimeOffset.UnixEpoch);
-
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (!condition() && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(10);
-        }
-
-        condition().ShouldBeTrue("the expected state was not reached within the timeout");
     }
 
     public void Dispose()

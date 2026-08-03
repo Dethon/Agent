@@ -108,7 +108,7 @@ public sealed class SpaceEffectTests : IDisposable
 
         _dispatcher.Dispatch(new SelectSpace("other"));
 
-        await WaitUntil(() => _spaceStore.State.SpaceName == "Other");
+        await TestChat.Eventually(() => _spaceStore.State.SpaceName == "Other");
         _topicService.JoinedSpaces.ShouldBe(["other"]);
     }
 
@@ -133,17 +133,6 @@ public sealed class SpaceEffectTests : IDisposable
             new ChatMessageModel { Role = "assistant", Content = "hello", MessageId = "m-1" }
         ]));
         _calls.Reset();
-    }
-
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (!condition() && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(10);
-        }
-
-        condition().ShouldBeTrue("the expected state was not reached within the timeout");
     }
 
     public void Dispose()

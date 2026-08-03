@@ -52,7 +52,7 @@ public sealed class TopicSelectionEffectTests : IDisposable
     public async Task HandleSelectTopicAsync_TopicHasNoMessages_StartsTheSessionAndLoadsHistory()
     {
         GivenTopic("topic-1");
-        _topicService.SetHistory(10, 20, HistoryMessage("m-1", "hello"));
+        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "hello"));
 
         await _effect.HandleSelectTopicAsync("topic-1");
 
@@ -78,7 +78,7 @@ public sealed class TopicSelectionEffectTests : IDisposable
     public async Task HandleSelectTopicAsync_UnreadMessages_MarksTheTopicAsRead()
     {
         GivenTopic("topic-1");
-        _topicService.SetHistory(10, 20, HistoryMessage("m-1", "hello"));
+        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "hello"));
 
         await _effect.HandleSelectTopicAsync("topic-1");
 
@@ -90,7 +90,7 @@ public sealed class TopicSelectionEffectTests : IDisposable
     public async Task HandleSelectTopicAsync_NothingUnread_WritesNothing()
     {
         GivenTopic("topic-1", lastReadMessageId: "m-1");
-        _topicService.SetHistory(10, 20, HistoryMessage("m-1", "hello"));
+        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "hello"));
 
         await _effect.HandleSelectTopicAsync("topic-1");
 
@@ -110,11 +110,11 @@ public sealed class TopicSelectionEffectTests : IDisposable
     public async Task Dispatch_SelectTopic_RunsTheSameWork()
     {
         GivenTopic("topic-1");
-        _topicService.SetHistory(10, 20, HistoryMessage("m-1", "hello"));
+        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "hello"));
 
         _dispatcher.Dispatch(new SelectTopic("topic-1"));
 
-        await WaitUntil(() => _messagesStore.State.MessagesByTopic.ContainsKey("topic-1"));
+        await TestChat.Eventually(() => _messagesStore.State.MessagesByTopic.ContainsKey("topic-1"));
         _messagesStore.State.MessagesByTopic["topic-1"].Single().Content.ShouldBe("hello");
     }
 
@@ -156,22 +156,8 @@ public sealed class TopicSelectionEffectTests : IDisposable
         _calls.Reset();
     }
 
-    private static ChatHistoryMessage HistoryMessage(string messageId, string content) =>
-        new(messageId, "assistant", content, null, DateTimeOffset.UnixEpoch);
-
     private static ChatMessageModel Message(string messageId, string content) =>
         new() { Role = "assistant", Content = content, MessageId = messageId };
-
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (!condition() && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(10);
-        }
-
-        condition().ShouldBeTrue("the expected state was not reached within the timeout");
-    }
 
     public void Dispose()
     {
