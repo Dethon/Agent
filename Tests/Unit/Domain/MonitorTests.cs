@@ -26,6 +26,8 @@ internal sealed class FakeAiAgent : DisposableAgent
     public int WarmupCalls;
     public TaskCompletionSource WarmupSignaled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TimeSpan WarmupDelay { get; init; }
+    public TimeSpan TurnDelay { get; init; }
+    public Func<Task>? TurnGate { get; init; }
     public ConcurrentQueue<string> Events { get; } = new();
     public ConcurrentQueue<string> RestoredSessionKeys { get; } = new();
     public ConcurrentQueue<IReadOnlyList<ChatMessage>> ReceivedMessages { get; } = new();
@@ -90,10 +92,22 @@ internal sealed class FakeAiAgent : DisposableAgent
             throw ExceptionToThrow;
         }
 
+        if (TurnGate is not null)
+        {
+            await TurnGate();
+        }
+
+        if (TurnDelay > TimeSpan.Zero)
+        {
+            await Task.Delay(TurnDelay, cancellationToken);
+        }
+
         foreach (var update in UpdatesToYield)
         {
             yield return update;
         }
+
+        Events.Enqueue("run-complete");
     }
 
     public override ValueTask DisposeAsync()
@@ -341,7 +355,7 @@ public class ChatMonitorTests
         await monitor.Monitor(CancellationToken.None);
 
         // Assert - warmup completes before the first streaming turn starts
-        fakeAgent.Events.ToArray().ShouldBe(["warmup", "run"]);
+        fakeAgent.Events.ToArray().ShouldBe(["warmup", "run", "run-complete"]);
     }
 
     [Fact]
@@ -593,6 +607,82 @@ public class ChatMonitorTests
         // Assert - CTS should be canceled AND thread state should be deleted
         context.Cts.IsCancellationRequested.ShouldBeTrue();
         mockStateStore.Verify(s => s.DeleteAsync(agentKey), Times.Once);
+    }
+
+    // The next three tests state the trade in one place: turns within a conversation
+    // serialise, while conversations and delivery fan-out stay concurrent.
+    [Fact]
+    public async Task Monitor_TwoMessagesInOneConversation_RunsTurnsSequentially()
+    {
+        // Each turn takes time, so overlapping turns interleave the run/run-complete
+        // events. Sequential turns produce one closed window per message.
+        var channel = MonitorTestMocks.CreateChannel(
+            messages:
+            [
+                MonitorTestMocks.CreateChannelMessage(content: "first"),
+                MonitorTestMocks.CreateChannelMessage(content: "second")
+            ]);
+        var fakeAgent = new FakeAiAgent { TurnDelay = TimeSpan.FromMilliseconds(100) };
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        fakeAgent.Events.ToArray()
+            .ShouldBe(["warmup", "run", "run-complete", "run", "run-complete"]);
+    }
+
+    [Fact]
+    public async Task Monitor_MessagesInDifferentConversations_RunTurnsConcurrently()
+    {
+        // Both turns block until BOTH have started. Concurrent conversations release the
+        // gate; serialising across conversations would leave the first turn waiting.
+        var bothStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = 0;
+        var timedOut = false;
+        var fakeAgent = new FakeAiAgent
+        {
+            TurnGate = async () =>
+            {
+                if (Interlocked.Increment(ref started) >= 2)
+                {
+                    bothStarted.TrySetResult();
+                }
+
+                try
+                {
+                    await bothStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+                }
+                catch (TimeoutException)
+                {
+                    timedOut = true;
+                }
+            }
+        };
+        var channel1 = MonitorTestMocks.CreateChannel(
+            "ch-1", MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", channelId: "ch-1"));
+        var channel2 = MonitorTestMocks.CreateChannel(
+            "ch-2", MonitorTestMocks.CreateChannelMessage(conversationId: "conv-2", channelId: "ch-2"));
+
+        var monitor = new ChatMonitor(
+            [channel1, channel2],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        timedOut.ShouldBeFalse();
     }
 
     [Fact]

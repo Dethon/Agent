@@ -83,9 +83,8 @@ public class ChatMonitor(
         // outlives the agent and the order of operations is well-defined.
         var warmup = agent.WarmupSessionAsync(thread, linkedCt);
 
-        var aiResponses = group.Prepend(first)
-            .Select(async (x, index, _) => await RunTurnAsync(x, index, agentKey, anchors.Targets, agent, thread, warmup, linkedCt))
-            .Merge(linkedCt);
+        var aiResponses = RunTurnsSequentiallyAsync(
+            group.Prepend(first), agentKey, anchors.Targets, agent, thread, warmup, linkedCt);
 
         await foreach (var turn in aiResponses.WithCancellation(ct))
         {
@@ -96,6 +95,33 @@ public class ChatMonitor(
             }
 
             yield return true;
+        }
+    }
+
+    // One turn at a time within a conversation. Three pieces of state shared across a
+    // conversation's turns depend on this and are not defended anywhere else:
+    // ToolApprovalChatClient's dynamically-approved tool set (an unsynchronised HashSet
+    // mutated mid-turn), and OpenRouterChatClient's reasoning queue and cost/cached-token
+    // queues (drained per update and per response, so two interleaved streams on one client
+    // cross-attribute each other's values). Reintroducing concurrency here re-breaks all
+    // three. Different conversations and the fan-out across delivery targets stay concurrent.
+    private async IAsyncEnumerable<TurnUpdate> RunTurnsSequentiallyAsync(
+        IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
+        AgentKey agentKey,
+        IReadOnlyList<DeliveryTarget> groupTargets,
+        DisposableAgent agent,
+        AgentSession thread,
+        Task warmup,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var index = 0;
+        await foreach (var x in messages.IgnoreCancellation(ct))
+        {
+            var turn = await RunTurnAsync(x, index++, agentKey, groupTargets, agent, thread, warmup, ct);
+            await foreach (var update in turn.IgnoreCancellation(ct))
+            {
+                yield return update;
+            }
         }
     }
 
