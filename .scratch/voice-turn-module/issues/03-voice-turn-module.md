@@ -41,17 +41,17 @@ The turn-start and speech-end latency anchors stay on the session. They are not 
 
 **Blocked by:** None — can start immediately. Runs in parallel with 01 and 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The module owns every field the turn reset touches; none of them is reachable from outside it.
-- [ ] A stream that ends with no segments started settles the turn silent, and releases the dispatch stamp so it cannot outlive the turn.
-- [ ] A stream that ends with one segment drained and another still outstanding does not settle the turn.
-- [ ] A completion or failure callback carrying a previous turn's epoch is ignored.
-- [ ] A reset landing between a segment beginning and its completion does not drive the new turn's counter negative.
-- [ ] A turn where every segment failed settles silent; a turn where any segment played settles spoken.
-- [ ] The reply tool no longer reads a segment counter: it ends the stream in one call, asks whether the next segment is the first for the minimum-length choice, and asks the token for the metrics decision.
-- [ ] The existing reply-segment unit file is retargeted at the module and renamed. Pick a name that is told apart at a glance from the existing file testing turn latency decomposition.
-- [ ] The two handshake tests currently in the playback unit file move to the module's file — they test the handshake, not playback.
-- [ ] The reply tool's own unit file passes with the epoch parameters gone from its call sites.
-- [ ] The integration files get the minimal edit needed to stay green; restructuring them is ticket 05.
-- [ ] Every hazard comment moves with the code it describes. Each one records a bug that actually happened; deleting one is a regression.
+- [x] The module owns every field the turn reset touches; none of them is reachable from outside it.
+- [x] A stream that ends with no segments started settles the turn silent, and releases the dispatch stamp so it cannot outlive the turn.
+- [x] A stream that ends with one segment drained and another still outstanding does not settle the turn.
+- [x] A completion or failure callback carrying a previous turn's epoch is ignored.
+- [x] A reset landing between a segment beginning and its completion does not drive the new turn's counter negative.
+- [x] A turn where every segment failed settles silent; a turn where any segment played settles spoken.
+- [x] The reply tool no longer reads a segment counter: it ends the stream in one call, asks whether the next segment is the first for the minimum-length choice, and asks the token for the metrics decision.
+- [x] The existing reply-segment unit file is retargeted at the module and renamed. Pick a name that is told apart at a glance from the existing file testing turn latency decomposition.
+- [x] The two handshake tests currently in the playback unit file move to the module's file — they test the handshake, not playback.
+- [x] The reply tool's own unit file passes with the epoch parameters gone from its call sites.
+- [x] The integration files get the minimal edit needed to stay green; restructuring them is ticket 05.
+- [x] Every hazard comment moves with the code it describes. Each one records a bug that actually happened; deleting one is a regression.

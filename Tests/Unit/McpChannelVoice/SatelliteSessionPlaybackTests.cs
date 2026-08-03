@@ -351,25 +351,9 @@ public class SatelliteSessionPlaybackTests
         drained.ShouldBeEmpty();            // OnDrained must NOT fire on preempt
     }
 
-    [Fact]
-    public async Task TurnHandshake_SignalSpoken_ResolvesTrue()
-    {
-        var session = MakeSession();
-        session.ResetTurn();
-        var wait = session.WaitForTurnSpokenAsync();
-        session.SignalTurnSpoken();
-        (await wait).ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task TurnHandshake_SignalSilent_ResolvesFalse()
-    {
-        var session = MakeSession();
-        session.ResetTurn();
-        var wait = session.WaitForTurnSpokenAsync();
-        session.SignalTurnSilent();
-        (await wait).ShouldBeFalse();
-    }
+    // The two turn-handshake tests that used to sit here moved to VoiceTurnTests: they test the
+    // handshake, not playback, and they now drive the real path (begin a segment, complete it, end
+    // the stream) rather than a signal method that no longer exists.
 
     [Fact]
     public async Task MicRouting_RouteAudio_FeedsActiveCaptureOnly()

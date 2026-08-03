@@ -45,20 +45,10 @@ public sealed class SatelliteSession
     // the loop), so a second High job stacking in the same window never preempts the first.
     private long _preemptPendingSeq = -1;
     private UtteranceCapture? _capture;
-    private readonly Lock _turnGate = new();
-    private TaskCompletionSource<bool> _turn = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private const long TurnNotStarted = long.MinValue;
     private long _turnStartedAt = TurnNotStarted;
     private const long SpeechEndNotMarked = long.MinValue;
     private long _speechEndedAt = SpeechEndNotMarked;
-    private const long DispatchNotMarked = long.MinValue;
-    private long _dispatchedAt = DispatchNotMarked;
-    private int _preambleClaimed;
-    private int _replySegmentsStarted;
-    private int _replySegmentsOutstanding;
-    private int _replyStreamComplete;
-    private int _replyAudioPlayed;
-    private long _turnEpoch;
     private static readonly TimeSpan _snoozeWindow = TimeSpan.FromSeconds(60);
     private readonly Lock _dismissGate = new();
     private string? _dismissedAlert;
@@ -72,6 +62,11 @@ public sealed class SatelliteSession
 
     public string SatelliteId { get; }
     public SatelliteConfig Config { get; }
+
+    // The current user turn's reply state. Exposed as a property rather than forwarded through this
+    // class: forwarding methods would be a pass-through layer with the same surface the module was
+    // extracted to remove.
+    public VoiceTurn Turn { get; } = new();
 
     // Writes a control event on this satellite's live Wyoming connection. Set by
     // WyomingSatelliteHost when the connection is established and cleared on teardown, because the
@@ -226,161 +221,6 @@ public sealed class SatelliteSession
     public void MarkSpeechEnd(long captureClosedAt, long endpointTailMs, TimeProvider time) =>
         Interlocked.Exchange(
             ref _speechEndedAt, captureClosedAt - (endpointTailMs * time.TimestampFrequency / 1000));
-
-    // Stamped when a transcript actually reached the agent, so the hub can measure the agent round
-    // trip it cannot otherwise see into (the agent's own MemoryRecall/LlmTotal stages live in a
-    // different process). Single-use, like NoteDismissedAlert/TryConsumeDismissedAlert below: a live
-    // session's conversation can also receive a schedule-fired or agent-initiated reply that never
-    // went through a transcript dispatch, so a stamp left over from an earlier real turn must not be
-    // readable by that later, unrelated reply — it would report an invented, stale round trip.
-    public void MarkDispatched(long timestamp) => Interlocked.Exchange(ref _dispatchedAt, timestamp);
-
-    public long? TryConsumeDispatchedAt()
-    {
-        var stamp = Interlocked.Exchange(ref _dispatchedAt, DispatchNotMarked);
-        return stamp == DispatchNotMarked ? null : stamp;
-    }
-
-    // Callers must ResetTurn before the reply path can SignalTurnSpoken/SignalTurnSilent for
-    // the new turn; otherwise a signal lands on the discarded TCS and the awaiter blocks forever.
-    public void ResetTurn()
-    {
-        // All under _turnGate, which BeginReplySegment also takes: registering a segment and
-        // starting a turn must not interleave, or a segment lands on the new turn's counter while
-        // its callbacks still carry the old epoch and are rejected — leaving the new turn
-        // permanently outstanding.
-        lock (_turnGate)
-        {
-            Interlocked.Exchange(ref _preambleClaimed, 0);
-            Interlocked.Exchange(ref _replySegmentsStarted, 0);
-            Interlocked.Exchange(ref _replySegmentsOutstanding, 0);
-            Interlocked.Exchange(ref _replyStreamComplete, 0);
-            Interlocked.Exchange(ref _replyAudioPlayed, 0);
-            Interlocked.Exchange(ref _dispatchedAt, DispatchNotMarked);
-            Interlocked.Increment(ref _turnEpoch);
-            _turn = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        }
-    }
-
-    // The reply is streamed as several sentence jobs, so "the answer finished" is no longer "a job
-    // drained" — it is "every started segment drained AND the agent's stream ended". Signalling on
-    // the first drain instead would end FollowUpConversation, which chimes and reopens the mic while
-    // the remaining sentences are still being spoken.
-    public int ReplySegmentsStarted => Volatile.Read(ref _replySegmentsStarted);
-
-    // Playback callbacks outlive the turn that queued them (a preempted or slow job can drain after
-    // FollowUpConversation has moved on), and this handshake is now counter-based rather than the
-    // old idempotent "set the TCS" — so a stale decrement would drive the NEXT turn's outstanding
-    // count negative and it could then never reach zero, wedging the mic until ReplyTimeoutMs.
-    // Callbacks carry the epoch they were queued under and are ignored once it moves.
-    public long CurrentTurnEpoch => Interlocked.Read(ref _turnEpoch);
-
-    // Returns the epoch the segment was registered under, so its callbacks release the same turn
-    // that counted it. Reading CurrentTurnEpoch separately leaves a window for ResetTurn to land in
-    // between, which registers on one turn and releases against another.
-    public long BeginReplySegment()
-    {
-        lock (_turnGate)
-        {
-            Interlocked.Increment(ref _replySegmentsStarted);
-            Interlocked.Increment(ref _replySegmentsOutstanding);
-            return Interlocked.Read(ref _turnEpoch);
-        }
-    }
-
-    public void CompleteReplySegment(long epoch)
-    {
-        // Epoch check and decrement under the gate ResetTurn takes: checked then decremented
-        // without it, a reset landing between the two puts the stale decrement on the NEW turn's
-        // counter, which then can never reach zero. SettleIfComplete stays outside — after a reset
-        // it reads the zeroed flags and no-ops, and it re-enters _turnGate to signal.
-        lock (_turnGate)
-        {
-            if (epoch != CurrentTurnEpoch)
-            {
-                return;
-            }
-            Interlocked.Exchange(ref _replyAudioPlayed, 1);
-            Interlocked.Decrement(ref _replySegmentsOutstanding);
-        }
-        SettleIfComplete();
-    }
-
-    // A segment that never plays (synthesis threw, or the queue refused it) must NOT settle the turn
-    // on its own: sentences behind it may still be queued, and settling here would end
-    // FollowUpConversation, whose chime is a High-priority job — it would preempt the sentence
-    // currently playing and the rest would then be spoken into an open capture.
-    public void FailReplySegment(long epoch)
-    {
-        // Same gate discipline as CompleteReplySegment, for the same reason.
-        lock (_turnGate)
-        {
-            if (epoch != CurrentTurnEpoch)
-            {
-                return;
-            }
-            Interlocked.Decrement(ref _replySegmentsOutstanding);
-        }
-        SettleIfComplete();
-    }
-
-    public void MarkReplyStreamComplete()
-    {
-        Interlocked.Exchange(ref _replyStreamComplete, 1);
-        SettleIfComplete();
-    }
-
-    // The turn is over only once the agent has stopped sending AND every segment it produced has
-    // finished. Spoken when any segment reached the satellite — half an answer still played, and the
-    // user is owed the follow-up window; Silent when every one of them failed. An empty answer starts
-    // no segments and is left for the caller to settle explicitly.
-    private void SettleIfComplete()
-    {
-        if (Volatile.Read(ref _replyStreamComplete) != 1
-            || Volatile.Read(ref _replySegmentsOutstanding) != 0
-            || ReplySegmentsStarted == 0)
-        {
-            return;
-        }
-
-        if (Volatile.Read(ref _replyAudioPlayed) == 1)
-        {
-            SignalTurnSpoken();
-        }
-        else
-        {
-            SignalTurnSilent();
-        }
-    }
-
-    // Claimed by the first tool call of a turn, which speaks whatever the model said before it
-    // ("Buscando") instead of leaving it buffered until the answer. One claim per turn: later tool
-    // calls keep mid-run narration buffered so it cannot race the answer into the playback queue.
-    public bool TryClaimPreamble() => Interlocked.CompareExchange(ref _preambleClaimed, 1, 0) == 0;
-
-    public Task<bool> WaitForTurnSpokenAsync()
-    {
-        lock (_turnGate)
-        {
-            return _turn.Task;
-        }
-    }
-
-    public void SignalTurnSpoken()
-    {
-        lock (_turnGate)
-        {
-            _turn.TrySetResult(true);
-        }
-    }
-
-    public void SignalTurnSilent()
-    {
-        lock (_turnGate)
-        {
-            _turn.TrySetResult(false);
-        }
-    }
 
     // Wake-word dismissal context for LLM-mediated snooze: the host stashes what was dismissed; the
     // next dispatched transcript within the window consumes it (single-use).

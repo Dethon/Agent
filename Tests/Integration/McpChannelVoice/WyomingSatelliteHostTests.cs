@@ -31,6 +31,15 @@ public class WyomingSatelliteHostTests
         new(new ArbitrationSettings(), conversations, Mock.Of<IMetricsPublisher>(),
             TimeProvider.System, NullLogger<WakeArbiter>.Instance);
 
+    // Stands in for the agent answering: one reply segment queued, played, and the stream ended.
+    // That is the route SendReplyTool takes, so what the test proves and what production does are
+    // the same thing — there is no signal-the-turn shortcut to take instead.
+    private static void SpeakOneReplySegment(SatelliteSession session)
+    {
+        session.Turn.BeginSegment().Complete();
+        session.Turn.EndStream();
+    }
+
     private static byte[] Pcm(short value, int bytes = 3200)
     {
         var buf = new byte[bytes];
@@ -691,7 +700,7 @@ public class WyomingSatelliteHostTests
         long? stamp = null;
         for (var i = 0; i < 200 && stamp is null && !ct.IsCancellationRequested; i++)
         {
-            stamp = session!.TryConsumeDispatchedAt();
+            stamp = session!.Turn.TryConsumeDispatchedAt();
             if (stamp is null)
             { await Task.Delay(20, ct); }
         }
@@ -1162,7 +1171,7 @@ public class WyomingSatelliteHostTests
         // Wake turn dispatched -> simulate the agent's spoken reply so the follow-up window opens.
         await emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), ct);
         sessions.Get("kitchen-01").ShouldNotBeNull();
-        sessions.Get("kitchen-01")!.SignalTurnSpoken();
+        SpeakOneReplySegment(sessions.Get("kitchen-01")!);
 
         await WaitForConditionAsync(() => sessions.Get("kitchen-01")?.HasActiveCapture == true, TimeSpan.FromSeconds(10));
         streamFollowUp.TrySetResult();
@@ -1727,7 +1736,7 @@ public class WyomingSatelliteHostTests
         await emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), ct);
         sawTranscript.Task.IsCompleted.ShouldBeFalse(); // transcript deferred (no re-arm yet)
         sessions.Get("kitchen-01").ShouldNotBeNull();
-        sessions.Get("kitchen-01")!.SignalTurnSpoken();
+        SpeakOneReplySegment(sessions.Get("kitchen-01")!);
 
         // The follow-up window opens asynchronously after the reply signal; wait for the capture to
         // become active, then let the satellite stream the wake-free follow-up utterance into it.
@@ -1852,7 +1861,7 @@ public class WyomingSatelliteHostTests
         await emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), ct);
         sawTranscript.Task.IsCompleted.ShouldBeFalse(); // transcript deferred (no re-arm yet)
         sessions.Get("kitchen-01").ShouldNotBeNull();
-        sessions.Get("kitchen-01")!.SignalTurnSpoken();
+        SpeakOneReplySegment(sessions.Get("kitchen-01")!);
 
         // Wait for the wake-free window to open, then stream pure silence into it.
         await WaitForConditionAsync(() => sessions.Get("kitchen-01")?.HasActiveCapture == true, TimeSpan.FromSeconds(10));

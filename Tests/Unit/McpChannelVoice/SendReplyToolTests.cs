@@ -121,14 +121,15 @@ public class SendReplyToolTests
     {
         // Regression guard for the FIX #4 follow-up: a reply synthesis failure (e.g. a Wyoming TTS
         // 'error' event, which now throws) must resolve the per-turn handshake via the reply job's
-        // OnFailed -> SignalTurnSilent, so FollowUpConversation ends + re-arms wake. Without it the
+        // OnFailed -> the segment fails and the turn settles silent, so FollowUpConversation ends +
+        // re-arms wake. Without it the
         // mic stays wedged until the ~120s ReplyTimeoutMs. The chime and approval jobs already do this.
         _tts.Setup(t => t.SynthesizeAsync(
                 It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
             .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) => ThrowingAudio());
 
-        _session.ResetTurn();
-        var turn = _session.WaitForTurnSpokenAsync();
+        _session.Turn.Reset();
+        var turn = _session.Turn.AwaitSpoken();
 
         await SendReplyTool.McpRun(_conversationId, "hola", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
@@ -223,8 +224,8 @@ public class SendReplyToolTests
         // arriving after the wait it existed to cover, and costing words for nothing. The first tool
         // call of a turn must flush and speak it. It must NOT resolve the turn handshake: that ends
         // FollowUpConversation and re-arms the mic mid-turn, before the answer is even spoken.
-        _session.ResetTurn();
-        var turn = _session.WaitForTurnSpokenAsync();
+        _session.Turn.Reset();
+        var turn = _session.Turn.AwaitSpoken();
 
         await SendReplyTool.McpRun(_conversationId, "Buscando.", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.ToolCall, false, "m-1", _services);
@@ -268,7 +269,7 @@ public class SendReplyToolTests
         // Only the FIRST tool call of a turn flushes. Anything the model says between later tool
         // rounds stays buffered and is spoken with the answer, so mid-run chatter can never become a
         // second utterance racing the reply into the playback queue.
-        _session.ResetTurn();
+        _session.Turn.Reset();
 
         await SendReplyTool.McpRun(_conversationId, "Buscando.", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.ToolCall, false, "m-1", _services);
@@ -284,7 +285,7 @@ public class SendReplyToolTests
         // One clock throughout: a second FakeTimeProvider here used to stamp EnqueuedAt while this
         // one drained playback, so the queue-wait span was computed across two unrelated timelines.
         _session.MarkTurnStart(_clock.GetTimestamp());
-        _session.MarkDispatched(_clock.GetTimestamp()); // turn-anchored spans need the dispatch proof
+        _session.Turn.MarkDispatched(_clock.GetTimestamp()); // turn-anchored spans need the dispatch proof
         _clock.Advance(TimeSpan.FromMilliseconds(1000)); // STT + agent thinking before the reply arrives
 
         await SendReplyTool.McpRun(_conversationId, "hola mundo", ReplyContentType.Text, false, "m-1", _services);
@@ -311,10 +312,10 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_StreamComplete_PublishesSpeechEndAndQueueWaitMetrics()
     {
-        _session.ResetTurn();
+        _session.Turn.Reset();
         _session.MarkTurnStart(_clock.GetTimestamp());
         _session.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
@@ -336,7 +337,7 @@ public class SendReplyToolTests
         // routes it down the utterance path — create_conversation no-ops in that state. The turn
         // anchors from the earlier real turn are never invalidated, so without a gate this publishes
         // SpeechEndToFirstAudioMs ≈ 120000: one sample that wrecks Avg/P95/Max on the headline metric.
-        _session.ResetTurn();
+        _session.Turn.Reset();
         _session.MarkTurnStart(_clock.GetTimestamp());
         _session.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
         _clock.Advance(TimeSpan.FromMinutes(2));
@@ -358,8 +359,8 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_StreamCompleteAfterDispatch_PublishesAgentRoundTrip()
     {
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
         _clock.Advance(TimeSpan.FromSeconds(4)); // the agent thinking
 
         await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
@@ -375,7 +376,7 @@ public class SendReplyToolTests
     {
         // An announce/scheduled delivery never went through a transcript dispatch, so there is no
         // round trip to report — publishing one would invent a span.
-        _session.ResetTurn();
+        _session.Turn.Reset();
 
         await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
@@ -390,13 +391,13 @@ public class SendReplyToolTests
         // (CreateConversationTool routes it through this same session) with no fresh transcript
         // dispatch behind it. The stamp from the earlier real turn must not still be sitting there
         // for this second, unrelated reply to pick up and report as an invented round trip.
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
 
-        _session.ResetTurn();
+        _session.Turn.Reset();
         await SendReplyTool.McpRun(_conversationId, "otra vez", ReplyContentType.Text, false, "m-2", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
 
@@ -408,8 +409,8 @@ public class SendReplyToolTests
     {
         // The preamble ("Buscando") is spoken with isReply:false. If it consumed the dispatch
         // stamp, the real answer that follows would lose its AgentRoundTripMs metric entirely.
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
         _clock.Advance(TimeSpan.FromSeconds(2));
 
         await SendReplyTool.McpRun(_conversationId, "Buscando.", ReplyContentType.Text, false, "m-1", _services);
@@ -427,14 +428,14 @@ public class SendReplyToolTests
     {
         // A follow-up turn re-arms the stamp: each dispatch stands on its own, independent of the
         // previous turn's already-consumed one.
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
         _clock.Advance(TimeSpan.FromSeconds(2));
         await SendReplyTool.McpRun(_conversationId, "primero", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
 
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
         _clock.Advance(TimeSpan.FromSeconds(3));
         await SendReplyTool.McpRun(_conversationId, "segundo", ReplyContentType.Text, false, "m-2", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
@@ -479,10 +480,10 @@ public class SendReplyToolTests
 
         // All three anchors coincide, so SpeechEndToFirstAudioMs is the whole dispatch -> first-audio
         // span and the three sub-spans must tile it exactly.
-        _session.ResetTurn();
+        _session.Turn.Reset();
         _session.MarkTurnStart(_clock.GetTimestamp());
         _session.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
         _clock.Advance(TimeSpan.FromSeconds(2)); // the agent thinking
 
         await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", services);
@@ -510,9 +511,9 @@ public class SendReplyToolTests
         // A metrics-publisher blip on AgentRoundTripMs must not fault this call before the reply
         // job is even built — that would leave the answer unspoken and the turn handshake
         // unsettled until the ~120s ReplyTimeoutMs.
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
-        var turn = _session.WaitForTurnSpokenAsync();
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
+        var turn = _session.Turn.AwaitSpoken();
 
         var throwingMetrics = new Mock<IMetricsPublisher>();
         throwingMetrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
@@ -549,8 +550,8 @@ public class SendReplyToolTests
     {
         // The whole point of streaming: the answer's opening is already synthesizing while the
         // agent is still generating the rest, instead of waiting for the turn to end.
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId,
             "Mañana por la tarde hará sol y unos veintidós grados. Por la noche ",
@@ -564,8 +565,8 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_PartialSentence_SpeaksNothingYet()
     {
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId, "Mañana por la tarde hará sol y unos",
             ReplyContentType.Text, false, "m-1", _services);
@@ -578,9 +579,9 @@ public class SendReplyToolTests
     {
         // The regression that streaming introduces if the handshake is left per-job: sentence one
         // draining would end FollowUpConversation, chiming and reopening the mic over the rest.
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
-        var turn = _session.WaitForTurnSpokenAsync();
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
+        var turn = _session.Turn.AwaitSpoken();
 
         var written = new List<string>();
         var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -600,7 +601,7 @@ public class SendReplyToolTests
         await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await Task.Delay(100); // let the loop finish the drain wait and run OnDrained
 
-        _session.ReplySegmentsStarted.ShouldBe(1);
+        written.Count.ShouldBe(1);        // exactly the opening sentence has reached the satellite
         turn.IsCompleted.ShouldBeFalse();
 
         await SendReplyTool.McpRun(_conversationId,
@@ -613,8 +614,7 @@ public class SendReplyToolTests
 
         turn.IsCompleted.ShouldBeTrue();
         (await turn).ShouldBeTrue();
-        _session.ReplySegmentsStarted.ShouldBeGreaterThan(1); // it really did stream in pieces
-        written.Count.ShouldBeGreaterThan(1);
+        written.Count.ShouldBeGreaterThan(1); // it really did stream in pieces
     }
 
     [Fact]
@@ -622,10 +622,10 @@ public class SendReplyToolTests
     {
         // SpeechEndToFirstAudioMs/WakeToFirstAudioMs measure time-to-FIRST-audio, so N segments must
         // not publish N samples. The single-use dispatch stamp is what enforces it.
-        _session.ResetTurn();
+        _session.Turn.Reset();
         _session.MarkTurnStart(_clock.GetTimestamp());
         _session.MarkSpeechEnd(_clock.GetTimestamp(), 0, _clock);
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId,
             "Mañana por la tarde hará sol y unos veintidós grados. ",
@@ -652,8 +652,8 @@ public class SendReplyToolTests
         {
             Tts = new TtsSettings { Streaming = new StreamingTtsConfig { Enabled = false } }
         });
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId,
             "Mañana por la tarde hará sol y unos veintidós grados. ",
@@ -681,8 +681,8 @@ public class SendReplyToolTests
                 It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
             .Returns<string, SynthesisOptions, CancellationToken>((text, _, _) => Recording(text, synthesized));
 
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId,
             "Mañana por la tarde hará sol y unos veintidós grados. ",
@@ -708,8 +708,8 @@ public class SendReplyToolTests
         {
             Tts = new TtsSettings { Streaming = new StreamingTtsConfig { Prefetch = false } }
         });
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId,
             "Mañana por la tarde hará sol y unos veintidós grados. ",
@@ -724,7 +724,7 @@ public class SendReplyToolTests
     public async Task McpRun_ReplySegmentPreemptedMidPlayback_SettlesTheTurnThroughTheRealPlaybackLoop()
     {
         // Drives a real reply job through RunPlaybackLoopAsync and preempts it, which is the only
-        // way to reach the OnPreempted -> FailReplySegment release. A preempted job never sees
+        // way to reach the OnPreempted -> segment.Fail() release. A preempted job never sees
         // OnDrained, so without that release the turn waits out the ~120s ReplyTimeoutMs with the
         // mic wedged.
         // Signalled from the WRITER, not the audio source: the prefetch pump starts synthesising at
@@ -735,9 +735,9 @@ public class SendReplyToolTests
                 It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
             .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) => Gated());
 
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
-        var turn = _session.WaitForTurnSpokenAsync();
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
+        var turn = _session.Turn.AwaitSpoken();
         var pump = _session.RunPlaybackLoopAsync(
             async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
             CancellationToken.None, _clock);
@@ -770,9 +770,9 @@ public class SendReplyToolTests
         var services = BuildServices(new VoiceSettings(),
             failOn: VoiceMetric.AnnouncePreemptedReply);
 
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
-        var turn = _session.WaitForTurnSpokenAsync();
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
+        var turn = _session.Turn.AwaitSpoken();
         var pump = _session.RunPlaybackLoopAsync(
             async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
             CancellationToken.None, _clock);
@@ -800,9 +800,9 @@ public class SendReplyToolTests
                 It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
             .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) => DisposeTracking(disposed));
 
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
-        var turn = _session.WaitForTurnSpokenAsync();
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
+        var turn = _session.Turn.AwaitSpoken();
         _session.CompletePlayback();    // the writer is completed: every enqueue now returns false
 
         await SendReplyTool.McpRun(_conversationId, "Hola mundo", ReplyContentType.Text, false, "m-1", _services);
@@ -834,8 +834,8 @@ public class SendReplyToolTests
         });
 
         var playing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
         var pump = _session.RunPlaybackLoopAsync(
             async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
             CancellationToken.None, _clock);
@@ -877,8 +877,8 @@ public class SendReplyToolTests
             }
         });
 
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
         // No playback loop is running, so nothing drains and the queue stays at its cap.
 
         await SendReplyTool.McpRun(_conversationId, "Primera frase completa. ",
@@ -901,12 +901,12 @@ public class SendReplyToolTests
         // stamp outlives the turn. A schedule firing into the same live session then consumes it and
         // publishes AgentRoundTripMs/WakeToFirstAudioMs anchored to the old turn — minutes of
         // staleness on the headline metrics, which is what the stamp gate exists to prevent.
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
 
-        _session.TryConsumeDispatchedAt().ShouldBeNull();
+        _session.Turn.TryConsumeDispatchedAt().ShouldBeNull();
     }
 
     // One chunk, then parks: the job stays mid-drain until something cancels it, which is what makes

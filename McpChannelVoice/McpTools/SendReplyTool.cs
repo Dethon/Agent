@@ -87,7 +87,7 @@ public sealed class SendReplyTool
             // not resolve the turn handshake (that would end FollowUpConversation and re-arm the mic
             // mid-turn) and it must not publish the reply-latency metrics, which measure time-to-answer.
             case ReplyContentType.ToolCall:
-                if (session.TryClaimPreamble())
+                if (session.Turn.TryClaimPreamble())
                 {
                     _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger, isReply: false);
                 }
@@ -111,22 +111,12 @@ public sealed class SendReplyTool
             // messageId). Text chunks are never flagged complete, so this is where we
             // speak the accumulated reply.
             case ReplyContentType.StreamComplete:
-                // Speak whatever tail is left after the streamed segments, then close the handshake.
-                // ReplySegmentsStarted is the authority on whether the turn produced audio at all:
-                // streaming may already have spoken everything, leaving this flush empty.
+                // Speak whatever tail is left after the streamed segments, then tell the turn the
+                // agent has stopped sending. Whether that settles the turn silent or leaves it
+                // waiting on audio still playing is the turn's decision: streaming may already have
+                // spoken everything, leaving this flush empty.
                 _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
-                if (session.ReplySegmentsStarted == 0)
-                {
-                    // Nothing reached SpeakAsync, so nothing consumed the dispatch stamp. Left
-                    // behind it outlives the turn, and a schedule firing into this same live session
-                    // would consume it and report the old turn's age as its own round trip.
-                    _ = session.TryConsumeDispatchedAt();
-                    session.SignalTurnSilent();
-                }
-                else
-                {
-                    session.MarkReplyStreamComplete();
-                }
+                session.Turn.EndStream();
                 return "ok";
 
             default:
@@ -254,7 +244,7 @@ public sealed class SendReplyTool
                 return;
             }
 
-            var minChars = session.ReplySegmentsStarted == 0
+            var minChars = session.Turn.NextSegmentIsFirst
                 ? streaming.FirstSegmentMinChars
                 : streaming.MinChars;
             if (!accumulator.TryTakeSpeakable(conversationId, minChars, out var segment))
@@ -283,15 +273,10 @@ public sealed class SendReplyTool
         var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
         var options = new SynthesisOptions { Voice = voice };
 
-        // Read before BeginReplySegment below: only the turn's FIRST reply segment may publish the
-        // time-to-first-audio spans, or a three-sentence answer reports three samples of a metric
-        // that means "how long until the user heard anything" and the decomposition stops summing.
-        var isFirstReplySegment = isReply && session.ReplySegmentsStarted == 0;
-
-        // Assigned by BeginReplySegment below, before the enqueue and therefore before any callback
-        // can run. Taking it from registration rather than reading CurrentTurnEpoch separately is
-        // what keeps the count and its release on the same turn.
-        var segmentEpoch = 0L;
+        // Assigned by BeginSegment below, before the enqueue and therefore before any callback can
+        // run. The token carries the epoch it was registered under, so the count and its release
+        // cannot land on different turns. A preamble job never registers one and never releases it.
+        var segment = default(SegmentToken);
 
         // Reply text arriving here closes the hub-visible agent round trip: dispatch -> answer.
         // Compared against the agent's own MemoryRecall + LlmTotal, the difference is queue time.
@@ -301,7 +286,7 @@ public sealed class SendReplyTool
         // to pick up and report as its own invented round trip. The consumed value doubles as the
         // proof that this reply answers a transcript this hub dispatched, which the turn-anchored
         // spans below need — see the OnFirstAudio gate.
-        var dispatchedAtStamp = isReply ? session.TryConsumeDispatchedAt() : null;
+        var dispatchedAtStamp = isReply ? session.Turn.TryConsumeDispatchedAt() : null;
 
         // Taken before the publish below and used as its end bound, so the round trip ends exactly
         // where the queue wait begins: the publish is itself an awaited Redis round trip, and stamping
@@ -364,7 +349,7 @@ public sealed class SendReplyTool
                 // Released BEFORE the publish, and the publish is guarded: the playback loop swallows
                 // a throwing OnPreempted, so a metrics blip here used to leak the slot for good and
                 // wedge the mic for the full timeout.
-                session.FailReplySegment(segmentEpoch);
+                segment.Fail();
 
                 // A job the loop cancels BEFORE its first pull never touches its audio, so the
                 // consumer-side release (the reader's teardown) never runs — an alarm preempting the
@@ -377,7 +362,7 @@ public sealed class SendReplyTool
                 }
 
                 // One sample per turn, like the other reply-anchored metrics.
-                if (!isFirstReplySegment)
+                if (!segment.IsFirst)
                 {
                     return;
                 }
@@ -402,7 +387,7 @@ public sealed class SendReplyTool
             // settles once every started segment has drained and the agent's stream has ended.
             // Signalling here directly would end the turn on sentence one and reopen the mic over the
             // rest of the answer.
-            OnDrained: () => { if (isReply) { session.CompleteReplySegment(segmentEpoch); } return Task.CompletedTask; },
+            OnDrained: () => { if (isReply) { segment.Complete(); } return Task.CompletedTask; },
             // If synthesis/playback fails (e.g. a Wyoming TTS error event throws), resolve the turn
             // as silent so FollowUpConversation ends and re-arms wake instead of blocking on the
             // handshake until the ~120s ReplyTimeoutMs. No audio actually played, hence Silent (not
@@ -414,7 +399,7 @@ public sealed class SendReplyTool
                 {
                     return;
                 }
-                session.FailReplySegment(segmentEpoch);
+                segment.Fail();
                 // Defensive twin of the OnPreempted dispose above: every known failure reaches here
                 // after the reader's teardown has already released the pump, but a failed segment's
                 // synthesis must never be able to outlive its job.
@@ -434,7 +419,7 @@ public sealed class SendReplyTool
             // turn spans, and the decomposition would stop summing.
             OnFirstAudio: async timing =>
             {
-                if (!isFirstReplySegment)
+                if (!segment.IsFirst)
                 {
                     return;
                 }
@@ -509,7 +494,7 @@ public sealed class SendReplyTool
         // ~120s ReplyTimeoutMs for audio that will never play.
         if (isReply)
         {
-            segmentEpoch = session.BeginReplySegment();
+            segment = session.Turn.BeginSegment();
         }
 
         // A reply's segments get their own allowance: sharing the announce depth meant one turn's
@@ -521,7 +506,7 @@ public sealed class SendReplyTool
             logger.LogWarning(
                 "Reply segment for {Satellite} was refused by the playback queue (depth {Depth}); " +
                 "this part of the answer will not be spoken", session.SatelliteId, depth);
-            session.FailReplySegment(segmentEpoch);
+            segment.Fail();
         }
 
         // Nothing will ever enumerate a refused job, so disposal is the only thing that releases its

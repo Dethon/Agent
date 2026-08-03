@@ -24,7 +24,7 @@ namespace Tests.Unit.McpChannelVoice;
 // the dashboard goes hunting for a span that does not exist. Nothing asserted that relationship
 // while the metrics were being added, which is exactly how the speech-end anchor came to be a whole
 // trailing-silence run late.
-public class VoiceTurnDecompositionTests
+public class TurnLatencyDecompositionTests
 {
     private const int ChunkBytes = 3200; // 100 ms at 16 kHz / 16-bit / mono
     private static readonly TimeSpan _chunkDuration = TimeSpan.FromMilliseconds(100);
@@ -47,7 +47,7 @@ public class VoiceTurnDecompositionTests
     private readonly IServiceProvider _services;
     private readonly List<VoiceEvent> _published = [];
 
-    public VoiceTurnDecompositionTests()
+    public TurnLatencyDecompositionTests()
     {
         _session = new SatelliteSession("kitchen-01",
             new SatelliteConfig { Identity = "household", Room = "Kitchen" });
@@ -139,8 +139,8 @@ public class VoiceTurnDecompositionTests
         _clock.Advance(TimeSpan.FromMilliseconds(VerifyMs)); // final speaker-verify pass (ONNX embed)
         _clock.Advance(TimeSpan.FromMilliseconds(SttMs));    // whisper decode
 
-        _session.ResetTurn();
-        _session.MarkDispatched(_clock.GetTimestamp());
+        _session.Turn.Reset();
+        _session.Turn.MarkDispatched(_clock.GetTimestamp());
         _clock.Advance(TimeSpan.FromMilliseconds(AgentMs)); // the agent process thinking
 
         await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
