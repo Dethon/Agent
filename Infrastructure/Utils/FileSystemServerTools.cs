@@ -18,27 +18,27 @@ namespace Infrastructure.Utils;
 // on a mount, not which will succeed on a given file.
 public static class FileSystemServerTools
 {
-    private sealed record Operation(
-        string ToolName,
-        string MethodName,
+    private sealed record Wiring(
         Func<FileSystemBackendBase, string> Describe,
         Func<FileSystemBackendBase, Delegate> Handler);
 
-    private static readonly IReadOnlyList<Operation> _operations =
-    [
-        new("fs_read", nameof(IFileSystemBackend.ReadAsync), b => b.DescribeRead, b =>
+    // How each operation reaches the wire. The operations themselves — their names, their backend
+    // methods — come from the one list; this only adds the tool signature and the description hook.
+    private static readonly IReadOnlyDictionary<string, Wiring> _wiring = new Dictionary<string, Wiring>(StringComparer.Ordinal)
+    {
+        ["fs_read"] = new(b => b.DescribeRead, b =>
             async (string path, int? offset = null, int? limit = null, CancellationToken ct = default) =>
                 ToolResponse.Create(await b.ReadAsync(path, offset, limit, ct))),
 
-        new("fs_info", nameof(IFileSystemBackend.InfoAsync), b => b.DescribeInfo, b =>
+        ["fs_info"] = new(b => b.DescribeInfo, b =>
             async (string path, CancellationToken ct = default) =>
                 ToolResponse.Create(await b.InfoAsync(path, ct))),
 
-        new("fs_glob", nameof(IFileSystemBackend.GlobAsync), b => b.DescribeGlob, b =>
+        ["fs_glob"] = new(b => b.DescribeGlob, b =>
             async (string pattern, string basePath = "", CancellationToken ct = default) =>
                 ToolResponse.Create(await b.GlobAsync(basePath, pattern, ct))),
 
-        new("fs_search", nameof(IFileSystemBackend.SearchAsync), b => b.DescribeSearch, b =>
+        ["fs_search"] = new(b => b.DescribeSearch, b =>
             async (string query, bool regex = false, string? path = null, string? directoryPath = null,
                     string? filePattern = null, int maxResults = 50, int contextLines = 1,
                     string outputMode = "content", CancellationToken ct = default) =>
@@ -46,51 +46,52 @@ public static class FileSystemServerTools
                     query, regex, path, directoryPath, filePattern, maxResults, contextLines,
                     ParseOutputMode(outputMode), ct))),
 
-        new("fs_create", nameof(IFileSystemBackend.CreateAsync), b => b.DescribeCreate, b =>
+        ["fs_create"] = new(b => b.DescribeCreate, b =>
             async (string path, string content, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
                 ToolResponse.Create(await b.CreateAsync(path, content, overwrite, createDirectories, ct))),
 
-        new("fs_edit", nameof(IFileSystemBackend.EditAsync), b => b.DescribeEdit, b =>
+        ["fs_edit"] = new(b => b.DescribeEdit, b =>
             async (string path, IReadOnlyList<TextEdit> edits, CancellationToken ct = default) =>
                 ToolResponse.Create(await b.EditAsync(path, edits, ct))),
 
-        new("fs_move", nameof(IFileSystemBackend.MoveAsync), b => b.DescribeMove, b =>
+        ["fs_move"] = new(b => b.DescribeMove, b =>
             async (string sourcePath, string destinationPath, CancellationToken ct = default) =>
                 ToolResponse.Create(await b.MoveAsync(sourcePath, destinationPath, ct))),
 
-        new("fs_delete", nameof(IFileSystemBackend.DeleteAsync), b => b.DescribeDelete, b =>
+        ["fs_delete"] = new(b => b.DescribeDelete, b =>
             async (string path, CancellationToken ct = default) =>
                 ToolResponse.Create(await b.DeleteAsync(path, ct))),
 
-        new("fs_exec", nameof(IFileSystemBackend.ExecAsync), b => b.DescribeExec, b =>
+        ["fs_exec"] = new(b => b.DescribeExec, b =>
             async (string path, string command, int? timeoutSeconds = null, CancellationToken ct = default) =>
                 ToolResponse.Create(await b.ExecAsync(path, command, timeoutSeconds, ct))),
 
-        new("fs_copy", nameof(IFileSystemBackend.CopyAsync), b => b.DescribeCopy, b =>
+        ["fs_copy"] = new(b => b.DescribeCopy, b =>
             async (string sourcePath, string destinationPath, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
                 ToolResponse.Create(await b.CopyAsync(sourcePath, destinationPath, overwrite, createDirectories, ct))),
 
-        new("fs_blob_read", nameof(IFileSystemBackend.ReadChunksAsync), b => b.DescribeBlobRead, b =>
+        ["fs_blob_read"] = new(b => b.DescribeBlobRead, b =>
             async (string path, long offset = 0, int length = 262144, CancellationToken ct = default) =>
                 ToolResponse.Create(await b.ReadBlobAsync(path, offset, length, ct))),
 
-        new("fs_blob_write", nameof(IFileSystemBackend.WriteChunksAsync), b => b.DescribeBlobWrite, b =>
+        ["fs_blob_write"] = new(b => b.DescribeBlobWrite, b =>
             async (string path, string contentBase64, long offset = 0, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
                 ToolResponse.Create(await b.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct)))
-    ];
+    };
 
     public static IMcpServerBuilder AddFileSystemTools<TBackend>(this IMcpServerBuilder builder)
         where TBackend : FileSystemBackendBase
     {
-        foreach (var operation in _operations.Where(o => Overrides(typeof(TBackend), o.MethodName)))
+        foreach (var toolName in SupportedToolNames(typeof(TBackend)))
         {
+            var wiring = _wiring[toolName];
             builder.Services.AddSingleton<McpServerTool>(sp =>
             {
                 var backend = sp.GetRequiredService<TBackend>();
-                return McpServerTool.Create(operation.Handler(backend), new McpServerToolCreateOptions
+                return McpServerTool.Create(wiring.Handler(backend), new McpServerToolCreateOptions
                 {
-                    Name = operation.ToolName,
-                    Description = operation.Describe(backend)
+                    Name = toolName,
+                    Description = wiring.Describe(backend)
                 });
             });
         }
@@ -98,9 +99,12 @@ public static class FileSystemServerTools
         return builder;
     }
 
-    // The operations a backend really implements, in the order the fs_* tools are declared.
+    // The operations a backend really implements, in the one list's canonical order.
     public static IReadOnlyList<string> SupportedToolNames(Type backendType) =>
-        _operations.Where(o => Overrides(backendType, o.MethodName)).Select(o => o.ToolName).ToList();
+        FileSystemOperations.All
+            .Where(o => Overrides(backendType, o.MethodName))
+            .Select(o => o.ToolName)
+            .ToList();
 
     // The backend's own declaration of what it can do. An operation it never overrode is still the
     // base's unsupported default, so there is nothing to register.

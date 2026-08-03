@@ -8,11 +8,11 @@ They collapse into one list derived from the base. Payload validation also stops
 
 **Blocked by:** 07 — the surface must be fully derived from backends before the lists that describe it can be replaced by one.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One list of operations is derived from the base; the other five enumerations are gone.
-- [ ] Payload validation fails on an unknown tool name instead of returning success.
-- [ ] Adding an operation to the base makes it appear in the registrar, the capability list, the session filter and the tool feature with no further edit, demonstrated by a test.
-- [ ] Capability derivation for remote filesystem servers still maps advertised tool names to the leaf names the model calls, in the same display order.
-- [ ] The session still filters raw filesystem tools out while the domain tools are active.
-- [ ] All existing conformance and consistency tests pass unchanged.
+- [x] One list of operations is derived from the base; the other five enumerations are gone.
+- [x] Payload validation fails on an unknown tool name instead of returning success.
+- [x] Adding an operation to the base makes it appear in the registrar, the capability list, the session filter and the tool feature with no further edit, demonstrated by a test.
+- [x] Capability derivation for remote filesystem servers still maps advertised tool names to the leaf names the model calls, in the same display order.
+- [x] The session still filters raw filesystem tools out while the domain tools are active.
+- [x] All existing conformance and consistency tests pass unchanged.

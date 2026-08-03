@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.FileSystem;
 using Microsoft.Extensions.Logging;
@@ -82,31 +83,19 @@ internal static class McpFileSystemDiscovery
         return mounts.Where(m => m is not null).Select(m => m!.Value).ToList();
     }
 
-    // A server advertises exactly the fs_* tools it supports (unsupported ones are never registered),
-    // so its advertised tool set is the single source of truth for a mount's capabilities. Map each
-    // fs_* tool to the domain-tool leaf name the LLM actually calls, in a stable display order.
-    private static readonly (string FsTool, string Capability)[] _capabilityMap =
-    [
-        ("fs_read", VfsTextReadTool.Name),
-        ("fs_create", VfsTextCreateTool.Name),
-        ("fs_edit", VfsTextEditTool.Name),
-        ("fs_glob", VfsGlobFilesTool.Name),
-        ("fs_search", VfsTextSearchTool.Name),
-        ("fs_move", VfsMoveTool.Name),
-        ("fs_copy", VfsCopyTool.Name),
-        ("fs_delete", VfsRemoveTool.Name),
-        ("fs_info", VfsFileInfoTool.Name),
-        ("fs_exec", VfsExecTool.Name)
-    ];
-
+    // A server advertises exactly the fs_* tools its backend implements (an operation it never
+    // overrode is never registered), so its advertised tool set is the single source of truth for a
+    // mount's capabilities. Each one maps to the domain-tool leaf name the LLM actually calls, in
+    // the operation list's canonical display order.
     internal static IReadOnlyList<string> DeriveCapabilities(IEnumerable<string> advertisedToolNames)
     {
         var advertised = advertisedToolNames.ToList();
-        return _capabilityMap
-            .Where(m => advertised.Any(name =>
-                name.Equals(m.FsTool, StringComparison.Ordinal) ||
-                name.EndsWith($"__{m.FsTool}", StringComparison.Ordinal)))
-            .Select(m => m.Capability)
+        return FileSystemOperations.All
+            .Where(o => o.Capability is not null)
+            .Where(o => advertised.Any(name =>
+                name.Equals(o.ToolName, StringComparison.Ordinal) ||
+                name.EndsWith($"__{o.ToolName}", StringComparison.Ordinal)))
+            .Select(o => o.Capability!)
             .ToList();
     }
 

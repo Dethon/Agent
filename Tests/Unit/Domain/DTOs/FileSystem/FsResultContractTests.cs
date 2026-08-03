@@ -53,12 +53,15 @@ public class FsResultContractTests
         FsResultContract.TryValidate("fs_read", node, out _).ShouldBeFalse();
     }
 
+    // Fails closed: returning success for a name nobody recognises let a typo skip the schema
+    // check the method exists to perform.
     [Fact]
-    public void TryValidate_SkipsUnknownTool()
+    public void TryValidate_UnknownTool_Fails()
     {
         var node = JsonNodeWith("{\"anything\":1}");
 
-        FsResultContract.TryValidate("fs_not_a_tool", node, out _).ShouldBeTrue();
+        FsResultContract.TryValidate("fs_not_a_tool", node, out var error).ShouldBeFalse();
+        error.ShouldNotBeNull().ShouldContain("fs_not_a_tool");
     }
 
     [Theory]

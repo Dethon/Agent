@@ -8,12 +8,12 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
 {
     private const string Feature = "filesystem";
 
-    public static readonly IReadOnlySet<string> AllToolKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        VfsTextReadTool.Key, VfsTextCreateTool.Key, VfsTextEditTool.Key,
-        VfsGlobFilesTool.Key, VfsTextSearchTool.Key, VfsMoveTool.Key, VfsCopyTool.Key, VfsRemoveTool.Key,
-        VfsExecTool.Key, VfsFileInfoTool.Key
-    };
+    // The keys the feature config can enable, derived from the operations that have a domain tool
+    // — so a new operation appears here as soon as it is added to the one list.
+    public static readonly IReadOnlySet<string> AllToolKeys = FileSystemOperations.All
+        .Where(o => o.ToolKey is not null)
+        .Select(o => o.ToolKey!)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     public string FeatureName => Feature;
 
