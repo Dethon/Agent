@@ -14,16 +14,33 @@ This is the only part of the slice-shape work that changes what a user sees, and
 
 **Blocked by:** 05 — Collapse the ten slices to two files each.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The pipeline no longer holds a finalized-ids dictionary and no longer locks around message identity.
-- [ ] The stream processor no longer holds a per-stream committed set.
-- [ ] The finalized ids on the messages state are the only place a committed message id is recorded.
-- [ ] A message id committed during one stream is treated as committed by a later stream in the same topic, and a repeat updates the existing message rather than being dropped.
-- [ ] A message id present from a history load is treated as committed by a subsequent stream.
-- [ ] The pipeline's finalized count is derived from the messages state and reports the same number the old dictionary did for the paths that populated both.
-- [ ] The clear-topic method is gone from the pipeline interface and the implementation, and its call site in the topic delete effect is removed.
-- [ ] Deleting a topic still clears both its messages and its finalized ids, through the clear-messages action alone.
-- [ ] The two existing pipeline tests that covered clear-topic are rewritten against the clear-messages action.
-- [ ] The existing stream processing and message store tests pass, with edits only where the widened set genuinely changes an asserted outcome.
-- [ ] Any test edited for the widened behaviour has a comment naming why the expectation moved.
+- [x] The pipeline no longer holds a finalized-ids dictionary and no longer locks around message identity.
+- [x] The stream processor no longer holds a per-stream committed set.
+- [x] The finalized ids on the messages state are the only place a committed message id is recorded.
+- [x] A message id committed during one stream is treated as committed by a later stream in the same topic, and a repeat updates the existing message rather than being dropped.
+- [x] A message id present from a history load is treated as committed by a subsequent stream.
+- [x] The pipeline's finalized count is derived from the messages state and reports the same number the old dictionary did for the paths that populated both.
+- [x] The clear-topic method is gone from the pipeline interface and the implementation, and its call site in the topic delete effect is removed.
+- [x] Deleting a topic still clears both its messages and its finalized ids, through the clear-messages action alone.
+- [x] The two existing pipeline tests that covered clear-topic are rewritten against the clear-messages action.
+- [x] The existing stream processing and message store tests pass, with edits only where the widened set genuinely changes an asserted outcome.
+- [x] Any test edited for the widened behaviour has a comment naming why the expectation moved.
+
+## Comments
+
+**Two counting paths diverge, both harmlessly.** `FinalizeMessage` used to record
+a message id even when there was no streaming content to commit; now the id
+enters state only through the `AddMessage` that carries it. A finalize with no
+content therefore no longer bumps `FinalizedCount`. Nothing observable follows
+from it: the second finalize for that id dispatches nothing either way.
+
+`LoadHistory` used to union history ids into the pipeline's dictionary, while the
+`MessagesLoaded` reducer replaces the topic's set. After a history reload the
+registry now describes exactly the messages the client holds, which is the point
+of having one owner.
+
+**No test needed editing for the widened behaviour.** The two new
+`StreamingService` tests are the widening; every existing stream and message
+test passed unchanged.

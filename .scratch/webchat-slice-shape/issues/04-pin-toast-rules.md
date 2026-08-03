@@ -10,14 +10,19 @@ Toast is already close to the two-file target shape — its reducers are inline 
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Dispatching an error whose text matches a toast already present leaves the list unchanged.
-- [ ] Dispatching a fourth distinct error leaves three toasts, and the oldest is the one dropped.
-- [ ] A message longer than 150 characters is stored truncated to 150 characters plus an ellipsis.
-- [ ] A message of exactly 150 characters is not truncated.
-- [ ] An empty or whitespace-only message is replaced by the fallback text.
-- [ ] Dismissing a toast by id removes that toast and leaves the others.
-- [ ] Dismissing an id that is not present leaves the list unchanged.
-- [ ] Tests assert on observable state, never on which handlers were registered.
-- [ ] The tests construct the store through a real dispatcher, so they survive the collapse in ticket 05 unchanged.
+- [x] Dispatching an error whose text matches a toast already present leaves the list unchanged.
+- [x] Dispatching a fourth distinct error leaves three toasts, and the oldest is the one dropped.
+- [x] A message longer than 150 characters is stored truncated to 150 characters plus an ellipsis.
+- [x] A message of exactly 150 characters is not truncated.
+- [x] An empty or whitespace-only message is replaced by the fallback text.
+- [x] Dismissing a toast by id removes that toast and leaves the others.
+- [x] Dismissing an id that is not present leaves the list unchanged.
+- [x] Tests assert on observable state, never on which handlers were registered.
+- [x] The tests construct the store through a real dispatcher, so they survive the collapse in ticket 05 unchanged.
+
+## Comments
+
+Dedupe runs after truncation, so two messages that differ only past the 150th
+character collapse into one toast. Pinned as it stands.

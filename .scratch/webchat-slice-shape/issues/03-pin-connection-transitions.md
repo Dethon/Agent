@@ -10,11 +10,23 @@ The three actions ticket 02 removes are gone by the time this starts. Do not pin
 
 **Blocked by:** 02 — Delete the state code nobody calls.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Every reducer arm that survives ticket 02 has at least one test asserting the state it produces.
-- [ ] Each connection lifecycle transition — connecting, connected, reconnecting, reconnected, closed — is covered.
-- [ ] Tests assert on observable state, never on which handlers were registered.
-- [ ] No test references any of the three actions deleted in ticket 02.
-- [ ] The tests construct the store through a real dispatcher rather than calling the reducer directly, so they survive the collapse in ticket 05 unchanged.
-- [ ] Any transition that looks incorrect is pinned as-is and noted, not corrected.
+- [x] Every reducer arm that survives ticket 02 has at least one test asserting the state it produces.
+- [x] Each connection lifecycle transition — connecting, connected, reconnecting, reconnected, closed — is covered.
+- [x] Tests assert on observable state, never on which handlers were registered.
+- [x] No test references any of the three actions deleted in ticket 02.
+- [x] The tests construct the store through a real dispatcher rather than calling the reducer directly, so they survive the collapse in ticket 05 unchanged.
+- [x] Any transition that looks incorrect is pinned as-is and noted, not corrected.
+
+## Comments
+
+Three things pinned as they are rather than corrected:
+
+- `ConnectionConnecting` and `ConnectionReconnecting` leave a previous `Error` in
+  place. Only `ConnectionConnected` and `ConnectionReconnected` clear it, so a
+  stale error is still readable while the client is retrying.
+- `ConnectionConnected` and `ConnectionReconnected` produce identical state. Two
+  actions, one transition.
+- The reducer reads `DateTime.UtcNow` directly rather than a `TimeProvider`, so
+  `LastConnected` can only be asserted as a window around the dispatch.

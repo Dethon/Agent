@@ -10,14 +10,14 @@ Nothing switches over to the catch-all in this ticket. `RegisterHandler<TAction>
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A subscriber receives no emission when a reducer returns the state it was passed.
-- [ ] A subscriber still receives an emission when a reducer returns a new state instance, including one that is equal by value to the previous state.
-- [ ] A catch-all registration receives an action dispatched through a variable declared as `IAction`.
-- [ ] A catch-all registration receives actions of every type, including types no handler was registered for.
-- [ ] A catch-all registered before a typed handler runs before it, for an action both would receive.
-- [ ] A catch-all registration can be disposed and stops receiving actions afterwards, matching the existing typed registration.
-- [ ] `RegisterHandler<TAction>` behaviour is unchanged and every existing test that uses it still passes.
-- [ ] The three ordering and emission behaviours are covered by a new unit test file for the dispatcher, written before the production change.
-- [ ] No test asserts on the dispatcher's internal handler storage.
+- [x] A subscriber receives no emission when a reducer returns the state it was passed.
+- [x] A subscriber still receives an emission when a reducer returns a new state instance, including one that is equal by value to the previous state.
+- [x] A catch-all registration receives an action dispatched through a variable declared as `IAction`.
+- [x] A catch-all registration receives actions of every type, including types no handler was registered for.
+- [x] A catch-all registered before a typed handler runs before it, for an action both would receive.
+- [x] A catch-all registration can be disposed and stops receiving actions afterwards, matching the existing typed registration.
+- [x] `RegisterHandler<TAction>` behaviour is unchanged and every existing test that uses it still passes.
+- [x] The three ordering and emission behaviours are covered by a new unit test file for the dispatcher, written before the production change.
+- [x] No test asserts on the dispatcher's internal handler storage.

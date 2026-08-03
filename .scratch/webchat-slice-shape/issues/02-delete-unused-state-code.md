@@ -16,14 +16,20 @@ The two selector files that stay are the agent settings selectors, which encode 
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The generic selector helper file is gone and nothing references it.
-- [ ] The streaming selectors file is gone and its two projections live at their only consumer, which behaves identically.
-- [ ] The render coordinator's existing tests pass unchanged.
-- [ ] The connection status change action, its reducer arm and its registration are gone.
-- [ ] The connection error action, its reducer arm and its registration are gone.
-- [ ] The approval responding action, its reducer arm and its registration are gone.
-- [ ] A solution-wide search finds no remaining reference to any of the three removed actions.
-- [ ] The agent settings selectors and the unread selectors are untouched.
-- [ ] The full unit suite passes with no test edits.
+- [x] The generic selector helper file is gone and nothing references it.
+- [x] The streaming selectors file is gone and its two projections live at their only consumer, which behaves identically.
+- [x] The render coordinator's existing tests pass unchanged.
+- [x] The connection status change action, its reducer arm and its registration are gone.
+- [x] The connection error action, its reducer arm and its registration are gone.
+- [x] The approval responding action, its reducer arm and its registration are gone.
+- [x] A solution-wide search finds no remaining reference to any of the three removed actions.
+- [x] The agent settings selectors and the unread selectors are untouched.
+- [x] The full unit suite passes with no test edits.
+
+## Comments
+
+`ApprovalState.IsResponding` went with the approval-responding action. Once the
+only arm that set it was gone the property could only ever be false, and nothing
+in the client reads it.
