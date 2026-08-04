@@ -23,6 +23,27 @@ public sealed class ChatLiveConnection(
 
     public HubConnection? HubConnection => _connection?.Connection;
 
+    // The one place that decides whether a hub call can be made. A connection that is null,
+    // still connecting or reconnecting cannot carry one — the last two are present and not
+    // live, which is the window the old per-call null guards missed entirely.
+    private IChatHubConnection? LiveHubConnection =>
+        _connection is { State: HubConnectionState.Connected } connection ? connection : null;
+
+    public Task<HubResult<T>> InvokeAsync<T>(string methodName, params object?[] args) =>
+        LiveHubConnection is { } connection
+            ? connection.InvokeAsync<T>(methodName, args)
+            : Task.FromResult(HubResult<T>.NotLive);
+
+    public Task<HubResult<Nothing>> InvokeAsync(string methodName, params object?[] args) =>
+        LiveHubConnection is { } connection
+            ? connection.InvokeAsync(methodName, args)
+            : Task.FromResult(HubResult<Nothing>.NotLive);
+
+    public Task<HubResult<IAsyncEnumerable<T>>> StreamAsync<T>(string methodName, params object?[] args) =>
+        LiveHubConnection is { } connection
+            ? connection.StreamAsync<T>(methodName, args)
+            : Task.FromResult(HubResult<IAsyncEnumerable<T>>.NotLive);
+
     public Task ConnectAsync() => StartLiveConnectionAsync(CancellationToken.None);
 
     private async Task StartLiveConnectionAsync(CancellationToken cancellationToken)

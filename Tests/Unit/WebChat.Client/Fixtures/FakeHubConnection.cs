@@ -3,11 +3,21 @@ using WebChat.Client.Contracts;
 
 namespace Tests.Unit.WebChat.Client.Fixtures;
 
+public sealed record HubCall(string MethodName, object?[] Arguments);
+
 public sealed class FakeHubConnection : IChatHubConnection
 {
     private readonly Dictionary<string, List<Delegate>> _handlers = [];
+    private readonly Dictionary<string, Func<object?[], object?>> _answers = [];
+    private readonly List<HubCall> _calls = [];
 
     public HubConnection? Connection => null;
+
+    public IReadOnlyList<HubCall> Calls => _calls;
+
+    public void Answer(string methodName, object? answer) => _answers[methodName] = _ => answer;
+
+    public void Answer(string methodName, Func<object?[], object?> answer) => _answers[methodName] = answer;
     public HubConnectionState State { get; set; } = HubConnectionState.Disconnected;
     public Func<CancellationToken, Task> StartBehavior { get; set; } = _ => Task.CompletedTask;
     public Func<CancellationToken, Task<bool>> PingBehavior { get; set; } = _ => Task.FromResult(true);
@@ -59,6 +69,36 @@ public sealed class FakeHubConnection : IChatHubConnection
     }
 
     public Task<bool> PingAsync(CancellationToken cancellationToken) => PingBehavior(cancellationToken);
+
+    public Task<HubResult<T>> InvokeAsync<T>(string methodName, params object?[] args)
+    {
+        _calls.Add(new HubCall(methodName, args));
+        var answer = _answers.TryGetValue(methodName, out var scripted) ? (T?)scripted(args) : default;
+        return Task.FromResult(HubResult<T>.Answered(answer));
+    }
+
+    public Task<HubResult<Nothing>> InvokeAsync(string methodName, params object?[] args)
+    {
+        _calls.Add(new HubCall(methodName, args));
+        _answers.TryGetValue(methodName, out var scripted);
+        scripted?.Invoke(args);
+        return Task.FromResult(HubResult<Nothing>.Answered(default));
+    }
+
+    public Task<HubResult<IAsyncEnumerable<T>>> StreamAsync<T>(string methodName, params object?[] args)
+    {
+        _calls.Add(new HubCall(methodName, args));
+        var stream = _answers.TryGetValue(methodName, out var scripted)
+            ? (IAsyncEnumerable<T>)scripted(args)!
+            : EmptyStream<T>();
+        return Task.FromResult(HubResult<IAsyncEnumerable<T>>.Answered(stream));
+    }
+
+    private static async IAsyncEnumerable<T> EmptyStream<T>()
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
 
     public ValueTask DisposeAsync()
     {

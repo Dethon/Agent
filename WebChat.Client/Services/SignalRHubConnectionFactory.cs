@@ -60,6 +60,21 @@ internal sealed class SignalRHubConnection(HubConnection connection) : IChatHubC
     public Task<bool> PingAsync(CancellationToken cancellationToken) =>
         connection.InvokeAsync<bool>("Ping", cancellationToken);
 
+    // These answer rather than decide: whether the connection is live enough to carry a call
+    // is settled once, by the live connection that owns this instance. Answering with a hub
+    // result here keeps one vocabulary at the seam and lets a fake script not live.
+    public async Task<HubResult<T>> InvokeAsync<T>(string methodName, params object?[] args) =>
+        HubResult<T>.Answered(await connection.InvokeCoreAsync<T>(methodName, args));
+
+    public async Task<HubResult<Nothing>> InvokeAsync(string methodName, params object?[] args)
+    {
+        await connection.InvokeCoreAsync(methodName, args);
+        return HubResult<Nothing>.Answered(default);
+    }
+
+    public Task<HubResult<IAsyncEnumerable<T>>> StreamAsync<T>(string methodName, params object?[] args) =>
+        Task.FromResult(HubResult<IAsyncEnumerable<T>>.Answered(connection.StreamAsyncCore<T>(methodName, args)));
+
     public ValueTask DisposeAsync() => connection.DisposeAsync();
 }
 
