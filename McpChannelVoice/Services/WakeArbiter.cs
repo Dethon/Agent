@@ -50,6 +50,17 @@ public sealed class WakeArbiter(
         }
     }
 
+    // Is this satellite still a candidate to win a wake? Asked by the connection's unwind test,
+    // which has no other way to see that a dropped link stopped competing before its playback loop
+    // finished draining.
+    internal bool IsRegistered(string satelliteId)
+    {
+        lock (_gate)
+        {
+            return _handles.ContainsKey(satelliteId);
+        }
+    }
+
     public void Claim(string satelliteId, double? wakeRms, double? wakeScore, string source)
     {
         if (!settings.Enabled)

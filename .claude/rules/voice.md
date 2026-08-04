@@ -15,7 +15,7 @@ Pipeline: satellite wakes locally → streams mic `audio-chunk`s → `SatelliteS
 
 **Alert routing.** Insistent announces — timers and alarms, i.e. exactly the `/api/voice/announce`
 requests carrying `insistent` — are marked `alert: true` on the Wyoming `audio-start` (protocol
-1.5, `WyomingSatelliteHost.BuildAudioStart`; `InsistentAnnouncementController` is the only producer,
+1.5, `SatelliteConnection.BuildAudioStart`; `InsistentAnnouncementController` is the only producer,
 via `PlaybackJob.Alert`). The satellite plays a marked stream on `--alert-snd-command` instead of
 `--snd-command`: on music units a non-attenuated `alert` ALSA softvol, so an alert is not capped by
 the calibrated conversational `TTS` level. `AnnouncePriority.High` is deliberately not the marker —
@@ -72,9 +72,28 @@ and a duplicated number.
 
 **End-of-utterance floor.** `SilenceGate` classifies speech against a noise floor that `AdaptiveLevelTracker` measures inside the capture and freezes at the first accepted speech frame — so a capture that opens on sound (a command running straight on from the wake word) has nothing but that sound to measure. Two measurements taken where the room is actually audible cap it, and can only ever lower it: the satellite's own `room_rms` on `run-pipeline` (protocol 1.7, idle audio), and `RoomNoiseMemory`, a per-satellite window of recent background samples the hub keeps from its own captures (a no-speech capture's floor, or the trailing run that ended a capture — `WyomingClient.RoomLevelSamples` / `RoomLevelRetentionSeconds`). Without either the gate behaves exactly as before. An inflated floor is not a cosmetic error: it arms the adaptive regime, whose `PeakDropDb` backstop then reads normal syllable dynamics as background and endpoints the user mid-sentence.
 
+**One connection module, one host.** `SatelliteConnection` owns one run of the link to a satellite:
+registering it with the session registry and the wake arbiter, launching the playback and
+conversation tasks, routing the frames the satellite sends, and unwinding in order. `WyomingSatelliteHost`
+keeps what is genuinely its own — discovering which satellites have an address, dialling them,
+parsing addresses, reconnecting forever, and the turn helpers (transcription and dispatch, the early
+speaker check, the chime, every metric publish). Its internal `CreateConnection` returns a fully
+wired connection, which is how a unit test drives frame routing without a socket while still
+exercising the real publishing code.
+
+The wire arrives as two halves: the write side is a delegate supplied at construction (the
+coordinator's end-of-turn write and the arbiter's re-arm handle both close over it before the read
+loop starts), the read side an `IAsyncEnumerable<WyomingEvent>` passed to the run. The host keeps the
+`WyomingClient` and disposes it when the run returns, and the run still throws when the link drops so
+the reconnect loop catches and retries. **The unwind is split on purpose**: a synchronous phase
+releases the arbiter registration, then an asynchronous phase drains the rest. A satellite whose link
+just died must stop being an arbitration candidate before anything unbounded runs, or it can still
+win a wake against a live satellite and silently suppress a real command — and a method that cannot
+await cannot be reordered behind one.
+
 **One gate factory, one turn module, one capture module.** `SilenceGateFactory` (singleton) is the only thing that knows how a satellite's gate is put together: it resolves the per-satellite `Gate` overrides against `WyomingClientSettings`, applies the room cap, and owns the `RoomNoiseMemory` per satellite — keyed that way deliberately, so it outlives a connection. There is no gate-purpose parameter: the wake capture and the approval capture ask for the same gate, which is what stopped them drifting apart (the approval mic used to run uncapped and cut people off mid-answer). Every live capture also pays back into the memory as it closes, through `RecordCaptureClose` — the wake and follow-up captures via `CaptureSession`, the approval mic from its own `finally`. A capture that only reads would let the memory expire on a satellite used mostly for approvals. Never assemble an `AdaptiveLevelTracker` at a call site.
 
-`VoiceTurn` (`session.Turn`) owns the whole per-turn reply handshake — the started/outstanding/stream-complete/audio-played counters, the epoch, the preamble claim and the dispatch stamp — and offers no route to the settle rule from outside. `BeginSegment()` returns a `SegmentToken` carrying its own epoch, so a segment cannot be released against a turn it never registered on. The reply tool ends a turn with one `EndStream()` and never reads a counter. `CaptureSession` owns the microphone for a connection: open, close (frozen gate stats, room sample and speech-end anchor at that instant), and the two indicator events, which go through `SatelliteSession.TrySendControlAsync` because they are indicator-only and must never cost the user the utterance. `FollowUpConversation` takes those two modules plus five delegates.
+`VoiceTurn` (`session.Turn`) owns the whole per-turn reply handshake — the started/outstanding/stream-complete/audio-played counters, the epoch, the preamble claim and the dispatch stamp — and offers no route to the settle rule from outside. `BeginSegment()` returns a `SegmentToken` carrying its own epoch, so a segment cannot be released against a turn it never registered on. The reply tool ends a turn with one `EndStream()` and never reads a counter. `CaptureSession` owns the microphone for a connection: opening a **wake turn** (which takes the **wake announcement** the satellite reported and records its room level immediately before building the gate that reads it back), opening a **follow-up turn** (which takes nothing — a follow-up has no wake of its own, so it can never report a loudness it did not measure), close (frozen gate stats, room sample and speech-end anchor at that instant), and the two indicator events, which go through `SatelliteSession.TrySendControlAsync` because they are indicator-only and must never cost the user the utterance. `FollowUpConversation` takes those two modules plus five delegates.
 
 Sending a `transcript` event ends the satellite's turn and re-arms wake; `FollowUpConversation` reopens the mic wake-free, announced by the `ListeningChime` earcon and, on the wire, by a `listening-started` event (protocol 1.6) that returns the satellite's LED from Thinking to Listening — it cannot infer the moment itself, because its capture never closed. When several satellites hear the same wake word, `WakeArbiter` picks one winner (calibrated `wake_rms`, 500 ms coincidence window, onset-alignment check against open captures) and silently re-arms the losers via `pause-satellite`; a much-louder wake during another satellite's open conversation hands the conversation over.
 
