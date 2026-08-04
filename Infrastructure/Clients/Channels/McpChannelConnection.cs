@@ -12,9 +12,21 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Clients.Channels;
 
-public sealed class McpChannelConnection(string channelId, bool attachOnly = false, ILogger<McpChannelConnection>? logger = null)
+public sealed class McpChannelConnection(
+    string channelId,
+    bool attachOnly = false,
+    ILogger<McpChannelConnection>? logger = null,
+    // How often the run below asks whether the link is still there. The supervision cadence belongs
+    // to the thing being supervised, which is why it moved here with the run.
+    TimeSpan? healthCheckInterval = null)
     : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
+    private static readonly TimeSpan _defaultHealthCheckInterval = TimeSpan.FromSeconds(30);
+
+    // A retry that has backed off this far is waiting on something that will not be fixed by
+    // waiting longer, and the next attempt should not be minutes away.
+    private static readonly TimeSpan _maxReconnectDelay = TimeSpan.FromSeconds(30);
+
     private const string CancelCommandContent = "/cancel";
 
     private static readonly TimeSpan _minBackoff = TimeSpan.FromSeconds(1);
@@ -57,6 +69,96 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
     public bool AttachOnly { get; } = attachOnly;
 
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
+
+    // Connect, register the catalog, watch health, reconnect, re-register — for as long as the
+    // token lives. The order is here rather than in a caller because the order is about this.
+    public async Task RunAsync(
+        string endpoint, IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+    {
+        var interval = healthCheckInterval ?? _defaultHealthCheckInterval;
+        try
+        {
+            await WithRetryAsync(endpoint, reconnect: false, ct);
+            var registered = await TryRegisterAgentsAsync(agents, ct);
+
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(interval, ct);
+
+                if (!await IsHealthyAsync(ct))
+                {
+                    logger?.LogWarning("Channel {ChannelId} health check failed, reconnecting", ChannelId);
+                    await WithRetryAsync(endpoint, reconnect: true, ct);
+                    registered = await TryRegisterAgentsAsync(agents, ct);
+                }
+                else if (!registered)
+                {
+                    // The link is healthy but a previous registration failed; retry until it sticks
+                    // so the channel is not left serving an empty catalog indefinitely.
+                    registered = await TryRegisterAgentsAsync(agents, ct);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Shutting down. A call in flight when the token trips reports the abort it is, and
+            // this is where the run ends: it returns rather than faulting its caller.
+        }
+    }
+
+    // One loop for both, because a reconnect is a connect that had a predecessor: a fix to the
+    // back-off could otherwise land in one and miss the other.
+    private async Task WithRetryAsync(string endpoint, bool reconnect, CancellationToken ct)
+    {
+        var verb = reconnect ? "Reconnecting" : "Connecting";
+        var attempt = 0;
+
+        while (!ct.IsCancellationRequested)
+        {
+            attempt++;
+            try
+            {
+                logger?.LogInformation(
+                    "{Verb} channel {ChannelId} to {Endpoint} (attempt {Attempt})",
+                    verb, ChannelId, endpoint, attempt);
+                if (reconnect)
+                {
+                    await ReconnectAsync(endpoint, ct);
+                }
+                else
+                {
+                    await ConnectAsync(endpoint, ct);
+                }
+                logger?.LogInformation("Channel {ChannelId} connected", ChannelId);
+                return;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var delay = TimeSpan.FromSeconds(
+                    Math.Min(Math.Pow(2, attempt), _maxReconnectDelay.TotalSeconds));
+                logger?.LogWarning(
+                    "Failed {Verb} channel {ChannelId} (attempt {Attempt}), retrying in {Delay}s: {Error}",
+                    verb.ToLowerInvariant(), ChannelId, attempt, delay.TotalSeconds, ex.Message);
+                await Task.Delay(delay, ct);
+            }
+        }
+    }
+
+    private async Task<bool> TryRegisterAgentsAsync(
+        IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+    {
+        try
+        {
+            await RegisterAgentsAsync(agents, ct);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger?.LogWarning(
+                "Failed to register agents with channel {ChannelId}: {Error}", ChannelId, ex.Message);
+            return false;
+        }
+    }
 
     public async Task ConnectAsync(string endpoint, CancellationToken ct)
     {
