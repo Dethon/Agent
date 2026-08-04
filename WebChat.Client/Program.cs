@@ -18,14 +18,8 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.H
 builder.Services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
 builder.Services.AddScoped<ConnectionEventDispatcher>();
 
-// The live connection (concrete type still needed by the services that reach for the raw hub)
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddScoped<IHubConnectionFactory, SignalRHubConnectionFactory>();
-builder.Services.AddScoped<IHubEventBinder, HubEventBinder>();
-builder.Services.AddScoped<ISessionRecovery, SessionRecovery>();
-builder.Services.AddScoped(sp => new Lazy<ISessionRecovery>(sp.GetRequiredService<ISessionRecovery>));
-builder.Services.AddScoped<ChatLiveConnection>();
-builder.Services.AddScoped<IChatLiveConnection>(sp => sp.GetRequiredService<ChatLiveConnection>());
+builder.Services.AddWebChatLiveConnection();
 
 builder.Services.AddScoped<IChatSessionService, ChatSessionService>();
 builder.Services.AddScoped<IChatMessagingService, ChatMessagingService>();

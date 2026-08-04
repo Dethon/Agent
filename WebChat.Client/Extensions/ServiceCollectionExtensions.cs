@@ -44,6 +44,23 @@ public static class ServiceCollectionExtensions
             return services;
         }
 
+        public IServiceCollection AddWebChatLiveConnection()
+        {
+            services.AddScoped<IHubConnectionFactory, SignalRHubConnectionFactory>();
+            services.AddScoped<IHubEventBinder, HubEventBinder>();
+            services.AddScoped<ISessionRecovery, SessionRecovery>();
+
+            // Session recovery makes its hub calls back through the live connection, so it is
+            // resolved lazily — injecting it eagerly would be a container cycle.
+            services.AddScoped(sp => new Lazy<ISessionRecovery>(sp.GetRequiredService<ISessionRecovery>));
+
+            // The concrete type is still needed by the services that reach for the raw hub.
+            services.AddScoped<ChatLiveConnection>();
+            services.AddScoped<IChatLiveConnection>(sp => sp.GetRequiredService<ChatLiveConnection>());
+
+            return services;
+        }
+
         public IServiceCollection AddWebChatEffects()
         {
             services.AddScoped<ReconnectionEffect>();

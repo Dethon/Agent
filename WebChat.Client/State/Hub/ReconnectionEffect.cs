@@ -13,7 +13,7 @@ public sealed class ReconnectionEffect : IDisposable
     private readonly IDisposable _subscription;
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
-    private int? _lastReloadedEpoch;
+    private int? _lastHandledEpoch;
 
     public ReconnectionEffect(
         ConnectionStore connectionStore,
@@ -38,8 +38,8 @@ public sealed class ReconnectionEffect : IDisposable
                 // The first epoch seen is the connection this client started on, so there is
                 // nothing to catch up on. Every later one is an interruption, whether or not
                 // a disconnected status was ever observed in between.
-                var isCatchUp = _lastReloadedEpoch is { } lastEpoch && state.Epoch > lastEpoch;
-                _lastReloadedEpoch = state.Epoch;
+                var isCatchUp = _lastHandledEpoch is { } lastEpoch && state.Epoch > lastEpoch;
+                _lastHandledEpoch = state.Epoch;
 
                 if (isCatchUp)
                 {
