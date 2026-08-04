@@ -5,6 +5,6 @@ namespace WebChat.Client.Contracts;
 
 public interface IApprovalService
 {
-    Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result);
+    Task<HubResult<bool>> RespondToApprovalAsync(string approvalId, ToolApprovalResult result);
     Task<HubResult<ToolApprovalRequestMessage>> GetPendingApprovalForTopicAsync(string topicId);
 }

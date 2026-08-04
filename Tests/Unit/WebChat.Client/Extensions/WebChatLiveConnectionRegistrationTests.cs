@@ -8,6 +8,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Services;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State.Approval;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
 using WebChat.Client.State.Pipeline;
@@ -130,6 +131,7 @@ public sealed class WebChatLiveConnectionRegistrationTests
         services.AddScoped<ITopicService, TopicService>();
         services.AddScoped<IAgentService, AgentService>();
         services.AddScoped<IApprovalService, ApprovalService>();
+        services.AddScoped<ApprovalResponder>();
 
         services.AddWebChatStores();
         services.AddWebChatEffects();

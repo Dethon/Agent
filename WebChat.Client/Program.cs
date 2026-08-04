@@ -5,6 +5,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Services;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State.Approval;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
 using WebChat.Client.State.Pipeline;
@@ -26,6 +27,7 @@ builder.Services.AddScoped<IChatMessagingService, ChatMessagingService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddScoped<IApprovalService, ApprovalService>();
+builder.Services.AddScoped<ApprovalResponder>();
 
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
 

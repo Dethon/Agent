@@ -24,10 +24,15 @@ public sealed class FakeApprovalService : IApprovalService
     // Set to answer not live for every call, the way a transport between connections does.
     public bool NotLive { get; set; }
 
-    public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
+    public Task<HubResult<bool>> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<bool>.NotLive);
+        }
+
         _responses.Add((approvalId, result));
-        return Task.FromResult(true);
+        return Task.FromResult(HubResult<bool>.Answered(true));
     }
 
     public Task<HubResult<ToolApprovalRequestMessage>> GetPendingApprovalForTopicAsync(string topicId)

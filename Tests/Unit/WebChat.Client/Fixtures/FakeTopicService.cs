@@ -70,24 +70,35 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         return Task.CompletedTask;
     }
 
-    public Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
+    public Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false)
     {
-        _savedTopics.Add(topic);
         recorder?.Record($"save:{topic.TopicId}");
-        return Task.CompletedTask;
+
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<Nothing>.NotLive);
+        }
+
+        _savedTopics.Add(topic);
+        return Task.FromResult(HubResult<Nothing>.Answered(default));
     }
 
-    public Task DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)
+    public Task<HubResult<Nothing>> DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)
     {
         recorder?.Record($"delete:{topicId}");
 
         if (ThrowOnDeleteTopic is not null)
         {
-            return Task.FromException(ThrowOnDeleteTopic);
+            return Task.FromException<HubResult<Nothing>>(ThrowOnDeleteTopic);
+        }
+
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<Nothing>.NotLive);
         }
 
         _deletedTopicIds.Add(topicId);
-        return Task.CompletedTask;
+        return Task.FromResult(HubResult<Nothing>.Answered(default));
     }
 
     public Task<HubResult<IReadOnlyList<ChatHistoryMessage>>> GetHistoryAsync(

@@ -10,27 +10,11 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
         string agentId, string spaceSlug = "default") =>
         liveConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId, spaceSlug);
 
-    public async Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return;
-        }
+    public Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false) =>
+        liveConnection.InvokeAsync("SaveTopic", topic, isNew);
 
-        await hubConnection.InvokeAsync("SaveTopic", topic, isNew);
-    }
-
-    public async Task DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return;
-        }
-
-        await hubConnection.InvokeAsync("DeleteTopic", agentId, topicId, chatId, threadId);
-    }
+    public Task<HubResult<Nothing>> DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId) =>
+        liveConnection.InvokeAsync("DeleteTopic", agentId, topicId, chatId, threadId);
 
     public Task<HubResult<IReadOnlyList<ChatHistoryMessage>>> GetHistoryAsync(
         string agentId, long chatId, long threadId) =>

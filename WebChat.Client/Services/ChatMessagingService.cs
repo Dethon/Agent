@@ -1,6 +1,5 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
-using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
@@ -18,16 +17,8 @@ public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : I
     public Task<HubResult<StreamState>> GetStreamStateAsync(string topicId) =>
         liveConnection.InvokeAsync<StreamState>("GetStreamState", topicId);
 
-    public async Task CancelTopicAsync(string topicId)
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return;
-        }
-
-        await hubConnection.InvokeAsync("CancelTopic", topicId);
-    }
+    public Task<HubResult<Nothing>> CancelTopicAsync(string topicId) =>
+        liveConnection.InvokeAsync("CancelTopic", topicId);
 
     public Task<HubResult<bool>> EnqueueMessageAsync(
         string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null) =>

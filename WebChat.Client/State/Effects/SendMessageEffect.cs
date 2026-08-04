@@ -67,7 +67,16 @@ public sealed class SendMessageEffect : IDisposable
 
     private async Task HandleCancelStreamingAsync(string topicId)
     {
-        await _messagingService.CancelTopicAsync(topicId);
+        var cancelled = await _messagingService.CancelTopicAsync(topicId);
+
+        // Marking the reply stopped when the stop never reached the server would surprise the
+        // user the moment it carries on.
+        if (!cancelled.IsLive)
+        {
+            _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
+
         _dispatcher.Dispatch(new StreamCancelled(topicId));
     }
 
@@ -109,7 +118,12 @@ public sealed class SendMessageEffect : IDisposable
             _dispatcher.Dispatch(new AddTopic(topic));
             _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
             _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-            await _topicService.SaveTopicAsync(topic.ToMetadata(), isNew: true);
+
+            var saved = await _topicService.SaveTopicAsync(topic.ToMetadata(), isNew: true);
+            if (!saved.IsLive)
+            {
+                _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            }
         }
         else
         {

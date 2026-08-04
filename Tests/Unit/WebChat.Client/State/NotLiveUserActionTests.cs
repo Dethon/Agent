@@ -1,8 +1,10 @@
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
+using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
@@ -119,6 +121,118 @@ public sealed class NotLiveUserActionTests
         await TestChat.Eventually(() =>
             client.Messages.State.MessagesByTopic.GetValueOrDefault("topic-1", []).Any(m => m.Role == "user"));
         client.Toasts.State.Toasts.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ADelete_ThatCouldNotBeMade_LeavesTheConversationInTheSidebar()
+    {
+        await using var client = new ScriptedChatClient();
+        await client.ConnectAsync();
+        SeedTopic(client);
+
+        client.GoNotLive();
+        client.Dispatcher.Dispatch(new RemoveTopic("topic-1", "agent-1", 10, 20));
+
+        await TestChat.Eventually(() => client.Toasts.State.Toasts.Count == 1);
+        await TestChat.Eventually(() => client.Topics.State.Topics.Any(topic => topic.TopicId == "topic-1"));
+        client.Topics.State.Topics.Single().Name.ShouldBe("Topic");
+    }
+
+    [Fact]
+    public async Task ADelete_WhileLive_StillRemovesTheConversation()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+
+        client.Dispatcher.Dispatch(new RemoveTopic("topic-1", "agent-1", 10, 20));
+
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "DeleteTopic"));
+        client.Topics.State.Topics.ShouldBeEmpty();
+        client.Toasts.State.Toasts.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ACancel_ThatCouldNotBeMade_RaisesOneToastAndLeavesTheReplyRunning()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        var stream = new GatedChatStream();
+        transport.Answer("SendMessage", _ => stream.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "first"));
+        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+
+        client.GoNotLive();
+        client.Dispatcher.Dispatch(new CancelStreaming("topic-1"));
+
+        await TestChat.Eventually(() => client.Toasts.State.Toasts.Count == 1);
+        client.Streaming.State.StreamingTopics.ShouldContain("topic-1");
+        stream.Release();
+    }
+
+    [Fact]
+    public async Task ACancel_WhileLive_StillStopsTheReply()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        var stream = new GatedChatStream();
+        transport.Answer("SendMessage", _ => stream.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "first"));
+        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+
+        client.Dispatcher.Dispatch(new CancelStreaming("topic-1"));
+
+        await TestChat.Eventually(() => !client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        client.Toasts.State.Toasts.ShouldBeEmpty();
+        stream.Release();
+    }
+
+    [Fact]
+    public async Task AnApprovalAnswered_WhileNotLive_LeavesThePromptOnScreen()
+    {
+        await using var client = new ScriptedChatClient();
+        await client.ConnectAsync();
+        client.Dispatcher.Dispatch(new ShowApproval("topic-1", new ToolApprovalRequestMessage("approval-1", [])));
+
+        client.GoNotLive();
+        await client.Service<ApprovalResponder>().RespondAsync("approval-1", ToolApprovalResult.Approved);
+
+        client.Approvals.State.CurrentRequest?.ApprovalId.ShouldBe("approval-1");
+        client.Toasts.State.Toasts.Count.ShouldBe(1);
+    }
+
+    // A server that refuses is live and has answered — the approval is no longer pending, so
+    // the prompt goes away exactly as it does today.
+    [Fact]
+    public async Task AnApprovalTheServerRefuses_StillClearsThePrompt()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        client.Dispatcher.Dispatch(new ShowApproval("topic-1", new ToolApprovalRequestMessage("approval-1", [])));
+        transport.Answer("RespondToApprovalAsync", false);
+
+        await client.Service<ApprovalResponder>().RespondAsync("approval-1", ToolApprovalResult.Approved);
+
+        client.Approvals.State.CurrentRequest.ShouldBeNull();
+        client.Toasts.State.Toasts.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task TwoFailedUserActions_InTheSameWindow_ProduceOneToast()
+    {
+        await using var client = new ScriptedChatClient();
+        await client.ConnectAsync();
+        SeedTopic(client);
+
+        client.GoNotLive();
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
+        await TestChat.Eventually(() => client.Toasts.State.Toasts.Count == 1);
+        client.Dispatcher.Dispatch(new RemoveTopic("topic-1", "agent-1", 10, 20));
+
+        await TestChat.Eventually(() => client.Topics.State.Topics.Any(topic => topic.TopicId == "topic-1"));
+        client.Toasts.State.Toasts.Count.ShouldBe(1);
     }
 
     private static void SeedTopic(ScriptedChatClient client)
