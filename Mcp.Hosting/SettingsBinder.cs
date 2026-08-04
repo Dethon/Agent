@@ -53,14 +53,14 @@ public static class SettingsBinder
     // Null only, never empty. Three shipped servers carry required members that ship as "" and are
     // filled from secrets, and an empty optional key is how a feature is switched off; an
     // empty-is-invalid rule would refuse to start them.
-    private static IEnumerable<string> MissingRequiredMembers(object instance, string path, Assembly settings) =>
+    private static IEnumerable<string> MissingRequiredMembers(object instance, string path, Assembly settingsAssembly) =>
         instance.GetType()
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(property => property.GetIndexParameters().Length == 0)
-            .SelectMany(property => Inspect(property, instance, path, settings));
+            .SelectMany(property => Inspect(property, instance, path, settingsAssembly));
 
     private static IEnumerable<string> Inspect(
-        PropertyInfo property, object instance, string path, Assembly settings)
+        PropertyInfo property, object instance, string path, Assembly settingsAssembly)
     {
         var memberPath = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
         var value = property.GetValue(instance);
@@ -72,14 +72,14 @@ public static class SettingsBinder
 
         // Recurses into a nested section, which is what a missing configuration block produces. A
         // collection's elements are data rather than sections, and no server reads one at startup.
-        return IsSection(property.PropertyType, settings)
-            ? MissingRequiredMembers(value, memberPath, settings)
+        return IsSection(property.PropertyType, settingsAssembly)
+            ? MissingRequiredMembers(value, memberPath, settingsAssembly)
             : [];
     }
 
-    private static bool IsSection(Type type, Assembly settings) =>
+    private static bool IsSection(Type type, Assembly settingsAssembly) =>
         type.IsClass
         && type != typeof(string)
         && !typeof(IEnumerable).IsAssignableFrom(type)
-        && type.Assembly == settings;
+        && type.Assembly == settingsAssembly;
 }

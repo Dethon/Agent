@@ -24,23 +24,24 @@ public class ToolServerExtensionsTests
         services.AddMcpHost(settings);
 
         services.ShouldContain(
+            descriptor => descriptor.ServiceType == typeof(IConfigureOptions<McpServerOptions>));
+        services.ShouldContain(
             descriptor => descriptor.ServiceType == typeof(IConfigureOptions<HttpServerTransportOptions>));
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<ProbeSettings>().ShouldBeSameAs(settings);
-        provider.GetService<IOptions<McpServerOptions>>().ShouldNotBeNull();
     }
 
     // The host on its own carries no error rule: a server that offers the agent nothing to call has
     // nothing to map an exception for.
     [Fact]
     public void AddMcpHost_AddsNoCallToolFilter() =>
-        CallToolFilterCount(services => services.AddMcpHost(new ProbeSettings("probe")))
+        McpServerProbe.CallToolFilterCount(services => services.AddMcpHost(new ProbeSettings("probe")))
             .ShouldBe(0);
 
     [Fact]
     public void AddToolServer_IsTheHostPlusTheFilter() =>
-        CallToolFilterCount(services => services.AddToolServer(new ProbeSettings("probe")))
+        McpServerProbe.CallToolFilterCount(services => services.AddToolServer(new ProbeSettings("probe")))
             .ShouldBe(1);
 
     // A dual-role server asks as a tool server and again as a channel server. Both of the real ones
@@ -48,7 +49,7 @@ public class ToolServerExtensionsTests
     // rather than assumed.
     [Fact]
     public void ADualRoleServer_EndsUpWithOneFilter() =>
-        CallToolFilterCount(services => services
+        McpServerProbe.CallToolFilterCount(services => services
             .AddToolServer(new ProbeSettings("probe"), Marked("tool-server"))
             .AddChannelServer(DeliveryPolicy.Broadcast, errorResult: Marked("channel-server")))
             .ShouldBe(1);
@@ -109,13 +110,4 @@ public class ToolServerExtensionsTests
         Content = [new TextContentBlock { Text = $"{marker}: {ex.Message}" }]
     };
 
-    private static int CallToolFilterCount(Action<IServiceCollection> configure)
-    {
-        var services = new ServiceCollection();
-        configure(services);
-
-        using var provider = services.BuildServiceProvider();
-        return provider.GetRequiredService<IOptions<McpServerOptions>>()
-            .Value.Filters.Request.CallToolFilters.Count;
-    }
 }

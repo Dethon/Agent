@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -59,4 +60,22 @@ public sealed class FailingTools
     [McpServerTool(Name = "cancels")]
     [Description("Test tool that always cancels, like an aborted long poll.")]
     public static string Cancels() => throw new OperationCanceledException();
+}
+// What a registration added, without booting anything. Counting filters is the one question both
+// hosting calls and every real server are asked, so it is written once.
+public static class McpServerProbe
+{
+    public static int CallToolFilterCount(Action<IServiceCollection> configure)
+    {
+        var services = new ServiceCollection();
+        configure(services);
+        return CallToolFilterCount(services);
+    }
+
+    public static int CallToolFilterCount(IServiceCollection services)
+    {
+        using var provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<IOptions<McpServerOptions>>()
+            .Value.Filters.Request.CallToolFilters.Count;
+    }
 }

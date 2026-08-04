@@ -39,16 +39,13 @@ public static class FileSystemServerResource
 
     public static string Address(string filesystemName) => Scheme + filesystemName;
 
-    public static string Describe(FileSystemBackendBase backend) =>
-        Describe(backend.FilesystemName, backend.DescribeMount);
-
     // What McpFileSystemDiscovery reads to mount this filesystem: the name it will be addressed by,
-    // the path it goes under, and the prose the model gets about it.
-    private static string Describe(string filesystemName, string description) =>
+    // the path it goes under, and the prose the model gets about it. All three come off the backend.
+    public static string Describe(FileSystemBackendBase backend) =>
         JsonSerializer.Serialize(new
         {
-            name = filesystemName,
-            mountPoint = "/" + filesystemName,
-            description
+            name = backend.FilesystemName,
+            mountPoint = backend.MountPoint,
+            description = backend.DescribeMount
         });
 }

@@ -17,14 +17,7 @@ namespace Tests.Integration.McpServers;
 // the cancellation rule the other six treat as load-bearing.
 public class McpServerContractTests
 {
-    public static TheoryData<string> Servers =>
-        McpServerRegistrations.All.Aggregate(
-            new TheoryData<string>(),
-            (data, row) =>
-            {
-                data.Add(row.Id);
-                return data;
-            });
+    public static TheoryData<string> Servers => McpServerRegistrations.Ids(McpServerRegistrations.All);
 
     // Everything the module registers reads its settings out of the container, so a server that
     // resolves a second instance would hand two halves of itself two different configurations.
@@ -50,16 +43,15 @@ public class McpServerContractTests
         var services = new ServiceCollection();
         row.Configure(services);
 
-        // The transport is asserted on the descriptor rather than by resolving it: its options bind
-        // to defaults whether or not anyone asked for the transport, so only the registration says
-        // whether the module added it.
+        // Both halves are asserted on the descriptors the two calls add, not by resolving IOptions:
+        // an IOptions<T> resolves to a default instance whether or not anyone configured it, so
+        // resolving it would stay green against a module that never started a server at all.
+        services.ShouldContain(
+            descriptor => descriptor.ServiceType == typeof(IConfigureOptions<McpServerOptions>),
+            $"{id} must start an MCP server");
         services.ShouldContain(
             descriptor => descriptor.ServiceType == typeof(IConfigureOptions<HttpServerTransportOptions>),
             $"{id} must add the HTTP transport");
-
-        using var provider = services.BuildServiceProvider();
-        provider.GetService<IOptions<McpServerOptions>>()
-            .ShouldNotBeNull($"{id} must start an MCP server");
     }
 
     // Two filters nested around each other is the failure this counts: the outer one converts the
@@ -69,12 +61,10 @@ public class McpServerContractTests
     [MemberData(nameof(Servers))]
     public void EveryServer_HasExactlyOneCallToolFilter(string id)
     {
-        var row = McpServerRegistrations.Get(id);
-        using var provider = Build(row);
+        var services = new ServiceCollection();
+        McpServerRegistrations.Get(id).Configure(services);
 
-        var options = provider.GetRequiredService<IOptions<McpServerOptions>>().Value;
-
-        options.Filters.Request.CallToolFilters.Count
+        McpServerProbe.CallToolFilterCount(services)
             .ShouldBe(1, $"{id} must have exactly one call-tool filter");
     }
 
@@ -94,16 +84,8 @@ public class McpServerContractTests
         tools.ShouldContain(ChannelProtocol.RequestApprovalTool, $"{id} must advertise request_approval");
     }
 
-    public static TheoryData<string> DualRoleServers =>
-        McpServerRegistrations.All
-            .Where(row => row.Role == McpServerRole.DualRole)
-            .Aggregate(
-                new TheoryData<string>(),
-                (data, row) =>
-                {
-                    data.Add(row.Id);
-                    return data;
-                });
+    public static TheoryData<string> DualRoleServers => McpServerRegistrations.Ids(
+        McpServerRegistrations.All.Where(row => row.Role == McpServerRole.DualRole));
 
     private static ServiceProvider Build(McpServerRow row)
     {

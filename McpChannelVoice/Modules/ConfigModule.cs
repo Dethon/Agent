@@ -7,12 +7,18 @@ using McpChannelVoice.Services;
 using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Settings;
+using Microsoft.Extensions.Configuration;
 using StackExchange.Redis;
 
 namespace McpChannelVoice.Modules;
 
 public static class ConfigModule
 {
+    // Voice is the one server whose settings need a second pass after binding: a satellite with no
+    // room or locality of its own inherits the hub's. Program.cs stays six lines of ceremony.
+    public static VoiceSettings GetVoiceSettings(this IConfigurationBuilder configBuilder) =>
+        configBuilder.BindSettings<VoiceSettings>().WithResolvedLocalityDefaults();
+
     public static IServiceCollection ConfigureVoiceChannel(
         this IServiceCollection services,
         VoiceSettings settings)

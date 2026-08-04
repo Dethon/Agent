@@ -1,10 +1,8 @@
-using Mcp.Hosting;
 using McpChannelVoice.Modules;
 using McpChannelVoice.Services;
-using McpChannelVoice.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
-var settings = builder.Configuration.BindSettings<VoiceSettings>().WithResolvedLocalityDefaults();
+var settings = builder.Configuration.GetVoiceSettings();
 builder.Services.ConfigureVoiceChannel(settings);
 
 var app = builder.Build();

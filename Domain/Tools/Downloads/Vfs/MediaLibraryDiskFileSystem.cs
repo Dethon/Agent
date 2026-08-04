@@ -13,17 +13,18 @@ namespace Domain.Tools.Downloads.Vfs;
 public sealed class MediaLibraryDiskFileSystem(
     IFileSystemClient client,
     LibraryPathConfig root,
-    DownloadsOverlay downloads) : DiskFileSystem(Name, MountDescription, client, root)
+    DownloadsOverlay downloads) : DiskFileSystem(Name, Mount(root), client, root)
 {
     public const string Name = "media";
 
-    // Not a constructor argument like the generic disk root's: this type is the media library, so
-    // its prose belongs with it.
-    private const string MountDescription =
-        "Media library — books, audiobooks, and other downloaded media. Read/list focused; treat "
-        + "writes as organisational only. Does NOT support fs_exec. Active downloads live under "
-        + "/media/downloads/<id>/: a virtual read-only status.json reports live state/progress/eta, "
-        + "and deleting the <id> directory cancels the download and cleans up its files.";
+    // Composed here rather than handed in like the generic disk root's: this type is the media
+    // library, so its prose belongs with it, and it already holds the path that text names.
+    private static string Mount(LibraryPathConfig root) =>
+        $"Media library ({root.BaseLibraryPath}) — books, audiobooks, and other downloaded media. "
+        + "Read/list focused; treat writes as organisational only. Does NOT support fs_exec. Active "
+        + $"downloads live under {MediaFilesystem.DownloadsDir}/<id>/: a virtual read-only "
+        + "status.json reports live state/progress/eta, and deleting the <id> directory cancels the "
+        + "download and cleans up its files.";
 
     public override string DescribeRead =>
         $"Read a download's virtual status file ({MediaFilesystem.DownloadsSubdir}/<id>/status.json "

@@ -35,7 +35,7 @@ public class NoOutboundSurfaceTests
                 ignoreOrder: true);
 
     [Fact]
-    public async Task AReplyChunk_IsAccceptedAndDropped()
+    public async Task AReplyChunk_IsAcceptedAndDropped()
     {
         await using var server = await StartAsync();
 

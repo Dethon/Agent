@@ -206,6 +206,13 @@ public static class McpServerRegistrations
 
     public static McpServerRow Get(string id) => All.Single(row => row.Id == id);
 
+    public static TheoryData<string> Ids(IEnumerable<McpServerRow> rows) =>
+        rows.Aggregate(new TheoryData<string>(), (data, row) =>
+        {
+            data.Add(row.Id);
+            return data;
+        });
+
     private static McpServerRow Row<TSettings>(
         string id,
         McpServerRole role,

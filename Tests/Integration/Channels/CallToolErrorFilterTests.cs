@@ -1,9 +1,9 @@
 using Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
+using Tests.Integration.McpServers;
 
 namespace Tests.Integration.Channels;
 
@@ -41,13 +41,6 @@ public class CallToolErrorFilterTests
         Content = [new TextContentBlock { Text = ex.Message }]
     };
 
-    private static int CallToolFilterCount(Action<IMcpServerBuilder> configure)
-    {
-        var services = new ServiceCollection();
-        configure(services.AddMcpServer());
-
-        using var provider = services.BuildServiceProvider();
-        return provider.GetRequiredService<IOptions<McpServerOptions>>()
-            .Value.Filters.Request.CallToolFilters.Count;
-    }
+    private static int CallToolFilterCount(Action<IMcpServerBuilder> configure) =>
+        McpServerProbe.CallToolFilterCount(services => configure(services.AddMcpServer()));
 }

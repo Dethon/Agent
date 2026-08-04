@@ -1,10 +1,13 @@
 using System.Text.Json;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Domain.Tools.Files;
 using Domain.Tools.HomeAssistant.Vfs;
+using Domain.Tools.Printing;
 using Domain.Tools.Printing.Vfs;
 using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Timers.Vfs;
@@ -12,6 +15,7 @@ using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
+using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure;
@@ -57,6 +61,38 @@ public class FileSystemServerConformanceTests
         capabilities.Count.ShouldBe(overridden.Count(t => !t.StartsWith("fs_blob", StringComparison.Ordinal)), name);
     }
 
+    // Every filesystem backend in the repo, constructed. The tool assertions above only need the
+    // type, but a mount's identity is a value the instance carries, so this table holds the real
+    // thing — a backend whose FilesystemName drifted from the mount it is published at fails here.
+    // Every filesystem backend in the repo, constructed. The tool assertions only need the type,
+    // but a mount's identity is a value the instance carries, so the identity assertion holds the
+    // real thing — a backend whose FilesystemName drifted from the mount it is published at fails.
+    private static IReadOnlyDictionary<string, FileSystemBackendBase> MountedBackends =>
+        new Dictionary<string, FileSystemBackendBase>
+        {
+            ["timers"] = new TimerFileSystem(
+                Mock.Of<ITimerStore>(), TimeProvider.System, Mock.Of<IAlertDismisser>(),
+                Mock.Of<ISatelliteCatalog>()),
+            ["schedules"] = new ScheduleFileSystem(
+                Mock.Of<IScheduleStore>(), Mock.Of<IAgentCatalog>(), Mock.Of<ICronValidator>(),
+                TimeProvider.System),
+            ["print-queue"] = new PrinterQueueFileSystem(
+                Mock.Of<IPrintSpool>(), Mock.Of<IPrinterClient>(), new PrintQueueGate(), "text,jpeg"),
+            ["ha"] = new HaFileSystem(
+                new HaCatalogProvider(Mock.Of<IHomeAssistantClient>), Mock.Of<IHomeAssistantClient>),
+            ["media"] = new MediaLibraryDiskFileSystem(
+                Mock.Of<IFileSystemClient>(), new LibraryPathConfig("/media"),
+                new DownloadsOverlay(
+                    Mock.Of<IDownloadClient>(), Mock.Of<IDownloadRoutingStore>(),
+                    Mock.Of<IFileSystemClient>(), new LibraryPathConfig("/media"))),
+            ["vault"] = new TextDiskFileSystem(
+                "vault", "A personal vault.", Mock.Of<IFileSystemClient>(),
+                new LibraryPathConfig("/vault"), [".md"]),
+            ["sandbox"] = new SandboxFileSystem(
+                "sandbox", "A sandbox container.", Mock.Of<IFileSystemClient>(),
+                new LibraryPathConfig("/sandbox"), [".py"], Mock.Of<ICommandRunner>())
+        };
+
     // The other half of the same idea. A mount's identity used to be written three times per server
     // — in the backend, in the resource address, and in the resource body's name and mount point —
     // and nothing compared the three. Now all three come off the backend's one name, so a mount the
@@ -66,6 +102,9 @@ public class FileSystemServerConformanceTests
     public void EveryFilesystemServer_PublishesItsMountAtTheAddressDerivedFromItsName(
         string name, Type backendType)
     {
+        var backend = MountedBackends[name];
+        backend.ShouldBeOfType(backendType);
+
         var services = new ServiceCollection();
         typeof(FileSystemServerResource)
             .GetMethod(nameof(FileSystemServerResource.AddFileSystemResource))!
@@ -75,22 +114,14 @@ public class FileSystemServerConformanceTests
         services.Single(d => d.ServiceType == typeof(McpServerResource))
             .Lifetime.ShouldBe(ServiceLifetime.Singleton, name);
 
-        // The seven real backends need their whole dependency graph to construct, so what the one
-        // name turns into is asserted on a backend that carries the same name and nothing else.
-        var mount = new NamedBackend(name);
-        FileSystemServerResource.Address(mount.FilesystemName).ShouldBe($"filesystem://{name}");
+        backend.FilesystemName.ShouldBe(name);
+        FileSystemServerResource.Address(backend.FilesystemName).ShouldBe($"filesystem://{name}");
 
-        var published = Published(FileSystemServerResource.Describe(mount));
+        var published = Published(FileSystemServerResource.Describe(backend));
         published.Name.ShouldBe(name);
         published.MountPoint.ShouldBe($"/{name}");
-        published.Description.ShouldBe(mount.DescribeMount);
-    }
-
-    private sealed class NamedBackend(string name) : FileSystemBackendBase
-    {
-        public override string FilesystemName => name;
-
-        public override string DescribeMount => $"The {name} mount.";
+        published.Description.ShouldBe(backend.DescribeMount);
+        published.Description.ShouldNotBeNullOrWhiteSpace(name);
     }
 
     // That the resource the registrar really builds carries the same three, so nothing between the
