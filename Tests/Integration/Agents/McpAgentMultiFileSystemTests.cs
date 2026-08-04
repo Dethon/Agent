@@ -36,13 +36,15 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
             TestAgentSpec.Default with
             {
                 DisplayName = "test-multi-fs-agent",
-                McpServerEndpoints = [fsFixture.LibraryEndpoint, fsFixture.NotesEndpoint]
+                McpServerEndpoints = [fsFixture.LibraryEndpoint, fsFixture.NotesEndpoint],
+                FilesystemEnabledTools = _allFileSystemTools
             },
             llmClient,
             stateStore,
             NoOpMetricsPublisher.Instance,
             TimeProvider.System,
-            filesystemEnabledTools: _allFileSystemTools);
+            [],
+            []);
     }
 
     [SkippableFact]

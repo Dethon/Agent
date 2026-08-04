@@ -12,7 +12,8 @@ Each `agents[]` / `subAgents[]` entry may carry a `providerRouting` object (`sor
 `price`|`throughput`|`latency`, plus `order`, `only`, `ignore`, `allowFallbacks`,
 `preferredMinThroughput`, `preferredMaxLatency`, `maxPrice`), overriding
 `openRouter.providerRouting` **wholesale** — never field-by-field. It reaches the wire through
-the same path as `session_id`: `MultiAgentFactory.ResolveRouting` → `OpenRouterChatClient` →
+the same path as `session_id`: `ProviderRoutingResolver.Resolve` (called from `AgentSpecProjection`,
+which puts the resolved value on the agent spec) → `OpenRouterChatClient` →
 `ReasoningHandler` → `OpenRouterHttpHelpers.PrepareRequestBodyAsync`, which stamps `provider`.
 `{}` is not the wholesale opt-out it looks like: the JSON config provider records an empty
 object as a null-valued key, `Get<ProviderRouting>()` returns null for it, and `declared ??
@@ -34,7 +35,7 @@ re-sent uncached every turn. `sort` does *not* disable it. Prefer `only` + `sort
 the provider set. `ProviderRoutingAdvisories` logs a warning for this and for a `:nitro`/`:floor`
 model suffix fighting an explicit `sort`; both are warnings, never throws, because the same path
 serves runtime-created agents. The advisories run at agent/subagent construction
-(`MultiAgentFactory.ResolveRouting`) with no dedupe — agents are constructed per conversation
+(`ProviderRoutingResolver.Resolve`) with no dedupe — agents are constructed per conversation
 activation and subagents per spawn, so a tripped advisory repeats for the lifetime of the config,
 not once per agent. `MemoryModule` binds `openRouter.providerRouting` for the memory extraction
 and dreaming chat clients directly, so those two models skip the advisories entirely.

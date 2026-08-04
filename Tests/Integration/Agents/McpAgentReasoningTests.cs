@@ -53,7 +53,9 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
             openRouter,
             stateStore,
             NoOpMetricsPublisher.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            [],
+            []);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -94,7 +96,9 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
             openRouter,
             stateStore,
             NoOpMetricsPublisher.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            [],
+            []);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -133,7 +137,9 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
             openRouter,
             stateStore,
             NoOpMetricsPublisher.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            [],
+            []);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -187,7 +193,9 @@ public class McpAgentReasoningTestsConfigPatch
             new Mock<IThreadStateStore>().Object,
             NoOpMetricsPublisher.Instance,
             TimeProvider.System,
-            loggerFactory: LoggerFactory.Create(b => b.AddProvider(logProvider)));
+            [],
+            [],
+            LoggerFactory.Create(b => b.AddProvider(logProvider)));
 
         return (agent, captured, logProvider.Messages);
     }

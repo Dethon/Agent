@@ -36,7 +36,9 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
             approvalClient,
             stateStore,
             NoOpMetricsPublisher.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            [],
+            []);
     }
 
     [Fact]

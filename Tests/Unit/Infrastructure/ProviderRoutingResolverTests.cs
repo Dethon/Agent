@@ -10,12 +10,12 @@ public sealed class ProviderRoutingResolverTests
     private const string Model = "z-ai/glm-5.2";
 
     private readonly CapturingLoggerProvider _logProvider = new(LogLevel.Warning);
+    private readonly ILogger _logger;
+
+    public ProviderRoutingResolverTests() =>
+        _logger = LoggerFactory.Create(b => b.AddProvider(_logProvider)).CreateLogger("routing");
 
     private List<string> Logs => _logProvider.Messages;
-
-    private ILogger Logger => LoggerFactory
-        .Create(b => b.AddProvider(_logProvider))
-        .CreateLogger("routing");
 
     // The global default carries an `ignore` the declared routing never sets: a field-by-field
     // merge would leak it while leaving `sort` intact, so only a fixture shaped like this can
@@ -30,7 +30,7 @@ public sealed class ProviderRoutingResolverTests
             new ProviderRouting { Sort = ProviderSort.Throughput, Ignore = ["chutes"] },
             Model,
             "routed",
-            Logger);
+            _logger);
 
         resolved.ShouldBe(declared);
         resolved!.Ignore.ShouldBeNull();
@@ -41,7 +41,7 @@ public sealed class ProviderRoutingResolverTests
     {
         var globalRouting = new ProviderRouting { Sort = ProviderSort.Throughput };
 
-        var resolved = ProviderRoutingResolver.Resolve(null, globalRouting, Model, "plain", Logger);
+        var resolved = ProviderRoutingResolver.Resolve(null, globalRouting, Model, "plain", _logger);
 
         resolved.ShouldBe(globalRouting);
     }
@@ -51,7 +51,7 @@ public sealed class ProviderRoutingResolverTests
     [Fact]
     public void Resolve_NeitherDeclaredNorGlobal_ResolvesToNull()
     {
-        ProviderRoutingResolver.Resolve(null, null, Model, "plain", Logger).ShouldBeNull();
+        ProviderRoutingResolver.Resolve(null, null, Model, "plain", _logger).ShouldBeNull();
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class ProviderRoutingResolverTests
     {
         var routing = new ProviderRouting { Order = ["deepinfra"] };
 
-        ProviderRoutingResolver.Resolve(routing, null, Model, "noisy", Logger);
+        ProviderRoutingResolver.Resolve(routing, null, Model, "noisy", _logger);
 
         Logs.ShouldContain(m => m.Contains("noisy") && m.Contains("sticky routing"));
     }
@@ -72,7 +72,7 @@ public sealed class ProviderRoutingResolverTests
     {
         var globalRouting = new ProviderRouting { Order = ["deepinfra"] };
 
-        ProviderRoutingResolver.Resolve(null, globalRouting, Model, "plain", Logger);
+        ProviderRoutingResolver.Resolve(null, globalRouting, Model, "plain", _logger);
 
         Logs.ShouldContain(m => m.Contains("plain") && m.Contains("sticky routing"));
     }
@@ -84,7 +84,7 @@ public sealed class ProviderRoutingResolverTests
     {
         var routing = new ProviderRouting { Order = ["deepinfra"] };
 
-        ProviderRoutingResolver.Resolve(routing, null, Model, "subagent-worker", Logger);
+        ProviderRoutingResolver.Resolve(routing, null, Model, "subagent-worker", _logger);
 
         Logs.ShouldContain(m => m.Contains("subagent-worker") && m.Contains("sticky routing"));
     }
@@ -96,7 +96,7 @@ public sealed class ProviderRoutingResolverTests
     {
         var routing = new ProviderRouting { Sort = ProviderSort.Latency };
 
-        ProviderRoutingResolver.Resolve(routing, null, Model, "quiet", Logger);
+        ProviderRoutingResolver.Resolve(routing, null, Model, "quiet", _logger);
 
         Logs.ShouldNotContain(m => m.Contains("sticky routing") || m.Contains("providerRouting.sort"));
     }

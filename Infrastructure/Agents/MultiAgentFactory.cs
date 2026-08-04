@@ -1,7 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
-using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Metrics;
@@ -22,7 +21,7 @@ public sealed class MultiAgentFactory(
 {
     private readonly McpPromptCache _promptCache = new(TimeProvider.System, TimeSpan.FromSeconds(60));
 
-    private ILogger? Logger => loggerFactory?.CreateLogger<MultiAgentFactory>();
+    private readonly ILogger? _logger = loggerFactory?.CreateLogger<MultiAgentFactory>();
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
@@ -48,7 +47,7 @@ public sealed class MultiAgentFactory(
         string userId)
     {
         var spec = AgentSpecProjection.ForSubAgent(
-            definition, conversationId, whitelistPatterns, userId, openRouterConfig, Logger);
+            definition, conversationId, whitelistPatterns, userId, openRouterConfig, _logger);
 
         return Build(spec, approvalHandler);
     }
@@ -56,7 +55,7 @@ public sealed class MultiAgentFactory(
     private DisposableAgent CreateFromDefinition(
         AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
     {
-        var spec = AgentSpecProjection.ForAgent(definition, agentKey, userId, openRouterConfig, Logger);
+        var spec = AgentSpecProjection.ForAgent(definition, agentKey, userId, openRouterConfig, _logger);
 
         return Build(spec, approvalHandler);
     }
@@ -102,32 +101,8 @@ public sealed class MultiAgentFactory(
             TimeProvider.System,
             domainTools,
             domainPrompts,
-            ExtractFilesystemEnabledTools(spec.EnabledFeatures),
             loggerFactory,
             _promptCache);
-    }
-
-    private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
-    {
-        var fsParts = enabledFeatures
-            .Select(f => f.Split('.', 2))
-            .Where(p => p[0].Equals("filesystem", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        if (fsParts.Count == 0)
-        {
-            return new HashSet<string>();
-        }
-
-        if (fsParts.Any(p => p.Length == 1))
-        {
-            return FileSystemToolFeature.AllToolKeys;
-        }
-
-        return fsParts
-            .Where(p => p.Length == 2)
-            .Select(p => p[1])
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     internal IChatClient CreateChatClient(

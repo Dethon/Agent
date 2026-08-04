@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.DTOs;
+using Domain.Tools.FileSystem;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
@@ -30,6 +31,7 @@ internal static class AgentSpecProjection
                 definition.Model, definition.Id, logger),
             McpServerEndpoints = definition.McpServerEndpoints,
             EnabledFeatures = definition.EnabledFeatures,
+            FilesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures),
             WhitelistPatterns = definition.WhitelistPatterns,
             CustomInstructions = definition.CustomInstructions,
             Language = definition.Language,
@@ -46,6 +48,9 @@ internal static class AgentSpecProjection
         ILogger? logger)
     {
         var identity = $"subagent-{definition.Id}";
+        // A subagent cannot spawn subagents.
+        string[] enabledFeatures = [.. definition.EnabledFeatures
+            .Where(f => !f.Equals("subagents", StringComparison.OrdinalIgnoreCase))];
 
         return new AgentSpec
         {
@@ -67,9 +72,8 @@ internal static class AgentSpecProjection
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, identity, logger),
             McpServerEndpoints = definition.McpServerEndpoints,
-            // A subagent cannot spawn subagents.
-            EnabledFeatures = [.. definition.EnabledFeatures
-                .Where(f => !f.Equals("subagents", StringComparison.OrdinalIgnoreCase))],
+            EnabledFeatures = enabledFeatures,
+            FilesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures),
             WhitelistPatterns = whitelistPatterns,
             CustomInstructions = definition.CustomInstructions,
             Language = definition.Language,
@@ -81,5 +85,28 @@ internal static class AgentSpecProjection
             // properties down, the patch is rejected and logged instead of silently winning.
             PatchableModelIds = []
         };
+    }
+
+    private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
+    {
+        var fsParts = enabledFeatures
+            .Select(f => f.Split('.', 2))
+            .Where(p => p[0].Equals("filesystem", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (fsParts.Count == 0)
+        {
+            return new HashSet<string>();
+        }
+
+        if (fsParts.Any(p => p.Length == 1))
+        {
+            return FileSystemToolFeature.AllToolKeys;
+        }
+
+        return fsParts
+            .Where(p => p.Length == 2)
+            .Select(p => p[1])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 }

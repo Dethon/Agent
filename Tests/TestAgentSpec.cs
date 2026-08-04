@@ -17,6 +17,7 @@ internal static class TestAgentSpec
         Model = "test-model",
         McpServerEndpoints = [],
         EnabledFeatures = [],
+        FilesystemEnabledTools = new HashSet<string>(),
         WhitelistPatterns = [],
         KeepsHistory = true,
         PatchableModelIds = []

@@ -58,7 +58,9 @@ public class McpAgentLatencyTests : IAsyncDisposable
             chatClient.Object,
             stateStore.Object,
             _publisher.Object,
-            TimeProvider.System);
+            TimeProvider.System,
+            [],
+            []);
     }
 
     public async ValueTask DisposeAsync()
@@ -127,7 +129,9 @@ public class McpAgentLatencyTests : IAsyncDisposable
             wrappedClient,
             new Mock<IThreadStateStore>().Object,
             _publisher.Object,
-            TimeProvider.System);
+            TimeProvider.System,
+            [],
+            []);
 
         var message = new ChatMessage(ChatRole.User, "hello");
         message.SetConfigPatch(new AgentConfigPatch { Model = "z-ai/glm" });

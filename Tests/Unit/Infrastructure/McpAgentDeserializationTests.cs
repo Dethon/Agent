@@ -23,7 +23,9 @@ public class McpAgentDeserializationTests : IAsyncDisposable
             chatClient.Object,
             stateStore.Object,
             NoOpMetricsPublisher.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            [],
+            []);
     }
 
     public async ValueTask DisposeAsync()

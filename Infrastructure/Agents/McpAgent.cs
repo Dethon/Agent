@@ -62,14 +62,13 @@ public sealed class McpAgent : DisposableAgent
         IThreadStateStore stateStore,
         IMetricsPublisher metricsPublisher,
         TimeProvider timeProvider,
-        IReadOnlyList<AIFunction>? domainTools = null,
-        IReadOnlyList<string>? domainPrompts = null,
-        IReadOnlySet<string>? filesystemEnabledTools = null, // null treated as empty (disabled)
+        IReadOnlyList<AIFunction> domainTools,
+        IReadOnlyList<string> domainPrompts,
         ILoggerFactory? loggerFactory = null,
         McpPromptCache? promptCache = null)
     {
         _endpoints = spec.McpServerEndpoints;
-        _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
+        _filesystemEnabledTools = spec.FilesystemEnabledTools;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger<McpAgent>();
         _name = spec.DisplayName;
@@ -77,8 +76,8 @@ public sealed class McpAgent : DisposableAgent
         _userId = spec.UserId;
         _customInstructions = spec.CustomInstructions;
         _language = spec.Language;
-        _domainTools = domainTools ?? [];
-        _domainPrompts = domainPrompts ?? [];
+        _domainTools = domainTools;
+        _domainPrompts = domainPrompts;
         _reasoningEffort = ParseEffort(spec.ReasoningEffort);
         _timeProvider = timeProvider;
         _metricsPublisher = metricsPublisher;

@@ -84,7 +84,8 @@ public class SubAgentTests(RedisFixture redisFixture)
             stateStore,
             NoOpMetricsPublisher.Instance,
             TimeProvider.System,
-            domainTools: toolFeature.GetTools(featureConfig).ToList());
+            toolFeature.GetTools(featureConfig).ToList(),
+            []);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 

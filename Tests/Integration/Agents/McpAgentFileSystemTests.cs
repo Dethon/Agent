@@ -36,13 +36,15 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
             TestAgentSpec.Default with
             {
                 DisplayName = "test-fs-agent",
-                McpServerEndpoints = [vaultFixture.McpEndpoint]
+                McpServerEndpoints = [vaultFixture.McpEndpoint],
+                FilesystemEnabledTools = enabledTools ?? _allFileSystemTools
             },
             llmClient,
             stateStore,
             NoOpMetricsPublisher.Instance,
             TimeProvider.System,
-            filesystemEnabledTools: enabledTools ?? _allFileSystemTools);
+            [],
+            []);
     }
 
     [SkippableFact]

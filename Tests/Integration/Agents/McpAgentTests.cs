@@ -36,7 +36,9 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
             llmClient,
             stateStore,
             NoOpMetricsPublisher.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            [],
+            []);
     }
 
     [SkippableFact]

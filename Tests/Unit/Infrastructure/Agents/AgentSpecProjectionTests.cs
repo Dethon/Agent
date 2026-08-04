@@ -8,11 +8,15 @@ namespace Tests.Unit.Infrastructure.Agents;
 
 public sealed class AgentSpecProjectionTests
 {
+    private static readonly ProviderRouting _globalRouting = new() { Sort = ProviderSort.Throughput };
+    private static readonly ProviderRouting _declaredRouting = new() { Sort = ProviderSort.Latency };
+
     private static readonly OpenRouterConfig _openRouter = new()
     {
         ApiUrl = "http://test",
         ApiKey = "test-key",
         MaxContextTokens = 200_000,
+        ProviderRouting = _globalRouting,
         PatchableModelIds = ["model-a", "model-b"]
     };
 
@@ -26,11 +30,13 @@ public sealed class AgentSpecProjectionTests
         WhitelistPatterns = ["allow-*"],
         CustomInstructions = "Be helpful",
         Language = "es",
-        EnabledFeatures = ["memory", "subagents"],
+        EnabledFeatures = ["memory", "subagents", "filesystem.text_read"],
         MaxContextTokens = 100_000,
-        ReasoningEffort = "high"
+        ReasoningEffort = "high",
+        ProviderRouting = _declaredRouting
     };
 
+    // Declares no routing, so it inherits the global default that the agent above overrides.
     private static readonly SubAgentDefinition _subAgentDefinition = new()
     {
         Id = "worker",
@@ -40,7 +46,7 @@ public sealed class AgentSpecProjectionTests
         McpServerEndpoints = ["http://tools"],
         CustomInstructions = "Be brief",
         Language = "es",
-        EnabledFeatures = ["memory", "subagents"],
+        EnabledFeatures = ["memory", "subagents", "filesystem.text_read"],
         MaxContextTokens = 50_000,
         ReasoningEffort = "low"
     };
@@ -51,9 +57,21 @@ public sealed class AgentSpecProjectionTests
     private static AgentSpec SubAgentSpec() => AgentSpecProjection.ForSubAgent(
         _subAgentDefinition, "conv-1", ["allow-*"], "fran", _openRouter, null);
 
-    // One row per field the two paths resolve differently, so a new difference is a new row
-    // rather than a new test. A row whose two expectations are equal is a difference this
-    // change removed on purpose, and the table is where that is stated.
+    // The defect this whole change exists to fix: the subagent path built a metrics publisher
+    // and never handed it to the agent, so a subagent published no turn latency at all. Its
+    // events belong to its own identity and to the conversation its parent is running in.
+    [Fact]
+    public void ForSubAgent_ASubAgentDefinition_CarriesItsMetricsIdentityAndTheParentConversation()
+    {
+        var spec = SubAgentSpec();
+
+        spec.MetricsAgentId.ShouldBe("Worker");
+        spec.ConversationId.ShouldBe("conv-1");
+    }
+
+    // One row per field the two paths resolve, so a new difference is a new row rather than a
+    // new test. A row whose two expectations are equal is a difference this change removed on
+    // purpose, and the table is where that is stated.
     public static IEnumerable<object?[]> FieldsToCompare =>
     [
         Row("display name", s => s.DisplayName, "Jack-conv-1", "subagent-worker"),
@@ -65,14 +83,20 @@ public sealed class AgentSpecProjectionTests
         Row("patchable model ids", s => s.PatchableModelIds,
             new[] { "model-a", "model-b" }, Array.Empty<string>()),
         Row("enabled features", s => s.EnabledFeatures,
-            new[] { "memory", "subagents" }, new[] { "memory" }),
+            new[] { "memory", "subagents", "filesystem.text_read" },
+            new[] { "memory", "filesystem.text_read" }),
+        Row("filesystem enabled tools", s => s.FilesystemEnabledTools,
+            new[] { "text_read" }, new[] { "text_read" }),
         Row("whitelist patterns", s => s.WhitelistPatterns,
-            new[] { "allow-*" }, new[] { "allow-*" })
+            new[] { "allow-*" }, new[] { "allow-*" }),
+        // The agent declares its own routing wholesale; the subagent declares none and inherits
+        // the global default. Both arrive on the spec already resolved.
+        Row("provider routing", s => s.ProviderRouting, _declaredRouting, _globalRouting)
     ];
 
     [Theory]
     [MemberData(nameof(FieldsToCompare))]
-    public void Project_FieldsThatDifferBetweenAnAgentAndASubAgent(
+    public void Project_AComparedField_HasTheStatedValueOnEachPath(
         string _, Func<AgentSpec, object?> read, object? expectedForAgent, object? expectedForSubAgent)
     {
         read(AgentSpec()).ShouldBe(expectedForAgent);
@@ -93,16 +117,4 @@ public sealed class AgentSpecProjectionTests
 
     private static string WithoutSpawnId(string routingSessionId) =>
         Regex.Replace(routingSessionId, "(?<=^subagent-[^:]{1,64}:)[0-9a-f]{32}$", "<spawn>");
-
-    // The defect this whole change exists to fix: the subagent path built a metrics publisher
-    // and never handed it to the agent, so a subagent published no turn latency at all. Its
-    // events belong to its own identity and to the conversation its parent is running in.
-    [Fact]
-    public void ForSubAgent_CarriesItsMetricsIdentityAndTheParentConversation()
-    {
-        var spec = SubAgentSpec();
-
-        spec.MetricsAgentId.ShouldBe("Worker");
-        spec.ConversationId.ShouldBe("conv-1");
-    }
 }

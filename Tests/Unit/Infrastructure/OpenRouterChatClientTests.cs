@@ -61,7 +61,9 @@ public sealed class OpenRouterChatClientTests
             client,
             new Mock<IThreadStateStore>().Object,
             NoOpMetricsPublisher.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            [],
+            []);
 
         var message = new ChatMessage(ChatRole.User, "hi");
         message.SetConfigPatch(new AgentConfigPatch { Model = "z-ai/glm-5.2" });
@@ -90,7 +92,9 @@ public sealed class OpenRouterChatClientTests
             client,
             new Mock<IThreadStateStore>().Object,
             NoOpMetricsPublisher.Instance,
-            TimeProvider.System);
+            TimeProvider.System,
+            [],
+            []);
 
         await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hi")]).ToListAsync();
 
