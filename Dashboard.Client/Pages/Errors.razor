@@ -112,7 +112,7 @@
         var dim = Enum.Parse<ErrorDimension>(value);
         Store.SetGroupBy(dim);
         await Storage.SetAsync("errors.groupBy", value);
-        var breakdown = await Api.GetErrorGroupedAsync(dim, _from, _to);
+        var breakdown = await Api.GetGroupedAsync<int>($"errors/by/{dim}", _from, _to);
         Store.SetBreakdown(breakdown ?? []);
     }
 

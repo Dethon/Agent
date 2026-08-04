@@ -49,7 +49,8 @@ public sealed class MetricsHubEffect(
         try
         {
             var s = tokensStore.State;
-            var result = await api.GetTokenGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
+            var result = await api.GetGroupedAsync<decimal>(
+                $"tokens/by/{s.GroupBy}", s.From, s.To, [("metric", s.Metric.ToString())], ct);
             ct.ThrowIfCancellationRequested();
             tokensStore.SetBreakdown(result ?? []);
         }
@@ -62,7 +63,8 @@ public sealed class MetricsHubEffect(
         try
         {
             var s = toolsStore.State;
-            var result = await api.GetToolGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
+            var result = await api.GetGroupedAsync<decimal>(
+                $"tools/by/{s.GroupBy}", s.From, s.To, [("metric", s.Metric.ToString())], ct);
             ct.ThrowIfCancellationRequested();
             toolsStore.SetBreakdown(result ?? []);
         }
@@ -75,7 +77,7 @@ public sealed class MetricsHubEffect(
         try
         {
             var s = errorsStore.State;
-            var result = await api.GetErrorGroupedAsync(s.GroupBy, s.From, s.To, ct);
+            var result = await api.GetGroupedAsync<int>($"errors/by/{s.GroupBy}", s.From, s.To, ct: ct);
             ct.ThrowIfCancellationRequested();
             errorsStore.SetBreakdown(result ?? []);
         }
@@ -88,7 +90,7 @@ public sealed class MetricsHubEffect(
         try
         {
             var s = schedulesStore.State;
-            var result = await api.GetScheduleGroupedAsync(s.GroupBy, s.From, s.To, ct);
+            var result = await api.GetGroupedAsync<int>($"schedules/by/{s.GroupBy}", s.From, s.To, ct: ct);
             ct.ThrowIfCancellationRequested();
             schedulesStore.SetBreakdown(result ?? []);
         }
@@ -101,7 +103,8 @@ public sealed class MetricsHubEffect(
         try
         {
             var s = memoryStore.State;
-            var result = await api.GetMemoryGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
+            var result = await api.GetGroupedAsync<decimal>(
+                $"memory/by/{s.GroupBy}", s.From, s.To, [("metric", s.Metric.ToString())], ct);
             ct.ThrowIfCancellationRequested();
             memoryStore.SetBreakdown(result ?? []);
         }
@@ -114,7 +117,8 @@ public sealed class MetricsHubEffect(
         try
         {
             var s = latencyStore.State;
-            var breakdown = await api.GetLatencyGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
+            var breakdown = await api.GetGroupedAsync<decimal>(
+                $"latency/by/{s.GroupBy}", s.From, s.To, [("metric", s.Metric.ToString())], ct);
             ct.ThrowIfCancellationRequested();
             var trend = await api.GetLatencyTrendAsync(s.Metric, s.From, s.To, ct);
             ct.ThrowIfCancellationRequested();
@@ -130,7 +134,9 @@ public sealed class MetricsHubEffect(
         try
         {
             var s = voiceStore.State;
-            var result = await api.GetVoiceGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, s.Agg, ct);
+            var result = await api.GetGroupedAsync<decimal>(
+                $"voice/by/{s.GroupBy}", s.From, s.To,
+                [("metric", s.Metric.ToString()), ("agg", s.Agg.ToString())], ct);
             ct.ThrowIfCancellationRequested();
             voiceStore.SetBreakdown(result ?? []);
         }

@@ -175,8 +175,9 @@
 
     private async Task ReloadBreakdown()
     {
-        var breakdown = await Api.GetVoiceGroupedAsync(
-            Store.State.GroupBy, Store.State.Metric, _from, _to, Store.State.Agg);
+        var breakdown = await Api.GetGroupedAsync<decimal>(
+            $"voice/by/{Store.State.GroupBy}", _from, _to,
+            [("metric", Store.State.Metric.ToString()), ("agg", Store.State.Agg.ToString())]);
         Store.SetBreakdown(breakdown ?? []);
     }
 

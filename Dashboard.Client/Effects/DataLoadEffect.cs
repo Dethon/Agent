@@ -44,28 +44,33 @@ public sealed class DataLoadEffect(
             var schedulesTask = api.GetSchedulesAsync(from, to);
             var healthTask = api.GetHealthAsync();
 
-            var tokenBreakdownTask = api.GetTokenGroupedAsync(
-                tokensStore.State.GroupBy, tokensStore.State.Metric, from, to);
-            var toolBreakdownTask = api.GetToolGroupedAsync(
-                toolsStore.State.GroupBy, toolsStore.State.Metric, from, to);
-            var errorBreakdownTask = api.GetErrorGroupedAsync(
-                errorsStore.State.GroupBy, from, to);
-            var scheduleBreakdownTask = api.GetScheduleGroupedAsync(
-                schedulesStore.State.GroupBy, from, to);
+            var tokenBreakdownTask = api.GetGroupedAsync<decimal>(
+                $"tokens/by/{tokensStore.State.GroupBy}", from, to,
+                [("metric", tokensStore.State.Metric.ToString())]);
+            var toolBreakdownTask = api.GetGroupedAsync<decimal>(
+                $"tools/by/{toolsStore.State.GroupBy}", from, to,
+                [("metric", toolsStore.State.Metric.ToString())]);
+            var errorBreakdownTask = api.GetGroupedAsync<int>(
+                $"errors/by/{errorsStore.State.GroupBy}", from, to);
+            var scheduleBreakdownTask = api.GetGroupedAsync<int>(
+                $"schedules/by/{schedulesStore.State.GroupBy}", from, to);
             var memoryRecallTask = api.GetMemoryRecallAsync(from, to);
             var memoryExtractionTask = api.GetMemoryExtractionAsync(from, to);
             var memoryDreamingTask = api.GetMemoryDreamingAsync(from, to);
-            var memoryBreakdownTask = api.GetMemoryGroupedAsync(
-                memoryStore.State.GroupBy, memoryStore.State.Metric, from, to);
+            var memoryBreakdownTask = api.GetGroupedAsync<decimal>(
+                $"memory/by/{memoryStore.State.GroupBy}", from, to,
+                [("metric", memoryStore.State.Metric.ToString())]);
 
             var latencyTask = api.GetLatencyAsync(from, to);
-            var latencyBreakdownTask = api.GetLatencyGroupedAsync(
-                latencyStore.State.GroupBy, latencyStore.State.Metric, from, to);
+            var latencyBreakdownTask = api.GetGroupedAsync<decimal>(
+                $"latency/by/{latencyStore.State.GroupBy}", from, to,
+                [("metric", latencyStore.State.Metric.ToString())]);
             var latencyTrendTask = api.GetLatencyTrendAsync(latencyStore.State.Metric, from, to);
 
             var voiceTask = api.GetVoiceEventsAsync(from, to);
-            var voiceBreakdownTask = api.GetVoiceGroupedAsync(
-                voiceStore.State.GroupBy, voiceStore.State.Metric, from, to, voiceStore.State.Agg);
+            var voiceBreakdownTask = api.GetGroupedAsync<decimal>(
+                $"voice/by/{voiceStore.State.GroupBy}", from, to,
+                [("metric", voiceStore.State.Metric.ToString()), ("agg", voiceStore.State.Agg.ToString())]);
 
             await Task.WhenAll(summaryTask, tokensTask, toolsTask, errorsTask,
                 schedulesTask, healthTask, tokenBreakdownTask, toolBreakdownTask,

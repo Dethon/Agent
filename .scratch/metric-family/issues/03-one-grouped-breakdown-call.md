@@ -22,11 +22,11 @@ Behaviour is identical. Every request that goes out today goes out unchanged.
 
 **Blocked by:** 01 — the voice and latency call signatures name the renamed enum.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One grouped call on the API service replaces the seven per-family builders, handling both value types the families return.
-- [ ] The live-update effect, the page-load effect and all seven pages use it.
-- [ ] Every outbound request is byte-for-byte what it is today: same path, same query values, same order of concerns.
-- [ ] The voice aggregation is still passed explicitly with no default anywhere on the path.
-- [ ] The comment recording the aggregation-default bug is gone; the regression test guarding the same bug stays and still passes.
-- [ ] The existing dashboard client test suite passes without changes to its assertions.
+- [x] One grouped call on the API service replaces the seven per-family builders, handling both value types the families return.
+- [x] The live-update effect, the page-load effect and all seven pages use it.
+- [x] Every outbound request is byte-for-byte what it is today: same path, same query values, same order of concerns.
+- [x] The voice aggregation is still passed explicitly with no default anywhere on the path.
+- [x] The comment recording the aggregation-default bug is gone; the regression test guarding the same bug stays and still passes.
+- [x] The existing dashboard client test suite passes without changes to its assertions.

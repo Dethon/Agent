@@ -113,7 +113,7 @@
         var dim = Enum.Parse<ScheduleDimension>(value);
         Store.SetGroupBy(dim);
         await Storage.SetAsync("schedules.groupBy", value);
-        var breakdown = await Api.GetScheduleGroupedAsync(dim, _from, _to);
+        var breakdown = await Api.GetGroupedAsync<int>($"schedules/by/{dim}", _from, _to);
         Store.SetBreakdown(breakdown ?? []);
     }
 

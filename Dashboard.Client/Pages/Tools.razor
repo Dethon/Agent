@@ -165,8 +165,9 @@
 
     private async Task ReloadBreakdown()
     {
-        var breakdown = await Api.GetToolGroupedAsync(
-            Store.State.GroupBy, Store.State.Metric, _from, _to);
+        var breakdown = await Api.GetGroupedAsync<decimal>(
+            $"tools/by/{Store.State.GroupBy}", _from, _to,
+            [("metric", Store.State.Metric.ToString())]);
         Store.SetBreakdown(breakdown ?? []);
     }
 

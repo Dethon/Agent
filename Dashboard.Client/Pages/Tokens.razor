@@ -148,15 +148,17 @@
 
     private async Task ReloadBreakdown()
     {
-        var breakdown = await Api.GetTokenGroupedAsync(
-            Store.State.GroupBy, Store.State.Metric, _from, _to);
+        var breakdown = await Api.GetGroupedAsync<decimal>(
+            $"tokens/by/{Store.State.GroupBy}", _from, _to,
+            [("metric", Store.State.Metric.ToString())]);
         Store.SetBreakdown(breakdown ?? []);
     }
 
     private async Task ReloadTruncationsAsync()
     {
-        var breakdown = await Api.GetTokenGroupedAsync(
-            TokenDimension.Model, TokenMetric.TruncationCount, _from, _to);
+        var breakdown = await Api.GetGroupedAsync<decimal>(
+            $"tokens/by/{TokenDimension.Model}", _from, _to,
+            [("metric", nameof(TokenMetric.TruncationCount))]);
         var total = breakdown is null ? 0 : (long)breakdown.Values.Sum();
         Store.SetTruncations(total);
     }

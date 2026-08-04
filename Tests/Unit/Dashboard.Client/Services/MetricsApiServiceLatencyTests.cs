@@ -33,9 +33,8 @@ public class MetricsApiServiceLatencyTests
         await api.GetLatencyAsync(from, to);
         handler.LastUri.ShouldContain("api/metrics/latency?from=2026-03-01&to=2026-03-02");
 
-        await api.GetLatencyGroupedAsync(LatencyDimension.Stage, Aggregation.P95, from, to);
-        handler.LastUri.ShouldContain("api/metrics/latency/by/Stage?metric=P95");
-
+        // latency/by is a grouped breakdown like every other family's, asserted in
+        // MetricsApiServiceGroupedTests. The trend is latency's alone.
         await api.GetLatencyTrendAsync(Aggregation.P95, from, to);
         handler.LastUri.ShouldContain("api/metrics/latency/trend?metric=P95");
     }
