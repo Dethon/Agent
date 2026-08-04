@@ -551,9 +551,10 @@ public class WyomingSatelliteHostTests
         // belongs to nothing this turn measured — "unknown" is the only honest answer.
         wakes[0].WakeRms.ShouldBe(runPipelineFirst ? 1234.5 : null);
         wakes[0].WakeScore.ShouldBe(runPipelineFirst ? 0.87 : null);
-        // Nothing left over either way: a stash surviving the turn is read by the NEXT wake, which
-        // would then report a loudness measured in a different utterance.
-        sessions.Get("kitchen-01").ShouldNotBeNull().TryConsumeWakeSignal().ShouldBeNull();
+        // Nothing is left over either way, and there is no longer anywhere for it to be left: the
+        // announcement is an argument now, spent by the opening it reaches or discarded by the early
+        // return that refuses a second one. The session that held the stash is gone.
+        sessions.Get("kitchen-01").ShouldNotBeNull();
 
         await host.StopAsync(CancellationToken.None);
         listener.Stop();

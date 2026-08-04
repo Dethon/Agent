@@ -177,29 +177,6 @@ public sealed class SatelliteSession
 
     public bool TryAbortCapture() => Volatile.Read(ref _capture)?.Abort() ?? false;
 
-    // Wake metadata stash: the read loop notes the claim's rms/score; the capture-open path
-    // consumes it single-use onto the WakeTriggered event (same pattern as the dismissal stash).
-    private readonly Lock _wakeSignalGate = new();
-    private (double? Rms, double? Score)? _wakeSignal;
-
-    public void NoteWakeSignal(double? rms, double? score)
-    {
-        lock (_wakeSignalGate)
-        {
-            _wakeSignal = (rms, score);
-        }
-    }
-
-    public (double? Rms, double? Score)? TryConsumeWakeSignal()
-    {
-        lock (_wakeSignalGate)
-        {
-            var value = _wakeSignal;
-            _wakeSignal = null;
-            return value;
-        }
-    }
-
     // A connection that has ever reported wake_rms runs post-arbitration firmware and understands
     // pause-satellite; anything else gets the legacy transcript abort (audible done cue).
     public bool SupportsPause { get; private set; }

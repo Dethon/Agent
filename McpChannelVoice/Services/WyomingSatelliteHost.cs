@@ -207,43 +207,30 @@ public sealed class WyomingSatelliteHost(
                         // Waking the satellite during an active alert dismisses it — no spoken command
                         // needed (the satellite mics only on local wake).
                         session.NoteDismissals(alerts.Acknowledge(id), time.GetUtcNow());
-                        var wake = ReadWakeAnnouncement(evt.Data);
+                        var wake = WakeAnnouncement.Read(evt.Data);
                         if (wake.Rms is not null)
                         {
                             session.MarkSupportsPause();
                         }
                         wakeAnnounced = true;
-                        // Recorded before OnWake, which opens the capture on this thread and reads
-                        // the memory back through the same factory.
-                        gates.RecordRoomLevel(id, wake.RoomRms ?? 0);
-                        // Stashed before OnWake, which opens the capture synchronously on this thread
-                        // and consumes the stash onto WakeTriggered.
-                        session.NoteWakeSignal(wake.Rms, wake.Score);
                         arbiter.Claim(id, wake.Rms, wake.Score, wake.Source);
-                        coordinator.OnWake();
-                        // OnWake opens the capture on this thread and consumes the stash — unless a
-                        // turn was already open, in which case it no-ops and nothing consumes it.
-                        // Anything still stashed here therefore belongs to a turn that never used
-                        // it, and the next wake would report it as its own loudness. Drop it: a
-                        // missing WakeRms reads as "unknown", a wrong one silently skews the
-                        // RmsOffsetDb calibration it feeds.
-                        session.TryConsumeWakeSignal();
+                        coordinator.OnWake(wake);
                         break;
 
                     // Legacy/foreign satellites announce the mic stream with audio-start, so it still
-                    // has to open a turn. It carries no wake metadata, and deliberately neither
-                    // stashes nor claims once run-pipeline has announced this turn: noting (null,
-                    // null) would erase the loudness WakeTriggered reports for RmsOffsetDb
-                    // calibration, and a null-rms claim only survives the arbiter's first-wins
-                    // in-window dedupe if run-pipeline happens to arrive first — a satellite that
-                    // reordered the two would silently lose every steal.
+                    // has to open a turn. It carries no wake metadata, and deliberately does not
+                    // claim once run-pipeline has announced this turn: a null-rms claim only
+                    // survives the arbiter's first-wins in-window dedupe if run-pipeline happens to
+                    // arrive first — a satellite that reordered the two would silently lose every
+                    // steal. It announces the wake with no announcement, and the coordinator's
+                    // early return discards a run-pipeline that arrives second.
                     case "audio-start":
                         session.NoteDismissals(alerts.Acknowledge(id), time.GetUtcNow());
                         if (!wakeAnnounced)
                         {
                             arbiter.Claim(id, null, null, "wake");
                         }
-                        coordinator.OnWake();
+                        coordinator.OnWake(null);
                         break;
 
                     case "audio-chunk":
@@ -299,20 +286,12 @@ public sealed class WyomingSatelliteHost(
     {
         var capture = new CaptureSession(
             session, gates, time, voiceSettings.Arbitration.HistorySpan,
-            onOpened: isFollowUp =>
-            {
-                if (isFollowUp)
-                {
-                    // A follow-up has no wake of its own, so consuming the stash here would either
-                    // report nothing or, worse, attribute the wake turn's loudness to it.
-                    return;
-                }
-                // On-device wake started this conversation; the read loop stashed what the satellite
-                // reported about it, and this is the single-use consumer.
-                var wake = session.TryConsumeWakeSignal();
-                PublishVoiceMetric(VoiceMetric.WakeTriggered, session,
-                    wakeRms: wake?.Rms, wakeScore: wake?.Score);
-            });
+            // Reached only by a wake turn, carrying what the satellite reported about the wake that
+            // opened it. A follow-up has no counterpart, so it cannot report a loudness it never
+            // measured.
+            onWakeTurn: announcement => PublishVoiceMetric(
+                VoiceMetric.WakeTriggered, session,
+                wakeRms: announcement?.Rms, wakeScore: announcement?.Score));
 
         return new FollowUpConversation(followUp, time)
         {
@@ -613,22 +592,6 @@ public sealed class WyomingSatelliteHost(
         ["timestamp"] = 0,
         ["alert"] = alert
     };
-
-    internal readonly record struct WakeAnnouncement(double? Rms, double? Score, string Source, double? RoomRms = null);
-
-    // Wake metadata is peer-supplied and optional: pre-arbitration firmware sends run-pipeline with
-    // no data object at all, and Wyoming has no schema to stop a peer sending the wrong types. Every
-    // read here has to survive absent, null and wrong-typed values, because an exception on the read
-    // loop tears down the satellite connection mid-utterance.
-    internal static WakeAnnouncement ReadWakeAnnouncement(JsonObject data) => new(
-        JsonNumber.ReadDouble(data, "wake_rms"),
-        JsonNumber.ReadDouble(data, "wake_score"),
-        data["source"] is JsonValue value
-        && value.TryGetValue<string>(out var source)
-        && !string.IsNullOrWhiteSpace(source)
-            ? source
-            : "wake",
-        JsonNumber.ReadDouble(data, "room_rms"));
 
     private static (int Rate, int Width, int Channels) FormatOf(JsonObject data) =>
     (

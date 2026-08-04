@@ -15,22 +15,38 @@ public sealed class CaptureSession(
     SilenceGateFactory gates,
     TimeProvider time,
     TimeSpan historySpan,
-    // Called with isFollowUp as each capture opens. The wake turn is the one the connection host
-    // acts on: it is where the satellite's stashed wake metadata is consumed, and a follow-up has no
-    // wake of its own.
-    Action<bool> onOpened)
+    // Called as a wake turn opens, with what the satellite reported about the wake. There is no
+    // follow-up counterpart on purpose: a follow-up has no wake of its own, and this hook is where
+    // the wake metric is published.
+    Action<WakeAnnouncement?> onWakeTurn)
 {
-    public UtteranceCapture Open(bool isFollowUp)
+    public UtteranceCapture OpenWakeTurn(WakeAnnouncement? announcement)
     {
         // The turn opens here, so the playback loop can report turn -> first-audio latency.
         session.MarkTurnStart(time.GetTimestamp());
-        onOpened(isFollowUp);
-        return session.OpenCapture(
+        onWakeTurn(announcement);
+        // Paid in immediately before the gate below reads it back, so "record before the gate is
+        // built" is a fact about this method rather than an order two files have to agree on. A
+        // legacy satellite sends nothing and records a zero, which the room-noise memory drops as an
+        // absent measurement rather than treating as a silent room.
+        gates.RecordRoomLevel(session.SatelliteId, announcement?.RoomRms ?? 0);
+        return Open();
+    }
+
+    // Takes nothing, and never will: a follow-up window reopens the microphone wake-free, so there
+    // is no announcement to carry and no wake to report.
+    public UtteranceCapture OpenFollowUpTurn()
+    {
+        session.MarkTurnStart(time.GetTimestamp());
+        return Open();
+    }
+
+    private UtteranceCapture Open() =>
+        session.OpenCapture(
             gates.Create(session.SatelliteId, session.Config),
             // Rule B asks an already-open capture, retrospectively, what it heard during another
             // satellite's wake-word span — so every capture has to remember.
             new ChunkHistory(time, historySpan));
-    }
 
     // Returns the gate statistics frozen at this instant. The endpointing tail is what anchors
     // speech end and it must not be re-read later: Feed keeps accepting frames until the satellite

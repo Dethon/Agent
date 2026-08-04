@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
@@ -57,14 +58,17 @@ public sealed class FollowUpConversation(
     public Func<UtteranceCapture, CancellationToken, Task<bool>> EarlyReject { get; init; } =
         (_, _) => Task.FromResult(false);
 
-    public void OnWake()
+    // The announcement arrives as an argument and is spent here. A wake that finds a turn already
+    // open returns without opening one, which discards the announcement with it — there is nothing
+    // left over for the next turn to report as its own loudness.
+    public void OnWake(WakeAnnouncement? announcement)
     {
         if (_active || _disposed.IsCancellationRequested)
         {
             return;
         }
         _active = true;
-        _first = Capture.Open(isFollowUp: false);
+        _first = Capture.OpenWakeTurn(announcement);
         _wakes.Writer.TryWrite(true);
     }
 
@@ -166,7 +170,7 @@ public sealed class FollowUpConversation(
                 await OnFollowUpWindow(ct);
                 // Announced before the capture opens, so the light and the live mic agree.
                 await Capture.ListeningStartedAsync(ct);
-                capture = Capture.Open(isFollowUp: true);
+                capture = Capture.OpenFollowUpTurn();
             }
         }
         finally

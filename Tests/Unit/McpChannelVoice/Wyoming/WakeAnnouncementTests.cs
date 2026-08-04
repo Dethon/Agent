@@ -1,18 +1,18 @@
 using System.Text.Json.Nodes;
-using McpChannelVoice.Services;
+using McpChannelVoice.Services.WyomingProtocol;
 using Shouldly;
 
-namespace Tests.Unit.McpChannelVoice;
+namespace Tests.Unit.McpChannelVoice.Wyoming;
 
 // The wake metadata on run-pipeline is peer-supplied and optional, and it is read on the Wyoming
 // read loop — where an exception drops the satellite connection mid-utterance. Every shape a
 // non-conforming or pre-arbitration satellite can send has to come back as a value, never a throw.
-public class WyomingSatelliteHostWakeAnnouncementTests
+public class WakeAnnouncementTests
 {
     [Fact]
-    public void ReadWakeAnnouncement_WakeFrame_ReturnsReportedSignalAndSource()
+    public void Read_WakeFrame_ReturnsReportedSignalAndSource()
     {
-        var wake = WyomingSatelliteHost.ReadWakeAnnouncement(
+        var wake = WakeAnnouncement.Read(
             new JsonObject { ["source"] = "wake", ["wake_rms"] = 1234.5, ["wake_score"] = 0.87 });
 
         wake.Rms.ShouldBe(1234.5);
@@ -21,9 +21,9 @@ public class WyomingSatelliteHostWakeAnnouncementTests
     }
 
     [Fact]
-    public void ReadWakeAnnouncement_ButtonFrame_ReportsButtonSourceWithNoSignal()
+    public void Read_ButtonFrame_ReportsButtonSourceWithNoSignal()
     {
-        var wake = WyomingSatelliteHost.ReadWakeAnnouncement(new JsonObject { ["source"] = "button" });
+        var wake = WakeAnnouncement.Read(new JsonObject { ["source"] = "button" });
 
         wake.Rms.ShouldBeNull();
         wake.Score.ShouldBeNull();
@@ -33,9 +33,9 @@ public class WyomingSatelliteHostWakeAnnouncementTests
     // Pre-arbitration firmware sends run-pipeline with no data at all: null signals (which rank
     // last in PickWinner) and the default source, not a torn-down connection.
     [Fact]
-    public void ReadWakeAnnouncement_EmptyData_ReturnsNoSignalAndDefaultsToWake()
+    public void Read_EmptyData_ReturnsNoSignalAndDefaultsToWake()
     {
-        var wake = WyomingSatelliteHost.ReadWakeAnnouncement([]);
+        var wake = WakeAnnouncement.Read([]);
 
         wake.Rms.ShouldBeNull();
         wake.Score.ShouldBeNull();
@@ -48,18 +48,18 @@ public class WyomingSatelliteHostWakeAnnouncementTests
     // cannot — its first frame is already the turn. A satellite that doesn't send it reads as null
     // and the hub falls back to what its own captures have learned.
     [Fact]
-    public void ReadWakeAnnouncement_WakeFrameWithRoomLevel_ReturnsTheMeasuredRoom()
+    public void Read_WakeFrameWithRoomLevel_ReturnsTheMeasuredRoom()
     {
-        var wake = WyomingSatelliteHost.ReadWakeAnnouncement(
+        var wake = WakeAnnouncement.Read(
             new JsonObject { ["source"] = "wake", ["wake_rms"] = 1234.5, ["room_rms"] = 68.25 });
 
         wake.RoomRms.ShouldBe(68.25);
     }
 
     [Fact]
-    public void ReadWakeAnnouncement_NonNumericSignals_ReturnsNoSignal()
+    public void Read_NonNumericSignals_ReturnsNoSignal()
     {
-        var wake = WyomingSatelliteHost.ReadWakeAnnouncement(new JsonObject
+        var wake = WakeAnnouncement.Read(new JsonObject
         {
             ["wake_rms"] = "loud",
             ["wake_score"] = JsonValue.Create((object?)null)
@@ -76,18 +76,18 @@ public class WyomingSatelliteHostWakeAnnouncementTests
     [InlineData(true)]
     [InlineData("")]
     [InlineData("   ")]
-    public void ReadWakeAnnouncement_UnusableSource_FallsBackToWake(object source)
+    public void Read_UnusableSource_FallsBackToWake(object source)
     {
-        var wake = WyomingSatelliteHost.ReadWakeAnnouncement(
+        var wake = WakeAnnouncement.Read(
             new JsonObject { ["source"] = JsonValue.Create(source) });
 
         wake.Source.ShouldBe("wake");
     }
 
     [Fact]
-    public void ReadWakeAnnouncement_ObjectSource_FallsBackToWake()
+    public void Read_ObjectSource_FallsBackToWake()
     {
-        var wake = WyomingSatelliteHost.ReadWakeAnnouncement(
+        var wake = WakeAnnouncement.Read(
             new JsonObject { ["source"] = new JsonObject { ["kind"] = "wake" } });
 
         wake.Source.ShouldBe("wake");
