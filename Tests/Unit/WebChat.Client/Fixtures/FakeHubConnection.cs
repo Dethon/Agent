@@ -11,8 +11,6 @@ public sealed class FakeHubConnection : IChatHubConnection
     private readonly Dictionary<string, Func<object?[], object?>> _answers = [];
     private readonly List<HubCall> _calls = [];
 
-    public HubConnection? Connection => null;
-
     public IReadOnlyList<HubCall> Calls => _calls;
 
     public void Answer(string methodName, object? answer) => _answers[methodName] = _ => answer;

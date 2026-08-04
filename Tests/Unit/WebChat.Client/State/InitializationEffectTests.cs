@@ -236,7 +236,7 @@ public sealed class InitializationEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task RegisterUserAsync_NoHubConnection_DoesNothing()
+    public async Task RegisterUserAsync_WithASelectedUser_GoesThroughTheSessionService()
     {
         _dispatcher.Dispatch(new SelectUser("user-1"));
         _calls.Reset();

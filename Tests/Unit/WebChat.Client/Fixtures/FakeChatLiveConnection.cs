@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 
 namespace Tests.Unit.WebChat.Client.Fixtures;
@@ -6,8 +5,6 @@ namespace Tests.Unit.WebChat.Client.Fixtures;
 public sealed class FakeChatLiveConnection(CallRecorder? recorder = null) : IChatLiveConnection
 {
     public int ConnectCalls { get; private set; }
-
-    public HubConnection? HubConnection => null;
 
     public Task ConnectAsync()
     {

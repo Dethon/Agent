@@ -32,7 +32,6 @@ public sealed class SignalRHubConnectionFactory(
 
 internal sealed class SignalRHubConnection(HubConnection connection) : IChatHubConnection
 {
-    public HubConnection? Connection => connection;
     public HubConnectionState State => connection.State;
 
     public event Func<Exception?, Task>? Closed

@@ -21,8 +21,6 @@ public sealed class ChatLiveConnection(
     private IChatHubConnection? _connection;
     private bool _disposed;
 
-    public HubConnection? HubConnection => _connection?.Connection;
-
     // The one place that decides whether a hub call can be made. A connection that is null,
     // still connecting or reconnecting cannot carry one — the last two are present and not
     // live, which is the window the old per-call null guards missed entirely.

@@ -1,13 +1,7 @@
-using Microsoft.AspNetCore.SignalR.Client;
-
 namespace WebChat.Client.Contracts;
 
 public interface IChatLiveConnection : IAsyncDisposable
 {
-    // Retained on purpose and temporarily: the callers that have not moved onto the verbs
-    // below still reach through it. Removing it is the last ticket of this feature.
-    HubConnection? HubConnection { get; }
-
     Task ConnectAsync();
     Task ReconnectIfNeededAsync();
 
