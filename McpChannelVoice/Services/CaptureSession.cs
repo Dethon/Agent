@@ -29,6 +29,12 @@ public sealed class CaptureSession(
         // built" is a fact about this method rather than an order two files have to agree on. A
         // legacy satellite sends nothing and records a zero, which the room-noise memory drops as an
         // absent measurement rather than treating as a silent room.
+        //
+        // It follows that a wake frame arriving while a turn is already open pays nothing in — the
+        // coordinator returns before reaching here. That is the trade for the memory having exactly
+        // one payment site: a reading is kept only when it describes the capture it is about to cap,
+        // and the satellite that sends a second announcement for a turn it already opened is the
+        // only one that loses a sample.
         gates.RecordRoomLevel(session.SatelliteId, announcement?.RoomRms ?? 0);
         return Open();
     }

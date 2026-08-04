@@ -45,7 +45,7 @@ public sealed class SatelliteConnection(
     {
         try
         {
-            Register(ct);
+            Start(ct);
             await Writer(WyomingEvent.Header("run-satellite", new JsonObject()), ct);
 
             await foreach (var evt in events.WithCancellation(ct))
@@ -60,7 +60,9 @@ public sealed class SatelliteConnection(
         }
     }
 
-    private void Register(CancellationToken ct)
+    // Registration and launch together: the arbiter handle and the two background tasks all close
+    // over the same writer, and a partial one of these is what the drain's null checks exist for.
+    private void Start(CancellationToken ct)
     {
         // The Wyoming client lives only in the host's per-connection scope, so hand the session a
         // writer for control events raised from outside it — the transcript fast-path and the

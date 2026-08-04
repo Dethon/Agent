@@ -275,7 +275,7 @@ public class SatelliteConnectionTests
         }
     }
 
-    private static async Task StopAsync(SatelliteConnection connection, Task run, CancellationTokenSource cts)
+    private static async Task StopAsync(Task run, CancellationTokenSource cts)
     {
         await cts.CancelAsync();
         try
@@ -327,7 +327,7 @@ public class SatelliteConnectionTests
         // uncapped floor endpoints inside the quieter clause (or drops the turn as no-speech).
         h.ChunksTranscribed.ShouldBeGreaterThanOrEqualTo(12);
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     // Only run-pipeline carries the wake metadata; a satellite that also announces its mic stream
@@ -378,7 +378,7 @@ public class SatelliteConnectionTests
         wakes[0].WakeRms.ShouldBe(runPipelineFirst ? 1234.5 : null);
         wakes[0].WakeScore.ShouldBe(runPipelineFirst ? 0.87 : null);
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     [Fact]
@@ -408,7 +408,7 @@ public class SatelliteConnectionTests
         h.WrittenOfType("transcript")[0].Data["text"]!.GetValue<string>().ShouldBe("");
         h.Emitter.Received().Count.ShouldBe(0);
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     [Fact]
@@ -430,7 +430,7 @@ public class SatelliteConnectionTests
         await UntilAsync(() => alertCts.IsCancellationRequested, TimeSpan.FromSeconds(5));
         alertCts.IsCancellationRequested.ShouldBeTrue();
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     // The rule the unwind split exists to carry. A satellite whose link just died must stop being an
@@ -510,7 +510,7 @@ public class SatelliteConnectionTests
         afterStt.ShouldBeGreaterThanOrEqualTo(TimeSpan.Zero);
         afterStt.ShouldBeLessThan(TimeSpan.FromMilliseconds(500));
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     [Fact]
@@ -547,7 +547,7 @@ public class SatelliteConnectionTests
         h.SttOptions.ShouldNotBeNull();
         h.SttOptions!.TargetSpeaker.ShouldBe("fran");
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     [Fact]
@@ -604,7 +604,7 @@ public class SatelliteConnectionTests
 
         h.Emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     [Fact]
@@ -659,7 +659,7 @@ public class SatelliteConnectionTests
         h.PublishedOf(VoiceMetric.UtteranceRejected)
             .Any(e => e.Outcome == "unknown_speaker_early").ShouldBeFalse();
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     [Fact]
@@ -716,7 +716,7 @@ public class SatelliteConnectionTests
 
         h.Emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     [Fact]
@@ -760,7 +760,7 @@ public class SatelliteConnectionTests
         await h.Emitter.ReceivedAtLeastAsync(2, TimeSpan.FromSeconds(15), cts.Token);
         h.Emitter.Received().Count.ShouldBe(2);
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     [Fact]
@@ -799,7 +799,7 @@ public class SatelliteConnectionTests
         h.WrittenOfType("transcript")[0].Data["text"]!.GetValue<string>().ShouldBe("");
         h.Emitter.Received().Count.ShouldBe(1); // the silent follow-up was never dispatched
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     [Fact]
@@ -821,7 +821,7 @@ public class SatelliteConnectionTests
         await UntilAsync(() => alertCts.IsCancellationRequested, TimeSpan.FromSeconds(5));
         alertCts.IsCancellationRequested.ShouldBeTrue(); // the alert was acknowledged
 
-        await StopAsync(connection, run, cts);
+        await StopAsync(run, cts);
     }
 
     // The host's reconnect loop is built on the run throwing: a link that dies has to surface as an

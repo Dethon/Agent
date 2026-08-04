@@ -13,17 +13,17 @@ reaching across the seam for it.
 
 **Blocked by:** None — can start immediately. Runs in parallel with ticket 02.
 
-**Status:** done
+**Status:** resolved
 
-- [ ] The satellite session exposes one operation that takes the dismissed alerts and the
+- [x] The satellite session exposes one operation that takes the dismissed alerts and the
       current time, composes the description and records it, replacing the host's private
       helper.
-- [ ] The operation is a no-op when there are no dismissed alerts, matching the helper's
+- [x] The operation is a no-op when there are no dismissed alerts, matching the helper's
       current early return.
-- [ ] All three host call sites — the wake frame, the legacy audio-start frame, and the
+- [x] All three host call sites — the wake frame, the legacy audio-start frame, and the
       post-dispatch fallback — go through it.
-- [ ] The description format is unchanged: each alert rendered as its lowercased kind
+- [x] The description format is unchanged: each alert rendered as its lowercased kind
       followed by its quoted text, several joined with "and".
-- [ ] The existing satellite session dismissal-stash unit tests are extended to cover the
+- [x] The existing satellite session dismissal-stash unit tests are extended to cover the
       new operation, including the multiple-alert join and the empty case.
-- [ ] The alert-acknowledgement integration tests pass unchanged.
+- [x] The alert-acknowledgement integration tests pass unchanged.

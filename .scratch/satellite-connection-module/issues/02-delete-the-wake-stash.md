@@ -23,30 +23,38 @@ throughout and is the evidence that the behaviour held.
 
 **Blocked by:** None — can start immediately. Runs in parallel with ticket 01.
 
-**Status:** done
+**Status:** resolved
 
-- [ ] The **wake announcement** type and its defensive parser move to the Wyoming protocol
+- [x] The **wake announcement** type and its defensive parser move to the Wyoming protocol
       area, alongside the other wire types, with the parser exposed as a static read
       operation on the type.
-- [ ] The parser's tolerance is unchanged and still covers absent, null and wrong-typed
+- [x] The parser's tolerance is unchanged and still covers absent, null and wrong-typed
       values for every field, including a missing data object entirely. Its existing unit
       tests move with it under a name matching its new owner, with no assertion changed.
-- [ ] The capture session's single open operation is replaced by two named ones: opening a
+- [x] The capture session's single open operation is replaced by two named ones: opening a
       wake turn, which takes the announcement, and opening a follow-up turn, which takes
       nothing. The follow-up opening never publishes a wake-triggered metric.
-- [ ] Recording the satellite's reported room level moves into the wake-turn opening,
+- [x] Recording the satellite's reported room level moves into the wake-turn opening,
       immediately before the gate is built, beside the capture-close recording already
       there.
-- [ ] The conversation coordinator's wake announcement takes the announcement and passes
+- [x] The conversation coordinator's wake announcement takes the announcement and passes
       it to the wake-turn opening. Its early return when a turn is already open discards
       the argument, which is what replaces the explicit drop step.
-- [ ] The satellite session's wake stash is deleted — both the note operation and the
+- [x] The satellite session's wake stash is deleted — both the note operation and the
       single-use consume operation. Nothing in the codebase references them afterwards.
-- [ ] The legacy audio-start path announces the wake with no announcement, records a zero
+- [x] The legacy audio-start path announces the wake with no announcement, records a zero
       room level, and behaves identically — the room-noise memory already discards a
       non-positive sample as an absent measurement rather than a silent room. Cover this
       with a test.
-- [ ] The conversation coordinator's unit tests are updated for the two named openings and
-      otherwise unchanged.
-- [ ] The whole voice integration suite passes without modification, including the
-      multi-satellite arbitration tests.
+- [x] The conversation coordinator's unit tests are updated for the two named openings and
+      otherwise unchanged. *Four assertions changed shape:* they observed a follow-up opening
+      through the old single `onOpened` callback, which the split removes. Each now observes
+      the same behaviour through the coordinator's own surface (the live capture, the
+      dispatch count, the wake-hook count) rather than a marker the production code no longer
+      emits.
+- [x] The whole voice integration suite passes without modification, including the
+      multi-satellite arbitration tests. *One line had to give:* the frame-order test read the
+      stash back through `TryConsumeWakeSignal`, which this ticket deletes, so the two boxes
+      contradict each other. The claim it made — nothing is left over for the next wake — is
+      now structurally impossible and covered directly by the coordinator's
+      `OnWake_TurnAlreadyOpen_DiscardsTheSecondAnnouncement`.

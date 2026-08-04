@@ -127,8 +127,8 @@ public sealed class WyomingSatelliteHost(
 
     private async Task RunConnectionAsync(string id, SatelliteConfig config, string host, int port, CancellationToken ct)
     {
-        // Dial, create, run. The client stays here so dialling and disposal stay together; the
-        // connection borrows only the two halves of the wire it needs.
+        // The client stays in this scope so dialling and disposal stay together; the connection
+        // borrows only the two halves of the wire it needs.
         await using var client = new WyomingClient();
         await client.ConnectAsync(host, port, ct);
         logger.LogInformation("Connected to satellite {Id} at {Host}:{Port}", id, host, port);
