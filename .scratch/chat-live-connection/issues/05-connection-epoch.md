@@ -27,17 +27,17 @@ ADR — this is cheap to reverse.
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The connection state carries an epoch, incremented every time the client
+- [x] The connection state carries an epoch, incremented every time the client
       becomes live
-- [ ] The epoch does not advance on the connecting or disconnected transitions
-- [ ] The reconnection effect reloads on a higher epoch and not on the first one it
+- [x] The epoch does not advance on the connecting or disconnected transitions
+- [x] The reconnection effect reloads on a higher epoch and not on the first one it
       sees, replacing both of its booleans
-- [ ] A test covers a rebuild in which no disconnected status is ever observed, and
+- [x] A test covers a rebuild in which no disconnected status is ever observed, and
       the reload still happens
-- [ ] The synthesized close dispatch in teardown is removed, along with the ordering
+- [x] The synthesized close dispatch in teardown is removed, along with the ordering
       rule it existed for
-- [ ] The reload body — refetch topics, reload selected history, restart session,
+- [x] The reload body — refetch topics, reload selected history, restart session,
       resume streams — is unchanged
-- [ ] A comment on the epoch records why it exists
+- [x] A comment on the epoch records why it exists

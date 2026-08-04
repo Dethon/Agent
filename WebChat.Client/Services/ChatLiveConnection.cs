@@ -211,6 +211,7 @@ public sealed class ChatLiveConnection(
         // let the online/visibility listeners retry on the next resume rather than getting
         // stuck — and don't let the failure escape uncaught into OnPageVisible.
         await TearDownAsync();
+        _connectionEventDispatcher.HandleClosed(null);
         OnStateChanged?.Invoke();
     }
 
@@ -246,12 +247,6 @@ public sealed class ChatLiveConnection(
         eventBinder.Unbind();
         await _connection.DisposeAsync();
         _connection = null;
-
-        // Drive the Disconnected transition deterministically and in order on this task
-        // before reconnecting. ReconnectionEffect only arms its reload on a
-        // Disconnected/Reconnecting status, so without this the topic/history/stream reload
-        // could be skipped when the new connection's Connected dispatch wins the race.
-        _connectionEventDispatcher.HandleClosed(null);
     }
 
     public async ValueTask DisposeAsync()

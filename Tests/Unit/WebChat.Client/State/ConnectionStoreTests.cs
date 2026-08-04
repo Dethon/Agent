@@ -146,6 +146,60 @@ public class ConnectionStoreTests : IDisposable
     }
 
     [Fact]
+    public void Initial_HasNoEpoch()
+    {
+        _store.State.Epoch.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Connected_AdvancesTheEpoch()
+    {
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        _store.State.Epoch.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Reconnected_AdvancesTheEpoch()
+    {
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        _store.State.Epoch.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Connecting_DoesNotAdvanceTheEpoch()
+    {
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        _dispatcher.Dispatch(new ConnectionConnecting());
+
+        _store.State.Epoch.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Reconnecting_DoesNotAdvanceTheEpoch()
+    {
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+
+        _store.State.Epoch.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Closed_DoesNotAdvanceTheEpoch()
+    {
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        _dispatcher.Dispatch(new ConnectionClosed("hub dropped"));
+
+        _store.State.Epoch.ShouldBe(1);
+    }
+
+    [Fact]
     public void FullLifecycle_ConnectDropReconnectRecover()
     {
         _dispatcher.Dispatch(new ConnectionConnecting());

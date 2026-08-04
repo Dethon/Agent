@@ -112,6 +112,20 @@ public sealed class ChatLiveConnectionTests : IDisposable
     }
 
     [Fact]
+    public async Task ReconnectIfNeededAsync_AfterRebuild_AdvancesTheEpochWithoutADisconnectedStatus()
+    {
+        await _liveConnection.ConnectAsync();
+        var statuses = new List<ConnectionStatus>();
+        using var subscription = _connectionStore.StateObservable.Subscribe(state => statuses.Add(state.Status));
+        _factory.Created.Single().State = HubConnectionState.Reconnecting;
+
+        await _liveConnection.ReconnectIfNeededAsync();
+
+        _connectionStore.State.Epoch.ShouldBe(2);
+        statuses.ShouldNotContain(ConnectionStatus.Disconnected);
+    }
+
+    [Fact]
     public async Task ConnectAsync_FirstConnect_DoesNotRunSessionRecovery()
     {
         await _liveConnection.ConnectAsync();

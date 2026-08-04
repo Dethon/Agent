@@ -39,7 +39,8 @@ public sealed class ConnectionStore : IDisposable
             Status = ConnectionStatus.Connected,
             LastConnected = DateTime.UtcNow,
             ReconnectAttempts = 0,
-            Error = null
+            Error = null,
+            Epoch = state.Epoch + 1
         },
 
         ConnectionReconnecting => state with
@@ -53,7 +54,8 @@ public sealed class ConnectionStore : IDisposable
             Status = ConnectionStatus.Connected,
             LastConnected = DateTime.UtcNow,
             ReconnectAttempts = 0,
-            Error = null
+            Error = null,
+            Epoch = state.Epoch + 1
         },
 
         ConnectionClosed a => state with

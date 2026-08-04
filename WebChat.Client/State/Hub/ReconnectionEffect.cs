@@ -13,8 +13,7 @@ public sealed class ReconnectionEffect : IDisposable
     private readonly IDisposable _subscription;
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
-    private bool _wasEverConnected;
-    private bool _wasDisconnectedSinceLastConnect;
+    private int? _lastReloadedEpoch;
 
     public ReconnectionEffect(
         ConnectionStore connectionStore,
@@ -31,33 +30,21 @@ public sealed class ReconnectionEffect : IDisposable
         _subscription = connectionStore.StateObservable
             .Subscribe(state =>
             {
-                if (state.Status is ConnectionStatus.Reconnecting or ConnectionStatus.Disconnected)
-                {
-                    _wasDisconnectedSinceLastConnect = true;
-                    return;
-                }
-
-                var isNowConnected = state.Status == ConnectionStatus.Connected;
-                if (!isNowConnected)
+                if (state.Status != ConnectionStatus.Connected)
                 {
                     return;
                 }
 
-                // First connection - just mark as connected, don't reload
-                if (!_wasEverConnected)
-                {
-                    _wasEverConnected = true;
-                    return;
-                }
+                // The first epoch seen is the connection this client started on, so there is
+                // nothing to catch up on. Every later one is an interruption, whether or not
+                // a disconnected status was ever observed in between.
+                var isCatchUp = _lastReloadedEpoch is { } lastEpoch && state.Epoch > lastEpoch;
+                _lastReloadedEpoch = state.Epoch;
 
-                // Reconnection after being disconnected - reload history
-                if (!_wasDisconnectedSinceLastConnect)
+                if (isCatchUp)
                 {
-                    return;
+                    _ = HandleReconnectedAsync(topicsStore, spaceStore, sessionService, streamResumeService);
                 }
-
-                _wasDisconnectedSinceLastConnect = false;
-                _ = HandleReconnectedAsync(topicsStore, spaceStore, sessionService, streamResumeService);
             });
     }
 
