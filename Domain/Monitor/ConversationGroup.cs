@@ -1,0 +1,303 @@
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Threading.Channels;
+using Domain.Agents;
+using Domain.Contracts;
+using Domain.DTOs;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
+using Domain.Extensions;
+using Domain.Metrics;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
+
+namespace Domain.Monitor;
+
+// Everything one conversation and one agent own for the length of the group: the pending-turn
+// queue, the command dispatch, the delivery anchors, the agent, the restored thread and the
+// session warmup. The order they are established in is the order of the statements below, so
+// changing it is a local edit rather than an argument spread across ChatMonitor.
+internal sealed class ConversationGroup(
+    AgentKey agentKey,
+    IAgentFactory agentFactory,
+    DeliveryTargetResolver targetResolver,
+    ChatThreadResolver threadResolver,
+    IMetricsPublisher metricsPublisher,
+    IMemoryRecallHook? memoryRecallHook) : IAsyncDisposable
+{
+    // The outer token. Establishing the group runs on it rather than on the per-turn token,
+    // because a /cancel there would throw out of a stage nothing downstream can absorb.
+    private CancellationToken _groupCt;
+
+    // The group token: the outer one linked with the thread context's, so a /cancel or /clear
+    // ends the turns.
+    private CancellationToken _turnCt;
+
+    private GroupState? _state;
+
+    private sealed record GroupState(
+        IReadOnlyList<DeliveryTarget> Targets,
+        AgentKey DeliveryKey,
+        DisposableAgent Agent,
+        AgentSession Thread,
+        Task Warmup);
+
+    private sealed record PendingTurn(
+        (IChannelConnection Channel, ChannelMessage Message) Source, int Index);
+
+    public async IAsyncEnumerable<TurnUpdate> RunAsync(
+        IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
+        Action onGroupComplete,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        _groupCt = ct;
+
+        // The context is what a /clear disposes and what ends the group, so it exists before
+        // any message is read: ChatThreadResolver.ClearAsync only deletes persisted state when
+        // it finds a live one.
+        var context = threadResolver.Resolve(agentKey);
+        context.RegisterCompletionCallback(onGroupComplete);
+        using var linkedCts = context.GetLinkedTokenSource(ct);
+        _turnCt = linkedCts.Token;
+
+        var first = await messages.FirstAsync(ct);
+        await EnsureEstablishedAsync(first);
+
+        await foreach (var update in RunTurnsSequentiallyAsync(messages.Prepend(first)))
+        {
+            yield return update;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_state is not null)
+        {
+            await _state.Agent.DisposeAsync();
+        }
+    }
+
+    // One turn at a time within a conversation. Three pieces of state shared across a
+    // conversation's turns depend on this and are not defended anywhere else:
+    // ToolApprovalChatClient's dynamically-approved tool set (an unsynchronised HashSet
+    // mutated mid-turn), and OpenRouterChatClient's reasoning queue and cost/cached-token
+    // queues (drained per update and per response, so two interleaved streams on one client
+    // cross-attribute each other's values). Reintroducing concurrency here re-breaks all
+    // three. Different conversations and the fan-out across delivery targets stay concurrent.
+    //
+    // Commands do NOT queue: /cancel is how the stop button reaches the monitor, so it has to
+    // reach threadResolver while the turn it stops is still running. Reading messages in a
+    // separate loop keeps commands immediate and turns sequential.
+    private async IAsyncEnumerable<TurnUpdate> RunTurnsSequentiallyAsync(
+        IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages)
+    {
+        var pending = Channel.CreateUnbounded<PendingTurn>();
+        var reader = DispatchCommandsAndQueueTurnsAsync(messages, pending.Writer);
+
+        try
+        {
+            await foreach (var (x, index) in pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt))
+            {
+                var turn = await RunTurnAsync(x, index);
+                await foreach (var update in turn.IgnoreCancellation(_turnCt))
+                {
+                    yield return update;
+                }
+            }
+        }
+        finally
+        {
+            await reader;
+        }
+    }
+
+    // The index counts every message in the group, commands included, because
+    // ResolveTurnTargetsAsync reads index 0 as "the message the group anchors were resolved
+    // from".
+    private async Task DispatchCommandsAndQueueTurnsAsync(
+        IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
+        ChannelWriter<PendingTurn> writer)
+    {
+        var index = 0;
+        try
+        {
+            await foreach (var x in messages.IgnoreCancellation(_turnCt))
+            {
+                switch (ChatCommandParser.Parse(x.Message.Content))
+                {
+                    case ChatCommand.Clear:
+                        await threadResolver.ClearAsync(agentKey);
+                        break;
+                    case ChatCommand.Cancel:
+                        threadResolver.Cancel(agentKey);
+                        break;
+                    default:
+                        await writer.WriteAsync(new PendingTurn(x, index), _turnCt);
+                        break;
+                }
+
+                index++;
+            }
+
+            writer.TryComplete();
+        }
+        catch (OperationCanceledException)
+        {
+            writer.TryComplete();
+        }
+        catch (Exception ex)
+        {
+            writer.TryComplete(ex);
+        }
+    }
+
+    // Resolve delivery targets BEFORE anything downstream, because the turn's whole
+    // identity comes out of them. The delivery identity is the first delivery target's
+    // conversation id, or the message's own when nothing resolved, and it is the id
+    // everything the turn produces is filed under: the agent is built from it, chat
+    // history restores under it, approvals route to it, and every event it publishes is
+    // stamped with it. The rule is "name the conversation the reply actually landed in".
+    // A schedule fire delivers into a minted WebChat conversation, so filing any of that
+    // under the synthetic scheduling id would name a conversation nobody can open — and
+    // for chat history it is worse than a label: WebChat reads history keyed on the
+    // minted id and would see an empty conversation.
+    //
+    // The approval channel follows the same anchor, not the origin. Schedule/ServiceBus
+    // channels auto-approve silently, so binding approvals to the origin would hide tool
+    // calls from the user in WebChat.
+    //
+    // These targets anchor the group; per-message reply delivery is resolved separately in
+    // ResolveTurnTargetsAsync.
+    private async Task<GroupState> EnsureEstablishedAsync(
+        (IChannelConnection Channel, ChannelMessage Message) x)
+    {
+        if (_state is not null)
+        {
+            return _state;
+        }
+
+        var targets = await targetResolver.ResolveAsync(x.Message, x.Channel, _groupCt);
+        var (approvalChannel, deliveryKey) = targets.Count > 0
+            ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, x.Message.AgentId))
+            : (x.Channel, agentKey);
+        var agent = agentFactory.Create(deliveryKey, x.Message.Sender, x.Message.AgentId, approvalChannel);
+        var thread = await GetOrRestoreThread(agent, deliveryKey);
+
+        // Start session warmup (MCP connections + tool discovery) without awaiting it yet, so
+        // it overlaps the turn-start announce and memory recall. It is awaited deterministically
+        // just before the first RunStreamingAsync, so it never outlives the agent and the order
+        // of operations is well-defined.
+        var warmup = agent.WarmupSessionAsync(thread, _turnCt);
+
+        return _state = new GroupState(targets, deliveryKey, agent, thread, warmup);
+    }
+
+    private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(
+        (IChannelConnection Channel, ChannelMessage Message) x, int index)
+    {
+        var state = await EnsureEstablishedAsync(x);
+        // FirstReply times the turn from the moment it starts to its first delivered reply
+        // chunk: target resolution, memory recall, the wait on session warmup and the
+        // turn-start announce for agent-initiated messages. It is the turn's own window
+        // rather than the user's wall clock — a turn queued behind a running one is not
+        // measured while it waits.
+        var firstReply = metricsPublisher.MeasureLatency(
+            LatencyStage.FirstReply, state.DeliveryKey.ConversationId);
+        var targets = await ResolveTurnTargetsAsync(x, index, state.Targets);
+        var turn = new Turn(x.Channel, x.Message, targets, firstReply);
+        // Agent-initiated turns (downloads, schedules) land in conversations with no live
+        // stream on the receiving channel; announce the turn so the channel can set one up
+        // before reply chunks arrive.
+        if (turn.Message.Origin is not null)
+        {
+            await targetResolver.AnnounceTurnStartAsync(turn.Targets, turn.Message, _turnCt);
+        }
+        var userMessage = await BuildUserMessageAsync(turn, state);
+
+        await state.Warmup;
+        return StreamAgentTurn(state, userMessage, turn);
+    }
+
+    // Deliver each message's reply to the channel that actually sent it. The group is keyed
+    // only by (ConversationId, AgentId), so a later message from a different channel — e.g.
+    // the user typing in WebChat inside a voice-started conversation — joins this same group.
+    // The group anchors cover the initiating message and any ReplyTo fan-out (re-resolving
+    // the latter would re-mint conversations); a subsequent plain interactive message is
+    // routed back to its own origin instead of the opening channel.
+    private async Task<IReadOnlyList<DeliveryTarget>> ResolveTurnTargetsAsync(
+        (IChannelConnection Channel, ChannelMessage Message) x,
+        int index,
+        IReadOnlyList<DeliveryTarget> groupTargets)
+    {
+        if (index == 0)
+        {
+            return groupTargets;
+        }
+
+        // A later turn reusing the group targets minted nothing of its own, so the marker
+        // is cleared: those conversations pre-exist this turn and the announce has to set
+        // their streams up again.
+        return x.Message.ReplyTo is { Count: > 0 }
+            ? [.. groupTargets.Select(t => t with { Minted = false })]
+            : await targetResolver.ResolveAsync(x.Message, x.Channel, _turnCt);
+    }
+
+    private async Task<ChatMessage> BuildUserMessageAsync(Turn turn, GroupState state)
+    {
+        var message = turn.Message;
+        var userMessage = new ChatMessage(ChatRole.User, message.Content);
+        userMessage.SetSenderId(message.Sender);
+        userMessage.SetLocation(message.Location);
+        userMessage.SetSatelliteId(message.SatelliteId);
+        userMessage.SetDismissedAlert(message.DismissedAlert);
+        userMessage.SetConfigPatch(message.ConfigPatch);
+        userMessage.SetTimestamp(DateTimeOffset.UtcNow);
+        userMessage.SetConversationContext(
+            DeliveryTargetResolver.BuildConversationContext(message, turn.Targets));
+        if (memoryRecallHook is not null)
+        {
+            // The delivery identity again, not the message's own: recall stamps durable
+            // provenance on any memory extracted from this turn, so the source it names
+            // has to be a conversation that can still be opened.
+            await memoryRecallHook.EnrichAsync(
+                userMessage, message.Sender, state.DeliveryKey.ConversationId, message.AgentId, state.Thread, _turnCt);
+        }
+
+        return userMessage;
+    }
+
+    private IAsyncEnumerable<TurnUpdate> StreamAgentTurn(GroupState state, ChatMessage userMessage, Turn turn)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var ct = _turnCt;
+        return state.Agent
+            .RunStreamingAsync([userMessage], state.Thread, cancellationToken: ct)
+            .WithErrorHandling(ct)
+            .ToUpdateAiResponsePairs()
+            .Append((new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
+            .OnCompletion(
+                seed: false,
+                fold: (faulted, pair) => faulted || pair.Item1.Contents.OfType<ErrorContent>().Any(),
+                onCompletion: (faulted, _) =>
+                {
+                    var error = faulted ? "Agent run reported an error" : null;
+                    var evt = ScheduleExecutionEvent.FromMessage(
+                        turn.Message, stopwatch.ElapsedMilliseconds, !faulted, error);
+                    if (evt is not null)
+                    {
+                        metricsPublisher.Publish(evt);
+                    }
+
+                    return ValueTask.CompletedTask;
+                },
+                ct)
+            .Select(pair => new TurnUpdate(pair.Item1, turn));
+    }
+
+    private ValueTask<AgentSession> GetOrRestoreThread(DisposableAgent agent, AgentKey deliveryKey)
+    {
+        return agent.DeserializeSessionAsync(
+            JsonSerializer.SerializeToElement(deliveryKey.ToString()), null, _groupCt);
+    }
+}

@@ -24,12 +24,12 @@ read. Behaviour is identical. This is the last of three preparatory steps.
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A conversation group module owns the queue, the command dispatch, the anchors, the agent, the thread, the warmup and the turn loop.
-- [ ] It is internal, constructed only by the chat monitor, and disposable.
-- [ ] The chat monitor is left with merging, grouping, delivering and reporting first-reply latency.
-- [ ] The monitor's private turn-scope record, its group-anchor resolution, its queuing loop, its turn runner and its per-turn target resolution no longer exist outside the module.
-- [ ] The thread context is still created and its completion callback registered before any message is parsed.
-- [ ] No new test seam is introduced; the module is not driven directly by any test.
-- [ ] The existing monitor test suite passes unchanged.
+- [x] A conversation group module owns the queue, the command dispatch, the anchors, the agent, the thread, the warmup and the turn loop.
+- [x] It is internal, constructed only by the chat monitor, and disposable.
+- [x] The chat monitor is left with merging, grouping, delivering and reporting first-reply latency.
+- [x] The monitor's private turn-scope record, its group-anchor resolution, its queuing loop, its turn runner and its per-turn target resolution no longer exist outside the module.
+- [x] The thread context is still created and its completion callback registered before any message is parsed.
+- [x] No new test seam is introduced; the module is not driven directly by any test.
+- [x] The existing monitor test suite passes unchanged.
