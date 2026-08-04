@@ -36,16 +36,25 @@ public sealed class StreamingService(
 
             if (isNewStream)
             {
-                StartNewStream(topic, message, correlationId, configPatch);
+                await StartNewStreamAsync(topic, message, correlationId, configPatch);
+                return;
             }
-            else
+
+            var enqueued = await messagingService.EnqueueMessageAsync(
+                topic.TopicId, message, correlationId, configPatch);
+
+            // A not-live enqueue is not the server saying "there is no stream to enqueue
+            // onto". Falling through here would open a second stream over a transport that
+            // cannot carry it and show the user a reply that has already failed.
+            if (!enqueued.IsLive)
             {
-                var success = await messagingService.EnqueueMessageAsync(
-                    topic.TopicId, message, correlationId, configPatch);
-                if (!success)
-                {
-                    StartNewStream(topic, message, correlationId, configPatch);
-                }
+                dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+                return;
+            }
+
+            if (!enqueued.Value)
+            {
+                await StartNewStreamAsync(topic, message, correlationId, configPatch);
             }
         }
         finally
@@ -72,10 +81,16 @@ public sealed class StreamingService(
                 return false;
             }
 
-            dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-            var streamTask = ResumeStreamResponseAsync(topic, streamingMessage, startMessageId);
-            _activeStreams[topic.TopicId] = streamTask;
-            _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out var _));
+            var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
+
+            // Recovery the user never asked for: announce nothing and say nothing. Announcing
+            // first would leave a stream marked started that can never say it completed.
+            if (!chunks.IsLive)
+            {
+                return false;
+            }
+
+            Announce(topic, () => ProcessStreamAsync(topic, chunks.Value!, streamingMessage, startMessageId));
             return true;
         }
         finally
@@ -97,30 +112,59 @@ public sealed class StreamingService(
         }
     }
 
-    private void StartNewStream(
+    private async Task StartNewStreamAsync(
         StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)
     {
+        var chunks = await messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
+
+        // Announce only a stream that has actually started. The old order announced first and
+        // discovered afterwards, which is how a user was shown a reply that never spoke.
+        if (!chunks.IsLive)
+        {
+            dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
+
+        Announce(topic, () => ProcessStreamAsync(
+            topic, chunks.Value!, new ChatMessageModel { Role = "assistant" }, currentMessageId: null));
+    }
+
+    // StreamStarted resets the streaming buffer, so it has to be dispatched before the first
+    // chunk is processed rather than alongside the task that processes them.
+    private void Announce(StoredTopic topic, Func<Task> startStream)
+    {
         dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-        var streamTask = StreamResponseAsync(topic, message, correlationId, configPatch);
+        var streamTask = startStream();
         _activeStreams[topic.TopicId] = streamTask;
         _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out var _));
     }
 
-    public Task StreamResponseAsync(
+    public async Task StreamResponseAsync(
         StoredTopic topic, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
-        var chunks = messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
-        var streamingMessage = new ChatMessageModel { Role = "assistant" };
-        return ProcessStreamAsync(topic, chunks, streamingMessage, currentMessageId: null);
+        var chunks = await messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
+        if (!chunks.IsLive)
+        {
+            dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
+
+        await ProcessStreamAsync(
+            topic, chunks.Value!, new ChatMessageModel { Role = "assistant" }, currentMessageId: null);
     }
 
-    public Task ResumeStreamResponseAsync(
+    public async Task ResumeStreamResponseAsync(
         StoredTopic topic,
         ChatMessageModel streamingMessage,
         string startMessageId)
     {
-        var chunks = messagingService.ResumeStreamAsync(topic.TopicId);
-        return ProcessStreamAsync(topic, chunks, streamingMessage, startMessageId);
+        var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
+        if (!chunks.IsLive)
+        {
+            return;
+        }
+
+        await ProcessStreamAsync(topic, chunks.Value!, streamingMessage, startMessageId);
     }
 
     private async Task ProcessStreamAsync(

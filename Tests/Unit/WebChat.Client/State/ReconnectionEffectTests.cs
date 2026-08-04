@@ -79,7 +79,7 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         _mockSessionService
             .Setup(s => s.StartSessionAsync(It.IsAny<StoredTopic>()))
-            .ReturnsAsync(true);
+            .ReturnsAsync(HubResult<bool>.Answered(true));
 
         CreateEffect();
 

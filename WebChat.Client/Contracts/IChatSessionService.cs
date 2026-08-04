@@ -8,6 +8,6 @@ public interface IChatSessionService
 
     event Action? OnSessionChanged;
 
-    Task<bool> StartSessionAsync(StoredTopic topic);
+    Task<HubResult<bool>> StartSessionAsync(StoredTopic topic);
     void ClearSession();
 }

@@ -5,6 +5,7 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -90,8 +91,17 @@ public sealed class SendMessageEffect : IDisposable
                 SpaceSlug = _spaceStore.State.CurrentSlug
             };
 
-            var success = await _sessionService.StartSessionAsync(topic);
-            if (!success)
+            var started = await _sessionService.StartSessionAsync(topic);
+
+            // Three outcomes, not two. A server that refuses is live and has answered, and
+            // stays as silent as it is today; a call that could not be made says so once.
+            if (!started.IsLive)
+            {
+                _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+                return;
+            }
+
+            if (!started.Value)
             {
                 return;
             }
@@ -106,7 +116,12 @@ public sealed class SendMessageEffect : IDisposable
             topic = state.Topics.First(t => t.TopicId == action.TopicId);
             if (_sessionService.CurrentTopic?.TopicId != topic.TopicId)
             {
-                await _sessionService.StartSessionAsync(topic);
+                var started = await _sessionService.StartSessionAsync(topic);
+                if (!started.IsLive)
+                {
+                    _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+                    return;
+                }
             }
         }
 

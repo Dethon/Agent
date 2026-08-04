@@ -7,39 +7,13 @@ namespace WebChat.Client.Services;
 
 public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : IChatMessagingService
 {
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
-        string? correlationId = null, AgentConfigPatch? configPatch = null)
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            yield break;
-        }
-
-        var stream = hubConnection.StreamAsync<ChatStreamMessage>(
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendMessageAsync(string topicId, string message,
+        string? correlationId = null, AgentConfigPatch? configPatch = null) =>
+        liveConnection.StreamAsync<ChatStreamMessage>(
             "SendMessage", topicId, message, correlationId, configPatch);
 
-        await foreach (var item in stream)
-        {
-            yield return item;
-        }
-    }
-
-    public async IAsyncEnumerable<ChatStreamMessage> ResumeStreamAsync(string topicId)
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            yield break;
-        }
-
-        var stream = hubConnection.StreamAsync<ChatStreamMessage>("ResumeStream", topicId);
-
-        await foreach (var item in stream)
-        {
-            yield return item;
-        }
-    }
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId) =>
+        liveConnection.StreamAsync<ChatStreamMessage>("ResumeStream", topicId);
 
     public async Task<StreamState?> GetStreamStateAsync(string topicId)
     {
@@ -63,16 +37,7 @@ public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : I
         await hubConnection.InvokeAsync("CancelTopic", topicId);
     }
 
-    public async Task<bool> EnqueueMessageAsync(
-        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return false;
-        }
-
-        return await hubConnection.InvokeAsync<bool>(
-            "EnqueueMessage", topicId, message, correlationId, configPatch);
-    }
+    public Task<HubResult<bool>> EnqueueMessageAsync(
+        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null) =>
+        liveConnection.InvokeAsync<bool>("EnqueueMessage", topicId, message, correlationId, configPatch);
 }

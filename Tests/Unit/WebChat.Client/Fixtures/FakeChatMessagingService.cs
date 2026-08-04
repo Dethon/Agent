@@ -80,11 +80,27 @@ public sealed class FakeChatMessagingService : IChatMessagingService
 
     public IReadOnlySet<string> CancelledTopics => _cancelledTopics;
 
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
+    // Set to answer not live for every call, the way a transport between connections does.
+    public bool NotLive { get; set; }
+
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendMessageAsync(string topicId, string message,
         string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
         LastConfigPatch = configPatch;
+        return Task.FromResult(NotLive
+            ? HubResult<IAsyncEnumerable<ChatStreamMessage>>.NotLive
+            : HubResult<IAsyncEnumerable<ChatStreamMessage>>.Answered(SendChunks()));
+    }
 
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId) =>
+        Task.FromResult(NotLive
+            ? HubResult<IAsyncEnumerable<ChatStreamMessage>>.NotLive
+            : HubResult<IAsyncEnumerable<ChatStreamMessage>>.Answered(ResumeChunks()));
+
+    // The failure stays inside the iteration: a stream that opens and then breaks is a
+    // different thing from one that could never open, and both have tests.
+    private async IAsyncEnumerable<ChatStreamMessage> SendChunks()
+    {
         if (_exceptionToThrow is not null)
         {
             throw _exceptionToThrow;
@@ -106,7 +122,7 @@ public sealed class FakeChatMessagingService : IChatMessagingService
         }
     }
 
-    public async IAsyncEnumerable<ChatStreamMessage> ResumeStreamAsync(string topicId)
+    private async IAsyncEnumerable<ChatStreamMessage> ResumeChunks()
     {
         if (_exceptionToThrow is not null)
         {
@@ -136,10 +152,12 @@ public sealed class FakeChatMessagingService : IChatMessagingService
         return Task.CompletedTask;
     }
 
-    public Task<bool> EnqueueMessageAsync(
+    public Task<HubResult<bool>> EnqueueMessageAsync(
         string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
         LastConfigPatch = configPatch;
-        return Task.FromResult(_enqueueResult);
+        return Task.FromResult(NotLive
+            ? HubResult<bool>.NotLive
+            : HubResult<bool>.Answered(_enqueueResult));
     }
 }

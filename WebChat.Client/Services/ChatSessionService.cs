@@ -10,26 +10,18 @@ public sealed class ChatSessionService(IChatLiveConnection liveConnection) : ICh
 
     public event Action? OnSessionChanged;
 
-    public async Task<bool> StartSessionAsync(StoredTopic topic)
+    public async Task<HubResult<bool>> StartSessionAsync(StoredTopic topic)
     {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return false;
-        }
-
-        var success = await hubConnection.InvokeAsync<bool>(
+        var result = await liveConnection.InvokeAsync<bool>(
             "StartSession", topic.AgentId, topic.TopicId, topic.ChatId, topic.ThreadId, topic.Name);
 
-        if (!success)
+        if (result is { IsLive: true, Value: true })
         {
-            return false;
+            CurrentTopic = topic;
+            OnSessionChanged?.Invoke();
         }
 
-        CurrentTopic = topic;
-        OnSessionChanged?.Invoke();
-
-        return true;
+        return result;
     }
 
     public void ClearSession()

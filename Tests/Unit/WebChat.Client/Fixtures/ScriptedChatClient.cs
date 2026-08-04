@@ -48,10 +48,14 @@ public sealed class ScriptedChatClient : IAsyncDisposable
             return connection;
         };
 
-        // Program.cs activates these at start-up; an effect that is never resolved has never
-        // registered its handler and would make a dispatch look like a no-op.
+        // A store registers its reducer in its constructor and an effect its handler, so
+        // anything left unresolved silently ignores every dispatch. In the browser the
+        // components resolve the stores; here nothing would until an assertion asked for one.
         new[]
         {
+            typeof(TopicsStore), typeof(MessagesStore), typeof(StreamingStore), typeof(ConnectionStore),
+            typeof(ApprovalStore), typeof(UserIdentityStore), typeof(ToastStore), typeof(AgentSettingsStore),
+            typeof(SpaceStore), typeof(AgentActivityStore),
             typeof(SessionRecoveryEffect), typeof(ReconnectionEffect), typeof(SendMessageEffect),
             typeof(TopicSelectionEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
             typeof(AgentSelectionEffect), typeof(UserIdentityEffect), typeof(SpaceEffect),
