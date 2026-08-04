@@ -61,4 +61,4 @@ inside the agent.
 - [ ] The agent factory interface, both definition records and the settings schema are unchanged.
 - [ ] Everything the existing tests already assert about agent construction, routing and conversation-context wiring still passes.
 
-**Status:** ready-for-agent
+**Status:** done

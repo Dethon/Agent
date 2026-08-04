@@ -20,8 +20,9 @@ public sealed class MultiAgentFactory(
     IMetricsPublisher? metricsPublisher = null,
     ILoggerFactory? loggerFactory = null) : IAgentFactory
 {
-
     private readonly McpPromptCache _promptCache = new(TimeProvider.System, TimeSpan.FromSeconds(60));
+
+    private ILogger? Logger => loggerFactory?.CreateLogger<MultiAgentFactory>();
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
@@ -46,104 +47,72 @@ public sealed class MultiAgentFactory(
         string[] whitelistPatterns,
         string userId)
     {
+        var spec = AgentSpecProjection.ForSubAgent(
+            definition, conversationId, whitelistPatterns, userId, openRouterConfig, Logger);
+
+        return Build(spec, approvalHandler);
+    }
+
+    private DisposableAgent CreateFromDefinition(
+        AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
+    {
+        var spec = AgentSpecProjection.ForAgent(definition, agentKey, userId, openRouterConfig, Logger);
+
+        return Build(spec, approvalHandler);
+    }
+
+    // Everything that differs between an agent and a subagent was resolved by the projection,
+    // so nothing here asks which one it is building.
+    private DisposableAgent Build(AgentSpec spec, IToolApprovalHandler approvalHandler)
+    {
         var agentPublisher = metricsPublisher is not null
-            ? new AgentMetricsPublisher(metricsPublisher, definition.Name)
+            ? new AgentMetricsPublisher(metricsPublisher, spec.MetricsAgentId)
             : null;
 
         var chatClient = CreateChatClient(
-            definition.Model, agentPublisher, definition.MaxContextTokens,
-            sessionId: $"subagent-{definition.Id}:{Guid.NewGuid():N}",
-            providerRouting: ResolveRouting(
-                $"subagent-{definition.Id}", definition.Model, definition.ProviderRouting));
+            spec.Model, agentPublisher, spec.MaxContextTokens,
+            sessionId: spec.RoutingSessionId,
+            providerRouting: spec.ProviderRouting);
 
         var effectiveClient = new ToolApprovalChatClient(
-            chatClient,
-            approvalHandler,
-            conversationId,
-            whitelistPatterns,
-            agentPublisher);
-
-        var enabledFeatures = definition.EnabledFeatures
-            .Where(f => !f.Equals("subagents", StringComparison.OrdinalIgnoreCase));
-
-        var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, conversationId, whitelistPatterns, userId),
-            UserId: userId,
-            ConversationContextProvider: () => ConversationContextMeta.Current);
-        var domainTools = domainToolRegistry
-            .GetToolsForFeatures(enabledFeatures, featureConfig)
-            .ToList();
-        var domainPrompts = domainToolRegistry
-            .GetPromptsForFeatures(enabledFeatures)
-            .ToList();
-
-        var filesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures);
-
-        return new McpAgent(
-            definition.McpServerEndpoints,
-            effectiveClient,
-            $"subagent-{definition.Id}",
-            definition.Description ?? "",
-            new NullThreadStateStore(),
-            userId,
-            definition.CustomInstructions,
-            definition.Language,
-            domainTools,
-            domainPrompts,
-            filesystemEnabledTools: filesystemEnabledTools,
-            loggerFactory: loggerFactory,
-            reasoningEffort: definition.ReasoningEffort,
-            promptCache: _promptCache);
-    }
-
-    private DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
-    {
-        var agentPublisher = metricsPublisher is not null
-            ? new AgentMetricsPublisher(metricsPublisher, definition.Name)
-            : metricsPublisher;
-        var chatClient = CreateChatClient(
-            definition.Model, agentPublisher, definition.MaxContextTokens,
-            sessionId: $"{definition.Id}:{agentKey.ConversationId}",
-            providerRouting: ResolveRouting(definition.Id, definition.Model, definition.ProviderRouting));
-        var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
-
-        var name = $"{definition.Name}-{agentKey.ConversationId}";
-        var effectiveClient = new ToolApprovalChatClient(
-            chatClient, approvalHandler, agentKey.ConversationId, definition.WhitelistPatterns, agentPublisher);
+            chatClient, approvalHandler, spec.ConversationId, spec.WhitelistPatterns, agentPublisher);
 
         var featureConfig = new FeatureConfig(
             SubAgentFactory: def => CreateSubAgent(
-                def, approvalHandler, agentKey.ConversationId, definition.WhitelistPatterns, userId),
-            UserId: userId,
+                def, approvalHandler, spec.ConversationId, spec.WhitelistPatterns, spec.UserId),
+            UserId: spec.UserId,
             ConversationContextProvider: () => ConversationContextMeta.Current);
+
         var domainTools = domainToolRegistry
-            .GetToolsForFeatures(definition.EnabledFeatures, featureConfig)
+            .GetToolsForFeatures(spec.EnabledFeatures, featureConfig)
             .ToList();
         var domainPrompts = domainToolRegistry
-            .GetPromptsForFeatures(definition.EnabledFeatures)
+            .GetPromptsForFeatures(spec.EnabledFeatures)
             .ToList();
 
-        var filesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures);
+        var stateStore = spec.KeepsHistory
+            ? serviceProvider.GetRequiredService<IThreadStateStore>()
+            : new NullThreadStateStore();
 
         return new McpAgent(
-            definition.McpServerEndpoints,
+            spec.McpServerEndpoints,
             effectiveClient,
-            name,
-            definition.Description ?? "",
+            spec.DisplayName,
+            spec.Description,
             stateStore,
-            userId,
-            definition.CustomInstructions,
-            definition.Language,
+            spec.UserId,
+            spec.CustomInstructions,
+            spec.Language,
             domainTools,
             domainPrompts,
-            filesystemEnabledTools: filesystemEnabledTools,
+            filesystemEnabledTools: ExtractFilesystemEnabledTools(spec.EnabledFeatures),
             loggerFactory: loggerFactory,
-            reasoningEffort: definition.ReasoningEffort,
+            reasoningEffort: spec.ReasoningEffort,
             metricsPublisher: agentPublisher,
-            model: definition.Model,
-            conversationId: agentKey.ConversationId,
+            model: spec.Model,
+            conversationId: spec.ConversationId,
             promptCache: _promptCache,
-            patchableModelIds: openRouterConfig.PatchableModelIds);
+            patchableModelIds: spec.PatchableModelIds);
     }
 
     private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
@@ -168,14 +137,6 @@ public sealed class MultiAgentFactory(
             .Select(p => p[1])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
-
-    private ProviderRouting? ResolveRouting(string agentId, string model, ProviderRouting? declared) =>
-        ProviderRoutingResolver.Resolve(
-            declared,
-            openRouterConfig.ProviderRouting,
-            model,
-            agentId,
-            loggerFactory?.CreateLogger<MultiAgentFactory>());
 
     internal IChatClient CreateChatClient(
         string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null,
