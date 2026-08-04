@@ -65,8 +65,10 @@ public class MemoryRecallHook(
             using var latency = metricsPublisher.MeasureLatency(
                 LatencyStage.MemoryRecall, conversationId, agentName);
 
+            // Read before the agent is handed this turn, which is what the anchor's factory
+            // says it needs and what the chat monitor test pins.
             var (persisted, persistedCount, stateKey) = await TryFetchThreadAsync(thread);
-            var anchorIndex = (int)persistedCount;
+            var anchor = MemoryAnchor.TakenBeforeCurrentTurnIsPersisted(persistedCount);
 
             var embeddingInput = BuildRecallWindowText(messageText, persisted, options.WindowUserTurns);
 
@@ -106,7 +108,7 @@ public class MemoryRecallHook(
             });
 
             await extractionQueue.EnqueueAsync(
-                new MemoryExtractionRequest(userId, stateKey, anchorIndex, conversationId, agentId)
+                new MemoryExtractionRequest(userId, stateKey, anchor, conversationId, agentId)
                 {
                     FallbackContent = messageText
                 }, ct);

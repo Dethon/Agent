@@ -98,7 +98,7 @@ public class MemoryExtractionWorker(
         {
             logger.LogDebug(
                 "Extraction dropped: no window could be built (user {UserId}, key {Key}, anchor {Anchor})",
-                request.UserId, request.ThreadStateKey, request.AnchorIndex);
+                request.UserId, request.ThreadStateKey, request.Anchor.PersistedMessageCount);
             return [];
         }
 
@@ -117,7 +117,7 @@ public class MemoryExtractionWorker(
         var contextSlots = hasFallback ? options.WindowMixedTurns - 1 : options.WindowMixedTurns;
 
         var window = (thread?
-            .Take(Math.Max(0, request.AnchorIndex))
+            .Take(Math.Max(0, request.Anchor.PersistedMessageCount))
             .TakeLast(contextSlots)
             .ToList()) ?? [];
 

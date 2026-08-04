@@ -277,7 +277,7 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_EnqueuesExtractionWithAnchorIndexEqualToPersistedCount()
+    public async Task EnrichAsync_EnqueuesExtractionWithAnchorEqualToPersistedCount()
     {
         var message = new ChatMessage(ChatRole.User, "current");
         var session = CreateSessionWithStateKey("state-anchor");
@@ -307,7 +307,7 @@ public class MemoryRecallHookTests
         {
             item.UserId.ShouldBe("user1");
             item.ThreadStateKey.ShouldBe("state-anchor");
-            item.AnchorIndex.ShouldBe(4);
+            item.Anchor.PersistedMessageCount.ShouldBe(4);
             item.ConversationId.ShouldBe("conv_1");
             break;
         }
@@ -369,7 +369,7 @@ public class MemoryRecallHookTests
             item.FallbackContent.ShouldBe("hello");
             if (cause == ExtractionFallbackCause.NoStateKey)
             {
-                item.AnchorIndex.ShouldBe(0);
+                item.Anchor.PersistedMessageCount.ShouldBe(0);
             }
             break;
         }
@@ -400,7 +400,7 @@ public class MemoryRecallHookTests
 
         _queue.Complete();
         var request = await _queue.ReadAllAsync(CancellationToken.None).FirstAsync();
-        request.AnchorIndex.ShouldBe(500);
+        request.Anchor.PersistedMessageCount.ShouldBe(500);
         _threadStateStore.Verify(s => s.GetMessagesAsync(It.IsAny<string>()), Times.Never);
     }
 }

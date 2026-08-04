@@ -22,6 +22,9 @@ public class MemoryExtractionWorkerTests
     private readonly MemoryExtractionOptions _options = new();
     private readonly MemoryExtractionWorker _worker;
 
+    private static MemoryAnchor Anchor(int persistedMessageCount) =>
+        MemoryAnchor.TakenBeforeCurrentTurnIsPersisted(persistedMessageCount);
+
     public MemoryExtractionWorkerTests()
     {
         _worker = new MemoryExtractionWorker(
@@ -73,7 +76,7 @@ public class MemoryExtractionWorkerTests
             .Setup(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MemoryEntry m, CancellationToken _) => m);
 
-        var request = new MemoryExtractionRequest("user1", "thread-key-1", 0, "conv_1", null)
+        var request = new MemoryExtractionRequest("user1", "thread-key-1", Anchor(0), "conv_1", null)
         {
             FallbackContent = "Hello, I work at Contoso"
         };
@@ -138,7 +141,7 @@ public class MemoryExtractionWorkerTests
                 null, null, 3, It.IsAny<CancellationToken>()))
             .ReturnsAsync([new MemorySearchResult(existingMemory, 0.92)]);
 
-        var request = new MemoryExtractionRequest("user1", "thread-key-2", 0, null, null);
+        var request = new MemoryExtractionRequest("user1", "thread-key-2", Anchor(0), null, null);
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -163,7 +166,7 @@ public class MemoryExtractionWorkerTests
             .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
             .Callback<MetricEvent>(evt => published = evt);
 
-        var request = new MemoryExtractionRequest("user2", "thread-key-3", 0, null, null);
+        var request = new MemoryExtractionRequest("user2", "thread-key-3", Anchor(0), null, null);
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -186,7 +189,7 @@ public class MemoryExtractionWorkerTests
                 McpServerEndpoints = [], EnabledFeatures = []
             });
 
-        var request = new MemoryExtractionRequest("user1", "any-key", 0, "conv_1", "agent-no-memory");
+        var request = new MemoryExtractionRequest("user1", "any-key", Anchor(0), "conv_1", "agent-no-memory");
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -219,7 +222,7 @@ public class MemoryExtractionWorkerTests
             .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
             .Callback<MetricEvent>(evt => published = evt);
 
-        var request = new MemoryExtractionRequest("user3", "thread-key-5", 0, null, null)
+        var request = new MemoryExtractionRequest("user3", "thread-key-5", Anchor(0), null, null)
         {
             FallbackContent = "Some message"
         };
@@ -264,7 +267,7 @@ public class MemoryExtractionWorkerTests
             .ReturnsAsync([]);
 
         // AnchorIndex=6 means 6 persisted messages known at recall time; FallbackContent is the current user message
-        var request = new MemoryExtractionRequest("user1", stateKey, 6, "conv_1", null)
+        var request = new MemoryExtractionRequest("user1", stateKey, Anchor(6), "conv_1", null)
         {
             FallbackContent = "turn4 user"
         };
@@ -293,7 +296,7 @@ public class MemoryExtractionWorkerTests
             .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
             .Callback<MetricEvent>(evt => published = evt);
 
-        var request = new MemoryExtractionRequest("user1", "gone", 0, "conv_1", null);
+        var request = new MemoryExtractionRequest("user1", "gone", Anchor(0), "conv_1", null);
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -329,7 +332,7 @@ public class MemoryExtractionWorkerTests
             .Callback<IReadOnlyList<ChatMessage>, string, CancellationToken>((w, _, _) => capturedWindow = w)
             .ReturnsAsync([]);
 
-        var request = new MemoryExtractionRequest("user1", "short", 99, "conv_1", null)
+        var request = new MemoryExtractionRequest("user1", "short", Anchor(99), "conv_1", null)
         {
             FallbackContent = "current message"
         };
@@ -362,7 +365,7 @@ public class MemoryExtractionWorkerTests
                 return [];
             });
 
-        var request = new MemoryExtractionRequest("user1", null, 0, "conv_1", null)
+        var request = new MemoryExtractionRequest("user1", null, Anchor(0), "conv_1", null)
         {
             FallbackContent = "I work at Contoso"
         };
@@ -385,7 +388,7 @@ public class MemoryExtractionWorkerTests
             .Callback<IReadOnlyList<ChatMessage>, string, CancellationToken>((w, _, _) => capturedWindow = w)
             .ReturnsAsync([]);
 
-        var request = new MemoryExtractionRequest("user1", null, 0, "conv_1", null)
+        var request = new MemoryExtractionRequest("user1", null, Anchor(0), "conv_1", null)
         {
             FallbackContent = "I work at Contoso"
         };
