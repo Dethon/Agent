@@ -38,13 +38,9 @@ public class MemoryRecallHook(
         AgentSession thread,
         CancellationToken ct)
     {
-        if (agentId is not null)
+        if (!agentDefinitionProvider.HasFeatureEnabled(agentId, "memory"))
         {
-            var agentDef = agentDefinitionProvider.GetById(agentId);
-            if (agentDef is not null && !agentDef.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
-            {
-                return;
-            }
+            return;
         }
 
         try

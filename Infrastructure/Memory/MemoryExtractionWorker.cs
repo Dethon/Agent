@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.Extensions;
 using Domain.Memory;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
@@ -43,13 +44,9 @@ public class MemoryExtractionWorker(
 
     public async Task ProcessRequestAsync(MemoryExtractionRequest request, CancellationToken ct)
     {
-        if (request.AgentId is not null)
+        if (!agentDefinitionProvider.HasFeatureEnabled(request.AgentId, "memory"))
         {
-            var agentDef = agentDefinitionProvider.GetById(request.AgentId);
-            if (agentDef is not null && !agentDef.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
-            {
-                return;
-            }
+            return;
         }
 
         var sw = Stopwatch.StartNew();
