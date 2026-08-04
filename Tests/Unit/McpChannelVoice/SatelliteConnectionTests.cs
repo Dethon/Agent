@@ -10,6 +10,7 @@ using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.LocalCommands;
+using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -49,6 +50,11 @@ public class SatelliteConnectionTests
             WakeWord = "hey_jarvis"
         };
         public string TranscriptText = "hola";
+        public ISpeakerVerifier? Verifier;
+        // A conversation's FIRST turn — the normal case for a one-shot command, given the 5-minute
+        // mapping expiry — makes GetOrCreateAsync a full create_conversation MCP round trip to the
+        // agent process. Exaggerated by a test that needs the gap unambiguous.
+        public TimeSpan CreateConversationDelay = TimeSpan.Zero;
         // Runs on the connection's own writer, so a test can park a write the way a dead socket
         // parks one.
         public Func<WyomingEvent, CancellationToken, Task>? WriteHook;
@@ -59,6 +65,9 @@ public class SatelliteConnectionTests
         public readonly List<VoiceEvent> Published = [];
         public readonly Channel<WyomingEvent> Inbound = Channel.CreateUnbounded<WyomingEvent>();
         public int ChunksTranscribed;
+        public long SttFinishedAt;
+        public TranscriptionOptions? SttOptions;
+        public Mock<ISpeechToText> Stt = null!;
         public WakeArbiter Arbiter = null!;
 
         private readonly List<WyomingEvent> _written = [];
@@ -79,8 +88,12 @@ public class SatelliteConnectionTests
             var factory = new Mock<IConversationFactory>();
             factory.Setup(f => f.CreateAsync(
                     It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(() =>
+                .Returns(async () =>
                 {
+                    if (CreateConversationDelay > TimeSpan.Zero)
+                    {
+                        await Task.Delay(CreateConversationDelay);
+                    }
                     var identity = ConversationIdGenerator.CreateFor("topic-x");
                     var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
                         $"{Config.Identity} @ {Config.Room}", DateTimeOffset.UtcNow, null);
@@ -90,17 +103,19 @@ public class SatelliteConnectionTests
                 factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
                 TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
 
-            var stt = new Mock<ISpeechToText>();
-            stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
+            Stt = new Mock<ISpeechToText>();
+            Stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
                                              It.IsAny<TranscriptionOptions>(),
                                              It.IsAny<CancellationToken>()))
                 .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
-                    async (audio, _, token) =>
+                    async (audio, options, token) =>
                     {
+                        SttOptions = options;
                         await foreach (var chunk in audio.WithCancellation(token))
                         {
                             Interlocked.Increment(ref ChunksTranscribed);
                         }
+                        SttFinishedAt = TimeProvider.System.GetTimestamp();
                         return new TranscriptionResult
                         {
                             Text = TranscriptText,
@@ -124,10 +139,11 @@ public class SatelliteConnectionTests
             var host = new WyomingSatelliteHost(
                 Wyoming, Voice,
                 new SatelliteRegistry(new Dictionary<string, SatelliteConfig> { [id] = Config }),
-                Sessions, manager, stt.Object, dispatcher, Alerts, publisher.Object,
+                Sessions, manager, Stt.Object, dispatcher, Alerts, publisher.Object,
                 TimeProvider.System, Arbiter,
                 new SilenceGateFactory(Voice, Wyoming, TimeProvider.System),
-                NullLogger<WyomingSatelliteHost>.Instance);
+                NullLogger<WyomingSatelliteHost>.Instance,
+                Verifier);
 
             return host.CreateConnection(id, Config, WriteAsync);
         }
@@ -171,6 +187,67 @@ public class SatelliteConnectionTests
             lock (Published)
             { return Published.Where(e => e.Metric == metric).ToArray(); }
         }
+    }
+
+    private sealed class RejectingVerifier : ISpeakerVerifier
+    {
+        public Task<SpeakerVerification> VerifyAsync(
+            IReadOnlyList<AudioChunk> speechAudio, long speechMs, SatelliteConfig config, CancellationToken ct,
+            bool enforceMinSpeech = true) =>
+            Task.FromResult(new SpeakerVerification(SpeakerDecision.Rejected, 0.12, null));
+    }
+
+    private sealed class IdentifyingVerifier(string name) : ISpeakerVerifier
+    {
+        public Task<SpeakerVerification> VerifyAsync(
+            IReadOnlyList<AudioChunk> speechAudio, long speechMs, SatelliteConfig config, CancellationToken ct,
+            bool enforceMinSpeech = true) =>
+            Task.FromResult(new SpeakerVerification(SpeakerDecision.Accepted, 0.91, name, name));
+    }
+
+    // Models the real SpeakerVerifier's short-utterance skip precisely (Skipped when
+    // enforceMinSpeech && speechMs < minSpeechMs) without embedding real audio: the peak PCM
+    // sample stands in for "known enrolled voice" vs "unknown voice" so a test can drive
+    // Accepted/Rejected deterministically by choosing which tone it streams.
+    private sealed class GatedToneVerifier(long minSpeechMs, short knownSample) : ISpeakerVerifier
+    {
+        public Task<SpeakerVerification> VerifyAsync(
+            IReadOnlyList<AudioChunk> speechAudio, long speechMs, SatelliteConfig config, CancellationToken ct,
+            bool enforceMinSpeech = true)
+        {
+            if (enforceMinSpeech && speechMs < minSpeechMs)
+            {
+                return Task.FromResult(new SpeakerVerification(SpeakerDecision.Skipped));
+            }
+            return Task.FromResult(PeakSample(speechAudio) == knownSample
+                ? new SpeakerVerification(SpeakerDecision.Accepted, 0.91, "fran", "fran")
+                : new SpeakerVerification(SpeakerDecision.Rejected, 0.213, null));
+        }
+
+        private static short PeakSample(IReadOnlyList<AudioChunk> chunks)
+        {
+            short peak = 0;
+            foreach (var chunk in chunks)
+            {
+                var span = chunk.Data.Span;
+                for (var i = 0; i + 1 < span.Length; i += 2)
+                {
+                    var sample = (short)(span[i] | (span[i + 1] << 8));
+                    if (Math.Abs((int)sample) > Math.Abs((int)peak))
+                    { peak = sample; }
+                }
+            }
+            return peak;
+        }
+    }
+
+    // Stands in for the agent answering: one reply segment queued, played, and the stream ended.
+    // That is the route SendReplyTool takes, so what the test proves and what production does are
+    // the same thing — there is no signal-the-turn shortcut to take instead.
+    private static void SpeakOneReplySegment(SatelliteSession session)
+    {
+        session.Turn.BeginSegment().Complete();
+        session.Turn.EndStream();
     }
 
     // Constant-amplitude S16LE. 3200 bytes = 100 ms at 16 kHz mono.
@@ -402,6 +479,349 @@ public class SatelliteConnectionTests
         // And the rest of the unwind still ran once the drain could finish.
         h.Sessions.Get("kitchen-01").ShouldBeNull();
         connection.Session.ControlWriter.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Dispatch_Stamp_IsTakenBeforeTheDispatchSoItsOwnWorkIsMeasured()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var h = new Harness { CreateConversationDelay = TimeSpan.FromSeconds(1) };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 6);
+
+        (await h.Emitter.FirstAsync(TimeSpan.FromSeconds(20), cts.Token)).Content.ShouldBe("hola");
+        await UntilAsync(() => h.WrittenOfType("transcript").Count > 0, TimeSpan.FromSeconds(10));
+
+        long? stamp = null;
+        await UntilAsync(() => (stamp ??= connection.Session.Turn.TryConsumeDispatchedAt()) is not null,
+            TimeSpan.FromSeconds(5));
+        stamp.ShouldNotBeNull();
+
+        // TranscriptDispatcher.DispatchAsync does real work inside: the create_conversation round
+        // trip above, the channel/message write, and an awaited Redis publish. Stamping after it
+        // returned left all of that in no span at all, on the common path. The stamp must sit
+        // immediately after STT so that work is inside AgentRoundTripMs.
+        var afterStt = TimeProvider.System.GetElapsedTime(h.SttFinishedAt, stamp!.Value);
+        afterStt.ShouldBeGreaterThanOrEqualTo(TimeSpan.Zero);
+        afterStt.ShouldBeLessThan(TimeSpan.FromMilliseconds(500));
+
+        await StopAsync(connection, run, cts);
+    }
+
+    [Fact]
+    public async Task Speaker_Conclusive_EmitsIdentifiedPersonAsSender()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var h = new Harness
+        {
+            // EarlyVerifyMs = 0 keeps the fake off the early-close path; only the terminal verify
+            // (which yields the identity) drives this test.
+            Voice = new VoiceSettings
+            {
+                AgentId = "mycroft",
+                FollowUp = new FollowUpSettings { Enabled = false },
+                SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = 0 }
+            },
+            Verifier = new IdentifyingVerifier("fran")
+        };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 6);
+
+        var msg = await h.Emitter.FirstAsync(TimeSpan.FromSeconds(10), cts.Token);
+        msg.Content.ShouldBe("hola");
+        msg.Sender.ShouldBe("fran"); // conclusive identity routed into Sender, not "household"
+
+        // The gate's verdict must reach the STT chain, not just the message Sender: the decorator's
+        // whole TSE policy is keyed off TargetSpeaker, so prove the wiring lands the identified name
+        // there (not merely "the floor is positive", which would pin clamping instead of wiring).
+        h.SttOptions.ShouldNotBeNull();
+        h.SttOptions!.TargetSpeaker.ShouldBe("fran");
+
+        await StopAsync(connection, run, cts);
+    }
+
+    [Fact]
+    public async Task Speaker_Unknown_RejectsCaptureWithoutSttAndPublishesMetric()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var h = new Harness { Verifier = new RejectingVerifier() };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        // Pre-roll gap: real captures open on ambient/gap frames from wake-detection latency,
+        // seeding the AdaptiveLevelTracker's noise floor before real speech classifies as speech.
+        h.SendAudio(0, 1);
+        // Loud portion is 10 chunks (~1000ms) so capture.Stats.SpeechMs clears the verifier's
+        // default 800ms MinVerifySpeechMs — 4 chunks (~400ms) would short-circuit verification to
+        // Skipped instead of exercising Rejected.
+        h.SendAudio(8000, 10);
+        h.SendAudio(0, 6);
+
+        await UntilAsync(() => h.WrittenOfType("transcript").Count > 0, TimeSpan.FromSeconds(10));
+        // Closing transcript re-arms the satellite; the conversation ended without STT.
+        h.WrittenOfType("transcript")[0].Data["text"]!.GetValue<string>().ShouldBe("");
+
+        h.Stt.Verify(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
+                                            It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()),
+            Times.Never());
+
+        var rejection = h.PublishedOf(VoiceMetric.UtteranceRejected).SingleOrDefault();
+        rejection.ShouldNotBeNull();
+        rejection!.Outcome.ShouldBe("unknown_speaker");
+        rejection.Similarity.ShouldBe(0.12);
+
+        // Verification runs before the STT stopwatch starts, so without its own metric the ONNX
+        // embedding is invisible latency. The capture here ends long before EarlyVerifyMs (5 s), so
+        // only the final inline pass runs — and SpeakerVerifyMs means exactly that pass, the additive
+        // one. The early pass has its own member (SpeakerVerifyEarlyMs), asserted in the early-reject
+        // test below.
+        var verify = h.PublishedOf(VoiceMetric.SpeakerVerifyMs);
+        verify.Length.ShouldBe(1);
+        verify.ShouldAllBe(e => e.DurationMs != null && e.DurationMs >= 0);
+        verify.ShouldAllBe(e => e.Outcome == "final");
+        h.PublishedOf(VoiceMetric.SpeakerVerifyEarlyMs).ShouldBeEmpty();
+
+        // The EndpointTailMs PUBLISH SITE, not just the gate underneath it: the satellite streams
+        // 6 silent 100 ms frames after the loud ones and TrailingSilenceMs is 200, so the gate ends
+        // on the second silent frame and the reported tail must be that 200 — not the 600 ms of
+        // silence that kept arriving afterwards. Published even though this capture is rejected,
+        // because tuning TrailingSilenceMs needs the rejected captures too.
+        var tail = h.PublishedOf(VoiceMetric.EndpointTailMs).SingleOrDefault();
+        tail.ShouldNotBeNull();
+        tail!.DurationMs.ShouldBe(200);
+        tail.EndReason.ShouldBe("trailing_silence");
+
+        h.Emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
+
+        await StopAsync(connection, run, cts);
+    }
+
+    [Fact]
+    public async Task EarlyMark_NoSpeechYet_KeepsMicOpenForLateSpeech()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        // Small enough to keep the test fast, large enough that the delay below reliably straddles
+        // it even under CI jitter.
+        const int earlyVerifyMs = 150;
+        var h = new Harness
+        {
+            Voice = new VoiceSettings
+            {
+                AgentId = "mycroft",
+                FollowUp = new FollowUpSettings
+                { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 },
+                SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = earlyVerifyMs }
+            },
+            Verifier = new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000)
+        };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        // First (wake) utterance: ordinary speech then trailing silence, dispatched normally.
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 6);
+
+        // Wake turn dispatched -> simulate the agent's spoken reply so the follow-up window opens.
+        await h.Emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), cts.Token);
+        SpeakOneReplySegment(connection.Session);
+        await UntilAsync(() => connection.Session.HasActiveCapture, TimeSpan.FromSeconds(10));
+
+        // Follow-up mic reopened and gets pure ambient noise — nobody has started speaking yet.
+        // Real wall-clock delay (not more gate-time audio) so the early-verify mark elapses while
+        // the capture's gate-classified speech is still exactly zero — this is the production
+        // symptom (speechMs=0 at the early mark).
+        h.SendAudio(0, 1);
+        await Task.Delay(TimeSpan.FromMilliseconds(earlyVerifyMs + 450), cts.Token);
+
+        // The user starts talking only now, well after the early mark has already elapsed.
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 6);
+
+        // The late-arriving speech must still reach the agent: a capture with zero gate-classified
+        // speech at the early mark must never be early-rejected, so the mic stays open for the
+        // speaker who is about to talk.
+        await h.Emitter.ReceivedAtLeastAsync(2, TimeSpan.FromSeconds(15), cts.Token);
+        h.Emitter.Received().Count.ShouldBe(2);
+
+        h.PublishedOf(VoiceMetric.UtteranceRejected)
+            .Any(e => e.Outcome == "unknown_speaker_early").ShouldBeFalse();
+
+        await StopAsync(connection, run, cts);
+    }
+
+    [Fact]
+    public async Task EarlyMark_ContinuousUnknownVoice_StillEarlyRejects()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        const int earlyVerifyMs = 150;
+        var h = new Harness
+        {
+            Voice = new VoiceSettings
+            {
+                AgentId = "mycroft",
+                FollowUp = new FollowUpSettings { Enabled = false },
+                SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = earlyVerifyMs }
+            },
+            Verifier = new GatedToneVerifier(minSpeechMs: 300, knownSample: 8000)
+        };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        // Continuous unknown-voice audio (a tone distinct from the enrolled one) latches as speech
+        // and never stops on its own — models a talking TV holding the capture open. No trailing
+        // silence is sent, so the capture is still open purely because wall-clock time passes.
+        h.SendAudio(0, 1);
+        h.SendAudio(3000, 4);
+
+        await UntilAsync(() => h.WrittenOfType("transcript").Count > 0, TimeSpan.FromSeconds(10));
+        // Closing transcript re-arms the satellite; the conversation ended without STT.
+        h.WrittenOfType("transcript")[0].Data["text"]!.GetValue<string>().ShouldBe("");
+
+        h.Stt.Verify(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(),
+                                            It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()),
+            Times.Never());
+
+        var rejection = h.PublishedOf(VoiceMetric.UtteranceRejected).SingleOrDefault();
+        rejection.ShouldNotBeNull();
+        rejection!.Outcome.ShouldBe("unknown_speaker_early");
+        // The "TV" DID latch as speech, unlike the zero-speech scenario above.
+        (rejection.SpeechMs ?? 0).ShouldBeGreaterThanOrEqualTo(300L);
+
+        // This is the only test that forces the early-close branch to reject, so it is the one place
+        // the early pass gets its own coverage. It must publish SpeakerVerifyEarlyMs, NOT
+        // SpeakerVerifyMs: the early pass runs while the capture is still open, concurrent with the
+        // user speaking, so it overlaps the utterance and is not part of the additive decomposition.
+        // Sharing one member let any grouping not keyed on Outcome (the dashboard defaults to
+        // SatelliteId) silently average an overlapping span together with an additive one.
+        var verify = h.PublishedOf(VoiceMetric.SpeakerVerifyEarlyMs).SingleOrDefault();
+        verify.ShouldNotBeNull();
+        verify!.Outcome.ShouldBe("early");
+        (verify.DurationMs ?? -1).ShouldBeGreaterThanOrEqualTo(0L);
+        verify.Similarity.ShouldBe(0.213); // GatedToneVerifier's fixed Rejected similarity
+        h.PublishedOf(VoiceMetric.SpeakerVerifyMs).ShouldBeEmpty();
+
+        h.Emitter.Received().ShouldBeEmpty(); // no message notification reached the agent
+
+        await StopAsync(connection, run, cts);
+    }
+
+    [Fact]
+    public async Task FollowUp_Enabled_DispatchesFollowUpWithoutSecondWake()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        var h = new Harness
+        {
+            Voice = new VoiceSettings
+            {
+                AgentId = "mycroft",
+                FollowUp = new FollowUpSettings
+                { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 }
+            }
+        };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        // First utterance: speech then trailing silence. Leading silent chunk seeds the
+        // AdaptiveLevelTracker's noise floor (models the real pre-roll gap).
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 6);
+
+        // First utterance dispatched -> simulate the agent's spoken reply so the follow-up opens.
+        await h.Emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), cts.Token);
+        h.WrittenOfType("transcript").ShouldBeEmpty(); // transcript deferred (no re-arm yet)
+        SpeakOneReplySegment(connection.Session);
+
+        // The follow-up window opens asynchronously after the reply signal; wait for the capture to
+        // become active, then stream the wake-free follow-up utterance into it. A fresh
+        // SilenceGate+AdaptiveLevelTracker is opened per capture, so this needs its own leading
+        // silent chunk to seed the floor.
+        await UntilAsync(() => connection.Session.HasActiveCapture, TimeSpan.FromSeconds(10));
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 6);
+
+        // Second utterance must be dispatched WITHOUT a second run-pipeline (wake-free follow-up).
+        await h.Emitter.ReceivedAtLeastAsync(2, TimeSpan.FromSeconds(15), cts.Token);
+        h.Emitter.Received().Count.ShouldBe(2);
+
+        await StopAsync(connection, run, cts);
+    }
+
+    [Fact]
+    public async Task FollowUp_Silence_ReArmsSatelliteWithClosingTranscript()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        var h = new Harness
+        {
+            Voice = new VoiceSettings
+            {
+                AgentId = "mycroft",
+                FollowUp = new FollowUpSettings
+                { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 }
+            }
+        };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 6);
+
+        // First utterance dispatched -> simulate the agent's spoken reply so the follow-up opens.
+        await h.Emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), cts.Token);
+        h.WrittenOfType("transcript").ShouldBeEmpty(); // transcript deferred (no re-arm yet)
+        SpeakOneReplySegment(connection.Session);
+
+        // Wait for the wake-free window to open, then stream pure silence into it: 12 silent chunks
+        // (~1.2s) exceed the 800ms no-speech window.
+        await UntilAsync(() => connection.Session.HasActiveCapture, TimeSpan.FromSeconds(10));
+        h.SendAudio(0, 12);
+
+        // The no-speech timeout fires -> the closing (empty) transcript re-arms the satellite.
+        await UntilAsync(() => h.WrittenOfType("transcript").Count > 0, TimeSpan.FromSeconds(15));
+        h.WrittenOfType("transcript")[0].Data["text"]!.GetValue<string>().ShouldBe("");
+        h.Emitter.Received().Count.ShouldBe(1); // the silent follow-up was never dispatched
+
+        await StopAsync(connection, run, cts);
+    }
+
+    [Fact]
+    public async Task Dispatch_Utterance_AcknowledgesActiveAlertOnThatSatellite()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var h = new Harness();
+        using var alertCts = new CancellationTokenSource();
+        h.Alerts.Register(new AlertHandle(alertCts, ["kitchen-01"], "test alert", AnnounceKind.Alarm));
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 6);
+
+        await h.Emitter.FirstAsync(TimeSpan.FromSeconds(10), cts.Token); // utterance dispatched
+        await UntilAsync(() => alertCts.IsCancellationRequested, TimeSpan.FromSeconds(5));
+        alertCts.IsCancellationRequested.ShouldBeTrue(); // the alert was acknowledged
+
+        await StopAsync(connection, run, cts);
     }
 
     // The host's reconnect loop is built on the run throwing: a link that dies has to surface as an
