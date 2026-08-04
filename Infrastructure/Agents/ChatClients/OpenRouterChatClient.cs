@@ -4,12 +4,12 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
-using Domain.Memory;
 using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using OpenAI;
@@ -81,60 +81,11 @@ public sealed class OpenRouterChatClient : IChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var transformedMessages = messages.Select(x =>
-        {
-            var newMessage = x.Clone();
-            var msgSender = newMessage.GetSenderId();
-            var timestamp = newMessage.GetTimestamp();
-            var location = newMessage.GetLocation();
-            var satelliteId = newMessage.GetSatelliteId();
-            var dismissedAlert = newMessage.GetDismissedAlert();
-            if (newMessage.Role == ChatRole.User && (msgSender is not null || timestamp is not null || dismissedAlert is not null))
-            {
-                var hasLocation = !string.IsNullOrWhiteSpace(location);
-                var hasSatellite = !string.IsNullOrWhiteSpace(satelliteId);
-                var senderSegment = msgSender is null
-                    ? null
-                    : (hasLocation, hasSatellite) switch
-                    {
-                        (true, true) => $"Message from {msgSender} (in {location} via {satelliteId})",
-                        (true, false) => $"Message from {msgSender} (in {location})",
-                        (false, true) => $"Message from {msgSender} (via {satelliteId})",
-                        (false, false) => $"Message from {msgSender}"
-                    };
-
-                var localTimestamp = timestamp is { } ts
-                    ? TimeZoneInfo.ConvertTime(ts, _timeProvider.LocalTimeZone)
-                    : (DateTimeOffset?)null;
-
-                var prefix = (senderSegment, timestamp) switch
-                {
-                    (not null, not null) => $"[Current time: {localTimestamp:yyyy-MM-dd HH:mm:ss zzz}] {senderSegment}:\n",
-                    (not null, null) => $"{senderSegment}:\n",
-                    (null, not null) => $"[Current time: {localTimestamp:yyyy-MM-dd HH:mm:ss zzz}]:\n",
-                    _ => ""
-                };
-
-                if (!string.IsNullOrWhiteSpace(dismissedAlert))
-                {
-                    prefix = $"[The user just dismissed the {dismissedAlert}]\n{prefix}";
-                }
-
-                newMessage.Contents = newMessage.Contents
-                    .Prepend(new TextContent(prefix))
-                    .ToList();
-            }
-
-            var memoryContext = newMessage.GetMemoryContext();
-            if (memoryContext is not null && newMessage.Role == ChatRole.User)
-            {
-                newMessage.Contents = newMessage.Contents
-                    .Prepend(new TextContent(RecallBlock.Render(memoryContext)))
-                    .ToList();
-            }
-
-            return newMessage;
-        }).ToList();
+        // Decorated on the way out and never on the way in: what the client sends carries the
+        // sender, the local time and the recall block, and what gets persisted stays as typed.
+        var transformedMessages = messages
+            .Select(x => TurnDecoration.Apply(x, _timeProvider.LocalTimeZone))
+            .ToList();
 
         // The model a per-message config patch resolved to rides this request's own options
         // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on
