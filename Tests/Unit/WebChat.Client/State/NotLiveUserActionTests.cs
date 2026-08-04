@@ -139,6 +139,21 @@ public sealed class NotLiveUserActionTests
     }
 
     [Fact]
+    public async Task ADelete_OfTheOpenConversation_ThatCouldNotBeMade_LeavesItSelected()
+    {
+        await using var client = new ScriptedChatClient();
+        await client.ConnectAsync();
+        SeedTopic(client);
+        client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        client.GoNotLive();
+        client.Dispatcher.Dispatch(new RemoveTopic("topic-1", "agent-1", 10, 20));
+
+        await TestChat.Eventually(() => client.Topics.State.SelectedTopicId == "topic-1");
+        client.Topics.State.Topics.Single().TopicId.ShouldBe("topic-1");
+    }
+
+    [Fact]
     public async Task ADelete_WhileLive_StillRemovesTheConversation()
     {
         await using var client = new ScriptedChatClient();

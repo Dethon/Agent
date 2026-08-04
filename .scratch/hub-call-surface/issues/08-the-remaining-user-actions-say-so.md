@@ -17,15 +17,15 @@ never having asked.
 
 **Blocked by:** 01, 03, 04.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The save, delete, cancel and approval-response calls answer with a result.
-- [ ] Each raises one toast when the call could not be made.
-- [ ] A delete that could not be made leaves the conversation in the sidebar rather
+- [x] The save, delete, cancel and approval-response calls answer with a result.
+- [x] Each raises one toast when the call could not be made.
+- [x] A delete that could not be made leaves the conversation in the sidebar rather
       than removing it optimistically.
-- [ ] An approval answered while the transport cannot carry the call leaves the
+- [x] An approval answered while the transport cannot carry the call leaves the
       prompt on screen so it can be answered again.
-- [ ] A server answering no to the approval response stays distinct from not live and
+- [x] A server answering no to the approval response stays distinct from not live and
       keeps today's behaviour.
-- [ ] Two failed user actions in the same window produce one toast, not two.
-- [ ] When the transport is live, all four behave exactly as they do today.
+- [x] Two failed user actions in the same window produce one toast, not two.
+- [x] When the transport is live, all four behave exactly as they do today.

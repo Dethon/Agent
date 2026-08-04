@@ -15,9 +15,9 @@ fixture or a collection definition would change this ticket into a migration.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A search for each of the three types across the whole solution returns only
+- [x] A search for each of the three types across the whole solution returns only
       their own definitions.
-- [ ] All three files are deleted.
-- [ ] The integration test project builds and its suites pass unchanged.
+- [x] All three files are deleted.
+- [x] The integration test project builds and its suites pass unchanged.

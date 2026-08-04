@@ -19,18 +19,18 @@ caller knows a stream will not start before it announces one.
 
 **Blocked by:** 01, 03, 04.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The session start, send stream and enqueue calls answer with a result.
-- [ ] The streaming calls report not live before any iteration begins, rather than
+- [x] The session start, send stream and enqueue calls answer with a result.
+- [x] The streaming calls report not live before any iteration begins, rather than
       yielding an empty sequence.
-- [ ] A message typed while the transport cannot carry a call raises exactly one
+- [x] A message typed while the transport cannot carry a call raises exactly one
       toast and adds no message to the transcript.
-- [ ] A not-live enqueue does not fall through to opening a new stream and announces
+- [x] A not-live enqueue does not fall through to opening a new stream and announces
       no stream.
-- [ ] A server answering no to the enqueue still opens a new stream, as it does
+- [x] A server answering no to the enqueue still opens a new stream, as it does
       today — the two outcomes stay distinct.
-- [ ] When the transport is live, sending, enqueuing and starting a session behave
+- [x] When the transport is live, sending, enqueuing and starting a session behave
       exactly as they do today.
-- [ ] The existing send-message and streaming suites pass, adjusted only for the
+- [x] The existing send-message and streaming suites pass, adjusted only for the
       changed signatures.

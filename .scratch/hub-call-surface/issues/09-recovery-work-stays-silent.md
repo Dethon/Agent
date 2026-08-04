@@ -20,14 +20,14 @@ never asked" stops being indistinguishable from "the server refused".
 
 **Blocked by:** 03, 04.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The space join, user registration, stream resume and three push calls answer
+- [x] The space join, user registration, stream resume and three push calls answer
       with a result.
-- [ ] Identifying the user is a method on the session service, and session recovery
+- [x] Identifying the user is a method on the session service, and session recovery
       depends on that rather than on a transport.
-- [ ] None of these raises a toast when the call could not be made.
-- [ ] None of them disturbs a store when the call could not be made.
-- [ ] The push service's unsubscribe still swallows a server-side failure, and its
+- [x] None of these raises a toast when the call could not be made.
+- [x] None of them disturbs a store when the call could not be made.
+- [x] The push service's unsubscribe still swallows a server-side failure, and its
       existing suite passes.
-- [ ] When the transport is live, all six behave exactly as they do today.
+- [x] When the transport is live, all six behave exactly as they do today.

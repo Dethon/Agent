@@ -36,15 +36,15 @@ whether the connection is live, so it cannot be an answer that depends on being 
 (`.scratch/chat-live-connection/`) to have landed, since it renames this module and
 adds the receive verb to the same seam.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The result type exists and expresses exactly two cases.
-- [ ] The live connection exposes a typed invoke, a void invoke and a stream verb,
+- [x] The result type exists and expresses exactly two cases.
+- [x] The live connection exposes a typed invoke, a void invoke and a stream verb,
       each answering with a result.
-- [ ] The hub connection abstraction exposes the same three verbs, and its fake can
+- [x] The hub connection abstraction exposes the same three verbs, and its fake can
       be scripted to answer them.
-- [ ] Each verb returns the server's answer when the connection is live.
-- [ ] Each verb answers not live when there is no connection, when one is connecting,
+- [x] Each verb returns the server's answer when the connection is live.
+- [x] Each verb answers not live when there is no connection, when one is connecting,
       and when one is reconnecting.
-- [ ] The probe is unchanged and does not answer with a result.
-- [ ] Nothing outside the connection module changes, and the full client suite passes.
+- [x] The probe is unchanged and does not answer with a result.
+- [x] Nothing outside the connection module changes, and the full client suite passes.

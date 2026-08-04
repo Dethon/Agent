@@ -1,6 +1,5 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
-using WebChat.Client.Models;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -20,8 +19,8 @@ public sealed class TopicDeleteEffect : IDisposable
     private readonly IMessagePipeline _pipeline;
     private readonly ILogger<TopicDeleteEffect> _logger;
     private readonly IDisposable _subscription;
-    private IReadOnlyList<StoredTopic> _beforeLastChange = [];
-    private IReadOnlyList<StoredTopic> _lastSeen = [];
+    private TopicsState _beforeLastChange = TopicsState.Initial;
+    private TopicsState _lastSeen = TopicsState.Initial;
 
     public TopicDeleteEffect(
         Dispatcher dispatcher,
@@ -46,7 +45,7 @@ public sealed class TopicDeleteEffect : IDisposable
         _subscription = topicsStore.StateObservable.Subscribe(state =>
         {
             _beforeLastChange = _lastSeen;
-            _lastSeen = state.Topics;
+            _lastSeen = state;
         });
 
         dispatcher.RegisterHandler<RemoveTopic>(action =>
@@ -96,12 +95,25 @@ public sealed class TopicDeleteEffect : IDisposable
 
     private void RestoreTopic(string topicId)
     {
+        // Read the snapshot before dispatching anything: a dispatch that changes topic state
+        // moves the pair along, and the next read would see what this method just produced.
+        var before = _beforeLastChange;
+
         _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
 
-        var removed = _beforeLastChange.FirstOrDefault(topic => topic.TopicId == topicId);
-        if (removed is not null)
+        var removed = before.Topics.FirstOrDefault(topic => topic.TopicId == topicId);
+        if (removed is null)
         {
-            _dispatcher.Dispatch(new AddTopic(removed));
+            return;
+        }
+
+        _dispatcher.Dispatch(new AddTopic(removed));
+
+        // The same reduce cleared the selection. Putting the row back without it would leave
+        // the user looking at an empty transcript beside the conversation they still have.
+        if (before.SelectedTopicId == topicId)
+        {
+            _dispatcher.Dispatch(new SelectTopic(topicId));
         }
     }
 

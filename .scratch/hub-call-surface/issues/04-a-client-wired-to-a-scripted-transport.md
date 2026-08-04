@@ -20,16 +20,16 @@ justify that: composition and scripting, nothing clever.
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A fixture composes the real client — live connection, services, effects,
+- [x] A fixture composes the real client — live connection, services, effects,
       dispatcher, stores — over the fake hub connection.
-- [ ] A test can script the transport's answer to a named hub call, and can put it in
+- [x] A test can script the transport's answer to a named hub call, and can put it in
       a state where calls answer not live.
-- [ ] The stores are reachable for assertions without reaching into internals.
-- [ ] A smoke test proves the wiring: a server push through the scripted transport
+- [x] The stores are reachable for assertions without reaching into internals.
+- [x] A smoke test proves the wiring: a server push through the scripted transport
       reaches the store.
-- [ ] A smoke test proves the other direction: a call made through a live transport
+- [x] A smoke test proves the other direction: a call made through a live transport
       reaches it with the arguments the caller passed.
-- [ ] The fixture reuses the existing fake hub connection and connection factory
+- [x] The fixture reuses the existing fake hub connection and connection factory
       rather than introducing a second set.

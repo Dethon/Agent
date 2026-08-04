@@ -20,11 +20,11 @@ connection's state property and the foreground reconnect policy both read it.
 
 **Blocked by:** 05, 06, 07, 08, 09.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] No caller anywhere in the client reads the raw connection object.
-- [ ] The accessor is deleted from both the live connection interface and the hub
+- [x] No caller anywhere in the client reads the raw connection object.
+- [x] The accessor is deleted from both the live connection interface and the hub
       connection abstraction.
-- [ ] SignalR client types appear in the client only in the connection factory and in
+- [x] SignalR client types appear in the client only in the connection factory and in
       the two places that read the connection-state enum.
-- [ ] The full client suite passes, and the WebChat end-to-end suite passes.
+- [x] The full client suite passes, and the WebChat end-to-end suite passes.

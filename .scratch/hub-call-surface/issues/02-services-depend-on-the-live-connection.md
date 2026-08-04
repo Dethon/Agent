@@ -15,10 +15,10 @@ interfaces are about the retyping and nothing else.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The topic, messaging, approval, agent and session services take the live
+- [x] The topic, messaging, approval, agent and session services take the live
       connection interface.
-- [ ] No service in the client names the concrete connection class.
-- [ ] Container registration is unchanged in effect: the same instance is injected.
-- [ ] The full client suite passes unchanged.
+- [x] No service in the client names the concrete connection class.
+- [x] Container registration is unchanged in effect: the same instance is injected.
+- [x] The full client suite passes unchanged.

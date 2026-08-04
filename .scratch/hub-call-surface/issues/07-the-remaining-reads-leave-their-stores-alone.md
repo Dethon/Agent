@@ -17,13 +17,13 @@ it rather than folding into the same early return.
 
 **Blocked by:** 03, 04.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The agent list, stream state and pending approval calls answer with a result.
-- [ ] A populated agent list survives a fetch that could not be made.
-- [ ] A stream resume that cannot ask for the stream state does nothing and leaves
+- [x] The agent list, stream state and pending approval calls answer with a result.
+- [x] A populated agent list survives a fetch that could not be made.
+- [x] A stream resume that cannot ask for the stream state does nothing and leaves
       the streaming state untouched, distinct from a read that answers "no stream".
-- [ ] An approval prompt already on screen is not dismissed by a pending-approval read
+- [x] An approval prompt already on screen is not dismissed by a pending-approval read
       that could not be made.
-- [ ] None of the three raises a toast.
-- [ ] When the transport is live, all three behave exactly as they do today.
+- [x] None of the three raises a toast.
+- [x] When the transport is live, all three behave exactly as they do today.

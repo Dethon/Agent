@@ -20,15 +20,15 @@ feed a store, and the rule for those is to stay quiet and keep what is on screen
 
 **Blocked by:** 01, 03, 04.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The topic list and history calls answer with a result rather than an empty list.
-- [ ] Their callers skip the store dispatch when the answer is not live.
-- [ ] A populated topic list survives an agent switch made while the transport cannot
+- [x] The topic list and history calls answer with a result rather than an empty list.
+- [x] Their callers skip the store dispatch when the answer is not live.
+- [x] A populated topic list survives an agent switch made while the transport cannot
       carry a call — the failing-first test.
-- [ ] A populated transcript survives a history fetch that could not be made.
-- [ ] Neither case raises a toast.
-- [ ] When the transport is live, both calls behave exactly as they do today,
+- [x] A populated transcript survives a history fetch that could not be made.
+- [x] Neither case raises a toast.
+- [x] When the transport is live, both calls behave exactly as they do today,
       including a genuinely empty answer emptying the list.
-- [ ] The existing agent selection, topic selection and initialization suites pass,
+- [x] The existing agent selection, topic selection and initialization suites pass,
       adjusted only for the changed signatures.
