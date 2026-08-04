@@ -9,6 +9,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
+using Domain.Memory;
 using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using OpenAI;
@@ -127,9 +128,8 @@ public sealed class OpenRouterChatClient : IChatClient
             var memoryContext = newMessage.GetMemoryContext();
             if (memoryContext is not null && newMessage.Role == ChatRole.User)
             {
-                var memoryBlock = FormatMemoryContext(memoryContext);
                 newMessage.Contents = newMessage.Contents
-                    .Prepend(new TextContent(memoryBlock))
+                    .Prepend(new TextContent(RecallBlock.Render(memoryContext)))
                     .ToList();
             }
 
@@ -292,23 +292,6 @@ public sealed class OpenRouterChatClient : IChatClient
         }
 
         return last;
-    }
-
-    private static string FormatMemoryContext(MemoryContext context)
-    {
-        var memoryLines = context.Memories
-            .Select(r => $"- {r.Memory.Content} ({r.Memory.Category.ToString().ToLowerInvariant()}, importance: {r.Memory.Importance:F1})");
-
-        var profileLine = context.Profile is not null
-            ? [$"[User profile: {context.Profile.Summary}]"]
-            : Enumerable.Empty<string>();
-
-        var lines = new[] { "[Memory context]" }
-            .Concat(memoryLines)
-            .Concat(profileLine)
-            .Append("[End memory context]");
-
-        return string.Join(Environment.NewLine, lines) + Environment.NewLine;
     }
 
     // One handler (= one connection pool) for the whole process: a per-conversation
