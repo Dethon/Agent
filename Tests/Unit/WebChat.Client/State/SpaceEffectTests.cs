@@ -17,7 +17,7 @@ public sealed class SpaceEffectTests : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly SpaceStore _spaceStore;
     private readonly FakeTopicService _topicService;
-    private readonly FakeChatConnectionService _connectionService = new() { IsConnected = true };
+    private readonly FakeChatLiveConnection _liveConnection = new() { IsConnected = true };
     private readonly FakeConfigService _configService;
     private readonly FakeNavigationManager _navigationManager = new();
     private readonly FakePushSubscriptionService _pushService = new();
@@ -35,7 +35,7 @@ public sealed class SpaceEffectTests : IDisposable
         _effect = new SpaceEffect(
             _dispatcher,
             _topicService,
-            _connectionService,
+            _liveConnection,
             _configService,
             _navigationManager,
             _pushService,
@@ -71,7 +71,7 @@ public sealed class SpaceEffectTests : IDisposable
     [Fact]
     public async Task HandleSelectSpaceAsync_UnknownSpaceWhileDisconnected_LeavesInitialisationToDoIt()
     {
-        _connectionService.IsConnected = false;
+        _liveConnection.IsConnected = false;
 
         await _effect.HandleSelectSpaceAsync("ghost");
 

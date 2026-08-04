@@ -10,16 +10,16 @@ using WebChat.Client.State.Hub;
 
 namespace Tests.Unit.WebChat.Client.Services;
 
-public class ChatConnectionServiceTests
+public class ChatLiveConnectionTests
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly FakeHubConnectionFactory _factory = new();
     private readonly RecordingDispatcher _dispatcher = new();
-    private readonly ChatConnectionService _service;
+    private readonly ChatLiveConnection _service;
 
-    public ChatConnectionServiceTests()
+    public ChatLiveConnectionTests()
     {
-        _service = new ChatConnectionService(_factory, new ConnectionEventDispatcher(_dispatcher), _timeProvider);
+        _service = new ChatLiveConnection(_factory, new ConnectionEventDispatcher(_dispatcher), _timeProvider);
     }
 
     [Fact]

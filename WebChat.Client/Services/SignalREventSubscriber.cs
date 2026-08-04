@@ -7,7 +7,7 @@ using WebChat.Client.State.Hub;
 namespace WebChat.Client.Services;
 
 public sealed class SignalREventSubscriber(
-    ChatConnectionService connectionService,
+    ChatLiveConnection liveConnection,
     IHubEventDispatcher hubEventDispatcher) : ISignalREventSubscriber
 {
     private readonly List<IDisposable> _subscriptions = new();
@@ -22,7 +22,7 @@ public sealed class SignalREventSubscriber(
             return;
         }
 
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return;

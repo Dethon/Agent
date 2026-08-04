@@ -4,7 +4,7 @@ using WebChat.Client.Models;
 
 namespace WebChat.Client.Services;
 
-public sealed class ChatSessionService(ChatConnectionService connectionService) : IChatSessionService
+public sealed class ChatSessionService(ChatLiveConnection liveConnection) : IChatSessionService
 {
     public StoredTopic? CurrentTopic { get; private set; }
 
@@ -12,7 +12,7 @@ public sealed class ChatSessionService(ChatConnectionService connectionService) 
 
     public async Task<bool> StartSessionAsync(StoredTopic topic)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return false;

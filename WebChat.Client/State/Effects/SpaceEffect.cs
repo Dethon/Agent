@@ -11,7 +11,7 @@ public sealed class SpaceEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
-    private readonly IChatConnectionService _connectionService;
+    private readonly IChatLiveConnection _liveConnection;
     private readonly IConfigService _configService;
     private readonly NavigationManager _navigationManager;
     private readonly IPushSubscriptionService _pushNotificationService;
@@ -22,7 +22,7 @@ public sealed class SpaceEffect : IDisposable
     public SpaceEffect(
         Dispatcher dispatcher,
         ITopicService topicService,
-        IChatConnectionService connectionService,
+        IChatLiveConnection liveConnection,
         IConfigService configService,
         NavigationManager navigationManager,
         IPushSubscriptionService pushNotificationService,
@@ -30,7 +30,7 @@ public sealed class SpaceEffect : IDisposable
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
-        _connectionService = connectionService;
+        _liveConnection = liveConnection;
         _configService = configService;
         _navigationManager = navigationManager;
         _pushNotificationService = pushNotificationService;
@@ -54,7 +54,7 @@ public sealed class SpaceEffect : IDisposable
         if (space is null)
         {
             // If hub isn't connected yet, skip — InitializationEffect handles initial join
-            if (!_connectionService.IsConnected)
+            if (!_liveConnection.IsConnected)
             {
                 return;
             }

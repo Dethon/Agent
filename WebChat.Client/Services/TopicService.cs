@@ -4,11 +4,11 @@ using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
-public sealed class TopicService(ChatConnectionService connectionService) : ITopicService
+public sealed class TopicService(ChatLiveConnection liveConnection) : ITopicService
 {
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return [];
@@ -19,7 +19,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
 
     public async Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return;
@@ -30,7 +30,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
 
     public async Task DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return;
@@ -41,7 +41,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return [];
@@ -53,7 +53,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
 
     public async Task JoinSpaceAsync(string spaceSlug)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return;

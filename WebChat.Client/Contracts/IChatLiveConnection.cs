@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.SignalR.Client;
 
 namespace WebChat.Client.Contracts;
 
-public interface IChatConnectionService : IAsyncDisposable
+public interface IChatLiveConnection : IAsyncDisposable
 {
     bool IsConnected { get; }
     HubConnection? HubConnection { get; }

@@ -9,14 +9,14 @@ namespace Tests.Unit.WebChat.Client.Services;
 public sealed class PushNotificationServiceTests
 {
     private readonly Mock<IJSRuntime> _mockJsRuntime;
-    private readonly Mock<IChatConnectionService> _mockConnectionService;
+    private readonly Mock<IChatLiveConnection> _mockLiveConnection;
     private readonly PushNotificationService _sut;
 
     public PushNotificationServiceTests()
     {
         _mockJsRuntime = new Mock<IJSRuntime>();
-        _mockConnectionService = new Mock<IChatConnectionService>();
-        _sut = new PushNotificationService(_mockJsRuntime.Object, _mockConnectionService.Object);
+        _mockLiveConnection = new Mock<IChatLiveConnection>();
+        _sut = new PushNotificationService(_mockJsRuntime.Object, _mockLiveConnection.Object);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class PushNotificationServiceTests
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", It.IsAny<object[]>()))
             .Returns(new ValueTask<PushSubscriptionResult>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
-        _mockConnectionService
+        _mockLiveConnection
             .Setup(c => c.HubConnection)
             .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);
 
@@ -107,7 +107,7 @@ public sealed class PushNotificationServiceTests
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<string?>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
             .Returns(new ValueTask<string?>("https://endpoint"));
-        _mockConnectionService
+        _mockLiveConnection
             .Setup(c => c.HubConnection)
             .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);
 
@@ -150,7 +150,7 @@ public sealed class PushNotificationServiceTests
 
         _mockJsRuntime.Verify(js => js.InvokeAsync<PushSubscriptionResult?>(
             "pushNotifications.getSubscription", It.IsAny<object[]>()), Times.Once);
-        _mockConnectionService.Verify(c => c.HubConnection, Times.AtLeastOnce);
+        _mockLiveConnection.Verify(c => c.HubConnection, Times.AtLeastOnce);
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public sealed class PushNotificationServiceTests
 
         await _sut.ResubscribeAsync();
 
-        _mockConnectionService.Verify(c => c.HubConnection, Times.Never);
+        _mockLiveConnection.Verify(c => c.HubConnection, Times.Never);
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public sealed class PushNotificationServiceTests
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription", It.IsAny<object[]>()))
             .Returns(new ValueTask<PushSubscriptionResult?>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
-        _mockConnectionService
+        _mockLiveConnection
             .Setup(c => c.HubConnection)
             .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);
 

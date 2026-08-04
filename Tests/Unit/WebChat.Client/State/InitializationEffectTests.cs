@@ -27,7 +27,7 @@ public sealed class InitializationEffectTests : IDisposable
     private readonly StreamingStore _streamingStore;
     private readonly SpaceStore _spaceStore;
     private readonly UserIdentityStore _userIdentityStore;
-    private readonly FakeChatConnectionService _connectionService;
+    private readonly FakeChatLiveConnection _liveConnection;
     private readonly FakeAgentService _agentService;
     private readonly FakeTopicService _topicService;
     private readonly FakeConfigService _configService;
@@ -46,7 +46,7 @@ public sealed class InitializationEffectTests : IDisposable
         _spaceStore = new SpaceStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
 
-        _connectionService = new FakeChatConnectionService(_calls);
+        _liveConnection = new FakeChatLiveConnection(_calls);
         _agentService = new FakeAgentService(_calls);
         _topicService = new FakeTopicService(_calls);
         _configService = new FakeConfigService(_calls);
@@ -60,7 +60,7 @@ public sealed class InitializationEffectTests : IDisposable
 
         _effect = new InitializationEffect(
             _dispatcher,
-            _connectionService,
+            _liveConnection,
             _agentService,
             _topicService,
             _configService,
@@ -221,7 +221,7 @@ public sealed class InitializationEffectTests : IDisposable
         _dispatcher.Dispatch(new Initialize());
 
         await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
-        _connectionService.ConnectCalls.ShouldBe(1);
+        _liveConnection.ConnectCalls.ShouldBe(1);
         _eventSubscriber.IsSubscribed.ShouldBeTrue();
     }
 

@@ -4,11 +4,11 @@ using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
-public sealed class AgentService(ChatConnectionService connectionService) : IAgentService
+public sealed class AgentService(ChatLiveConnection liveConnection) : IAgentService
 {
     public async Task<IReadOnlyList<AgentCatalogEntry>> GetAgentsAsync()
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return [];

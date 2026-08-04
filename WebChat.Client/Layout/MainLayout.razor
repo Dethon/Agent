@@ -1,7 +1,7 @@
 @inherits LayoutComponentBase
 @using WebChat.Client.Contracts
 @implements IDisposable
-@inject IChatConnectionService ConnectionService
+@inject IChatLiveConnection LiveConnection
 @inject IJSRuntime Js
 @inject SpaceStore SpaceStore
 
@@ -13,8 +13,8 @@
         <HeaderConversation />
         <div class="header-right">
             <div class="connection-status">
-                <span class="status-dot @(ConnectionService.IsConnected ? "connected" : "")"></span>
-                @(ConnectionService.IsConnected ? "Connected" : "Disconnected")
+                <span class="status-dot @(LiveConnection.IsConnected ? "connected" : "")"></span>
+                @(LiveConnection.IsConnected ? "Connected" : "Disconnected")
             </div>
             <UserIdentityPicker />
             <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
@@ -62,7 +62,7 @@
 
     protected override Task OnInitializedAsync()
     {
-        ConnectionService.OnStateChanged += StateHasChanged;
+        LiveConnection.OnStateChanged += StateHasChanged;
         _spaceSubscription = SpaceStore.StateObservable.Subscribe(state =>
         {
             var changed = false;
@@ -109,7 +109,7 @@
     [JSInvokable]
     public async Task OnPageVisible()
     {
-        await ConnectionService.ReconnectIfNeededAsync();
+        await LiveConnection.ReconnectIfNeededAsync();
     }
 
     private async Task ToggleTheme()
@@ -121,7 +121,7 @@
     public void Dispose()
     {
         _disposed = true;
-        ConnectionService.OnStateChanged -= StateHasChanged;
+        LiveConnection.OnStateChanged -= StateHasChanged;
         _spaceSubscription?.Dispose();
         _selfRef?.Dispose();
     }

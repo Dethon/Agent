@@ -18,11 +18,11 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.H
 builder.Services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
 builder.Services.AddScoped<ConnectionEventDispatcher>();
 
-// Connection services (ChatConnectionService is the concrete type needed by dependent services)
+// The live connection (concrete type still needed by the services that reach for the raw hub)
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IHubConnectionFactory, SignalRHubConnectionFactory>();
-builder.Services.AddScoped<ChatConnectionService>();
-builder.Services.AddScoped<IChatConnectionService>(sp => sp.GetRequiredService<ChatConnectionService>());
+builder.Services.AddScoped<ChatLiveConnection>();
+builder.Services.AddScoped<IChatLiveConnection>(sp => sp.GetRequiredService<ChatLiveConnection>());
 
 builder.Services.AddScoped<IChatSessionService, ChatSessionService>();
 builder.Services.AddScoped<IChatMessagingService, ChatMessagingService>();

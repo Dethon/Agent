@@ -5,12 +5,12 @@ using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
-public sealed class ChatMessagingService(ChatConnectionService connectionService) : IChatMessagingService
+public sealed class ChatMessagingService(ChatLiveConnection liveConnection) : IChatMessagingService
 {
     public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
         string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             yield break;
@@ -27,7 +27,7 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
 
     public async IAsyncEnumerable<ChatStreamMessage> ResumeStreamAsync(string topicId)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             yield break;
@@ -43,7 +43,7 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
 
     public async Task<StreamState?> GetStreamStateAsync(string topicId)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return null;
@@ -54,7 +54,7 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
 
     public async Task CancelTopicAsync(string topicId)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return;
@@ -66,7 +66,7 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
     public async Task<bool> EnqueueMessageAsync(
         string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return false;

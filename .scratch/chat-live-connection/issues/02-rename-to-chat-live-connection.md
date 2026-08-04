@@ -17,9 +17,9 @@ what goes.
 
 **Blocked by:** None — can start immediately. Runs in parallel with 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The interface and implementation carry the live connection name
-- [ ] Every consumer, the container registration and the test fixture are updated
-- [ ] The interface's member list is unchanged in this ticket
-- [ ] No production behavior changes; the full unit suite passes unchanged
+- [x] The interface and implementation carry the live connection name
+- [x] Every consumer, the container registration and the test fixture are updated
+- [x] The interface's member list is unchanged in this ticket
+- [x] No production behavior changes; the full unit suite passes unchanged

@@ -13,7 +13,7 @@ namespace WebChat.Client.State.Effects;
 public sealed class InitializationEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly IChatConnectionService _connectionService;
+    private readonly IChatLiveConnection _liveConnection;
     private readonly IAgentService _agentService;
     private readonly ITopicService _topicService;
     private readonly IConfigService _configService;
@@ -30,7 +30,7 @@ public sealed class InitializationEffect : IDisposable
 
     public InitializationEffect(
         Dispatcher dispatcher,
-        IChatConnectionService connectionService,
+        IChatLiveConnection liveConnection,
         IAgentService agentService,
         ITopicService topicService,
         IConfigService configService,
@@ -46,7 +46,7 @@ public sealed class InitializationEffect : IDisposable
         ILogger<InitializationEffect> logger)
     {
         _dispatcher = dispatcher;
-        _connectionService = connectionService;
+        _liveConnection = liveConnection;
         _agentService = agentService;
         _topicService = topicService;
         _configService = configService;
@@ -69,7 +69,7 @@ public sealed class InitializationEffect : IDisposable
 
     public async Task HandleInitializeAsync()
     {
-        await _connectionService.ConnectAsync();
+        await _liveConnection.ConnectAsync();
         _eventSubscriber.Subscribe();
 
         await RegisterUserAsync();
@@ -97,7 +97,7 @@ public sealed class InitializationEffect : IDisposable
         SubscribePushAsync().LogFaults(_logger, "push subscription");
 
         // Re-register user on reconnection (after initial subscribe to avoid race)
-        _connectionService.OnReconnected += () =>
+        _liveConnection.OnReconnected += () =>
         {
             var registerTask = RegisterUserAsync();
             var joinTask = _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
@@ -142,9 +142,9 @@ public sealed class InitializationEffect : IDisposable
     public async Task RegisterUserAsync(string? userId = null)
     {
         userId ??= _userIdentityStore.State.SelectedUserId;
-        if (!string.IsNullOrEmpty(userId) && _connectionService.HubConnection is not null)
+        if (!string.IsNullOrEmpty(userId) && _liveConnection.HubConnection is not null)
         {
-            await _connectionService.HubConnection.InvokeAsync("RegisterUser", userId);
+            await _liveConnection.HubConnection.InvokeAsync("RegisterUser", userId);
         }
     }
 

@@ -4,10 +4,10 @@ using WebChat.Client.State.Hub;
 
 namespace WebChat.Client.Services;
 
-public sealed class ChatConnectionService(
+public sealed class ChatLiveConnection(
     IHubConnectionFactory connectionFactory,
     ConnectionEventDispatcher connectionEventDispatcher,
-    TimeProvider timeProvider) : IChatConnectionService
+    TimeProvider timeProvider) : IChatLiveConnection
 {
     private const int MaxRebuildAttempts = 4;
     private static readonly TimeSpan _probeTimeout = TimeSpan.FromSeconds(1.5);
@@ -70,7 +70,7 @@ public sealed class ChatConnectionService(
         _connectionEventDispatcher.HandleConnecting();
         await connection.StartAsync(cancellationToken);
 
-        // The service may have been disposed while StartAsync was in flight (e.g. the circuit
+        // The live connection may have been disposed while StartAsync was in flight (e.g. the circuit
         // tore down mid-rebuild). Don't publish state or fire recovery into a dead store —
         // drop the just-started connection instead of leaking it.
         if (_disposed)

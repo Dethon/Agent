@@ -5,11 +5,11 @@ using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
-public sealed class ApprovalService(ChatConnectionService connectionService) : IApprovalService
+public sealed class ApprovalService(ChatLiveConnection liveConnection) : IApprovalService
 {
     public async Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return false;
@@ -20,7 +20,7 @@ public sealed class ApprovalService(ChatConnectionService connectionService) : I
 
     public async Task<ToolApprovalRequestMessage?> GetPendingApprovalForTopicAsync(string topicId)
     {
-        var hubConnection = connectionService.HubConnection;
+        var hubConnection = liveConnection.HubConnection;
         if (hubConnection is null)
         {
             return null;
