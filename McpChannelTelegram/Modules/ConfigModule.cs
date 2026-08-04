@@ -1,5 +1,5 @@
-using Channels.Hosting;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;

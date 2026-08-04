@@ -1,15 +1,15 @@
-using Channels.Hosting;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Infrastructure.Validation;
+using Mcp.Hosting;
 using McpServerScheduling.Services;
 using McpServerScheduling.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
-using Tests.Unit.Channels.Hosting;
+using Tests.Unit.Mcp.Hosting;
 using Xunit;
 
 namespace Tests.Unit.McpServerScheduling;

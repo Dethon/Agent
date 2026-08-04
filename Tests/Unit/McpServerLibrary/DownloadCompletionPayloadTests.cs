@@ -1,12 +1,12 @@
-using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using Shouldly;
 
 namespace Tests.Unit.McpServerLibrary;
 
 // This server's own payload shape. The gate-on-live behaviour it depends on is pinned once at the
-// policy seam (Tests/Unit/Channels.Hosting/DeliveryPolicyTests.cs), and what the watcher does with
+// policy seam (Tests/Unit/Mcp.Hosting/DeliveryPolicyTests.cs), and what the watcher does with
 // a false return is pinned in DownloadCompletionWatcherTests.
 public class DownloadCompletionPayloadTests
 {

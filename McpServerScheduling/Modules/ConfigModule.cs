@@ -1,4 +1,3 @@
-using Channels.Hosting;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Prompts;
@@ -6,6 +5,7 @@ using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Infrastructure.Validation;
+using Mcp.Hosting;
 using McpServerScheduling.McpPrompts;
 using McpServerScheduling.McpResources;
 using McpServerScheduling.McpTools;

@@ -1,11 +1,11 @@
 using System.Runtime.CompilerServices;
-using Channels.Hosting;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
+using Mcp.Hosting;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.SignalR;

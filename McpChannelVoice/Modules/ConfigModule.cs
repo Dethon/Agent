@@ -1,7 +1,7 @@
-using Channels.Hosting;
 using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Metrics;
+using Mcp.Hosting;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.LocalCommands;

@@ -1,4 +1,4 @@
-namespace Channels.Hosting;
+namespace Mcp.Hosting;
 
 // How a channel server buffers an outbound item when nobody is polling. Required at registration
 // with no default: the difference between Broadcast and GateOnLive is exactly the no-live-subscriber

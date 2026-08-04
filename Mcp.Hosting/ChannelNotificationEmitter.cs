@@ -1,7 +1,7 @@
 using Domain.Channels;
 using Domain.DTOs.Channel;
 
-namespace Channels.Hosting;
+namespace Mcp.Hosting;
 
 // The one way a channel server puts an item on the wire. Emitting answers "was anyone listening?"
 // as its return value, with the freshness check inside the operation, so a caller can neither skip

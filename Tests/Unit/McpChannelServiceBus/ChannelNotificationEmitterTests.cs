@@ -1,13 +1,13 @@
-using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelServiceBus;
 
 // This channel's own payload shape, and nothing else. Liveness and buffering are the shared
 // emitter's business and are pinned once at the policy seam
-// (Tests/Unit/Channels.Hosting/DeliveryPolicyTests.cs).
+// (Tests/Unit/Mcp.Hosting/DeliveryPolicyTests.cs).
 public class ChannelNotificationEmitterTests
 {
     private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "servicebus";

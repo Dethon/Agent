@@ -1,9 +1,9 @@
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
-using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using McpChannelServiceBus.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;

@@ -1,6 +1,6 @@
-using Channels.Hosting;
 using Domain.Contracts;
 using Domain.DTOs;
+using Mcp.Hosting;
 using McpServerLibrary.Settings;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

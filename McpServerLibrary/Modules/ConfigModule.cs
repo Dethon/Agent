@@ -1,10 +1,10 @@
-using Channels.Hosting;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Domain.Tools.Files;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using McpServerLibrary.McpPrompts;
 using McpServerLibrary.McpResources;
 using McpServerLibrary.McpTools;

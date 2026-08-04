@@ -1,5 +1,5 @@
-using Channels.Hosting;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using McpChannelTelegram.Settings;
 using Telegram.Bot;
 using Telegram.Bot.Types;

@@ -1,9 +1,9 @@
 using System.ComponentModel;
 using System.Net;
 using System.Text.Json;
-using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,7 +41,7 @@ public class ChannelServerExtensionsTests
     // a cache client, a printing library, a console UI toolkit and the whole agent stack as
     // transitive dependencies, and nothing else in the build would object.
     [Fact]
-    public void ChannelsHosting_ReferencesNothingFromInfrastructure() =>
+    public void McpHosting_ReferencesNothingFromInfrastructure() =>
         typeof(ChannelServerExtensions).Assembly
             .GetReferencedAssemblies()
             .Select(reference => reference.Name)

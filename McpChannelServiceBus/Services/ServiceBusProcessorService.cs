@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
-using Channels.Hosting;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 
 namespace McpChannelServiceBus.Services;
 

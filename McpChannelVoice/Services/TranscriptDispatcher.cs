@@ -1,9 +1,9 @@
-using Channels.Hosting;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
+using Mcp.Hosting;
 using McpChannelVoice.Services.LocalCommands;
 
 namespace McpChannelVoice.Services;

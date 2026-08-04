@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace Channels.Hosting;
+namespace Mcp.Hosting;
 
 // What "being a channel server" means, as one call. It extends the MCP server builder rather than
 // the service collection because the transport tool and the call-tool filter have to join the

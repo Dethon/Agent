@@ -1,5 +1,5 @@
 using Azure.Messaging.ServiceBus;
-using Channels.Hosting;
+using Mcp.Hosting;
 using McpChannelServiceBus.McpTools;
 using McpChannelServiceBus.Services;
 using McpChannelServiceBus.Settings;

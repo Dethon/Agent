@@ -1,8 +1,8 @@
-using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 
-namespace Tests.Unit.Channels.Hosting;
+namespace Tests.Unit.Mcp.Hosting;
 
 // A real ChannelInbox behind the real emitter, drained the way the agent's channel connection
 // drains it. Every test that used to substitute an emitter uses this instead: overriding the

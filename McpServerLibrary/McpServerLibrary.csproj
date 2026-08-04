@@ -26,7 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
-    <ProjectReference Include="..\Channels.Hosting\Channels.Hosting.csproj" />
+    <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
   </ItemGroup>
 
   <ItemGroup>

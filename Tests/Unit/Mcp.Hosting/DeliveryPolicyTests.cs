@@ -1,10 +1,10 @@
-using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
-namespace Tests.Unit.Channels.Hosting;
+namespace Tests.Unit.Mcp.Hosting;
 
 // The policy seam: the emitter and a real ChannelInbox together, asserted on what a subscriber
 // ends up holding and on what the emit reports back. The three policies differ only in the

@@ -1,9 +1,9 @@
-using Channels.Hosting;
 using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Clients.Push;
 using Infrastructure.Conversations;
 using Infrastructure.StateManagers;
+using Mcp.Hosting;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;

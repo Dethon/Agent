@@ -1,6 +1,6 @@
-using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
@@ -8,7 +8,7 @@ namespace Tests.Unit.McpChannelVoice;
 // This channel's own payload shape: the room location, satellite id and dismissed-alert marker it
 // is the only channel to populate. Two of them are adjacent optional strings, which is why they
 // ride the shared payload as named properties. Liveness and buffering are pinned once at the
-// policy seam (Tests/Unit/Channels.Hosting/DeliveryPolicyTests.cs).
+// policy seam (Tests/Unit/Mcp.Hosting/DeliveryPolicyTests.cs).
 public class ChannelNotificationEmitterTests
 {
     private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "voice";

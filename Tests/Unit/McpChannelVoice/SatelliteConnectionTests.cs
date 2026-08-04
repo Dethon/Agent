@@ -1,7 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
-using Channels.Hosting;
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
@@ -9,6 +8,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
+using Mcp.Hosting;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Services.Verification;
@@ -18,7 +18,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
-using Tests.Unit.Channels.Hosting;
+using Tests.Unit.Mcp.Hosting;
 
 namespace Tests.Unit.McpChannelVoice;
 

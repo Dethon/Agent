@@ -1,13 +1,13 @@
-using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelTelegram;
 
 // This channel's own payload shape, and the one thing that is specific to it: the buffer-always
 // target. Liveness is the shared emitter's business and is pinned once at the policy seam
-// (Tests/Unit/Channels.Hosting/DeliveryPolicyTests.cs).
+// (Tests/Unit/Mcp.Hosting/DeliveryPolicyTests.cs).
 public class ChannelNotificationEmitterTests
 {
     private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "telegram";

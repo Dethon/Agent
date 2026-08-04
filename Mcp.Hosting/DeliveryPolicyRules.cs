@@ -1,4 +1,4 @@
-namespace Channels.Hosting;
+namespace Mcp.Hosting;
 
 internal static class DeliveryPolicyRules
 {

@@ -1,6 +1,6 @@
-using Channels.Hosting;
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
 using Microsoft.Extensions.Logging;

@@ -1,12 +1,12 @@
-using Channels.Hosting;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using McpServerLibrary.Services;
 using McpServerLibrary.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
-using Tests.Unit.Channels.Hosting;
 using Tests.Unit.Domain.Downloads.Vfs;
+using Tests.Unit.Mcp.Hosting;
 using Xunit;
 
 namespace Tests.Unit.McpServerLibrary;

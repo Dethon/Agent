@@ -24,7 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Domain\Domain.csproj" />
-    <ProjectReference Include="..\Channels.Hosting\Channels.Hosting.csproj" />
+    <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
   </ItemGroup>
 
   <ItemGroup>

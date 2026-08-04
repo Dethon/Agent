@@ -1,5 +1,5 @@
-using Channels.Hosting;
 using Domain.Contracts;
+using Mcp.Hosting;
 using McpServerScheduling.Settings;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

@@ -56,7 +56,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerTimers", "McpServe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpChannelVoice", "McpChannelVoice\McpChannelVoice.csproj", "{20FCF76A-5B2E-4B5D-A162-8B752B7209BD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Channels.Hosting", "Channels.Hosting\Channels.Hosting.csproj", "{EB31D208-69DC-4260-8E36-C7DD36E68680}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mcp.Hosting", "Mcp.Hosting\Mcp.Hosting.csproj", "{EB31D208-69DC-4260-8E36-C7DD36E68680}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
