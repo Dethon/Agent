@@ -73,6 +73,14 @@ public sealed class SatelliteSession
     // WyomingClient itself lives only inside that per-connection scope. Null means not connected.
     public Func<WyomingEvent, CancellationToken, Task>? ControlWriter { get; set; }
 
+    // This satellite's own text-to-speech voice, or the channel's. Written once here because the
+    // rule was spelled out at four call sites — the reply, both confirmation-prompt paths and the
+    // announcement service — so a satellite with its own voice could be honoured in three of them
+    // and missed in the fourth. The alarm controller deliberately does not use it: it synthesises
+    // each alert once and replays it to every target, so there is no per-satellite voice to resolve.
+    public string? ResolveVoice(VoiceSettings settings) =>
+        Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
+
     public async Task<bool> TrySendControlAsync(WyomingEvent evt, CancellationToken ct)
     {
         var writer = ControlWriter;

@@ -55,10 +55,9 @@ public class AnnouncementService(
                 continue;
             }
 
-            var voice = request.Voice
-                        ?? session.Config.Tts?.OpenAi?.Voice
-                        ?? settings.Tts.OpenAi.Voice;
-            var options = new SynthesisOptions { Voice = voice };
+            // An explicitly requested voice still wins: the caller asked for this announcement to be
+            // read in it, which outranks the satellite's standing preference.
+            var options = new SynthesisOptions { Voice = request.Voice ?? session.ResolveVoice(settings) };
 
             var job = new PlaybackJob(
                 Label: $"announce:{announcementId}",

@@ -19,15 +19,15 @@ says so.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The satellite session exposes one operation that takes the voice settings and
+- [x] The satellite session exposes one operation that takes the voice settings and
       answers with this satellite's configured voice, falling back to the global voice.
-- [ ] The reply path, both confirmation-prompt paths and the announcement service use it,
+- [x] The reply path, both confirmation-prompt paths and the announcement service use it,
       replacing their own fallback expressions.
-- [ ] An explicitly requested voice still wins where a caller accepts one: the
+- [x] An explicitly requested voice still wins where a caller accepts one: the
       announcement service keeps preferring the voice on the request.
-- [ ] The alarm controller is left alone.
-- [ ] Unit tests cover a satellite with a configured voice, a satellite without one, and
+- [x] The alarm controller is left alone.
+- [x] Unit tests cover a satellite with a configured voice, a satellite without one, and
       a satellite whose configured section exists but names no voice.
-- [ ] The existing reply, confirmation-prompt and announcement tests pass unchanged.
+- [x] The existing reply, confirmation-prompt and announcement tests pass unchanged.

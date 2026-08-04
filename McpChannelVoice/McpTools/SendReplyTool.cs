@@ -270,8 +270,7 @@ public sealed class SendReplyTool
         bool isReply,
         CancellationToken ct)
     {
-        var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
-        var options = new SynthesisOptions { Voice = voice };
+        var options = new SynthesisOptions { Voice = session.ResolveVoice(settings) };
 
         // Assigned by BeginSegment below, before the enqueue and therefore before any callback can
         // run. The token carries the epoch it was registered under, so the count and its release

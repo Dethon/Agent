@@ -112,8 +112,7 @@ public sealed class RequestApprovalTool
         SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings,
         AnnouncePriority priority = AnnouncePriority.High)
     {
-        var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
-        var options = new SynthesisOptions { Voice = voice };
+        var options = new SynthesisOptions { Voice = session.ResolveVoice(settings) };
         var job = new PlaybackJob(
             Label: $"approval:{session.SatelliteId}",
             Priority: priority,
@@ -128,11 +127,11 @@ public sealed class RequestApprovalTool
         CancellationToken ct)
     {
         var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
         var job = new PlaybackJob(
             Label: $"approval:{session.SatelliteId}",
             Priority: AnnouncePriority.High,
-            Audio: tts.SynthesizeAsync(text, new SynthesisOptions { Voice = voice }, default),
+            Audio: tts.SynthesizeAsync(
+                text, new SynthesisOptions { Voice = session.ResolveVoice(settings) }, default),
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: _ => { drained.TrySetResult(); return Task.CompletedTask; },
             OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
