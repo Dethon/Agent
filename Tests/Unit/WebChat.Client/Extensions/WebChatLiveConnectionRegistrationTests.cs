@@ -81,8 +81,36 @@ public sealed class WebChatLiveConnectionRegistrationTests
         scope.ServiceProvider.GetRequiredService<IChatLiveConnection>().ShouldBeSameAs(liveConnection);
     }
 
+    // A cycle behind a factory registration is invisible to ValidateOnBuild — only actually
+    // resolving finds it — and it does not report itself as a cycle, it recurses until the
+    // process dies. So resolve everything the client registers, not only the start-up roots.
+    [Fact]
+    public async Task TheClientRegistrations_ResolveEveryRegisteredService()
+    {
+        var services = CreateRegistrations();
+        await using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+
+        var serviceTypes = services
+            .Select(descriptor => descriptor.ServiceType)
+            .Where(type => !type.IsGenericTypeDefinition)
+            .Distinct()
+            .ToList();
+
+        serviceTypes.ShouldContain(typeof(IChatLiveConnection));
+
+        serviceTypes.ForEach(type =>
+            Should.NotThrow(
+                () => scope.ServiceProvider.GetRequiredService(type),
+                $"{type.Name} did not resolve"));
+    }
+
+    private static ServiceProvider CreateProvider() =>
+        CreateRegistrations().BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
     // Mirrors Program.cs. Only the browser primitives are substituted.
-    private static ServiceProvider CreateProvider()
+    private static ServiceCollection CreateRegistrations()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -114,6 +142,6 @@ public sealed class WebChatLiveConnectionRegistrationTests
         services.AddScoped<PushNotificationService>();
         services.AddScoped<IPushSubscriptionService>(sp => sp.GetRequiredService<PushNotificationService>());
 
-        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        return services;
     }
 }
