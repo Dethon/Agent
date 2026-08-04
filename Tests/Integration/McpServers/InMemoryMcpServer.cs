@@ -27,20 +27,20 @@ public static class InMemoryMcpServer
         app.MapMcp("/mcp");
         await app.StartAsync();
 
+        var endpoint = $"http://localhost:{port}/mcp";
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri($"http://localhost:{port}/mcp")
-            }));
+            new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }));
 
-        return new RunningServer(app, client);
+        return new RunningServer(app, client, endpoint);
     }
 
     public static string Text(CallToolResult result) =>
         string.Join("|", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
 }
 
-public sealed record RunningServer(WebApplication App, McpClient Client) : IAsyncDisposable
+// Endpoint is handed back so a test can point a real client — the agent's own McpChannelConnection,
+// say — at this server instead of using the one built above.
+public sealed record RunningServer(WebApplication App, McpClient Client, string Endpoint) : IAsyncDisposable
 {
     public async ValueTask DisposeAsync()
     {

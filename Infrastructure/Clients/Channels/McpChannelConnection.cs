@@ -44,6 +44,11 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
     private McpClient? _client;
+    // What the far end offers, for this connection generation and no other. Every server in this
+    // repo registers its tools before its transport starts, so the answer cannot change while one
+    // connection is up; a reconnect may be talking to a different process, so it starts over.
+    // See docs/adr/0012-a-servers-tool-set-is-fixed-for-a-connection-generation.md.
+    private IReadOnlySet<string>? _toolNames;
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
 
@@ -58,6 +63,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
         // Never leave a second pump alive on this connection: two of them share one subscriberId
         // and displace each other's waiter, which the inbox retires with an instant empty batch.
         await StopPumpAsync();
+        _toolNames = null;
 
         _client = await McpClient.CreateAsync(
             new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }),
@@ -359,8 +365,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
         try
         {
-            var tools = await _client.ListToolsAsync(cancellationToken: ct);
-            if (tools.All(t => t.Name != ChannelProtocol.CreateConversationTool))
+            if (!await OffersToolAsync(ChannelProtocol.CreateConversationTool, ct))
             {
                 return null;
             }
@@ -400,8 +405,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
             return;
         }
 
-        var tools = await _client.ListToolsAsync(cancellationToken: ct);
-        if (tools.All(t => t.Name != ChannelProtocol.RegisterAgentsTool))
+        if (!await OffersToolAsync(ChannelProtocol.RegisterAgentsTool, ct))
         {
             return;
         }
@@ -450,6 +454,18 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
         }
 
         await ConnectAsync(endpoint, ct);
+    }
+
+    // Two targets resolving at once can both find the set unfetched and each ask; that costs one
+    // extra round trip on the first turn of a generation and settles on the same answer, which is
+    // cheaper than serialising every probe behind a lock.
+    private async Task<bool> OffersToolAsync(string toolName, CancellationToken ct)
+    {
+        _toolNames ??= (await _client!.ListToolsAsync(cancellationToken: ct))
+            .Select(tool => tool.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return _toolNames.Contains(toolName);
     }
 
     private void EnsureConnected()
