@@ -3,7 +3,6 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 using Shouldly;
@@ -133,138 +132,12 @@ public sealed class MultiAgentFactoryTests
         ex.Message.ShouldContain(expectedMessageFragment ?? agentId);
     }
 
-    // The global default carries an `ignore` the agent never declares: a field-by-field merge
-    // would leak it while leaving `sort` intact, so only a fixture shaped like this can tell
-    // wholesale replacement from a merge.
+    // ProviderRoutingResolverTests pins the resolution rules themselves, but not the argument
+    // mapping at the real OpenRouterChatClient ctor call -- the one hop a null slip would sever
+    // in production only, invisibly to a test that stops at the resolver. This drives the real
+    // construction end-to-end onto a captured request.
     [Fact]
-    public void Create_AgentDeclaresRouting_UsesItsOwnAndNotTheGlobalDefault()
-    {
-        var agentRouting = new ProviderRouting { Sort = ProviderSort.Latency };
-        var (factory, captured, _) = CreateCapturingFactory(
-            new ProviderRouting { Sort = ProviderSort.Throughput, Ignore = ["chutes"] },
-            RoutedAgent("routed", agentRouting));
-
-        factory.Create(new AgentKey("1:1", "test"), "user1", "routed", _approvalHandler.Object);
-
-        captured.Single().ShouldBe(agentRouting);
-        captured.Single()!.Ignore.ShouldBeNull();
-    }
-
-    [Fact]
-    public void Create_AgentDeclaresNoRouting_InheritsTheGlobalDefault()
-    {
-        var globalRouting = new ProviderRouting { Sort = ProviderSort.Throughput };
-        var (factory, captured, _) = CreateCapturingFactory(globalRouting, RoutedAgent("plain", null));
-
-        factory.Create(new AgentKey("1:1", "test"), "user1", "plain", _approvalHandler.Object);
-
-        captured.Single().ShouldBe(globalRouting);
-    }
-
-    // Balanced routing is the absence of a provider object, so "neither set" must resolve to
-    // null rather than to some empty-but-present default.
-    [Fact]
-    public void Create_NeitherAgentNorGlobalDeclaresRouting_ResolvesToNull()
-    {
-        var (factory, captured, _) = CreateCapturingFactory(null, RoutedAgent("plain", null));
-
-        factory.Create(new AgentKey("1:1", "test"), "user1", "plain", _approvalHandler.Object);
-
-        captured.Single().ShouldBeNull();
-    }
-
-    // Same merge-vs-wholesale fixture shape as the agent variant above.
-    [Fact]
-    public void CreateSubAgent_DeclaresRouting_UsesItsOwnAndNotTheGlobalDefault()
-    {
-        var subRouting = new ProviderRouting { Sort = ProviderSort.Throughput };
-        var (factory, captured, _) = CreateCapturingFactory(
-            new ProviderRouting { Sort = ProviderSort.Price, Ignore = ["chutes"] });
-
-        factory.CreateSubAgent(
-            RoutedSubAgent(subRouting), _approvalHandler.Object, "conv-1", [], "user1");
-
-        captured.Single().ShouldBe(subRouting);
-        captured.Single()!.Ignore.ShouldBeNull();
-    }
-
-    [Fact]
-    public void CreateSubAgent_DeclaresNoRouting_InheritsTheGlobalDefault()
-    {
-        var globalRouting = new ProviderRouting { Sort = ProviderSort.Price };
-        var (factory, captured, _) = CreateCapturingFactory(globalRouting);
-
-        factory.CreateSubAgent(RoutedSubAgent(null), _approvalHandler.Object, "conv-1", [], "user1");
-
-        captured.Single().ShouldBe(globalRouting);
-    }
-
-    [Fact]
-    public void CreateSubAgent_NeitherDeclaresRouting_ResolvesToNull()
-    {
-        var (factory, captured, _) = CreateCapturingFactory(null);
-
-        factory.CreateSubAgent(RoutedSubAgent(null), _approvalHandler.Object, "conv-1", [], "user1");
-
-        captured.Single().ShouldBeNull();
-    }
-
-    [Fact]
-    public void Create_RoutingTripsAnAdvisory_LogsAWarningNamingTheAgent()
-    {
-        var routing = new ProviderRouting { Order = ["deepinfra"] };
-        var (factory, _, logs) = CreateCapturingFactory(null, RoutedAgent("noisy", routing));
-
-        factory.Create(new AgentKey("1:1", "test"), "user1", "noisy", _approvalHandler.Object);
-
-        logs.ShouldContain(m => m.Contains("noisy") && m.Contains("sticky routing"));
-    }
-
-    // Advisories run on the resolved routing, not the declared one: a global default that trips
-    // one must warn for every agent that inherits it, or the config mistake stays invisible
-    // exactly where it does the most damage.
-    [Fact]
-    public void Create_InheritedGlobalRoutingTripsAnAdvisory_LogsAWarningNamingTheAgent()
-    {
-        var globalRouting = new ProviderRouting { Order = ["deepinfra"] };
-        var (factory, _, logs) = CreateCapturingFactory(globalRouting, RoutedAgent("plain", null));
-
-        factory.Create(new AgentKey("1:1", "test"), "user1", "plain", _approvalHandler.Object);
-
-        logs.ShouldContain(m => m.Contains("plain") && m.Contains("sticky routing"));
-    }
-
-    [Fact]
-    public void CreateSubAgent_RoutingTripsAnAdvisory_LogsAWarningNamingTheSubAgent()
-    {
-        var routing = new ProviderRouting { Order = ["deepinfra"] };
-        var (factory, _, logs) = CreateCapturingFactory(null);
-
-        factory.CreateSubAgent(RoutedSubAgent(routing), _approvalHandler.Object, "conv-1", [], "user1");
-
-        logs.ShouldContain(m => m.Contains("subagent-worker") && m.Contains("sticky routing"));
-    }
-
-    // Asserts the absence of an advisory rather than an empty log: agent construction may warn
-    // about unrelated things, and this test must not become a tripwire for those.
-    [Fact]
-    public void Create_RoutingIsClean_LogsNoAdvisory()
-    {
-        var routing = new ProviderRouting { Sort = ProviderSort.Latency };
-        var (factory, _, logs) = CreateCapturingFactory(null, RoutedAgent("quiet", routing));
-
-        factory.Create(new AgentKey("1:1", "test"), "user1", "quiet", _approvalHandler.Object);
-
-        logs.ShouldNotContain(m => m.Contains("sticky routing") || m.Contains("providerRouting.sort"));
-    }
-
-    // The chatClientFactory seam short-circuits before the real OpenRouterChatClient
-    // construction, so the routing tests above pin ResolveRouting but not the argument
-    // mapping at the real ctor call -- the one hop a null slip would sever in production
-    // only, invisibly to every seam-based test. This drives the real branch end-to-end
-    // onto a captured request.
-    [Fact]
-    public async Task CreateChatClient_NoFactoryOverride_StampsRoutingAndSessionOntoTheRequest()
+    public async Task CreateChatClient_ResolvedRouting_StampsRoutingAndSessionOntoTheRequest()
     {
         var handler = new CapturingSseHandler();
 
@@ -279,65 +152,5 @@ public sealed class MultiAgentFactoryTests
         var body = System.Text.Json.Nodes.JsonNode.Parse(handler.CapturedBody!)!.AsObject();
         body["provider"]!["sort"]!.GetValue<string>().ShouldBe("latency");
         body["session_id"]!.GetValue<string>().ShouldBe("session-1");
-    }
-
-    private static AgentDefinition RoutedAgent(string id, ProviderRouting? routing) => new()
-    {
-        Id = id,
-        Name = id,
-        Model = "z-ai/glm-5.2",
-        McpServerEndpoints = [],
-        ProviderRouting = routing
-    };
-
-    private static SubAgentDefinition RoutedSubAgent(ProviderRouting? routing) => new()
-    {
-        Id = "worker",
-        Name = "Worker",
-        Model = "z-ai/glm-5.2",
-        McpServerEndpoints = [],
-        ProviderRouting = routing
-    };
-
-    private (MultiAgentFactory Factory, List<ProviderRouting?> Captured, List<string> Logs)
-        CreateCapturingFactory(ProviderRouting? globalRouting, params AgentDefinition[] agents)
-    {
-        var captured = new List<ProviderRouting?>();
-        var logProvider = new CapturingLoggerProvider(LogLevel.Warning);
-
-        var optionsMonitor = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        optionsMonitor.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions { Agents = agents });
-
-        var domainToolRegistry = new Mock<IDomainToolRegistry>();
-        domainToolRegistry
-            .Setup(r => r.GetToolsForFeatures(It.IsAny<IEnumerable<string>>(), It.IsAny<FeatureConfig>()))
-            .Returns(Enumerable.Empty<AIFunction>());
-        domainToolRegistry
-            .Setup(r => r.GetPromptsForFeatures(It.IsAny<IEnumerable<string>>()))
-            .Returns(Enumerable.Empty<string>());
-
-        var serviceProvider = new Mock<IServiceProvider>();
-        serviceProvider
-            .Setup(sp => sp.GetService(typeof(IThreadStateStore)))
-            .Returns(new Mock<IThreadStateStore>().Object);
-
-        var factory = new MultiAgentFactory(
-            serviceProvider.Object,
-            new AgentDefinitionProvider(optionsMonitor.Object, new CustomAgentRegistry()),
-            new OpenRouterConfig
-            {
-                ApiUrl = "http://test",
-                ApiKey = "test-key",
-                ProviderRouting = globalRouting
-            },
-            domainToolRegistry.Object,
-            loggerFactory: LoggerFactory.Create(b => b.AddProvider(logProvider)),
-            chatClientFactory: (_, _, _, routing) =>
-            {
-                captured.Add(routing);
-                return new Mock<IChatClient>().Object;
-            });
-
-        return (factory, captured, logProvider.Messages);
     }
 }

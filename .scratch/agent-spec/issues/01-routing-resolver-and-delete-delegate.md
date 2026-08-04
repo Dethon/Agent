@@ -35,4 +35,4 @@ module effort.
 - [ ] The existing wire test still drives real chat-client construction through a capturing transport handler and still asserts that the resolved routing and the session id reach the request body.
 - [ ] The full unit test suite passes.
 
-**Status:** ready-for-agent
+**Status:** done

@@ -18,8 +18,7 @@ public sealed class MultiAgentFactory(
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry,
     IMetricsPublisher? metricsPublisher = null,
-    ILoggerFactory? loggerFactory = null,
-    Func<string, int?, IMetricsPublisher?, ProviderRouting?, IChatClient>? chatClientFactory = null) : IAgentFactory
+    ILoggerFactory? loggerFactory = null) : IAgentFactory
 {
 
     private readonly McpPromptCache _promptCache = new(TimeProvider.System, TimeSpan.FromSeconds(60));
@@ -170,25 +169,13 @@ public sealed class MultiAgentFactory(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    // Wholesale replacement, not a per-field merge: an agent that declares routing owns the
-    // whole object, so it can never inherit an `ignore` list invisible at its own config site.
-    private ProviderRouting? ResolveRouting(string agentId, string model, ProviderRouting? declared)
-    {
-        var effective = declared ?? openRouterConfig.ProviderRouting;
-        var logger = loggerFactory?.CreateLogger<MultiAgentFactory>();
-
-        if (logger is null)
-        {
-            return effective;
-        }
-
-        foreach (var advisory in ProviderRoutingAdvisories.For(model, effective))
-        {
-            logger.LogWarning("Agent '{AgentId}': {Advisory}", agentId, advisory);
-        }
-
-        return effective;
-    }
+    private ProviderRouting? ResolveRouting(string agentId, string model, ProviderRouting? declared) =>
+        ProviderRoutingResolver.Resolve(
+            declared,
+            openRouterConfig.ProviderRouting,
+            model,
+            agentId,
+            loggerFactory?.CreateLogger<MultiAgentFactory>());
 
     internal IChatClient CreateChatClient(
         string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null,
@@ -197,11 +184,6 @@ public sealed class MultiAgentFactory(
     {
         var effectivePublisher = publisher ?? metricsPublisher;
         var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
-
-        if (chatClientFactory is not null)
-        {
-            return chatClientFactory(model, effectiveContext, effectivePublisher, providerRouting);
-        }
 
         return new OpenRouterChatClient(
             openRouterConfig.ApiUrl,
