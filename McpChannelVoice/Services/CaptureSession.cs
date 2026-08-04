@@ -62,7 +62,7 @@ public sealed class CaptureSession(
         session.CloseCapture();
         var stats = capture.Stats;
         gates.RecordCaptureClose(session.SatelliteId, stats);
-        // Stamped with the host's TimeProvider — the same instance handed to RunPlaybackLoopAsync,
+        // Stamped with the host's TimeProvider — the same instance the playback loop reads,
         // which reads it back. The frozen endpointing tail rewinds the close to the instant the user
         // actually stopped talking; read here, at the close, because it is the last point where the
         // tail is known to be the one the gate ended on.

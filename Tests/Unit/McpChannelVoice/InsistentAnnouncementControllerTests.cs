@@ -510,10 +510,10 @@ public class InsistentAnnouncementControllerTests
         chunks()[0].ShouldBe(PcmGain.Apply(AlarmTone.Pcm(AnnounceKind.Alarm), 0.5).ToArray());
 
         // The single round is the last one (MaxRepeats=1), so RunLoopAsync never advances fake time
-        // for a gap delay; nothing else unblocks RunPlaybackLoopAsync's playback-completion wait
+        // for a gap delay; nothing else unblocks the playback loop's playback-completion wait
         // (chunks written -> waits out totalAudio, real "the satellite finished playing" semantics)
         // for this round's job. Advance past that nominal duration so the loop reaches the next
-        // ReadAllAsync iteration and observes CompletePlayback's channel completion.
+        // ReadAllAsync iteration and observes the queue's completion.
         time.Advance(TimeSpan.FromSeconds(2));
         h.Sessions.Get("kitchen-01")!.Playback.Complete();
         await pump;
@@ -552,7 +552,7 @@ public class InsistentAnnouncementControllerTests
         http.Requests[0].Body.ShouldContain("\"rounds\":1");
 
         // MaxRepeats=1, so RunLoopAsync never advances fake time itself; nothing else unblocks
-        // RunPlaybackLoopAsync's playback-completion wait for round 1's job (see
+        // the playback loop's playback-completion wait for round 1's job (see
         // Start_AlarmRound_PlaysToneBeforeSpeech). Advance past its nominal duration first.
         time.Advance(TimeSpan.FromSeconds(2));
         h.Sessions.Get("kitchen-01")!.Playback.Complete();

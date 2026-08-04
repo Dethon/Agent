@@ -1,6 +1,10 @@
+using System.Runtime.CompilerServices;
+using System.Text;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
+using static Tests.Unit.McpChannelVoice.PlaybackFakes;
 
 namespace Tests.Unit.McpChannelVoice;
 
@@ -21,10 +25,10 @@ public class PlaybackQueueTests
         var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         async IAsyncEnumerable<AudioChunk> gated(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token = default)
+            [EnumeratorCancellation] CancellationToken token = default)
         {
             yield return new AudioChunk
-            { Data = System.Text.Encoding.UTF8.GetBytes("s1"), Format = AudioFormat.WyomingStandard };
+            { Data = Encoding.UTF8.GetBytes("s1"), Format = AudioFormat.WyomingStandard };
             firstChunkWritten.TrySetResult();
             await Task.Delay(Timeout.Infinite, token);
             yield break;
@@ -35,20 +39,20 @@ public class PlaybackQueueTests
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
             Audio: gated());
-        var segment2 = segment1 with { Label = "reply-2", Audio = GenerateAudio("s2", count: 1) };
-        var segment3 = segment1 with { Label = "reply-3", Audio = GenerateAudio("s3", count: 1) };
+        var segment2 = segment1 with { Label = "reply-2", Audio = Audio("s2", count: 1) };
+        var segment3 = segment1 with { Label = "reply-3", Audio = Audio("s3", count: 1) };
         var alarm = segment1 with
         {
             Label = "alarm",
             Priority = AnnouncePriority.High,
-            Audio = GenerateAudio("alarm", count: 1)
+            Audio = Audio("alarm", count: 1)
         };
 
         var pumpTask = queue.RunAsync(
             async (chunk, _) =>
             {
                 lock (played)
-                { played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span)); }
+                { played.Add(Encoding.UTF8.GetString(chunk.Data.Span)); }
                 await Task.Yield();
             },
             CancellationToken.None);
@@ -83,14 +87,14 @@ public class PlaybackQueueTests
             Label: "alarm-1",
             Kind: PlaybackKind.Alarm,
             Priority: AnnouncePriority.High,
-            Audio: GenerateAudio("alarm-1", count: 1));
-        var second = first with { Label = "alarm-2", Audio = GenerateAudio("alarm-2", count: 1) };
+            Audio: Audio("alarm-1", count: 1));
+        var second = first with { Label = "alarm-2", Audio = Audio("alarm-2", count: 1) };
 
         var pumpTask = queue.RunAsync(
             async (chunk, _) =>
             {
                 lock (played)
-                { played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span)); }
+                { played.Add(Encoding.UTF8.GetString(chunk.Data.Span)); }
                 await Task.Yield();
             },
             CancellationToken.None);
@@ -113,13 +117,13 @@ public class PlaybackQueueTests
             Label: "first",
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("first", count: 2));
-        var second = first with { Label = "second", Audio = GenerateAudio("second", count: 1) };
+            Audio: Audio("first", count: 2));
+        var second = first with { Label = "second", Audio = Audio("second", count: 1) };
 
         var pumpTask = queue.RunAsync(
             async (chunk, ct) =>
             {
-                played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span));
+                played.Add(Encoding.UTF8.GetString(chunk.Data.Span));
                 await Task.Yield();
             },
             CancellationToken.None);
@@ -144,7 +148,7 @@ public class PlaybackQueueTests
             Label: "normal",
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("normal", count: 1));
+            Audio: Audio("normal", count: 1));
         var low = normal with { Label = "low", Priority = AnnouncePriority.Low };
 
         // No playback loop is running, so the first job stays queued (Reader.Count > 0).
@@ -216,12 +220,12 @@ public class PlaybackQueueTests
             Label: "normal",
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("normal", count: 2));
+            Audio: Audio("normal", count: 2));
         var high = new PlaybackJob(
             Label: "high",
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.High,
-            Audio: GenerateAudio("high", count: 1));
+            Audio: Audio("high", count: 1));
 
         var queuedAhead = queue.Enqueue(normal);
         var cuttingIn = queue.Enqueue(high);
@@ -247,12 +251,12 @@ public class PlaybackQueueTests
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.Normal,
             Audio: ThrowingAudio());
-        var next = failing with { Label = "next", Audio = GenerateAudio("next", count: 1) };
+        var next = failing with { Label = "next", Audio = Audio("next", count: 1) };
 
         var pumpTask = queue.RunAsync(
             async (chunk, ct) =>
             {
-                played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span));
+                played.Add(Encoding.UTF8.GetString(chunk.Data.Span));
                 await Task.Yield();
             },
             CancellationToken.None,
@@ -285,7 +289,7 @@ public class PlaybackQueueTests
         // Drained means the satellite finished PLAYING, not that the hub finished writing: the Pi
         // buffers the audio and plays it at real time, and the earcon's mic must not open early.
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
 
         // 16000 bytes at 16 kHz/16-bit/mono = exactly 500 ms of audio.
         static async IAsyncEnumerable<AudioChunk> halfSecond()
@@ -317,7 +321,7 @@ public class PlaybackQueueTests
     public async Task Run_FirstChunk_PublishesSynthesisAndTurnTiming()
     {
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         queue.MarkTurnStart(time.GetTimestamp());
@@ -366,7 +370,7 @@ public class PlaybackQueueTests
             Label: "reply:kitchen-01",
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("hi", count: 1),
+            Audio: Audio("hi", count: 1),
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
@@ -390,7 +394,7 @@ public class PlaybackQueueTests
             Label: "reply:kitchen-01",
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("x", count: 3),
+            Audio: Audio("x", count: 3),
             OnFirstAudio: _ => { Interlocked.Increment(ref invocations); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
@@ -415,7 +419,7 @@ public class PlaybackQueueTests
             Label: label,
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.High,
-            Audio: GenerateAudio(label, count: 1));
+            Audio: Audio(label, count: 1));
         }
 
         var first = queue.Enqueue(high("h1"));
@@ -437,7 +441,7 @@ public class PlaybackQueueTests
     public async Task Run_FirstChunk_PublishesSpeechEndAndQueueWaitTiming()
     {
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         queue.MarkTurnStart(time.GetTimestamp());
@@ -495,7 +499,7 @@ public class PlaybackQueueTests
             Label: "reply:kitchen-01",
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("hi", count: 2),
+            Audio: Audio("hi", count: 2),
             OnFirstAudio: _ => { order.Add("metrics"); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(
@@ -516,7 +520,7 @@ public class PlaybackQueueTests
         // SpeechEndToFirstAudioMs omits it and EndpointTailMs sits beside the span instead of nested
         // inside it, which is ~40% of the wait at production settings.
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         time.Advance(TimeSpan.FromSeconds(3));            // the user talking
@@ -528,7 +532,7 @@ public class PlaybackQueueTests
             Label: "reply:kitchen-01",
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("hi", count: 1),
+            Audio: Audio("hi", count: 1),
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
@@ -553,7 +557,7 @@ public class PlaybackQueueTests
             Label: "chime:kitchen-01",
             Kind: PlaybackKind.Chime,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("hi", count: 1),
+            Audio: Audio("hi", count: 1),
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
@@ -565,6 +569,29 @@ public class PlaybackQueueTests
         timing.QueueWait.ShouldBeNull();
 
         await pump.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task Run_FirstAudioCallbackThrows_TheJobStillDrains()
+    {
+        // The one callback a job still carries is invoked between two audio writes, so it keeps its
+        // guard: a producer's metrics publish failing must not cut the answer short.
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
+        var written = 0;
+
+        var job = new PlaybackJob(
+            Label: "reply:kitchen-01",
+            Kind: PlaybackKind.Reply,
+            Priority: AnnouncePriority.Normal,
+            Audio: Audio("hi", count: 3),
+            OnFirstAudio: _ => throw new InvalidOperationException("metrics down"));
+
+        var ticket = queue.Enqueue(job);
+        queue.Complete();
+        await queue.RunAsync((_, _) => { written++; return Task.CompletedTask; }, CancellationToken.None);
+
+        written.ShouldBe(3);
+        (await ticket.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
     }
 
     // The alert bit is what the hub puts on the wire for the satellite's sink selection, so it has
@@ -590,12 +617,12 @@ public class PlaybackQueueTests
             Label: "reply",
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("reply", count: 1));
+            Audio: Audio("reply", count: 1));
         var alarm = reply with
         {
             Label = "alarm",
             Kind = PlaybackKind.Alarm,
-            Audio = GenerateAudio("alarm", count: 1)
+            Audio = Audio("alarm", count: 1)
         };
 
         queue.Enqueue(reply);
@@ -606,31 +633,4 @@ public class PlaybackQueueTests
         flags.ShouldBe(new[] { false, true });
     }
 
-    private static PlaybackJob Job(string label, PlaybackKind kind) => new(
-        Label: label,
-        Kind: kind,
-        Priority: AnnouncePriority.Normal,
-        Audio: GenerateAudio(label, count: 1));
-
-    private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)
-    {
-        for (var i = 0; i < count; i++)
-        {
-            yield return new AudioChunk
-            {
-                Data = System.Text.Encoding.UTF8.GetBytes(label),
-                Format = AudioFormat.WyomingStandard
-            };
-            await Task.Yield();
-        }
-    }
-
-    private static async IAsyncEnumerable<AudioChunk> ThrowingAudio()
-    {
-        await Task.Yield();
-        throw new InvalidOperationException("synthesis failed");
-#pragma warning disable CS0162
-        yield break;
-#pragma warning restore CS0162
-    }
 }

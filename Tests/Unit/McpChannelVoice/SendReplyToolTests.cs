@@ -677,7 +677,7 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_ReplySegmentPreemptedMidPlayback_SettlesTheTurnThroughTheRealPlaybackLoop()
     {
-        // Drives a real reply job through RunPlaybackLoopAsync and preempts it, which is the only
+        // Drives a real reply job through the playback loop and preempts it, which is the only
         // way to reach the preempted outcome -> segment.Fail() release. Without it the turn waits
         // out the ~120s ReplyTimeoutMs with the mic wedged.
         // Signalled from the WRITER, not the audio source: the prefetch pump starts synthesising at

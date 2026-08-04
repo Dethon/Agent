@@ -1,7 +1,10 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
+using static Tests.Unit.McpChannelVoice.PlaybackFakes;
 
 namespace Tests.Unit.McpChannelVoice;
 
@@ -125,7 +128,7 @@ public class PlaybackQueueOutcomeTests
         // The audio was written, so the satellite has it and will play it out. Today that case
         // reports nothing at all, which is why every waiting producer had to carry a token.
         var queue = new PlaybackQueue();
-        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var connection = new CancellationTokenSource();
         var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -205,7 +208,7 @@ public class PlaybackQueueOutcomeTests
         var pump = queue.RunAsync(
             (chunk, _) =>
             {
-                var label = System.Text.Encoding.UTF8.GetString(chunk.Data.Span);
+                var label = Encoding.UTF8.GetString(chunk.Data.Span);
                 lock (played)
                 { played.Add(label); }
                 if (label == "second")
@@ -334,7 +337,7 @@ public class PlaybackQueueOutcomeTests
         var audio = ending switch
         {
             PlaybackOutcomeKind.Failed => ThrowingAudio(),
-            PlaybackOutcomeKind.Drained => OneChunk(),
+            PlaybackOutcomeKind.Drained => Audio(),
             _ => Parked(reached)
         };
 
@@ -363,24 +366,6 @@ public class PlaybackQueueOutcomeTests
         return await ticket.Completed.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
-    private static PlaybackJob Job(string label, PlaybackKind kind) => new(
-        Label: label,
-        Kind: kind,
-        Priority: AnnouncePriority.Normal,
-        Audio: OneChunk(label));
-
-    private static AudioChunk Chunk(string label = "x") => new()
-    {
-        Data = System.Text.Encoding.UTF8.GetBytes(label),
-        Format = AudioFormat.WyomingStandard
-    };
-
-    private static async IAsyncEnumerable<AudioChunk> OneChunk(string label = "x")
-    {
-        yield return Chunk(label);
-        await Task.Yield();
-    }
-
     private static async IAsyncEnumerable<AudioChunk> Parked(
         TaskCompletionSource reached,
         [EnumeratorCancellation] CancellationToken token = default)
@@ -390,12 +375,4 @@ public class PlaybackQueueOutcomeTests
         await Task.Delay(Timeout.Infinite, token);
     }
 
-    private static async IAsyncEnumerable<AudioChunk> ThrowingAudio()
-    {
-        await Task.Yield();
-        throw new InvalidOperationException("synthesis failed");
-#pragma warning disable CS0162
-        yield break;
-#pragma warning restore CS0162
-    }
 }

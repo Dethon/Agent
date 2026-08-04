@@ -120,16 +120,22 @@ public class RequestApprovalToolTests : IDisposable
     private static AudioChunk Silent() =>
         new() { Data = new byte[3200], Format = AudioFormat.WyomingStandard };
 
-    // Whenever the tool opens a capture, feed one speech-then-silence answer into it.
-    // Five silent chunks (500 ms) — not three — because the capture opens with no
-    // leading gap: the floor tracker's smoothed floor needs a full smoothing window
-    // of true silence to descend enough for the next "Loud" burst to cross the entry
-    // bar (a shorter gap is exactly what the smoothing is designed to ride through).
-    // The tool speaks its question, awaits that job's playback outcome, and only then opens the mic
-    // — so the mic being open is the observable end of the prompt. Bounded, so a prompt that never
-    // settles fails here instead of hanging the suite until the whole run times out.
-    private async Task PromptSpokenAndMicOpenAsync()
+    // The tool queues its question synchronously, before its first await, so a job queued once
+    // McpRun has returned its task sits behind the question in the same FIFO queue: when THIS
+    // outcome arrives, the question has been heard. That is the same signal the tool itself waits
+    // on before opening the mic, so the wait is on an outcome rather than on a flag flipping.
+    private async Task PromptHeardThenMicOpenAsync()
     {
+        var behindThePrompt = _session.Playback.Enqueue(new PlaybackJob(
+            Label: "after-the-prompt",
+            Kind: PlaybackKind.Announce,
+            Priority: AnnouncePriority.Normal,
+            Audio: Audio()));
+        (await behindThePrompt.Completed.WaitAsync(TimeSpan.FromSeconds(10)))
+            .Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+
+        // The tool opens the mic from its own continuation on that outcome, so this is the handoff
+        // between two continuations of the same signal, not a poll for something unrelated.
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (!_session.HasActiveCapture)
         {
@@ -137,10 +143,15 @@ public class RequestApprovalToolTests : IDisposable
             {
                 throw new TimeoutException("the confirmation prompt never opened its mic");
             }
-            await Task.Delay(10);
+            await Task.Delay(5);
         }
     }
 
+    // Whenever the tool opens a capture, feed one speech-then-silence answer into it.
+    // Five silent chunks (500 ms) — not three — because the capture opens with no
+    // leading gap: the floor tracker's smoothed floor needs a full smoothing window
+    // of true silence to descend enough for the next "Loud" burst to cross the entry
+    // bar (a shorter gap is exactly what the smoothing is designed to ride through).
     private Task FeedAnswersAsync(CancellationToken ct) => Task.Run(async () =>
     {
         while (!ct.IsCancellationRequested)
@@ -292,7 +303,7 @@ public class RequestApprovalToolTests : IDisposable
         var run = RequestApprovalTool.McpRun(
             _conversationId, ApprovalMode.Request, [MakeRequest()], services);
 
-        await PromptSpokenAndMicOpenAsync();
+        await PromptHeardThenMicOpenAsync();
         _session.RouteAudio(Level(90));
         _session.TryAbortCapture().ShouldBeTrue();
 
@@ -439,7 +450,7 @@ public class RequestApprovalToolTests : IDisposable
         var run = RequestApprovalTool.McpRun(
             _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
 
-        await PromptSpokenAndMicOpenAsync();
+        await PromptHeardThenMicOpenAsync();
 
         // The approval mic is an open capture like any wake turn's: Rule B must be able to ask
         // it, retrospectively, what it heard during another satellite's wake-word span —
@@ -462,7 +473,7 @@ public class RequestApprovalToolTests : IDisposable
         var run = RequestApprovalTool.McpRun(
             _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
 
-        await PromptSpokenAndMicOpenAsync();
+        await PromptHeardThenMicOpenAsync();
 
         // The arbiter stole the turn mid-answer (and already re-armed this satellite via
         // pause-satellite): the partial audio is not an answer, and there is no one left

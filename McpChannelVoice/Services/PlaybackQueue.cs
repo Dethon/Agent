@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services.Tts;
+using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
 
@@ -79,15 +80,19 @@ public sealed record FirstAudioTiming(
 
 // What a satellite hears next: everything queued for playback on one connection, played one job at a
 // time in the order it was accepted, with a high-priority job cutting in. One queue per satellite
-// connection — the connection constructs it, runs its loop and completes it as the link unwinds; the
-// satellite session exposes it as a property so producers reach it without a pass-through layer.
+// connection — built with the connection, whose run drives its loop and whose drain settles what was
+// never played; the satellite session exposes it as a property so producers reach it without a
+// pass-through layer.
 // The two depth limits are the queue's, not a producer's: an answer's segments get their own
 // allowance (sharing the announce depth meant one turn's answer competed with itself and lost
 // sentences out of its middle), everything else shares the announce one. A null prefetch size means
 // prefetching is switched off, and a segment's synthesis then starts when the loop reaches it. The
-// defaults match the settings records; the connection passes the configured values.
+// defaults are the settings' own, so a queue built without configuration behaves as configuration
+// would have made it.
 public sealed class PlaybackQueue(
-    int replyMaxDepth = 64, int announceMaxDepth = 8, int? prefetchBufferChunks = 64)
+    int replyMaxDepth = StreamingTtsConfig.DefaultMaxQueuedSegments,
+    int announceMaxDepth = AnnounceSettings.DefaultQueueMaxDepth,
+    int? prefetchBufferChunks = StreamingTtsConfig.DefaultPrefetchBufferChunks)
 {
     private readonly Channel<QueuedJob> _jobs = Channel.CreateUnbounded<QueuedJob>();
     private CancellationTokenSource? _currentCts;

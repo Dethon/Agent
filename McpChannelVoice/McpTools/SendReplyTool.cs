@@ -88,7 +88,7 @@ public sealed class SendReplyTool
             case ReplyContentType.ToolCall:
                 if (session.Turn.TryClaimPreamble())
                 {
-                    _ = FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger, isReply: false);
+                    FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger, isReply: false);
                 }
                 return "ok";
 
@@ -102,7 +102,7 @@ public sealed class SendReplyTool
                 accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
                 if (p.IsComplete)
                 {
-                    _ = FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                    FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 }
                 return "ok";
 
@@ -114,7 +114,7 @@ public sealed class SendReplyTool
                 // agent has stopped sending. Whether that settles the turn silent or leaves it
                 // waiting on audio still playing is the turn's decision: streaming may already have
                 // spoken everything, leaving this flush empty.
-                _ = FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 session.Turn.EndStream();
                 return "ok";
 
@@ -123,7 +123,7 @@ public sealed class SendReplyTool
                 // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
                 if (p.IsComplete)
                 {
-                    _ = FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                    FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                     return "ok";
                 }
                 SpeakReadySegments(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
@@ -192,7 +192,7 @@ public sealed class SendReplyTool
         }
     }
 
-    private static bool FlushAndSpeak(
+    private static void FlushAndSpeak(
         SatelliteSession session,
         ReplyTextAccumulator accumulator,
         string conversationId,
@@ -206,10 +206,9 @@ public sealed class SendReplyTool
         var text = accumulator.Flush(conversationId);
         if (string.IsNullOrWhiteSpace(text))
         {
-            return false;
+            return;
         }
-        Speak(session, text, conversationId, tts, settings, metrics, time, logger, isReply, default);
-        return true;
+        Speak(session, text, conversationId, tts, settings, metrics, time, logger, isReply);
     }
 
     // Drains every complete sentence run the buffer now holds into the playback queue, so the user
@@ -252,8 +251,7 @@ public sealed class SendReplyTool
             }
 
             Speak(
-                session, segment, conversationId, tts, settings, metrics, time, logger,
-                isReply: true, default);
+                session, segment, conversationId, tts, settings, metrics, time, logger, isReply: true);
         }
     }
 
@@ -268,8 +266,7 @@ public sealed class SendReplyTool
         IMetricsPublisher metrics,
         TimeProvider time,
         ILogger<SendReplyTool> logger,
-        bool isReply,
-        CancellationToken ct)
+        bool isReply)
     {
         var options = new SynthesisOptions { Voice = session.ResolveVoice(settings) };
 
@@ -313,7 +310,7 @@ public sealed class SendReplyTool
             Label: $"{(isReply ? "reply" : "preamble")}:{session.SatelliteId}",
             Kind: isReply ? PlaybackKind.Reply : PlaybackKind.Preamble,
             Priority: AnnouncePriority.Normal,
-            Audio: tts.SynthesizeAsync(text, options, ct),
+            Audio: tts.SynthesizeAsync(text, options, default),
             EnqueuedAt: enqueuedAt,
             // Anchored to the turn's FIRST reply segment — never the preamble flush, which runs
             // with isReply: false and publishes nothing. Under streaming that segment is the first

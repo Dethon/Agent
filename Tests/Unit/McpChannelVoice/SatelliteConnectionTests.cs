@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using Channels.Hosting;
@@ -935,7 +936,7 @@ public class SatelliteConnectionTests
 
     // Audio that never ends on its own, so the job is still in flight when the link drops.
     private static async IAsyncEnumerable<AudioChunk> NeverEndingChunks(
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         while (true)
         {

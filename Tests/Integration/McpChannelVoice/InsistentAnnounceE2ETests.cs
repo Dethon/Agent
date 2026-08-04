@@ -118,7 +118,7 @@ public class InsistentAnnounceE2ETests
 
         // Every ring must reach the satellite marked as an alert, or it plays on the calibrated
         // conversational route and the alarm is capped by TTS_VOLUME. This is the only coverage of
-        // the host lambda that puts job.Alert on the wire — the pure builder and PlaybackJob.Alert
+        // the host lambda that puts job.Alert on the wire — the pure builder and PlaybackKind.Alarm
         // are unit-tested either side of it, so a literal there would ship a dead feature.
         audioStarts.ToArray().ShouldAllBe(alert => alert);
 

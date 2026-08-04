@@ -214,7 +214,7 @@ public class AnnouncementServiceTests
         // announcement whose synthesis then failed was counted as played and nothing else was ever
         // recorded for it.
         var (sut, sessions, published) = BuildRecordingSut(
-            [("kitchen-01", "Kitchen")], audio: ThrowingAudio);
+            [("kitchen-01", "Kitchen")], audio: PlaybackFakes.ThrowingAudio);
         var session = sessions.Get("kitchen-01")!;
         var pump = session.Playback.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
 
@@ -247,15 +247,6 @@ public class AnnouncementServiceTests
         var played = published.Single(e => e.Metric == VoiceMetric.AnnouncePlayed);
         played.Room.ShouldBe("Kitchen");
         played.Identity.ShouldBe("household");
-    }
-
-    private static async IAsyncEnumerable<AudioChunk> ThrowingAudio()
-    {
-        await Task.Yield();
-        throw new InvalidOperationException("synthesis failed");
-#pragma warning disable CS0162
-        yield break;
-#pragma warning restore CS0162
     }
 
     private static async IAsyncEnumerable<AudioChunk> NeverEnding()
