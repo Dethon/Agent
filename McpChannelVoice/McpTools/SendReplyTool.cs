@@ -6,7 +6,6 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
-using McpChannelVoice.Services.Tts;
 using McpChannelVoice.Settings;
 using ModelContextProtocol.Server;
 
@@ -50,7 +49,7 @@ public sealed class SendReplyTool
             // delivery path below goes through AnnouncementService instead, so TimeProvider is
             // resolved here rather than unconditionally at the top of McpRun.
             var time = services.GetRequiredService<TimeProvider>();
-            return await HandleUtteranceReplyAsync(session, p, accumulator, tts, settings, metrics, time, logger);
+            return HandleUtteranceReply(session, p, accumulator, tts, settings, metrics, time, logger);
         }
 
         var delivery = services.GetRequiredService<VoiceDeliveryRegistry>();
@@ -64,7 +63,7 @@ public sealed class SendReplyTool
         return "ok";
     }
 
-    private static async Task<string> HandleUtteranceReplyAsync(
+    private static string HandleUtteranceReply(
         SatelliteSession session,
         SendReplyParams p,
         ReplyTextAccumulator accumulator,
@@ -89,7 +88,7 @@ public sealed class SendReplyTool
             case ReplyContentType.ToolCall:
                 if (session.Turn.TryClaimPreamble())
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger, isReply: false);
+                    _ = FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger, isReply: false);
                 }
                 return "ok";
 
@@ -103,7 +102,7 @@ public sealed class SendReplyTool
                 accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
                 if (p.IsComplete)
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                    _ = FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 }
                 return "ok";
 
@@ -115,7 +114,7 @@ public sealed class SendReplyTool
                 // agent has stopped sending. Whether that settles the turn silent or leaves it
                 // waiting on audio still playing is the turn's decision: streaming may already have
                 // spoken everything, leaving this flush empty.
-                _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                _ = FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 session.Turn.EndStream();
                 return "ok";
 
@@ -124,10 +123,10 @@ public sealed class SendReplyTool
                 // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
                 if (p.IsComplete)
                 {
-                    _ = await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                    _ = FlushAndSpeak(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                     return "ok";
                 }
-                await SpeakReadySegmentsAsync(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
+                SpeakReadySegments(session, accumulator, p.ConversationId, tts, settings, metrics, time, logger);
                 return "ok";
         }
     }
@@ -193,7 +192,7 @@ public sealed class SendReplyTool
         }
     }
 
-    private static async Task<bool> FlushAndSpeakAsync(
+    private static bool FlushAndSpeak(
         SatelliteSession session,
         ReplyTextAccumulator accumulator,
         string conversationId,
@@ -209,7 +208,7 @@ public sealed class SendReplyTool
         {
             return false;
         }
-        await SpeakAsync(session, text, conversationId, tts, settings, metrics, time, logger, isReply, default);
+        Speak(session, text, conversationId, tts, settings, metrics, time, logger, isReply, default);
         return true;
     }
 
@@ -217,7 +216,7 @@ public sealed class SendReplyTool
     // hears the answer's opening while the agent is still generating its end. The first run clears a
     // deliberately low bar (it is the wait everyone feels); later ones need more text, because each
     // is its own TTS request and the audio already playing is covering them.
-    private static async Task SpeakReadySegmentsAsync(
+    private static void SpeakReadySegments(
         SatelliteSession session,
         ReplyTextAccumulator accumulator,
         string conversationId,
@@ -252,13 +251,15 @@ public sealed class SendReplyTool
                 return;
             }
 
-            await SpeakAsync(
+            Speak(
                 session, segment, conversationId, tts, settings, metrics, time, logger,
                 isReply: true, default);
         }
     }
 
-    private static async Task SpeakAsync(
+    // Synchronous, because queueing is: the segment's synthesis is handed to the queue rather than
+    // started here, and the queue answers immediately.
+    private static void Speak(
         SatelliteSession session,
         string text,
         string conversationId,
@@ -304,15 +305,6 @@ public sealed class SendReplyTool
             });
         }
 
-        // A reply segment's synthesis starts NOW rather than when the loop reaches it: the loop is
-        // sequential and will not touch this job's audio until the previous segment has finished its
-        // real-time drain, which would put a full TTS round trip into every sentence seam. Announce,
-        // chime and approval jobs are left lazy — they have no seam to hide.
-        var synthesis = tts.SynthesizeAsync(text, options, ct);
-        var prefetch = isReply && settings.Tts.Streaming.Prefetch
-            ? new PrefetchedAudio(synthesis, settings.Tts.Streaming.PrefetchBufferChunks)
-            : null;
-
         // Latency is still measured in the loop, and still means the same thing: for the first reply
         // segment the loop pulls immediately, so it observes the real synthesis time. Later segments
         // find their audio already buffered — but they do not publish TtsLatencyMs, so the
@@ -321,74 +313,9 @@ public sealed class SendReplyTool
             Label: $"{(isReply ? "reply" : "preamble")}:{session.SatelliteId}",
             Kind: isReply ? PlaybackKind.Reply : PlaybackKind.Preamble,
             Priority: AnnouncePriority.Normal,
-            Audio: prefetch?.Chunks ?? synthesis,
+            Audio: tts.SynthesizeAsync(text, options, ct),
             OnStarted: _ => Task.CompletedTask,
-            OnPreempted: async _ =>
-            {
-                if (!isReply)
-                {
-                    return;
-                }
-
-                // EVERY preempted segment must release its slot — a preempted job never reaches
-                // OnDrained, so without this the turn stays outstanding until the ~120s
-                // ReplyTimeoutMs. Settles Spoken when earlier audio reached the satellite, which is
-                // what an alarm cutting into a reply looks like.
-                //
-                // Released BEFORE anything else: the playback loop swallows a throwing OnPreempted,
-                // so a slot leaked here would wedge the mic for the full timeout.
-                segment.Fail();
-
-                // A job the loop cancels BEFORE its first pull never touches its audio, so the
-                // consumer-side release (the reader's teardown) never runs — an alarm preempting the
-                // queued tail of a streamed reply would leave one pump per sentence parked on a full
-                // buffer holding an open TTS response. Disposal is safe after partial playback too:
-                // cancelling an already-cancelled pump is a no-op.
-                if (prefetch is not null)
-                {
-                    await prefetch.DisposeAsync();
-                }
-
-                // One sample per turn, like the other reply-anchored metrics.
-                if (!segment.IsFirst)
-                {
-                    return;
-                }
-
-                metrics.Publish(new VoiceEvent
-                {
-                    Metric = VoiceMetric.AnnouncePreemptedReply,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
-                    ConversationId = conversationId
-                });
-            },
-            // The reply is several sentence jobs now, so a drain resolves this SEGMENT; the turn only
-            // settles once every started segment has drained and the agent's stream has ended.
-            // Signalling here directly would end the turn on sentence one and reopen the mic over the
-            // rest of the answer.
-            OnDrained: () => { if (isReply) { segment.Complete(); } return Task.CompletedTask; },
-            // If synthesis/playback fails (e.g. a Wyoming TTS error event throws), resolve the turn
-            // as silent so FollowUpConversation ends and re-arms wake instead of blocking on the
-            // handshake until the ~120s ReplyTimeoutMs. No audio actually played, hence Silent (not
-            // Spoken). Mirrors the chime and approval jobs, which also settle their handshake on failure.
-            // A failed preamble settles nothing: the answer still owes the handshake a signal.
-            OnFailed: async _ =>
-            {
-                if (!isReply)
-                {
-                    return;
-                }
-                segment.Fail();
-                // Defensive twin of the OnPreempted dispose above: every known failure reaches here
-                // after the reader's teardown has already released the pump, but a failed segment's
-                // synthesis must never be able to outlive its job.
-                if (prefetch is not null)
-                {
-                    await prefetch.DisposeAsync();
-                }
-            },
+            OnPreempted: _ => Task.CompletedTask,
             EnqueuedAt: enqueuedAt,
             // Anchored to the turn's FIRST reply segment — never the preamble flush, which runs
             // with isReply: false and publishes nothing. Under streaming that segment is the first
@@ -480,20 +407,70 @@ public sealed class SendReplyTool
             segment = session.Turn.BeginSegment();
         }
 
-        var queued = session.Playback.Enqueue(job).Refused is null;
-        if (isReply && !queued)
+        var ticket = session.Playback.Enqueue(job);
+        if (isReply && ticket.Refused is { } reason)
         {
             logger.LogWarning(
-                "Reply segment for {Satellite} was refused by the playback queue; " +
-                "this part of the answer will not be spoken", session.SatelliteId);
-            segment.Fail();
+                "Reply segment for {Satellite} was refused by the playback queue ({Reason}); " +
+                "this part of the answer will not be spoken", session.SatelliteId, reason);
         }
 
-        // Nothing will ever enumerate a refused job, so disposal is the only thing that releases its
-        // in-flight synthesis.
-        if (prefetch is not null && !queued)
+        if (!isReply)
         {
-            await prefetch.DisposeAsync();
+            return;
+        }
+
+        // One binding for every way the job can end, where there used to be a release on three
+        // separate paths and a disposal on the same three. A missed release left the turn
+        // outstanding until the ~120 s reply timeout, with the microphone shut for all of it.
+        _ = ticket.Completed.ContinueWith(
+            settled => SettleSegment(settled.Result, segment, session, conversationId, metrics, logger),
+            TaskScheduler.Default);
+    }
+
+    // Runs unobserved on the queue's signal, so it guards itself: the queue no longer swallows what
+    // a producer throws, and a segment left outstanding is exactly the wedged microphone above.
+    private static void SettleSegment(
+        PlaybackOutcome outcome,
+        SegmentToken segment,
+        SatelliteSession session,
+        string conversationId,
+        IMetricsPublisher metrics,
+        ILogger<SendReplyTool> logger)
+    {
+        try
+        {
+            // A drain resolves this SEGMENT, not the turn: the turn settles once every started
+            // segment has drained and the agent's stream has ended. Every other ending fails the
+            // segment — the turn still settles Spoken when earlier audio reached the satellite,
+            // which is what an alarm cutting into a reply looks like, and Silent when none did.
+            if (outcome.Kind == PlaybackOutcomeKind.Drained)
+            {
+                segment.Complete();
+                return;
+            }
+
+            segment.Fail();
+
+            // One sample per turn, like the other reply-anchored metrics.
+            if (outcome.Kind != PlaybackOutcomeKind.Preempted || !segment.IsFirst)
+            {
+                return;
+            }
+
+            metrics.Publish(new VoiceEvent
+            {
+                Metric = VoiceMetric.AnnouncePreemptedReply,
+                SatelliteId = session.SatelliteId,
+                Room = session.Config.Room,
+                Identity = session.Config.Identity,
+                ConversationId = conversationId
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex, "Settling the reply segment for {Satellite} failed", session.SatelliteId);
         }
     }
 }

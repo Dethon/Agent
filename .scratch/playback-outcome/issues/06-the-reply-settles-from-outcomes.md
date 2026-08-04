@@ -22,25 +22,25 @@ exactly as they are; only where the release is called from moves.
 
 **Blocked by:** 04. Runs in parallel with 05 and 07.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The reply path registers its segment, queues the job, and binds the segment to the
+- [x] The reply path registers its segment, queues the job, and binds the segment to the
       outcome in one place: drained completes it, and preempted, failed, refused or
       discarded fail it.
-- [ ] That binding guards itself, because the queue no longer swallows what a producer
+- [x] That binding guards itself, because the queue no longer swallows what a producer
       throws.
-- [ ] The three release calls and the three prefetch disposals are gone, along with the
+- [x] The three release calls and the three prefetch disposals are gone, along with the
       reply path's reference to the prefetch type.
-- [ ] The queue creates the prefetch for reply segments after accepting them, sized from its
+- [x] The queue creates the prefetch for reply segments after accepting them, sized from its
       construction, and disposes it on every terminal outcome.
-- [ ] Prefetching being switched off is expressed by the queue having no prefetch size, and
+- [x] Prefetching being switched off is expressed by the queue having no prefetch size, and
       still means a segment's synthesis starts when the loop reaches it.
-- [ ] A preempted answer still settles as spoken when earlier audio reached the satellite and
+- [x] A preempted answer still settles as spoken when earlier audio reached the satellite and
       silent when none did, unchanged.
-- [ ] The queue's tests prove the prefetch is disposed on each terminal outcome and never
+- [x] The queue's tests prove the prefetch is disposed on each terminal outcome and never
       created for a refused job.
-- [ ] The reply tests prove each segment is released exactly once per outcome, including a
+- [x] The reply tests prove each segment is released exactly once per outcome, including a
       refused segment, and that a refused segment's text stays buffered for the next flush
       rather than being lost.
-- [ ] The turn-latency decomposition still sums, and the first-audio spans are still anchored
+- [x] The turn-latency decomposition still sums, and the first-audio spans are still anchored
       to the turn's first reply segment.

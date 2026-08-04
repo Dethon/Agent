@@ -146,7 +146,12 @@ public sealed class WyomingSatelliteHost(
     {
         var session = new SatelliteSession(id, config, new PlaybackQueue(
             replyMaxDepth: voiceSettings.Tts.Streaming.MaxQueuedSegments,
-            announceMaxDepth: voiceSettings.Announce.QueueMaxDepth));
+            announceMaxDepth: voiceSettings.Announce.QueueMaxDepth,
+            // No prefetch size means no prefetch: a segment's synthesis then starts when the loop
+            // reaches it, which is the kill switch the setting has always been.
+            prefetchBufferChunks: voiceSettings.Tts.Streaming.Prefetch
+                ? voiceSettings.Tts.Streaming.PrefetchBufferChunks
+                : null));
         var followUp = voiceSettings.FollowUp with
         {
             Enabled = config.FollowUpEnabled ?? voiceSettings.FollowUp.Enabled

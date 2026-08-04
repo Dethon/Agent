@@ -225,6 +225,100 @@ public class PlaybackQueueOutcomeTests
         await pump.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    [Fact]
+    public async Task Enqueue_ReplySegmentPreemptedBeforeItsFirstPull_ReleasesTheSynthesisAnyway()
+    {
+        // The prefetch pump is already running when the loop cancels a marked job before touching
+        // its audio, so nothing consumer-side ever tears it down: one pump per queued sentence left
+        // parked on a full buffer holding an open TTS response, on every alarm that cuts into a
+        // streamed reply. The queue owns that lifetime now and releases it on every outcome.
+        var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var queue = new PlaybackQueue(prefetchBufferChunks: 1);
+
+        var reply = queue.Enqueue(
+            Job("reply", PlaybackKind.Reply) with { Audio = EndlessSynthesis(released) });
+        queue.Enqueue(Job("alarm", PlaybackKind.Alarm) with { Priority = AnnouncePriority.High });
+        queue.Complete();
+
+        await queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+
+        (await reply.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+        await released.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task Enqueue_ReplySegmentDrained_ReleasesTheSynthesisToo()
+    {
+        var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var queue = new PlaybackQueue(prefetchBufferChunks: 1);
+
+        var reply = queue.Enqueue(
+            Job("reply", PlaybackKind.Reply) with { Audio = OneChunkThenRelease(released) });
+        queue.Complete();
+
+        await queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+
+        (await reply.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+        await released.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task Enqueue_RefusedReplySegment_NeverStartsASynthesisToDisposeOf()
+    {
+        // The queue wraps the audio only once it has decided to accept the job, so the refused case
+        // has nothing to release and the trickiest disposal path stops existing.
+        var pulled = 0;
+        var queue = new PlaybackQueue(replyMaxDepth: 1, prefetchBufferChunks: 4);
+        queue.Enqueue(Job("first", PlaybackKind.Reply));
+
+        var refused = queue.Enqueue(
+            Job("refused", PlaybackKind.Reply) with { Audio = Counting(() => Interlocked.Increment(ref pulled)) });
+
+        refused.Refused.ShouldBe(RefusalReason.QueueFull);
+        await Task.Delay(100);   // the pump, had one been created, would have pulled by now
+        Volatile.Read(ref pulled).ShouldBe(0);
+    }
+
+    private static async IAsyncEnumerable<AudioChunk> EndlessSynthesis(
+        TaskCompletionSource released,
+        [EnumeratorCancellation] CancellationToken token = default)
+    {
+        try
+        {
+            while (true)
+            {
+                yield return Chunk();
+                await Task.Delay(10, token);
+            }
+        }
+        finally
+        {
+            released.TrySetResult();
+        }
+    }
+
+    private static async IAsyncEnumerable<AudioChunk> OneChunkThenRelease(
+        TaskCompletionSource released,
+        [EnumeratorCancellation] CancellationToken token = default)
+    {
+        try
+        {
+            yield return Chunk();
+            await Task.Yield();
+        }
+        finally
+        {
+            released.TrySetResult();
+        }
+    }
+
+    private static async IAsyncEnumerable<AudioChunk> Counting(Action onPull)
+    {
+        onPull();
+        yield return Chunk();
+        await Task.Yield();
+    }
+
     private static async Task<PlaybackOutcome> EndingAsync(PlaybackOutcomeKind ending)
     {
         var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1);

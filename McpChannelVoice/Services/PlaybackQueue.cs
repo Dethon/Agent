@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Domain.DTOs.Voice;
+using McpChannelVoice.Services.Tts;
 
 namespace McpChannelVoice.Services;
 
@@ -82,15 +83,18 @@ public sealed record FirstAudioTiming(
 // satellite session exposes it as a property so producers reach it without a pass-through layer.
 // The two depth limits are the queue's, not a producer's: an answer's segments get their own
 // allowance (sharing the announce depth meant one turn's answer competed with itself and lost
-// sentences out of its middle), everything else shares the announce one. The defaults match the
-// settings records; the connection passes the configured values.
-public sealed class PlaybackQueue(int replyMaxDepth = 64, int announceMaxDepth = 8)
+// sentences out of its middle), everything else shares the announce one. A null prefetch size means
+// prefetching is switched off, and a segment's synthesis then starts when the loop reaches it. The
+// defaults match the settings records; the connection passes the configured values.
+public sealed class PlaybackQueue(
+    int replyMaxDepth = 64, int announceMaxDepth = 8, int? prefetchBufferChunks = 64)
 {
     private readonly Channel<QueuedJob> _jobs = Channel.CreateUnbounded<QueuedJob>();
     private CancellationTokenSource? _currentCts;
     // The job the loop is playing, kept so the drain can settle it when the connection dies before
     // the loop could reach any terminal path of its own.
     private QueuedJob? _inFlight;
+    private bool _closed;
     private readonly Lock _gate = new();
     private long _enqueueSeq;
     // High-water sequence whose jobs must be preempted as they start. Set only when a high-priority
@@ -159,15 +163,36 @@ public sealed class PlaybackQueue(int replyMaxDepth = 64, int announceMaxDepth =
         return Write(normalSeq, job);
     }
 
-    // TryWrite (unbounded channel) returns false only once the writer is completed — i.e. the
-    // satellite disconnected and the playback loop tore down. A refusal rather than a
-    // ChannelClosedException is what lets announce report an offline target instead of a 500.
+    // A completed queue means the satellite disconnected and the loop tore down. Checked before the
+    // job is accepted rather than by a failed write, so the prefetch below is only ever created for
+    // a job that was taken: a refused job has nothing to dispose, and the trickiest disposal path
+    // stops existing instead of being handled.
     private PlaybackTicket Write(long seq, PlaybackJob job)
     {
-        var queued = new QueuedJob(seq, job);
-        return _jobs.Writer.TryWrite(queued)
-            ? new PlaybackTicket(null, queued.Completed)
-            : Refuse(RefusalReason.QueueClosed);
+        if (Volatile.Read(ref _closed))
+        {
+            return Refuse(RefusalReason.QueueClosed);
+        }
+
+        // The queue owns the audio source's lifetime from here: it starts a reply segment's
+        // synthesis early — the loop will not touch this job's audio until the previous segment has
+        // finished its real-time drain, which would put a full TTS round trip into every sentence
+        // seam — and disposes it once the job has settled.
+        var prefetch = job.Kind == PlaybackKind.Reply && prefetchBufferChunks is { } capacity
+            ? new PrefetchedAudio(job.Audio, capacity)
+            : null;
+        var queued = new QueuedJob(
+            seq, prefetch is null ? job : job with { Audio = prefetch.Chunks }, prefetch);
+
+        if (_jobs.Writer.TryWrite(queued))
+        {
+            return new PlaybackTicket(null, queued.Completed);
+        }
+
+        // Lost a race with Complete(): the job is accepted-then-closed rather than refused outright,
+        // so it is the one case where an already-started synthesis has to be let go of here.
+        _ = queued.ReleaseAudioAsync();
+        return Refuse(RefusalReason.QueueClosed);
     }
 
     // A refused job has an outcome like any other, already settled, so nobody writes a second settle
@@ -185,15 +210,24 @@ public sealed class PlaybackQueue(int replyMaxDepth = 64, int announceMaxDepth =
         {
             inFlight = _inFlight;
         }
-        inFlight?.Settle(PlaybackOutcomeKind.Discarded);
+        if (inFlight is not null)
+        {
+            inFlight.Settle(PlaybackOutcomeKind.Discarded);
+            _ = inFlight.ReleaseAudioAsync();
+        }
 
         while (_jobs.Reader.TryRead(out var queued))
         {
             queued.Settle(PlaybackOutcomeKind.Discarded);
+            _ = queued.ReleaseAudioAsync();
         }
     }
 
-    public void Complete() => _jobs.Writer.TryComplete();
+    public void Complete()
+    {
+        Volatile.Write(ref _closed, true);
+        _jobs.Writer.TryComplete();
+    }
 
     public void PreemptCurrent()
     {
@@ -446,6 +480,9 @@ public sealed class PlaybackQueue(int replyMaxDepth = 64, int announceMaxDepth =
                     }
                 }
                 jobCts.Dispose();
+                // Whatever the job's audio was wrapped in is the queue's to release, on every way
+                // the job ended — no producer disposes anything.
+                await queued.ReleaseAudioAsync();
             }
         }
     }
@@ -453,7 +490,7 @@ public sealed class PlaybackQueue(int replyMaxDepth = 64, int announceMaxDepth =
     // One job's place in the queue: its order, what to play, how much of it reached the writer, and
     // the single outcome that will end it. Settling is first-wins, which is what makes "exactly one
     // outcome" true even when the drain races a loop that was already finishing.
-    private sealed class QueuedJob(long seq, PlaybackJob job)
+    private sealed class QueuedJob(long seq, PlaybackJob job, PrefetchedAudio? prefetch = null)
     {
         private readonly TaskCompletionSource<PlaybackOutcome> _settled =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -468,6 +505,9 @@ public sealed class PlaybackQueue(int replyMaxDepth = 64, int announceMaxDepth =
 
         public void Settle(PlaybackOutcomeKind kind, Exception? error = null) =>
             _settled.TrySetResult(new PlaybackOutcome(kind, ChunksWritten, error));
+
+        // Safe on a job that drained: the pump has already finished and cancelling it is a no-op.
+        public ValueTask ReleaseAudioAsync() => prefetch?.DisposeAsync() ?? ValueTask.CompletedTask;
     }
 
     private static TimeSpan DurationOf(AudioChunk chunk)

@@ -564,8 +564,9 @@ public class SendReplyToolTests
         _session.Playback.Complete();
         await pump.WaitAsync(TimeSpan.FromSeconds(5));
 
-        turn.IsCompleted.ShouldBeTrue();
-        (await turn).ShouldBeTrue();
+        // Awaited rather than read: the segment settles from the job's outcome, and the queue
+        // signals an outcome without waiting for whoever reacts to it.
+        (await turn.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBeTrue();
         written.Count.ShouldBeGreaterThan(1); // it really did stream in pieces
     }
 
@@ -656,16 +657,17 @@ public class SendReplyToolTests
                 It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
             .Returns<string, SynthesisOptions, CancellationToken>((text, _, _) => Recording(text, synthesized));
 
-        var services = BuildServices(new VoiceSettings
-        {
-            Tts = new TtsSettings { Streaming = new StreamingTtsConfig { Prefetch = false } }
-        });
-        _session.Turn.Reset();
-        _session.Turn.MarkDispatched(_clock.GetTimestamp());
+        // Prefetching is switched off by the queue having no prefetch size, which is what the
+        // connection builds from Tts.Streaming.Prefetch.
+        _sessions.Register(new SatelliteSession(
+            "kitchen-01", _session.Config, new PlaybackQueue(prefetchBufferChunks: null)));
+        var session = _sessions.Get("kitchen-01")!;
+        session.Turn.Reset();
+        session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         await SendReplyTool.McpRun(_conversationId,
             "Mañana por la tarde hará sol y unos veintidós grados. ",
-            ReplyContentType.Text, false, "m-1", services);
+            ReplyContentType.Text, false, "m-1", _services);
 
         await Task.Delay(200);
         lock (synthesized)
@@ -709,27 +711,34 @@ public class SendReplyToolTests
     }
 
     [Fact]
-    public async Task McpRun_PlaybackQueueRefusesTheSegment_SettlesTheTurnAndReleasesTheSynthesis()
+    public async Task McpRun_PlaybackQueueRefusesTheSegment_SettlesTheTurnAndNeverStartsTheSynthesis()
     {
-        // A satellite that disconnects mid-answer completes the playback writer, so every further
-        // enqueue is refused. The slot must still be released, and the prefetched synthesis — which
-        // nothing will ever enumerate — must be disposed rather than left parked on a full buffer
-        // holding an open TTS response.
-        var disposed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // A satellite that disconnects mid-answer completes the playback queue, so every further
+        // enqueue is refused. The segment must still be released — and the synthesis must never
+        // start at all, because the queue only takes ownership of audio for a job it accepted.
+        var pulled = 0;
         _tts.Setup(t => t.SynthesizeAsync(
                 It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
-            .Returns<string, SynthesisOptions, CancellationToken>((_, _, _) => DisposeTracking(disposed));
+            .Returns<string, SynthesisOptions, CancellationToken>(
+                (_, _, _) => Counting(() => Interlocked.Increment(ref pulled)));
 
         _session.Turn.Reset();
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
         var turn = _session.Turn.AwaitSpoken();
-        _session.Playback.Complete();    // the writer is completed: every enqueue now returns false
+        _session.Playback.Complete();    // the queue is closed: every enqueue now refuses
 
         await SendReplyTool.McpRun(_conversationId, "Hola mundo", ReplyContentType.Text, false, "m-1", _services);
         await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
 
         (await turn.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBeFalse();  // nothing ever played
-        await disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Volatile.Read(ref pulled).ShouldBe(0);
+    }
+
+    private static async IAsyncEnumerable<AudioChunk> Counting(Action onPull)
+    {
+        onPull();
+        yield return new AudioChunk { Data = new byte[16], Format = AudioFormat.WyomingStandard };
+        await Task.Yield();
     }
 
     [Fact]

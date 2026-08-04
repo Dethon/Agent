@@ -4,6 +4,10 @@ using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
 
+// Ordering, preemption and the loop's own timing, driven against sources the loop pulls itself.
+// Every queue here is built without a prefetch so a reply segment's audio is pulled when the loop
+// reaches it: the prefetch is the subject of PlaybackQueueOutcomeTests, and having it run ahead of
+// the loop would move a fake clock before the loop had taken its first reading.
 public class PlaybackQueueTests
 {
     [Fact]
@@ -12,7 +16,7 @@ public class PlaybackQueueTests
         // A reply is several sentence jobs now, so cancelling only _currentCts left an alarm
         // queued behind the REST of the answer: it cut sentence 1 and was then heard after sentences
         // 2..N had played in full. Every job queued when the High job arrives must be preempted.
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var played = new List<string>();
         var preempted = new List<string>();
         var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -71,7 +75,7 @@ public class PlaybackQueueTests
     {
         // The preempt mark must not swallow a second alarm that stacks in the gap — the High
         // exemption in the loop is what keeps insistent announcements ringing.
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var played = new List<string>();
 
         var first = new PlaybackJob(
@@ -103,7 +107,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Enqueue_Normal_RunsAfterCurrent()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var played = new List<string>();
 
         var first = new PlaybackJob(
@@ -138,7 +142,7 @@ public class PlaybackQueueTests
         // The returned bool is observable behavior: AnnouncementService maps it to
         // Status queued/dropped + the AnnounceQueued/AnnounceError metric. A Low-priority job must
         // be dropped (return false) when anything is already queued, so it never delays speech.
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var normal = new PlaybackJob(
             Label: "normal",
             Kind: PlaybackKind.Announce,
@@ -158,7 +162,7 @@ public class PlaybackQueueTests
     {
         // The depth cap is the backpressure guard: once the queue is full, further Normal jobs
         // must be dropped (return false) rather than unbounded-buffered.
-        var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1);
+        var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1, prefetchBufferChunks: null);
 
         // No loop running: fill to depth 1, then the next Normal overflows.
         queue.Enqueue(Job("a", PlaybackKind.Announce)).Refused.ShouldBeNull();
@@ -171,7 +175,7 @@ public class PlaybackQueueTests
         // An answer is several sentence jobs and is one logical unit: refusing part of it leaves a
         // hole in the middle of what the user hears. Its allowance is its own, and the kind is what
         // picks it — no producer passes a depth.
-        var queue = new PlaybackQueue(replyMaxDepth: 3, announceMaxDepth: 1);
+        var queue = new PlaybackQueue(replyMaxDepth: 3, announceMaxDepth: 1, prefetchBufferChunks: null);
 
         queue.Enqueue(Job("s1", PlaybackKind.Reply)).Refused.ShouldBeNull();
         queue.Enqueue(Job("s2", PlaybackKind.Reply)).Refused.ShouldBeNull();
@@ -184,7 +188,7 @@ public class PlaybackQueueTests
     {
         // The preamble cue plays ahead of an answer rather than being part of it, so it shares the
         // announce depth exactly as it did when the reply tool chose the limit itself.
-        var queue = new PlaybackQueue(replyMaxDepth: 8, announceMaxDepth: 2);
+        var queue = new PlaybackQueue(replyMaxDepth: 8, announceMaxDepth: 2, prefetchBufferChunks: null);
 
         queue.Enqueue(Job("announce", PlaybackKind.Announce)).Refused.ShouldBeNull();
         queue.Enqueue(Job("preamble", PlaybackKind.Preamble)).Refused.ShouldBeNull();
@@ -197,7 +201,7 @@ public class PlaybackQueueTests
         // TryTakeSpeakable removes a sentence run from the accumulator, so the reply path asks
         // before it takes the text rather than discovering a refusal after both text and synthesis
         // are spent.
-        var queue = new PlaybackQueue(replyMaxDepth: 2, announceMaxDepth: 1);
+        var queue = new PlaybackQueue(replyMaxDepth: 2, announceMaxDepth: 1, prefetchBufferChunks: null);
         queue.Enqueue(Job("s1", PlaybackKind.Reply));
 
         queue.CanAccept(PlaybackKind.Reply).ShouldBeTrue();
@@ -207,7 +211,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Enqueue_HighPriorityWhileIdle_PreemptsQueuedAheadButPlaysItself()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var drained = new List<string>();
         var preempted = new List<string>();
 
@@ -247,7 +251,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_JobAudioThrows_SurvivesAndReportsThenPlaysNext()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var played = new List<string>();
         var errors = new List<string>();
 
@@ -286,7 +290,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_OnStartedThrows_SwallowsAndKeepsLoopAlive()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var played = new List<string>();
 
         var bad = new PlaybackJob(
@@ -325,7 +329,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_JobDrains_InvokesOnDrained()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var drained = new List<string>();
 
         var job = new PlaybackJob(
@@ -350,7 +354,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_JobPreempted_DoesNotInvokeOnDrained()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var drained = new List<string>();
         var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -393,7 +397,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_WaitsForAudioPlaybackDuration_BeforeOnDrained()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
         var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -428,7 +432,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_FirstChunk_PublishesSynthesisAndTurnTiming()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -471,7 +475,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_FirstChunk_NoTurnStart_TurnTimingNull()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // No MarkTurnStart: a job with no preceding turn (e.g. not wired) must NOT report a turn time,
@@ -499,7 +503,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_MultiChunk_InvokesOnFirstAudioOnce()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var invocations = 0;
 
         var job = new PlaybackJob(
@@ -522,7 +526,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_JobAudioThrows_InvokesOnFailed()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var failed = new TaskCompletionSource();
 
         // A synthesis failure must reach OnFailed so awaiters (approval prompt, chime) that block on a
@@ -547,7 +551,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Enqueue_TwoHighWhileIdle_BothPlay()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var drained = new List<string>();
         var preempted = new List<string>();
 
@@ -584,7 +588,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_FirstChunk_PublishesSpeechEndAndQueueWaitTiming()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -638,7 +642,7 @@ public class PlaybackQueueTests
         // writer call delays the first audio byte reaching the satellite by however long Redis takes:
         // the observer changing what it observes. Every timestamp the callback reports is captured
         // before the write, so ordering the write first costs no accuracy at all.
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var order = new List<string>();
 
         var job = new PlaybackJob(
@@ -667,7 +671,7 @@ public class PlaybackQueueTests
         // machine time the user waits through, so it belongs inside this span: without the rewind
         // SpeechEndToFirstAudioMs omits it and EndpointTailMs sits beside the span instead of nested
         // inside it, which is ~40% of the wait at production settings.
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -698,7 +702,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_FirstChunk_NoSpeechEndOrEnqueueStamp_TimingsAreNull()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // A job with no preceding capture (chime, announce) must report nulls rather than a garbage
@@ -729,7 +733,7 @@ public class PlaybackQueueTests
     [Fact]
     public async Task Run_ReportsTheAlarmKindAsTheAlertRouteOnAudioStart()
     {
-        var queue = new PlaybackQueue();
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var flags = new List<bool>();
 
         var pumpTask = queue.RunAsync(
