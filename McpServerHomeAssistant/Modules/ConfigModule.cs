@@ -6,7 +6,6 @@ using Infrastructure.Utils;
 using McpServerHomeAssistant.McpPrompts;
 using McpServerHomeAssistant.McpResources;
 using McpServerHomeAssistant.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -14,17 +13,6 @@ namespace McpServerHomeAssistant.Modules;
 
 public static class ConfigModule
 {
-    public static McpSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<McpSettings>();
-        return settings ?? throw new InvalidOperationException("Settings not found");
-    }
-
     extension(IServiceCollection services)
     {
         public IServiceCollection ConfigureMcp(McpSettings settings)

@@ -10,7 +10,6 @@ using McpServerLibrary.McpResources;
 using McpServerLibrary.McpTools;
 using McpServerLibrary.Services;
 using McpServerLibrary.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -19,17 +18,6 @@ namespace McpServerLibrary.Modules;
 
 public static class ConfigModule
 {
-    public static McpSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<McpSettings>();
-        return settings ?? throw new InvalidOperationException("Settings not found");
-    }
-
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
         services

@@ -8,17 +8,6 @@ namespace McpChannelTelegram.Modules;
 
 public static class ConfigModule
 {
-    public static ChannelSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<ChannelSettings>();
-        return settings ?? throw new InvalidOperationException("Settings not found");
-    }
-
     public static IServiceCollection ConfigureChannel(this IServiceCollection services, ChannelSettings settings)
     {
         services

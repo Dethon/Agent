@@ -8,7 +8,6 @@ using McpServerPrinter.McpPrompts;
 using McpServerPrinter.McpResources;
 using McpServerPrinter.Services;
 using McpServerPrinter.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharpIpp;
@@ -17,17 +16,6 @@ namespace McpServerPrinter.Modules;
 
 public static class ConfigModule
 {
-    public static PrinterSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        return config.Get<PrinterSettings>()
-               ?? throw new InvalidOperationException("Settings not found");
-    }
-
     public static IServiceCollection ConfigurePrinter(this IServiceCollection services, PrinterSettings settings)
     {
         services

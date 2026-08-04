@@ -7,7 +7,6 @@ using McpServerTimers.McpPrompts;
 using McpServerTimers.McpResources;
 using McpServerTimers.Services;
 using McpServerTimers.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -15,17 +14,6 @@ namespace McpServerTimers.Modules;
 
 public static class ConfigModule
 {
-    public static TimerSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        return config.Get<TimerSettings>()
-               ?? throw new InvalidOperationException("Settings not found");
-    }
-
     public static IServiceCollection ConfigureTimers(this IServiceCollection services, TimerSettings settings)
     {
         services.AddHttpClient(VoiceHubHttp.ClientName, client =>

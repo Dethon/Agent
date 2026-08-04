@@ -5,7 +5,6 @@ using Infrastructure.Utils;
 using McpServerIdealista.McpPrompts;
 using McpServerIdealista.McpTools;
 using McpServerIdealista.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -13,17 +12,6 @@ namespace McpServerIdealista.Modules;
 
 public static class ConfigModule
 {
-    public static McpSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<McpSettings>();
-        return settings ?? throw new InvalidOperationException("Settings not found");
-    }
-
     extension(IServiceCollection services)
     {
         public IServiceCollection ConfigureMcp(McpSettings settings)

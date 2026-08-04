@@ -6,7 +6,6 @@ using Infrastructure.Utils;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -14,29 +13,6 @@ namespace McpServerWebSearch.Modules;
 
 public static class ConfigModule
 {
-    public static McpSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<McpSettings>();
-        if (settings == null)
-        {
-            throw new InvalidOperationException("Settings not found");
-        }
-
-        // Bind nested sections explicitly for environment variable support
-        settings = settings with
-        {
-            CapSolver = config.GetSection("CapSolver").Get<CapSolverConfiguration>(),
-            Camoufox = config.GetSection("Camoufox").Get<CamoufoxConfiguration>()
-        };
-
-        return settings;
-    }
-
     extension(IServiceCollection services)
     {
         public IServiceCollection ConfigureMcp(McpSettings settings)

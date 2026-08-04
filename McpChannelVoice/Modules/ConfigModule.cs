@@ -13,18 +13,6 @@ namespace McpChannelVoice.Modules;
 
 public static class ConfigModule
 {
-    public static VoiceSettings GetVoiceSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<VoiceSettings>()
-                       ?? throw new InvalidOperationException("Voice settings not found");
-        return settings.WithResolvedLocalityDefaults();
-    }
-
     public static IServiceCollection ConfigureVoiceChannel(
         this IServiceCollection services,
         VoiceSettings settings)

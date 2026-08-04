@@ -11,7 +11,6 @@ using McpServerScheduling.McpResources;
 using McpServerScheduling.McpTools;
 using McpServerScheduling.Services;
 using McpServerScheduling.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -20,17 +19,6 @@ namespace McpServerScheduling.Modules;
 
 public static class ConfigModule
 {
-    public static SchedulingSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        return config.Get<SchedulingSettings>()
-               ?? throw new InvalidOperationException("Settings not found");
-    }
-
     public static IServiceCollection ConfigureScheduling(this IServiceCollection services, SchedulingSettings settings)
     {
         services

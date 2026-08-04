@@ -7,7 +7,6 @@ using Infrastructure.Utils;
 using McpServerSandbox.McpPrompts;
 using McpServerSandbox.McpResources;
 using McpServerSandbox.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -15,17 +14,6 @@ namespace McpServerSandbox.Modules;
 
 public static class ConfigModule
 {
-    public static McpSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<McpSettings>();
-        return settings ?? throw new InvalidOperationException("Settings not found");
-    }
-
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
         services
