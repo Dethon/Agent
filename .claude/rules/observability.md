@@ -49,7 +49,7 @@ fail — it keeps trying.
   of becoming live, and skipped when `ConnectionState.Epoch` is 1, where ordinary page load fetches
   the same data. A failure inside it is logged and leaves the connection live. It does not reload
   the overview's summary totals, which stay short until the next page load.
-- `MetricsHubEffect` is the binder and nothing else: the mapping from a push to a store update and a
+- `MetricsHubBinder` is the binder and nothing else: the mapping from a push to a store update and a
   family refresh, with `Bind` and `Unbind` driven by the module.
 
 Health tiles come from `ServiceHealthRegistry`, a sorted-set roster (`metrics:health:seen`) scored by *last registration*, not last health — reachability is the separate TTL'd `metrics:health:<service>` key. Services publishing `HeartbeatEvent`s register themselves; third-party containers are registered by `HttpHealthProbeService`, which polls the URLs in `HttpProbes` (`Observability/appsettings.json`) and treats **any** HTTP response, even non-2xx, as up. A probe target re-registers every cycle whether or not it answers, so a down service stays visible as a red tile, while a retired one stops registering and ages off after `Retention` (7 days).

@@ -18,11 +18,6 @@ public sealed class FakeMetricsHubConnection : IMetricsHubConnection
 
     public bool Disposed { get; private set; }
 
-    public IReadOnlyCollection<string> BoundWireNames => _handlers
-        .Where(pair => pair.Value.Count > 0)
-        .Select(pair => pair.Key)
-        .ToList();
-
     public event Func<Exception?, Task>? Closed;
     public event Func<Exception?, Task>? Reconnecting;
     public event Func<string?, Task>? Reconnected;

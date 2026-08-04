@@ -17,7 +17,7 @@ using Tests.Unit.Dashboard.Client.Fixtures;
 
 namespace Tests.Unit.Dashboard.Client.Effects;
 
-public class MetricsHubEffectTests : IAsyncDisposable
+public class MetricsHubBinderTests : IAsyncDisposable
 {
     private readonly FakeMetricsHubConnection _hub = new();
     private readonly FakeApiHandler _handler = new();
@@ -32,21 +32,21 @@ public class MetricsHubEffectTests : IAsyncDisposable
     private readonly VoiceStore _voiceStore = new();
     private readonly MetricsApiService _api;
     private readonly MetricFamilyTable _families;
-    private readonly MetricsHubEffect _effect;
+    private readonly MetricsHubBinder _binder;
 
-    public MetricsHubEffectTests()
+    public MetricsHubBinderTests()
     {
         var http = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
         _api = new MetricsApiService(http);
         _families = new MetricFamilyTable(
             _api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
-        _effect = new MetricsHubEffect(_families, _metricsStore, _healthStore);
+        _binder = new MetricsHubBinder(_families, _metricsStore, _healthStore);
     }
 
     public ValueTask DisposeAsync()
     {
-        _effect.Unbind();
+        _binder.Unbind();
         _tokensStore.Dispose();
         _toolsStore.Dispose();
         _errorsStore.Dispose();
@@ -67,10 +67,10 @@ public class MetricsHubEffectTests : IAsyncDisposable
     private static readonly Dictionary<
         string,
         (Func<MetricFamilyTable, MetricFamily> Family,
-         Action<MetricsHubEffectTests> Choose,
+         Action<MetricsHubBinderTests> Choose,
          string ExpectedRequest,
          object Breakdown,
-         Func<MetricsHubEffectTests, object?> GetBreakdown,
+         Func<MetricsHubBinderTests, object?> GetBreakdown,
          object? SecondResponse)>
     _familyCases = new()
     {
@@ -225,7 +225,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     private static readonly
     Dictionary<
         string,
-        (object StaleData, object FreshData, Func<FakeMetricsHubConnection, Task> FireEvent, Func<MetricsHubEffectTests, object?> GetBreakdown)>
+        (object StaleData, object FreshData, Func<FakeMetricsHubConnection, Task> FireEvent, Func<MetricsHubBinderTests, object?> GetBreakdown)>
     _rapidEventCases = new()
     {
         ["TokenUsage"] = (
@@ -283,7 +283,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     {
         var (staleData, freshData, fireEvent, getBreakdown) = _rapidEventCases[caseName];
 
-        _effect.Bind(_hub);
+        _binder.Bind(_hub);
 
         _handler.EnqueueResponse(staleData, delay: TimeSpan.FromMilliseconds(500));
         _handler.EnqueueResponse(freshData, delay: TimeSpan.FromMilliseconds(10));
@@ -300,7 +300,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     {
         var lastKnown = new Dictionary<string, decimal> { ["kept"] = 42m };
         _tokensStore.SetBreakdown(lastKnown);
-        _effect.Bind(_hub);
+        _binder.Bind(_hub);
 
         // Nothing is staged, so the handler answers 404 and the refresh throws.
         await _hub.RaiseAsync("OnTokenUsage", new TokenUsageEvent
@@ -320,7 +320,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     {
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
         _handler.EnqueueResponse(new List<LatencyTrendSeries>(), delay: TimeSpan.Zero);
-        _effect.Bind(_hub);
+        _binder.Bind(_hub);
 
         await _hub.RaiseAsync("OnLatency", new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 5 });
 
@@ -331,7 +331,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     public async Task OnVoice_AppendsEventToVoiceStore()
     {
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
-        _effect.Bind(_hub);
+        _binder.Bind(_hub);
 
         await _hub.RaiseAsync("OnVoice", new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
 
@@ -345,7 +345,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         // the breakdown using whatever aggregation the user picked, not silently fall back to Avg.
         _voiceStore.SetAgg(Aggregation.P95);
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
-        _effect.Bind(_hub);
+        _binder.Bind(_hub);
 
         await _hub.RaiseAsync("OnVoice", new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
 
@@ -397,7 +397,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     public async Task LoadAsync_RequestsVoiceBreakdownUsingStoreAgg()
     {
         // DataLoadEffect is a third, independent call site for GetVoiceGroupedAsync (the page-load
-        // path, distinct from MetricsHubEffect's live-refresh path) that can silently omit `agg`
+        // path, distinct from MetricsHubBinder's live-refresh path) that can silently omit `agg`
         // and fall back to Avg. No response staging is needed: we only assert on the outbound
         // request, and DataLoadEffect swallows the resulting 404s from the unstaffed FakeApiHandler.
         _voiceStore.SetAgg(Aggregation.P95);

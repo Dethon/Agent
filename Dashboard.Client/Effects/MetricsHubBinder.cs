@@ -9,7 +9,7 @@ namespace Dashboard.Client.Effects;
 
 // The mapping from a server push to a store update and a family refresh, and nothing else. The
 // connection lifecycle belongs to MetricsLiveConnection, which drives Bind and Unbind.
-public sealed class MetricsHubEffect(
+public sealed class MetricsHubBinder(
     MetricFamilyTable families,
     MetricsStore metricsStore,
     HealthStore healthStore)

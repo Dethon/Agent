@@ -47,7 +47,7 @@ builder.Services.AddSingleton<IMetricsHubConnection>(sp =>
 builder.Services.AddScoped<MetricFamilyTable>();
 
 builder.Services.AddScoped<DataLoadEffect>();
-builder.Services.AddScoped<MetricsHubEffect>();
+builder.Services.AddScoped<MetricsHubBinder>();
 builder.Services.AddScoped<IMetricsCatchUp, MetricsCatchUp>();
 builder.Services.AddScoped<MetricsLiveConnection>();
 

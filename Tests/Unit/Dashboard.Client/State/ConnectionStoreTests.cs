@@ -45,22 +45,21 @@ public class ConnectionStoreTests
         store.State.Epoch.ShouldBe(2);
     }
 
+    public static TheoryData<string, Action<ConnectionStore>> TransitionsThatAreNotBecomingLive => new()
+    {
+        { "connecting", store => store.SetConnecting() },
+        { "reconnecting", store => store.SetReconnecting() },
+    };
+
     [Theory]
-    [InlineData("connecting")]
-    [InlineData("reconnecting")]
-    public void SetStatus_TransitionsThatAreNotBecomingLive_LeaveTheEpochAlone(string transition)
+    [MemberData(nameof(TransitionsThatAreNotBecomingLive))]
+    public void SetStatus_TransitionsThatAreNotBecomingLive_LeaveTheEpochAlone(
+        string _, Action<ConnectionStore> transition)
     {
         using var store = new ConnectionStore();
         store.SetLive();
 
-        if (transition == "connecting")
-        {
-            store.SetConnecting();
-        }
-        else
-        {
-            store.SetReconnecting();
-        }
+        transition(store);
 
         store.State.Epoch.ShouldBe(1);
     }

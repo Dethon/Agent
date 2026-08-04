@@ -10,7 +10,7 @@ namespace Dashboard.Client.Services;
 // events into store updates.
 public sealed class MetricsLiveConnection(
     IMetricsHubConnection hub,
-    MetricsHubEffect binder,
+    MetricsHubBinder binder,
     ConnectionStore connectionStore,
     IMetricsCatchUp catchUp,
     TimeProvider timeProvider,

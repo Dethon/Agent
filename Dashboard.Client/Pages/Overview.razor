@@ -27,7 +27,7 @@
         <div class="controls">
             <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
                           OnChanged="OnTimeChanged" />
-            <span class="connection-status @StatusModifier">@StatusLabel</span>
+            <span class="connection-status @_status.Modifier">@_status.Label</span>
         </div>
     </header>
 
@@ -79,22 +79,6 @@
     private long _voiceUtterances;
     private double _voiceLatency;
     private readonly List<IDisposable> _subscriptions = [];
-
-    // The header's own presentation of the one connection status the store holds. The layout shows
-    // the same status on every page; this is the overview's version of it.
-    private string StatusModifier => _status switch
-    {
-        ConnectionStatus.Live => "connected",
-        ConnectionStatus.Reconnecting => "reconnecting",
-        _ => "connecting"
-    };
-
-    private string StatusLabel => _status switch
-    {
-        ConnectionStatus.Live => "Live",
-        ConnectionStatus.Reconnecting => "Reconnecting",
-        _ => "Connecting"
-    };
 
     private static readonly IReadOnlyList<PillOption> TimeOptions =
     [
@@ -173,7 +157,7 @@
     .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
     .page-header h2 { font-size: 1.4rem; font-weight: 600; }
     .connection-status { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 10px; font-weight: 600; }
-    .connection-status.connected { background: rgba(74,222,128,0.15); color: var(--accent-green); }
+    .connection-status.live { background: rgba(74,222,128,0.15); color: var(--accent-green); }
     .connection-status.connecting,
     .connection-status.reconnecting { background: rgba(251,191,36,0.15); color: var(--accent-yellow); }
     .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }

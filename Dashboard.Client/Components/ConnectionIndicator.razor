@@ -2,28 +2,14 @@
 @implements IDisposable
 @inject ConnectionStore Connection
 
-<div class="live-indicator @Modifier" title="@Label">
+<div class="live-indicator @_status.Modifier" title="@_status.Label">
     <span class="live-dot"></span>
-    <span class="live-label">@Label</span>
+    <span class="live-label">@_status.Label</span>
 </div>
 
 @code {
     private ConnectionStatus _status = ConnectionStatus.Connecting;
     private IDisposable? _subscription;
-
-    private string Modifier => _status switch
-    {
-        ConnectionStatus.Live => "live",
-        ConnectionStatus.Reconnecting => "reconnecting",
-        _ => "connecting"
-    };
-
-    private string Label => _status switch
-    {
-        ConnectionStatus.Live => "Live",
-        ConnectionStatus.Reconnecting => "Reconnecting",
-        _ => "Connecting"
-    };
 
     protected override void OnInitialized()
     {
