@@ -16,11 +16,11 @@ the existing monitor suite must stay green without edits.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The turn-start announce takes no skip-minted argument and skips exactly the targets marked minted.
-- [ ] Group anchors reused for a later turn carry the minted marker cleared.
-- [ ] The group-opening turn still skips announcing the targets it minted.
-- [ ] A later turn still announces those same conversations, now because the marker is cleared rather than because a flag said to ignore it.
-- [ ] The announce tests that drive the resolver directly are rewritten against the marker instead of the removed argument, and keep their intent.
-- [ ] The existing monitor test suite passes unchanged.
+- [x] The turn-start announce takes no skip-minted argument and skips exactly the targets marked minted.
+- [x] Group anchors reused for a later turn carry the minted marker cleared.
+- [x] The group-opening turn still skips announcing the targets it minted.
+- [x] A later turn still announces those same conversations, now because the marker is cleared rather than because a flag said to ignore it.
+- [x] The announce tests that drive the resolver directly are rewritten against the marker instead of the removed argument, and keep their intent.
+- [x] The existing monitor test suite passes unchanged.

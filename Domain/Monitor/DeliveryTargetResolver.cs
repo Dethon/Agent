@@ -74,14 +74,16 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
     public async Task AnnounceTurnStartAsync(
         IReadOnlyList<DeliveryTarget> targets,
         ChannelMessage message,
-        bool skipMinted,
         CancellationToken ct)
     {
         // The announce is channel-agnostic: every target gets the same create_conversation
         // call and applies its own turn-start semantics (SignalR sets up a live stream,
         // voice binds an announcement unless the satellite session is live). Channels
         // without a create_conversation tool no-op inside CreateConversationAsync.
-        var announceable = targets.Where(t => !(skipMinted && t.Minted));
+        //
+        // A target minted while resolving THIS turn was already announced by its own
+        // create_conversation, so announcing it again would set the same stream up twice.
+        var announceable = targets.Where(t => !t.Minted);
         foreach (var target in announceable)
         {
             try

@@ -241,7 +241,7 @@ public class ChatMonitor(
         // those conversations as pre-existing.
         if (x.Message.Origin is not null)
         {
-            await _targetResolver.AnnounceTurnStartAsync(targets, x.Message, skipMinted: index == 0, ct);
+            await _targetResolver.AnnounceTurnStartAsync(targets, x.Message, ct);
         }
         var userMessage = await BuildUserMessageAsync(x.Message, targets, scope, ct);
 
@@ -263,8 +263,16 @@ public class ChatMonitor(
         IReadOnlyList<DeliveryTarget> groupTargets,
         CancellationToken ct)
     {
-        return index == 0 || x.Message.ReplyTo is { Count: > 0 }
-            ? groupTargets
+        if (index == 0)
+        {
+            return groupTargets;
+        }
+
+        // A later turn reusing the group targets minted nothing of its own, so the marker
+        // is cleared: those conversations pre-exist this turn and the announce has to set
+        // their streams up again.
+        return x.Message.ReplyTo is { Count: > 0 }
+            ? [.. groupTargets.Select(t => t with { Minted = false })]
             : await _targetResolver.ResolveAsync(x.Message, x.Channel, ct);
     }
 
