@@ -1,6 +1,5 @@
 using Domain.Channels;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -28,31 +27,6 @@ public static class ChannelServerExtensions
 
         return builder
             .WithTools<McpChannelReceiveTool>()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(
-                next => async (context, cancellationToken) =>
-                {
-                    try
-                    {
-                        return await next(context, cancellationToken);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // channel_receive's long poll ends in cancellation whenever the agent hangs
-                        // up or the server shuts down. Mapping that to IsError would hand the pump
-                        // an error result to retry on; let it propagate as the abort it is.
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        context.Services?.GetService<ILoggerFactory>()
-                            ?.CreateLogger(typeof(ChannelServerExtensions))
-                            .LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                        return errorResult?.Invoke(ex) ?? new CallToolResult
-                        {
-                            IsError = true,
-                            Content = [new TextContentBlock { Text = ex.Message }]
-                        };
-                    }
-                }));
+            .AddCallToolErrorFilter(errorResult);
     }
 }
