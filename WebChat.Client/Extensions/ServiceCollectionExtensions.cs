@@ -50,8 +50,9 @@ public static class ServiceCollectionExtensions
             services.AddScoped<IHubEventBinder, HubEventBinder>();
             services.AddScoped<ISessionRecovery, SessionRecovery>();
 
-            // Session recovery makes its hub calls back through the live connection, so it is
-            // resolved lazily — injecting it eagerly would be a container cycle.
+            // Both collaborators reach back down to the live connection, so both are resolved
+            // lazily — injecting either eagerly is a container cycle.
+            services.AddScoped(sp => new Lazy<IHubEventBinder>(sp.GetRequiredService<IHubEventBinder>));
             services.AddScoped(sp => new Lazy<ISessionRecovery>(sp.GetRequiredService<ISessionRecovery>));
 
             // The concrete type is still needed by the services that reach for the raw hub.

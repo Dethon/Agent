@@ -6,9 +6,12 @@ namespace WebChat.Client.Services;
 
 public sealed class ChatLiveConnection(
     IHubConnectionFactory connectionFactory,
-    IHubEventBinder eventBinder,
-    // Resolved lazily: session recovery makes its hub calls through this same live
-    // connection, so eager injection would be a container cycle.
+    // Both are resolved lazily because both reach back down to this live connection: the
+    // binder through the hub event dispatcher's stream resume service, session recovery
+    // through its hub calls. Injecting either eagerly is a container cycle, and since the
+    // interface is registered through a factory the container cannot see it — it recurses
+    // building live connections until the process dies.
+    Lazy<IHubEventBinder> eventBinder,
     Lazy<ISessionRecovery> sessionRecovery,
     ConnectionEventDispatcher connectionEventDispatcher,
     TimeProvider timeProvider) : IChatLiveConnection
@@ -51,7 +54,7 @@ public sealed class ChatLiveConnection(
         // otherwise land on a connection with no handlers. Binding here is also what makes a
         // rebuilt connection heard at all — the server pushes belong to the hub connection
         // instance, so a rebuild that skipped this step would leave the client connected and deaf.
-        eventBinder.Bind(connection);
+        eventBinder.Value.Bind(connection);
 
         connection.Closed += OnConnectionClosed;
 
@@ -77,7 +80,7 @@ public sealed class ChatLiveConnection(
         // drop the just-started connection instead of leaking it.
         if (_disposed)
         {
-            eventBinder.Unbind();
+            eventBinder.Value.Unbind();
             await connection.DisposeAsync();
             _connection = null;
             return false;
@@ -232,7 +235,7 @@ public sealed class ChatLiveConnection(
         // callback later race the fresh connection (flip the UI to Disconnected over a live
         // socket, or fire a redundant reconnect).
         _connection.Closed -= OnConnectionClosed;
-        eventBinder.Unbind();
+        eventBinder.Value.Unbind();
         await _connection.DisposeAsync();
         _connection = null;
     }
@@ -242,7 +245,7 @@ public sealed class ChatLiveConnection(
         _disposed = true;
         if (_connection is not null)
         {
-            eventBinder.Unbind();
+            eventBinder.Value.Unbind();
             await _connection.DisposeAsync();
         }
     }

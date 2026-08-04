@@ -44,7 +44,7 @@ public sealed class ChatLiveConnectionTests : IDisposable
         _binder = new HubEventBinder(hubEventDispatcher);
         _liveConnection = new ChatLiveConnection(
             _factory,
-            _binder,
+            new Lazy<IHubEventBinder>(() => _binder),
             new Lazy<ISessionRecovery>(() => _sessionRecovery),
             new ConnectionEventDispatcher(_dispatcher),
             _timeProvider);
