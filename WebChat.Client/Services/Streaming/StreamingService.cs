@@ -115,18 +115,30 @@ public sealed class StreamingService(
     private async Task StartNewStreamAsync(
         StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)
     {
-        var chunks = await messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
+        var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch);
 
         // Announce only a stream that has actually started. The old order announced first and
         // discovered afterwards, which is how a user was shown a reply that never spoke.
-        if (!chunks.IsLive)
+        if (chunks is not null)
         {
-            dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
-            return;
+            Announce(topic, () => ProcessStreamAsync(
+                topic, chunks, new ChatMessageModel { Role = "assistant" }, currentMessageId: null));
+        }
+    }
+
+    // Null means the send could not be made and the user has been told. The send is theirs, so
+    // this is the one stream verb that raises a toast.
+    private async Task<IAsyncEnumerable<ChatStreamMessage>?> OpenSendStreamAsync(
+        StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)
+    {
+        var chunks = await messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
+        if (chunks.IsLive)
+        {
+            return chunks.Value!;
         }
 
-        Announce(topic, () => ProcessStreamAsync(
-            topic, chunks.Value!, new ChatMessageModel { Role = "assistant" }, currentMessageId: null));
+        dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+        return null;
     }
 
     // StreamStarted resets the streaming buffer, so it has to be dispatched before the first
@@ -142,15 +154,12 @@ public sealed class StreamingService(
     public async Task StreamResponseAsync(
         StoredTopic topic, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
-        var chunks = await messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
-        if (!chunks.IsLive)
+        var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch);
+        if (chunks is not null)
         {
-            dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
-            return;
+            await ProcessStreamAsync(
+                topic, chunks, new ChatMessageModel { Role = "assistant" }, currentMessageId: null);
         }
-
-        await ProcessStreamAsync(
-            topic, chunks.Value!, new ChatMessageModel { Role = "assistant" }, currentMessageId: null);
     }
 
     public async Task ResumeStreamResponseAsync(

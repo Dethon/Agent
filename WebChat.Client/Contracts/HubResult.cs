@@ -10,6 +10,6 @@ public readonly record struct HubResult<T>(bool IsLive, T? Value)
     public static HubResult<T> Answered(T? value) => new(true, value);
 }
 
-// What a hub call that returns no value carries. There is nothing to read; the only fact is
-// whether the call could be made at all.
+// Stands in for the payload of a hub call that returns none, so those calls answer with the
+// same result type as the rest instead of inventing a second convention.
 public readonly record struct Nothing;

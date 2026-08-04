@@ -119,6 +119,8 @@ public sealed class SendMessageEffect : IDisposable
             _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
             _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
 
+            // No early return, unlike the other user actions: the conversation is already on
+            // screen, so the send still runs and its own failure toast dedupes into this one.
             var saved = await _topicService.SaveTopicAsync(topic.ToMetadata(), isNew: true);
             if (!saved.IsLive)
             {

@@ -10,8 +10,8 @@ public interface IChatSessionService
 
     Task<HubResult<bool>> StartSessionAsync(StoredTopic topic);
 
-    // The same concern as starting a session: who the server thinks this client is. It lived
-    // as the one hub call with no service in front of it until this feature.
+    // Here because it is the same concern as starting a session — who the server thinks this
+    // client is — and because session recovery needs a dependency it can fake.
     Task<HubResult<Nothing>> RegisterUserAsync(string userId);
 
     void ClearSession();
