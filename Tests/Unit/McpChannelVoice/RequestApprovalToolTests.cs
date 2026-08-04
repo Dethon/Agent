@@ -35,7 +35,7 @@ public class RequestApprovalToolTests : IDisposable
             new SatelliteConfig { Identity = "household", Room = "Kitchen" });
         _sessions.Register(_session);
 
-        _pumpTask = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), _pump.Token);
+        _pumpTask = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), _pump.Token);
 
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
@@ -96,7 +96,7 @@ public class RequestApprovalToolTests : IDisposable
     public void Dispose()
     {
         _pump.Cancel();
-        _session.CompletePlayback();
+        _session.Playback.Complete();
         try
         { _pumpTask.GetAwaiter().GetResult(); }
         catch { /* OCE on teardown */ }
@@ -491,7 +491,7 @@ public class RequestApprovalToolTests : IDisposable
         _sessions.Register(session);
 
         using var pump = new CancellationTokenSource();
-        var pumpTask = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), pump.Token);
+        var pumpTask = session.Playback.RunAsync(async (_, _) => await Task.Yield(), pump.Token);
         try
         {
             var conversationId = await _manager.GetOrCreateAsync(session, "agent-1", "hi", default);
@@ -533,7 +533,7 @@ public class RequestApprovalToolTests : IDisposable
         finally
         {
             pump.Cancel();
-            session.CompletePlayback();
+            session.Playback.Complete();
             try
             { await pumpTask; }
             catch { /* OCE on teardown */ }

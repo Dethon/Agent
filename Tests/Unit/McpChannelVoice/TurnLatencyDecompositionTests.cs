@@ -121,7 +121,7 @@ public class TurnLatencyDecompositionTests
         // production code actually published, and every millisecond advanced between speech end and
         // first audio is claimed by exactly one term — which is the property under test.
         var capture = _session.OpenCapture(NewGate());
-        _session.MarkTurnStart(_clock.GetTimestamp());
+        _session.Playback.MarkTurnStart(_clock.GetTimestamp());
 
         // Audio arrives in real time, so advance the clock in step with each frame's duration: that
         // equivalence between audio-domain and wall-clock time is what lets the tail be rewound.
@@ -133,7 +133,7 @@ public class TurnLatencyDecompositionTests
         capture.Stats.TrailingSilenceMs.ShouldBe(EndpointTailMs);
 
         _session.CloseCapture();
-        _session.MarkSpeechEnd(_clock.GetTimestamp(), capture.Stats.TrailingSilenceMs, _clock);
+        _session.Playback.MarkSpeechEnd(_clock.GetTimestamp(), capture.Stats.TrailingSilenceMs, _clock);
 
         _clock.Advance(TimeSpan.FromMilliseconds(VerifyMs)); // final speaker-verify pass (ONNX embed)
         _clock.Advance(TimeSpan.FromMilliseconds(SttMs));    // whisper decode
@@ -147,8 +147,8 @@ public class TurnLatencyDecompositionTests
 
         _clock.Advance(TimeSpan.FromMilliseconds(QueueWaitMs)); // the reply waits behind another job
 
-        var pump = _session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.CompletePlayback();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
+        _session.Playback.Complete();
         await Task.Delay(80);                        // let the loop reach the playback-drain wait
         _clock.Advance(TimeSpan.FromSeconds(1));     // drain the remaining playback duration
         await pump.WaitAsync(TimeSpan.FromSeconds(2));

@@ -96,7 +96,7 @@ public sealed class InsistentAnnouncementController(
 
                 foreach (var session in OnlineSessions(targetIds))
                 {
-                    await session.EnqueuePlaybackAsync(
+                    await session.Playback.EnqueueAsync(
                         BuildJob(announcementId, buffered, session, gain), settings.Announce.QueueMaxDepth);
                 }
                 round++;
@@ -126,7 +126,7 @@ public sealed class InsistentAnnouncementController(
             {
                 foreach (var session in OnlineSessions(targetIds))
                 {
-                    session.PreemptCurrent();
+                    session.Playback.PreemptCurrent();
                 }
                 metrics.Publish(AlarmEvent(VoiceMetric.AlarmAcknowledged, targetIds, round));
             }

@@ -114,8 +114,8 @@ public class AnnouncementServiceTests
         var session = sessions.Get("kitchen-01")!;
         var started = new TaskCompletionSource();
         var preempted = new TaskCompletionSource();
-        var pump = session.RunPlaybackLoopAsync((c, ct) => Task.Delay(50, ct), CancellationToken.None);
-        await session.EnqueuePlaybackAsync(
+        var pump = session.Playback.RunAsync((c, ct) => Task.Delay(50, ct), CancellationToken.None);
+        await session.Playback.EnqueueAsync(
             new PlaybackJob("ongoing", AnnouncePriority.Normal,
                 NeverEnding(),
                 _ => { started.TrySetResult(); return Task.CompletedTask; },
@@ -151,7 +151,7 @@ public class AnnouncementServiceTests
         var (sut, sessions) = BuildSut(("kitchen-01", "Kitchen"));
         var session = sessions.Get("kitchen-01")!;
         var flags = new List<bool>();
-        var pump = session.RunPlaybackLoopAsync(
+        var pump = session.Playback.RunAsync(
             (_, _) => Task.CompletedTask,
             CancellationToken.None,
             onAudioStart: (_, alert, _) =>
@@ -174,7 +174,7 @@ public class AnnouncementServiceTests
         flags.ShouldHaveSingleItem();
         flags[0].ShouldBeFalse();
 
-        session.CompletePlayback();
+        session.Playback.Complete();
         await pump;
     }
 }

@@ -1,23 +1,18 @@
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
-using McpChannelVoice.Services.WyomingProtocol;
-using McpChannelVoice.Settings;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
 
-public class SatelliteSessionPlaybackTests
+public class PlaybackQueueTests
 {
-    private static SatelliteSession MakeSession() =>
-        new("kitchen-01", new SatelliteConfig { Identity = "household", Room = "Kitchen" });
-
     [Fact]
-    public async Task EnqueuePlayback_High_PreemptsSegmentsAlreadyQueuedBehindTheCurrentOne()
+    public async Task Enqueue_High_PreemptsSegmentsAlreadyQueuedBehindTheCurrentOne()
     {
-        // A reply is several sentence jobs now, so cancelling only _currentPlaybackCts left an alarm
+        // A reply is several sentence jobs now, so cancelling only _currentCts left an alarm
         // queued behind the REST of the answer: it cut sentence 1 and was then heard after sentences
         // 2..N had played in full. Every job queued when the High job arrives must be preempted.
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var played = new List<string>();
         var preempted = new List<string>();
         var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -47,7 +42,7 @@ public class SatelliteSessionPlaybackTests
             Audio = GenerateAudio("alarm", count: 1)
         };
 
-        var pumpTask = session.RunPlaybackLoopAsync(
+        var pumpTask = queue.RunAsync(
             async (chunk, _) =>
             {
                 lock (played)
@@ -56,13 +51,13 @@ public class SatelliteSessionPlaybackTests
             },
             CancellationToken.None);
 
-        await session.EnqueuePlaybackAsync(segment1, queueMaxDepth: 8);
-        await session.EnqueuePlaybackAsync(segment2, queueMaxDepth: 8);
-        await session.EnqueuePlaybackAsync(segment3, queueMaxDepth: 8);
+        await queue.EnqueueAsync(segment1, queueMaxDepth: 8);
+        await queue.EnqueueAsync(segment2, queueMaxDepth: 8);
+        await queue.EnqueueAsync(segment3, queueMaxDepth: 8);
         await firstChunkWritten.Task;
 
-        await session.EnqueuePlaybackAsync(alarm, queueMaxDepth: 8);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(alarm, queueMaxDepth: 8);
+        queue.Complete();
         await pumpTask;
 
         // The alarm is heard next, not after the rest of the answer.
@@ -71,11 +66,11 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
-    public async Task EnqueuePlayback_SecondHighStackedBehindAHigh_StillPlays()
+    public async Task Enqueue_SecondHighStackedBehindAHigh_StillPlays()
     {
         // The preempt mark must not swallow a second alarm that stacks in the gap — the High
         // exemption in the loop is what keeps insistent announcements ringing.
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var played = new List<string>();
 
         var first = new PlaybackJob(
@@ -86,7 +81,7 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask);
         var second = first with { Label = "alarm-2", Audio = GenerateAudio("alarm-2", count: 1) };
 
-        var pumpTask = session.RunPlaybackLoopAsync(
+        var pumpTask = queue.RunAsync(
             async (chunk, _) =>
             {
                 lock (played)
@@ -95,18 +90,18 @@ public class SatelliteSessionPlaybackTests
             },
             CancellationToken.None);
 
-        await session.EnqueuePlaybackAsync(first, queueMaxDepth: 8);
-        await session.EnqueuePlaybackAsync(second, queueMaxDepth: 8);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(first, queueMaxDepth: 8);
+        await queue.EnqueueAsync(second, queueMaxDepth: 8);
+        queue.Complete();
         await pumpTask;
 
         played.ShouldBe(["alarm-1", "alarm-2"]);
     }
 
     [Fact]
-    public async Task EnqueuePlayback_Normal_RunsAfterCurrent()
+    public async Task Enqueue_Normal_RunsAfterCurrent()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var played = new List<string>();
 
         var first = new PlaybackJob(
@@ -117,7 +112,7 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask);
         var second = first with { Label = "second", Audio = GenerateAudio("second", count: 1) };
 
-        var pumpTask = session.RunPlaybackLoopAsync(
+        var pumpTask = queue.RunAsync(
             async (chunk, ct) =>
             {
                 played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span));
@@ -125,9 +120,9 @@ public class SatelliteSessionPlaybackTests
             },
             CancellationToken.None);
 
-        await session.EnqueuePlaybackAsync(first, queueMaxDepth: 4);
-        await session.EnqueuePlaybackAsync(second, queueMaxDepth: 4);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(first, queueMaxDepth: 4);
+        await queue.EnqueueAsync(second, queueMaxDepth: 4);
+        queue.Complete();
 
         await pumpTask;
 
@@ -135,12 +130,12 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
-    public async Task EnqueuePlayback_LowPriorityWhileQueueNonEmpty_IsDropped()
+    public async Task Enqueue_LowPriorityWhileQueueNonEmpty_IsDropped()
     {
         // The returned bool is observable behavior: AnnouncementService maps it to
         // Status queued/dropped + the AnnounceQueued/AnnounceError metric. A Low-priority job must
         // be dropped (return false) when anything is already queued, so it never delays speech.
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var normal = new PlaybackJob(
             Label: "normal",
             Priority: AnnouncePriority.Normal,
@@ -150,16 +145,16 @@ public class SatelliteSessionPlaybackTests
         var low = normal with { Label = "low", Priority = AnnouncePriority.Low };
 
         // No playback loop is running, so the first job stays queued (Reader.Count > 0).
-        (await session.EnqueuePlaybackAsync(normal, queueMaxDepth: 4)).ShouldBeTrue();
-        (await session.EnqueuePlaybackAsync(low, queueMaxDepth: 4)).ShouldBeFalse();
+        (await queue.EnqueueAsync(normal, queueMaxDepth: 4)).ShouldBeTrue();
+        (await queue.EnqueueAsync(low, queueMaxDepth: 4)).ShouldBeFalse();
     }
 
     [Fact]
-    public async Task EnqueuePlayback_NormalWhenQueueAtMaxDepth_IsDropped()
+    public async Task Enqueue_NormalWhenQueueAtMaxDepth_IsDropped()
     {
         // The depth cap is the backpressure guard: once the queue is full, further Normal jobs
         // must be dropped (return false) rather than unbounded-buffered.
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         static PlaybackJob job(string label)
         {
             return new(
@@ -171,14 +166,14 @@ public class SatelliteSessionPlaybackTests
         }
 
         // No loop running: fill to depth 1, then the next Normal overflows.
-        (await session.EnqueuePlaybackAsync(job("a"), queueMaxDepth: 1)).ShouldBeTrue();
-        (await session.EnqueuePlaybackAsync(job("b"), queueMaxDepth: 1)).ShouldBeFalse();
+        (await queue.EnqueueAsync(job("a"), queueMaxDepth: 1)).ShouldBeTrue();
+        (await queue.EnqueueAsync(job("b"), queueMaxDepth: 1)).ShouldBeFalse();
     }
 
     [Fact]
-    public async Task EnqueuePlayback_HighPriorityWhileIdle_PreemptsQueuedAheadButPlaysItself()
+    public async Task Enqueue_HighPriorityWhileIdle_PreemptsQueuedAheadButPlaysItself()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var drained = new List<string>();
         var preempted = new List<string>();
 
@@ -201,11 +196,11 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: l => { preempted.Add(l); return Task.CompletedTask; },
             OnDrained: () => { drained.Add("high"); return Task.CompletedTask; });
 
-        await session.EnqueuePlaybackAsync(normal, queueMaxDepth: 4);
-        await session.EnqueuePlaybackAsync(high, queueMaxDepth: 4);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(normal, queueMaxDepth: 4);
+        await queue.EnqueueAsync(high, queueMaxDepth: 4);
+        queue.Complete();
 
-        await session.RunPlaybackLoopAsync(
+        await queue.RunAsync(
             (_, ct) => { ct.ThrowIfCancellationRequested(); return Task.CompletedTask; },
             CancellationToken.None);
 
@@ -214,9 +209,9 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_JobAudioThrows_SurvivesAndReportsThenPlaysNext()
+    public async Task Run_JobAudioThrows_SurvivesAndReportsThenPlaysNext()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var played = new List<string>();
         var errors = new List<string>();
 
@@ -228,7 +223,7 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask);
         var next = failing with { Label = "next", Audio = GenerateAudio("next", count: 1) };
 
-        var pumpTask = session.RunPlaybackLoopAsync(
+        var pumpTask = queue.RunAsync(
             async (chunk, ct) =>
             {
                 played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span));
@@ -241,9 +236,9 @@ public class SatelliteSessionPlaybackTests
                 return Task.CompletedTask;
             });
 
-        await session.EnqueuePlaybackAsync(failing, queueMaxDepth: 4);
-        await session.EnqueuePlaybackAsync(next, queueMaxDepth: 4);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(failing, queueMaxDepth: 4);
+        await queue.EnqueueAsync(next, queueMaxDepth: 4);
+        queue.Complete();
 
         await pumpTask;
 
@@ -252,9 +247,9 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_OnStartedThrows_SwallowsAndKeepsLoopAlive()
+    public async Task Run_OnStartedThrows_SwallowsAndKeepsLoopAlive()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var played = new List<string>();
 
         var bad = new PlaybackJob(
@@ -270,7 +265,7 @@ public class SatelliteSessionPlaybackTests
             OnStarted = _ => Task.CompletedTask
         };
 
-        var pumpTask = session.RunPlaybackLoopAsync(
+        var pumpTask = queue.RunAsync(
             async (chunk, ct) =>
             {
                 played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span));
@@ -278,9 +273,9 @@ public class SatelliteSessionPlaybackTests
             },
             CancellationToken.None);
 
-        await session.EnqueuePlaybackAsync(bad, queueMaxDepth: 4);
-        await session.EnqueuePlaybackAsync(next, queueMaxDepth: 4);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(bad, queueMaxDepth: 4);
+        await queue.EnqueueAsync(next, queueMaxDepth: 4);
+        queue.Complete();
 
         await pumpTask;
 
@@ -290,9 +285,9 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_JobDrains_InvokesOnDrained()
+    public async Task Run_JobDrains_InvokesOnDrained()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var drained = new List<string>();
 
         var job = new PlaybackJob(
@@ -303,20 +298,20 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask,
             OnDrained: () => { drained.Add("reply:kitchen-01"); return Task.CompletedTask; });
 
-        var pump = session.RunPlaybackLoopAsync(
+        var pump = queue.RunAsync(
             async (_, _) => await Task.Yield(), CancellationToken.None);
 
-        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(job, queueMaxDepth: 4);
+        queue.Complete();
         await pump;
 
         drained.ShouldBe(["reply:kitchen-01"]);
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_JobPreempted_DoesNotInvokeOnDrained()
+    public async Task Run_JobPreempted_DoesNotInvokeOnDrained()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var drained = new List<string>();
         var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -340,12 +335,12 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask,
             OnDrained: () => { drained.Add("reply:kitchen-01"); return Task.CompletedTask; });
 
-        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
 
-        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        await queue.EnqueueAsync(job, queueMaxDepth: 4);
         await firstChunkWritten.Task;       // job is mid-drain
-        session.PreemptCurrent();           // cancel it; the gated enumerator unwinds via OCE
-        session.CompletePlayback();
+        queue.PreemptCurrent();           // cancel it; the gated enumerator unwinds via OCE
+        queue.Complete();
         await pump;
 
         drained.ShouldBeEmpty();            // OnDrained must NOT fire on preempt
@@ -356,48 +351,9 @@ public class SatelliteSessionPlaybackTests
     // the stream) rather than a signal method that no longer exists.
 
     [Fact]
-    public async Task MicRouting_RouteAudio_FeedsActiveCaptureOnly()
+    public async Task Run_WaitsForAudioPlaybackDuration_BeforeOnDrained()
     {
-        var session = MakeSession();
-        var loud = new byte[3200];
-        for (var i = 0; i < loud.Length; i += 2)
-        { loud[i] = 0x40; loud[i + 1] = 0x1F; }
-        AudioChunk loudChunk()
-        {
-            return new() { Data = loud, Format = AudioFormat.WyomingStandard };
-        }
-
-        var silent = new AudioChunk { Data = new byte[3200], Format = AudioFormat.WyomingStandard };
-
-        // No active capture: routing is a safe no-op.
-        Should.NotThrow(() => session.RouteAudio(silent));
-
-        var capture = session.OpenCapture(new SilenceGate(
-            new AdaptiveLevelTracker(
-                clampRms: 500, enterMarginDb: 9, exitMarginDb: 4, peakDropDb: 15,
-                floorWindow: TimeSpan.FromSeconds(3)),
-            trailingSilence: TimeSpan.FromMilliseconds(200),
-            maxUtterance: TimeSpan.FromMilliseconds(1000),
-            minSpeech: TimeSpan.FromMilliseconds(100)));
-
-        // Speech then trailing silence routed through the session must end the active capture.
-        session.RouteAudio(silent); // pre-roll gap seeds the floor
-        session.RouteAudio(loudChunk());
-        session.RouteAudio(loudChunk());
-        session.RouteAudio(silent);
-        session.RouteAudio(silent);
-
-        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
-
-        // After close, routing must not reach any capture (no throw, no effect).
-        session.CloseCapture();
-        Should.NotThrow(() => session.RouteAudio(loudChunk()));
-    }
-
-    [Fact]
-    public async Task RunPlaybackLoop_WaitsForAudioPlaybackDuration_BeforeOnDrained()
-    {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
         var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -416,26 +372,26 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask,
             OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; });
 
-        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
 
-        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        await queue.EnqueueAsync(job, queueMaxDepth: 4);
         await Task.Delay(80); // let the loop write the audio and reach the playback wait
         drained.Task.IsCompleted.ShouldBeFalse(); // must NOT fire on write-drain — playback (500 ms) hasn't elapsed
 
         time.Advance(TimeSpan.FromMilliseconds(500)); // playback completes
         await drained.Task.WaitAsync(TimeSpan.FromSeconds(2)); // now OnDrained fires
-        session.CompletePlayback();
+        queue.Complete();
         await pump;
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_FirstChunk_PublishesSynthesisAndTurnTiming()
+    public async Task Run_FirstChunk_PublishesSynthesisAndTurnTiming()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        session.MarkTurnStart(time.GetTimestamp());
+        queue.MarkTurnStart(time.GetTimestamp());
         time.Advance(TimeSpan.FromSeconds(2)); // capture + STT + agent thinking before synthesis begins
 
         // Synthesis takes 300 ms to produce its first chunk; 16000 bytes = 500 ms of audio.
@@ -454,8 +410,8 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
-        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
-        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        await queue.EnqueueAsync(job, queueMaxDepth: 4);
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -464,16 +420,16 @@ public class SatelliteSessionPlaybackTests
         timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
         timing.SinceTurnStart.ShouldBe(TimeSpan.FromMilliseconds(2300));
 
-        session.CompletePlayback();
+        queue.Complete();
         await Task.Delay(80);                            // let the loop reach the playback-drain wait
         time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
         await pump.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_FirstChunk_NoTurnStart_TurnTimingNull()
+    public async Task Run_FirstChunk_NoTurnStart_TurnTimingNull()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // No MarkTurnStart: a job with no preceding turn (e.g. not wired) must NOT report a turn time,
@@ -486,9 +442,9 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
-        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
-        session.CompletePlayback();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        await queue.EnqueueAsync(job, queueMaxDepth: 4);
+        queue.Complete();
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
         timing.SinceTurnStart.ShouldBeNull();
@@ -498,9 +454,9 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_MultiChunk_InvokesOnFirstAudioOnce()
+    public async Task Run_MultiChunk_InvokesOnFirstAudioOnce()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var invocations = 0;
 
         var job = new PlaybackJob(
@@ -511,18 +467,18 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: _ => { Interlocked.Increment(ref invocations); return Task.CompletedTask; });
 
-        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
-        session.CompletePlayback();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        await queue.EnqueueAsync(job, queueMaxDepth: 4);
+        queue.Complete();
         await pump;
 
         invocations.ShouldBe(1); // fires only on the first chunk, not per chunk
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_JobAudioThrows_InvokesOnFailed()
+    public async Task Run_JobAudioThrows_InvokesOnFailed()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var failed = new TaskCompletionSource();
 
         // A synthesis failure must reach OnFailed so awaiters (approval prompt, chime) that block on a
@@ -535,18 +491,18 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask,
             OnFailed: _ => { failed.TrySetResult(); return Task.CompletedTask; });
 
-        await session.EnqueuePlaybackAsync(failing, queueMaxDepth: 4);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(failing, queueMaxDepth: 4);
+        queue.Complete();
 
-        await session.RunPlaybackLoopAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+        await queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
 
         failed.Task.IsCompletedSuccessfully.ShouldBeTrue();
     }
 
     [Fact]
-    public async Task EnqueuePlayback_TwoHighWhileIdle_BothPlay()
+    public async Task Enqueue_TwoHighWhileIdle_BothPlay()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var drained = new List<string>();
         var preempted = new List<string>();
 
@@ -564,11 +520,11 @@ public class SatelliteSessionPlaybackTests
             OnDrained: () => { drained.Add(label); return Task.CompletedTask; });
         }
 
-        await session.EnqueuePlaybackAsync(high("h1"), queueMaxDepth: 4);
-        await session.EnqueuePlaybackAsync(high("h2"), queueMaxDepth: 4);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(high("h1"), queueMaxDepth: 4);
+        await queue.EnqueueAsync(high("h2"), queueMaxDepth: 4);
+        queue.Complete();
 
-        await session.RunPlaybackLoopAsync(
+        await queue.RunAsync(
             (_, ct) => { ct.ThrowIfCancellationRequested(); return Task.CompletedTask; },
             CancellationToken.None);
 
@@ -577,10 +533,10 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
-    public async Task EnqueuePlayback_AfterChannelCompleted_ReturnsFalse()
+    public async Task Enqueue_AfterChannelCompleted_ReturnsFalse()
     {
-        var session = MakeSession();
-        session.CompletePlayback(); // satellite disconnected -> playback channel completed
+        var queue = new PlaybackQueue();
+        queue.Complete(); // satellite disconnected -> playback channel completed
 
         var job = new PlaybackJob(
             Label: "x",
@@ -591,21 +547,21 @@ public class SatelliteSessionPlaybackTests
 
         // Must return false (dropped) rather than throwing ChannelClosedException, so callers
         // like the announce endpoint don't surface a 500.
-        var accepted = await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        var accepted = await queue.EnqueueAsync(job, queueMaxDepth: 4);
 
         accepted.ShouldBeFalse();
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_FirstChunk_PublishesSpeechEndAndQueueWaitTiming()
+    public async Task Run_FirstChunk_PublishesSpeechEndAndQueueWaitTiming()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        session.MarkTurnStart(time.GetTimestamp());
+        queue.MarkTurnStart(time.GetTimestamp());
         time.Advance(TimeSpan.FromSeconds(3));            // the user talking
-        session.MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 0, time);
+        queue.MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 0, time);
         time.Advance(TimeSpan.FromSeconds(2));            // verify + STT + agent
         var enqueuedAt = time.GetTimestamp();
         time.Advance(TimeSpan.FromMilliseconds(400));     // the reply waits behind the preamble
@@ -627,8 +583,8 @@ public class SatelliteSessionPlaybackTests
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; },
             EnqueuedAt: enqueuedAt);
 
-        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
-        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        await queue.EnqueueAsync(job, queueMaxDepth: 4);
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -639,20 +595,20 @@ public class SatelliteSessionPlaybackTests
         timing.QueueWait.ShouldBe(TimeSpan.FromMilliseconds(400));
         timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
 
-        session.CompletePlayback();
+        queue.Complete();
         await Task.Delay(80);                            // let the loop reach the playback-drain wait
         time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
         await pump.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_FirstChunk_WritesTheAudioBeforeInvokingOnFirstAudio()
+    public async Task Run_FirstChunk_WritesTheAudioBeforeInvokingOnFirstAudio()
     {
         // Four awaited metric publishes now hang off OnFirstAudio, so invoking it before the first
         // writer call delays the first audio byte reaching the satellite by however long Redis takes:
         // the observer changing what it observes. Every timestamp the callback reports is captured
         // before the write, so ordering the write first costs no accuracy at all.
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var order = new List<string>();
 
         var job = new PlaybackJob(
@@ -663,30 +619,30 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: _ => { order.Add("metrics"); return Task.CompletedTask; });
 
-        var pump = session.RunPlaybackLoopAsync(
+        var pump = queue.RunAsync(
             (_, _) => { order.Add("write"); return Task.CompletedTask; }, CancellationToken.None);
-        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(job, queueMaxDepth: 4);
+        queue.Complete();
         await pump.WaitAsync(TimeSpan.FromSeconds(2));
 
         order.ShouldBe(["write", "metrics", "write"]);
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_FirstChunk_SpeechEndAnchorRewindsTheEndpointTail()
+    public async Task Run_FirstChunk_SpeechEndAnchorRewindsTheEndpointTail()
     {
         // The caller can only see the capture CLOSE, which SilenceGate reaches a whole
         // trailingSilence run after the user stopped talking (2000 ms in production). The tail is
         // machine time the user waits through, so it belongs inside this span: without the rewind
         // SpeechEndToFirstAudioMs omits it and EndpointTailMs sits beside the span instead of nested
         // inside it, which is ~40% of the wait at production settings.
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         time.Advance(TimeSpan.FromSeconds(3));            // the user talking
         time.Advance(TimeSpan.FromMilliseconds(2000));    // the endpointing tail the gate waits out
-        session.MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 2000, time);
+        queue.MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 2000, time);
         time.Advance(TimeSpan.FromMilliseconds(1000));    // verify + STT + agent
 
         var job = new PlaybackJob(
@@ -697,9 +653,9 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
-        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
-        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
-        session.CompletePlayback();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        await queue.EnqueueAsync(job, queueMaxDepth: 4);
+        queue.Complete();
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
         timing.SinceSpeechEnd.ShouldBe(TimeSpan.FromMilliseconds(3000)); // 2000 tail + 1000 machine
@@ -708,9 +664,9 @@ public class SatelliteSessionPlaybackTests
     }
 
     [Fact]
-    public async Task RunPlaybackLoop_FirstChunk_NoSpeechEndOrEnqueueStamp_TimingsAreNull()
+    public async Task Run_FirstChunk_NoSpeechEndOrEnqueueStamp_TimingsAreNull()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // A job with no preceding capture (chime, announce) must report nulls rather than a garbage
@@ -723,9 +679,9 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
-        var pump = session.RunPlaybackLoopAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        await session.EnqueuePlaybackAsync(job, queueMaxDepth: 4);
-        session.CompletePlayback();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        await queue.EnqueueAsync(job, queueMaxDepth: 4);
+        queue.Complete();
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
         timing.SinceSpeechEnd.ShouldBeNull();
@@ -737,12 +693,12 @@ public class SatelliteSessionPlaybackTests
     // The alert bit is what the hub puts on the wire for the satellite's sink selection, so it has
     // to survive the queue and arrive with the stream it belongs to — not with a neighbouring job.
     [Fact]
-    public async Task RunPlaybackLoop_ReportsEachJobsAlertFlagOnAudioStart()
+    public async Task Run_ReportsEachJobsAlertFlagOnAudioStart()
     {
-        var session = MakeSession();
+        var queue = new PlaybackQueue();
         var flags = new List<bool>();
 
-        var pumpTask = session.RunPlaybackLoopAsync(
+        var pumpTask = queue.RunAsync(
             (_, _) => Task.CompletedTask,
             CancellationToken.None,
             onAudioStart: (_, alert, _) =>
@@ -760,9 +716,9 @@ public class SatelliteSessionPlaybackTests
             OnPreempted: _ => Task.CompletedTask);
         var alarm = reply with { Label = "alarm", Audio = GenerateAudio("alarm", count: 1), Alert = true };
 
-        await session.EnqueuePlaybackAsync(reply, queueMaxDepth: 8);
-        await session.EnqueuePlaybackAsync(alarm, queueMaxDepth: 8);
-        session.CompletePlayback();
+        await queue.EnqueueAsync(reply, queueMaxDepth: 8);
+        await queue.EnqueueAsync(alarm, queueMaxDepth: 8);
+        queue.Complete();
         await pumpTask;
 
         flags.ShouldBe(new[] { false, true });

@@ -21,20 +21,20 @@ surface this extraction removes.
 is constructed and run by the satellite connection, which that work creates, and its
 drain phase is where ticket 04 settles discarded jobs.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A new playback queue module owns the job channel, the enqueue sequence, the
+- [x] A new playback queue module owns the job channel, the enqueue sequence, the
       high-water preemption mark, the current job's cancellation source, the enqueue
       operation, the queue-depth reader, the preempt-current operation, the
       channel-completion operation and the playback loop.
-- [ ] The satellite session exposes it as a property and forwards nothing.
-- [ ] The satellite connection constructs it, launches its loop with the frame writer and
+- [x] The satellite session exposes it as a property and forwards nothing.
+- [x] The satellite connection constructs it, launches its loop with the frame writer and
       the audio-envelope hooks, and completes it in the drain phase.
-- [ ] The playback job record, its five callbacks and the depth argument are unchanged.
-- [ ] Preemption is unchanged: the high-water mark, the exemption that lets a second
+- [x] The playback job record, its five callbacks and the depth argument are unchanged.
+- [x] Preemption is unchanged: the high-water mark, the exemption that lets a second
       high-priority job stack and still play, and the preempt-on-start throw that stops a
       cancellation-ignoring audio source from draining anyway.
-- [ ] The playback test file is renamed for the type it now drives, with its assertions
+- [x] The playback test file is renamed for the type it now drives, with its assertions
       unchanged.
-- [ ] The satellite session's remaining tests, all producer tests and the voice
+- [x] The satellite session's remaining tests, all producer tests and the voice
       integration suite pass unchanged.

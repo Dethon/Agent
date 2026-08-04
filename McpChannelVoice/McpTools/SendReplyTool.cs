@@ -239,7 +239,7 @@ public sealed class SendReplyTool
             // buffer, so a refused enqueue used to discard it outright — the user heard an answer
             // with a hole in the middle while the turn still settled Spoken. Leaving it buffered
             // means the next chunk, or the StreamComplete flush, still speaks it.
-            if (session.PlaybackQueueDepth >= streaming.MaxQueuedSegments)
+            if (session.Playback.Depth >= streaming.MaxQueuedSegments)
             {
                 return;
             }
@@ -482,7 +482,7 @@ public sealed class SendReplyTool
         // A reply's segments get their own allowance: sharing the announce depth meant one turn's
         // answer competed with itself and lost sentences out of its middle.
         var depth = isReply ? settings.Tts.Streaming.MaxQueuedSegments : settings.Announce.QueueMaxDepth;
-        var queued = await session.EnqueuePlaybackAsync(job, depth);
+        var queued = await session.Playback.EnqueueAsync(job, depth);
         if (isReply && !queued)
         {
             logger.LogWarning(

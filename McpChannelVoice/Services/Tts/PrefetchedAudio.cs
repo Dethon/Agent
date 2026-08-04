@@ -7,7 +7,7 @@ namespace McpChannelVoice.Services.Tts;
 // Makes a lazy synthesis stream hot: the TTS request goes out as soon as the segment is queued,
 // rather than when the playback loop first pulls it.
 //
-// Why this exists: RunPlaybackLoopAsync is a single sequential enumeration, and a job's audio is not
+// Why this exists: the playback loop is a single sequential enumeration, and a job's audio is not
 // touched until the previous job's body has completed — including its real-time drain wait. With the
 // reply split into sentence segments that put a full TTS round trip (~0.5-0.9 s measured) into every
 // seam. Starting the pump at enqueue moves that round trip under the previous segment's playback,

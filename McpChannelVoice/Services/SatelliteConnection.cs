@@ -77,7 +77,7 @@ public sealed class SatelliteConnection(
             token => Writer(WyomingEvent.Header("pause-satellite", new JsonObject()), token),
             token => Writer(ClosingTranscript(), token)));
 
-        _playbackTask = Task.Run(() => Session.RunPlaybackLoopAsync(
+        _playbackTask = Task.Run(() => Session.Playback.RunAsync(
             WritePlaybackFrameAsync,
             ct, time, logger,
             onAudioStart: (format, alert, token) => Writer(
@@ -154,7 +154,7 @@ public sealed class SatelliteConnection(
     private async Task DrainAsync()
     {
         Coordinator.Dispose();
-        Session.CompletePlayback();
+        Session.Playback.Complete();
         await AwaitSwallowingAsync(_playbackTask);
         await AwaitSwallowingAsync(_conversationTask);
         Session.ControlWriter = null;

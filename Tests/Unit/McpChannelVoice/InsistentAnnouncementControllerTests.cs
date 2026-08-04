@@ -92,7 +92,7 @@ public class InsistentAnnouncementControllerTests
     // after the job's last chunk, so a single Advance can land before the timer even exists.
     private static async Task DrainPumpAsync(Task pump, FakeTimeProvider time, SatelliteSession session)
     {
-        session.CompletePlayback();
+        session.Playback.Complete();
         var sw = System.Diagnostics.Stopwatch.StartNew();
         while (!pump.IsCompleted)
         {
@@ -109,7 +109,7 @@ public class InsistentAnnouncementControllerTests
     private static (Task Pump, Func<int> Count) PumpPlays(SatelliteSession session, FakeTimeProvider time)
     {
         var count = 0;
-        var pump = session.RunPlaybackLoopAsync(
+        var pump = session.Playback.RunAsync(
             (_, _) => { Interlocked.Increment(ref count); return Task.CompletedTask; },
             CancellationToken.None, time);
         return (pump, () => Volatile.Read(ref count));
@@ -318,7 +318,7 @@ public class InsistentAnnouncementControllerTests
         SatelliteSession session, FakeTimeProvider time)
     {
         var flags = new List<bool>();
-        var pump = session.RunPlaybackLoopAsync(
+        var pump = session.Playback.RunAsync(
             (_, _) => Task.CompletedTask,
             CancellationToken.None,
             time,
@@ -443,7 +443,7 @@ public class InsistentAnnouncementControllerTests
         h.Tts.Verify(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
             Times.Once); // synthesized once, replayed across rounds
 
-        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        h.Sessions.Get("kitchen-01")!.Playback.Complete();
         await pump;
     }
 
@@ -475,7 +475,7 @@ public class InsistentAnnouncementControllerTests
         await Task.Delay(50);
         plays().ShouldBe(2); // acknowledged before the second round (tone + TTS)
 
-        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        h.Sessions.Get("kitchen-01")!.Playback.Complete();
         await pump;
     }
 
@@ -483,7 +483,7 @@ public class InsistentAnnouncementControllerTests
         SatelliteSession session, FakeTimeProvider time)
     {
         var captured = new List<byte[]>();
-        var pump = session.RunPlaybackLoopAsync(
+        var pump = session.Playback.RunAsync(
             (chunk, _) => { lock (captured) { captured.Add(chunk.Data.ToArray()); } return Task.CompletedTask; },
             CancellationToken.None, time);
         return (pump, () => { lock (captured) { return captured.ToList(); } }
@@ -515,7 +515,7 @@ public class InsistentAnnouncementControllerTests
         // for this round's job. Advance past that nominal duration so the loop reaches the next
         // ReadAllAsync iteration and observes CompletePlayback's channel completion.
         time.Advance(TimeSpan.FromSeconds(2));
-        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        h.Sessions.Get("kitchen-01")!.Playback.Complete();
         await pump;
     }
 
@@ -555,7 +555,7 @@ public class InsistentAnnouncementControllerTests
         // RunPlaybackLoopAsync's playback-completion wait for round 1's job (see
         // Start_AlarmRound_PlaysToneBeforeSpeech). Advance past its nominal duration first.
         time.Advance(TimeSpan.FromSeconds(2));
-        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        h.Sessions.Get("kitchen-01")!.Playback.Complete();
         await pump;
     }
 
@@ -590,7 +590,7 @@ public class InsistentAnnouncementControllerTests
         // MaxRepeats=1, so RunLoopAsync never advances fake time itself; unblock round 1's
         // playback-completion wait before draining (see Start_AlarmRound_PlaysToneBeforeSpeech).
         time.Advance(TimeSpan.FromSeconds(2));
-        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        h.Sessions.Get("kitchen-01")!.Playback.Complete();
         await pump;
     }
 
@@ -619,7 +619,7 @@ public class InsistentAnnouncementControllerTests
 
         // Same fake-time gotcha as above: unblock round 1's playback-completion wait before draining.
         time.Advance(TimeSpan.FromSeconds(2));
-        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        h.Sessions.Get("kitchen-01")!.Playback.Complete();
         await pump;
     }
 
@@ -651,7 +651,7 @@ public class InsistentAnnouncementControllerTests
         // Same fake-time gotcha (see Acknowledge_StopsLoopAndMarksAcknowledged): unblock round 1's
         // playback-completion wait before draining.
         time.Advance(TimeSpan.FromSeconds(2));
-        h.Sessions.Get("kitchen-01")!.CompletePlayback();
+        h.Sessions.Get("kitchen-01")!.Playback.Complete();
         await pump;
     }
 
