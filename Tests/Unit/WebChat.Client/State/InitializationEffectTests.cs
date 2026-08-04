@@ -28,6 +28,7 @@ public sealed class InitializationEffectTests : IDisposable
     private readonly SpaceStore _spaceStore;
     private readonly UserIdentityStore _userIdentityStore;
     private readonly FakeChatLiveConnection _liveConnection;
+    private readonly FakeChatSessionService _sessionService;
     private readonly FakeAgentService _agentService;
     private readonly FakeTopicService _topicService;
     private readonly FakeConfigService _configService;
@@ -46,6 +47,7 @@ public sealed class InitializationEffectTests : IDisposable
         _userIdentityStore = new UserIdentityStore(_dispatcher);
 
         _liveConnection = new FakeChatLiveConnection(_calls);
+        _sessionService = new FakeChatSessionService(_calls);
         _agentService = new FakeAgentService(_calls);
         _topicService = new FakeTopicService(_calls);
         _configService = new FakeConfigService(_calls);
@@ -59,6 +61,7 @@ public sealed class InitializationEffectTests : IDisposable
         _effect = new InitializationEffect(
             _dispatcher,
             _liveConnection,
+            _sessionService,
             _agentService,
             _topicService,
             _configService,

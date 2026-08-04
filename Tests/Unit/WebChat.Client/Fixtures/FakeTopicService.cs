@@ -63,11 +63,17 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
                 .ToList()));
     }
 
-    public Task JoinSpaceAsync(string spaceSlug)
+    public Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug)
     {
-        _joinedSpaces.Add(spaceSlug);
         recorder?.Record($"join:{spaceSlug}");
-        return Task.CompletedTask;
+
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<Nothing>.NotLive);
+        }
+
+        _joinedSpaces.Add(spaceSlug);
+        return Task.FromResult(HubResult<Nothing>.Answered(default));
     }
 
     public Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false)

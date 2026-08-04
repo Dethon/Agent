@@ -13,7 +13,7 @@ public sealed class SessionRecoveryTests : IDisposable
     private readonly Dispatcher _dispatcher = new();
     private readonly SpaceStore _spaceStore;
     private readonly UserIdentityStore _userIdentityStore;
-    private readonly FakeChatLiveConnection _liveConnection;
+    private readonly FakeChatSessionService _sessionService;
     private readonly FakeTopicService _topicService;
     private readonly FakePushSubscriptionService _pushService = new();
     private readonly SessionRecovery _recovery;
@@ -22,11 +22,11 @@ public sealed class SessionRecoveryTests : IDisposable
     {
         _spaceStore = new SpaceStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
-        _liveConnection = new FakeChatLiveConnection(_calls);
+        _sessionService = new FakeChatSessionService(_calls);
         _topicService = new FakeTopicService(_calls);
 
         _recovery = new SessionRecovery(
-            _liveConnection, _topicService, _pushService, _userIdentityStore, _spaceStore);
+            _sessionService, _topicService, _pushService, _userIdentityStore, _spaceStore);
     }
 
     [Fact]

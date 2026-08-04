@@ -1,5 +1,4 @@
 using Domain.DTOs.WebChat;
-using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
@@ -20,14 +19,6 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
         string agentId, long chatId, long threadId) =>
         liveConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", agentId, chatId, threadId);
 
-    public async Task JoinSpaceAsync(string spaceSlug)
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return;
-        }
-
-        await hubConnection.InvokeAsync("JoinSpace", spaceSlug);
-    }
+    public Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug) =>
+        liveConnection.InvokeAsync("JoinSpace", spaceSlug);
 }

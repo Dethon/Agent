@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.UserIdentity;
@@ -6,7 +5,7 @@ using WebChat.Client.State.UserIdentity;
 namespace WebChat.Client.Services;
 
 public sealed class SessionRecovery(
-    IChatLiveConnection liveConnection,
+    IChatSessionService sessionService,
     ITopicService topicService,
     IPushSubscriptionService pushSubscriptionService,
     UserIdentityStore userIdentityStore,
@@ -35,12 +34,9 @@ public sealed class SessionRecovery(
         }
     }
 
-    private async Task RegisterUserAsync()
+    private Task RegisterUserAsync()
     {
         var userId = userIdentityStore.State.SelectedUserId;
-        if (!string.IsNullOrEmpty(userId) && liveConnection.HubConnection is not null)
-        {
-            await liveConnection.HubConnection.InvokeAsync("RegisterUser", userId);
-        }
+        return string.IsNullOrEmpty(userId) ? Task.CompletedTask : sessionService.RegisterUserAsync(userId);
     }
 }

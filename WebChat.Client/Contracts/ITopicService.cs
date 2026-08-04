@@ -8,5 +8,5 @@ public interface ITopicService
     Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false);
     Task<HubResult<Nothing>> DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId);
     Task<HubResult<IReadOnlyList<ChatHistoryMessage>>> GetHistoryAsync(string agentId, long chatId, long threadId);
-    Task JoinSpaceAsync(string spaceSlug);
+    Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug);
 }

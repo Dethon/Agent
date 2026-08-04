@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
@@ -14,6 +13,7 @@ public sealed class InitializationEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly IChatLiveConnection _liveConnection;
+    private readonly IChatSessionService _sessionService;
     private readonly IAgentService _agentService;
     private readonly ITopicService _topicService;
     private readonly IConfigService _configService;
@@ -30,6 +30,7 @@ public sealed class InitializationEffect : IDisposable
     public InitializationEffect(
         Dispatcher dispatcher,
         IChatLiveConnection liveConnection,
+        IChatSessionService sessionService,
         IAgentService agentService,
         ITopicService topicService,
         IConfigService configService,
@@ -45,6 +46,7 @@ public sealed class InitializationEffect : IDisposable
     {
         _dispatcher = dispatcher;
         _liveConnection = liveConnection;
+        _sessionService = sessionService;
         _agentService = agentService;
         _topicService = topicService;
         _configService = configService;
@@ -131,13 +133,10 @@ public sealed class InitializationEffect : IDisposable
         await Task.WhenAll(topics.Select(LoadTopicHistoryAsync));
     }
 
-    public async Task RegisterUserAsync(string? userId = null)
+    public Task RegisterUserAsync(string? userId = null)
     {
         userId ??= _userIdentityStore.State.SelectedUserId;
-        if (!string.IsNullOrEmpty(userId) && _liveConnection.HubConnection is not null)
-        {
-            await _liveConnection.HubConnection.InvokeAsync("RegisterUser", userId);
-        }
+        return string.IsNullOrEmpty(userId) ? Task.CompletedTask : _sessionService.RegisterUserAsync(userId);
     }
 
     private async Task SubscribePushAsync()

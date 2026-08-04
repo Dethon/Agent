@@ -140,7 +140,7 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task ResubscribeAsync_WhenSubscriptionExists_AccessesHubConnection()
+    public async Task ResubscribeAsync_WhenSubscriptionExists_ResendsItOverTheHub()
     {
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription", It.IsAny<object[]>()))
@@ -150,11 +150,12 @@ public sealed class PushNotificationServiceTests
 
         _mockJsRuntime.Verify(js => js.InvokeAsync<PushSubscriptionResult?>(
             "pushNotifications.getSubscription", It.IsAny<object[]>()), Times.Once);
-        _mockLiveConnection.Verify(c => c.HubConnection, Times.AtLeastOnce);
+        _mockLiveConnection.Verify(
+            c => c.InvokeAsync("SubscribePush", It.IsAny<object?[]>()), Times.Once);
     }
 
     [Fact]
-    public async Task ResubscribeAsync_WhenNoSubscription_DoesNotAccessHub()
+    public async Task ResubscribeAsync_WhenNoSubscription_MakesNoHubCall()
     {
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription", It.IsAny<object[]>()))
@@ -162,7 +163,8 @@ public sealed class PushNotificationServiceTests
 
         await _sut.ResubscribeAsync();
 
-        _mockLiveConnection.Verify(c => c.HubConnection, Times.Never);
+        _mockLiveConnection.Verify(
+            c => c.InvokeAsync(It.IsAny<string>(), It.IsAny<object?[]>()), Times.Never);
     }
 
     [Fact]
