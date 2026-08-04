@@ -21,6 +21,7 @@ builder.Services.AddScoped<ConnectionEventDispatcher>();
 // The live connection (concrete type still needed by the services that reach for the raw hub)
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IHubConnectionFactory, SignalRHubConnectionFactory>();
+builder.Services.AddScoped<IHubEventBinder, HubEventBinder>();
 builder.Services.AddScoped<ChatLiveConnection>();
 builder.Services.AddScoped<IChatLiveConnection>(sp => sp.GetRequiredService<ChatLiveConnection>());
 
@@ -40,7 +41,6 @@ builder.Services.AddScoped<StreamResumeService>();
 builder.Services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<StreamResumeService>());
 builder.Services.AddScoped<IMessagePipeline, MessagePipeline>();
 
-builder.Services.AddScoped<ISignalREventSubscriber, SignalREventSubscriber>();
 builder.Services.AddScoped<PushNotificationService>();
 builder.Services.AddScoped<IPushSubscriptionService>(sp => sp.GetRequiredService<PushNotificationService>());
 

@@ -28,18 +28,18 @@ the blind spot that let this defect ship.
 
 **Blocked by:** 01, 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A red test asserts that a server push reaches the store after a rebuild, and
+- [x] A red test asserts that a server push reaches the store after a rebuild, and
       fails against the current design before any extraction lands
-- [ ] The live connection binds the server pushes to each hub connection it builds,
+- [x] The live connection binds the server pushes to each hub connection it builds,
       before starting it
-- [ ] Tearing down a hub connection unbinds before disposing, and a push raised on
+- [x] Tearing down a hub connection unbinds before disposing, and a push raised on
       a torn-down instance changes nothing
-- [ ] The binder takes the connection to bind to, can be unbound, and no longer
+- [x] The binder takes the connection to bind to, can be unbound, and no longer
       guards against a repeated bind
-- [ ] The initialization effect no longer binds server pushes
-- [ ] The binder has tests of its own: binding registers all six pushes against the
+- [x] The initialization effect no longer binds server pushes
+- [x] The binder has tests of its own: binding registers all six pushes against the
       connection it was given, and unbinding releases them
-- [ ] A push reaches the store on a first connect as well as after a rebuild
-- [ ] The existing rebuild, probe, retry and give-up behavior is unchanged
+- [x] A push reaches the store on a first connect as well as after a rebuild
+- [x] The existing rebuild, probe, retry and give-up behavior is unchanged

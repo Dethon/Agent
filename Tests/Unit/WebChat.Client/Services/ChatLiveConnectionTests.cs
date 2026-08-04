@@ -1,54 +1,123 @@
+using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
-using WebChat.Client.Contracts;
 using WebChat.Client.Services;
 using WebChat.Client.State;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Hub;
+using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Topics;
 
 namespace Tests.Unit.WebChat.Client.Services;
 
-public class ChatLiveConnectionTests
+public sealed class ChatLiveConnectionTests : IDisposable
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly FakeHubConnectionFactory _factory = new();
-    private readonly RecordingDispatcher _dispatcher = new();
-    private readonly ChatLiveConnection _service;
+    private readonly Dispatcher _dispatcher = new();
+    private readonly ConnectionStore _connectionStore;
+    private readonly TopicsStore _topicsStore;
+    private readonly MessagesStore _messagesStore;
+    private readonly StreamingStore _streamingStore;
+    private readonly HubEventBinder _binder;
+    private readonly ChatLiveConnection _liveConnection;
 
     public ChatLiveConnectionTests()
     {
-        _service = new ChatLiveConnection(_factory, new ConnectionEventDispatcher(_dispatcher), _timeProvider);
+        _connectionStore = new ConnectionStore(_dispatcher);
+        _topicsStore = new TopicsStore(_dispatcher);
+        _messagesStore = new MessagesStore(_dispatcher);
+        _streamingStore = new StreamingStore(_dispatcher);
+
+        var pipeline = new MessagePipeline(
+            _dispatcher, _messagesStore, _streamingStore, NullLogger<MessagePipeline>.Instance);
+        var hubEventDispatcher = new HubEventDispatcher(
+            _dispatcher, _topicsStore, _streamingStore, pipeline, new FakeStreamResumeService());
+
+        _binder = new HubEventBinder(hubEventDispatcher);
+        _liveConnection = new ChatLiveConnection(
+            _factory, _binder, new ConnectionEventDispatcher(_dispatcher), _timeProvider);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_FirstConnect_AServerPushReachesTheStore()
+    {
+        await _liveConnection.ConnectAsync();
+
+        _factory.Created.Single().Raise("OnTopicChanged", TopicCreated("topic-1"));
+
+        _topicsStore.State.Topics.ShouldContain(topic => topic.TopicId == "topic-1");
+    }
+
+    [Fact]
+    public async Task ReconnectIfNeededAsync_AfterRebuild_AServerPushStillReachesTheStore()
+    {
+        await _liveConnection.ConnectAsync();
+        _factory.Created.Single().State = HubConnectionState.Reconnecting;
+
+        await _liveConnection.ReconnectIfNeededAsync();
+        _factory.Created.Last().Raise("OnTopicChanged", TopicCreated("topic-1"));
+
+        _topicsStore.State.Topics.ShouldContain(topic => topic.TopicId == "topic-1");
+    }
+
+    [Fact]
+    public async Task ReconnectIfNeededAsync_AfterRebuild_APushOnTheTornDownConnectionChangesNothing()
+    {
+        await _liveConnection.ConnectAsync();
+        var tornDown = _factory.Created.Single();
+        tornDown.State = HubConnectionState.Reconnecting;
+
+        await _liveConnection.ReconnectIfNeededAsync();
+        tornDown.Raise("OnTopicChanged", TopicCreated("topic-1"));
+
+        _topicsStore.State.Topics.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_APushOnTheDisposedConnectionChangesNothing()
+    {
+        await _liveConnection.ConnectAsync();
+        var connection = _factory.Created.Single();
+
+        await _liveConnection.DisposeAsync();
+        connection.Raise("OnTopicChanged", TopicCreated("topic-1"));
+
+        _topicsStore.State.Topics.ShouldBeEmpty();
     }
 
     [Fact]
     public async Task ReconnectIfNeededAsync_StuckReconnectingConnection_ReplacesItWithFreshConnection()
     {
-        await _service.ConnectAsync();
+        await _liveConnection.ConnectAsync();
         var stuck = _factory.Created.Single();
         stuck.State = HubConnectionState.Reconnecting;
 
-        await _service.ReconnectIfNeededAsync();
+        await _liveConnection.ReconnectIfNeededAsync();
 
         stuck.Disposed.ShouldBeTrue();
         _factory.Created.Count.ShouldBe(2);
-        _service.IsConnected.ShouldBeTrue();
+        _liveConnection.IsConnected.ShouldBeTrue();
     }
 
     [Fact]
     public async Task ReconnectIfNeededAsync_AfterRebuild_FiresOnReconnectedRecovery()
     {
-        await _service.ConnectAsync();
+        await _liveConnection.ConnectAsync();
         var recovered = false;
-        _service.OnReconnected += () =>
+        _liveConnection.OnReconnected += () =>
         {
             recovered = true;
             return Task.CompletedTask;
         };
         _factory.Created.Single().State = HubConnectionState.Reconnecting;
 
-        await _service.ReconnectIfNeededAsync();
+        await _liveConnection.ReconnectIfNeededAsync();
 
         recovered.ShouldBeTrue();
     }
@@ -56,12 +125,12 @@ public class ChatLiveConnectionTests
     [Fact]
     public async Task ReconnectIfNeededAsync_HungConnectAttempt_IsCancelledAtAttemptTimeoutAndRetried()
     {
-        await _service.ConnectAsync();
+        await _liveConnection.ConnectAsync();
         _factory.Created.Single().State = HubConnectionState.Reconnecting;
         var hung = new FakeHubConnection { StartBehavior = ct => Task.Delay(Timeout.InfiniteTimeSpan, ct) };
         _factory.Enqueue(hung);
 
-        var reconnect = _service.ReconnectIfNeededAsync();
+        var reconnect = _liveConnection.ReconnectIfNeededAsync();
 
         // Just short of the 2.5s per-attempt timeout the hung attempt must still be running.
         _timeProvider.Advance(TimeSpan.FromSeconds(2.4));
@@ -73,53 +142,56 @@ public class ChatLiveConnectionTests
 
         hung.Disposed.ShouldBeTrue();
         _factory.Created.Count.ShouldBe(3);
-        _service.IsConnected.ShouldBeTrue();
+        _liveConnection.IsConnected.ShouldBeTrue();
     }
 
     [Fact]
     public async Task ReconnectIfNeededAsync_ServerUnreachable_GivesUpDisconnectedAfterFourAttempts()
     {
-        await _service.ConnectAsync();
+        await _liveConnection.ConnectAsync();
         _factory.Created.Single().State = HubConnectionState.Reconnecting;
         _factory.CreateBehavior = () => new FakeHubConnection
         {
             StartBehavior = _ => Task.FromException(new IOException("connection refused"))
         };
 
-        var reconnect = _service.ReconnectIfNeededAsync();
+        var reconnect = _liveConnection.ReconnectIfNeededAsync();
         await AdvanceUntilCompleteAsync(reconnect);
 
         _factory.Created.Count.ShouldBe(5); // the original connection + 4 rebuild attempts
-        _service.IsConnected.ShouldBeFalse();
-        _dispatcher.Actions.Last().ShouldBeOfType<ConnectionClosed>();
+        _liveConnection.IsConnected.ShouldBeFalse();
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Disconnected);
     }
 
     [Fact]
     public async Task ReconnectIfNeededAsync_ConnectedAndPingSucceeds_KeepsConnection()
     {
-        await _service.ConnectAsync();
+        await _liveConnection.ConnectAsync();
         var live = _factory.Created.Single();
 
-        await _service.ReconnectIfNeededAsync();
+        await _liveConnection.ReconnectIfNeededAsync();
 
         live.Disposed.ShouldBeFalse();
         _factory.Created.Count.ShouldBe(1);
-        _service.IsConnected.ShouldBeTrue();
+        _liveConnection.IsConnected.ShouldBeTrue();
     }
 
     [Fact]
     public async Task ReconnectIfNeededAsync_ConnectedButPingFails_Rebuilds()
     {
-        await _service.ConnectAsync();
+        await _liveConnection.ConnectAsync();
         var zombie = _factory.Created.Single();
         zombie.PingBehavior = _ => Task.FromException<bool>(new IOException("transport dead"));
 
-        await _service.ReconnectIfNeededAsync();
+        await _liveConnection.ReconnectIfNeededAsync();
 
         zombie.Disposed.ShouldBeTrue();
         _factory.Created.Count.ShouldBe(2);
-        _service.IsConnected.ShouldBeTrue();
+        _liveConnection.IsConnected.ShouldBeTrue();
     }
+
+    private static TopicChangedNotification TopicCreated(string topicId) =>
+        new(TopicChangeType.Created, topicId, TestChat.Topic(topicId));
 
     private async Task AdvanceUntilCompleteAsync(Task task)
     {
@@ -137,13 +209,11 @@ public class ChatLiveConnectionTests
     // advance get a chance to run before the next assertion or advance.
     private static Task SettleAsync() => Task.Delay(50);
 
-    private sealed class RecordingDispatcher : IDispatcher
+    public void Dispose()
     {
-        public List<object> Actions { get; } = [];
-
-        public void Dispatch<TAction>(TAction action) where TAction : IAction
-        {
-            Actions.Add(action);
-        }
+        _connectionStore.Dispose();
+        _topicsStore.Dispose();
+        _messagesStore.Dispose();
+        _streamingStore.Dispose();
     }
 }

@@ -18,7 +18,6 @@ public sealed class InitializationEffect : IDisposable
     private readonly ITopicService _topicService;
     private readonly IConfigService _configService;
     private readonly ILocalStorageService _localStorage;
-    private readonly ISignalREventSubscriber _eventSubscriber;
     private readonly IStreamResumeService _streamResumeService;
     private readonly IPushSubscriptionService _pushNotificationService;
     private readonly UserIdentityStore _userIdentityStore;
@@ -35,7 +34,6 @@ public sealed class InitializationEffect : IDisposable
         ITopicService topicService,
         IConfigService configService,
         ILocalStorageService localStorage,
-        ISignalREventSubscriber eventSubscriber,
         IStreamResumeService streamResumeService,
         IPushSubscriptionService pushNotificationService,
         UserIdentityStore userIdentityStore,
@@ -51,7 +49,6 @@ public sealed class InitializationEffect : IDisposable
         _topicService = topicService;
         _configService = configService;
         _localStorage = localStorage;
-        _eventSubscriber = eventSubscriber;
         _streamResumeService = streamResumeService;
         _pushNotificationService = pushNotificationService;
         _userIdentityStore = userIdentityStore;
@@ -70,7 +67,6 @@ public sealed class InitializationEffect : IDisposable
     public async Task HandleInitializeAsync()
     {
         await _liveConnection.ConnectAsync();
-        _eventSubscriber.Subscribe();
 
         await RegisterUserAsync();
 

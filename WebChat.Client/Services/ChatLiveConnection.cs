@@ -6,6 +6,7 @@ namespace WebChat.Client.Services;
 
 public sealed class ChatLiveConnection(
     IHubConnectionFactory connectionFactory,
+    IHubEventBinder eventBinder,
     ConnectionEventDispatcher connectionEventDispatcher,
     TimeProvider timeProvider) : IChatLiveConnection
 {
@@ -42,6 +43,12 @@ public sealed class ChatLiveConnection(
         var connection = await connectionFactory.CreateAsync();
         _connection = connection;
 
+        // Bind before starting: a push that arrives immediately after the handshake would
+        // otherwise land on a connection with no handlers. Binding here is also what makes a
+        // rebuilt connection heard at all — the server pushes belong to the hub connection
+        // instance, so a rebuild that skipped this step would leave the client connected and deaf.
+        eventBinder.Bind(connection);
+
         connection.Closed += OnConnectionClosed;
 
         connection.Reconnecting += _ =>
@@ -75,6 +82,7 @@ public sealed class ChatLiveConnection(
         // drop the just-started connection instead of leaking it.
         if (_disposed)
         {
+            eventBinder.Unbind();
             await connection.DisposeAsync();
             _connection = null;
             return;
@@ -216,6 +224,7 @@ public sealed class ChatLiveConnection(
         // callback later race the fresh connection (flip the UI to Disconnected over a live
         // socket, or fire a redundant reconnect).
         _connection.Closed -= OnConnectionClosed;
+        eventBinder.Unbind();
         await _connection.DisposeAsync();
         _connection = null;
 
@@ -231,6 +240,7 @@ public sealed class ChatLiveConnection(
         _disposed = true;
         if (_connection is not null)
         {
+            eventBinder.Unbind();
             await _connection.DisposeAsync();
         }
     }

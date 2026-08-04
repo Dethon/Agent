@@ -32,7 +32,6 @@ public sealed class InitializationEffectTests : IDisposable
     private readonly FakeTopicService _topicService;
     private readonly FakeConfigService _configService;
     private readonly FakeLocalStorageService _localStorage;
-    private readonly FakeSignalREventSubscriber _eventSubscriber;
     private readonly FakeStreamResumeService _streamResumeService;
     private readonly FakePushSubscriptionService _pushService;
     private readonly RecordingLogger<InitializationEffect> _logger = new();
@@ -51,7 +50,6 @@ public sealed class InitializationEffectTests : IDisposable
         _topicService = new FakeTopicService(_calls);
         _configService = new FakeConfigService(_calls);
         _localStorage = new FakeLocalStorageService(_calls);
-        _eventSubscriber = new FakeSignalREventSubscriber(_calls);
         _streamResumeService = new FakeStreamResumeService();
         _pushService = new FakePushSubscriptionService();
 
@@ -65,7 +63,6 @@ public sealed class InitializationEffectTests : IDisposable
             _topicService,
             _configService,
             _localStorage,
-            _eventSubscriber,
             _streamResumeService,
             _pushService,
             _userIdentityStore,
@@ -90,7 +87,6 @@ public sealed class InitializationEffectTests : IDisposable
         _calls.Calls.ShouldBe(
         [
             "connect",
-            "subscribe",
             "register-user",
             "space:default",
             "join:default",
@@ -158,7 +154,7 @@ public sealed class InitializationEffectTests : IDisposable
 
         await _effect.HandleInitializeAsync();
 
-        _calls.Calls.ShouldBe(["connect", "subscribe", "space:ghost", "space:default", "join:default", "agents"]);
+        _calls.Calls.ShouldBe(["connect", "space:ghost", "space:default", "join:default", "agents"]);
         _spaceStore.State.CurrentSlug.ShouldBe("default");
         _spaceStore.State.SpaceName.ShouldBe("Main");
     }
@@ -222,7 +218,6 @@ public sealed class InitializationEffectTests : IDisposable
 
         await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
         _liveConnection.ConnectCalls.ShouldBe(1);
-        _eventSubscriber.IsSubscribed.ShouldBeTrue();
     }
 
     [Fact]
