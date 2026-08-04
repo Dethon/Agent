@@ -142,6 +142,22 @@ conversation someone can open, so a scheduled task fires under the conversation 
 delivered into and not under the schedule.
 _Avoid_: conversation id, target conversation, delivery key
 
+## Channel connection
+
+**Connection generation**:
+One unbroken run of the agent's link to a channel, from the moment it is established
+to the moment it drops. Anything the agent learned about the channel by asking it
+belongs to that run and no other, because the next run may be talking to a different
+process.
+_Avoid_: session, connection instance, epoch
+
+**Not connected**:
+The state a channel link is in before its first connection and for the whole of a
+reconnect. It is not one behaviour: each thing a caller can ask for answers it in the
+way its own caller needs, and which way that is belongs to the question rather than to
+the state.
+_Avoid_: disconnected, offline, dead
+
 ## Memory
 
 **Decoration**:
@@ -199,6 +215,26 @@ _Avoid_: first turn, initial capture
 A turn the hub opens by itself after a reply, with the microphone live and no wake
 word. It has no wake announcement of its own and never will.
 _Avoid_: continuation, second turn
+
+**Capture**:
+The satellite's microphone while it is open, from the moment the hub starts listening
+to the moment it stops and says what the room sounded like. It knows nothing about
+turns: a wake turn and a follow-up turn each open one, and so does a question the
+agent asks mid-turn, which is not a turn at all.
+_Avoid_: recording, mic session, utterance
+
+**Satellite identity**:
+Which satellite something is about, said once: the satellite itself, the room it is
+in, and the person it belongs to. Everything the hub reports about a satellite names
+it this way, so a report cannot name two of the three and forget the last.
+_Avoid_: satellite id, room, device info
+
+**Reply speaker**:
+The one thing that turns an agent's answer into audio on a satellite — deciding what
+is a speakable segment, having it synthesised, queueing it, and reporting how it went.
+It serves both a live answer and one delivered to a satellite that was not listening
+when it was written.
+_Avoid_: reply handler, send reply, TTS pipeline
 
 ## Satellite playback
 

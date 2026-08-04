@@ -12,6 +12,11 @@ The seven candidates from the 2026-08-02 review all landed and are excluded.
 The adapter-counting argument is excluded because `docs/adr/0001-single-adapter-interfaces-stay.md`
 closed it.
 
+**All twelve have since shipped.** On 2026-08-04 the "Noted, not carded" section was
+re-verified against the shipped code and grilled: three of its seven items became
+`.scratch/voice-and-channel-lifecycle/spec.md`, and the four that stayed were rewritten
+with today's facts. Read those four as of 2026-08-04, not as of the survey.
+
 ## Index
 
 | # | Candidate | Strength | Area | Status |
@@ -94,9 +99,10 @@ candidate 3's spec is what creates.
 Candidates 4 and the noted `SendReplyTool` item overlapped; 4 has been grilled and
 took the smaller half. Claimed by 4: the three segment-release paths, the three
 prefetch-disposal paths, and the per-satellite voice fallback duplicated at four
-sites. Left for the noted item: the eight service-locator lookups at `:37-52` and the
-private statics threading nine or ten parameters, whose fix is a reply-speaker module
-holding them as fields.
+sites. Left for the noted item: the service-locator lookups and the private statics
+threading nine or ten parameters, whose fix is a reply-speaker module holding them as
+fields. Both halves have now landed — 4 shipped, and the remainder is
+`.scratch/voice-and-channel-lifecycle/issues/02-the-reply-speaker-leaves-the-tool.md`.
 
 Rerun the cross-candidate contact check before adding a candidate, the same way
 `.scratch/README.md` records for the previous batch.
@@ -1026,76 +1032,75 @@ tests drop six fakes each, and the recall block becomes testable without a trans
 
 Smaller, or better folded into a candidate above.
 
+**All seven were re-verified on 2026-08-04**, after the twelve candidates had shipped.
+Three went into `.scratch/voice-and-channel-lifecycle/spec.md` and are stubbed below;
+a fourth issue appeared during that grilling and was never a noted item. The four that
+stayed are rewritten here with today's facts — four of the seven entries had aged, and
+two of them lost the evidence they were built on.
+
 **Dashboard pages re-render on every dispatch.** Found while grilling candidate 11,
-and it replaces that candidate's diagnosis, which was wrong. Every dashboard page
-subscribes to a whole store observable with no selector and no `DistinctUntilChanged`
-— `Dashboard.Client/Pages/Tokens.razor:108`, `Overview.razor:99`, and the same shape
-on the other seven — then recomputes its aggregates and calls `StateHasChanged`. A
-live event costs two renders, because the handler appends the event and then sets the
-breakdown, and each render re-runs `s.Events.Sum(...)` three times over the full list
-and redraws the chart. WebChat avoids this with
+and it replaces that candidate's diagnosis, which was wrong. Re-verified 2026-08-04
+and much smaller than written: candidate 9 collapsed Tokens, Tools, Errors, Latency,
+Schedules and Voice onto `Dashboard.Client/Components/MetricControls.razor`, so "the
+same shape on the other seven" is no longer true. Four sites remain, each subscribing
+to a whole store observable with no selector and no `DistinctUntilChanged`:
+`MetricControls.razor:58` (which now serves six pages at once), `Overview.razor:95-110`
+(seven subscriptions, four of them calling `RebuildActivity` over four full event
+lists), `Memory.razor:156` and `ConnectionIndicator.razor:16`. WebChat avoids this with
 `WebChat.Client/State/StoreSubscriberComponent.cs:12-34`, which selects a slice and
 applies `DistinctUntilChanged`. Candidate 11 attributed the cost to the missing
 reference-equality guard on `Dashboard.Client/State/Store.cs`; that guard could never
 fire there, because every dashboard reducer is bound to one action and always
-allocates. It would be dead code. The fix is a select-then-distinct subscription
-helper on the pages, not a change to the store. No reported symptom, so this is a
-finding rather than a card.
+allocates. It would be dead code. The fix is a select-then-distinct helper, and it is
+now mostly one edit in `MetricControls` plus `Overview`. No reported symptom, so this
+is a finding rather than a card.
 
-**The alert routing rule, restated in six places.** The timer/alarm/schedule
-decision and the four-hour ceiling appear in `Domain/Prompts/TimerPrompt.cs:21-38`
-and `:33`, `:42`, `:58`; `Domain/Prompts/SchedulingPrompt.cs:16-18`;
-`Domain/Prompts/HomeAssistantPrompt.cs:98-110`;
-`McpServerTimers/McpResources/FileSystemResource.cs:16`; and
-`McpServerScheduling/McpResources/FileSystemResource.cs:21`. Only
-`Domain/Tools/Timers/Vfs/TimerFileSystem.cs:307` (`MaxDurationSeconds`) is
-machine-readable. This has already shipped a bug:
-`Tests/Unit/McpServerScheduling/FileSystemResourceTests.cs:41-44` documents that
-the resource blurb contradicted the engine on both halves of the timing contract.
-One shared fragment sourced from the constant. Also split
-`HomeAssistantPrompt.cs` (195 lines, five jobs) — lines 118-179 are Music
-Assistant playback, a different subsystem, and the tool side already has the
-`HaMusicActions` split.
+**The alert routing rule, restated in five places.** Re-verified 2026-08-04; it was
+six, and both the sixth site and the entry's best evidence are gone. Candidate 6
+deleted the two hand-written `McpResources/FileSystemResource.cs` files in favour of
+`AddFileSystemResource<TBackend>()`, and with them
+`Tests/Unit/McpServerScheduling/FileSystemResourceTests.cs`, which documented that the
+resource blurb had contradicted the engine on both halves of the timing contract. That
+shipped bug can no longer recur the same way — the blurb now comes off the backend.
 
-**`SendReplyTool` is 450 lines of reply policy behind a static MCP signature.**
-`McpChannelVoice/McpTools/SendReplyTool.cs` (518 lines): eight service-locator
-lookups at `:37-52`, private statics threading nine or ten parameters at
-`:196-205`, `:220-228`, `:261-271`. Tests must build a nine-registration
-`ServiceCollection` to call a static — `SendReplyToolTests.cs:87-97`, `:470-479`,
-`:526`, plus `TurnLatencyDecompositionTests.cs:87-101` and
-`SendReplyToolScheduledDeliveryTests.cs:46-57`. The per-satellite voice fallback
-`session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice` is duplicated at
-`:273`, `RequestApprovalTool.cs:124` and `:140`, `AnnouncementService.cs:58-60`.
-The static-plus-`IServiceProvider` shape is a repo-wide convention and should
-stay; the module inside it should come out. Candidate 4 claims the voice fallback
-(one resolver on the satellite session) and the disposal duty; what stays here is the
-service-locator lookups and the parameter threading.
+What is left is the timer/alarm/schedule decision and the four-hour ceiling written out
+in prose at `Domain/Prompts/TimerPrompt.cs:16-18`, `:33`, `:36`, `:42`;
+`Domain/Prompts/SchedulingPrompt.cs:16-18`; `Domain/Prompts/HomeAssistantPrompt.cs:79`,
+`:98-110`; `Domain/Tools/Timers/Vfs/TimerFileSystem.cs:24-32` (`DescribeMount`); and
+`Domain/Tools/Scheduling/Vfs/ScheduleFileSystem.cs:21`. Only
+`Domain/Tools/Timers/Vfs/TimerFileSystem.cs:317` (`MaxDurationSeconds`) is
+machine-readable, and the ceiling is spelled "4 hours" in four of the prose sites. One
+shared fragment sourced from the constant. Also split `HomeAssistantPrompt.cs` (195
+lines, five jobs) — lines 118-179 are Music Assistant playback, a different subsystem,
+and the tool side already has the `HaMusicActions` split.
 
-**The capture is a shared mutable field.** `SatelliteSession.cs:155-178` exposes
-`OpenCapture`, `CloseCapture`, `HasActiveCapture`, `RouteAudio`, `EndCapture`,
-`GetCaptureActivity` and `TryAbortCapture` over one volatile field at `:47`.
-`CaptureSession` was extracted to own the mic but the field stayed public, so
-`RequestApprovalTool.cs:177-196` re-implements open/close/record by hand and
-`WakeArbiter` reaches into four unrelated facts through the whole session
-(`WakeArbiterHandle` at `WakeArbiter.cs:8-11` carries a `SatelliteSession`). The
-tell: `HasActiveCapture` at `:164` has zero production callers and 12 test call
-sites using it as a spin-wait synchroniser. Narrow `WakeArbiterHandle` to
-`CalibratedPeakIn`, `TryAbort` and `ReArmAsync`. Related to candidate 3.
+**`SendReplyTool` is reply policy behind a static MCP signature.** **Grilled
+2026-08-04 → `.scratch/voice-and-channel-lifecycle/issues/02-the-reply-speaker-leaves-the-tool.md`.**
+The file is 470 lines now, not 518: candidate 4 took the voice fallback (it is
+`SatelliteSession.ResolveVoice`) and the disposal duty. Corrected counts at grilling
+time: seven unconditional service-locator lookups at `:36-42` plus two conditional at
+`:51` and `:59`, seven private statics, four test files reaching the tool. The
+static-plus-`IServiceProvider` shape is a repo-wide convention and stays.
 
-**Channel-connection lifecycle.** `Infrastructure/Clients/Channels/McpChannelConnection.cs`
-(461 lines) implements two interfaces that between them describe none of its
-lifecycle. "Not connected" has five behaviours: `SendReplyAsync` and
-`RequestApprovalAsync` throw (`EnsureConnected` `:455-461`),
-`CreateConversationAsync` returns null (`:355-358`), `RegisterAgentsAsync`
-returns silently (`:398-401`), `IsHealthyAsync` returns false (`:427-430`), and
-`Messages` at `:54` yields forever. The connect → register → reconnect →
-re-register ordering lives entirely in `Agent/App/ChannelConnectionHost.cs:27-50`
-plus two near-identical 28-line retry loops at `:67-94` and `:96-123`. Also
-`CreateConversationAsync` pays a full `ListToolsAsync` round trip to probe
-capability on every call (`:362-364`), and `ChatMonitor` calls it per turn per
-target for agent-initiated turns (`:237-240`). Consider one
-`RunAsync(endpoint, catalog, ct)` owning the whole lifecycle and caching the tool
-set per connection generation.
+**The capture is a shared mutable field.** **Grilled 2026-08-04 →
+`.scratch/voice-and-channel-lifecycle/` issues `03` and `04`, and
+`docs/adr/0013-the-microphone-and-the-turn-are-separate-types.md`.** The seven
+members are at `SatelliteSession.cs:72-95` over the field at `:9`; `HasActiveCapture`
+has zero production callers and 16 test call sites, not 12. This entry's proposed fix
+was wrong and the ticket does not follow it: narrowing `WakeArbiterHandle` to
+`CalibratedPeakIn`, `TryAbort` and `ReArmAsync` misses `SatelliteId`, `Config.Room`,
+`Config.Identity`, `Config.RmsOffsetDb`, `SupportsPause` and `GetCaptureActivity`,
+which the arbiter reads at 17 sites.
+
+**Channel-connection lifecycle.** **Grilled 2026-08-04 →
+`.scratch/voice-and-channel-lifecycle/` issues `05` and `06`,
+`docs/adr/0011-not-connected-is-five-behaviours-and-stays-that-way.md` and
+`docs/adr/0012-a-servers-tool-set-is-fixed-for-a-connection-generation.md`.** Verified
+intact, with one drifted reference: the per-turn per-target `CreateConversationAsync`
+calls moved out of `ChatMonitor` when candidate 8 landed and are now at
+`Domain/Monitor/DeliveryTargetResolver.cs:51` and `:91`. The five not-connected
+behaviours are kept rather than unified — see ADR 0011 for why
+`CreateConversationAsync`'s null is load-bearing.
 
 **HTTP adapter boilerplate.** `Infrastructure/Clients/Voice/HttpSatelliteCatalog.cs:16-34`,
 `HttpAlertDismisser.cs:13-18` and `HttpInsistentAnnouncer.cs:14-23` each repeat
@@ -1106,20 +1111,33 @@ Error policy differs per client with no interface stating it:
 `Torrent/JackettSearchClient.cs:38-41`, `:57-60`, `:76-79` swallow everything to
 `[]`; `BraveSearchClient.cs:16-24` throws raw; `HomeAssistant/HomeAssistantClient.cs:159-197`
 maps to typed exceptions (the properly deep version of the same idea);
-`Torrent/QBittorrentDownloadClient.cs:109-126` re-authenticates on 403. None of
-the three voice adapters has a unit test.
+`Torrent/QBittorrentDownloadClient.cs:109-126` re-authenticates on 403.
+
+**Re-verified 2026-08-04: this entry's evidence is gone.** "None of the three voice
+adapters has a unit test" is false — `Tests/Unit/Infrastructure/Clients/Voice/`
+holds `HttpSatelliteCatalogTests`, `HttpAlertDismisserTests` and
+`HttpInsistentAnnouncerTests`. What is left is about five repeated lines across four
+methods, in files of 19, 24 and 35 lines, where `VoiceHubHttp` already owns the part
+with a rule in it. The error-policy divergence still stands and is a separate
+observation about four unrelated clients, not about this boilerplate. Weak; kept only
+so the divergence is written down somewhere.
 
 **`ConversationContext` travels by magic string plus an AsyncLocal.**
 `Infrastructure/Agents/Mcp/ConversationContextMeta.cs:10` (`OptionsKey`), `:17`
 (reads `FunctionInvokingChatClient.CurrentContext`); stamped at
-`McpAgent.cs:373`, `:388-399`; read at `QualifiedMcpTool.cs:27`; handed to
-Domain's `FeatureConfig` at `MultiAgentFactory.cs:73` and `:119`. The contract is
-enforced by nothing except an error log at `McpAgent.cs:392-394`, and
-`options ??= CreateRunOptions(...)` at `:274` means a caller-supplied
-`AgentRunOptions` drops the context entirely. The ambient read itself is
-deliberate and correct per the comment at `ConversationContextMeta.cs:13-16`, so
-this is about giving it a home, not removing it. A `TurnContextScope` owning both
-ends. Speculative; overlaps candidate 7.
+`McpAgent.cs:352-362`; read at `QualifiedMcpTool.cs:27`; handed to Domain's
+`FeatureConfig` at `MultiAgentFactory.cs:83`. The contract is enforced by nothing
+except a warning log at `McpAgent.cs:356-359`. The ambient read itself is deliberate
+and correct per the comment at `ConversationContextMeta.cs:13-16`, so this is about
+giving it a home, not removing it. A `TurnContextScope` owning both ends.
+
+**Half withdrawn, 2026-08-04.** "`options ??= CreateRunOptions(...)` means a
+caller-supplied `AgentRunOptions` drops the context entirely" was the concrete defect
+here, and it is no longer one. Candidate 7 landed `ResolveTurnConfig`, whose comment at
+`McpAgent.cs:251-255` states that a supplied option set replaces instructions, tools,
+reasoning effort and the config patch on purpose for non-channel callers, and whose
+warning at `:257-262` says so at run time. No production path passes options. What is
+left is taste about the magic string. Speculative, and weaker than when written.
 
 ---
 
