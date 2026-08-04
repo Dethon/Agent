@@ -50,10 +50,6 @@ public static class ServiceCollectionExtensions
             services.AddScoped<IHubEventBinder, HubEventBinder>();
             services.AddScoped<ISessionRecovery, SessionRecovery>();
 
-            // Session recovery makes its hub calls back through the live connection, so it is
-            // resolved lazily — injecting it eagerly is a container cycle.
-            services.AddScoped(sp => new Lazy<ISessionRecovery>(sp.GetRequiredService<ISessionRecovery>));
-
             // The concrete type is still needed by the services that reach for the raw hub.
             services.AddScoped<ChatLiveConnection>();
             services.AddScoped<IChatLiveConnection>(sp => sp.GetRequiredService<ChatLiveConnection>());
@@ -63,6 +59,9 @@ public static class ServiceCollectionExtensions
 
         public IServiceCollection AddWebChatEffects()
         {
+            // Ahead of the catch-up effect: both are keyed on the epoch, and the server
+            // should learn who the client is before it is asked to re-read anything.
+            services.AddScoped<SessionRecoveryEffect>();
             services.AddScoped<ReconnectionEffect>();
             services.AddScoped<SendMessageEffect>();
             services.AddScoped<TopicSelectionEffect>();

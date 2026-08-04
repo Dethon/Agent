@@ -12,11 +12,18 @@ public sealed class FakeSessionRecovery : ISessionRecovery
 
     public bool BlockUntilReleased { get; set; }
 
+    public Exception? ThrowOnRecover { get; set; }
+
     public void Release() => _gate.TrySetResult();
 
     public async Task RecoverAsync()
     {
         RecoverCalls++;
+
+        if (ThrowOnRecover is not null)
+        {
+            throw ThrowOnRecover;
+        }
 
         if (BlockUntilReleased)
         {

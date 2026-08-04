@@ -43,6 +43,7 @@ builder.Services.AddScoped<IPushSubscriptionService>(sp => sp.GetRequiredService
 var app = builder.Build();
 
 // Activate effects that need to run at startup
+_ = app.Services.GetRequiredService<SessionRecoveryEffect>();
 _ = app.Services.GetRequiredService<ReconnectionEffect>();
 _ = app.Services.GetRequiredService<SendMessageEffect>();
 _ = app.Services.GetRequiredService<TopicSelectionEffect>();

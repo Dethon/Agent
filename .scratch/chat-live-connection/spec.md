@@ -188,7 +188,9 @@ handlers, so a push arriving immediately after the handshake is not dropped.
 Teardown is the mirror: detach the close handler, unbind, dispose.
 
 Session recovery is awaited rather than detached, so a completed connect means the
-server has re-identified the client. It is awaited outside the per-attempt
+server has re-identified the client. (Amended during implementation — recovery is
+driven by an effect on the connection epoch instead, and the live connection does
+not run it. See the amendment on ticket 04.) It is awaited outside the per-attempt
 timeout. That timeout exists to bound a handshake that can hang for tens of
 seconds after a mobile radio resume; extending it over recovery would let a slow
 space rejoin cancel and trigger a rebuild retry on an otherwise healthy

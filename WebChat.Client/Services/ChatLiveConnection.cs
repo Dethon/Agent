@@ -7,11 +7,6 @@ namespace WebChat.Client.Services;
 public sealed class ChatLiveConnection(
     IHubConnectionFactory connectionFactory,
     IHubEventBinder eventBinder,
-    // Resolved lazily because session recovery makes its hub calls back through this live
-    // connection. Injecting it eagerly is a container cycle, and since the interface is
-    // registered through a factory the container cannot see it — it recurses building live
-    // connections until the process dies.
-    Lazy<ISessionRecovery> sessionRecovery,
     ConnectionEventDispatcher connectionEventDispatcher,
     TimeProvider timeProvider) : IChatLiveConnection
 {
@@ -25,25 +20,16 @@ public sealed class ChatLiveConnection(
     private readonly SemaphoreSlim _reconnectLock = new(1, 1);
     private IChatHubConnection? _connection;
     private bool _disposed;
-    private bool _hasConnectedBefore;
 
     public HubConnection? HubConnection => _connection?.Connection;
 
-    public async Task ConnectAsync()
-    {
-        if (await StartLiveConnectionAsync(CancellationToken.None))
-        {
-            await sessionRecovery.Value.RecoverAsync();
-        }
-    }
+    public Task ConnectAsync() => StartLiveConnectionAsync(CancellationToken.None);
 
-    // Returns whether session recovery is due, so the caller can run it outside whatever
-    // timeout bounded the handshake.
-    private async Task<bool> StartLiveConnectionAsync(CancellationToken cancellationToken)
+    private async Task StartLiveConnectionAsync(CancellationToken cancellationToken)
     {
         if (_connection is not null)
         {
-            return false;
+            return;
         }
 
         var connection = await connectionFactory.CreateAsync();
@@ -65,10 +51,8 @@ public sealed class ChatLiveConnection(
 
         connection.Reconnected += _ =>
         {
-            // The status is published before recovery runs, so the UI shows Connected at once
-            // and does not wait on the re-identification behind it.
             _connectionEventDispatcher.HandleReconnected();
-            return sessionRecovery.Value.RecoverAsync();
+            return Task.CompletedTask;
         };
 
         _connectionEventDispatcher.HandleConnecting();
@@ -82,18 +66,12 @@ public sealed class ChatLiveConnection(
             eventBinder.Unbind();
             await connection.DisposeAsync();
             _connection = null;
-            return false;
+            return;
         }
 
+        // Publishing Connected advances the connection epoch, which is what session recovery
+        // and catch-up are keyed on. Neither runs on the first one.
         _connectionEventDispatcher.HandleConnected();
-
-        // A rebuild does NOT raise SignalR's Reconnected event, so recovery has to be run
-        // from here on every connect after the first. It is skipped on the first connect
-        // because first-load start-up validates the space slug and can replace it before
-        // joining — recovering here would join an unvalidated space and then join again.
-        var recoveryIsDue = _hasConnectedBefore;
-        _hasConnectedBefore = true;
-        return recoveryIsDue;
     }
 
     public async Task ReconnectIfNeededAsync()
@@ -172,22 +150,9 @@ public sealed class ChatLiveConnection(
         {
             await TearDownAsync();
 
-            var recoveryIsDue = await TryBecomeLiveAsync();
-            if (_disposed)
+            var becameLive = await TryBecomeLiveAsync();
+            if (_disposed || becameLive)
             {
-                return;
-            }
-
-            if (recoveryIsDue is { } isDue)
-            {
-                // Recovery is awaited here, outside the per-attempt timeout: that timeout
-                // bounds the handshake, and stretching it over a slow space rejoin would
-                // cancel recovery and retry the rebuild on a perfectly healthy connection.
-                if (isDue)
-                {
-                    await sessionRecovery.Value.RecoverAsync();
-                }
-
                 return;
             }
 
@@ -205,8 +170,7 @@ public sealed class ChatLiveConnection(
         _connectionEventDispatcher.HandleClosed(null);
     }
 
-    // Null means the attempt failed; otherwise, whether session recovery is due.
-    private async Task<bool?> TryBecomeLiveAsync()
+    private async Task<bool> TryBecomeLiveAsync()
     {
         try
         {
@@ -214,11 +178,12 @@ public sealed class ChatLiveConnection(
             // yet, and an unbounded StartAsync can hang on a dead handshake for tens of
             // seconds — the exact stall this rebuild exists to escape.
             using var cts = new CancellationTokenSource(_rebuildAttemptTimeout, timeProvider);
-            return await StartLiveConnectionAsync(cts.Token);
+            await StartLiveConnectionAsync(cts.Token);
+            return true;
         }
         catch
         {
-            return null;
+            return false;
         }
     }
 

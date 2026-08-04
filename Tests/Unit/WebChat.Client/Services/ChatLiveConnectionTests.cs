@@ -26,7 +26,6 @@ public sealed class ChatLiveConnectionTests : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
     private readonly HubEventBinder _binder;
-    private readonly FakeSessionRecovery _sessionRecovery = new();
     private readonly ChatLiveConnection _liveConnection;
 
     public ChatLiveConnectionTests()
@@ -45,7 +44,6 @@ public sealed class ChatLiveConnectionTests : IDisposable
         _liveConnection = new ChatLiveConnection(
             _factory,
             _binder,
-            new Lazy<ISessionRecovery>(() => _sessionRecovery),
             new ConnectionEventDispatcher(_dispatcher),
             _timeProvider);
     }
@@ -123,74 +121,6 @@ public sealed class ChatLiveConnectionTests : IDisposable
 
         _connectionStore.State.Epoch.ShouldBe(2);
         statuses.ShouldNotContain(ConnectionStatus.Disconnected);
-    }
-
-    [Fact]
-    public async Task ConnectAsync_FirstConnect_DoesNotRunSessionRecovery()
-    {
-        await _liveConnection.ConnectAsync();
-
-        _sessionRecovery.RecoverCalls.ShouldBe(0);
-    }
-
-    [Fact]
-    public async Task ReconnectIfNeededAsync_AfterRebuild_RunsSessionRecovery()
-    {
-        await _liveConnection.ConnectAsync();
-        _factory.Created.Single().State = HubConnectionState.Reconnecting;
-
-        await _liveConnection.ReconnectIfNeededAsync();
-
-        _sessionRecovery.RecoverCalls.ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task ReconnectIfNeededAsync_AfterRebuild_CompletesOnlyOnceRecoveryHasFinished()
-    {
-        await _liveConnection.ConnectAsync();
-        _factory.Created.Single().State = HubConnectionState.Reconnecting;
-        _sessionRecovery.BlockUntilReleased = true;
-
-        var reconnect = _liveConnection.ReconnectIfNeededAsync();
-        await SettleAsync();
-        reconnect.IsCompleted.ShouldBeFalse();
-
-        _sessionRecovery.Release();
-        await reconnect;
-
-        _sessionRecovery.Completed.ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task ReconnectIfNeededAsync_SlowRecovery_DoesNotTriggerAnotherRebuildAttempt()
-    {
-        await _liveConnection.ConnectAsync();
-        _factory.Created.Single().State = HubConnectionState.Reconnecting;
-        _sessionRecovery.BlockUntilReleased = true;
-
-        var reconnect = _liveConnection.ReconnectIfNeededAsync();
-        await SettleAsync();
-
-        // Well past the 2.5s per-attempt timeout, which bounds the handshake alone.
-        _timeProvider.Advance(TimeSpan.FromSeconds(10));
-        await SettleAsync();
-        _factory.Created.Count.ShouldBe(2);
-
-        _sessionRecovery.Release();
-        await reconnect;
-
-        _factory.Created.Count.ShouldBe(2);
-        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
-    }
-
-    [Fact]
-    public async Task ReconnectIfNeededAsync_TransportReconnects_RunsSessionRecovery()
-    {
-        await _liveConnection.ConnectAsync();
-
-        await _factory.Created.Single().RaiseReconnectedAsync("connection-1");
-
-        _sessionRecovery.RecoverCalls.ShouldBe(1);
     }
 
     [Fact]

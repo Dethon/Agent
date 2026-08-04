@@ -1,3 +1,5 @@
+using System.Reactive.Linq;
+
 namespace WebChat.Client.State.Connection;
 
 public record ConnectionConnecting : IAction;
@@ -24,6 +26,15 @@ public sealed class ConnectionStore : IDisposable
     public ConnectionState State => _store.State;
 
     public IObservable<ConnectionState> StateObservable => _store.StateObservable;
+
+    // Every epoch after the one a subscriber first sees — that is, each interruption it
+    // lived through. Both catch-up and session recovery are keyed on this, so the rule that
+    // neither runs on the first connection is written here once instead of in each of them.
+    public IObservable<int> BecameLiveAgain => _store.StateObservable
+        .Where(state => state.Status == ConnectionStatus.Connected)
+        .Select(state => state.Epoch)
+        .DistinctUntilChanged()
+        .Skip(1);
 
     public void Dispose() => _store.Dispose();
 
