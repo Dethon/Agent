@@ -4,6 +4,10 @@ namespace WebChat.Client.State.Streaming;
 
 public record StreamStarted(string TopicId) : IAction;
 
+// The server pushed a stream start. StreamResumeEffect turns it into either a resume or a
+// plain StreamStarted; nothing else should react to it.
+public record RemoteStreamStarted(string TopicId) : IAction;
+
 public record StreamChunk(
     string TopicId,
     string? Content,

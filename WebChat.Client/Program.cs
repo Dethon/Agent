@@ -53,5 +53,6 @@ _ = app.Services.GetRequiredService<UserIdentityEffect>();
 _ = app.Services.GetRequiredService<SpaceEffect>();
 _ = app.Services.GetRequiredService<AgentActivityEffect>();
 _ = app.Services.GetRequiredService<AgentSettingsEffect>();
+_ = app.Services.GetRequiredService<StreamResumeEffect>();
 
 await app.RunAsync();

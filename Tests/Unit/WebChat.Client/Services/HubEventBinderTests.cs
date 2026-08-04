@@ -40,7 +40,7 @@ public sealed class HubEventBinderTests : IDisposable
         var pipeline = new MessagePipeline(
             _dispatcher, _messagesStore, _streamingStore, NullLogger<MessagePipeline>.Instance);
         var hubEventDispatcher = new HubEventDispatcher(
-            _dispatcher, _topicsStore, _streamingStore, pipeline, new FakeStreamResumeService());
+            _dispatcher, _topicsStore, _streamingStore, pipeline);
 
         _binder = new HubEventBinder(hubEventDispatcher);
     }

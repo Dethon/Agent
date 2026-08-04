@@ -39,12 +39,12 @@ public sealed class ChatLiveConnectionTests : IDisposable
         var pipeline = new MessagePipeline(
             _dispatcher, _messagesStore, _streamingStore, NullLogger<MessagePipeline>.Instance);
         var hubEventDispatcher = new HubEventDispatcher(
-            _dispatcher, _topicsStore, _streamingStore, pipeline, new FakeStreamResumeService());
+            _dispatcher, _topicsStore, _streamingStore, pipeline);
 
         _binder = new HubEventBinder(hubEventDispatcher);
         _liveConnection = new ChatLiveConnection(
             _factory,
-            new Lazy<IHubEventBinder>(() => _binder),
+            _binder,
             new Lazy<ISessionRecovery>(() => _sessionRecovery),
             new ConnectionEventDispatcher(_dispatcher),
             _timeProvider);

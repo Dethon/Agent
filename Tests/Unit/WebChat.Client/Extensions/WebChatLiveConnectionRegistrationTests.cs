@@ -14,11 +14,11 @@ using WebChat.Client.State.Pipeline;
 
 namespace Tests.Unit.WebChat.Client.Extensions;
 
-// The live connection sits underneath everything that makes a hub call, and both the hub
-// event binder and session recovery reach back down to it — so the registration is two Lazys
-// away from a container cycle, and a cycle here is a blank page rather than a failing test.
-// Faking a collaborator would fake away the edge under test, so everything the client
-// registers is real except the browser primitives.
+// The live connection sits underneath everything that makes a hub call, and session recovery
+// reaches back down to it — so the registration is one Lazy away from a container cycle, and
+// a cycle here is a blank page rather than a failing test. Faking a collaborator would fake
+// away the edge under test, so everything the client registers is real except the browser
+// primitives.
 public sealed class WebChatLiveConnectionRegistrationTests
 {
     [Fact]
@@ -60,6 +60,7 @@ public sealed class WebChatLiveConnectionRegistrationTests
     [InlineData(typeof(SpaceEffect))]
     [InlineData(typeof(AgentActivityEffect))]
     [InlineData(typeof(AgentSettingsEffect))]
+    [InlineData(typeof(StreamResumeEffect))]
     public async Task TheClientRegistrations_ResolveEveryStartUpEffect(Type effectType)
     {
         await using var provider = CreateProvider();
@@ -69,14 +70,13 @@ public sealed class WebChatLiveConnectionRegistrationTests
     }
 
     [Fact]
-    public async Task TheLiveConnection_IsTheSameInstanceItsCollaboratorsReachBackTo()
+    public async Task TheLiveConnection_IsTheSameInstanceSessionRecoveryReachesBackTo()
     {
         await using var provider = CreateProvider();
         await using var scope = provider.CreateAsyncScope();
         var liveConnection = scope.ServiceProvider.GetRequiredService<ChatLiveConnection>();
 
         scope.ServiceProvider.GetRequiredService<ISessionRecovery>();
-        scope.ServiceProvider.GetRequiredService<IHubEventBinder>();
 
         scope.ServiceProvider.GetRequiredService<IChatLiveConnection>().ShouldBeSameAs(liveConnection);
     }
