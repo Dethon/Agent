@@ -50,9 +50,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<IHubEventBinder, HubEventBinder>();
             services.AddScoped<ISessionRecovery, SessionRecovery>();
 
-            // The concrete type is still needed by the services that reach for the raw hub.
-            services.AddScoped<ChatLiveConnection>();
-            services.AddScoped<IChatLiveConnection>(sp => sp.GetRequiredService<ChatLiveConnection>());
+            services.AddScoped<IChatLiveConnection, ChatLiveConnection>();
 
             return services;
         }

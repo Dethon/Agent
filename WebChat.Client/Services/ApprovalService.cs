@@ -5,7 +5,7 @@ using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
-public sealed class ApprovalService(ChatLiveConnection liveConnection) : IApprovalService
+public sealed class ApprovalService(IChatLiveConnection liveConnection) : IApprovalService
 {
     public async Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {

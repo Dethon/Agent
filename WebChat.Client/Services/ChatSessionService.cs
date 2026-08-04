@@ -4,7 +4,7 @@ using WebChat.Client.Models;
 
 namespace WebChat.Client.Services;
 
-public sealed class ChatSessionService(ChatLiveConnection liveConnection) : IChatSessionService
+public sealed class ChatSessionService(IChatLiveConnection liveConnection) : IChatSessionService
 {
     public StoredTopic? CurrentTopic { get; private set; }
 

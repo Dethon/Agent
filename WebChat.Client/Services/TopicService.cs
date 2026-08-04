@@ -4,7 +4,7 @@ using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
-public sealed class TopicService(ChatLiveConnection liveConnection) : ITopicService
+public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicService
 {
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
     {

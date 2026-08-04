@@ -4,7 +4,7 @@ using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
-public sealed class AgentService(ChatLiveConnection liveConnection) : IAgentService
+public sealed class AgentService(IChatLiveConnection liveConnection) : IAgentService
 {
     public async Task<IReadOnlyList<AgentCatalogEntry>> GetAgentsAsync()
     {

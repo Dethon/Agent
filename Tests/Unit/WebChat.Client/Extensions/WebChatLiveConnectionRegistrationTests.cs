@@ -74,7 +74,7 @@ public sealed class WebChatLiveConnectionRegistrationTests
     {
         await using var provider = CreateProvider();
         await using var scope = provider.CreateAsyncScope();
-        var liveConnection = scope.ServiceProvider.GetRequiredService<ChatLiveConnection>();
+        var liveConnection = scope.ServiceProvider.GetRequiredService<IChatLiveConnection>();
 
         scope.ServiceProvider.GetRequiredService<ISessionRecovery>();
 

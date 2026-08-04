@@ -5,7 +5,7 @@ using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
-public sealed class ChatMessagingService(ChatLiveConnection liveConnection) : IChatMessagingService
+public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : IChatMessagingService
 {
     public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
         string? correlationId = null, AgentConfigPatch? configPatch = null)
