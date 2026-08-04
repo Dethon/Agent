@@ -16,10 +16,12 @@ Pipeline: satellite wakes locally → streams mic `audio-chunk`s → `SatelliteS
 **Alert routing.** Insistent announces — timers and alarms, i.e. exactly the `/api/voice/announce`
 requests carrying `insistent` — are marked `alert: true` on the Wyoming `audio-start` (protocol
 1.5, `SatelliteConnection.BuildAudioStart`; `InsistentAnnouncementController` is the only producer,
-via `PlaybackJob.Alert`). The satellite plays a marked stream on `--alert-snd-command` instead of
+via `PlaybackKind.Alarm`, which is what the playback queue reads to mark the stream — a producer
+cannot mark audio that is not an alert). The satellite plays a marked stream on
+`--alert-snd-command` instead of
 `--snd-command`: on music units a non-attenuated `alert` ALSA softvol, so an alert is not capped by
 the calibrated conversational `TTS` level. `AnnouncePriority.High` is deliberately not the marker —
-approval prompts share it. The flag defaults to false everywhere, so ordinary replies, plain
+approval prompts share it. Every other kind is unmarked, so ordinary replies, plain
 announcements and a pre-1.5 satellite are unaffected, and an unopenable alert device falls back to
 the normal sink rather than dropping the connection. A music unit's level chain is three per-source
 softvols (`Music`, `TTS`, `Alert`) under a PipeWire master that starts at `MASTER_VOLUME` %

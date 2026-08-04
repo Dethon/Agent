@@ -12,10 +12,14 @@ public sealed class SatelliteSession
     private string? _dismissedAlert;
     private DateTimeOffset _dismissedAt;
 
-    public SatelliteSession(string satelliteId, SatelliteConfig config)
+    // The queue is built by the connection, which is where its depth limits are configured. A
+    // session built without one — a test, or a caller that never plays audio — gets a queue on the
+    // settings' own defaults rather than a null property.
+    public SatelliteSession(string satelliteId, SatelliteConfig config, PlaybackQueue? playback = null)
     {
         SatelliteId = satelliteId;
         Config = config;
+        Playback = playback ?? new PlaybackQueue();
     }
 
     public string SatelliteId { get; }
@@ -28,7 +32,7 @@ public sealed class SatelliteSession
 
     // Everything queued to be heard on this satellite. Exposed the same way as the turn above, for
     // the same reason.
-    public PlaybackQueue Playback { get; } = new();
+    public PlaybackQueue Playback { get; }
 
     // Writes a control event on this satellite's live Wyoming connection. Set by
     // SatelliteConnection when the connection is established and cleared on teardown, because the

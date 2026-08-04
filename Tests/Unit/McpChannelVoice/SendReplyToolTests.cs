@@ -767,9 +767,9 @@ public class SendReplyToolTests
             ReplyContentType.Text, false, "m-1", services);       // segment two sits queued
 
         await _session.Playback.EnqueueAsync(new PlaybackJob(
-            Label: "alarm", Priority: AnnouncePriority.High,
+            Label: "alarm", Kind: PlaybackKind.Alarm, Priority: AnnouncePriority.High,
             Audio: NoAudio(), OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask), 4);
+            OnPreempted: _ => Task.CompletedTask));
 
         await disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -788,17 +788,17 @@ public class SendReplyToolTests
         {
             Tts = new TtsSettings
             {
-                Streaming = new StreamingTtsConfig
-                {
-                    FirstSegmentMinChars = 10,
-                    MinChars = 10,
-                    MaxQueuedSegments = 1
-                }
+                Streaming = new StreamingTtsConfig { FirstSegmentMinChars = 10, MinChars = 10 }
             }
         });
 
-        _session.Turn.Reset();
-        _session.Turn.MarkDispatched(_clock.GetTimestamp());
+        // The depth limit is the queue's now, so a satellite with room for one segment is a queue
+        // built with room for one segment.
+        _sessions.Register(new SatelliteSession(
+            "kitchen-01", _session.Config, new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1)));
+        var session = _sessions.Get("kitchen-01")!;
+        session.Turn.Reset();
+        session.Turn.MarkDispatched(_clock.GetTimestamp());
         // No playback loop is running, so nothing drains and the queue stays at its cap.
 
         await SendReplyTool.McpRun(_conversationId, "Primera frase completa. ",

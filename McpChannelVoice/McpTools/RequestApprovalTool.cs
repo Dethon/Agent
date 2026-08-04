@@ -115,11 +115,12 @@ public sealed class RequestApprovalTool
         var options = new SynthesisOptions { Voice = session.ResolveVoice(settings) };
         var job = new PlaybackJob(
             Label: $"approval:{session.SatelliteId}",
+            Kind: PlaybackKind.Approval,
             Priority: priority,
             Audio: tts.SynthesizeAsync(text, options, default),
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: _ => Task.CompletedTask);
-        await session.Playback.EnqueueAsync(job, settings.Announce.QueueMaxDepth);
+        await session.Playback.EnqueueAsync(job);
     }
 
     private static async Task<bool> SpeakAndAwaitAsync(
@@ -129,6 +130,7 @@ public sealed class RequestApprovalTool
         var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var job = new PlaybackJob(
             Label: $"approval:{session.SatelliteId}",
+            Kind: PlaybackKind.Approval,
             Priority: AnnouncePriority.High,
             Audio: tts.SynthesizeAsync(
                 text, new SynthesisOptions { Voice = session.ResolveVoice(settings) }, default),
@@ -137,7 +139,7 @@ public sealed class RequestApprovalTool
             OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
             OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
 
-        var accepted = await session.Playback.EnqueueAsync(job, settings.Announce.QueueMaxDepth);
+        var accepted = await session.Playback.EnqueueAsync(job);
         if (!accepted)
         {
             // Satellite disconnected between session resolution and enqueue (playback channel

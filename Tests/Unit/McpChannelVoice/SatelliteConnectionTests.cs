@@ -460,11 +460,11 @@ public class SatelliteConnectionTests
         await connection.Session.Playback.EnqueueAsync(
             new PlaybackJob(
                 Label: "reply",
+                Kind: PlaybackKind.Reply,
                 Priority: AnnouncePriority.Normal,
                 Audio: OneChunk(),
                 OnStarted: _ => Task.CompletedTask,
-                OnPreempted: _ => Task.CompletedTask),
-            queueMaxDepth: 8);
+                OnPreempted: _ => Task.CompletedTask));
         await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
 
         h.DropLink();

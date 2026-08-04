@@ -239,7 +239,7 @@ public sealed class SendReplyTool
             // buffer, so a refused enqueue used to discard it outright — the user heard an answer
             // with a hole in the middle while the turn still settled Spoken. Leaving it buffered
             // means the next chunk, or the StreamComplete flush, still speaks it.
-            if (session.Playback.Depth >= streaming.MaxQueuedSegments)
+            if (!session.Playback.CanAccept(PlaybackKind.Reply))
             {
                 return;
             }
@@ -319,6 +319,7 @@ public sealed class SendReplyTool
         // decomposition is unaffected.
         var job = new PlaybackJob(
             Label: $"{(isReply ? "reply" : "preamble")}:{session.SatelliteId}",
+            Kind: isReply ? PlaybackKind.Reply : PlaybackKind.Preamble,
             Priority: AnnouncePriority.Normal,
             Audio: prefetch?.Chunks ?? synthesis,
             OnStarted: _ => Task.CompletedTask,
@@ -479,15 +480,12 @@ public sealed class SendReplyTool
             segment = session.Turn.BeginSegment();
         }
 
-        // A reply's segments get their own allowance: sharing the announce depth meant one turn's
-        // answer competed with itself and lost sentences out of its middle.
-        var depth = isReply ? settings.Tts.Streaming.MaxQueuedSegments : settings.Announce.QueueMaxDepth;
-        var queued = await session.Playback.EnqueueAsync(job, depth);
+        var queued = await session.Playback.EnqueueAsync(job);
         if (isReply && !queued)
         {
             logger.LogWarning(
-                "Reply segment for {Satellite} was refused by the playback queue (depth {Depth}); " +
-                "this part of the answer will not be spoken", session.SatelliteId, depth);
+                "Reply segment for {Satellite} was refused by the playback queue; " +
+                "this part of the answer will not be spoken", session.SatelliteId);
             segment.Fail();
         }
 

@@ -3,8 +3,24 @@ using Domain.DTOs.Voice;
 
 namespace McpChannelVoice.Services;
 
+// What a producer is queueing. One fact, from which the queue derives how much of that kind it will
+// hold at once and whether the audio takes the satellite's alert route — three conventions (a label
+// prefix, a depth limit each producer read from settings, a boolean any producer could set) that
+// were really this one thing spelled three ways.
+public enum PlaybackKind
+{
+    Reply,
+    Preamble,
+    Announce,
+    Alarm,
+    Chime,
+    Approval
+}
+
+// Label stays free text for logs; Kind is what the queue reads.
 public sealed record PlaybackJob(
     string Label,
+    PlaybackKind Kind,
     AnnouncePriority Priority,
     IAsyncEnumerable<AudioChunk> Audio,
     Func<string, Task> OnStarted,
@@ -12,10 +28,7 @@ public sealed record PlaybackJob(
     Func<Task>? OnDrained = null,
     Func<FirstAudioTiming, Task>? OnFirstAudio = null,
     Func<Exception, Task>? OnFailed = null,
-    long EnqueuedAt = 0,
-    // Timer/alarm audio. Carried to the satellite on audio-start so it plays on the
-    // non-attenuated alert route instead of the calibrated per-satellite voice level.
-    bool Alert = false);
+    long EnqueuedAt = 0);
 
 // Timing captured the moment a job's first audio chunk is produced. SinceSynthesisStart is the
 // TTS time-to-first-audio (synthesis request -> first chunk); SinceTurnStart is the wake/turn-open
@@ -34,7 +47,11 @@ public sealed record FirstAudioTiming(
 // time in the order it was accepted, with a high-priority job cutting in. One queue per satellite
 // connection — the connection constructs it, runs its loop and completes it as the link unwinds; the
 // satellite session exposes it as a property so producers reach it without a pass-through layer.
-public sealed class PlaybackQueue
+// The two depth limits are the queue's, not a producer's: an answer's segments get their own
+// allowance (sharing the announce depth meant one turn's answer competed with itself and lost
+// sentences out of its middle), everything else shares the announce one. The defaults match the
+// settings records; the connection passes the configured values.
+public sealed class PlaybackQueue(int replyMaxDepth = 64, int announceMaxDepth = 8)
 {
     private readonly Channel<(long Seq, PlaybackJob Job)> _jobs =
         Channel.CreateUnbounded<(long Seq, PlaybackJob Job)>();
@@ -51,11 +68,19 @@ public sealed class PlaybackQueue
     private const long SpeechEndNotMarked = long.MinValue;
     private long _speechEndedAt = SpeechEndNotMarked;
 
-    // Lets a caller decide whether a segment can be queued BEFORE it consumes the text and starts
-    // its synthesis, rather than finding out after both are already spent.
-    public int Depth => _jobs.Reader.Count;
+    private int Depth => _jobs.Reader.Count;
 
-    public ValueTask<bool> EnqueueAsync(PlaybackJob job, int queueMaxDepth)
+    // Lets a caller decide whether a job of this kind can be queued BEFORE it consumes the text and
+    // starts its synthesis, rather than finding out after both are already spent. It answers for the
+    // kind, not for a particular job: the limit is the only thing it can know in advance.
+    public bool CanAccept(PlaybackKind kind) => Depth < MaxDepthFor(kind);
+
+    // Only an answer's segments get the reply allowance. The preamble cue is one job that plays
+    // ahead of an answer, not part of it, so it shares the announce depth as it always did.
+    private int MaxDepthFor(PlaybackKind kind) =>
+        kind == PlaybackKind.Reply ? replyMaxDepth : announceMaxDepth;
+
+    public ValueTask<bool> EnqueueAsync(PlaybackJob job)
     {
         if (job.Priority == AnnouncePriority.High)
         {
@@ -85,7 +110,7 @@ public sealed class PlaybackQueue
             return ValueTask.FromResult(false);
         }
 
-        if (_jobs.Reader.Count >= queueMaxDepth)
+        if (!CanAccept(job.Kind))
         {
             return ValueTask.FromResult(false);
         }
@@ -195,7 +220,11 @@ public sealed class PlaybackQueue
                         firstChunkTimestamp = time.GetTimestamp();
                         if (onAudioStart is not null)
                         {
-                            await onAudioStart(chunk.Format, job.Alert, jobCts.Token);
+                            // The alert route is the alarm kind's, and only its. Priority is
+                            // deliberately not the marker: confirmation prompts share High and must
+                            // stay at the calibrated conversational level.
+                            await onAudioStart(
+                                chunk.Format, job.Kind == PlaybackKind.Alarm, jobCts.Token);
                         }
                         if (job.OnFirstAudio is not null)
                         {

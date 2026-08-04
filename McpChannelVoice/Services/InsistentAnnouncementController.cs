@@ -96,8 +96,7 @@ public sealed class InsistentAnnouncementController(
 
                 foreach (var session in OnlineSessions(targetIds))
                 {
-                    await session.Playback.EnqueueAsync(
-                        BuildJob(announcementId, buffered, session, gain), settings.Announce.QueueMaxDepth);
+                    await session.Playback.EnqueueAsync(BuildJob(announcementId, buffered, session, gain));
                 }
                 round++;
 
@@ -185,12 +184,11 @@ public sealed class InsistentAnnouncementController(
         string announcementId, IReadOnlyList<AudioChunk> buffered, SatelliteSession session, double gain) =>
         new(
             Label: $"alarm:{announcementId}",
+            // The only place the alarm kind is minted. This controller handles exactly the insistent
+            // announces — timers and alarms — so the satellite's non-attenuated alert route is
+            // reached by those and nothing else.
+            Kind: PlaybackKind.Alarm,
             Priority: AnnouncePriority.High,
-            // The only place an alert is minted. This controller handles exactly the insistent
-            // announces — timers and alarms — so the satellite's non-attenuated route is reached
-            // by those and nothing else. AnnouncePriority.High is deliberately NOT the marker:
-            // approval prompts and wake announcements share it and must stay at voice level.
-            Alert: true,
             Audio: Replay(buffered, gain),
             OnStarted: _ =>
             {

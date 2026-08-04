@@ -116,11 +116,10 @@ public class AnnouncementServiceTests
         var preempted = new TaskCompletionSource();
         var pump = session.Playback.RunAsync((c, ct) => Task.Delay(50, ct), CancellationToken.None);
         await session.Playback.EnqueueAsync(
-            new PlaybackJob("ongoing", AnnouncePriority.Normal,
+            new PlaybackJob("ongoing", PlaybackKind.Announce, AnnouncePriority.Normal,
                 NeverEnding(),
                 _ => { started.TrySetResult(); return Task.CompletedTask; },
-                _ => { preempted.TrySetResult(); return Task.CompletedTask; }),
-            queueMaxDepth: 4);
+                _ => { preempted.TrySetResult(); return Task.CompletedTask; }));
 
         // Wait until the playback loop has actually picked up the ongoing job
         // before issuing the high-priority preemption (otherwise PreemptCurrent

@@ -144,7 +144,9 @@ public sealed class WyomingSatelliteHost(
     internal SatelliteConnection CreateConnection(
         string id, SatelliteConfig config, Func<WyomingEvent, CancellationToken, Task> writer)
     {
-        var session = new SatelliteSession(id, config);
+        var session = new SatelliteSession(id, config, new PlaybackQueue(
+            replyMaxDepth: voiceSettings.Tts.Streaming.MaxQueuedSegments,
+            announceMaxDepth: voiceSettings.Announce.QueueMaxDepth));
         var followUp = voiceSettings.FollowUp with
         {
             Enabled = config.FollowUpEnabled ?? voiceSettings.FollowUp.Enabled
@@ -423,6 +425,7 @@ public sealed class WyomingSatelliteHost(
         var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var job = new PlaybackJob(
             Label: $"chime:{session.SatelliteId}",
+            Kind: PlaybackKind.Chime,
             Priority: AnnouncePriority.High,
             Audio: ListeningChime.Stream(),
             OnStarted: _ => Task.CompletedTask,
@@ -430,7 +433,7 @@ public sealed class WyomingSatelliteHost(
             OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
             OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
 
-        await session.Playback.EnqueueAsync(job, voiceSettings.Announce.QueueMaxDepth);
+        await session.Playback.EnqueueAsync(job);
         await drained.Task.WaitAsync(ct);
     }
 

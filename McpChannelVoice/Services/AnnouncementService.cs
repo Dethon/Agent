@@ -61,6 +61,7 @@ public class AnnouncementService(
 
             var job = new PlaybackJob(
                 Label: $"announce:{announcementId}",
+                Kind: PlaybackKind.Announce,
                 Priority: request.Priority,
                 Audio: tts.SynthesizeAsync(request.Text, options, ct),
                 OnStarted: _ =>
@@ -88,7 +89,7 @@ public class AnnouncementService(
                     return Task.CompletedTask;
                 });
 
-            var accepted = await session.Playback.EnqueueAsync(job, settings.Announce.QueueMaxDepth);
+            var accepted = await session.Playback.EnqueueAsync(job);
             outcomes.Add(new AnnouncementOutcome { Id = id, Status = accepted ? "queued" : "dropped" });
 
             metrics.Publish(new VoiceEvent

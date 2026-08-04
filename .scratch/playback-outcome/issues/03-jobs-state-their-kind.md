@@ -18,19 +18,19 @@ that check becomes a question the queue answers.
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A playback kind — reply, preamble, announcement, alarm, earcon, confirmation prompt
+- [x] A playback kind — reply, preamble, announcement, alarm, earcon, confirmation prompt
       — is a required part of every job, and the label stays as free text for logs.
-- [ ] The queue takes both depth limits at construction and picks between them by kind: an
+- [x] The queue takes both depth limits at construction and picks between them by kind: an
       answer's segments get the reply allowance, everything else the announce allowance.
-- [ ] No producer passes a depth.
-- [ ] The alert route is chosen by the alarm kind. The alert flag is gone, and priority is
+- [x] No producer passes a depth.
+- [x] The alert route is chosen by the alarm kind. The alert flag is gone, and priority is
       still not the marker, because confirmation prompts share the high priority.
-- [ ] The queue answers whether it can accept a given kind, replacing the public depth
+- [x] The queue answers whether it can accept a given kind, replacing the public depth
       reader, and the reply path uses it before taking text out of its buffer.
-- [ ] The queue's own tests assert the alert route and both depth limits by kind rather
+- [x] The queue's own tests assert the alert route and both depth limits by kind rather
       than by label string.
-- [ ] The existing audio-start tests still prove that a marked stream reaches the wire as
+- [x] The existing audio-start tests still prove that a marked stream reaches the wire as
       an alert and an unmarked one does not.
-- [ ] All producer tests and the voice integration suite pass.
+- [x] All producer tests and the voice integration suite pass.
