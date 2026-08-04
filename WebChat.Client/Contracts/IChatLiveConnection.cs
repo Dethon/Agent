@@ -8,7 +8,6 @@ public interface IChatLiveConnection : IAsyncDisposable
     HubConnection? HubConnection { get; }
 
     event Action? OnStateChanged;
-    event Func<Task>? OnReconnected;
     event Action? OnReconnecting;
 
     Task ConnectAsync();

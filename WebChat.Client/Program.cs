@@ -22,6 +22,8 @@ builder.Services.AddScoped<ConnectionEventDispatcher>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IHubConnectionFactory, SignalRHubConnectionFactory>();
 builder.Services.AddScoped<IHubEventBinder, HubEventBinder>();
+builder.Services.AddScoped<ISessionRecovery, SessionRecovery>();
+builder.Services.AddScoped(sp => new Lazy<ISessionRecovery>(sp.GetRequiredService<ISessionRecovery>));
 builder.Services.AddScoped<ChatLiveConnection>();
 builder.Services.AddScoped<IChatLiveConnection>(sp => sp.GetRequiredService<ChatLiveConnection>());
 

@@ -92,21 +92,6 @@ public sealed class InitializationEffect : IDisposable
         // previously stalled the agent list ~30s by being awaited here.
         SubscribePushAsync().LogFaults(_logger, "push subscription");
 
-        // Re-register user on reconnection (after initial subscribe to avoid race)
-        _liveConnection.OnReconnected += () =>
-        {
-            var registerTask = RegisterUserAsync();
-            var joinTask = _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
-
-            // Re-send existing push subscription without force-refreshing the push channel.
-            // Using RequestAndSubscribeAsync here would unsubscribe+resubscribe, generating a
-            // new endpoint in Chrome and losing accumulated space memberships.
-            var pushTask = _pushNotificationService.ResubscribeAsync()
-                .ContinueWith(_ => { }, TaskContinuationOptions.OnlyOnFaulted);
-
-            return Task.WhenAll(registerTask, joinTask, pushTask);
-        };
-
         var agents = await _agentService.GetAgentsAsync();
         _dispatcher.Dispatch(new SetAgents(agents));
         await AgentSettingsEffect.LoadAsync(agents, _localStorage, _dispatcher);

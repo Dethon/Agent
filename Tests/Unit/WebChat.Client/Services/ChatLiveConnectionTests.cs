@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
+using WebChat.Client.Contracts;
 using WebChat.Client.Services;
 using WebChat.Client.State;
 using WebChat.Client.State.Connection;
@@ -25,6 +26,7 @@ public sealed class ChatLiveConnectionTests : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
     private readonly HubEventBinder _binder;
+    private readonly FakeSessionRecovery _sessionRecovery = new();
     private readonly ChatLiveConnection _liveConnection;
 
     public ChatLiveConnectionTests()
@@ -41,7 +43,11 @@ public sealed class ChatLiveConnectionTests : IDisposable
 
         _binder = new HubEventBinder(hubEventDispatcher);
         _liveConnection = new ChatLiveConnection(
-            _factory, _binder, new ConnectionEventDispatcher(_dispatcher), _timeProvider);
+            _factory,
+            _binder,
+            new Lazy<ISessionRecovery>(() => _sessionRecovery),
+            new ConnectionEventDispatcher(_dispatcher),
+            _timeProvider);
     }
 
     [Fact]
@@ -106,20 +112,71 @@ public sealed class ChatLiveConnectionTests : IDisposable
     }
 
     [Fact]
-    public async Task ReconnectIfNeededAsync_AfterRebuild_FiresOnReconnectedRecovery()
+    public async Task ConnectAsync_FirstConnect_DoesNotRunSessionRecovery()
     {
         await _liveConnection.ConnectAsync();
-        var recovered = false;
-        _liveConnection.OnReconnected += () =>
-        {
-            recovered = true;
-            return Task.CompletedTask;
-        };
+
+        _sessionRecovery.RecoverCalls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ReconnectIfNeededAsync_AfterRebuild_RunsSessionRecovery()
+    {
+        await _liveConnection.ConnectAsync();
         _factory.Created.Single().State = HubConnectionState.Reconnecting;
 
         await _liveConnection.ReconnectIfNeededAsync();
 
-        recovered.ShouldBeTrue();
+        _sessionRecovery.RecoverCalls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ReconnectIfNeededAsync_AfterRebuild_CompletesOnlyOnceRecoveryHasFinished()
+    {
+        await _liveConnection.ConnectAsync();
+        _factory.Created.Single().State = HubConnectionState.Reconnecting;
+        _sessionRecovery.BlockUntilReleased = true;
+
+        var reconnect = _liveConnection.ReconnectIfNeededAsync();
+        await SettleAsync();
+        reconnect.IsCompleted.ShouldBeFalse();
+
+        _sessionRecovery.Release();
+        await reconnect;
+
+        _sessionRecovery.Completed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ReconnectIfNeededAsync_SlowRecovery_DoesNotTriggerAnotherRebuildAttempt()
+    {
+        await _liveConnection.ConnectAsync();
+        _factory.Created.Single().State = HubConnectionState.Reconnecting;
+        _sessionRecovery.BlockUntilReleased = true;
+
+        var reconnect = _liveConnection.ReconnectIfNeededAsync();
+        await SettleAsync();
+
+        // Well past the 2.5s per-attempt timeout, which bounds the handshake alone.
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+        await SettleAsync();
+        _factory.Created.Count.ShouldBe(2);
+
+        _sessionRecovery.Release();
+        await reconnect;
+
+        _factory.Created.Count.ShouldBe(2);
+        _liveConnection.IsConnected.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ReconnectIfNeededAsync_TransportReconnects_RunsSessionRecovery()
+    {
+        await _liveConnection.ConnectAsync();
+
+        await _factory.Created.Single().RaiseReconnectedAsync("connection-1");
+
+        _sessionRecovery.RecoverCalls.ShouldBe(1);
     }
 
     [Fact]

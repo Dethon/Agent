@@ -28,18 +28,18 @@ then removed from the live connection.
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Session recovery is a named, container-registered collaborator with one
+- [x] Session recovery is a named, container-registered collaborator with one
       recover operation, injected into the live connection
-- [ ] Recovery runs as the final step of becoming live, after the status is
+- [x] Recovery runs as the final step of becoming live, after the status is
       published
-- [ ] A completed connect implies recovery has finished — no detached task
-- [ ] Recovery is awaited outside the per-attempt timeout, and a slow recovery does
+- [x] A completed connect implies recovery has finished — no detached task
+- [x] Recovery is awaited outside the per-attempt timeout, and a slow recovery does
       not trigger a rebuild retry
-- [ ] Recovery does not run on the first connect, and a test protects that rule
-- [ ] Recovery runs after a rebuild, and a test protects that
-- [ ] The push subscription is re-sent without force-refreshing the push channel
-- [ ] The reconnected event is removed from the live connection and the
+- [x] Recovery does not run on the first connect, and a test protects that rule
+- [x] Recovery runs after a rebuild, and a test protects that
+- [x] The push subscription is re-sent without force-refreshing the push channel
+- [x] The reconnected event is removed from the live connection and the
       initialization effect no longer subscribes to one
-- [ ] First-load space validation still happens before the first space join
+- [x] First-load space validation still happens before the first space join
