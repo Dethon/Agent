@@ -3,6 +3,7 @@ using Domain.Agents;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
@@ -31,12 +32,11 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
     {
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
         return new McpAgent(
-            [mcpFixture.McpEndpoint],
+            TestAgentSpec.Default with { McpServerEndpoints = [mcpFixture.McpEndpoint] },
             llmClient,
-            "test-agent",
-            "",
             stateStore,
-            "test-user");
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System);
     }
 
     [SkippableFact]

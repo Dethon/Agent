@@ -3,6 +3,7 @@ using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -43,13 +44,16 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
 
         await using var agent = new McpAgent(
-            endpoints: [],
-            chatClient: openRouter,
-            name: "reasoning-agent",
-            description: "",
-            stateStore: stateStore,
-            userId: "reasoning-test-user",
-            reasoningEffort: "low");
+            TestAgentSpec.Default with
+            {
+                DisplayName = "reasoning-agent",
+                UserId = "reasoning-test-user",
+                ReasoningEffort = "low"
+            },
+            openRouter,
+            stateStore,
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -81,13 +85,16 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
 
         await using var agent = new McpAgent(
-            endpoints: [],
-            chatClient: openRouter,
-            name: "no-effort-agent",
-            description: "",
-            stateStore: stateStore,
-            userId: "no-effort-test-user",
-            reasoningEffort: "none");
+            TestAgentSpec.Default with
+            {
+                DisplayName = "no-effort-agent",
+                UserId = "no-effort-test-user",
+                ReasoningEffort = "none"
+            },
+            openRouter,
+            stateStore,
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -118,12 +125,15 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
 
         await using var agent = new McpAgent(
-            endpoints: [],
-            chatClient: openRouter,
-            name: "no-reasoning-agent",
-            description: "",
-            stateStore: stateStore,
-            userId: "no-reasoning-test-user");
+            TestAgentSpec.Default with
+            {
+                DisplayName = "no-reasoning-agent",
+                UserId = "no-reasoning-test-user"
+            },
+            openRouter,
+            stateStore,
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -166,16 +176,18 @@ public class McpAgentReasoningTestsConfigPatch
             }.ToAsyncEnumerable());
 
         var agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with
+            {
+                UserId = "fran",
+                Model = ConfiguredModel,
+                ReasoningEffort = reasoningEffort,
+                PatchableModelIds = _whitelist
+            },
             chatClient.Object,
-            "test-agent",
-            "",
             new Mock<IThreadStateStore>().Object,
-            "fran",
-            loggerFactory: LoggerFactory.Create(b => b.AddProvider(logProvider)),
-            reasoningEffort: reasoningEffort,
-            model: ConfiguredModel,
-            patchableModelIds: _whitelist);
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            loggerFactory: LoggerFactory.Create(b => b.AddProvider(logProvider)));
 
         return (agent, captured, logProvider.Messages);
     }

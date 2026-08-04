@@ -65,9 +65,9 @@ public sealed class MultiAgentFactory(
     // so nothing here asks which one it is building.
     private DisposableAgent Build(AgentSpec spec, IToolApprovalHandler approvalHandler)
     {
-        var agentPublisher = metricsPublisher is not null
+        IMetricsPublisher agentPublisher = metricsPublisher is not null
             ? new AgentMetricsPublisher(metricsPublisher, spec.MetricsAgentId)
-            : null;
+            : NoOpMetricsPublisher.Instance;
 
         var chatClient = CreateChatClient(
             spec.Model, agentPublisher, spec.MaxContextTokens,
@@ -95,24 +95,16 @@ public sealed class MultiAgentFactory(
             : new NullThreadStateStore();
 
         return new McpAgent(
-            spec.McpServerEndpoints,
+            spec,
             effectiveClient,
-            spec.DisplayName,
-            spec.Description,
             stateStore,
-            spec.UserId,
-            spec.CustomInstructions,
-            spec.Language,
+            agentPublisher,
+            TimeProvider.System,
             domainTools,
             domainPrompts,
-            filesystemEnabledTools: ExtractFilesystemEnabledTools(spec.EnabledFeatures),
-            loggerFactory: loggerFactory,
-            reasoningEffort: spec.ReasoningEffort,
-            metricsPublisher: agentPublisher,
-            model: spec.Model,
-            conversationId: spec.ConversationId,
-            promptCache: _promptCache,
-            patchableModelIds: spec.PatchableModelIds);
+            ExtractFilesystemEnabledTools(spec.EnabledFeatures),
+            loggerFactory,
+            _promptCache);
     }
 
     private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)

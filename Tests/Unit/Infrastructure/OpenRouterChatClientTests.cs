@@ -5,6 +5,7 @@ using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using Moq;
 using Shouldly;
@@ -51,14 +52,16 @@ public sealed class OpenRouterChatClientTests
             providerRouting: new ProviderRouting { Sort = ProviderSort.Latency },
             transportHandler: handler);
         await using var agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with
+            {
+                UserId = "fran",
+                Model = "configured/model",
+                PatchableModelIds = ["z-ai/glm-5.2"]
+            },
             client,
-            "test-agent",
-            "",
             new Mock<IThreadStateStore>().Object,
-            "fran",
-            model: "configured/model",
-            patchableModelIds: ["z-ai/glm-5.2"]);
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System);
 
         var message = new ChatMessage(ChatRole.User, "hi");
         message.SetConfigPatch(new AgentConfigPatch { Model = "z-ai/glm-5.2" });
@@ -78,14 +81,16 @@ public sealed class OpenRouterChatClientTests
         using var client = new OpenRouterChatClient(
             "http://localhost/api/v1", "test-key", "configured/model", transportHandler: handler);
         await using var agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with
+            {
+                UserId = "fran",
+                Model = "configured/model",
+                PatchableModelIds = ["z-ai/glm-5.2"]
+            },
             client,
-            "test-agent",
-            "",
             new Mock<IThreadStateStore>().Object,
-            "fran",
-            model: "configured/model",
-            patchableModelIds: ["z-ai/glm-5.2"]);
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System);
 
         await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hi")]).ToListAsync();
 

@@ -2,6 +2,7 @@ using Domain.Extensions;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
@@ -32,12 +33,15 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
     {
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
         return new McpAgent(
-            [vaultFixture.McpEndpoint],
+            TestAgentSpec.Default with
+            {
+                DisplayName = "test-fs-agent",
+                McpServerEndpoints = [vaultFixture.McpEndpoint]
+            },
             llmClient,
-            "test-fs-agent",
-            "",
             stateStore,
-            "test-user",
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
             filesystemEnabledTools: enabledTools ?? _allFileSystemTools);
     }
 

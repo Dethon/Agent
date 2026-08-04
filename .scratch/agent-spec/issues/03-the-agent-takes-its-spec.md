@@ -28,4 +28,4 @@ context handling, and session deserialisation.
 - [ ] The agent's observable turn behaviour is unchanged: both latency stages, the patched-model case, conversation-context handling and deserialisation.
 - [ ] The full unit test suite passes.
 
-**Status:** ready-for-agent
+**Status:** done

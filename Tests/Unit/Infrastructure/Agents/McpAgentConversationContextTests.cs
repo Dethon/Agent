@@ -3,6 +3,7 @@ using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -33,14 +34,12 @@ public class McpAgentConversationContextTests
             }.ToAsyncEnumerable());
 
         var agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with { UserId = "fran", ConversationId = "conv-42" },
             chatClient.Object,
-            "test-agent",
-            "",
             new Mock<IThreadStateStore>().Object,
-            "fran",
-            loggerFactory: LoggerFactory.Create(b => b.AddProvider(logProvider)),
-            conversationId: "conv-42");
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            loggerFactory: LoggerFactory.Create(b => b.AddProvider(logProvider)));
 
         return (agent, captured, logProvider.Messages);
     }

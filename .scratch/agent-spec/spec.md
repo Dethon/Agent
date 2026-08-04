@@ -1,6 +1,6 @@
 # Spec — Agent Spec
 
-Status: ready-for-agent
+Status: done
 
 Grilled from candidate 7 of `.scratch/architecture-audit-2026-08-03/candidates.md`,
 which holds the exact file and line evidence for every claim below. No ADR: both

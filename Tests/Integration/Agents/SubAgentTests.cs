@@ -4,6 +4,7 @@ using Domain.Extensions;
 using Domain.Tools.SubAgents;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -73,13 +74,16 @@ public class SubAgentTests(RedisFixture redisFixture)
         using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, "conv-test", ["domain__subagents__*"]);
 
         await using var agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with
+            {
+                DisplayName = "parent-agent-test",
+                CustomInstructions =
+                    "You have access to a subagent tool. Use the echo-agent subagent to echo back: 'Hello from subagent'"
+            },
             effectiveClient,
-            "parent-agent-test",
-            "",
             stateStore,
-            "test-user",
-            "You have access to a subagent tool. Use the echo-agent subagent to echo back: 'Hello from subagent'",
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
             domainTools: toolFeature.GetTools(featureConfig).ToList());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));

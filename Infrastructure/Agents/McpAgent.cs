@@ -6,14 +6,12 @@ using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
-using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Metrics;
 using Domain.Prompts;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
-using Infrastructure.Metrics;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -38,9 +36,9 @@ public sealed class McpAgent : DisposableAgent
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private readonly TimeProvider _timeProvider;
     private readonly IMetricsPublisher _metricsPublisher;
-    private readonly string? _model;
+    private readonly string _model;
     private readonly IReadOnlyList<string> _patchableModelIds;
-    private readonly string? _conversationId;
+    private readonly string _conversationId;
     private readonly McpPromptCache? _promptCache;
 
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
@@ -54,50 +52,46 @@ public sealed class McpAgent : DisposableAgent
     // model stamped on metrics is by construction the model the request ran on.
     private sealed record TurnConfig(string? ModelOverride, ReasoningEffort? Effort);
 
+    // The spec carries every configured value, so nothing about what this agent is can be
+    // expressed by omitting an argument. What is left are the live collaborators, and the
+    // metrics publisher is one of them and required: handing the agent no publisher is what
+    // silently cost every subagent its turn latency.
     public McpAgent(
-        string[] endpoints,
+        AgentSpec spec,
         IChatClient chatClient,
-        string name,
-        string description,
         IThreadStateStore stateStore,
-        string userId,
-        string? customInstructions = null,
-        string? language = null,
+        IMetricsPublisher metricsPublisher,
+        TimeProvider timeProvider,
         IReadOnlyList<AIFunction>? domainTools = null,
         IReadOnlyList<string>? domainPrompts = null,
         IReadOnlySet<string>? filesystemEnabledTools = null, // null treated as empty (disabled)
         ILoggerFactory? loggerFactory = null,
-        string? reasoningEffort = null,
-        TimeProvider? timeProvider = null,
-        IMetricsPublisher? metricsPublisher = null,
-        string? model = null,
-        string? conversationId = null,
-        McpPromptCache? promptCache = null,
-        IReadOnlyList<string>? patchableModelIds = null)
+        McpPromptCache? promptCache = null)
     {
-        _endpoints = endpoints;
+        _endpoints = spec.McpServerEndpoints;
         _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger<McpAgent>();
-        _name = name;
-        _description = description;
-        _userId = userId;
-        _customInstructions = customInstructions;
-        _language = language;
+        _name = spec.DisplayName;
+        _description = spec.Description;
+        _userId = spec.UserId;
+        _customInstructions = spec.CustomInstructions;
+        _language = spec.Language;
         _domainTools = domainTools ?? [];
         _domainPrompts = domainPrompts ?? [];
-        _reasoningEffort = ParseEffort(reasoningEffort);
-        _timeProvider = timeProvider ?? TimeProvider.System;
-        _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
-        _model = model;
-        _patchableModelIds = patchableModelIds ?? [];
-        _conversationId = conversationId;
+        _reasoningEffort = ParseEffort(spec.ReasoningEffort);
+        _timeProvider = timeProvider;
+        _metricsPublisher = metricsPublisher;
+        _model = spec.Model;
+        _patchableModelIds = spec.PatchableModelIds;
+        _conversationId = spec.ConversationId;
         _promptCache = promptCache;
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
-            Name = name,
-            Description = description,
-            ChatHistoryProvider = new RedisChatMessageStore(stateStore, metricsPublisher, conversationId)
+            Name = spec.DisplayName,
+            Description = spec.Description,
+            ChatHistoryProvider = new RedisChatMessageStore(
+                stateStore, metricsPublisher, spec.ConversationId)
         });
     }
 

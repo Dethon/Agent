@@ -54,15 +54,11 @@ public class McpAgentLatencyTests : IAsyncDisposable
 
         var stateStore = new Mock<IThreadStateStore>();
         _agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with { Model = "anthropic/claude", ConversationId = "conv1" },
             chatClient.Object,
-            "test-agent",
-            "",
             stateStore.Object,
-            "test-user",
-            metricsPublisher: _publisher.Object,
-            model: "anthropic/claude",
-            conversationId: "conv1");
+            _publisher.Object,
+            TimeProvider.System);
     }
 
     public async ValueTask DisposeAsync()
@@ -122,16 +118,16 @@ public class McpAgentLatencyTests : IAsyncDisposable
             chatClient, new Mock<IToolApprovalHandler>().Object, "conv-test");
 
         await using var agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with
+            {
+                Model = "anthropic/claude",
+                ConversationId = "conv1",
+                PatchableModelIds = ["z-ai/glm"]
+            },
             wrappedClient,
-            "test-agent",
-            "",
             new Mock<IThreadStateStore>().Object,
-            "test-user",
-            metricsPublisher: _publisher.Object,
-            model: "anthropic/claude",
-            conversationId: "conv1",
-            patchableModelIds: ["z-ai/glm"]);
+            _publisher.Object,
+            TimeProvider.System);
 
         var message = new ChatMessage(ChatRole.User, "hello");
         message.SetConfigPatch(new AgentConfigPatch { Model = "z-ai/glm" });
