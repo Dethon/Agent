@@ -12,4 +12,8 @@ public enum ConnectionStatus
 public record ConnectionState
 {
     public ConnectionStatus Status { get; init; } = ConnectionStatus.Connecting;
+
+    // How many times the client has become live. Catch-up is keyed on it, which makes "never on the
+    // first connection" a comparison against the store rather than a flag inside the module.
+    public int Epoch { get; init; }
 }

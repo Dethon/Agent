@@ -32,4 +32,36 @@ public class ConnectionStoreTests
 
         store.State.Status.ShouldBe(expected);
     }
+
+    [Fact]
+    public void SetLive_EveryTimeTheClientBecomesLive_AdvancesTheEpoch()
+    {
+        using var store = new ConnectionStore();
+
+        store.SetLive();
+        store.SetReconnecting();
+        store.SetLive();
+
+        store.State.Epoch.ShouldBe(2);
+    }
+
+    [Theory]
+    [InlineData("connecting")]
+    [InlineData("reconnecting")]
+    public void SetStatus_TransitionsThatAreNotBecomingLive_LeaveTheEpochAlone(string transition)
+    {
+        using var store = new ConnectionStore();
+        store.SetLive();
+
+        if (transition == "connecting")
+        {
+            store.SetConnecting();
+        }
+        else
+        {
+            store.SetReconnecting();
+        }
+
+        store.State.Epoch.ShouldBe(1);
+    }
 }

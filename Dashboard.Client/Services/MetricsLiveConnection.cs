@@ -12,6 +12,7 @@ public sealed class MetricsLiveConnection(
     IMetricsHubConnection hub,
     MetricsHubEffect binder,
     ConnectionStore connectionStore,
+    IMetricsCatchUp catchUp,
     TimeProvider timeProvider,
     ILogger<MetricsLiveConnection> logger) : IAsyncDisposable
 {
@@ -36,11 +37,7 @@ public sealed class MetricsLiveConnection(
             return Task.CompletedTask;
         };
 
-        hub.Reconnected += _ =>
-        {
-            connectionStore.SetLive();
-            return Task.CompletedTask;
-        };
+        hub.Reconnected += _ => BecomeLiveAndCatchUpAsync();
 
         connectionStore.SetConnecting();
         await StartUntilItSucceedsAsync();
@@ -48,7 +45,32 @@ public sealed class MetricsLiveConnection(
         // The latch records a start that succeeded, not one that was attempted: setting it before
         // the work is what used to leave a failed first start believing it was already running.
         _started = true;
+        await BecomeLiveAndCatchUpAsync();
+    }
+
+    // The last two steps of becoming live, shared with the path the transport takes when it
+    // reconnects on its own — the path that used to do nothing but flip a flag.
+    private async Task BecomeLiveAndCatchUpAsync()
+    {
         connectionStore.SetLive();
+
+        // Never on the first connection: ordinary page load fetches the same data there, and
+        // catching up as well would double every request on first paint.
+        if (connectionStore.State.Epoch <= 1)
+        {
+            return;
+        }
+
+        try
+        {
+            await catchUp.CatchUpAsync();
+        }
+        catch (Exception exception)
+        {
+            // The connection is live whether or not the reload worked, and every family keeps the
+            // values it already had.
+            logger.LogWarning(exception, "Metrics catch-up failed");
+        }
     }
 
     private async Task StartUntilItSucceedsAsync()

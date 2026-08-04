@@ -36,6 +36,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     private readonly LatencyStore _latencyStore = new();
     private readonly VoiceStore _voiceStore = new();
     private readonly MetricFamilyTable _families;
+    private readonly RecordingMetricsCatchUp _catchUp;
     private readonly MetricsLiveConnection _liveConnection;
 
     public MetricsLiveConnectionTests()
@@ -45,8 +46,9 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
             new MetricsApiService(http), _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
         var binder = new MetricsHubEffect(_families, _metricsStore, _healthStore);
+        _catchUp = new RecordingMetricsCatchUp(new MetricsCatchUp(_families));
         _liveConnection = new MetricsLiveConnection(
-            _hub, binder, _connectionStore, _time, NullLogger<MetricsLiveConnection>.Instance);
+            _hub, binder, _connectionStore, _catchUp, _time, NullLogger<MetricsLiveConnection>.Instance);
     }
 
     public async ValueTask DisposeAsync()
@@ -196,6 +198,76 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
     }
 
+    // The headline: recovering from an outage means the dashboard holds what it missed, asserted
+    // at the store rather than by recording that a method was called.
+    [Fact]
+    public async Task Reconnected_EventsArrivedDuringTheOutage_TheStoreHoldsWhatItMissed()
+    {
+        await ConnectAsync();
+        _voiceStore.State.Events.ShouldBeEmpty();
+        _handler.AnswerFor("api/metrics/voice?", new List<VoiceEventPayload>
+        {
+            new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
+        });
+
+        await _hub.RaiseReconnectingAsync(null);
+        await _hub.RaiseReconnectedAsync();
+
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
+    }
+
+    // Ordinary page load fetches the same data on the first connection, so catching up there would
+    // double every request on first paint.
+    [Fact]
+    public async Task ConnectAsync_FirstConnect_DoesNotCatchUp()
+    {
+        await ConnectAsync();
+
+        _catchUp.Runs.ShouldBe(0);
+        _connectionStore.State.Epoch.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Reconnected_AfterAnInterruption_CatchesUpOnce()
+    {
+        await ConnectAsync();
+
+        await _hub.RaiseReconnectingAsync(null);
+        await _hub.RaiseReconnectedAsync();
+
+        _catchUp.Runs.ShouldBe(1);
+        _connectionStore.State.Epoch.ShouldBe(2);
+    }
+
+    // Awaited as part of becoming live rather than detached, so a completed reconnect means what is
+    // on screen is current.
+    [Fact]
+    public async Task Reconnected_CatchUpIsStillRunning_HasNotCompletedYet()
+    {
+        await ConnectAsync();
+        _catchUp.Gate = new TaskCompletionSource();
+
+        var reconnected = _hub.RaiseReconnectedAsync();
+
+        reconnected.IsCompleted.ShouldBeFalse();
+        _catchUp.Gate.SetResult();
+        await reconnected;
+    }
+
+    [Fact]
+    public async Task Reconnected_CatchUpFails_LeavesTheConnectionLiveAndThePreviousValuesInPlace()
+    {
+        var lastKnown = new Dictionary<string, decimal> { ["kept"] = 42m };
+        _voiceStore.SetBreakdown(lastKnown);
+        await ConnectAsync();
+        _catchUp.Failure = new HttpRequestException("observability is down");
+
+        await _hub.RaiseReconnectedAsync();
+
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
+        _voiceStore.State.Breakdown.ShouldBe(lastKnown);
+    }
+
     [Fact]
     public async Task DisposeAsync_AfterConnecting_APushAfterwardsChangesNothing()
     {
@@ -207,4 +279,6 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _voiceStore.State.Events.ShouldBeEmpty();
         _hub.Disposed.ShouldBeTrue();
     }
+
+    private sealed record VoiceEventPayload(int Metric, string SatelliteId);
 }

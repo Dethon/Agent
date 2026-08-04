@@ -23,6 +23,35 @@ Optional publisher parameters coalesce once to `NoOpMetricsPublisher.Instance` w
 
 Published events reach the Redis Pub/Sub channel `metrics:events`. `MetricsCollectorService` subscribes, aggregates into Redis (sorted sets for time-series, hashes for totals, TTL keys for health), and forwards live events to the SignalR hub (`/hubs/metrics`); `MetricsQueryService` serves grouped aggregations by dimension/metric enum. The dashboard is hybrid: REST for history on page load, SignalR for live updates, `LocalStorageService` for UI state.
 
+## The dashboard's live connection
+
+`MetricsLiveConnection` owns being live, and it is the only thing that does. Becoming live is one
+ordered sequence inside it: bind the handlers to the hub connection, start it retrying until it
+succeeds, publish the status, then catch up. Steps three and four also run when the transport
+reconnects on its own. The layout calls connect and catches nothing, because the module does not
+fail — it keeps trying.
+
+- **The seam is `IMetricsHubConnection`**, one generic receive verb keyed by wire method name plus
+  the three lifecycle events. A twelfth server push is a line in the binder, not a member on the
+  interface, the implementation and the fake. Never hand-write a named registration method.
+- **`MetricsRetryPolicy` is the one schedule**: zero, two, ten, thirty seconds, then thirty
+  forever, and it never returns the value that means stop. It drives both automatic reconnection and
+  the module's own first-start loop, which delays through the injected `TimeProvider`. Automatic
+  reconnection has never covered the first attempt, so replacing only the policy would leave a
+  dashboard opened during a deploy just as dead as before.
+- **The started latch records a start that succeeded**, never one that was attempted.
+- **`ConnectionStore` is the only source of connection status**: connecting, live or reconnecting,
+  with no permanent disconnected state, because the module never gives up. The page-load path does
+  not report a failed request as a lost connection. The indicator lives in the layout, so every page
+  shows it; the overview reads the same store.
+- **`MetricsCatchUp` walks the family table** for the range each family already holds, so a
+  recovery does not move the user's group-by, metric or time choices. It is awaited as the last step
+  of becoming live, and skipped when `ConnectionState.Epoch` is 1, where ordinary page load fetches
+  the same data. A failure inside it is logged and leaves the connection live. It does not reload
+  the overview's summary totals, which stay short until the next page load.
+- `MetricsHubEffect` is the binder and nothing else: the mapping from a push to a store update and a
+  family refresh, with `Bind` and `Unbind` driven by the module.
+
 Health tiles come from `ServiceHealthRegistry`, a sorted-set roster (`metrics:health:seen`) scored by *last registration*, not last health — reachability is the separate TTL'd `metrics:health:<service>` key. Services publishing `HeartbeatEvent`s register themselves; third-party containers are registered by `HttpHealthProbeService`, which polls the URLs in `HttpProbes` (`Observability/appsettings.json`) and treats **any** HTTP response, even non-2xx, as up. A probe target re-registers every cycle whether or not it answers, so a down service stays visible as a red tile, while a retired one stops registering and ages off after `Retention` (7 days).
 
 Key files: metric DTOs `Domain/DTOs/Metrics/*.cs` (dimension/metric enums in `Enums/`), publisher `Infrastructure/Metrics/*.cs`, `Observability/Services/*.cs` (incl. `MetricsQueryService.cs`), API endpoints `Observability/MetricsApiEndpoints.cs`, dashboard `Dashboard.Client/{Pages,Components,Services}/` with state in `Dashboard.Client/State/**/*.cs`.
