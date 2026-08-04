@@ -44,7 +44,7 @@ public class TurnLatencyDecompositionTests
     private readonly SatelliteSessionRegistry _sessions = new();
     private readonly ReplyTextAccumulator _accumulator = new();
     private readonly string _conversationId;
-    private readonly IServiceProvider _services;
+    private readonly ReplySpeaker _speaker;
     private readonly List<VoiceEvent> _published = [];
 
     public TurnLatencyDecompositionTests()
@@ -86,19 +86,19 @@ public class TurnLatencyDecompositionTests
                 }
             });
 
-        _services = new ServiceCollection()
-            .AddSingleton(_sessions)
-            .AddSingleton(_accumulator)
-            .AddSingleton(manager)
-            .AddSingleton(tts.Object)
-            .AddSingleton(metrics.Object)
-            .AddSingleton(new VoiceSettings())
-            .AddSingleton(new VoiceDeliveryRegistry(
-                _clock, TimeSpan.FromMinutes(5), _accumulator, NullLogger<VoiceDeliveryRegistry>.Instance))
-            .AddSingleton<ILogger<SendReplyTool>>(NullLogger<SendReplyTool>.Instance)
-            .AddSingleton<TimeProvider>(_clock)
-            .BuildServiceProvider();
+        _speaker = new ReplySpeaker(
+            _accumulator, tts.Object, new VoiceSettings(), metrics.Object, _clock,
+            NullLogger<ReplySpeaker>.Instance);
     }
+
+    private void Say(string content, ReplyContentType contentType, bool isComplete) =>
+        _speaker.SpeakUtteranceReply(_session, new SendReplyParams
+        {
+            ConversationId = _conversationId,
+            Content = content,
+            ContentType = contentType,
+            IsComplete = isComplete
+        });
 
     private async IAsyncEnumerable<AudioChunk> SynthesizeAsync()
     {
@@ -111,7 +111,7 @@ public class TurnLatencyDecompositionTests
     public async Task VoiceTurn_SpeechEndToFirstAudio_EqualsTheSumOfItsNamedSpans()
     {
         // Walks one turn on a single FakeTimeProvider, feeding a real SilenceGate/UtteranceCapture so
-        // the endpoint tail is the gate's own value, and driving the real SendReplyTool so the round
+        // the endpoint tail is the gate's own value, and driving the real ReplySpeaker so the round
         // trip / queue wait / TTS / speech-end spans are the real published ones.
         //
         // Encoded gap: SpeakerVerifyMs and SttLatencyMs are published by WyomingSatelliteHost, which
@@ -142,8 +142,8 @@ public class TurnLatencyDecompositionTests
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
         _clock.Advance(TimeSpan.FromMilliseconds(AgentMs)); // the agent process thinking
 
-        await SendReplyTool.McpRun(_conversationId, "listo", ReplyContentType.Text, false, "m-1", _services);
-        await SendReplyTool.McpRun(_conversationId, "", ReplyContentType.StreamComplete, true, null, _services);
+        Say("listo", ReplyContentType.Text, false);
+        Say("", ReplyContentType.StreamComplete, true);
 
         _clock.Advance(TimeSpan.FromMilliseconds(QueueWaitMs)); // the reply waits behind another job
 

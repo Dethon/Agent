@@ -136,6 +136,7 @@ public static class ConfigModule
         services.AddSingleton(settings.Arbitration);
 
         services.AddSingleton<ReplyTextAccumulator>();
+        services.AddSingleton<ReplySpeaker>();
 
         services.AddSingleton<ITextToSpeech>(sp =>
             McpChannelVoice.Services.Tts.SilenceTrimmingTextToSpeech.Wrap(
