@@ -14,6 +14,8 @@ public class FileSystemBackendBaseTests
     {
         public override string FilesystemName => "bare";
 
+        public override string DescribeMount => "A bare mount that implements nothing.";
+
         public (bool DirsOnly, Func<string, bool> Matches) Prologue(string? basePath, string pattern) =>
             GlobPrologue(basePath, pattern);
 

@@ -11,8 +11,10 @@ MCP tools wrap Domain tools and expose them via Model Context Protocol.
 `AddFileSystemTools<TBackend>()` (`Infrastructure/Utils/FileSystemServerTools.cs`) for exactly the
 operations `TBackend` overrides on `FileSystemBackendBase`, and its description comes from that
 backend's `Describe*` hook. Hand-writing one would let a server advertise an operation its backend
-does not implement, which is the drift the registrar exists to make unrepresentable. See CLAUDE.md's
-"Virtual Filesystem Architecture".
+does not implement, which is the drift the registrar exists to make unrepresentable. The same goes
+for the mount's `filesystem://` resource: `AddFileSystemResource<TBackend>()` derives its address,
+published name and mount point from the backend's one name, and its prose from `DescribeMount`. See
+CLAUDE.md's "Virtual Filesystem Architecture".
 
 ## Structure
 

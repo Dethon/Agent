@@ -7,7 +7,6 @@ using Infrastructure.Utils;
 using Infrastructure.Validation;
 using Mcp.Hosting;
 using McpServerScheduling.McpPrompts;
-using McpServerScheduling.McpResources;
 using McpServerScheduling.McpTools;
 using McpServerScheduling.Services;
 using McpServerScheduling.Settings;
@@ -40,7 +39,7 @@ public static class ConfigModule
             // behind — the schedule would fire twice.
             .AddChannelServer(DeliveryPolicy.GateOnLive, noOutboundSurface: true)
             .AddFileSystemTools<ScheduleFileSystem>()
-            .WithResources<FileSystemResource>()
+            .AddFileSystemResource<ScheduleFileSystem>()
             .WithPrompts<McpSystemPrompt>();
 
         return services;

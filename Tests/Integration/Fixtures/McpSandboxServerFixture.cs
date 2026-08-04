@@ -6,7 +6,7 @@ using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Bash;
 using Infrastructure.Utils;
-using McpServerSandbox.McpResources;
+
 using McpServerSandbox.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -63,6 +63,7 @@ public class McpSandboxServerFixture : IAsyncLifetime
             .AddSingleton<ICommandRunner, BashRunner>()
             .AddSingleton(sp => new SandboxFileSystem(
                 "sandbox",
+                "Linux sandbox container.",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.ContainerRoot),
                 settings.AllowedExtensions,
@@ -81,7 +82,7 @@ public class McpSandboxServerFixture : IAsyncLifetime
                 }
             }))
             .AddFileSystemTools<SandboxFileSystem>()
-            .WithResources<FileSystemResource>();
+            .AddFileSystemResource<SandboxFileSystem>();
 
         var app = builder.Build();
         app.MapMcp("/mcp");

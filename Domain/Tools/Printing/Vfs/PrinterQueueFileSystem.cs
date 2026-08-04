@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Printing;
+using Domain.Prompts;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
 using Domain.Tools.Printing;
@@ -17,6 +18,17 @@ public sealed class PrinterQueueFileSystem(
     string supportedFormats) : FileSystemBackendBase
 {
     public override string FilesystemName => "print-queue";
+
+    public override string DescribeMount =>
+        "A printer exposed as a flat filesystem. Copy or create a document at /print-queue/<filename> "
+        + "to print it on the configured printer; the document is submitted automatically. Accepted "
+        + $"formats: {PrintingPrompt.DescribeFormats(supportedFormats)} - any other format is rejected "
+        + "on copy-in, so first convert whatever you want to print into an accepted format (typically "
+        + "text or JPEG, e.g. render a PDF or PNG to a JPEG) and copy that in. Remove a file with "
+        + "fs_delete to cancel it if it has not finished printing yet. Read /print-queue/status.json "
+        + "for the state of every queued job (queued/pending/processing). Finished jobs disappear "
+        + "from the listing automatically. Supported: read, create, edit (text only), copy, glob, "
+        + "search, delete, and binary copy-in. Not supported: move and exec.";
 
     // The words the model reads about each operation, next to the behaviour they describe.
     public override string DescribeRead => "Read a queued document's text, or read status.json for the queue state.";

@@ -6,7 +6,6 @@ using Infrastructure.Printing;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerPrinter.McpPrompts;
-using McpServerPrinter.McpResources;
 using McpServerPrinter.Services;
 using McpServerPrinter.Settings;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,7 +41,7 @@ public static class ConfigModule
         services
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<PrinterQueueFileSystem>()
-            .WithResources<FileSystemResource>()
+            .AddFileSystemResource<PrinterQueueFileSystem>()
             .WithPrompts<McpSystemPrompt>();
 
         return services;

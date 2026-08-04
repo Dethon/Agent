@@ -116,6 +116,8 @@ public class FileSystemOperationsTests
     {
         public override string FilesystemName => "everything";
 
+        public override string DescribeMount => "A mount that overrides every operation.";
+
         public override Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
             base.ReadAsync(path, offset, limit, ct);
 

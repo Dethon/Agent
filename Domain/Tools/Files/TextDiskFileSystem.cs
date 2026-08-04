@@ -11,9 +11,10 @@ namespace Domain.Tools.Files;
 // root without them stays a DiskFileSystem and advertises neither.
 public class TextDiskFileSystem(
     string filesystemName,
+    string mountDescription,
     IFileSystemClient client,
     LibraryPathConfig root,
-    string[] allowedExtensions) : DiskFileSystem(filesystemName, client, root)
+    string[] allowedExtensions) : DiskFileSystem(filesystemName, mountDescription, client, root)
 {
     private readonly TextReadTool _read = new(root.BaseLibraryPath, allowedExtensions);
     private readonly TextCreateTool _create = new(root.BaseLibraryPath, allowedExtensions);

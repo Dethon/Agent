@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
@@ -55,6 +56,64 @@ public class FileSystemServerConformanceTests
         var capabilities = McpFileSystemDiscovery.DeriveCapabilities(overridden);
         capabilities.Count.ShouldBe(overridden.Count(t => !t.StartsWith("fs_blob", StringComparison.Ordinal)), name);
     }
+
+    // The other half of the same idea. A mount's identity used to be written three times per server
+    // — in the backend, in the resource address, and in the resource body's name and mount point —
+    // and nothing compared the three. Now all three come off the backend's one name, so a mount the
+    // agent discovered at an address is a mount it can address.
+    [Theory]
+    [MemberData(nameof(Backends))]
+    public void EveryFilesystemServer_PublishesItsMountAtTheAddressDerivedFromItsName(
+        string name, Type backendType)
+    {
+        var services = new ServiceCollection();
+        typeof(FileSystemServerResource)
+            .GetMethod(nameof(FileSystemServerResource.AddFileSystemResource))!
+            .MakeGenericMethod(backendType)
+            .Invoke(null, [services.AddMcpServer()]);
+
+        services.Single(d => d.ServiceType == typeof(McpServerResource))
+            .Lifetime.ShouldBe(ServiceLifetime.Singleton, name);
+
+        FileSystemServerResource.Address(name).ShouldBe($"filesystem://{name}");
+
+        var published = Published(FileSystemServerResource.Describe(name, "a description"));
+        published.Name.ShouldBe(name);
+        published.MountPoint.ShouldBe($"/{name}");
+        published.Description.ShouldBe("a description");
+    }
+
+    // That the backend's own name is what reaches all three, driven through the registrar the way a
+    // ConfigModule drives it. The seven real backends need their whole dependency graph to
+    // construct, so the flow is pinned on a backend that does not.
+    [Fact]
+    public void TheRegisteredResource_TakesItsAddressAndBodyFromTheBackend()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new PickyBackend());
+        services.AddMcpServer().AddFileSystemResource<PickyBackend>();
+        using var provider = services.BuildServiceProvider();
+
+        var resource = provider.GetServices<McpServerResource>().Single();
+
+        resource.ProtocolResource!.Uri.ShouldBe("filesystem://picky");
+        resource.ProtocolResource.Name.ShouldBe("picky");
+        resource.ProtocolResource.Description.ShouldBe(new PickyBackend().DescribeMount);
+        resource.ProtocolResource.MimeType.ShouldBe("application/json");
+
+        var published = Published(FileSystemServerResource.Describe(new PickyBackend()));
+        published.Name.ShouldBe("picky");
+        published.MountPoint.ShouldBe("/picky");
+        published.Description.ShouldBe(new PickyBackend().DescribeMount);
+    }
+
+    // Read back the way McpFileSystemDiscovery reads it, so the body this test approves is the body
+    // the agent's mount actually parses.
+    private static PublishedMount Published(string json) =>
+        JsonSerializer.Deserialize<PublishedMount>(
+            json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+    private record PublishedMount(string Name, string MountPoint, string Description);
 
     // The lie this feature removes: timers registered fs_move from a method whose own description
     // said the operation was unsupported, so the prompt promised the model an operation that could
@@ -140,6 +199,8 @@ public class FileSystemServerConformanceTests
         public override string FilesystemName => "picky";
 
         public override string DescribeRead => "Reads only the one file this mount is willing to serve.";
+
+        public override string DescribeMount => "One file, and only if you ask nicely.";
 
         public override Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
             Task.FromResult(path == "allowed.md"

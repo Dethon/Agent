@@ -6,7 +6,7 @@ using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
-using McpServerLibrary.McpResources;
+
 using McpServerLibrary.McpTools;
 using McpServerLibrary.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -92,7 +92,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
             .AddFileSystemTools<MediaLibraryDiskFileSystem>()
-            .WithResources<FileSystemResource>();
+            .AddFileSystemResource<MediaLibraryDiskFileSystem>();
 
         var app = builder.Build();
         app.MapMcp("/mcp");

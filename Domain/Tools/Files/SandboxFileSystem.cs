@@ -8,10 +8,12 @@ namespace Domain.Tools.Files;
 // does not, so it is the one method this adds — and the only reason /sandbox advertises fs_exec.
 public class SandboxFileSystem(
     string filesystemName,
+    string mountDescription,
     IFileSystemClient client,
     LibraryPathConfig root,
     string[] allowedExtensions,
-    ICommandRunner runner) : TextDiskFileSystem(filesystemName, client, root, allowedExtensions)
+    ICommandRunner runner)
+    : TextDiskFileSystem(filesystemName, mountDescription, client, root, allowedExtensions)
 {
     public override string DescribeExec =>
         "Execute a bash command (`bash -lc <command>`) inside the sandbox container. The path "

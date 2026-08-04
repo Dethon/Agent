@@ -18,6 +18,8 @@ public sealed class ScheduleFileSystem(
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 
+    public override string DescribeMount => BuildMountDescription(timeProvider.LocalTimeZone.Id);
+
     // The words the model reads about each operation, next to the behaviour they describe. They
     // name the mount's real files, which is what makes the schedules surface usable without a probe.
     public override string DescribeGlob =>
@@ -507,4 +509,10 @@ public sealed class ScheduleFileSystem(
 
     private static ToolErrorResult Error(string code, string message) =>
         new() { ErrorCode = code, Message = message, Retryable = false };
+
+    // The zone the engine actually computes in, read off the injected TimeProvider rather than a
+    // static call, so what the model is told and what a cron expression means cannot drift apart.
+    private static string BuildMountDescription(string zone) =>
+        $$"""Scheduled agent tasks, grouped by agent. Discover agents by globbing /schedules (each agent is a directory); read /schedules/<agentId>/agent_info.json to learn what another agent does. Schedule against yourself — the agent directory whose agent_info.json name is your own — unless the user names another agent: the directory you write to decides who runs the prompt and where the result is delivered, so another agent's directory means someone else does the work and answers on their own channel. Create a schedule with fs_create at /schedules/<agentId>/<descriptive-unique-id>/schedule.json containing JSON {prompt, cron|runAt, userId?, deliverTo?}: provide EXACTLY ONE of cron (recurring, standard 5-field cron read in the {{zone}} time zone and adjusted automatically across daylight-saving changes, e.g. "0 9 * * *" = daily 09:00, "30 14 * * 1-5" = weekdays 14:30) or runAt (one-shot ISO-8601 datetime; give it a time zone — 'Z' for UTC or an offset like +02:00 — or omit one and it is read as {{zone}} local time; stored as UTC, auto-deleted after it fires). deliverTo is an optional list of channel ids (e.g. ["signalr","telegram"]) to receive the result; omit for the default. Change prompt/timing with fs_edit, reassign to another agent or rename with fs_move, remove with fs_delete. Read /schedules/<agentId>/<scheduleId>/status.json for createdAt/lastRunAt/nextRunAt, shown in the {{zone}} time zone. Fire a schedule immediately with fs_exec on its directory using command run_now.sh. Use descriptive, unique schedule ids.""";
+
 }

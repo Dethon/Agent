@@ -5,7 +5,6 @@ using Infrastructure.Timers;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerTimers.McpPrompts;
-using McpServerTimers.McpResources;
 using McpServerTimers.Services;
 using McpServerTimers.Settings;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,7 +43,7 @@ public static class ConfigModule
         services
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<TimerFileSystem>()
-            .WithResources<FileSystemResource>()
+            .AddFileSystemResource<TimerFileSystem>()
             .WithPrompts<TimersSystemPrompt>();
 
         return services;

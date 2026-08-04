@@ -15,6 +15,16 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
 {
     public abstract string FilesystemName { get; }
 
+    // The mount's identity, all of it derived from the one name: the address the resource is
+    // published at, the path the registry mounts it under, and the name the agent addresses it by
+    // cannot disagree, so there is nothing to keep in sync.
+    public string MountPoint => "/" + FilesystemName;
+
+    // What the model reads about the mount as a whole, beside what it reads about each operation.
+    // Abstract for the same reason FilesystemName is: a reusable disk root must not carry one
+    // deployment's prose, so it takes this as a constructor argument instead.
+    public abstract string DescribeMount { get; }
+
     // A caller-supplied pattern can be pathological, so every search matches under a bounded
     // timeout. Overridable because a test needs to trip it without waiting a real second.
     protected virtual TimeSpan SearchMatchTimeout => TimeSpan.FromSeconds(1);

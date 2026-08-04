@@ -5,7 +5,6 @@ using Infrastructure.Clients;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerVault.McpPrompts;
-using McpServerVault.McpResources;
 using McpServerVault.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,12 +19,19 @@ public static class ConfigModule
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
             .AddSingleton(sp => new TextDiskFileSystem(
                 "vault",
+                // The reusable disk root takes the mount's prose the same way it takes its name:
+                // "Obsidian vault" is this deployment's, not every text root's.
+                $"Personal Obsidian vault ({settings.VaultPath}) — markdown notes with wikilinks, "
+                + "embeds, frontmatter, and tags; the user edits the same files in Obsidian. "
+                + "Persistent host-mounted directory. Read/write text only (allowed extensions "
+                + "enforced); does NOT support fs_exec. See the Vault Filesystem (Obsidian) prompt "
+                + "for conventions.",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.VaultPath),
                 settings.AllowedExtensions))
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<TextDiskFileSystem>()
-            .WithResources<FileSystemResource>()
+            .AddFileSystemResource<TextDiskFileSystem>()
             .WithPrompts<McpSystemPrompt>();
 
         return services;

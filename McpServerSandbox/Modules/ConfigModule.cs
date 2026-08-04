@@ -6,7 +6,6 @@ using Infrastructure.Clients.Bash;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerSandbox.McpPrompts;
-using McpServerSandbox.McpResources;
 using McpServerSandbox.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -30,13 +29,18 @@ public static class ConfigModule
             .AddSingleton<ICommandRunner, BashRunner>()
             .AddSingleton(sp => new SandboxFileSystem(
                 "sandbox",
+                // The reusable disk root takes the mount's prose the same way it takes its name.
+                "Linux sandbox container — supports command execution via fs_exec (bash, python3, "
+                + "pip, git, curl, jq). Persistent /home/sandbox_user (named volume), ephemeral "
+                + "system dirs, full outbound network, no inbound ports. See the Sandbox Filesystem "
+                + "prompt for limits.",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.ContainerRoot),
                 settings.AllowedExtensions,
                 sp.GetRequiredService<ICommandRunner>()))
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<SandboxFileSystem>()
-            .WithResources<FileSystemResource>()
+            .AddFileSystemResource<SandboxFileSystem>()
             .WithPrompts<McpSystemPrompt>();
 
         return services;

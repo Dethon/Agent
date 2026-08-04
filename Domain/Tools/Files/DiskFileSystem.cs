@@ -13,10 +13,13 @@ namespace Domain.Tools.Files;
 // registrar derives the surface from what is overridden.
 public class DiskFileSystem(
     string filesystemName,
+    string mountDescription,
     IFileSystemClient client,
     LibraryPathConfig root) : FileSystemBackendBase
 {
     public override string FilesystemName => filesystemName;
+
+    public override string DescribeMount => mountDescription;
 
     private readonly GlobFilesTool _glob = new(client, root);
     private readonly MoveTool _move = new(client, root);

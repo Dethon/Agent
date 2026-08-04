@@ -15,6 +15,13 @@ public sealed partial class HaFileSystem(
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 
+    public override string DescribeMount =>
+        "Home Assistant as a filesystem. Browse `/ha/entities/<class>/<id>/` or "
+        + "`/ha/areas/<room>/<entity_id>/`. `read state.json` for live state; `read <service>.sh` "
+        + "(or `exec '<service>.sh --help'`) for an action's arguments; `exec '<service>.sh --flag "
+        + "value'` to control a device. NOT a shell — exec only runs the listed *.sh action files "
+        + "(anything else returns exit 127). No create/edit/delete.";
+
     // The words the model reads about each operation, next to the behaviour they describe. They
     // name the mount's real files, which is what makes the Home Assistant surface usable.
     public override string DescribeRead =>

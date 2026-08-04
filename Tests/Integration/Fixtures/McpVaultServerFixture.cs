@@ -3,7 +3,7 @@ using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Utils;
-using McpServerVault.McpResources;
+
 using McpServerVault.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -43,6 +43,7 @@ public class McpVaultServerFixture : IAsyncLifetime
             .AddTransient<global::Domain.Contracts.IFileSystemClient, LocalFileSystemClient>()
             .AddSingleton(sp => new TextDiskFileSystem(
                 "vault",
+                "Personal Obsidian vault.",
                 sp.GetRequiredService<global::Domain.Contracts.IFileSystemClient>(),
                 new LibraryPathConfig(settings.VaultPath),
                 settings.AllowedExtensions))
@@ -60,7 +61,7 @@ public class McpVaultServerFixture : IAsyncLifetime
                 }
             }))
             .AddFileSystemTools<TextDiskFileSystem>()
-            .WithResources<FileSystemResource>();
+            .AddFileSystemResource<TextDiskFileSystem>();
 
         var app = builder.Build();
         app.MapMcp("/mcp");

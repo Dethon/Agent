@@ -70,6 +70,7 @@ public class MultiFileSystemFixture : IAsyncLifetime
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
             .AddSingleton(sp => new TextDiskFileSystem(
                 "vault",
+                "Personal Obsidian vault.",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.VaultPath),
                 settings.AllowedExtensions))

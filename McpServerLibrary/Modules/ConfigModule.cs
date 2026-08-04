@@ -6,7 +6,6 @@ using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerLibrary.McpPrompts;
-using McpServerLibrary.McpResources;
 using McpServerLibrary.McpTools;
 using McpServerLibrary.Services;
 using McpServerLibrary.Settings;
@@ -45,7 +44,7 @@ public static class ConfigModule
             .AddChannelServer(DeliveryPolicy.GateOnLive, noOutboundSurface: true)
             .AddFileSystemTools<MediaLibraryDiskFileSystem>()
             .WithPrompts<McpSystemPrompt>()
-            .WithResources<FileSystemResource>();
+            .AddFileSystemResource<MediaLibraryDiskFileSystem>();
 
         return services;
     }

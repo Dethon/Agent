@@ -5,7 +5,6 @@ using Infrastructure.Extensions;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerHomeAssistant.McpPrompts;
-using McpServerHomeAssistant.McpResources;
 using McpServerHomeAssistant.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -38,7 +37,7 @@ public static class ConfigModule
                 .AddSingleton(sp => new HomeAssistantSetupSummary(sp.GetRequiredService<HaCatalogProvider>()))
                 .AddToolServer(settings, ToolResponse.Create)
                 .AddFileSystemTools<HaFileSystem>()
-                .WithResources<FileSystemResource>()
+                .AddFileSystemResource<HaFileSystem>()
                 .WithPrompts<McpSystemPrompt>();
 
             return services;

@@ -23,10 +23,11 @@ public class DiskFileSystemTests : IDisposable
     }
 
     private DiskFileSystem PlainRoot() =>
-        new("media", new LocalFileSystemClient(), new LibraryPathConfig(_root));
+        new("media", "A plain disk root.", new LocalFileSystemClient(), new LibraryPathConfig(_root));
 
     private TextDiskFileSystem TextRoot() =>
-        new("vault", new LocalFileSystemClient(), new LibraryPathConfig(_root), [".md", ".txt"]);
+        new("vault", "A text disk root.", new LocalFileSystemClient(), new LibraryPathConfig(_root),
+            [".md", ".txt"]);
 
     [Fact]
     public void BothShapes_AreBackends()
