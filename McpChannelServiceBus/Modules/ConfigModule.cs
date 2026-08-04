@@ -13,7 +13,6 @@ public static class ConfigModule
         var serviceBusClient = new ServiceBusClient(settings.ServiceBusConnectionString);
 
         services
-            .AddSingleton(settings)
             .AddSingleton(serviceBusClient)
             .AddSingleton(serviceBusClient.CreateProcessor(settings.PromptQueueName))
             .AddSingleton(serviceBusClient.CreateSender(settings.ResponseQueueName))
@@ -22,8 +21,7 @@ public static class ConfigModule
             .AddHostedService<ServiceBusProcessorService>();
 
         services
-            .AddMcpServer()
-            .WithHttpTransport()
+            .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             // Gate-on-live, not broadcast: the processor abandons the broker message when nobody

@@ -11,7 +11,6 @@ using McpServerLibrary.McpTools;
 using McpServerLibrary.Services;
 using McpServerLibrary.Settings;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace McpServerLibrary.Modules;
@@ -22,7 +21,6 @@ public static class ConfigModule
     {
         services
             .AddMemoryCache()
-            .AddSingleton(settings)
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.BaseLibraryPath))
             .AddSingleton<IConnectionMultiplexer>(_ => RedisConnection.ConnectResiliently(settings.RedisConnectionString))
@@ -37,8 +35,7 @@ public static class ConfigModule
                 new LibraryPathConfig(settings.BaseLibraryPath),
                 sp.GetRequiredService<DownloadsOverlay>()))
             .AddHostedService<DownloadCompletionWatcher>()
-            .AddMcpServer()
-            .WithHttpTransport()
+            .AddToolServer(settings, ToolResponse.Create)
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
             // Channel-protocol tools (invoked by the agent's channel connection, hidden from the LLM)
@@ -47,7 +44,7 @@ public static class ConfigModule
             .WithTools<RegisterAgentsTool>()
             // Gate-on-live: the completion watcher drops a routing entry only on a confirmed
             // delivery, so a disconnected-but-still-buffering subscriber must not read as delivered.
-            .AddChannelServer(DeliveryPolicy.GateOnLive, errorResult: ToolResponse.Create)
+            .AddChannelServer(DeliveryPolicy.GateOnLive)
             .AddFileSystemTools<MediaLibraryDiskFileSystem>()
             .WithPrompts<McpSystemPrompt>()
             .WithResources<FileSystemResource>();

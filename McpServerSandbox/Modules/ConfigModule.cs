@@ -4,11 +4,11 @@ using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Bash;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using McpServerSandbox.McpPrompts;
 using McpServerSandbox.McpResources;
 using McpServerSandbox.Settings;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace McpServerSandbox.Modules;
 
@@ -17,7 +17,6 @@ public static class ConfigModule
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
         services
-            .AddSingleton(settings)
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.ContainerRoot))
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
             .AddSingleton(new BashRunnerOptions
@@ -35,21 +34,7 @@ public static class ConfigModule
                 new LibraryPathConfig(settings.ContainerRoot),
                 settings.AllowedExtensions,
                 sp.GetRequiredService<ICommandRunner>()))
-            .AddMcpServer()
-            .WithHttpTransport()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return ToolResponse.Create(ex);
-                }
-            }))
+            .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<SandboxFileSystem>()
             .WithResources<FileSystemResource>()
             .WithPrompts<McpSystemPrompt>();

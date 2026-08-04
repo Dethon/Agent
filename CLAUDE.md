@@ -44,13 +44,41 @@ A new generic tunable (threshold, window, feature flag) belongs in `appsettings.
 
 Compose files, the launch command, secrets mounts, and WebChat/Dashboard access live in the `launch-stack` skill (`.claude/skills/launch-stack/SKILL.md`). Home Assistant setup lives in `.claude/rules/home-assistant.md`.
 
+## MCP Server Hosting
+
+`Mcp.Hosting` holds what being an MCP server means, so no server hand-writes it. The project
+references Domain, the MCP server package and the configuration binder alone, never Infrastructure —
+two channel servers depend on Domain only and must stay that way.
+
+- **`IConfigurationBuilder.BindSettings<TSettings>()` is the only way a server reads configuration.**
+  Environment variables first, user secrets last, so **user secrets win** — deliberately, and the
+  reverse of the framework default. Read `docs/adr/0005-user-secrets-outrank-environment-variables.md`
+  before touching the order; reversing it silently switches off CapSolver, web push and the Music
+  Assistant action on every containerised deployment. The secrets id comes off the entry assembly, so
+  the five servers with no `UserSecretsId` simply have no such source. Nested sections bind through
+  the plain call. A `required` member that bound to null fails startup naming it; **null only, never
+  empty** — three shipped servers carry required members that ship as `""` and are filled from secrets.
+- **`IServiceCollection.AddMcpHost(settings)`** is the three things every server has: the settings
+  singleton, the server and the HTTP transport. All thirteen use it.
+- **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for the
+  nine servers that offer the agent things to call. Being a tool server and being a channel server
+  are independent, so a dual-role server calls `AddToolServer` and then `AddChannelServer`.
+- **The error filter is one shared registration, installed at most once.** A cancelled call
+  propagates as the abort it is; anything else is logged and becomes the caller's error result. Two
+  filters nested around each other would let the outer one convert the very cancellation the inner
+  rethrows, so a second ask is a no-op and the first ask's error shape wins.
+- **`Tests/Integration/McpServers/McpServerRegistrations.cs` is the one server table.** Thirteen
+  rows, each driving the real `ConfigModule`; `McpServerContractTests` asserts every server resolves
+  its settings as a singleton, registered the host and has exactly one call-tool filter. A new server
+  is one new row.
+
 ## Channel Architecture
 
 Transports (WebChat, Telegram, ServiceBus, Voice, Scheduling) are independent MCP channel servers; the agent connects as an MCP client via `ChannelEndpoints`. Wire serialization is centralized in `ChannelProtocol` (shared `JsonSerializerOptions` + typed records — `ChannelMessageNotification`, `ChannelCancelNotification`, `RegisterAgentsParams`, `RequestApprovalParams`). Inbound: `channel/message`, `channel/cancel`. Outbound tools: `send_reply`, `request_approval`, `create_conversation`, `register_agents`. A new transport needs only a new channel server — zero agent changes.
 
-- **Being a channel server is one call.** `Mcp.Hosting`'s `IMcpServerBuilder.AddChannelServer(policy, subscriberId?, errorResult?)` wires the `ChannelInbox`, the shared `channel_receive` long-poll tool, the call-tool filter (cancellation propagates; anything else becomes an error result) and the sealed `ChannelNotificationEmitter`. A new transport writes only its reply-sending logic. The project references Domain and the MCP server package alone, never Infrastructure — two channel servers depend on Domain only and must stay that way.
+- **Being a channel server is one call.** `Mcp.Hosting`'s `IMcpServerBuilder.AddChannelServer(policy, subscriberId?, errorResult?)` wires the `ChannelInbox`, the shared `channel_receive` long-poll tool, the call-tool error filter and the sealed `ChannelNotificationEmitter`. It sits beside `AddToolServer`, and the difference between the two kinds of server is exactly what those two calls differ by. A new transport writes only its reply-sending logic.
 - **`DeliveryPolicy` is a required argument.** `Broadcast` always enqueues, so an idle-but-unpruned subscriber still receives (SignalR, Voice). `BufferAlways` targets a known subscriber id and creates its queue on demand, for a transport that cannot tell a sender to retry (Telegram). `GateOnLive` enqueues only when someone is actually polling, for callers that settle a durable record on a confirmed delivery — buffering on a failed emit would keep the record *and* leave a duplicate (ServiceBus, Scheduling, Library).
-- **Liveness is the return value of emitting**, never a separate property: `EmitAsync`/`EmitCancelAsync` answer "was anyone listening?", with the freshness window internal to `ChannelInbox`. The same stale-subscriber defect was fixed three times across six hand-copied emitters before this. `Tests/Integration/Channels/ChannelReceiveContractTests.cs` boots every real `ConfigModule` and asserts its declared policy.
+- **Liveness is the return value of emitting**, never a separate property: `EmitAsync`/`EmitCancelAsync` answer "was anyone listening?", with the freshness window internal to `ChannelInbox`. The same stale-subscriber defect was fixed three times across six hand-copied emitters before this. `ChannelReceiveContractTests` drives the channel-capable rows of that table and asserts each declared policy.
 
 - `create_conversation` doubles as the turn-start announce when given `existingConversationId`: ChatMonitor calls it channel-agnostically for agent-initiated messages (`Origin` set) into existing conversations, and each channel applies its own semantics — SignalR opens a live stream + `OnStreamChanged(Started)` before reply chunks arrive; voice no-ops on a live satellite session, else binds the turn as an announcement.
 - On connect and every reconnect the agent registers its `AgentCatalogEntry` list via `register_agents` (`ChannelConnectionHost`); channels use this single source instead of duplicated `Agents` config, and SignalR broadcasts `OnAgentsUpdated` so WebChat refreshes live.

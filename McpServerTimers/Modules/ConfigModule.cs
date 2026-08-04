@@ -3,12 +3,12 @@ using Domain.Tools.Timers.Vfs;
 using Infrastructure.Clients.Voice;
 using Infrastructure.Timers;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using McpServerTimers.McpPrompts;
 using McpServerTimers.McpResources;
 using McpServerTimers.Services;
 using McpServerTimers.Settings;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace McpServerTimers.Modules;
 
@@ -26,7 +26,6 @@ public static class ConfigModule
         });
 
         services
-            .AddSingleton(settings)
             .AddSingleton(TimeProvider.System)
             .AddSingleton<ITimerStore, InMemoryTimerStore>()
             // The three hub-local capabilities reached over HTTP: fire (announce), stop (dismiss),
@@ -43,24 +42,10 @@ public static class ConfigModule
             .AddHostedService<TimerFireService>();
 
         services
-            .AddMcpServer()
-            .WithHttpTransport()
+            .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<TimerFileSystem>()
             .WithResources<FileSystemResource>()
-            .WithPrompts<TimersSystemPrompt>()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return ToolResponse.Create(ex);
-                }
-            }));
+            .WithPrompts<TimersSystemPrompt>();
 
         return services;
     }

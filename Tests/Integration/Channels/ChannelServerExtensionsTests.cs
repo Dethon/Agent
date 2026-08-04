@@ -1,18 +1,15 @@
-using System.ComponentModel;
-using System.Net;
 using System.Text.Json;
 using Domain.Channels;
 using Domain.DTOs.Channel;
 using Mcp.Hosting;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
-using Tests.Integration.Fixtures;
+using Tests.Integration.McpServers;
 
 namespace Tests.Integration.Channels;
 
@@ -73,8 +70,8 @@ public class ChannelServerExtensionsTests
         var cancelled = await server.Client.CallToolAsync("cancels");
         var failed = await server.Client.CallToolAsync("throws");
 
-        Text(cancelled).ShouldNotContain(Marker);
-        Text(failed).ShouldContain(Marker);
+        InMemoryMcpServer.Text(cancelled).ShouldNotContain(Marker);
+        InMemoryMcpServer.Text(failed).ShouldContain(Marker);
     }
 
     private const string Marker = "mapped-by-the-channel-filter";
@@ -84,9 +81,6 @@ public class ChannelServerExtensionsTests
         IsError = true,
         Content = [new TextContentBlock { Text = $"{Marker}: {ex.Message}" }]
     };
-
-    private static string Text(CallToolResult result) =>
-        string.Join("|", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
 
     [Fact]
     public async Task CallToolFilter_AnyOtherException_BecomesAnErrorResult()
@@ -149,49 +143,10 @@ public class ChannelServerExtensionsTests
         return JsonSerializer.Deserialize<ChannelReceiveResult>(text, ChannelProtocol.SerializerOptions)!;
     }
 
-    private static async Task<RunningServer> StartAsync(Func<Exception, CallToolResult>? errorResult = null)
-    {
-        var port = TestPort.GetAvailable();
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services
+    private static Task<RunningServer> StartAsync(Func<Exception, CallToolResult>? errorResult = null) =>
+        InMemoryMcpServer.StartAsync(services => services
             .AddMcpServer()
             .WithHttpTransport()
             .WithTools<FailingTools>()
-            .AddChannelServer(DeliveryPolicy.Broadcast, errorResult: errorResult);
-
-        var app = builder.Build();
-        app.MapMcp("/mcp");
-        await app.StartAsync();
-
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri($"http://localhost:{port}/mcp")
-            }));
-
-        return new RunningServer(app, client);
-    }
-
-    private sealed record RunningServer(WebApplication App, McpClient Client) : IAsyncDisposable
-    {
-        public async ValueTask DisposeAsync()
-        {
-            await Client.DisposeAsync();
-            await App.StopAsync();
-            await App.DisposeAsync();
-        }
-    }
-}
-
-[McpServerToolType]
-public sealed class FailingTools
-{
-    [McpServerTool(Name = "throws")]
-    [Description("Test tool that always throws.")]
-    public static string Throws() => throw new InvalidOperationException("boom");
-
-    [McpServerTool(Name = "cancels")]
-    [Description("Test tool that always cancels, like an aborted long poll.")]
-    public static string Cancels() => throw new OperationCanceledException();
+            .AddChannelServer(DeliveryPolicy.Broadcast, errorResult: errorResult));
 }

@@ -3,11 +3,11 @@ using Domain.Prompts;
 using Domain.Tools.HomeAssistant.Vfs;
 using Infrastructure.Extensions;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using McpServerHomeAssistant.McpPrompts;
 using McpServerHomeAssistant.McpResources;
 using McpServerHomeAssistant.Settings;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace McpServerHomeAssistant.Modules;
 
@@ -27,7 +27,6 @@ public static class ConfigModule
             }
 
             services
-                .AddSingleton(settings)
                 .AddHomeAssistantClient(settings.HomeAssistant.BaseUrl, settings.HomeAssistant.Token)
                 .AddSingleton(sp => new HaCatalogProvider(
                     sp.GetRequiredService<IHomeAssistantClient>,
@@ -37,21 +36,7 @@ public static class ConfigModule
                     sp.GetRequiredService<IHomeAssistantClient>,
                     musicClientFactory: musicConfigured ? sp.GetRequiredService<IMusicAssistantClient> : null))
                 .AddSingleton(sp => new HomeAssistantSetupSummary(sp.GetRequiredService<HaCatalogProvider>()))
-                .AddMcpServer()
-                .WithHttpTransport()
-                .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-                {
-                    try
-                    {
-                        return await next(context, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                        logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                        return ToolResponse.Create(ex);
-                    }
-                }))
+                .AddToolServer(settings, ToolResponse.Create)
                 .AddFileSystemTools<HaFileSystem>()
                 .WithResources<FileSystemResource>()
                 .WithPrompts<McpSystemPrompt>();

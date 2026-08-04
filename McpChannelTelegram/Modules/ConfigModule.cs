@@ -11,15 +11,13 @@ public static class ConfigModule
     public static IServiceCollection ConfigureChannel(this IServiceCollection services, ChannelSettings settings)
     {
         services
-            .AddSingleton(settings)
             .AddSingleton(new BotRegistry(settings.Bots))
             .AddSingleton<MessageAccumulator>()
             .AddSingleton<ApprovalCallbackRouter>()
             .AddHostedService<TelegramBotService>();
 
         services
-            .AddMcpServer()
-            .WithHttpTransport()
+            .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             // Buffer-always: Telegram has no channel-level way to tell a sender "try again later",

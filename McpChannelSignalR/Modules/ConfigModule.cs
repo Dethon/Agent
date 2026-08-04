@@ -19,7 +19,6 @@ public static class ConfigModule
 
         services
             .AddSingleton<IConnectionMultiplexer>(redisMultiplexer)
-            .AddSingleton(settings)
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
@@ -58,8 +57,7 @@ public static class ConfigModule
         services.AddSignalR();
 
         services
-            .AddMcpServer()
-            .WithHttpTransport()
+            .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<CreateConversationTool>()

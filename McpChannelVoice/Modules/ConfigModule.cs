@@ -20,7 +20,6 @@ public static class ConfigModule
         var redisConnection = settings.RedisConnectionString;
 
         services
-            .AddSingleton(settings)
             .AddSingleton(new SatelliteRegistry(settings.Satellites))
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection))
             .AddMetricsPublishing("mcp-channel-voice")
@@ -148,8 +147,7 @@ public static class ConfigModule
         services.AddSingleton<InsistentAnnouncementController>();
 
         services
-            .AddMcpServer()
-            .WithHttpTransport()
+            .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
