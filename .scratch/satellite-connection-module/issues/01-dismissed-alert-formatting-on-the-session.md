@@ -13,7 +13,7 @@ reaching across the seam for it.
 
 **Blocked by:** None — can start immediately. Runs in parallel with ticket 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] The satellite session exposes one operation that takes the dismissed alerts and the
       current time, composes the description and records it, replacing the host's private

@@ -16,7 +16,7 @@ coverage and would leave the voice half of the metrics-publishing work still blo
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Ten test methods move to the connection's unit suite with assertions verbatim: the
       dispatch stamp taken before the dispatch; a conclusive speaker emitted as the sender;

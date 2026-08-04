@@ -23,7 +23,7 @@ throughout and is the evidence that the behaviour held.
 
 **Blocked by:** None — can start immediately. Runs in parallel with ticket 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] The **wake announcement** type and its defensive parser move to the Wyoming protocol
       area, alongside the other wire types, with the parser exposed as a static read

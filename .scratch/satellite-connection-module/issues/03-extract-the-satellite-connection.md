@@ -30,7 +30,7 @@ moment it lands. Ticket 04 ports the rest.
 
 **Blocked by:** 01, 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] A satellite connection module owns registration with the session registry and the
       wake arbiter, launching the playback and conversation tasks, routing all five frame
