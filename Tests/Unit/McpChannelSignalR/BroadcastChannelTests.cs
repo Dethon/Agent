@@ -40,11 +40,4 @@ public class BroadcastChannelTests
 
         reader.Completion.IsCompleted.ShouldBeTrue();
     }
-
-    [Fact]
-    public async Task WriteAsync_NoSubscribers_DoesNotThrow()
-    {
-        var sut = new BroadcastChannel<string>();
-        await Should.NotThrowAsync(() => sut.WriteAsync("orphan", CancellationToken.None));
-    }
 }

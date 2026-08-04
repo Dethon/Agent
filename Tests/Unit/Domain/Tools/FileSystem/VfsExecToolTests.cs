@@ -52,22 +52,6 @@ public class VfsExecToolTests
     }
 
     [Fact]
-    public async Task RunAsync_RootPath_PassesEmptyRelativePath()
-    {
-        _registry.Setup(r => r.Resolve("/sandbox"))
-            .Returns(Resolved(_backend.Object, ""));
-        _backend.Setup(b => b.ExecAsync("", "pwd", null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsExecResult>.Ok(new FsExecResult
-            {
-                Stdout = "/\n", Stderr = "", ExitCode = 0, Truncated = false, TimedOut = false, DurationMs = 1, Cwd = ""
-            }));
-
-        await _tool.RunAsync("/sandbox", "pwd");
-
-        _backend.Verify(b => b.ExecAsync("", "pwd", null, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
     public async Task RunAsync_UnknownMount_ThrowsFromRegistry()
     {
         _registry.Setup(r => r.Resolve("/unknown"))

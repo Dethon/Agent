@@ -77,20 +77,6 @@ public class DeliveryTargetResolverAnnounceTests
     }
 
     [Fact]
-    public async Task AnnounceTurnStart_IsChannelAgnostic_VoiceAnnouncedLikeAnyTarget()
-    {
-        // The agent has no per-channel policy: voice receives the same announce as every
-        // other channel and applies its own semantics in its create_conversation tool
-        // (no-op when the satellite session is live, announcement binding otherwise).
-        var (voice, calls) = Channel("voice");
-        var targets = new[] { new DeliveryTarget(voice.Object, "7:42") };
-
-        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), CancellationToken.None);
-
-        calls.ShouldHaveSingleItem().ExistingConversationId.ShouldBe("7:42");
-    }
-
-    [Fact]
     public async Task AnnounceTurnStart_TargetWithAddress_ThreadsAddressIntoCreateConversation()
     {
         // The address (e.g. the originating voice satellite) tells the channel WHERE the

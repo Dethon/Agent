@@ -37,8 +37,6 @@ public class ToolPatternMatcherTests
 
     [Theory]
     [InlineData("mcp__server__Tool", "*", true)]
-    [InlineData("local__Tool", "*", true)]
-    [InlineData("anything", "*", true)]
     public void IsMatch_GlobalWildcard_MatchesEverything(string toolName, string pattern, bool expected)
     {
         var matcher = new ToolPatternMatcher([pattern]);

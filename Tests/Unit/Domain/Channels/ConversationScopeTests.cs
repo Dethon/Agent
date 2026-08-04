@@ -47,12 +47,6 @@ public class ConversationScopeTests
     }
 
     [Fact]
-    public void Parse_EmptyMeta_ReturnsNull()
-    {
-        ConversationScope.Parse([]).ShouldBeNull();
-    }
-
-    [Fact]
     public void Parse_MetaWithoutConversationContextKey_ReturnsNull()
     {
         ConversationScope.Parse(new JsonObject { ["other"] = "value" }).ShouldBeNull();

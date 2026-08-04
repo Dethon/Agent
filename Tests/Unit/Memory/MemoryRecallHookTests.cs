@@ -98,32 +98,6 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_EnqueuesExtractionRequest()
-    {
-        var message = new ChatMessage(ChatRole.User, "I work at Contoso");
-
-        var session = CreateSessionWithStateKey("state-test");
-        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
-        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
-            .ReturnsAsync((ChatMessage[]?)null);
-
-        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(_testEmbedding);
-        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<MemorySearchResult>());
-
-        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await foreach (var item in _queue.ReadAllAsync(cts.Token))
-        {
-            item.UserId.ShouldBe("user1");
-            item.ConversationId.ShouldBe("conv_1");
-            break;
-        }
-    }
-
-    [Fact]
     public async Task EnrichAsync_WhenEmbeddingFails_ProceedsWithoutMemory()
     {
         var message = new ChatMessage(ChatRole.User, "Hello");

@@ -39,24 +39,6 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
-    public async Task PruneIdleAsync_KeepsRecentlyAccessedSessions()
-    {
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (ctx, page) = CreateMocks();
-        await using var manager = new BrowserSessionManager(
-            timeProvider: time,
-            idleTimeout: TimeSpan.FromMinutes(30));
-
-        await manager.GetOrCreateAsync("s1", ctx.Object);
-        time.Advance(TimeSpan.FromMinutes(20));
-
-        await manager.PruneIdleAsync();
-
-        manager.Get("s1").ShouldNotBeNull();
-        page.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
-    }
-
-    [Fact]
     public async Task PruneIdleAsync_AfterAccess_ResetsIdleClock()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);

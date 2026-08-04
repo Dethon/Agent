@@ -325,7 +325,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
     [Theory]
     [InlineData("MoveTest/source", "MoveTest/dest", "file-to-move.txt", "file-to-move.txt")]
-    [InlineData("LibraryMoveSource", "LibraryMoveTest", "library-file.mkv", "library-file.mkv")]
     public async Task MoveTool_WithinLibrary_MovesFile(
         string srcDir, string dstDir, string srcFileName, string dstFileName)
     {

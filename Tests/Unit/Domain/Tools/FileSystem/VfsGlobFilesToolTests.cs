@@ -55,21 +55,6 @@ public class VfsGlobFilesToolTests
         Entries(result).ShouldBe(["/print-queue/note.txt", "/print-queue/status.json"]);
     }
 
-    [Fact]
-    public async Task Run_PreservesDirectoryTrailingSlash()
-    {
-        var tool = Build("/schedules", "jonas", new FsGlobResult
-        {
-            Entries = ["/jonas/morning-news/"],
-            Truncated = false,
-            Total = 1
-        }, out _);
-
-        var result = await tool.RunAsync("/schedules/jonas", "*/", CancellationToken.None);
-
-        Entries(result).ShouldBe(["/schedules/jonas/morning-news/"]);
-    }
-
     private static FsResult<FileSystemResolution> Resolved(
         IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
         new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));

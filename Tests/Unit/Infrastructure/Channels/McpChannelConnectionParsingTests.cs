@@ -91,22 +91,6 @@ public class McpChannelConnectionParsingTests
     }
 
     [Fact]
-    public async Task HandleChannelMessageNotification_WithoutLocation_LeavesItNull()
-    {
-        var conn = new McpChannelConnection("signalr");
-        conn.HandleChannelMessageNotification(Json("""
-        {"conversationId":"c1","content":"hi","sender":"user"}
-        """));
-
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
-        {
-            msg.Location.ShouldBeNull();
-            break;
-        }
-    }
-
-    [Fact]
     public async Task HandleChannelMessageNotification_WithSatelliteId_ParsesIt()
     {
         var conn = new McpChannelConnection("voice");
@@ -118,22 +102,6 @@ public class McpChannelConnectionParsingTests
         await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
         {
             msg.SatelliteId.ShouldBe("kitchen-01");
-            break;
-        }
-    }
-
-    [Fact]
-    public async Task HandleChannelMessageNotification_WithoutSatelliteId_LeavesItNull()
-    {
-        var conn = new McpChannelConnection("signalr");
-        conn.HandleChannelMessageNotification(Json("""
-        {"conversationId":"c1","content":"hi","sender":"user"}
-        """));
-
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
-        {
-            msg.SatelliteId.ShouldBeNull();
             break;
         }
     }

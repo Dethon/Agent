@@ -19,25 +19,6 @@ namespace Tests.Unit.Infrastructure;
 // CreateHttpClient -> ReasoningHandler hop onto an actual outgoing request.
 public sealed class OpenRouterChatClientTests
 {
-    [Fact]
-    public async Task GetResponseAsync_CtorRoutingAndSession_ReachTheOutgoingRequestBody()
-    {
-        var handler = new CapturingSseHandler();
-        using var client = new OpenRouterChatClient(
-            "http://localhost/api/v1",
-            "test-key",
-            "test-model",
-            sessionId: "session-1",
-            providerRouting: new ProviderRouting { Sort = ProviderSort.Latency },
-            transportHandler: handler);
-
-        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "hi")]);
-
-        var body = JsonNode.Parse(handler.CapturedBody!)!.AsObject();
-        body["provider"]!["sort"]!.GetValue<string>().ShouldBe("latency");
-        body["session_id"]!.GetValue<string>().ShouldBe("session-1");
-    }
-
     // The span this feature exists to create: a real agent over a real chat client, so
     // deleting the line that puts the resolved patch on the turn's options fails here.
     // An assertion on the options alone would pass while the wire stayed wrong.

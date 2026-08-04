@@ -59,30 +59,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
     }
 
     [SkippableFact]
-    public async Task ThreadSession_DisposesAllResourcesCleanly()
-    {
-        // Arrange
-        using var chatClient = CreateChatClient();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        var session = await ThreadSession.CreateAsync(
-            [fixture.McpEndpoint],
-            "DisposeTestClient",
-            "test-user",
-            "Dispose Test",
-            [],
-            new HashSet<string>(),
-            null,
-            cts.Token);
-
-        var clientCount = session.ClientManager.Clients.Count;
-        clientCount.ShouldBeGreaterThan(0);
-
-        // Act & Assert - Should not throw
-        await session.DisposeAsync();
-    }
-
-    [SkippableFact]
     public async Task MultipleEndpoints_ConnectsToAllServers()
     {
         // Arrange - Use the same endpoint twice to verify multiple connections

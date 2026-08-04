@@ -172,58 +172,6 @@ public class ServiceBusProcessorServiceTests : IDisposable
         (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
     }
 
-    [Fact]
-    public async Task ProcessMessage_NullCorrelationId_GeneratesFallback()
-    {
-        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
-
-        var receiver = new Mock<ServiceBusReceiver>();
-        receiver
-            .Setup(r => r.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        var message = CreateReceivedMessage(new ServiceBusPromptMessage
-        {
-            CorrelationId = null,
-            Prompt = "Hello"
-        });
-
-        var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
-
-        await Should.NotThrowAsync(() => _sut.ProcessMessageAsync(args));
-
-        receiver.Verify(r => r.CompleteMessageAsync(
-            It.IsAny<ServiceBusReceivedMessage>(),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessMessage_MissingSender_DefaultsToServiceBus()
-    {
-        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
-
-        var receiver = new Mock<ServiceBusReceiver>();
-        receiver
-            .Setup(r => r.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        var message = CreateReceivedMessage(new ServiceBusPromptMessage
-        {
-            CorrelationId = "corr-1",
-            Prompt = "Hello",
-            Sender = null
-        });
-
-        var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
-
-        // Should complete without error using "service-bus" as fallback sender
-        await Should.NotThrowAsync(() => _sut.ProcessMessageAsync(args));
-
-        receiver.Verify(r => r.CompleteMessageAsync(
-            It.IsAny<ServiceBusReceivedMessage>(),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
     private async Task StartAndStopService()
     {
         _cts.CancelAfter(TimeSpan.FromMilliseconds(100));

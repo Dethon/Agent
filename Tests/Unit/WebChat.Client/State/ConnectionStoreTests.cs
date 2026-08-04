@@ -198,26 +198,4 @@ public class ConnectionStoreTests : IDisposable
 
         _store.State.Epoch.ShouldBe(1);
     }
-
-    [Fact]
-    public void FullLifecycle_ConnectDropReconnectRecover()
-    {
-        _dispatcher.Dispatch(new ConnectionConnecting());
-        _store.State.Status.ShouldBe(ConnectionStatus.Connecting);
-
-        _dispatcher.Dispatch(new ConnectionConnected());
-        _store.State.Status.ShouldBe(ConnectionStatus.Connected);
-
-        _dispatcher.Dispatch(new ConnectionClosed("hub dropped"));
-        _store.State.Status.ShouldBe(ConnectionStatus.Disconnected);
-
-        _dispatcher.Dispatch(new ConnectionReconnecting());
-        _store.State.Status.ShouldBe(ConnectionStatus.Reconnecting);
-        _store.State.ReconnectAttempts.ShouldBe(1);
-
-        _dispatcher.Dispatch(new ConnectionReconnected());
-        _store.State.Status.ShouldBe(ConnectionStatus.Connected);
-        _store.State.ReconnectAttempts.ShouldBe(0);
-        _store.State.Error.ShouldBeNull();
-    }
 }

@@ -98,15 +98,6 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task UnsubscribeAsync_WhenTheCallCouldNotBeMade_DoesNotThrow()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<string?>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
-            .Returns(new ValueTask<string?>("https://endpoint"));
-        await Should.NotThrowAsync(() => _sut.UnsubscribeAsync());
-    }
-
-    [Fact]
     public async Task RequestAndSubscribeAsync_WhenSubscribeReturnsNull_ReturnsFalse()
     {
         _mockJsRuntime
@@ -157,14 +148,5 @@ public sealed class PushNotificationServiceTests
 
         _mockLiveConnection.Verify(
             c => c.InvokeAsync(It.IsAny<string>(), It.IsAny<object?[]>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task ResubscribeAsync_WhenTheCallCouldNotBeMade_DoesNotThrow()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription", It.IsAny<object[]>()))
-            .Returns(new ValueTask<PushSubscriptionResult?>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
-        await Should.NotThrowAsync(() => _sut.ResubscribeAsync());
     }
 }

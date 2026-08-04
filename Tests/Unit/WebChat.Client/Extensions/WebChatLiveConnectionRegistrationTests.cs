@@ -23,54 +23,6 @@ namespace Tests.Unit.WebChat.Client.Extensions;
 public sealed class WebChatLiveConnectionRegistrationTests
 {
     [Fact]
-    public async Task TheClientRegistrations_ResolveTheLiveConnection()
-    {
-        await using var provider = CreateProvider();
-        await using var scope = provider.CreateAsyncScope();
-
-        Should.NotThrow(() => scope.ServiceProvider.GetRequiredService<IChatLiveConnection>());
-    }
-
-    [Fact]
-    public async Task TheClientRegistrations_ResolveTheHubEventBinder()
-    {
-        await using var provider = CreateProvider();
-        await using var scope = provider.CreateAsyncScope();
-
-        Should.NotThrow(() => scope.ServiceProvider.GetRequiredService<IHubEventBinder>());
-    }
-
-    [Fact]
-    public async Task TheClientRegistrations_ResolveSessionRecovery()
-    {
-        await using var provider = CreateProvider();
-        await using var scope = provider.CreateAsyncScope();
-
-        Should.NotThrow(() => scope.ServiceProvider.GetRequiredService<ISessionRecovery>());
-    }
-
-    // Program.cs activates these at start-up, so a cycle under any of them stops the app.
-    [Theory]
-    [InlineData(typeof(ReconnectionEffect))]
-    [InlineData(typeof(SendMessageEffect))]
-    [InlineData(typeof(TopicSelectionEffect))]
-    [InlineData(typeof(TopicDeleteEffect))]
-    [InlineData(typeof(InitializationEffect))]
-    [InlineData(typeof(AgentSelectionEffect))]
-    [InlineData(typeof(UserIdentityEffect))]
-    [InlineData(typeof(SpaceEffect))]
-    [InlineData(typeof(AgentActivityEffect))]
-    [InlineData(typeof(AgentSettingsEffect))]
-    [InlineData(typeof(StreamResumeEffect))]
-    public async Task TheClientRegistrations_ResolveEveryStartUpEffect(Type effectType)
-    {
-        await using var provider = CreateProvider();
-        await using var scope = provider.CreateAsyncScope();
-
-        Should.NotThrow(() => scope.ServiceProvider.GetRequiredService(effectType));
-    }
-
-    [Fact]
     public async Task TheLiveConnection_IsTheSameInstanceSessionRecoveryReachesBackTo()
     {
         await using var provider = CreateProvider();

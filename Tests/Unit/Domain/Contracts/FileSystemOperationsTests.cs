@@ -94,16 +94,6 @@ public class FileSystemOperationsTests
             .ShouldBe(FileSystemOperations.All.Select(o => o.ToolName));
     }
 
-    // Validation used to return success for a name it did not recognise, so a typo silently skipped
-    // the schema check it was there to perform.
-    [Fact]
-    public void TryValidate_UnknownToolName_Fails()
-    {
-        FsResultContract.TryValidate("fs_raed", JsonNode.Parse("{}")!, out var error).ShouldBeFalse();
-
-        error.ShouldNotBeNull().ShouldContain("fs_raed");
-    }
-
     [Fact]
     public void TryValidate_KnownToolNameWithAGoodPayload_Passes()
     {

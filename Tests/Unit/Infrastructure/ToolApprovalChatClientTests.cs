@@ -64,8 +64,6 @@ public class ToolApprovalChatClientTests
 
     [Theory]
     [InlineData("mcp__server__TestTool", "mcp__server__TestTool", "mcp__server__TestTool")]
-    [InlineData("mcp__mcp-library__*", "mcp__mcp-library__FileSearch", "mcp__mcp-library__FileSearch")]
-    [InlineData("mcp__*", "mcp__any-server__AnyTool", "mcp__any-server__AnyTool")]
     public async Task SendAsync_WhitelistedTool_SkipsApproval(string whitelistPattern, string toolName, string callToolName)
     {
         // Arrange

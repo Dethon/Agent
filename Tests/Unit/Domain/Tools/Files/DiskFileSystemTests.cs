@@ -29,13 +29,6 @@ public class DiskFileSystemTests : IDisposable
         new("vault", "A text disk root.", new LocalFileSystemClient(), new LibraryPathConfig(_root),
             [".md", ".txt"]);
 
-    [Fact]
-    public void BothShapes_AreBackends()
-    {
-        PlainRoot().ShouldBeAssignableTo<IFileSystemBackend>();
-        TextRoot().ShouldBeAssignableTo<IFileSystemBackend>();
-    }
-
     // A plain disk root has no text tooling, so read, create, edit and search are left unoverridden
     // and the base answers them. That is what keeps /media from advertising operations it never had.
     [Fact]

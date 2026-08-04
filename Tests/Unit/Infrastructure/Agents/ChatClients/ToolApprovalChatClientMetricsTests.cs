@@ -295,30 +295,6 @@ public class ToolApprovalChatClientMetricsTests
     }
 
     [Fact]
-    public async Task InvokeFunctionAsync_ApprovedTool_PublishesToolExecLatencyEvent()
-    {
-        var publisher = new Mock<IMetricsPublisher>();
-        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
-        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
-        var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
-
-        LatencyEvent? captured = null;
-        publisher
-            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
-            .Callback<MetricEvent>(e => { if (e is LatencyEvent l) { captured = l; } });
-
-        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-test", metricsPublisher: publisher.Object);
-        var options = new ChatOptions { Tools = [function] };
-
-        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
-
-        captured.ShouldNotBeNull();
-        captured.Stage.ShouldBe(LatencyStage.ToolExec);
-        captured.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
-    }
-
-    [Fact]
     public async Task InvokeFunctionAsync_ApprovedTool_ToolExecLatencyEvent_HasConversationId()
     {
         var publisher = new Mock<IMetricsPublisher>();

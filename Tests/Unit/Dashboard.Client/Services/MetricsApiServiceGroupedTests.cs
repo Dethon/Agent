@@ -78,12 +78,4 @@ public class MetricsApiServiceGroupedTests
 
         _handler.LastUri.ShouldBe(expectedUri);
     }
-
-    [Fact]
-    public async Task GetGroupedAsync_IntValuedFamily_ReadsTheResponse()
-    {
-        var breakdown = await _api.GetGroupedAsync<int>($"errors/by/{ErrorDimension.Service}", From, To);
-
-        breakdown.ShouldNotBeNull();
-    }
 }

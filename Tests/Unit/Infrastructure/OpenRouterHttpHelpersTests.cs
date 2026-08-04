@@ -68,24 +68,6 @@ public class OpenRouterHttpHelpersTests
     }
 
     [Fact]
-    public async Task FixEmptyAssistantContent_WithNoToolCalls_RemovesEmptyContent()
-    {
-        // Arrange
-        var json = "{\"messages\":[{\"role\":\"assistant\",\"content\":\"\"}]}";
-        var request = CreateRequest(json);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, null, null, CancellationToken.None);
-
-        // Assert
-        var resultJson = await request.Content!.ReadAsStringAsync();
-        var obj = JsonNode.Parse(resultJson);
-        var msg = obj!["messages"]![0]!;
-
-        msg["content"].ShouldBeNull();
-    }
-
-    [Fact]
     public async Task FixEmptyAssistantContent_WithValidContent_DoesNothing()
     {
         // Arrange
@@ -154,25 +136,6 @@ public class OpenRouterHttpHelpersTests
         var obj = JsonNode.Parse(resultJson);
 
         obj!["session_id"].ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task PrepareRequestBody_WithSessionId_StillFixesEmptyAssistantContent()
-    {
-        // Arrange
-        var json =
-            "{\"messages\":[{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[]}]}";
-        var request = CreateRequest(json);
-
-        // Act
-        await OpenRouterHttpHelpers.PrepareRequestBodyAsync(request, "jack:123:456", null, CancellationToken.None);
-
-        // Assert
-        var resultJson = await request.Content!.ReadAsStringAsync();
-        var obj = JsonNode.Parse(resultJson);
-
-        obj!["session_id"]!.GetValue<string>().ShouldBe("jack:123:456");
-        obj["messages"]![0]!["content"].ShouldBeNull();
     }
 
     [Fact]

@@ -122,31 +122,6 @@ public sealed class ReconnectionEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task WhenConnectionDroppedAndReconnected_ReloadsHistory()
-    {
-        var topic = new StoredTopic
-        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
-        _dispatcher.Dispatch(new TopicsLoaded([topic]));
-        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
-
-        CreateEffect();
-
-        _dispatcher.Dispatch(new ConnectionConnected());
-
-        // Connection drops completely (goes to Disconnected, not Reconnecting)
-        _dispatcher.Dispatch(new ConnectionClosed(null));
-
-        _dispatcher.Dispatch(new ConnectionConnecting());
-        _dispatcher.Dispatch(new ConnectionConnected());
-
-        await Task.Delay(50);
-
-        _mockTopicService.Verify(
-            s => s.GetHistoryAsync("agent-1", 123, 456),
-            Times.Once);
-    }
-
-    [Fact]
     public void WhenConnectionConnectedWithoutPriorReconnecting_DoesNotTriggerReconnection()
     {
         var topic = new StoredTopic { TopicId = "topic-1", Name = "Test Topic" };

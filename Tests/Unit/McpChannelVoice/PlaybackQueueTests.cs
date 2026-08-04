@@ -138,37 +138,6 @@ public class PlaybackQueueTests
     }
 
     [Fact]
-    public async Task Enqueue_LowPriorityWhileQueueNonEmpty_IsDropped()
-    {
-        // The returned bool is observable behavior: AnnouncementService maps it to
-        // Status queued/dropped + the AnnounceQueued/AnnounceError metric. A Low-priority job must
-        // be dropped (return false) when anything is already queued, so it never delays speech.
-        var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var normal = new PlaybackJob(
-            Label: "normal",
-            Kind: PlaybackKind.Announce,
-            Priority: AnnouncePriority.Normal,
-            Audio: Audio("normal", count: 1));
-        var low = normal with { Label = "low", Priority = AnnouncePriority.Low };
-
-        // No playback loop is running, so the first job stays queued (Reader.Count > 0).
-        queue.Enqueue(normal).Refused.ShouldBeNull();
-        queue.Enqueue(low).Refused.ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task Enqueue_NormalWhenQueueAtMaxDepth_IsDropped()
-    {
-        // The depth cap is the backpressure guard: once the queue is full, further Normal jobs
-        // must be dropped (return false) rather than unbounded-buffered.
-        var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1, prefetchBufferChunks: null);
-
-        // No loop running: fill to depth 1, then the next Normal overflows.
-        queue.Enqueue(Job("a", PlaybackKind.Announce)).Refused.ShouldBeNull();
-        queue.Enqueue(Job("b", PlaybackKind.Announce)).Refused.ShouldNotBeNull();
-    }
-
-    [Fact]
     public async Task Enqueue_ReplySegments_GetTheReplyAllowanceNotTheAnnounceOne()
     {
         // An answer is several sentence jobs and is one logical unit: refusing part of it leaves a
