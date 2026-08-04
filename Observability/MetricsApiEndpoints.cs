@@ -192,7 +192,7 @@ public static class MetricsApiEndpoints
         api.MapGet("/latency/by/{dimension}", async (
             MetricsQueryService query,
             LatencyDimension dimension,
-            LatencyMetric metric,
+            Aggregation metric,
             DateOnly? from,
             DateOnly? to) =>
         {
@@ -203,7 +203,7 @@ public static class MetricsApiEndpoints
 
         api.MapGet("/latency/trend", async (
             MetricsQueryService query,
-            LatencyMetric metric,
+            Aggregation metric,
             DateOnly? from,
             DateOnly? to) =>
         {
@@ -226,14 +226,14 @@ public static class MetricsApiEndpoints
             MetricsQueryService query,
             VoiceDimension dimension,
             VoiceMetric metric,
-            LatencyMetric? agg,
+            Aggregation? agg,
             DateOnly? from,
             DateOnly? to) =>
         {
             var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
             var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
             return await query.GetVoiceGroupedAsync(
-                dimension, metric, fromDate, toDate, agg ?? LatencyMetric.Avg);
+                dimension, metric, fromDate, toDate, agg ?? Aggregation.Avg);
         });
     }
 }

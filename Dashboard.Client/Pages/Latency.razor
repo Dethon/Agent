@@ -84,10 +84,10 @@
 
     private static readonly IReadOnlyList<PillOption> MetricOptions =
     [
-        new("Avg", nameof(LatencyMetric.Avg)),
-        new("P50", nameof(LatencyMetric.P50)),
-        new("P95", nameof(LatencyMetric.P95)),
-        new("P99", nameof(LatencyMetric.P99)),
+        new("Avg", nameof(Aggregation.Avg)),
+        new("P50", nameof(Aggregation.P50)),
+        new("P95", nameof(Aggregation.P95)),
+        new("P99", nameof(Aggregation.P99)),
     ];
 
     private static readonly IReadOnlyList<PillOption> TimeOptions =
@@ -100,7 +100,7 @@
     protected override async Task OnInitializedAsync()
     {
         var savedGroupBy = await Storage.GetAsync<LatencyDimension>("latency.groupBy");
-        var savedMetric = await Storage.GetAsync<LatencyMetric>("latency.metric");
+        var savedMetric = await Storage.GetAsync<Aggregation>("latency.metric");
         var savedDays = await Storage.GetIntAsync("latency.days");
 
         if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
@@ -178,7 +178,7 @@
 
     private async Task OnMetricChanged(string value)
     {
-        Store.SetMetric(Enum.Parse<LatencyMetric>(value));
+        Store.SetMetric(Enum.Parse<Aggregation>(value));
         await Storage.SetAsync("latency.metric", value);
         await ReloadBreakdown();
     }

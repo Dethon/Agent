@@ -11,5 +11,5 @@ public record VoiceState
     public Dictionary<string, decimal> Breakdown { get; init; } = [];
     public DateOnly From { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
     public DateOnly To { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
-    public LatencyMetric Agg { get; init; } = LatencyMetric.Avg;
+    public Aggregation Agg { get; init; } = Aggregation.Avg;
 }

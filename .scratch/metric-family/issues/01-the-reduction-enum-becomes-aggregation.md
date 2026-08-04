@@ -19,12 +19,12 @@ the rename first means none of them carries it. Behaviour is identical everywher
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The reduction enum is named for what it is; its members are unchanged.
-- [ ] Every reference across the domain, the observability service, the dashboard client and the tests compiles against the new name.
-- [ ] The latency page's metric pill and the voice page's aggregate pill are typed as the same thing, and both pages behave exactly as before.
-- [ ] Query string parameter names are unchanged, so no request or route moves.
-- [ ] A preference saved under the old build still loads and still selects the same pill.
-- [ ] `CONTEXT.md`'s aggregation entry matches what the code now calls it.
-- [ ] The existing dashboard and observability test suites pass with no change beyond the rename.
+- [x] The reduction enum is named for what it is; its members are unchanged.
+- [x] Every reference across the domain, the observability service, the dashboard client and the tests compiles against the new name.
+- [x] The latency page's metric pill and the voice page's aggregate pill are typed as the same thing, and both pages behave exactly as before.
+- [x] Query string parameter names are unchanged, so no request or route moves.
+- [x] A preference saved under the old build still loads and still selects the same pill.
+- [x] `CONTEXT.md`'s aggregation entry matches what the code now calls it.
+- [x] The existing dashboard and observability test suites pass with no change beyond the rename.

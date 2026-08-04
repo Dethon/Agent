@@ -33,10 +33,10 @@ public class MetricsApiServiceLatencyTests
         await api.GetLatencyAsync(from, to);
         handler.LastUri.ShouldContain("api/metrics/latency?from=2026-03-01&to=2026-03-02");
 
-        await api.GetLatencyGroupedAsync(LatencyDimension.Stage, LatencyMetric.P95, from, to);
+        await api.GetLatencyGroupedAsync(LatencyDimension.Stage, Aggregation.P95, from, to);
         handler.LastUri.ShouldContain("api/metrics/latency/by/Stage?metric=P95");
 
-        await api.GetLatencyTrendAsync(LatencyMetric.P95, from, to);
+        await api.GetLatencyTrendAsync(Aggregation.P95, from, to);
         handler.LastUri.ShouldContain("api/metrics/latency/trend?metric=P95");
     }
 }

@@ -83,26 +83,26 @@ public sealed class MetricsApiService(HttpClient http)
         http.GetFromJsonAsync<List<LatencyEvent>>($"api/metrics/latency?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
     public Task<Dictionary<string, decimal>?> GetLatencyGroupedAsync(
-        LatencyDimension dimension, LatencyMetric metric, DateOnly from, DateOnly to,
+        LatencyDimension dimension, Aggregation aggregation, DateOnly from, DateOnly to,
         CancellationToken ct = default) =>
         http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/latency/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+            $"api/metrics/latency/by/{dimension}?metric={aggregation}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 
     public Task<List<LatencyTrendSeries>?> GetLatencyTrendAsync(
-        LatencyMetric metric, DateOnly from, DateOnly to,
+        Aggregation aggregation, DateOnly from, DateOnly to,
         CancellationToken ct = default) =>
         http.GetFromJsonAsync<List<LatencyTrendSeries>>(
-            $"api/metrics/latency/trend?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+            $"api/metrics/latency/trend?metric={aggregation}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 
     public Task<List<VoiceEvent>?> GetVoiceEventsAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<VoiceEvent>>($"api/metrics/voice?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
-    // agg has no default on purpose: the aggregation is user-selected state (VoiceState.Agg), and a
+    // aggregation has no default on purpose: it is user-selected state (VoiceState.Agg), and a
     // default here is how a call site silently reverts the user's P95 pick to Avg. The query service
     // and the HTTP endpoint keep their defaults for wire compatibility.
     public Task<Dictionary<string, decimal>?> GetVoiceGroupedAsync(
         VoiceDimension dimension, VoiceMetric metric, DateOnly from, DateOnly to,
-        LatencyMetric agg, CancellationToken ct = default) =>
+        Aggregation aggregation, CancellationToken ct = default) =>
         http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/voice/by/{dimension}?metric={metric}&agg={agg}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+            $"api/metrics/voice/by/{dimension}?metric={metric}&agg={aggregation}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 }

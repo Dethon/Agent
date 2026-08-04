@@ -157,7 +157,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     {
         // Regression guard for the P95-pill-but-Avg-chart bug: a live voice event must refetch
         // the breakdown using whatever aggregation the user picked, not silently fall back to Avg.
-        _voiceStore.SetAgg(LatencyMetric.P95);
+        _voiceStore.SetAgg(Aggregation.P95);
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
         await _effect.StartAsync();
 
@@ -202,9 +202,9 @@ public class MetricsHubEffectTests : IAsyncDisposable
     {
         using var store = new VoiceStore();
 
-        store.SetAgg(LatencyMetric.P95);
+        store.SetAgg(Aggregation.P95);
 
-        store.State.Agg.ShouldBe(LatencyMetric.P95);
+        store.State.Agg.ShouldBe(Aggregation.P95);
     }
 
     [Fact]
@@ -214,7 +214,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         // path, distinct from MetricsHubEffect's live-refresh path) that can silently omit `agg`
         // and fall back to Avg. No response staging is needed: we only assert on the outbound
         // request, and DataLoadEffect swallows the resulting 404s from the unstaffed FakeApiHandler.
-        _voiceStore.SetAgg(LatencyMetric.P95);
+        _voiceStore.SetAgg(Aggregation.P95);
         var http = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
         var dataLoadEffect = new DataLoadEffect(
             new MetricsApiService(http), _metricsStore, _healthStore, _tokensStore, _toolsStore,

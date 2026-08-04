@@ -127,10 +127,10 @@
 
     private static readonly IReadOnlyList<PillOption> AggOptions =
     [
-        new("Avg", nameof(LatencyMetric.Avg)),
-        new("P50", nameof(LatencyMetric.P50)),
-        new("P95", nameof(LatencyMetric.P95)),
-        new("Max", nameof(LatencyMetric.Max)),
+        new("Avg", nameof(Aggregation.Avg)),
+        new("P50", nameof(Aggregation.P50)),
+        new("P95", nameof(Aggregation.P95)),
+        new("Max", nameof(Aggregation.Max)),
     ];
 
     protected override async Task OnInitializedAsync()
@@ -138,7 +138,7 @@
         var savedGroupBy = await Storage.GetAsync<VoiceDimension>("voice.groupBy");
         var savedMetric = await Storage.GetAsync<VoiceMetric>("voice.metric");
         var savedDays = await Storage.GetIntAsync("voice.days");
-        var savedAgg = await Storage.GetAsync<LatencyMetric>("voice.agg");
+        var savedAgg = await Storage.GetAsync<Aggregation>("voice.agg");
 
         if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
         if (savedMetric.HasValue) Store.SetMetric(savedMetric.Value);
@@ -196,7 +196,7 @@
 
     private async Task OnAggChanged(string v)
     {
-        Store.SetAgg(Enum.Parse<LatencyMetric>(v));
+        Store.SetAgg(Enum.Parse<Aggregation>(v));
         await Storage.SetAsync("voice.agg", v);
         await ReloadBreakdown();
     }
