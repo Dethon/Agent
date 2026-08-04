@@ -270,14 +270,11 @@ public sealed class WyomingSatelliteHost(
         metrics.Publish(new VoiceEvent
         {
             Metric = metric,
-            SatelliteId = session.SatelliteId,
-            Room = session.Config.Room,
-            Identity = session.Config.Identity,
             Outcome = outcome,
             DurationMs = elapsedMs,
             Similarity = similarity,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-        });
+        }.About(session));
 
     // Rejection telemetry is diagnostic, not part of the turn contract.
     private void PublishUnknownSpeaker(
@@ -285,9 +282,6 @@ public sealed class WyomingSatelliteHost(
         metrics.Publish(new VoiceEvent
         {
             Metric = VoiceMetric.UtteranceRejected,
-            SatelliteId = session.SatelliteId,
-            Room = session.Config.Room,
-            Identity = session.Config.Identity,
             Outcome = outcome,
             Similarity = similarity,
             PeakRms = stats.PeakRms,
@@ -296,7 +290,7 @@ public sealed class WyomingSatelliteHost(
             TrailingRms = stats.TrailingRms,
             EndReason = stats.EndReason,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-        });
+        }.About(session));
 
     // Returns true only when the transcript actually reached the agent. Empty/low-confidence
     // transcripts and STT errors return false so the conversation ends and wake re-arms, rather
@@ -313,13 +307,10 @@ public sealed class WyomingSatelliteHost(
             metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.EndpointTailMs,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 DurationMs = capture.Stats.TrailingSilenceMs,
                 EndReason = capture.Stats.EndReason,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-            });
+            }.About(session));
 
             double? similarity = null;
             string? identifiedSpeaker = null;
@@ -374,12 +365,9 @@ public sealed class WyomingSatelliteHost(
             metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.SttLatencyMs,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 DurationMs = sw.ElapsedMilliseconds,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-            });
+            }.About(session));
 
             if (isFollowUp)
             {
@@ -415,12 +403,9 @@ public sealed class WyomingSatelliteHost(
             metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.SttError,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 Error = ex.Message,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-            });
+            }.About(session));
             return false;
         }
     }
@@ -444,9 +429,6 @@ public sealed class WyomingSatelliteHost(
         metrics.Publish(new VoiceEvent
         {
             Metric = metric,
-            SatelliteId = session.SatelliteId,
-            Room = session.Config.Room,
-            Identity = session.Config.Identity,
             PeakRms = stats?.PeakRms,
             SpeechMs = stats?.SpeechMs,
             FloorRms = stats?.FloorRms,
@@ -455,7 +437,7 @@ public sealed class WyomingSatelliteHost(
             WakeRms = wakeRms,
             WakeScore = wakeScore,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-        });
+        }.About(session));
 
     private static bool TryParseAddress(string address, out string host, out int port)
     {

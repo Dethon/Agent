@@ -294,12 +294,9 @@ public sealed class SendReplyTool
             metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.AgentRoundTripMs,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 DurationMs = (long)time.GetElapsedTime(dispatchedAt, enqueuedAt).TotalMilliseconds,
                 ConversationId = conversationId
-            });
+            }.About(session));
         }
 
         // Latency is still measured in the loop, and still means the same thing: for the first reply
@@ -330,12 +327,9 @@ public sealed class SendReplyTool
                 metrics.Publish(new VoiceEvent
                 {
                     Metric = VoiceMetric.TtsLatencyMs,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
                     DurationMs = (long)timing.SinceSynthesisStart.TotalMilliseconds,
                     ConversationId = conversationId
-                });
+                }.About(session));
 
                 // Anchored on this job alone (its own enqueue stamp), so it is valid for every reply
                 // regardless of what preceded it.
@@ -344,12 +338,9 @@ public sealed class SendReplyTool
                     metrics.Publish(new VoiceEvent
                     {
                         Metric = VoiceMetric.ReplyQueueWaitMs,
-                        SatelliteId = session.SatelliteId,
-                        Room = session.Config.Room,
-                        Identity = session.Config.Identity,
                         DurationMs = (long)queueWait.TotalMilliseconds,
                         ConversationId = conversationId
-                    });
+                    }.About(session));
                 }
 
                 // The two below are anchored on the TURN (MarkTurnStart / MarkSpeechEnd), which is
@@ -369,12 +360,9 @@ public sealed class SendReplyTool
                     metrics.Publish(new VoiceEvent
                     {
                         Metric = VoiceMetric.WakeToFirstAudioMs,
-                        SatelliteId = session.SatelliteId,
-                        Room = session.Config.Room,
-                        Identity = session.Config.Identity,
                         DurationMs = (long)turn.TotalMilliseconds,
                         ConversationId = conversationId
-                    });
+                    }.About(session));
                 }
 
                 if (timing.SinceSpeechEnd is { } sinceSpeech)
@@ -382,12 +370,9 @@ public sealed class SendReplyTool
                     metrics.Publish(new VoiceEvent
                     {
                         Metric = VoiceMetric.SpeechEndToFirstAudioMs,
-                        SatelliteId = session.SatelliteId,
-                        Room = session.Config.Room,
-                        Identity = session.Config.Identity,
                         DurationMs = (long)sinceSpeech.TotalMilliseconds,
                         ConversationId = conversationId
-                    });
+                    }.About(session));
                 }
 
                 return Task.CompletedTask;
@@ -456,11 +441,8 @@ public sealed class SendReplyTool
             metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.AnnouncePreemptedReply,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 ConversationId = conversationId
-            });
+            }.About(session));
         }
         catch (Exception ex)
         {

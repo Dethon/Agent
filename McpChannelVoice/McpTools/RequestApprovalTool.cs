@@ -87,12 +87,9 @@ public sealed class RequestApprovalTool
             metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.ApprovalResolved,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 Outcome = parsed.ToString(),
                 ConversationId = p.ConversationId
-            });
+            }.About(session));
 
             switch (parsed)
             {

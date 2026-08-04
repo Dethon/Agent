@@ -197,11 +197,8 @@ public sealed class InsistentAnnouncementController(
                 metrics.Publish(new VoiceEvent
                 {
                     Metric = VoiceMetric.AnnouncePlayed,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
                     Priority = AnnouncePriority.High.ToString()
-                });
+                }.About(session));
                 return Task.CompletedTask;
             });
 

@@ -221,21 +221,15 @@ public sealed class WakeArbiter(
                 ? new VoiceEvent
                 {
                     Metric = VoiceMetric.WakeSuppressed,
-                    SatelliteId = holderId,
-                    Room = holderHandle.Session.Config.Room,
-                    Identity = holderHandle.Session.Config.Identity,
                     Outcome = "stale_steal"
-                }
+                }.About(holderHandle.Session)
                 : new VoiceEvent
                 {
                     Metric = VoiceMetric.WakeHandoff,
-                    SatelliteId = winner.Claim.SatelliteId,
-                    Room = handles[winner.Claim.SatelliteId].Session.Config.Room,
-                    Identity = handles[winner.Claim.SatelliteId].Session.Config.Identity,
                     Outcome = holderId,
                     WakeRms = winner.Claim.WakeRms,
                     WakeScore = winner.Claim.WakeScore
-                });
+                }.About(handles[winner.Claim.SatelliteId].Session));
             await SendReArmAsync(holderHandle);
             return;
         }
@@ -259,13 +253,10 @@ public sealed class WakeArbiter(
         metrics.Publish(new VoiceEvent
         {
             Metric = VoiceMetric.WakeSuppressed,
-            SatelliteId = claim.SatelliteId,
-            Room = handle.Session.Config.Room,
-            Identity = handle.Session.Config.Identity,
             Outcome = outcome,
             WakeRms = claim.WakeRms,
             WakeScore = claim.WakeScore
-        });
+        }.About(handle.Session));
         await SendReArmAsync(handle, claim);
     }
 
@@ -313,13 +304,10 @@ public sealed class WakeArbiter(
             metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.WakeSuppressed,
-                SatelliteId = handle.Session.SatelliteId,
-                Room = handle.Session.Config.Room,
-                Identity = handle.Session.Config.Identity,
                 Outcome = "rearm_failed",
                 WakeRms = claim?.WakeRms,
                 WakeScore = claim?.WakeScore
-            });
+            }.About(handle.Session));
         }
         catch (Exception ex)
         {

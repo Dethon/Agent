@@ -125,9 +125,6 @@ public sealed class TranscriptDispatcher(
             new VoiceEvent
             {
                 Metric = VoiceMetric.UtteranceTranscribed,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 Outcome = outcome,
                 Confidence = transcript.Confidence,
                 Similarity = similarity,
@@ -140,5 +137,5 @@ public sealed class TranscriptDispatcher(
                 TrailingRms = stats?.TrailingRms,
                 EndReason = stats?.EndReason,
                 ConversationId = conversationId
-            });
+            }.About(session));
 }

@@ -69,7 +69,7 @@ public class AnnouncementService(
                 // fails is no longer counted as played with nothing else ever recorded for it.
                 OnFirstAudio: _ =>
                 {
-                    metrics.Publish(AnnounceEvent(VoiceMetric.AnnouncePlayed, id, session, request));
+                    metrics.Publish(AnnounceEvent(VoiceMetric.AnnouncePlayed, session, request));
                     return Task.CompletedTask;
                 });
 
@@ -87,7 +87,7 @@ public class AnnouncementService(
 
             metrics.Publish(AnnounceEvent(
                 ticket.Refused is null ? VoiceMetric.AnnounceQueued : VoiceMetric.AnnounceError,
-                id, session, request) with
+                session, request) with
             { Outcome = status });
 
             // Runs unobserved on the queue's signal, so it guards itself.
@@ -99,7 +99,7 @@ public class AnnouncementService(
                         if (settled.Result.Kind == PlaybackOutcomeKind.Preempted)
                         {
                             metrics.Publish(AnnounceEvent(
-                                VoiceMetric.AnnouncePreemptedReply, id, session, request));
+                                VoiceMetric.AnnouncePreemptedReply, session, request));
                         }
                     }
                     catch (Exception ex)
@@ -118,13 +118,12 @@ public class AnnouncementService(
     }
 
     // Every announce metric carries the same room and identity context, offline targets included.
+    // The id the loop is on and the session's own are the same value — the registry keys sessions by
+    // SatelliteId — so stamping from the session leaves the payload as it was.
     private static VoiceEvent AnnounceEvent(
-        VoiceMetric metric, string id, SatelliteSession session, AnnounceRequest request) => new()
+        VoiceMetric metric, SatelliteSession session, AnnounceRequest request) => new VoiceEvent
         {
             Metric = metric,
-            SatelliteId = id,
-            Room = session.Config.Room,
-            Identity = session.Config.Identity,
             Priority = request.Priority.ToString()
-        };
+        }.About(session);
 }
