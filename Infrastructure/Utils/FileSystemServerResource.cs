@@ -44,7 +44,7 @@ public static class FileSystemServerResource
 
     // What McpFileSystemDiscovery reads to mount this filesystem: the name it will be addressed by,
     // the path it goes under, and the prose the model gets about it.
-    public static string Describe(string filesystemName, string description) =>
+    private static string Describe(string filesystemName, string description) =>
         JsonSerializer.Serialize(new
         {
             name = filesystemName,

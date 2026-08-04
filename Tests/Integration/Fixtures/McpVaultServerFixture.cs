@@ -3,7 +3,7 @@ using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Utils;
-
+using Mcp.Hosting;
 using McpServerVault.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -38,7 +38,6 @@ public class McpVaultServerFixture : IAsyncLifetime
         });
 
         builder.Services
-            .AddSingleton(settings)
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.VaultPath))
             .AddTransient<global::Domain.Contracts.IFileSystemClient, LocalFileSystemClient>()
             .AddSingleton(sp => new TextDiskFileSystem(
@@ -47,19 +46,7 @@ public class McpVaultServerFixture : IAsyncLifetime
                 sp.GetRequiredService<global::Domain.Contracts.IFileSystemClient>(),
                 new LibraryPathConfig(settings.VaultPath),
                 settings.AllowedExtensions))
-            .AddMcpServer()
-            .WithHttpTransport()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    return ToolResponse.Create(ex);
-                }
-            }))
+            .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<TextDiskFileSystem>()
             .AddFileSystemResource<TextDiskFileSystem>();
 

@@ -75,17 +75,26 @@ public class FileSystemServerConformanceTests
         services.Single(d => d.ServiceType == typeof(McpServerResource))
             .Lifetime.ShouldBe(ServiceLifetime.Singleton, name);
 
-        FileSystemServerResource.Address(name).ShouldBe($"filesystem://{name}");
+        // The seven real backends need their whole dependency graph to construct, so what the one
+        // name turns into is asserted on a backend that carries the same name and nothing else.
+        var mount = new NamedBackend(name);
+        FileSystemServerResource.Address(mount.FilesystemName).ShouldBe($"filesystem://{name}");
 
-        var published = Published(FileSystemServerResource.Describe(name, "a description"));
+        var published = Published(FileSystemServerResource.Describe(mount));
         published.Name.ShouldBe(name);
         published.MountPoint.ShouldBe($"/{name}");
-        published.Description.ShouldBe("a description");
+        published.Description.ShouldBe(mount.DescribeMount);
     }
 
-    // That the backend's own name is what reaches all three, driven through the registrar the way a
-    // ConfigModule drives it. The seven real backends need their whole dependency graph to
-    // construct, so the flow is pinned on a backend that does not.
+    private sealed class NamedBackend(string name) : FileSystemBackendBase
+    {
+        public override string FilesystemName => name;
+
+        public override string DescribeMount => $"The {name} mount.";
+    }
+
+    // That the resource the registrar really builds carries the same three, so nothing between the
+    // backend and the wire re-derives them.
     [Fact]
     public void TheRegisteredResource_TakesItsAddressAndBodyFromTheBackend()
     {
@@ -101,10 +110,6 @@ public class FileSystemServerConformanceTests
         resource.ProtocolResource.Description.ShouldBe(new PickyBackend().DescribeMount);
         resource.ProtocolResource.MimeType.ShouldBe("application/json");
 
-        var published = Published(FileSystemServerResource.Describe(new PickyBackend()));
-        published.Name.ShouldBe("picky");
-        published.MountPoint.ShouldBe("/picky");
-        published.Description.ShouldBe(new PickyBackend().DescribeMount);
     }
 
     // Read back the way McpFileSystemDiscovery reads it, so the body this test approves is the body

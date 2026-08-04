@@ -6,7 +6,7 @@ using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
-
+using Mcp.Hosting;
 using McpServerLibrary.McpTools;
 using McpServerLibrary.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -52,19 +52,6 @@ public class McpLibraryServerFixture : IAsyncLifetime
         builder.Services
             .AddSingleton<DownloadPathConfig>(_ => new DownloadPathConfig(DownloadPath))
             .AddSingleton<LibraryPathConfig>(_ => new LibraryPathConfig(LibraryPath))
-            .AddSingleton(new McpSettings
-            {
-                Jackett = new JackettConfiguration { ApiKey = "unused", ApiUrl = "http://localhost" },
-                QBittorrent = new QBittorrentConfiguration
-                {
-                    ApiUrl = "http://localhost",
-                    UserName = "unused",
-                    Password = "unused"
-                },
-                DownloadLocation = DownloadPath,
-                BaseLibraryPath = LibraryPath,
-                RedisConnectionString = "unused"
-            })
             .AddSingleton(_cache)
             .AddSingleton<IDownloadRoutingStore>(RoutingStore)
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
@@ -76,19 +63,21 @@ public class McpLibraryServerFixture : IAsyncLifetime
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(LibraryPath),
                 sp.GetRequiredService<DownloadsOverlay>()))
-            .AddMcpServer()
-            .WithHttpTransport()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
+            .AddToolServer(
+                new McpSettings
                 {
-                    return await next(context, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    return ToolResponse.Create(ex);
-                }
-            }))
+                    Jackett = new JackettConfiguration { ApiKey = "unused", ApiUrl = "http://localhost" },
+                    QBittorrent = new QBittorrentConfiguration
+                    {
+                        ApiUrl = "http://localhost",
+                        UserName = "unused",
+                        Password = "unused"
+                    },
+                    DownloadLocation = DownloadPath,
+                    BaseLibraryPath = LibraryPath,
+                    RedisConnectionString = "unused"
+                },
+                ToolResponse.Create)
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
             .AddFileSystemTools<MediaLibraryDiskFileSystem>()
