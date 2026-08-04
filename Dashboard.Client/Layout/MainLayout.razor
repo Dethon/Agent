@@ -1,5 +1,5 @@
 @inherits LayoutComponentBase
-@inject MetricsHubEffect HubEffect
+@inject MetricsLiveConnection LiveConnection
 
 <div class="layout">
     <nav class="sidebar">
@@ -37,12 +37,6 @@
 </div>
 
 @code {
-    protected override async Task OnInitializedAsync()
-    {
-        try { await HubEffect.StartAsync(); }
-        catch
-        {
-            // ignored
-        }
-    }
+    // Nothing to catch: the live connection keeps trying until it is live.
+    protected override Task OnInitializedAsync() => LiveConnection.ConnectAsync();
 }

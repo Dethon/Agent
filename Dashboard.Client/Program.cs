@@ -48,5 +48,6 @@ builder.Services.AddScoped<MetricFamilyTable>();
 
 builder.Services.AddScoped<DataLoadEffect>();
 builder.Services.AddScoped<MetricsHubEffect>();
+builder.Services.AddScoped<MetricsLiveConnection>();
 
 await builder.Build().RunAsync();

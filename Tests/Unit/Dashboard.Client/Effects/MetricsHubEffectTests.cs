@@ -43,13 +43,12 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _families = new MetricFamilyTable(
             _api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
-        _effect = new MetricsHubEffect(
-            _hub, _families, _metricsStore, _healthStore, _connectionStore);
+        _effect = new MetricsHubEffect(_families, _metricsStore, _healthStore);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        await _effect.DisposeAsync();
+        _effect.Unbind();
         _tokensStore.Dispose();
         _toolsStore.Dispose();
         _errorsStore.Dispose();
@@ -60,6 +59,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _memoryStore.Dispose();
         _latencyStore.Dispose();
         _voiceStore.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     private static readonly DateOnly From = new(2026, 3, 1);
@@ -294,7 +294,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     {
         var (staleData, freshData, fireEvent, getBreakdown) = _rapidEventCases[caseName];
 
-        await _effect.StartAsync();
+        _effect.Bind(_hub);
 
         _handler.EnqueueResponse(staleData, delay: TimeSpan.FromMilliseconds(500));
         _handler.EnqueueResponse(freshData, delay: TimeSpan.FromMilliseconds(10));
@@ -311,7 +311,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     {
         var lastKnown = new Dictionary<string, decimal> { ["kept"] = 42m };
         _tokensStore.SetBreakdown(lastKnown);
-        await _effect.StartAsync();
+        _effect.Bind(_hub);
 
         // Nothing is staged, so the handler answers 404 and the refresh throws.
         await _hub.RaiseAsync("OnTokenUsage", new TokenUsageEvent
@@ -331,7 +331,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     {
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
         _handler.EnqueueResponse(new List<LatencyTrendSeries>(), delay: TimeSpan.Zero);
-        await _effect.StartAsync();
+        _effect.Bind(_hub);
 
         await _hub.RaiseAsync("OnLatency", new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 5 });
 
@@ -342,7 +342,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     public async Task OnVoice_AppendsEventToVoiceStore()
     {
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
-        await _effect.StartAsync();
+        _effect.Bind(_hub);
 
         await _hub.RaiseAsync("OnVoice", new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
 
@@ -356,27 +356,12 @@ public class MetricsHubEffectTests : IAsyncDisposable
         // the breakdown using whatever aggregation the user picked, not silently fall back to Avg.
         _voiceStore.SetAgg(Aggregation.P95);
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
-        await _effect.StartAsync();
+        _effect.Bind(_hub);
 
         await _hub.RaiseAsync("OnVoice", new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
 
         _handler.LastRequestUri.ShouldNotBeNull();
         _handler.LastRequestUri!.ShouldContain("agg=P95");
-    }
-
-    // Not expressible before the seam: the old fake stubbed the lifecycle members out, so no test
-    // could raise a reconnect. What it documents is today's behaviour, which is that coming back
-    // flips a flag and nothing else — the data missed during the interruption is still missing.
-    [Fact]
-    public async Task Reconnected_AfterAnInterruption_ReportsTheDashboardConnectedAgain()
-    {
-        await _effect.StartAsync();
-        await _hub.RaiseReconnectingAsync(null);
-        _connectionStore.State.IsConnected.ShouldBeFalse();
-
-        await _hub.RaiseReconnectedAsync();
-
-        _connectionStore.State.IsConnected.ShouldBeTrue();
     }
 
     public static TheoryData<string, Func<IDisposable>, Action<object, DateOnly, DateOnly>, Func<object, DateOnly>, Func<object, DateOnly>> StoreFactories =>

@@ -1,22 +1,20 @@
 using Dashboard.Client.Contracts;
 using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
-using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Health;
 using Dashboard.Client.State.Metrics;
 using Domain.DTOs.Metrics;
 
 namespace Dashboard.Client.Effects;
 
+// The mapping from a server push to a store update and a family refresh, and nothing else. The
+// connection lifecycle belongs to MetricsLiveConnection, which drives Bind and Unbind.
 public sealed class MetricsHubEffect(
-    IMetricsHubConnection hub,
     MetricFamilyTable families,
     MetricsStore metricsStore,
-    HealthStore healthStore,
-    ConnectionStore connectionStore) : IAsyncDisposable
+    HealthStore healthStore)
 {
     private readonly List<IDisposable> _subscriptions = [];
-    private bool _started;
 
     // The live-update path's failure policy, written once: a refresh that fails leaves the family's
     // breakdown at its last known value. Nothing cancels a refresh any more, so a request abandoned
@@ -30,14 +28,9 @@ public sealed class MetricsHubEffect(
         catch { /* Breakdown stays at last known value */ }
     }
 
-    public async Task StartAsync()
+    public void Bind(IMetricsHubConnection hub)
     {
-        if (_started)
-        {
-            return;
-        }
-
-        _started = true;
+        ArgumentNullException.ThrowIfNull(hub);
 
         _subscriptions.Add(hub.On<MemoryRecallEvent>("OnMemoryRecall", async evt =>
         {
@@ -123,32 +116,11 @@ public sealed class MetricsHubEffect(
             return Task.CompletedTask;
         }));
 
-        hub.Reconnected += _ =>
-        {
-            connectionStore.SetConnected(true);
-            return Task.CompletedTask;
-        };
-
-        hub.Closed += _ =>
-        {
-            connectionStore.SetConnected(false);
-            return Task.CompletedTask;
-        };
-
-        hub.Reconnecting += _ =>
-        {
-            connectionStore.SetConnected(false);
-            return Task.CompletedTask;
-        };
-
-        await hub.StartAsync();
-        connectionStore.SetConnected(true);
     }
 
-    public async ValueTask DisposeAsync()
+    public void Unbind()
     {
-        _subscriptions.ForEach(s => s.Dispose());
+        _subscriptions.ForEach(subscription => subscription.Dispose());
         _subscriptions.Clear();
-        await hub.DisposeAsync();
     }
 }
