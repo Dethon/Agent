@@ -2,6 +2,8 @@ namespace Dashboard.Client.Metrics;
 
 public class MetricFamily(
     string name,
+    MetricChoice groupBy,
+    MetricChoice? metric,
     Action<DateOnly, DateOnly> setDateRange,
     Func<Task> loadEvents,
     Func<Task> refreshBreakdown)
@@ -13,6 +15,12 @@ public class MetricFamily(
     public string Name { get; } = name;
 
     public string PreferenceKeyPrefix { get; } = $"{name}.";
+
+    public MetricChoice GroupBy { get; } = groupBy;
+
+    // Null for a family with nothing to choose between: errors and schedules have no metric pill,
+    // because there is no quantity to pick.
+    public MetricChoice? Metric { get; } = metric;
 
     public void SetDateRange(DateOnly from, DateOnly to) => setDateRange(from, to);
 
@@ -72,10 +80,12 @@ public class MetricFamily(
 public sealed class MetricFamily<TStore>(
     TStore store,
     string name,
+    MetricChoice groupBy,
+    MetricChoice? metric,
     Action<DateOnly, DateOnly> setDateRange,
     Func<Task> loadEvents,
     Func<Task> refreshBreakdown)
-    : MetricFamily(name, setDateRange, loadEvents, refreshBreakdown)
+    : MetricFamily(name, groupBy, metric, setDateRange, loadEvents, refreshBreakdown)
     where TStore : class
 {
     public TStore Store { get; } = store;

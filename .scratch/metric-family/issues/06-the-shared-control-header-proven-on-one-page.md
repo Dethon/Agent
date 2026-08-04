@@ -32,16 +32,16 @@ client's.
 **Blocked by:** 05 — the page reloads through the family, and calls a page-load effect
 that ticket rewrites.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A session type owns preference loading, preference saving, date derivation from the selected day count, and change handling, in plain code with no component involved.
-- [ ] A control wrapper owns the header markup and the group-by, metric and time pills, and forwards to the session.
-- [ ] The wrapper accepts an extra-controls fragment and a set of unavailable metric values, both optional.
-- [ ] Child content receives the family's state typed.
-- [ ] The tokens page keeps its headline figures, its chart, its event table and its sorting unchanged.
-- [ ] The tokens page contains no preference reading, no preference writing and no date arithmetic.
-- [ ] Preferences saved under the current build still load and still select the same pills.
-- [ ] A dictionary-backed JavaScript runtime fake closes the storage edge, leaving the local storage service real. No storage interface is introduced.
-- [ ] Unit tests assert that a saved preference is applied on initialisation, that a changed pill is persisted under the family's prefix and triggers a refresh, and that the date range is derived from the day count against a fixed time provider.
-- [ ] Those tests run standalone, with no Docker and no browser.
-- [ ] The dashboard's Playwright suite passes unchanged.
+- [x] A session type owns preference loading, preference saving, date derivation from the selected day count, and change handling, in plain code with no component involved.
+- [x] A control wrapper owns the header markup and the group-by, metric and time pills, and forwards to the session.
+- [x] The wrapper accepts an extra-controls fragment and a set of unavailable metric values, both optional.
+- [x] Child content receives the family's state typed.
+- [x] The tokens page keeps its headline figures, its chart, its event table and its sorting unchanged.
+- [x] The tokens page contains no preference reading, no preference writing and no date arithmetic.
+- [x] Preferences saved under the current build still load and still select the same pills.
+- [x] A dictionary-backed JavaScript runtime fake closes the storage edge, leaving the local storage service real. No storage interface is introduced.
+- [x] Unit tests assert that a saved preference is applied on initialisation, that a changed pill is persisted under the family's prefix and triggers a refresh, and that the date range is derived from the day count against a fixed time provider.
+- [x] Those tests run standalone, with no Docker and no browser.
+- [x] The dashboard's Playwright suite passes unchanged.

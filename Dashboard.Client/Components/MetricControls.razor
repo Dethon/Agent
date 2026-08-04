@@ -1,0 +1,78 @@
+@typeparam TStore where TStore : Dashboard.Client.State.Store<TState>
+@typeparam TState where TState : class
+@using Dashboard.Client.Metrics
+@using static Dashboard.Client.Components.PillSelector
+@implements IDisposable
+@inject LocalStorageService Storage
+@inject TimeProvider Time
+@inject DataLoadEffect DataLoad
+
+<header class="page-header">
+    <h2>@Title</h2>
+    <div class="controls">
+        <PillSelector Label="Group by" Options="GroupByOptions" Value="@Family.GroupBy.Current"
+                      OnChanged="value => _session.ChangeAsync(Family.GroupBy, value)" />
+        @if (Family.Metric is { } metric)
+        {
+            <PillSelector Label="Metric" Options="MetricOptions" Value="@metric.Current"
+                          OnChanged="value => _session.ChangeAsync(metric, value)"
+                          DisabledValues="Unavailable()" />
+        }
+        @ExtraControls?.Invoke(_session)
+        <PillSelector Label="Time" Options="TimeOptions" Value="@_session.SelectedDays.ToString()"
+                      OnChanged="_session.ChangeDaysAsync" />
+    </div>
+</header>
+
+@ChildContent(_state)
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public MetricFamily<TStore> Family { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<PillOption> GroupByOptions { get; set; } = [];
+    [Parameter] public IReadOnlyList<PillOption> MetricOptions { get; set; } = [];
+    [Parameter] public Func<TState, IReadOnlySet<string>>? UnavailableMetrics { get; set; }
+    [Parameter] public RenderFragment<MetricControlsSession>? ExtraControls { get; set; }
+    [Parameter, EditorRequired] public RenderFragment<TState> ChildContent { get; set; } = default!;
+
+    private static readonly IReadOnlyList<PillOption> TimeOptions =
+    [
+        new("Today", "1"),
+        new("7d", "7"),
+        new("30d", "30"),
+    ];
+
+    private static readonly IReadOnlySet<string> NoneUnavailable = new HashSet<string>();
+
+    private MetricControlsSession _session = default!;
+    private TState _state = default!;
+    private IDisposable? _sub;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _session = new MetricControlsSession(Family, Storage, Time, DataLoad);
+        _state = Family.Store.State;
+        _sub = Family.Store.StateObservable.Subscribe(state =>
+        {
+            _state = state;
+            InvokeAsync(StateHasChanged);
+        });
+
+        await _session.InitializeAsync();
+    }
+
+    private IReadOnlySet<string> Unavailable() => UnavailableMetrics?.Invoke(_state) ?? NoneUnavailable;
+
+    public void Dispose() => _sub?.Dispose();
+}
+
+<style>
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
+
+    @@media (max-width: 768px) {
+        .page-header { flex-direction: column; }
+        .page-header h2 { font-size: 1.1rem; }
+    }
+</style>

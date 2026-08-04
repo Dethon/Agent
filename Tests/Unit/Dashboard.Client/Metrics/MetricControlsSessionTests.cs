@@ -1,0 +1,162 @@
+using Dashboard.Client.Effects;
+using Dashboard.Client.Metrics;
+using Dashboard.Client.Services;
+using Dashboard.Client.State.Connection;
+using Dashboard.Client.State.Errors;
+using Dashboard.Client.State.Health;
+using Dashboard.Client.State.Latency;
+using Dashboard.Client.State.Memory;
+using Dashboard.Client.State.Metrics;
+using Dashboard.Client.State.Schedules;
+using Dashboard.Client.State.Tokens;
+using Dashboard.Client.State.Tools;
+using Dashboard.Client.State.Voice;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
+using Microsoft.Extensions.Time.Testing;
+using Shouldly;
+using Tests.Unit.Dashboard.Client.Effects;
+
+namespace Tests.Unit.Dashboard.Client.Metrics;
+
+public class MetricControlsSessionTests : IDisposable
+{
+    private static readonly DateOnly Today = new(2026, 3, 24);
+
+    private readonly FakeApiHandler _handler = new();
+    private readonly FakeJsRuntime _js = new();
+    private readonly TokensStore _tokensStore = new();
+    private readonly ToolsStore _toolsStore = new();
+    private readonly ErrorsStore _errorsStore = new();
+    private readonly SchedulesStore _schedulesStore = new();
+    private readonly MemoryStore _memoryStore = new();
+    private readonly LatencyStore _latencyStore = new();
+    private readonly VoiceStore _voiceStore = new();
+    private readonly MetricsStore _metricsStore = new();
+    private readonly HealthStore _healthStore = new();
+    private readonly ConnectionStore _connectionStore = new();
+    private readonly LocalStorageService _storage;
+    private readonly MetricFamilyTable _families;
+    private readonly DataLoadEffect _dataLoad;
+
+    public MetricControlsSessionTests()
+    {
+        var http = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
+        var api = new MetricsApiService(http);
+        _storage = new LocalStorageService(_js);
+        _families = new MetricFamilyTable(
+            api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
+            _memoryStore, _latencyStore, _voiceStore);
+        _dataLoad = new DataLoadEffect(api, _families, _metricsStore, _healthStore, _connectionStore);
+    }
+
+    public void Dispose()
+    {
+        _tokensStore.Dispose();
+        _toolsStore.Dispose();
+        _errorsStore.Dispose();
+        _schedulesStore.Dispose();
+        _memoryStore.Dispose();
+        _latencyStore.Dispose();
+        _voiceStore.Dispose();
+        _metricsStore.Dispose();
+        _healthStore.Dispose();
+        _connectionStore.Dispose();
+    }
+
+    private MetricControlsSession SessionFor(MetricFamily family) =>
+        new(family, _storage, new FakeTimeProvider(
+            new DateTimeOffset(Today, TimeOnly.MinValue, TimeSpan.Zero)), _dataLoad);
+
+    // Every family, by the preference keys its page has always used.
+    public static TheoryData<string, string, string?> Families => new()
+    {
+        { "tokens", nameof(TokenDimension.Agent), nameof(TokenMetric.Cost) },
+        { "tools", nameof(ToolDimension.Status), nameof(ToolMetric.CallCount) },
+        { "errors", nameof(ErrorDimension.ErrorType), null },
+        { "schedules", nameof(ScheduleDimension.Status), null },
+        { "memory", nameof(MemoryDimension.Agent), nameof(MemoryMetric.AvgDuration) },
+        { "latency", nameof(LatencyDimension.Model), nameof(Aggregation.P50) },
+        { "voice", nameof(VoiceDimension.Room), nameof(VoiceMetric.SttLatencyMs) },
+    };
+
+    private MetricFamily FamilyNamed(string name) => _families.All.Single(f => f.Name == name);
+
+    [Theory]
+    [MemberData(nameof(Families))]
+    public async Task InitializeAsync_APreferenceIsSaved_AppliesItToTheFamilysChoices(
+        string name, string savedGroupBy, string? savedMetric)
+    {
+        var family = FamilyNamed(name);
+        _js.Storage[$"{name}.groupBy"] = savedGroupBy;
+        if (savedMetric is not null)
+        {
+            _js.Storage[$"{name}.metric"] = savedMetric;
+        }
+
+        await SessionFor(family).InitializeAsync();
+
+        family.GroupBy.Current.ShouldBe(savedGroupBy);
+        family.Metric?.Current.ShouldBe(savedMetric);
+    }
+
+    [Theory]
+    [MemberData(nameof(Families))]
+    public async Task ChangeAsync_APillMoves_PersistsUnderTheFamilysPrefixAndRefreshes(
+        string name, string chosenGroupBy, string? _)
+    {
+        var family = FamilyNamed(name);
+        var session = SessionFor(family);
+        await session.InitializeAsync();
+        _handler.Requests.Clear();
+        // Latency's refresh is two requests; the rest are one.
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+        _handler.EnqueueResponse(new List<LatencyTrendSeries>(), delay: TimeSpan.Zero);
+
+        await session.ChangeAsync(family.GroupBy, chosenGroupBy);
+
+        _js.Storage[$"{name}.groupBy"].ShouldBe(chosenGroupBy);
+        family.GroupBy.Current.ShouldBe(chosenGroupBy);
+        _handler.Requests.ShouldContain(u => u != null && u.Contains($"/{name}", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(1, "2026-03-24")]
+    [InlineData(7, "2026-03-18")]
+    [InlineData(30, "2026-02-23")]
+    public async Task ChangeDaysAsync_ADayCountIsChosen_DerivesTheRangeFromTheTimeProvider(
+        int days, string expectedFrom)
+    {
+        var session = SessionFor(_families.Tokens);
+        await session.InitializeAsync();
+
+        await session.ChangeDaysAsync(days.ToString());
+
+        session.SelectedDays.ShouldBe(days);
+        session.From.ShouldBe(DateOnly.Parse(expectedFrom));
+        session.To.ShouldBe(Today);
+        _tokensStore.State.From.ShouldBe(DateOnly.Parse(expectedFrom));
+    }
+
+    [Fact]
+    public async Task InitializeAsync_ADayCountIsSaved_DerivesTheRangeFromIt()
+    {
+        _js.Storage["tokens.days"] = "7";
+
+        var session = SessionFor(_families.Tokens);
+        await session.InitializeAsync();
+
+        session.SelectedDays.ShouldBe(7);
+        session.From.ShouldBe(new DateOnly(2026, 3, 18));
+    }
+
+    [Fact]
+    public async Task InitializeAsync_APreferenceNoLongerParses_LeavesTheChoiceAlone()
+    {
+        _js.Storage["tokens.groupBy"] = "SomethingRetired";
+
+        await SessionFor(_families.Tokens).InitializeAsync();
+
+        _families.Tokens.GroupBy.Current.ShouldBe(nameof(TokenDimension.User));
+    }
+}

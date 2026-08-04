@@ -6,6 +6,7 @@ using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Domain.DTOs.Metrics.Enums;
 
 namespace Dashboard.Client.Metrics;
 
@@ -14,6 +15,13 @@ namespace Dashboard.Client.Metrics;
 // price recorded in docs/adr/0007-a-metric-family-is-named-not-typed.md.
 public sealed class MetricFamilyTable
 {
+    public static readonly IReadOnlySet<MemoryMetric> UserOnlyMemoryMetrics = new HashSet<MemoryMetric>
+    {
+        MemoryMetric.StoredCount,
+        MemoryMetric.MergedCount,
+        MemoryMetric.DecayedCount,
+    };
+
     public MetricFamilyTable(
         MetricsApiService api,
         TokensStore tokens,
@@ -27,11 +35,21 @@ public sealed class MetricFamilyTable
         Tokens = new MetricFamily<TokensStore>(
             tokens,
             "tokens",
+            groupBy: MetricChoice.For("groupBy", () => tokens.State.GroupBy, tokens.SetGroupBy),
+            metric: MetricChoice.For("metric", () => tokens.State.Metric, tokens.SetMetric),
             setDateRange: tokens.SetDateRange,
+            // Truncations are a grouped count rather than one of the family's events, but they are
+            // the tokens page's fourth headline figure, so they load with them.
             loadEvents: async () =>
             {
                 var state = tokens.State;
-                tokens.SetEvents(await api.GetTokensAsync(state.From, state.To) ?? []);
+                var events = api.GetTokensAsync(state.From, state.To);
+                var truncations = api.GetGroupedAsync<decimal>(
+                    $"tokens/by/{TokenDimension.Model}", state.From, state.To,
+                    [("metric", nameof(TokenMetric.TruncationCount))]);
+                await Task.WhenAll(events, truncations);
+                tokens.SetEvents(await events ?? []);
+                tokens.SetTruncations((long)((await truncations)?.Values.Sum() ?? 0));
             },
             refreshBreakdown: async () =>
             {
@@ -45,6 +63,17 @@ public sealed class MetricFamilyTable
         Tools = new MetricFamily<ToolsStore>(
             tools,
             "tools",
+            groupBy: MetricChoice.For("groupBy", () => tools.State.GroupBy, dimension =>
+            {
+                tools.SetGroupBy(dimension);
+                // Grouped by status there is no error rate to show, so the pill that is about to be
+                // disabled cannot stay selected.
+                if (dimension == ToolDimension.Status && tools.State.Metric == ToolMetric.ErrorRate)
+                {
+                    tools.SetMetric(ToolMetric.CallCount);
+                }
+            }),
+            metric: MetricChoice.For("metric", () => tools.State.Metric, tools.SetMetric),
             setDateRange: tools.SetDateRange,
             loadEvents: async () =>
             {
@@ -63,6 +92,8 @@ public sealed class MetricFamilyTable
         Errors = new MetricFamily<ErrorsStore>(
             errors,
             "errors",
+            groupBy: MetricChoice.For("groupBy", () => errors.State.GroupBy, errors.SetGroupBy),
+            metric: null,
             setDateRange: errors.SetDateRange,
             loadEvents: async () =>
             {
@@ -80,6 +111,8 @@ public sealed class MetricFamilyTable
         Schedules = new MetricFamily<SchedulesStore>(
             schedules,
             "schedules",
+            groupBy: MetricChoice.For("groupBy", () => schedules.State.GroupBy, schedules.SetGroupBy),
+            metric: null,
             setDateRange: schedules.SetDateRange,
             loadEvents: async () =>
             {
@@ -97,6 +130,17 @@ public sealed class MetricFamilyTable
         Memory = new MetricFamily<MemoryStore>(
             memory,
             "memory",
+            groupBy: MetricChoice.For("groupBy", () => memory.State.GroupBy, dimension =>
+            {
+                memory.SetGroupBy(dimension);
+                // The stored, merged and decayed counts only exist per user, so grouping by
+                // anything else cannot leave one of them selected.
+                if (dimension != MemoryDimension.User && UserOnlyMemoryMetrics.Contains(memory.State.Metric))
+                {
+                    memory.SetMetric(MemoryMetric.Count);
+                }
+            }),
+            metric: MetricChoice.For("metric", () => memory.State.Metric, memory.SetMetric),
             setDateRange: memory.SetDateRange,
             loadEvents: async () =>
             {
@@ -121,6 +165,8 @@ public sealed class MetricFamilyTable
         Latency = new MetricFamily<LatencyStore>(
             latency,
             "latency",
+            groupBy: MetricChoice.For("groupBy", () => latency.State.GroupBy, latency.SetGroupBy),
+            metric: MetricChoice.For("metric", () => latency.State.Metric, latency.SetMetric),
             setDateRange: latency.SetDateRange,
             loadEvents: async () =>
             {
@@ -144,6 +190,8 @@ public sealed class MetricFamilyTable
         Voice = new MetricFamily<VoiceStore>(
             voice,
             "voice",
+            groupBy: MetricChoice.For("groupBy", () => voice.State.GroupBy, voice.SetGroupBy),
+            metric: MetricChoice.For("metric", () => voice.State.Metric, voice.SetMetric),
             setDateRange: voice.SetDateRange,
             loadEvents: async () =>
             {

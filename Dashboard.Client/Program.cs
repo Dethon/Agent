@@ -35,6 +35,7 @@ builder.Services.AddSingleton<VoiceStore>();
 
 builder.Services.AddScoped<MetricsApiService>();
 builder.Services.AddScoped<LocalStorageService>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(sp =>
 {
     var nav = sp.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
