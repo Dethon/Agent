@@ -10,230 +10,100 @@ public static class MetricsApiEndpoints
     {
         var api = app.MapGroup("/api/metrics");
 
-        api.MapGet("/summary", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetSummaryAsync(fromDate, toDate);
-        });
+        api.MapGet("/summary", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetSummaryAsync(range.From, range.To));
 
-        api.MapGet("/tokens", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetEventsAsync<TokenUsageEvent>("metrics:tokens:", fromDate, toDate);
-        });
+        api.MapGet("/tokens", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<TokenUsageEvent>("metrics:tokens:", range.From, range.To));
 
-        api.MapGet("/tools", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetEventsAsync<ToolCallEvent>("metrics:tools:", fromDate, toDate);
-        });
+        api.MapGet("/tools", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<ToolCallEvent>("metrics:tools:", range.From, range.To));
 
-        api.MapGet("/errors", async (
-            MetricsQueryService query,
-            int? limit) =>
-        {
-            return await query.GetRecentErrorsAsync(limit ?? 100);
-        });
+        api.MapGet("/errors", async (MetricsQueryService query, int? limit) =>
+            await query.GetRecentErrorsAsync(limit ?? 100));
 
-        api.MapGet("/errors/range", async (
-            MetricsQueryService query, DateOnly? from, DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetEventsAsync<ErrorEvent>("metrics:errors:", fromDate, toDate);
-        });
+        api.MapGet("/errors/range", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<ErrorEvent>("metrics:errors:", range.From, range.To));
 
-        api.MapGet("/schedules", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetEventsAsync<ScheduleExecutionEvent>(
-                "metrics:schedules:", fromDate, toDate);
-        });
+        api.MapGet("/schedules", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<ScheduleExecutionEvent>("metrics:schedules:", range.From, range.To));
 
         api.MapGet("/health", async (MetricsQueryService query) =>
-        {
-            return await query.GetHealthAsync();
-        });
+            await query.GetHealthAsync());
 
-        api.MapGet("/tokens/by-user", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetTokenBreakdownAsync("tokens:byUser:", fromDate, toDate);
-        });
+        api.MapGet("/tokens/by-user", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetTokenBreakdownAsync("tokens:byUser:", range.From, range.To));
 
-        api.MapGet("/tokens/by-model", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetTokenBreakdownAsync("tokens:byModel:", fromDate, toDate);
-        });
+        api.MapGet("/tokens/by-model", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetTokenBreakdownAsync("tokens:byModel:", range.From, range.To));
 
         api.MapGet("/tokens/by/{dimension}", async (
             MetricsQueryService query,
             TokenDimension dimension,
             TokenMetric metric,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetTokenGroupedAsync(dimension, metric, fromDate, toDate);
-        });
+            MetricDateRange range) =>
+            await query.GetTokenGroupedAsync(dimension, metric, range.From, range.To));
 
         api.MapGet("/tools/by/{dimension}", async (
             MetricsQueryService query,
             ToolDimension dimension,
             ToolMetric metric,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetToolGroupedAsync(dimension, metric, fromDate, toDate);
-        });
+            MetricDateRange range) =>
+            await query.GetToolGroupedAsync(dimension, metric, range.From, range.To));
 
         api.MapGet("/errors/by/{dimension}", async (
             MetricsQueryService query,
             ErrorDimension dimension,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetErrorGroupedAsync(dimension, fromDate, toDate);
-        });
+            MetricDateRange range) =>
+            await query.GetErrorGroupedAsync(dimension, range.From, range.To));
 
         api.MapGet("/schedules/by/{dimension}", async (
             MetricsQueryService query,
             ScheduleDimension dimension,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetScheduleGroupedAsync(dimension, fromDate, toDate);
-        });
+            MetricDateRange range) =>
+            await query.GetScheduleGroupedAsync(dimension, range.From, range.To));
 
-        api.MapGet("/memory/recall", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetEventsAsync<MemoryRecallEvent>("metrics:memory-recall:", fromDate, toDate);
-        });
+        api.MapGet("/memory/recall", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<MemoryRecallEvent>("metrics:memory-recall:", range.From, range.To));
 
-        api.MapGet("/memory/extraction", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetEventsAsync<MemoryExtractionEvent>("metrics:memory-extraction:", fromDate, toDate);
-        });
+        api.MapGet("/memory/extraction", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<MemoryExtractionEvent>("metrics:memory-extraction:", range.From, range.To));
 
-        api.MapGet("/memory/dreaming", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetEventsAsync<MemoryDreamingEvent>("metrics:memory-dreaming:", fromDate, toDate);
-        });
+        api.MapGet("/memory/dreaming", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<MemoryDreamingEvent>("metrics:memory-dreaming:", range.From, range.To));
 
         api.MapGet("/memory/by/{dimension}", async (
             MetricsQueryService query,
             MemoryDimension dimension,
             MemoryMetric metric,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetMemoryGroupedAsync(dimension, metric, fromDate, toDate);
-        });
+            MetricDateRange range) =>
+            await query.GetMemoryGroupedAsync(dimension, metric, range.From, range.To));
 
-        api.MapGet("/latency", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetEventsAsync<LatencyEvent>("metrics:latency:", fromDate, toDate);
-        });
+        api.MapGet("/latency", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<LatencyEvent>("metrics:latency:", range.From, range.To));
 
         api.MapGet("/latency/by/{dimension}", async (
             MetricsQueryService query,
             LatencyDimension dimension,
             Aggregation metric,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetLatencyGroupedAsync(dimension, metric, fromDate, toDate);
-        });
+            MetricDateRange range) =>
+            await query.GetLatencyGroupedAsync(dimension, metric, range.From, range.To));
 
         api.MapGet("/latency/trend", async (
             MetricsQueryService query,
             Aggregation metric,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetLatencyTrendAsync(metric, fromDate, toDate);
-        });
+            MetricDateRange range) =>
+            await query.GetLatencyTrendAsync(metric, range.From, range.To));
 
-        api.MapGet("/voice", async (
-            MetricsQueryService query,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetEventsAsync<VoiceEvent>("metrics:voice:", fromDate, toDate);
-        });
+        api.MapGet("/voice", async (MetricsQueryService query, MetricDateRange range) =>
+            await query.GetEventsAsync<VoiceEvent>("metrics:voice:", range.From, range.To));
 
         api.MapGet("/voice/by/{dimension}", async (
             MetricsQueryService query,
             VoiceDimension dimension,
             VoiceMetric metric,
             Aggregation? agg,
-            DateOnly? from,
-            DateOnly? to) =>
-        {
-            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            return await query.GetVoiceGroupedAsync(
-                dimension, metric, fromDate, toDate, agg ?? Aggregation.Avg);
-        });
+            MetricDateRange range) =>
+            await query.GetVoiceGroupedAsync(dimension, metric, range.From, range.To, agg ?? Aggregation.Avg));
     }
 }

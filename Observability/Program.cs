@@ -14,6 +14,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(
     ConnectionMultiplexer.Connect(redisConnection));
 
 builder.Services.AddSignalR();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<MetricsQueryService>();
 builder.Services.AddHostedService<MetricsCollectorService>();
 builder.Services.AddHttpClient();

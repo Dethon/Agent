@@ -19,12 +19,12 @@ that it edits the same endpoint file that ticket 01 renames a type in.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A date range type binds itself from the request, reading the existing from and to query values.
-- [ ] A missing value defaults to the current date taken from the time provider, never from the system clock directly.
-- [ ] Every route in the metrics group takes the bound range in place of two nullable parameters.
-- [ ] The observability service reads the clock in exactly one place for this purpose.
-- [ ] Requests are unchanged on the wire: same paths, same query parameter names, same responses for the same inputs.
-- [ ] Unit tests drive the binder against a request context carrying query values and a fake time provider, covering both values absent, one present, both present, and unparseable input.
-- [ ] Those tests run standalone, with no Redis and no browser.
+- [x] A date range type binds itself from the request, reading the existing from and to query values.
+- [x] A missing value defaults to the current date taken from the time provider, never from the system clock directly.
+- [x] Every route in the metrics group takes the bound range in place of two nullable parameters.
+- [x] The observability service reads the clock in exactly one place for this purpose.
+- [x] Requests are unchanged on the wire: same paths, same query parameter names, same responses for the same inputs.
+- [x] Unit tests drive the binder against a request context carrying query values and a fake time provider, covering both values absent, one present, both present, and unparseable input.
+- [x] Those tests run standalone, with no Redis and no browser.
