@@ -5,139 +5,124 @@
 @using Domain.DTOs.Metrics.Enums
 @using static Dashboard.Client.Components.PillSelector
 @implements IDisposable
-@inject MemoryStore Store
 @inject MetricsStore Metrics
-@inject DataLoadEffect DataLoad
-@inject MetricsApiService Api
+@inject MetricFamilyTable Families
 @inject LocalStorageService Storage
 
 <div class="memory-page">
-    <header class="page-header">
-        <h2>Memory</h2>
-        <div class="controls">
-            <PillSelector Label="Group by" Options="DimensionOptions" Value="@_state.GroupBy.ToString()"
-                          OnChanged="OnDimensionChanged" />
-            <PillSelector Label="Metric" Options="MetricOptions" Value="@_state.Metric.ToString()"
-                          OnChanged="OnMetricChanged" DisabledValues="_disabledMetrics" />
-            <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
-                          OnChanged="OnTimeChanged" />
-        </div>
-    </header>
+    <MetricControls TStore="MemoryStore" TState="MemoryState"
+                    Title="Memory"
+                    Family="Families.Memory"
+                    GroupByOptions="DimensionOptions"
+                    MetricOptions="MetricOptions"
+                    UnavailableMetrics="UnavailableMetrics">
+        <ChildContent Context="state">
+            <section class="kpi-row">
+                <KpiCard Label="Total Recalls" Value="@_metrics.TotalRecalls.ToString("N0")" Color="var(--accent-blue)" />
+                <KpiCard Label="Total Extractions" Value="@_metrics.TotalExtractions.ToString("N0")" Color="var(--accent-green)" />
+                <KpiCard Label="Avg Latency" Value="@($"{AvgLatency(state):F0}ms")" Color="var(--accent-yellow)" />
+                <KpiCard Label="Memories Stored" Value="@_metrics.MemoriesStored.ToString("N0")" Color="var(--accent-purple)" />
+                <KpiCard Label="Merged" Value="@_metrics.MemoriesMerged.ToString("N0")" Color="var(--accent-pink)" />
+                <KpiCard Label="Decayed" Value="@_metrics.MemoriesDecayed.ToString("N0")" Color="var(--accent-red)" />
+            </section>
 
-    <section class="kpi-row">
-        <KpiCard Label="Total Recalls" Value="@_metrics.TotalRecalls.ToString("N0")" Color="var(--accent-blue)" />
-        <KpiCard Label="Total Extractions" Value="@_metrics.TotalExtractions.ToString("N0")" Color="var(--accent-green)" />
-        <KpiCard Label="Avg Latency" Value="@($"{_avgLatency:F0}ms")" Color="var(--accent-yellow)" />
-        <KpiCard Label="Memories Stored" Value="@_metrics.MemoriesStored.ToString("N0")" Color="var(--accent-purple)" />
-        <KpiCard Label="Merged" Value="@_metrics.MemoriesMerged.ToString("N0")" Color="var(--accent-pink)" />
-        <KpiCard Label="Decayed" Value="@_metrics.MemoriesDecayed.ToString("N0")" Color="var(--accent-red)" />
-    </section>
+            <section class="section">
+                <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
+                              MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == state.Metric.ToString())?.Label ?? "")"
+                              Unit="@GetMetricUnit(state)" />
+            </section>
 
-    <section class="section">
-        <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
-                      MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
-                      Unit="@GetMetricUnit()" />
-    </section>
-
-    <section class="section">
-        <div class="tab-card">
-            <div class="tab-bar">
-                <div class="tab @(_activeTab == "Recall" ? "tab-active" : "")" @onclick='() => SetTab("Recall")'>
-                    Recall
-                </div>
-                <div class="tab @(_activeTab == "Extraction" ? "tab-active" : "")" @onclick='() => SetTab("Extraction")'>
-                    Extraction
-                </div>
-                <div class="tab @(_activeTab == "Dreaming" ? "tab-active" : "")" @onclick='() => SetTab("Dreaming")'>
-                    Dreaming
-                </div>
-            </div>
-
-            @if (_activeTab == "Recall")
-            {
-                <div class="events-table">
-                    <div class="table-header recall-grid">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                        <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
-                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
-                        <span class='sortable @SortClass("Memories")' @onclick='() => SortBy("Memories")'>Memories Found @SortIndicator("Memories")</span>
+            <section class="section">
+                <div class="tab-card">
+                    <div class="tab-bar">
+                        <div class="tab @(_activeTab == "Recall" ? "tab-active" : "")" @onclick='() => SetTab("Recall")'>
+                            Recall
+                        </div>
+                        <div class="tab @(_activeTab == "Extraction" ? "tab-active" : "")" @onclick='() => SetTab("Extraction")'>
+                            Extraction
+                        </div>
+                        <div class="tab @(_activeTab == "Dreaming" ? "tab-active" : "")" @onclick='() => SetTab("Dreaming")'>
+                            Dreaming
+                        </div>
                     </div>
-                    @foreach (var evt in GetSortedRecalls())
+
+                    @if (_activeTab == "Recall")
                     {
-                        <div class="table-row recall-grid">
-                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
-                            <span>@evt.UserId</span>
-                            <span>@evt.DurationMs ms</span>
-                            <span>@evt.MemoryCount</span>
+                        <div class="events-table">
+                            <div class="table-header recall-grid">
+                                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                                <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
+                                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
+                                <span class='sortable @SortClass("Memories")' @onclick='() => SortBy("Memories")'>Memories Found @SortIndicator("Memories")</span>
+                            </div>
+                            @foreach (var evt in GetSortedRecalls(state))
+                            {
+                                <div class="table-row recall-grid">
+                                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                                    <span>@evt.UserId</span>
+                                    <span>@evt.DurationMs ms</span>
+                                    <span>@evt.MemoryCount</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (_activeTab == "Extraction")
+                    {
+                        <div class="events-table">
+                            <div class="table-header extraction-grid">
+                                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                                <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
+                                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
+                                <span class='sortable @SortClass("Candidates")' @onclick='() => SortBy("Candidates")'>Candidates @SortIndicator("Candidates")</span>
+                                <span class='sortable @SortClass("Stored")' @onclick='() => SortBy("Stored")'>Stored @SortIndicator("Stored")</span>
+                            </div>
+                            @foreach (var evt in GetSortedExtractions(state))
+                            {
+                                <div class="table-row extraction-grid">
+                                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                                    <span>@evt.UserId</span>
+                                    <span>@evt.DurationMs ms</span>
+                                    <span>@evt.CandidateCount</span>
+                                    <span class="stored-count">@evt.StoredCount</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="events-table">
+                            <div class="table-header dreaming-grid">
+                                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                                <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
+                                <span class='sortable @SortClass("Merged")' @onclick='() => SortBy("Merged")'>Merged @SortIndicator("Merged")</span>
+                                <span class='sortable @SortClass("Decayed")' @onclick='() => SortBy("Decayed")'>Decayed @SortIndicator("Decayed")</span>
+                                <span>Profile Regen</span>
+                            </div>
+                            @foreach (var evt in GetSortedDreamings(state))
+                            {
+                                <div class="table-row dreaming-grid">
+                                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                                    <span>@evt.UserId</span>
+                                    <span class="merged-count">@evt.MergedCount</span>
+                                    <span class="decayed-count">@evt.DecayedCount</span>
+                                    <span>@(evt.ProfileRegenerated ? "✓" : "—")</span>
+                                </div>
+                            }
                         </div>
                     }
                 </div>
-            }
-            else if (_activeTab == "Extraction")
-            {
-                <div class="events-table">
-                    <div class="table-header extraction-grid">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                        <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
-                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
-                        <span class='sortable @SortClass("Candidates")' @onclick='() => SortBy("Candidates")'>Candidates @SortIndicator("Candidates")</span>
-                        <span class='sortable @SortClass("Stored")' @onclick='() => SortBy("Stored")'>Stored @SortIndicator("Stored")</span>
-                    </div>
-                    @foreach (var evt in GetSortedExtractions())
-                    {
-                        <div class="table-row extraction-grid">
-                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
-                            <span>@evt.UserId</span>
-                            <span>@evt.DurationMs ms</span>
-                            <span>@evt.CandidateCount</span>
-                            <span class="stored-count">@evt.StoredCount</span>
-                        </div>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="events-table">
-                    <div class="table-header dreaming-grid">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                        <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
-                        <span class='sortable @SortClass("Merged")' @onclick='() => SortBy("Merged")'>Merged @SortIndicator("Merged")</span>
-                        <span class='sortable @SortClass("Decayed")' @onclick='() => SortBy("Decayed")'>Decayed @SortIndicator("Decayed")</span>
-                        <span>Profile Regen</span>
-                    </div>
-                    @foreach (var evt in GetSortedDreamings())
-                    {
-                        <div class="table-row dreaming-grid">
-                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
-                            <span>@evt.UserId</span>
-                            <span class="merged-count">@evt.MergedCount</span>
-                            <span class="decayed-count">@evt.DecayedCount</span>
-                            <span>@(evt.ProfileRegenerated ? "\u2713" : "\u2014")</span>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-    </section>
+            </section>
+        </ChildContent>
+    </MetricControls>
 </div>
 
 @code {
-    private MemoryState _state = new();
     private MetricsState _metrics = new();
-    private int _selectedDays = 1;
-    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
-    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
-    private double _avgLatency;
-    private string _activeTab = "Recall";
-    private IDisposable? _sub;
     private IDisposable? _metricsSub;
-    private IReadOnlySet<string> _disabledMetrics = new HashSet<string>();
 
-    private static readonly HashSet<string> UserOnlyMetrics = [
-        nameof(MemoryMetric.StoredCount),
-        nameof(MemoryMetric.MergedCount),
-        nameof(MemoryMetric.DecayedCount),
-    ];
+    // The tab is the page's own state, not one of the family's choices, so it is not the control
+    // header's to remember. Its key is unchanged.
+    private string _activeTab = "Recall";
 
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [
@@ -155,86 +140,24 @@
         new("Decayed", nameof(MemoryMetric.DecayedCount)),
     ];
 
-    private static readonly IReadOnlyList<PillOption> TimeOptions =
-    [
-        new("Today", "1"),
-        new("7d", "7"),
-        new("30d", "30"),
-    ];
+    private static readonly IReadOnlySet<string> UserOnlyMetrics =
+        MetricFamilyTable.UserOnlyMemoryMetrics.Select(m => m.ToString()).ToHashSet();
+
+    private static readonly IReadOnlySet<string> Nothing = new HashSet<string>();
+
+    private static IReadOnlySet<string> UnavailableMetrics(MemoryState state) =>
+        state.GroupBy != MemoryDimension.User ? UserOnlyMetrics : Nothing;
 
     protected override async Task OnInitializedAsync()
     {
-        var savedGroupBy = await Storage.GetAsync<MemoryDimension>("memory.groupBy");
-        var savedMetric = await Storage.GetAsync<MemoryMetric>("memory.metric");
-        var savedDays = await Storage.GetIntAsync("memory.days");
         var savedTab = await Storage.GetStringAsync("memory.activeTab");
-
-        if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
-        if (savedMetric.HasValue) Store.SetMetric(savedMetric.Value);
-        if (savedDays.HasValue) _selectedDays = savedDays.Value;
         if (!string.IsNullOrEmpty(savedTab)) _activeTab = savedTab;
-
-        UpdateDisabledMetrics(Store.State.GroupBy);
-
-        _sub = Store.StateObservable.Subscribe(s =>
-        {
-            _state = s;
-            ComputeAvgLatency(s);
-            InvokeAsync(StateHasChanged);
-        });
 
         _metricsSub = Metrics.StateObservable.Subscribe(m =>
         {
             _metrics = m;
             InvokeAsync(StateHasChanged);
         });
-
-        _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to.AddDays(-(_selectedDays - 1));
-        Store.SetDateRange(_from, _to);
-        await DataLoad.LoadAsync(_from, _to);
-    }
-
-    private void ComputeAvgLatency(MemoryState s)
-    {
-        var totalDuration = s.RecallEvents.Sum(e => e.DurationMs) + s.ExtractionEvents.Sum(e => e.DurationMs);
-        var totalOps = s.RecallEvents.Count + s.ExtractionEvents.Count;
-        _avgLatency = totalOps > 0 ? (double)totalDuration / totalOps : 0;
-    }
-
-    private void UpdateDisabledMetrics(MemoryDimension groupBy)
-    {
-        _disabledMetrics = groupBy != MemoryDimension.User
-            ? UserOnlyMetrics
-            : new HashSet<string>();
-    }
-
-    private async Task OnDimensionChanged(string value)
-    {
-        var dim = Enum.Parse<MemoryDimension>(value);
-        Store.SetGroupBy(dim);
-        UpdateDisabledMetrics(dim);
-        if (dim != MemoryDimension.User && UserOnlyMetrics.Contains(_state.Metric.ToString()))
-            Store.SetMetric(MemoryMetric.Count);
-        await Storage.SetAsync("memory.groupBy", value);
-        await ReloadBreakdown();
-    }
-
-    private async Task OnMetricChanged(string value)
-    {
-        Store.SetMetric(Enum.Parse<MemoryMetric>(value));
-        await Storage.SetAsync("memory.metric", value);
-        await ReloadBreakdown();
-    }
-
-    private async Task OnTimeChanged(string value)
-    {
-        _selectedDays = int.Parse(value);
-        _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to.AddDays(-(_selectedDays - 1));
-        Store.SetDateRange(_from, _to);
-        await Storage.SetAsync("memory.days", value);
-        await DataLoad.LoadAsync(_from, _to);
     }
 
     private async Task SetTab(string tab)
@@ -243,15 +166,14 @@
         await Storage.SetAsync("memory.activeTab", tab);
     }
 
-    private async Task ReloadBreakdown()
+    private static double AvgLatency(MemoryState state)
     {
-        var breakdown = await Api.GetGroupedAsync<decimal>(
-            $"memory/by/{Store.State.GroupBy}", _from, _to,
-            [("metric", Store.State.Metric.ToString())]);
-        Store.SetBreakdown(breakdown ?? []);
+        var totalDuration = state.RecallEvents.Sum(e => e.DurationMs) + state.ExtractionEvents.Sum(e => e.DurationMs);
+        var totalOps = state.RecallEvents.Count + state.ExtractionEvents.Count;
+        return totalOps > 0 ? (double)totalDuration / totalOps : 0;
     }
 
-    private string GetMetricUnit() => _state.Metric switch
+    private static string GetMetricUnit(MemoryState state) => state.Metric switch
     {
         MemoryMetric.AvgDuration => "ms",
         _ => ""
@@ -266,9 +188,9 @@
         else { _sortColumn = column; _sortAsc = false; }
     }
 
-    private IEnumerable<MemoryRecallEvent> GetSortedRecalls()
+    private IEnumerable<MemoryRecallEvent> GetSortedRecalls(MemoryState state)
     {
-        var events = _state.RecallEvents.TakeLast(50).AsEnumerable();
+        var events = state.RecallEvents.TakeLast(50).AsEnumerable();
         Func<MemoryRecallEvent, object> keySelector = _sortColumn switch
         {
             "User" => e => e.UserId,
@@ -279,9 +201,9 @@
         return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
     }
 
-    private IEnumerable<MemoryExtractionEvent> GetSortedExtractions()
+    private IEnumerable<MemoryExtractionEvent> GetSortedExtractions(MemoryState state)
     {
-        var events = _state.ExtractionEvents.TakeLast(50).AsEnumerable();
+        var events = state.ExtractionEvents.TakeLast(50).AsEnumerable();
         Func<MemoryExtractionEvent, object> keySelector = _sortColumn switch
         {
             "User" => e => e.UserId,
@@ -293,9 +215,9 @@
         return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
     }
 
-    private IEnumerable<MemoryDreamingEvent> GetSortedDreamings()
+    private IEnumerable<MemoryDreamingEvent> GetSortedDreamings(MemoryState state)
     {
-        var events = _state.DreamingEvents.TakeLast(50).AsEnumerable();
+        var events = state.DreamingEvents.TakeLast(50).AsEnumerable();
         Func<MemoryDreamingEvent, object> keySelector = _sortColumn switch
         {
             "User" => e => e.UserId,
@@ -307,20 +229,13 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "\u25b2" : "\u25bc";
+    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "▲" : "▼";
 
-    public void Dispose()
-    {
-        _sub?.Dispose();
-        _metricsSub?.Dispose();
-    }
+    public void Dispose() => _metricsSub?.Dispose();
 }
 
 <style>
     .memory-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
-    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
-    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
     .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
     .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
 
@@ -348,8 +263,6 @@
     .decayed-count { color: var(--accent-red); }
 
     @@media (max-width: 768px) {
-        .page-header { flex-direction: column; }
-        .page-header h2 { font-size: 1.1rem; }
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .table-header, .table-row { font-size: 0.72rem; padding: 0.4rem 0.5rem; }
         .recall-grid { grid-template-columns: 110px minmax(80px, 1fr) 75px 95px; }

@@ -20,17 +20,17 @@ as it is.
 
 **Blocked by:** 06 — the session and the wrapper are built and proven there.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] All seven breakdown pages render their header through the wrapper.
-- [ ] No breakdown page reads or writes a preference, and none derives a date range.
-- [ ] Errors and schedules render no metric pill.
-- [ ] Tools and memory still disable the metric values they disable today.
-- [ ] Voice renders its aggregate pill through the extra-controls fragment, and choosing an aggregation still refreshes with that choice.
-- [ ] Latency still draws its trend panel, and the trend and the breakdown still move together.
-- [ ] Memory still shows the figures it takes from the shared summary store.
-- [ ] Every page keeps its headline figures, chart type, event table and sorting unchanged.
-- [ ] Every preference a user has saved still loads and still selects the same pills, on all seven pages.
-- [ ] The overview page is untouched.
-- [ ] The session tests are parameterised across all seven families.
-- [ ] The dashboard's Playwright suite passes unchanged.
+- [x] All seven breakdown pages render their header through the wrapper.
+- [x] No breakdown page reads or writes a preference, and none derives a date range.
+- [x] Errors and schedules render no metric pill.
+- [x] Tools and memory still disable the metric values they disable today.
+- [x] Voice renders its aggregate pill through the extra-controls fragment, and choosing an aggregation still refreshes with that choice.
+- [x] Latency still draws its trend panel, and the trend and the breakdown still move together.
+- [x] Memory still shows the figures it takes from the shared summary store.
+- [x] Every page keeps its headline figures, chart type, event table and sorting unchanged.
+- [x] Every preference a user has saved still loads and still selects the same pills, on all seven pages.
+- [x] The overview page is untouched.
+- [x] The session tests are parameterised across all seven families.
+- [x] The dashboard's Playwright suite passes unchanged.

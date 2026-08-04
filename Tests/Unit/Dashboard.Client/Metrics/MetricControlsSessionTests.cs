@@ -150,6 +150,23 @@ public class MetricControlsSessionTests : IDisposable
         session.From.ShouldBe(new DateOnly(2026, 3, 18));
     }
 
+    // Voice's aggregate pill is the one choice the shared header does not own. It is persisted and
+    // refreshed the same way, and the refresh still carries the aggregation the user picked.
+    [Fact]
+    public async Task ChangeAsync_TheVoiceAggregation_PersistsAndRefreshesWithIt()
+    {
+        var aggregation = MetricChoice.For("agg", () => _voiceStore.State.Agg, _voiceStore.SetAgg);
+        var session = SessionFor(_families.Voice);
+        await session.InitializeAsync();
+        _handler.Requests.Clear();
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+
+        await session.ChangeAsync(aggregation, nameof(Aggregation.P95));
+
+        _js.Storage["voice.agg"].ShouldBe(nameof(Aggregation.P95));
+        _handler.Requests.ShouldContain(u => u != null && u.Contains("agg=P95", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task InitializeAsync_APreferenceNoLongerParses_LeavesTheChoiceAlone()
     {

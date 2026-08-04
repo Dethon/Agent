@@ -3,92 +3,86 @@
 @using Domain.DTOs.Metrics
 @using Domain.DTOs.Metrics.Enums
 @using static Dashboard.Client.Components.PillSelector
-@implements IDisposable
 @inject VoiceStore Store
-@inject MetricsApiService Api
-@inject LocalStorageService Storage
+@inject MetricFamilyTable Families
 
 <div class="voice-page">
-    <header class="page-header">
-        <h2>Voice</h2>
-        <div class="controls">
-            <PillSelector Label="Group by" Options="DimensionOptions" Value="@_state.GroupBy.ToString()"
-                          OnChanged="OnDimensionChanged" />
-            <PillSelector Label="Metric" Options="MetricOptions" Value="@_state.Metric.ToString()"
-                          OnChanged="OnMetricChanged" />
-            <PillSelector Label="Aggregate" Options="AggOptions" Value="@_state.Agg.ToString()"
-                          OnChanged="OnAggChanged" />
-            <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
-                          OnChanged="OnTimeChanged" />
-        </div>
-    </header>
+    <MetricControls TStore="VoiceStore" TState="VoiceState"
+                    Title="Voice"
+                    Family="Families.Voice"
+                    GroupByOptions="DimensionOptions"
+                    MetricOptions="MetricOptions">
+        <ExtraControls Context="controls">
+            <PillSelector Label="Aggregate" Options="AggOptions" Value="@_aggregation.Current"
+                          OnChanged="value => controls.ChangeAsync(_aggregation, value)" />
+        </ExtraControls>
+        <ChildContent Context="state">
+            <section class="kpi-row">
+                <KpiCard Label="Utterances" Value="@state.Events.Count(e => e.Metric == VoiceMetric.UtteranceTranscribed).ToString("N0")" Color="var(--accent-blue)" />
+                <KpiCard Label="Median speech → audio" Value="@($"{MedianLatency(state):F0}ms")" Color="var(--accent-yellow)" />
+                <KpiCard Label="STT errors" Value="@state.Events.Count(e => e.Metric == VoiceMetric.SttError).ToString("N0")" Color="var(--accent-red)" />
+                <KpiCard Label="TTS errors" Value="@state.Events.Count(e => e.Metric == VoiceMetric.TtsError).ToString("N0")" Color="var(--accent-red)" />
+            </section>
 
-    <section class="kpi-row">
-        <KpiCard Label="Utterances" Value="@_utterances.ToString("N0")" Color="var(--accent-blue)" />
-        <KpiCard Label="Median speech → audio" Value="@($"{_medianLatency:F0}ms")" Color="var(--accent-yellow)" />
-        <KpiCard Label="STT errors" Value="@_sttErrors.ToString("N0")" Color="var(--accent-red)" />
-        <KpiCard Label="TTS errors" Value="@_ttsErrors.ToString("N0")" Color="var(--accent-red)" />
-    </section>
+            <section class="section">
+                <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
+                              MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == state.Metric.ToString())?.Label ?? "")"
+                              Unit="@GetMetricUnit(state)" />
+            </section>
 
-    <section class="section">
-        <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
-                      MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
-                      Unit="@GetMetricUnit()" />
-    </section>
-
-    <section class="section">
-        <h3>Recent voice events</h3>
-        <div class="events-table">
-            <div class="table-header">
-                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                <span class='sortable @SortClass("Satellite")' @onclick='() => SortBy("Satellite")'>Satellite @SortIndicator("Satellite")</span>
-                <span class='sortable @SortClass("Room")' @onclick='() => SortBy("Room")'>Room @SortIndicator("Room")</span>
-                <span class='sortable @SortClass("Identity")' @onclick='() => SortBy("Identity")'>Identity @SortIndicator("Identity")</span>
-                <span class='sortable @SortClass("Metric")' @onclick='() => SortBy("Metric")'>Metric @SortIndicator("Metric")</span>
-                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
-                <span class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome @SortIndicator("Outcome")</span>
-                <span class='sortable @SortClass("Error")' @onclick='() => SortBy("Error")'>Error @SortIndicator("Error")</span>
-            </div>
-            @foreach (var evt in GetSortedEvents())
-            {
-                <div class="table-row">
-                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
-                    <span>@evt.SatelliteId</span>
-                    <span>@evt.Room</span>
-                    <span>@evt.Identity</span>
-                    <span>@evt.Metric</span>
-                    <span>@(evt.DurationMs is { } d ? $"{d} ms" : "")</span>
-                    <span>@evt.Outcome</span>
-                    @if (!string.IsNullOrEmpty(evt.Error))
+            <section class="section">
+                <h3>Recent voice events</h3>
+                <div class="events-table">
+                    <div class="table-header">
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                        <span class='sortable @SortClass("Satellite")' @onclick='() => SortBy("Satellite")'>Satellite @SortIndicator("Satellite")</span>
+                        <span class='sortable @SortClass("Room")' @onclick='() => SortBy("Room")'>Room @SortIndicator("Room")</span>
+                        <span class='sortable @SortClass("Identity")' @onclick='() => SortBy("Identity")'>Identity @SortIndicator("Identity")</span>
+                        <span class='sortable @SortClass("Metric")' @onclick='() => SortBy("Metric")'>Metric @SortIndicator("Metric")</span>
+                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
+                        <span class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome @SortIndicator("Outcome")</span>
+                        <span class='sortable @SortClass("Error")' @onclick='() => SortBy("Error")'>Error @SortIndicator("Error")</span>
+                    </div>
+                    @foreach (var evt in GetSortedEvents(state))
                     {
-                        <span class="status-err tooltip-anchor" tabindex="0">ERR
-                            <span class="tooltip-popup">@evt.Error</span>
-                        </span>
+                        <div class="table-row">
+                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                            <span>@evt.SatelliteId</span>
+                            <span>@evt.Room</span>
+                            <span>@evt.Identity</span>
+                            <span>@evt.Metric</span>
+                            <span>@(evt.DurationMs is { } d ? $"{d} ms" : "")</span>
+                            <span>@evt.Outcome</span>
+                            @if (!string.IsNullOrEmpty(evt.Error))
+                            {
+                                <span class="status-err tooltip-anchor" tabindex="0">ERR
+                                    <span class="tooltip-popup">@evt.Error</span>
+                                </span>
+                            }
+                            else
+                            {
+                                <span></span>
+                            }
+                        </div>
                     }
-                    else
+                    @if (!state.Events.Any())
                     {
-                        <span></span>
+                        <p class="no-data">No voice events recorded</p>
                     }
                 </div>
-            }
-            @if (!_state.Events.Any())
-            {
-                <p class="no-data">No voice events recorded</p>
-            }
-        </div>
-    </section>
+            </section>
+        </ChildContent>
+    </MetricControls>
 </div>
 
 @code {
-    private VoiceState _state = new();
-    private int _selectedDays = 1;
-    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
-    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
-    private long _utterances;
-    private double _medianLatency;
-    private long _sttErrors;
-    private long _ttsErrors;
-    private IDisposable? _sub;
+    // The one family with a choice the shared header does not know about. It is declared where the
+    // pill is rendered, for the same reason the other choices are declared where the family is:
+    // whoever shows a pill owns the reading and writing behind it.
+    private MetricChoice _aggregation = default!;
+
+    protected override void OnInitialized() =>
+        _aggregation = MetricChoice.For("agg", () => Store.State.Agg, Store.SetAgg);
 
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [
@@ -118,13 +112,6 @@
         new("TSE latency (ms)", nameof(VoiceMetric.TseLatencyMs)),
     ];
 
-    private static readonly IReadOnlyList<PillOption> TimeOptions =
-    [
-        new("Today", "1"),
-        new("7d", "7"),
-        new("30d", "30"),
-    ];
-
     private static readonly IReadOnlyList<PillOption> AggOptions =
     [
         new("Avg", nameof(Aggregation.Avg)),
@@ -133,88 +120,22 @@
         new("Max", nameof(Aggregation.Max)),
     ];
 
-    protected override async Task OnInitializedAsync()
+    // WakeToFirstAudioMs starts at mic-open, so its median is inflated by however long the user
+    // spoke. SpeechEndToFirstAudioMs is the wait. Wake → audio stays available in the chart's
+    // metric selector.
+    private static double MedianLatency(VoiceState state)
     {
-        var savedGroupBy = await Storage.GetAsync<VoiceDimension>("voice.groupBy");
-        var savedMetric = await Storage.GetAsync<VoiceMetric>("voice.metric");
-        var savedDays = await Storage.GetIntAsync("voice.days");
-        var savedAgg = await Storage.GetAsync<Aggregation>("voice.agg");
-
-        if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
-        if (savedMetric.HasValue) Store.SetMetric(savedMetric.Value);
-        if (savedDays.HasValue) _selectedDays = savedDays.Value;
-        if (savedAgg.HasValue) Store.SetAgg(savedAgg.Value);
-
-        _sub = Store.StateObservable.Subscribe(s =>
-        {
-            _state = s;
-            _utterances = s.Events.Count(e => e.Metric == VoiceMetric.UtteranceTranscribed);
-            // WakeToFirstAudioMs starts at mic-open, so its median is inflated by however long the
-            // user spoke. SpeechEndToFirstAudioMs is the wait. Wake → audio stays available in the
-            // chart's metric selector.
-            var lat = s.Events.Where(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs && e.DurationMs is not null)
-                              .Select(e => e.DurationMs!.Value).OrderBy(x => x).ToList();
-            _medianLatency = lat.Count > 0 ? lat[lat.Count / 2] : 0;
-            _sttErrors = s.Events.Count(e => e.Metric == VoiceMetric.SttError);
-            _ttsErrors = s.Events.Count(e => e.Metric == VoiceMetric.TtsError);
-            InvokeAsync(StateHasChanged);
-        });
-
-        _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to.AddDays(-(_selectedDays - 1));
-        Store.SetDateRange(_from, _to);
-        await ReloadAll();
-    }
-
-    private async Task ReloadAll()
-    {
-        var events = await Api.GetVoiceEventsAsync(_from, _to);
-        Store.SetEvents(events ?? []);
-        await ReloadBreakdown();
-    }
-
-    private async Task ReloadBreakdown()
-    {
-        var breakdown = await Api.GetGroupedAsync<decimal>(
-            $"voice/by/{Store.State.GroupBy}", _from, _to,
-            [("metric", Store.State.Metric.ToString()), ("agg", Store.State.Agg.ToString())]);
-        Store.SetBreakdown(breakdown ?? []);
-    }
-
-    private async Task OnDimensionChanged(string v)
-    {
-        Store.SetGroupBy(Enum.Parse<VoiceDimension>(v));
-        await Storage.SetAsync("voice.groupBy", v);
-        await ReloadBreakdown();
-    }
-
-    private async Task OnMetricChanged(string v)
-    {
-        Store.SetMetric(Enum.Parse<VoiceMetric>(v));
-        await Storage.SetAsync("voice.metric", v);
-        await ReloadBreakdown();
-    }
-
-    private async Task OnAggChanged(string v)
-    {
-        Store.SetAgg(Enum.Parse<Aggregation>(v));
-        await Storage.SetAsync("voice.agg", v);
-        await ReloadBreakdown();
-    }
-
-    private async Task OnTimeChanged(string v)
-    {
-        _selectedDays = int.Parse(v);
-        _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to.AddDays(-(_selectedDays - 1));
-        Store.SetDateRange(_from, _to);
-        await Storage.SetAsync("voice.days", v);
-        await ReloadAll();
+        var durations = state.Events
+            .Where(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs && e.DurationMs is not null)
+            .Select(e => e.DurationMs!.Value)
+            .OrderBy(x => x)
+            .ToList();
+        return durations.Count > 0 ? durations[durations.Count / 2] : 0;
     }
 
     // Mirrors the query service: any metric whose name ends in Ms is a duration.
-    private string GetMetricUnit() =>
-        _state.Metric.ToString().EndsWith("Ms", StringComparison.Ordinal) ? "ms" : "";
+    private static string GetMetricUnit(VoiceState state) =>
+        state.Metric.ToString().EndsWith("Ms", StringComparison.Ordinal) ? "ms" : "";
 
     private string _sortColumn = "Time";
     private bool _sortAsc;
@@ -225,9 +146,9 @@
         else { _sortColumn = column; _sortAsc = false; }
     }
 
-    private IEnumerable<VoiceEvent> GetSortedEvents()
+    private IEnumerable<VoiceEvent> GetSortedEvents(VoiceState state)
     {
-        var events = _state.Events.TakeLast(50).AsEnumerable();
+        var events = state.Events.TakeLast(50).AsEnumerable();
         Func<VoiceEvent, object> keySelector = _sortColumn switch
         {
             "Satellite" => e => e.SatelliteId ?? "",
@@ -243,9 +164,7 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "\u25b2" : "\u25bc";
-
-    public void Dispose() => _sub?.Dispose();
+    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "▲" : "▼";
 }
 
 <style>
@@ -253,26 +172,6 @@
         display: flex;
         flex-direction: column;
         gap: 1.5rem;
-    }
-
-    .page-header {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 1rem;
-    }
-
-    .page-header h2 {
-        font-size: 1.4rem;
-        font-weight: 600;
-    }
-
-    .controls {
-        display: flex;
-        gap: 1.5rem;
-        flex-wrap: wrap;
-        align-items: flex-end;
     }
 
     .kpi-row {
@@ -378,14 +277,6 @@
     }
 
     @@media (max-width: 768px) {
-        .page-header {
-            flex-direction: column;
-        }
-
-        .page-header h2 {
-            font-size: 1.1rem;
-        }
-
         .events-table {
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;

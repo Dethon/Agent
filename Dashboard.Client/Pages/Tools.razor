@@ -3,86 +3,68 @@
 @using Domain.DTOs.Metrics
 @using Domain.DTOs.Metrics.Enums
 @using static Dashboard.Client.Components.PillSelector
-@implements IDisposable
-@inject ToolsStore Store
-@inject DataLoadEffect DataLoad
-@inject MetricsApiService Api
-@inject LocalStorageService Storage
+@inject MetricFamilyTable Families
 
 <div class="tools-page">
-    <header class="page-header">
-        <h2>Tool Calls</h2>
-        <div class="controls">
-            <PillSelector Label="Group by" Options="DimensionOptions" Value="@_state.GroupBy.ToString()"
-                          OnChanged="OnDimensionChanged" />
-            <PillSelector Label="Metric" Options="MetricOptions" Value="@_state.Metric.ToString()"
-                          OnChanged="OnMetricChanged" DisabledValues="_disabledMetrics" />
-            <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
-                          OnChanged="OnTimeChanged" />
-        </div>
-    </header>
+    <MetricControls TStore="ToolsStore" TState="ToolsState"
+                    Title="Tool Calls"
+                    Family="Families.Tools"
+                    GroupByOptions="DimensionOptions"
+                    MetricOptions="MetricOptions"
+                    UnavailableMetrics="UnavailableMetrics">
+        <ChildContent Context="state">
+            <section class="kpi-row">
+                <KpiCard Label="Total Calls" Value="@state.Events.Count.ToString("N0")" Color="var(--accent-yellow)" />
+                <KpiCard Label="Success Rate" Value="@($"{SuccessRate(state):F1}%")" Color="var(--accent-green)" />
+                <KpiCard Label="Avg Duration" Value="@($"{AvgDuration(state):F0}ms")" Color="var(--accent-blue)" />
+            </section>
 
-    <section class="kpi-row">
-        <KpiCard Label="Total Calls" Value="@_totalCalls.ToString("N0")" Color="var(--accent-yellow)" />
-        <KpiCard Label="Success Rate" Value="@($"{_successRate:F1}%")" Color="var(--accent-green)" />
-        <KpiCard Label="Avg Duration" Value="@($"{_avgDuration:F0}ms")" Color="var(--accent-blue)" />
-    </section>
+            <section class="section">
+                <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
+                              MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == state.Metric.ToString())?.Label ?? "")"
+                              Unit="@GetMetricUnit(state)" />
+            </section>
 
-    <section class="section">
-        <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
-                      MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
-                      Unit="@GetMetricUnit()" />
-    </section>
-
-    <section class="section">
-        <h3>Recent Tool Calls</h3>
-        <div class="events-table">
-            <div class="table-header">
-                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                <span class='sortable @SortClass("Tool")' @onclick='() => SortBy("Tool")'>Tool @SortIndicator("Tool")</span>
-                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
-                <span class='sortable @SortClass("Status")' @onclick='() => SortBy("Status")'>Status @SortIndicator("Status")</span>
-            </div>
-            @foreach (var evt in GetSortedEvents())
-            {
-                <div class="table-row">
-                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
-                    <span class="tool-name" title="@evt.ToolName">
-                        <span class="tool-name-full">@evt.ToolName</span>
-                        <span class="tool-name-short">@ShortToolName(evt.ToolName)</span>
-                    </span>
-                    <span>@evt.DurationMs ms</span>
-                    @if (evt.Success)
+            <section class="section">
+                <h3>Recent Tool Calls</h3>
+                <div class="events-table">
+                    <div class="table-header">
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                        <span class='sortable @SortClass("Tool")' @onclick='() => SortBy("Tool")'>Tool @SortIndicator("Tool")</span>
+                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
+                        <span class='sortable @SortClass("Status")' @onclick='() => SortBy("Status")'>Status @SortIndicator("Status")</span>
+                    </div>
+                    @foreach (var evt in GetSortedEvents(state))
                     {
-                        <span class="status-ok">OK</span>
-                    }
-                    else
-                    {
-                        <span class="status-err tooltip-anchor" tabindex="0">FAIL
-                            @if (!string.IsNullOrEmpty(evt.Error))
+                        <div class="table-row">
+                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                            <span class="tool-name" title="@evt.ToolName">
+                                <span class="tool-name-full">@evt.ToolName</span>
+                                <span class="tool-name-short">@ShortToolName(evt.ToolName)</span>
+                            </span>
+                            <span>@evt.DurationMs ms</span>
+                            @if (evt.Success)
                             {
-                                <span class="tooltip-popup">@evt.Error</span>
+                                <span class="status-ok">OK</span>
                             }
-                        </span>
+                            else
+                            {
+                                <span class="status-err tooltip-anchor" tabindex="0">FAIL
+                                    @if (!string.IsNullOrEmpty(evt.Error))
+                                    {
+                                        <span class="tooltip-popup">@evt.Error</span>
+                                    }
+                                </span>
+                            }
+                        </div>
                     }
                 </div>
-            }
-        </div>
-    </section>
+            </section>
+        </ChildContent>
+    </MetricControls>
 </div>
 
 @code {
-    private ToolsState _state = new();
-    private int _selectedDays = 1;
-    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
-    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
-    private long _totalCalls;
-    private double _successRate;
-    private double _avgDuration;
-    private IDisposable? _sub;
-
-    private IReadOnlySet<string> _disabledMetrics = new HashSet<string>();
-
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [
         new("Tool Name", nameof(ToolDimension.ToolName)),
@@ -96,82 +78,19 @@
         new("Error Rate", nameof(ToolMetric.ErrorRate)),
     ];
 
-    private static readonly IReadOnlyList<PillOption> TimeOptions =
-    [
-        new("Today", "1"),
-        new("7d", "7"),
-        new("30d", "30"),
-    ];
+    private static readonly IReadOnlySet<string> ErrorRateOnly = new HashSet<string> { nameof(ToolMetric.ErrorRate) };
+    private static readonly IReadOnlySet<string> Nothing = new HashSet<string>();
 
-    protected override async Task OnInitializedAsync()
-    {
-        var savedGroupBy = await Storage.GetAsync<ToolDimension>("tools.groupBy");
-        var savedMetric = await Storage.GetAsync<ToolMetric>("tools.metric");
-        var savedDays = await Storage.GetIntAsync("tools.days");
+    private static IReadOnlySet<string> UnavailableMetrics(ToolsState state) =>
+        state.GroupBy == ToolDimension.Status ? ErrorRateOnly : Nothing;
 
-        if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
-        if (savedMetric.HasValue) Store.SetMetric(savedMetric.Value);
-        if (savedDays.HasValue) _selectedDays = savedDays.Value;
+    private static double SuccessRate(ToolsState state) =>
+        state.Events.Count > 0 ? state.Events.Count(e => e.Success) * 100.0 / state.Events.Count : 0;
 
-        _sub = Store.StateObservable.Subscribe(s =>
-        {
-            _state = s;
-            _totalCalls = s.Events.Count;
-            _successRate = s.Events.Count > 0 ? s.Events.Count(e => e.Success) * 100.0 / s.Events.Count : 0;
-            _avgDuration = s.Events.Count > 0 ? s.Events.Average(e => e.DurationMs) : 0;
-            UpdateDisabledMetrics(s.GroupBy);
-            InvokeAsync(StateHasChanged);
-        });
+    private static double AvgDuration(ToolsState state) =>
+        state.Events.Count > 0 ? state.Events.Average(e => e.DurationMs) : 0;
 
-        _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to.AddDays(-(_selectedDays - 1));
-        Store.SetDateRange(_from, _to);
-        await DataLoad.LoadAsync(_from, _to);
-    }
-
-    private void UpdateDisabledMetrics(ToolDimension groupBy)
-    {
-        _disabledMetrics = groupBy == ToolDimension.Status
-            ? new HashSet<string> { nameof(ToolMetric.ErrorRate) }
-            : new HashSet<string>();
-    }
-
-    private async Task OnDimensionChanged(string value)
-    {
-        var dim = Enum.Parse<ToolDimension>(value);
-        Store.SetGroupBy(dim);
-        if (dim == ToolDimension.Status && _state.Metric == ToolMetric.ErrorRate)
-            Store.SetMetric(ToolMetric.CallCount);
-        await Storage.SetAsync("tools.groupBy", value);
-        await ReloadBreakdown();
-    }
-
-    private async Task OnMetricChanged(string value)
-    {
-        Store.SetMetric(Enum.Parse<ToolMetric>(value));
-        await Storage.SetAsync("tools.metric", value);
-        await ReloadBreakdown();
-    }
-
-    private async Task OnTimeChanged(string value)
-    {
-        _selectedDays = int.Parse(value);
-        _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to.AddDays(-(_selectedDays - 1));
-        Store.SetDateRange(_from, _to);
-        await Storage.SetAsync("tools.days", value);
-        await DataLoad.LoadAsync(_from, _to);
-    }
-
-    private async Task ReloadBreakdown()
-    {
-        var breakdown = await Api.GetGroupedAsync<decimal>(
-            $"tools/by/{Store.State.GroupBy}", _from, _to,
-            [("metric", Store.State.Metric.ToString())]);
-        Store.SetBreakdown(breakdown ?? []);
-    }
-
-    private string GetMetricUnit() => _state.Metric switch
+    private static string GetMetricUnit(ToolsState state) => state.Metric switch
     {
         ToolMetric.AvgDuration => "ms",
         ToolMetric.ErrorRate => "%",
@@ -193,9 +112,9 @@
         else { _sortColumn = column; _sortAsc = false; }
     }
 
-    private IEnumerable<ToolCallEvent> GetSortedEvents()
+    private IEnumerable<ToolCallEvent> GetSortedEvents(ToolsState state)
     {
-        var events = _state.Events.TakeLast(50).AsEnumerable();
+        var events = state.Events.TakeLast(50).AsEnumerable();
         Func<ToolCallEvent, object> keySelector = _sortColumn switch
         {
             "Tool" => e => e.ToolName,
@@ -207,16 +126,11 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "\u25b2" : "\u25bc";
-
-    public void Dispose() => _sub?.Dispose();
+    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "▲" : "▼";
 }
 
 <style>
     .tools-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
-    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
-    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
     .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
     .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
     .events-table { display: flex; flex-direction: column; gap: 2px; }
@@ -236,8 +150,6 @@
     .tooltip-popup { display: none; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; max-width: 320px; min-width: 150px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none; }
 
     @@media (max-width: 768px) {
-        .page-header { flex-direction: column; }
-        .page-header h2 { font-size: 1.1rem; }
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .table-header, .table-row { grid-template-columns: 110px minmax(0, 2fr) 80px minmax(0, 1fr); font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 405px; }
         .tool-name-full { display: none; }
