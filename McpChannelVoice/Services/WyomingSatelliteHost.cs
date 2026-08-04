@@ -151,7 +151,10 @@ public sealed class WyomingSatelliteHost(
             // reaches it, which is the kill switch the setting has always been.
             prefetchBufferChunks: voiceSettings.Tts.Streaming.Prefetch
                 ? voiceSettings.Tts.Streaming.PrefetchBufferChunks
-                : null));
+                : null),
+            // The one gate factory, so every capture on this satellite — wake turn, follow-up and
+            // approval answer — pays back into the same per-satellite room-noise memory.
+            new Microphone(id, gates));
         var followUp = voiceSettings.FollowUp with
         {
             Enabled = config.FollowUpEnabled ?? voiceSettings.FollowUp.Enabled

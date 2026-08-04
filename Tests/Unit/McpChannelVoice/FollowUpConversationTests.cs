@@ -32,7 +32,7 @@ public class FollowUpConversationTests
             {
                 if (evt.Type == "listening-started")
                 {
-                    CaptureWasOpenAtListeningStarted = Session.HasActiveCapture;
+                    CaptureWasOpenAtListeningStarted = Session.Mic.IsOpen;
                 }
                 Events.Add(evt.Type);
                 return IndicatorWritesThrow
@@ -90,13 +90,13 @@ public class FollowUpConversationTests
 
         // The user finishes speaking. The satellite's read loop is what ends a capture in
         // production, so the test ends it the same way.
-        public void EndUtterance() => Session.EndCapture();
+        public void EndUtterance() => Session.Mic.ForceEnd();
 
         public void FeedSilence(int chunks)
         {
             var silent = new AudioChunk { Data = new byte[3200], Format = AudioFormat.WyomingStandard };
             foreach (var _ in Enumerable.Range(0, chunks))
-            { Session.RouteAudio(silent); }
+            { Session.Mic.Feed(silent); }
         }
 
         // The agent's answer, over the real reply path: one segment queued and played, then the
@@ -188,7 +188,7 @@ public class FollowUpConversationTests
 
         // The follow-up window opened a second capture without a new wake: the mic is live again
         // and the wake-turn hook — the only thing a wake can fire — ran exactly once.
-        h.Session.HasActiveCapture.ShouldBeTrue();
+        h.Session.Mic.IsOpen.ShouldBeTrue();
         h.Events.Count(e => e == "open-first").ShouldBe(1);
 
         await StopAsync(sut, run);
@@ -378,7 +378,7 @@ public class FollowUpConversationTests
         h.Time.Advance(TimeSpan.FromMilliseconds(1));
         await Task.Delay(50);
 
-        h.Session.HasActiveCapture.ShouldBeTrue(); // one follow-up window opened
+        h.Session.Mic.IsOpen.ShouldBeTrue(); // one follow-up window opened
         h.EndUtterance();                // follow-up utterance
         await Task.Delay(50);
         h.Reply(spoke: true);            // turns=1 >= MaxTurns=1 -> end
@@ -389,7 +389,7 @@ public class FollowUpConversationTests
         // Capped at one: the first utterance plus a single follow-up reached the dispatcher, and
         // the mic is closed rather than open on a second window.
         h.Dispatched.Count.ShouldBe(2);
-        h.Session.HasActiveCapture.ShouldBeFalse();
+        h.Session.Mic.IsOpen.ShouldBeFalse();
         await StopAsync(sut, run);
     }
 
@@ -428,7 +428,7 @@ public class FollowUpConversationTests
         h.Time.Advance(TimeSpan.FromMilliseconds(5000)); // early-verify mark: the check is now in flight
         await Task.Delay(50);
 
-        h.Session.TryAbortCapture().ShouldBeTrue(); // arbiter suppresses this satellite mid-verify
+        h.Session.Mic.TryAbort().ShouldBeTrue(); // arbiter suppresses this satellite mid-verify
         h.EarlyRejectGate.SetResult(true);  // ...then the verifier rejects the audio so far
         await Task.Delay(50);
 
@@ -449,7 +449,7 @@ public class FollowUpConversationTests
         var run = sut.RunAsync(CancellationToken.None);
 
         sut.OnWake(null);
-        h.Session.TryAbortCapture().ShouldBeTrue(); // arbiter suppressed this satellite
+        h.Session.Mic.TryAbort().ShouldBeTrue(); // arbiter suppressed this satellite
 
         await Task.Delay(50);
         h.Dispatched.ShouldBeEmpty();
@@ -458,7 +458,7 @@ public class FollowUpConversationTests
         // the coordinator must be re-armed: a later wake starts a fresh conversation
         sut.OnWake(null);
         h.Events.Count(e => e == "open-first").ShouldBe(2);
-        h.Session.HasActiveCapture.ShouldBeTrue();
+        h.Session.Mic.IsOpen.ShouldBeTrue();
 
         await StopAsync(sut, run);
     }
@@ -488,7 +488,7 @@ public class FollowUpConversationTests
         var run = sut.RunAsync(CancellationToken.None);
 
         sut.OnWake(null);
-        h.Session.TryAbortCapture().ShouldBeTrue(); // arbiter suppressed this satellite
+        h.Session.Mic.TryAbort().ShouldBeTrue(); // arbiter suppressed this satellite
 
         await Task.Delay(50);
         h.Events.ShouldNotContain("voice-stopped");
@@ -563,7 +563,7 @@ public class FollowUpConversationTests
         h.Time.Advance(TimeSpan.FromMilliseconds(1));
         await Task.Delay(50);
 
-        h.Session.HasActiveCapture.ShouldBeTrue();
+        h.Session.Mic.IsOpen.ShouldBeTrue();
 
         await StopAsync(sut, run);
     }

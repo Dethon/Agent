@@ -552,7 +552,7 @@ public class SatelliteConnectionTests
         await h.Emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), cts.Token);
         SpeakOneReplySegment(connection.Session);
 
-        await UntilAsync(() => connection.Session.HasActiveCapture, TimeSpan.FromSeconds(10));
+        await UntilAsync(() => connection.Mic.IsOpen, TimeSpan.FromSeconds(10));
 
         // The earcon is generated at the satellite's fixed sink rate, which is what tells it apart
         // from the reply audio on the wire. Its envelope is already closed by the time the mic
@@ -720,7 +720,7 @@ public class SatelliteConnectionTests
         // Wake turn dispatched -> simulate the agent's spoken reply so the follow-up window opens.
         await h.Emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), cts.Token);
         SpeakOneReplySegment(connection.Session);
-        await UntilAsync(() => connection.Session.HasActiveCapture, TimeSpan.FromSeconds(10));
+        await UntilAsync(() => connection.Mic.IsOpen, TimeSpan.FromSeconds(10));
 
         // Follow-up mic reopened and gets pure ambient noise — nobody has started speaking yet.
         // Real wall-clock delay (not more gate-time audio) so the early-verify mark elapses while
@@ -834,7 +834,7 @@ public class SatelliteConnectionTests
         // become active, then stream the wake-free follow-up utterance into it. A fresh
         // SilenceGate+AdaptiveLevelTracker is opened per capture, so this needs its own leading
         // silent chunk to seed the floor.
-        await UntilAsync(() => connection.Session.HasActiveCapture, TimeSpan.FromSeconds(10));
+        await UntilAsync(() => connection.Mic.IsOpen, TimeSpan.FromSeconds(10));
         h.SendAudio(0, 1);
         h.SendAudio(8000, 4);
         h.SendAudio(0, 6);
@@ -874,7 +874,7 @@ public class SatelliteConnectionTests
 
         // Wait for the wake-free window to open, then stream pure silence into it: 12 silent chunks
         // (~1.2s) exceed the 800ms no-speech window.
-        await UntilAsync(() => connection.Session.HasActiveCapture, TimeSpan.FromSeconds(10));
+        await UntilAsync(() => connection.Mic.IsOpen, TimeSpan.FromSeconds(10));
         h.SendAudio(0, 12);
 
         // The no-speech timeout fires -> the closing (empty) transcript re-arms the satellite.

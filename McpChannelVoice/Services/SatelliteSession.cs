@@ -6,20 +6,26 @@ namespace McpChannelVoice.Services;
 
 public sealed class SatelliteSession
 {
-    private UtteranceCapture? _capture;
     private static readonly TimeSpan _snoozeWindow = TimeSpan.FromSeconds(60);
     private readonly Lock _dismissGate = new();
     private string? _dismissedAlert;
     private DateTimeOffset _dismissedAt;
 
-    // The queue is built by the connection, which is where its depth limits are configured. A
-    // session built without one — a test, or a caller that never plays audio — gets a queue on the
-    // settings' own defaults rather than a null property.
-    public SatelliteSession(string satelliteId, SatelliteConfig config, PlaybackQueue? playback = null)
+    // The queue and the microphone are built by the connection, which is where the queue's depth
+    // limits are configured and where the one gate factory lives. A session built without them — a
+    // test, or a caller that never listens or plays audio — gets both on the settings' own defaults
+    // rather than null properties.
+    public SatelliteSession(
+        string satelliteId,
+        SatelliteConfig config,
+        PlaybackQueue? playback = null,
+        Microphone? mic = null)
     {
         SatelliteId = satelliteId;
         Config = config;
         Playback = playback ?? new PlaybackQueue();
+        Mic = mic ?? new Microphone(satelliteId, new SilenceGateFactory(
+            new VoiceSettings(), new WyomingClientSettings(), TimeProvider.System));
     }
 
     public string SatelliteId { get; }
@@ -33,6 +39,11 @@ public sealed class SatelliteSession
     // Everything queued to be heard on this satellite. Exposed the same way as the turn above, for
     // the same reason.
     public PlaybackQueue Playback { get; }
+
+    // This satellite's microphone, owned the same way. The session has no capture surface of its
+    // own: a caller that listens holds the microphone, or CaptureSession if what it is opening is
+    // a turn.
+    public Microphone Mic { get; }
 
     // Writes a control event on this satellite's live Wyoming connection. Set by
     // SatelliteConnection when the connection is established and cleared on teardown, because the
@@ -68,31 +79,6 @@ public sealed class SatelliteSession
             return false;
         }
     }
-
-    public UtteranceCapture OpenCapture(SilenceGate gate, ChunkHistory? history = null)
-    {
-        var capture = new UtteranceCapture(gate, history);
-        Volatile.Write(ref _capture, capture);
-        return capture;
-    }
-
-    public void CloseCapture() => Volatile.Write(ref _capture, null);
-
-    public bool HasActiveCapture => Volatile.Read(ref _capture) is not null;
-
-    public void RouteAudio(AudioChunk chunk) => Volatile.Read(ref _capture)?.Feed(chunk);
-
-    public void EndCapture() => Volatile.Read(ref _capture)?.ForceEnd();
-
-    public CaptureActivity? GetCaptureActivity()
-    {
-        var capture = Volatile.Read(ref _capture);
-        return capture?.History is { } history
-            ? new CaptureActivity(history.OpenedAt, history.Snapshot())
-            : null;
-    }
-
-    public bool TryAbortCapture() => Volatile.Read(ref _capture)?.Abort() ?? false;
 
     // A connection that has ever reported wake_rms runs post-arbitration firmware and understands
     // pause-satellite; anything else gets the legacy transcript abort (audible done cue).

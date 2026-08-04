@@ -136,7 +136,7 @@ public sealed class WakeArbiter(
         // utterance as two conversations, with no exception and no log line to show for it.
         var openCaptures = handles
             .Where(kv => claims.All(c => c.SatelliteId != kv.Key))
-            .Select(kv => (kv.Key, Handle: kv.Value, Activity: kv.Value.Session.GetCaptureActivity()))
+            .Select(kv => (kv.Key, Handle: kv.Value, Activity: kv.Value.Session.Mic.Activity))
             .Where(h => h.Activity is not null)
             .ToList();
 
@@ -198,7 +198,7 @@ public sealed class WakeArbiter(
         {
             // Only a capture we actually aborted may be stolen from: if it already ended
             // naturally, its dispatch is in flight and these were independent turns.
-            if (!holderHandle.Session.TryAbortCapture())
+            if (!holderHandle.Session.Mic.TryAbort())
             {
                 return;
             }
@@ -241,7 +241,7 @@ public sealed class WakeArbiter(
 
     private async Task SuppressAsync(WakeArbiterHandle handle, WakeClaim claim, string outcome)
     {
-        if (!handle.Session.TryAbortCapture())
+        if (!handle.Session.Mic.TryAbort())
         {
             logger.LogWarning(
                 "Arbitration loser {Id} had no abortable capture (ended early); letting it proceed",

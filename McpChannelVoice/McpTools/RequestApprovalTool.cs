@@ -75,7 +75,12 @@ public sealed class RequestApprovalTool
                 return "rejected";
             }
 
-            var answer = await CaptureAnswerAsync(session, stt, gates, settings, time, cancellationToken);
+            // The same gate the wake turn the user is answering was endpointed against, room-noise
+            // cap included: a confirmation mic that behaved differently from the mic that heard the
+            // question cut people off mid-answer.
+            var answer = await CaptureAnswerAsync(
+                session.Mic, gates.Create(session.SatelliteId, session.Config),
+                stt, settings, time, cancellationToken);
             if (answer is null)
             {
                 // Arbitration stole the turn mid-answer: the arbiter already re-armed this
@@ -147,8 +152,11 @@ public sealed class RequestApprovalTool
 
     // Returns null when arbitration abandoned the capture — distinct from an empty answer,
     // which re-prompts.
+    // Holds a microphone, not a session: an approval prompt is a question the agent asked mid-turn,
+    // so it must not mark a turn start or a speech end on the playback queue — that would corrupt
+    // the latency reported for the turn actually in flight. Which type this takes is what says so.
     private static async Task<string?> CaptureAnswerAsync(
-        SatelliteSession session, ISpeechToText stt, SilenceGateFactory gates,
+        Microphone mic, SilenceGate gate, ISpeechToText stt,
         VoiceSettings settings, TimeProvider time, CancellationToken ct)
     {
         var followUp = settings.FollowUp;
@@ -157,11 +165,8 @@ public sealed class RequestApprovalTool
             await Task.Delay(followUp.PlaybackTailMs, ct); // echo guard after the prompt finishes
         }
 
-        // The same gate the wake turn the user is answering was endpointed against, room-noise cap
-        // included: a confirmation mic that behaved differently from the mic that heard the question
-        // cut people off mid-answer.
-        var capture = session.OpenCapture(
-            gates.Create(session.SatelliteId, session.Config),
+        var capture = mic.Open(
+            gate,
             // The approval mic is an open capture like any wake turn's: Rule B must be able
             // to ask it what it heard during another satellite's wake-word span.
             new ChunkHistory(time, settings.Arbitration.HistorySpan));
@@ -173,12 +178,11 @@ public sealed class RequestApprovalTool
         }
         finally
         {
-            // Always close the capture, even if the wait is cancelled, so a cancelled approval
-            // doesn't leave a dangling mic capture routing audio into a dead turn.
-            session.CloseCapture();
-            // And pay back into the memory this capture's gate read from; the factory decides
-            // whether it measured anything worth keeping.
-            gates.RecordCaptureClose(session.SatelliteId, capture.Stats);
+            // Always close, even if the wait is cancelled, so a cancelled approval doesn't leave a
+            // dangling mic capture routing audio into a dead turn. Closing pays back into the
+            // room-noise memory as one act, so an approval mic keeps the memory alive on a
+            // satellite used mostly for confirmations.
+            mic.Close(capture);
         }
 
         if (outcome == CaptureOutcome.Abandoned)

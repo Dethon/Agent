@@ -30,6 +30,10 @@ public sealed class SatelliteConnection(
 
     public required SatelliteSession Session { get; init; }
 
+    // The connection's microphone. Exposed beside the session because a caller watching this link
+    // wants to know whether it is listening, which is a fact about the mic rather than the session.
+    public Microphone Mic => Session.Mic;
+
     public required FollowUpConversation Coordinator { get; init; }
 
     public required Func<WyomingEvent, CancellationToken, Task> Writer { get; init; }
@@ -127,12 +131,12 @@ public sealed class SatelliteConnection(
 
             case "audio-chunk":
                 var (rate, width, channels) = FormatOf(evt.Data);
-                Session.RouteAudio(ToChunk(evt.Payload, rate, width, channels));
+                Session.Mic.Feed(ToChunk(evt.Payload, rate, width, channels));
                 break;
 
             case "audio-stop":
                 _wakeAnnounced = false;
-                Session.EndCapture();
+                Session.Mic.ForceEnd();
                 break;
 
             case "error":

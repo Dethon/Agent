@@ -105,6 +105,6 @@ public class CaptureSessionTests
         h.Sut.OpenFollowUpTurn();
 
         h.Opened.ShouldBeEmpty();
-        h.Session.HasActiveCapture.ShouldBeTrue();
+        h.Session.Mic.IsOpen.ShouldBeTrue();
     }
 }

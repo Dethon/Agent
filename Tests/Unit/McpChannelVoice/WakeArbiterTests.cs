@@ -73,7 +73,7 @@ public class WakeArbiterTests
             var gate = new SilenceGate(
                 new AdaptiveLevelTracker(500, 9, 4, 15, TimeSpan.FromSeconds(3)),
                 TimeSpan.FromMilliseconds(800), TimeSpan.FromSeconds(15), TimeSpan.FromMilliseconds(200));
-            Capture = Session.OpenCapture(gate, new ChunkHistory(time, settings.HistorySpan));
+            Capture = Session.Mic.Open(gate, new ChunkHistory(time, settings.HistorySpan));
         }
     }
 

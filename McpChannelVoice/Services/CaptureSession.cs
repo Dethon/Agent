@@ -48,7 +48,7 @@ public sealed class CaptureSession(
     }
 
     private UtteranceCapture Open() =>
-        session.OpenCapture(
+        session.Mic.Open(
             gates.Create(session.SatelliteId, session.Config),
             // Rule B asks an already-open capture, retrospectively, what it heard during another
             // satellite's wake-word span — so every capture has to remember.
@@ -59,9 +59,9 @@ public sealed class CaptureSession(
     // gets its closing transcript, so a later read would report the tail plus an arbitrary delay.
     public CaptureStats Close(UtteranceCapture capture)
     {
-        session.CloseCapture();
-        var stats = capture.Stats;
-        gates.RecordCaptureClose(session.SatelliteId, stats);
+        // Closing and paying back into the room-noise memory are one act on the microphone, so a
+        // turn cannot close without paying.
+        var stats = session.Mic.Close(capture);
         // Stamped with the host's TimeProvider — the same instance the playback loop reads,
         // which reads it back. The frozen endpointing tail rewinds the close to the instant the user
         // actually stopped talking; read here, at the close, because it is the last point where the

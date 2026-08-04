@@ -120,7 +120,7 @@ public class TurnLatencyDecompositionTests
         // advances rather than as published events. Every other span is asserted against what the
         // production code actually published, and every millisecond advanced between speech end and
         // first audio is claimed by exactly one term — which is the property under test.
-        var capture = _session.OpenCapture(NewGate());
+        var capture = _session.Mic.Open(NewGate());
         _session.Playback.MarkTurnStart(_clock.GetTimestamp());
 
         // Audio arrives in real time, so advance the clock in step with each frame's duration: that
@@ -132,7 +132,7 @@ public class TurnLatencyDecompositionTests
         (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
         capture.Stats.TrailingSilenceMs.ShouldBe(EndpointTailMs);
 
-        _session.CloseCapture();
+        _session.Mic.Close(capture);
         _session.Playback.MarkSpeechEnd(_clock.GetTimestamp(), capture.Stats.TrailingSilenceMs, _clock);
 
         _clock.Advance(TimeSpan.FromMilliseconds(VerifyMs)); // final speaker-verify pass (ONNX embed)

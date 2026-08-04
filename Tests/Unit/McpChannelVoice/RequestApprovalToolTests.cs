@@ -18,7 +18,7 @@ namespace Tests.Unit.McpChannelVoice;
 
 public class RequestApprovalToolTests : IDisposable
 {
-    private readonly SatelliteSession _session;
+    private SatelliteSession _session;
     private readonly SatelliteSessionRegistry _sessions = new();
     private readonly ReplyTextAccumulator _accumulator = new();
     private readonly Mock<ITextToSpeech> _tts = new();
@@ -78,6 +78,14 @@ public class RequestApprovalToolTests : IDisposable
     private IServiceProvider BuildServices(
         VoiceSettings voice, WyomingClientSettings wyoming, SilenceGateFactory gates)
     {
+        // A capture pays back into the room-noise memory of the factory that supplied its gate, so
+        // a test running against its own factory listens on a microphone built over that factory.
+        // The playback queue is carried over, because the pump is already running on it.
+        _session = new SatelliteSession(
+            _session.SatelliteId, _session.Config, _session.Playback,
+            new Microphone(_session.SatelliteId, gates));
+        _sessions.Register(_session);
+
         return new ServiceCollection()
             .AddSingleton(_sessions)
             .AddSingleton(_accumulator)
@@ -137,7 +145,7 @@ public class RequestApprovalToolTests : IDisposable
         // The tool opens the mic from its own continuation on that outcome, so this is the handoff
         // between two continuations of the same signal, not a poll for something unrelated.
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while (!_session.HasActiveCapture)
+        while (!_session.Mic.IsOpen)
         {
             if (DateTime.UtcNow > deadline)
             {
@@ -156,15 +164,15 @@ public class RequestApprovalToolTests : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
-            if (_session.HasActiveCapture)
+            if (_session.Mic.IsOpen)
             {
-                _session.RouteAudio(Loud());
-                _session.RouteAudio(Loud());
-                _session.RouteAudio(Silent());
-                _session.RouteAudio(Silent());
-                _session.RouteAudio(Silent());
-                _session.RouteAudio(Silent());
-                _session.RouteAudio(Silent());
+                _session.Mic.Feed(Loud());
+                _session.Mic.Feed(Loud());
+                _session.Mic.Feed(Silent());
+                _session.Mic.Feed(Silent());
+                _session.Mic.Feed(Silent());
+                _session.Mic.Feed(Silent());
+                _session.Mic.Feed(Silent());
                 await Task.Delay(60, ct);
             }
             else
@@ -183,14 +191,14 @@ public class RequestApprovalToolTests : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
-            if (_session.HasActiveCapture)
+            if (_session.Mic.IsOpen)
             {
                 foreach (var _ in Enumerable.Range(0, 5))
-                { _session.RouteAudio(Level(4000)); }   // the room, which the capture has to open on top of
-                _session.RouteAudio(Level(12_000));     // "sí, la de las tres"
-                _session.RouteAudio(Level(12_000));
-                _session.RouteAudio(Level(0));
-                _session.RouteAudio(Level(0));
+                { _session.Mic.Feed(Level(4000)); }   // the room, which the capture has to open on top of
+                _session.Mic.Feed(Level(12_000));     // "sí, la de las tres"
+                _session.Mic.Feed(Level(12_000));
+                _session.Mic.Feed(Level(0));
+                _session.Mic.Feed(Level(0));
                 await Task.Delay(60, ct);
             }
             else
@@ -228,9 +236,9 @@ public class RequestApprovalToolTests : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
-            if (_session.HasActiveCapture)
+            if (_session.Mic.IsOpen)
             {
-                _session.RouteAudio(Level(90));
+                _session.Mic.Feed(Level(90));
                 await Task.Delay(10, ct);
             }
             else
@@ -282,6 +290,51 @@ public class RequestApprovalToolTests : IDisposable
     }
 
     [Fact]
+    public async Task RequestMode_AnswerCapture_PaysBackIntoTheRoomMemoryAndAnchorsNoTurn()
+    {
+        // The two halves of what makes an approval mic an approval mic. It listens through the
+        // microphone, so closing pays back into the room-noise memory — a satellite used mostly for
+        // confirmations still learns what its room sounds like. And it is not a turn: marking a turn
+        // start or a speech end here would report this prompt's latency against the turn actually in
+        // flight, so a job queued afterwards must still find both anchors unset.
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
+        var voice = new VoiceSettings { FollowUp = new FollowUpSettings { PlaybackTailMs = 0, WindowMs = 500 } };
+        var wyoming = new WyomingClientSettings
+        {
+            SilenceRmsThreshold = 500,
+            TrailingSilenceMs = 200,
+            MaxUtteranceMs = 3000,
+            MinSpeechMs = 100
+        };
+        var gates = new SilenceGateFactory(voice, wyoming, TimeProvider.System);
+        var services = BuildServices(voice, wyoming, gates);
+
+        using var feed = new CancellationTokenSource();
+        var feeder = FeedRoomToneAsync(feed.Token);
+
+        (await RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], services)).ShouldBe("rejected");
+        await feed.CancelAsync();
+
+        FloorOfNextGateFor(gates, _session).ShouldBe(90, tolerance: 5);
+
+        FirstAudioTiming? timing = null;
+        var probe = _session.Playback.Enqueue(new PlaybackJob(
+            Label: "after-the-approval",
+            Kind: PlaybackKind.Announce,
+            Priority: AnnouncePriority.Normal,
+            Audio: Audio(),
+            OnFirstAudio: t => { timing = t; return Task.CompletedTask; }));
+        (await probe.Completed.WaitAsync(TimeSpan.FromSeconds(10)))
+            .Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+
+        timing.ShouldNotBeNull();
+        timing.SinceTurnStart.ShouldBeNull();
+        timing.SinceSpeechEnd.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task RequestMode_AnswerCaptureAbortedByArbiter_LeavesNoRoomReading()
     {
         // Arbitration took the turn away mid-answer, so this capture never established what silence
@@ -304,8 +357,8 @@ public class RequestApprovalToolTests : IDisposable
             _conversationId, ApprovalMode.Request, [MakeRequest()], services);
 
         await PromptHeardThenMicOpenAsync();
-        _session.RouteAudio(Level(90));
-        _session.TryAbortCapture().ShouldBeTrue();
+        _session.Mic.Feed(Level(90));
+        _session.Mic.TryAbort().ShouldBeTrue();
 
         (await run).ShouldBe("rejected");
 
@@ -455,7 +508,7 @@ public class RequestApprovalToolTests : IDisposable
         // The approval mic is an open capture like any wake turn's: Rule B must be able to ask
         // it, retrospectively, what it heard during another satellite's wake-word span —
         // otherwise a leaked "ok nabu" during an approval wakes the other room unarbitrated.
-        _session.GetCaptureActivity().ShouldNotBeNull();
+        _session.Mic.Activity.ShouldNotBeNull();
 
         using var feed = new CancellationTokenSource();
         var feeder = FeedAnswersAsync(feed.Token);
@@ -478,7 +531,7 @@ public class RequestApprovalToolTests : IDisposable
         // The arbiter stole the turn mid-answer (and already re-armed this satellite via
         // pause-satellite): the partial audio is not an answer, and there is no one left
         // here to re-prompt.
-        _session.TryAbortCapture().ShouldBeTrue();
+        _session.Mic.TryAbort().ShouldBeTrue();
 
         (await run).ShouldBe("rejected");
         _stt.Verify(
@@ -528,13 +581,13 @@ public class RequestApprovalToolTests : IDisposable
             {
                 while (!feed.IsCancellationRequested)
                 {
-                    if (session.HasActiveCapture)
+                    if (session.Mic.IsOpen)
                     {
-                        session.RouteAudio(Loud());
-                        session.RouteAudio(Loud());
-                        session.RouteAudio(Silent());
-                        session.RouteAudio(Silent());
-                        session.RouteAudio(Silent());
+                        session.Mic.Feed(Loud());
+                        session.Mic.Feed(Loud());
+                        session.Mic.Feed(Silent());
+                        session.Mic.Feed(Silent());
+                        session.Mic.Feed(Silent());
                         await Task.Delay(60, feed.Token);
                     }
                     else
