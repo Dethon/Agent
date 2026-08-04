@@ -433,7 +433,7 @@ public sealed class WyomingSatelliteHost(
             OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
             OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
 
-        await session.Playback.EnqueueAsync(job);
+        session.Playback.Enqueue(job);
         await drained.Task.WaitAsync(ct);
     }
 

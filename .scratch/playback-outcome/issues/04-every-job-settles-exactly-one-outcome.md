@@ -30,30 +30,30 @@ enum RefusalReason { QueueClosed, QueueFull, LowPriorityBehindQueue }
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Queueing a job returns a ticket. It is synchronous, because every branch of the
+- [x] Queueing a job returns a ticket. It is synchronous, because every branch of the
       enqueue already answers immediately.
-- [ ] A refused ticket names its reason and carries an outcome that is already settled as
+- [x] A refused ticket names its reason and carries an outcome that is already settled as
       refused, so a caller has one settle path rather than a branch.
-- [ ] The three refusal conditions map to distinct reasons: the satellite is gone, the
+- [x] The three refusal conditions map to distinct reasons: the satellite is gone, the
       queue already holds its limit for that kind, and a low-priority job arrived while
       anything was queued.
-- [ ] Every accepted job settles exactly once — drained, preempted, failed or discarded —
+- [x] Every accepted job settles exactly once — drained, preempted, failed or discarded —
       and the outcome carries how many chunks reached the writer, plus the error for a
       failure.
-- [ ] The connection's drain phase settles the in-flight job and everything left in the
+- [x] The connection's drain phase settles the in-flight job and everything left in the
       channel as discarded.
-- [ ] A job whose audio completed before teardown cut its real-time tail reports drained,
+- [x] A job whose audio completed before teardown cut its real-time tail reports drained,
       because the audio was written. Today that case reports nothing.
-- [ ] The queue signals an outcome and advances. It does not await anything a producer
+- [x] The queue signals an outcome and advances. It does not await anything a producer
       attached to it, and continuations cannot capture the loop's thread.
-- [ ] The five existing callbacks still fire on the same paths as before, so producers are
+- [x] The five existing callbacks still fire on the same paths as before, so producers are
       untouched by this ticket.
-- [ ] One parameterised test proves exactly-one-outcome across all five kinds of ending,
+- [x] One parameterised test proves exactly-one-outcome across all five kinds of ending,
       written red first.
-- [ ] Separate tests cover each refusal reason, a job preempted before its first pull
+- [x] Separate tests cover each refusal reason, a job preempted before its first pull
       reporting zero chunks, a job cut mid-sentence reporting what reached the writer, and
       the loop starting the next job without waiting for a consumer of the previous
       outcome.
-- [ ] All producer tests and the voice integration suite pass unchanged.
+- [x] All producer tests and the voice integration suite pass unchanged.

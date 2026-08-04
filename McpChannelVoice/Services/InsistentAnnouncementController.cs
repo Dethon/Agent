@@ -96,7 +96,7 @@ public sealed class InsistentAnnouncementController(
 
                 foreach (var session in OnlineSessions(targetIds))
                 {
-                    await session.Playback.EnqueueAsync(BuildJob(announcementId, buffered, session, gain));
+                    session.Playback.Enqueue(BuildJob(announcementId, buffered, session, gain));
                 }
                 round++;
 

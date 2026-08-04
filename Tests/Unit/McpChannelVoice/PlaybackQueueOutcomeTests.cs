@@ -1,0 +1,309 @@
+using System.Runtime.CompilerServices;
+using Domain.DTOs.Voice;
+using McpChannelVoice.Services;
+using Shouldly;
+
+namespace Tests.Unit.McpChannelVoice;
+
+// The queue's one promise: every job it is handed gets exactly one outcome — including a job it
+// turned away, and including every job still waiting when the satellite disappears. Before this the
+// rule was five callbacks, three of them terminal and mutually exclusive with nothing in the type
+// saying so, and teardown settled nothing at all.
+public class PlaybackQueueOutcomeTests
+{
+    [Theory]
+    [InlineData(PlaybackOutcomeKind.Drained)]
+    [InlineData(PlaybackOutcomeKind.Preempted)]
+    [InlineData(PlaybackOutcomeKind.Failed)]
+    [InlineData(PlaybackOutcomeKind.Refused)]
+    [InlineData(PlaybackOutcomeKind.Discarded)]
+    public async Task Enqueue_EveryWayAJobCanEnd_SettlesExactlyOneOutcome(PlaybackOutcomeKind expected)
+    {
+        var outcome = await EndingAsync(expected);
+
+        outcome.Kind.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void Enqueue_AfterTheQueueIsClosed_RefusesAsQueueClosed()
+    {
+        // The satellite disconnected and the loop tore down. Announce tells a missing speaker from a
+        // busy one by this reason.
+        var queue = new PlaybackQueue();
+        queue.Complete();
+
+        var ticket = queue.Enqueue(Job("x", PlaybackKind.Announce));
+
+        ticket.Refused.ShouldBe(RefusalReason.QueueClosed);
+    }
+
+    [Fact]
+    public void Enqueue_WhenTheKindsAllowanceIsFull_RefusesAsQueueFull()
+    {
+        var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1);
+        queue.Enqueue(Job("a", PlaybackKind.Announce));
+
+        queue.Enqueue(Job("b", PlaybackKind.Announce)).Refused.ShouldBe(RefusalReason.QueueFull);
+    }
+
+    [Fact]
+    public void Enqueue_LowPriorityWhileAnythingIsQueued_RefusesAsLowPriorityBehindQueue()
+    {
+        var queue = new PlaybackQueue();
+        queue.Enqueue(Job("a", PlaybackKind.Announce));
+
+        var low = Job("low", PlaybackKind.Announce) with { Priority = AnnouncePriority.Low };
+
+        queue.Enqueue(low).Refused.ShouldBe(RefusalReason.LowPriorityBehindQueue);
+    }
+
+    [Fact]
+    public async Task Enqueue_RefusedJob_CarriesAnAlreadySettledOutcome()
+    {
+        // One settle path rather than a branch: a caller reads the reason for its own status and
+        // still awaits the same outcome it would have awaited had the job been accepted.
+        var queue = new PlaybackQueue();
+        queue.Complete();
+
+        var ticket = queue.Enqueue(Job("x", PlaybackKind.Announce));
+
+        ticket.Completed.IsCompleted.ShouldBeTrue();
+        (await ticket.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Refused);
+    }
+
+    [Fact]
+    public async Task Run_JobPreemptedBeforeItsFirstPull_ReportsZeroChunksWritten()
+    {
+        // Proving preemption by counting label strings said nothing about what the satellite heard.
+        // A job the loop cancels before it touches its audio must report that nothing was spoken.
+        var queue = new PlaybackQueue();
+        var normal = Job("normal", PlaybackKind.Announce);
+        var high = Job("alarm", PlaybackKind.Alarm) with { Priority = AnnouncePriority.High };
+
+        var preempted = queue.Enqueue(normal);
+        queue.Enqueue(high);
+        queue.Complete();
+
+        await queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+
+        var outcome = await preempted.Completed;
+        outcome.Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+        outcome.ChunksWritten.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Run_JobCutMidSentence_ReportsTheChunksThatReachedTheWriter()
+    {
+        var queue = new PlaybackQueue();
+        var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async IAsyncEnumerable<AudioChunk> twoThenBlock(
+            [EnumeratorCancellation] CancellationToken token = default)
+        {
+            yield return Chunk();
+            yield return Chunk();
+            wrote.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+        }
+
+        var ticket = queue.Enqueue(Job("reply", PlaybackKind.Reply) with { Audio = twoThenBlock() });
+        var pump = queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+
+        await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        queue.PreemptCurrent();
+        queue.Complete();
+        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var outcome = await ticket.Completed;
+        outcome.Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+        outcome.ChunksWritten.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Run_AudioCompletedBeforeTeardownCutTheTail_ReportsDrained()
+    {
+        // The audio was written, so the satellite has it and will play it out. Today that case
+        // reports nothing at all, which is why every waiting producer had to carry a token.
+        var queue = new PlaybackQueue();
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var connection = new CancellationTokenSource();
+        var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 16000 bytes at 16 kHz/16-bit/mono = 500 ms of audio the loop will wait out in real time.
+        static async IAsyncEnumerable<AudioChunk> halfSecond()
+        {
+            yield return new AudioChunk { Data = new byte[16000], Format = AudioFormat.WyomingStandard };
+            await Task.CompletedTask;
+        }
+
+        var ticket = queue.Enqueue(Job("announce", PlaybackKind.Announce) with { Audio = halfSecond() });
+        var pump = queue.RunAsync(
+            (_, _) => { wrote.TrySetResult(); return Task.CompletedTask; },
+            connection.Token, time);
+
+        await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await connection.CancelAsync();          // the satellite drops mid-tail
+        queue.Complete();
+        await Should.NotThrowAsync(async () =>
+        {
+            try
+            { await pump; }
+            catch (OperationCanceledException) { }
+        });
+        queue.DiscardUnplayed();
+
+        (await ticket.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+    }
+
+    [Fact]
+    public async Task DiscardUnplayed_ConnectionDied_SettlesTheInFlightJobAndEverythingBehindIt()
+    {
+        var queue = new PlaybackQueue();
+        using var connection = new CancellationTokenSource();
+        var playing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async IAsyncEnumerable<AudioChunk> parked(
+            [EnumeratorCancellation] CancellationToken token = default)
+        {
+            yield return Chunk();
+            playing.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+        }
+
+        var inFlight = queue.Enqueue(Job("reply-1", PlaybackKind.Reply) with { Audio = parked() });
+        var behind = queue.Enqueue(Job("reply-2", PlaybackKind.Reply));
+        var pump = queue.RunAsync((_, _) => Task.CompletedTask, connection.Token);
+
+        await playing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await connection.CancelAsync();
+        queue.Complete();
+        try
+        { await pump.WaitAsync(TimeSpan.FromSeconds(5)); }
+        catch (OperationCanceledException) { }
+        queue.DiscardUnplayed();
+
+        (await inFlight.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
+        (await behind.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
+    }
+
+    [Fact]
+    public async Task Run_AConsumerOfOneOutcomeBlocks_TheNextJobStillPlays()
+    {
+        // There is no ordering between an outcome being signalled and the next job starting, and a
+        // producer's reaction runs on its own. A slow one used to sit in the seam between two
+        // sentences of a single answer.
+        var queue = new PlaybackQueue();
+        var played = new List<string>();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondPlayed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var first = queue.Enqueue(Job("first", PlaybackKind.Announce));
+        var blocked = first.Completed.ContinueWith(
+            _ => release.Task.GetAwaiter().GetResult(), TaskContinuationOptions.LongRunning);
+
+        queue.Enqueue(Job("second", PlaybackKind.Announce));
+        var pump = queue.RunAsync(
+            (chunk, _) =>
+            {
+                var label = System.Text.Encoding.UTF8.GetString(chunk.Data.Span);
+                lock (played)
+                { played.Add(label); }
+                if (label == "second")
+                {
+                    secondPlayed.TrySetResult();
+                }
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        await secondPlayed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        played.ShouldBe(["first", "second"]);
+
+        release.TrySetResult();
+        await blocked.WaitAsync(TimeSpan.FromSeconds(5));
+        queue.Complete();
+        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private static async Task<PlaybackOutcome> EndingAsync(PlaybackOutcomeKind ending)
+    {
+        var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1);
+        using var connection = new CancellationTokenSource();
+
+        if (ending == PlaybackOutcomeKind.Refused)
+        {
+            queue.Enqueue(Job("filling", PlaybackKind.Announce));
+            return await queue.Enqueue(Job("refused", PlaybackKind.Announce)).Completed;
+        }
+
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var audio = ending switch
+        {
+            PlaybackOutcomeKind.Failed => ThrowingAudio(),
+            PlaybackOutcomeKind.Drained => OneChunk(),
+            _ => Parked(reached)
+        };
+
+        var ticket = queue.Enqueue(Job("job", PlaybackKind.Announce) with { Audio = audio });
+        var pump = queue.RunAsync((_, _) => Task.CompletedTask, connection.Token);
+
+        if (ending is PlaybackOutcomeKind.Preempted or PlaybackOutcomeKind.Discarded)
+        {
+            await reached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        if (ending == PlaybackOutcomeKind.Preempted)
+        {
+            queue.PreemptCurrent();
+        }
+        if (ending == PlaybackOutcomeKind.Discarded)
+        {
+            await connection.CancelAsync();
+        }
+
+        queue.Complete();
+        try
+        { await pump.WaitAsync(TimeSpan.FromSeconds(5)); }
+        catch (OperationCanceledException) { }
+        queue.DiscardUnplayed();
+
+        return await ticket.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private static PlaybackJob Job(string label, PlaybackKind kind) => new(
+        Label: label,
+        Kind: kind,
+        Priority: AnnouncePriority.Normal,
+        Audio: OneChunk(label),
+        OnStarted: _ => Task.CompletedTask,
+        OnPreempted: _ => Task.CompletedTask);
+
+    private static AudioChunk Chunk(string label = "x") => new()
+    {
+        Data = System.Text.Encoding.UTF8.GetBytes(label),
+        Format = AudioFormat.WyomingStandard
+    };
+
+    private static async IAsyncEnumerable<AudioChunk> OneChunk(string label = "x")
+    {
+        yield return Chunk(label);
+        await Task.Yield();
+    }
+
+    private static async IAsyncEnumerable<AudioChunk> Parked(
+        TaskCompletionSource reached,
+        [EnumeratorCancellation] CancellationToken token = default)
+    {
+        yield return Chunk();
+        reached.TrySetResult();
+        await Task.Delay(Timeout.Infinite, token);
+    }
+
+    private static async IAsyncEnumerable<AudioChunk> ThrowingAudio()
+    {
+        await Task.Yield();
+        throw new InvalidOperationException("synthesis failed");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
+    }
+}

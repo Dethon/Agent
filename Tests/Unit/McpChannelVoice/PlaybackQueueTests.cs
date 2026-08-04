@@ -52,12 +52,12 @@ public class PlaybackQueueTests
             },
             CancellationToken.None);
 
-        await queue.EnqueueAsync(segment1);
-        await queue.EnqueueAsync(segment2);
-        await queue.EnqueueAsync(segment3);
+        queue.Enqueue(segment1);
+        queue.Enqueue(segment2);
+        queue.Enqueue(segment3);
         await firstChunkWritten.Task;
 
-        await queue.EnqueueAsync(alarm);
+        queue.Enqueue(alarm);
         queue.Complete();
         await pumpTask;
 
@@ -92,8 +92,8 @@ public class PlaybackQueueTests
             },
             CancellationToken.None);
 
-        await queue.EnqueueAsync(first);
-        await queue.EnqueueAsync(second);
+        queue.Enqueue(first);
+        queue.Enqueue(second);
         queue.Complete();
         await pumpTask;
 
@@ -123,8 +123,8 @@ public class PlaybackQueueTests
             },
             CancellationToken.None);
 
-        await queue.EnqueueAsync(first);
-        await queue.EnqueueAsync(second);
+        queue.Enqueue(first);
+        queue.Enqueue(second);
         queue.Complete();
 
         await pumpTask;
@@ -149,8 +149,8 @@ public class PlaybackQueueTests
         var low = normal with { Label = "low", Priority = AnnouncePriority.Low };
 
         // No playback loop is running, so the first job stays queued (Reader.Count > 0).
-        (await queue.EnqueueAsync(normal)).ShouldBeTrue();
-        (await queue.EnqueueAsync(low)).ShouldBeFalse();
+        queue.Enqueue(normal).Refused.ShouldBeNull();
+        queue.Enqueue(low).Refused.ShouldNotBeNull();
     }
 
     [Fact]
@@ -161,8 +161,8 @@ public class PlaybackQueueTests
         var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1);
 
         // No loop running: fill to depth 1, then the next Normal overflows.
-        (await queue.EnqueueAsync(Job("a", PlaybackKind.Announce))).ShouldBeTrue();
-        (await queue.EnqueueAsync(Job("b", PlaybackKind.Announce))).ShouldBeFalse();
+        queue.Enqueue(Job("a", PlaybackKind.Announce)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("b", PlaybackKind.Announce)).Refused.ShouldNotBeNull();
     }
 
     [Fact]
@@ -173,10 +173,10 @@ public class PlaybackQueueTests
         // picks it — no producer passes a depth.
         var queue = new PlaybackQueue(replyMaxDepth: 3, announceMaxDepth: 1);
 
-        (await queue.EnqueueAsync(Job("s1", PlaybackKind.Reply))).ShouldBeTrue();
-        (await queue.EnqueueAsync(Job("s2", PlaybackKind.Reply))).ShouldBeTrue();
-        (await queue.EnqueueAsync(Job("s3", PlaybackKind.Reply))).ShouldBeTrue();
-        (await queue.EnqueueAsync(Job("s4", PlaybackKind.Reply))).ShouldBeFalse();
+        queue.Enqueue(Job("s1", PlaybackKind.Reply)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("s2", PlaybackKind.Reply)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("s3", PlaybackKind.Reply)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("s4", PlaybackKind.Reply)).Refused.ShouldNotBeNull();
     }
 
     [Fact]
@@ -186,9 +186,9 @@ public class PlaybackQueueTests
         // announce depth exactly as it did when the reply tool chose the limit itself.
         var queue = new PlaybackQueue(replyMaxDepth: 8, announceMaxDepth: 2);
 
-        (await queue.EnqueueAsync(Job("announce", PlaybackKind.Announce))).ShouldBeTrue();
-        (await queue.EnqueueAsync(Job("preamble", PlaybackKind.Preamble))).ShouldBeTrue();
-        (await queue.EnqueueAsync(Job("approval", PlaybackKind.Approval))).ShouldBeFalse();
+        queue.Enqueue(Job("announce", PlaybackKind.Announce)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("preamble", PlaybackKind.Preamble)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("approval", PlaybackKind.Approval)).Refused.ShouldNotBeNull();
     }
 
     [Fact]
@@ -198,7 +198,7 @@ public class PlaybackQueueTests
         // before it takes the text rather than discovering a refusal after both text and synthesis
         // are spent.
         var queue = new PlaybackQueue(replyMaxDepth: 2, announceMaxDepth: 1);
-        await queue.EnqueueAsync(Job("s1", PlaybackKind.Reply));
+        queue.Enqueue(Job("s1", PlaybackKind.Reply));
 
         queue.CanAccept(PlaybackKind.Reply).ShouldBeTrue();
         queue.CanAccept(PlaybackKind.Announce).ShouldBeFalse();
@@ -232,8 +232,8 @@ public class PlaybackQueueTests
             OnPreempted: l => { preempted.Add(l); return Task.CompletedTask; },
             OnDrained: () => { drained.Add("high"); return Task.CompletedTask; });
 
-        await queue.EnqueueAsync(normal);
-        await queue.EnqueueAsync(high);
+        queue.Enqueue(normal);
+        queue.Enqueue(high);
         queue.Complete();
 
         await queue.RunAsync(
@@ -273,8 +273,8 @@ public class PlaybackQueueTests
                 return Task.CompletedTask;
             });
 
-        await queue.EnqueueAsync(failing);
-        await queue.EnqueueAsync(next);
+        queue.Enqueue(failing);
+        queue.Enqueue(next);
         queue.Complete();
 
         await pumpTask;
@@ -311,8 +311,8 @@ public class PlaybackQueueTests
             },
             CancellationToken.None);
 
-        await queue.EnqueueAsync(bad);
-        await queue.EnqueueAsync(next);
+        queue.Enqueue(bad);
+        queue.Enqueue(next);
         queue.Complete();
 
         await pumpTask;
@@ -340,7 +340,7 @@ public class PlaybackQueueTests
         var pump = queue.RunAsync(
             async (_, _) => await Task.Yield(), CancellationToken.None);
 
-        await queue.EnqueueAsync(job);
+        queue.Enqueue(job);
         queue.Complete();
         await pump;
 
@@ -377,7 +377,7 @@ public class PlaybackQueueTests
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
 
-        await queue.EnqueueAsync(job);
+        queue.Enqueue(job);
         await firstChunkWritten.Task;       // job is mid-drain
         queue.PreemptCurrent();           // cancel it; the gated enumerator unwinds via OCE
         queue.Complete();
@@ -415,7 +415,7 @@ public class PlaybackQueueTests
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
 
-        await queue.EnqueueAsync(job);
+        queue.Enqueue(job);
         await Task.Delay(80); // let the loop write the audio and reach the playback wait
         drained.Task.IsCompleted.ShouldBeFalse(); // must NOT fire on write-drain — playback (500 ms) hasn't elapsed
 
@@ -453,7 +453,7 @@ public class PlaybackQueueTests
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
-        await queue.EnqueueAsync(job);
+        queue.Enqueue(job);
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -486,7 +486,7 @@ public class PlaybackQueueTests
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        await queue.EnqueueAsync(job);
+        queue.Enqueue(job);
         queue.Complete();
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
@@ -512,7 +512,7 @@ public class PlaybackQueueTests
             OnFirstAudio: _ => { Interlocked.Increment(ref invocations); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        await queue.EnqueueAsync(job);
+        queue.Enqueue(job);
         queue.Complete();
         await pump;
 
@@ -536,7 +536,7 @@ public class PlaybackQueueTests
             OnPreempted: _ => Task.CompletedTask,
             OnFailed: _ => { failed.TrySetResult(); return Task.CompletedTask; });
 
-        await queue.EnqueueAsync(failing);
+        queue.Enqueue(failing);
         queue.Complete();
 
         await queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
@@ -566,8 +566,8 @@ public class PlaybackQueueTests
             OnDrained: () => { drained.Add(label); return Task.CompletedTask; });
         }
 
-        await queue.EnqueueAsync(high("h1"));
-        await queue.EnqueueAsync(high("h2"));
+        queue.Enqueue(high("h1"));
+        queue.Enqueue(high("h2"));
         queue.Complete();
 
         await queue.RunAsync(
@@ -578,26 +578,8 @@ public class PlaybackQueueTests
         preempted.ShouldBeEmpty();
     }
 
-    [Fact]
-    public async Task Enqueue_AfterChannelCompleted_ReturnsFalse()
-    {
-        var queue = new PlaybackQueue();
-        queue.Complete(); // satellite disconnected -> playback channel completed
-
-        var job = new PlaybackJob(
-            Label: "x",
-            Kind: PlaybackKind.Announce,
-            Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("x", count: 1),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask);
-
-        // Must return false (dropped) rather than throwing ChannelClosedException, so callers
-        // like the announce endpoint don't surface a 500.
-        var accepted = await queue.EnqueueAsync(job);
-
-        accepted.ShouldBeFalse();
-    }
+    // Enqueueing onto a completed queue is a refusal rather than a ChannelClosedException — see
+    // PlaybackQueueOutcomeTests, which owns every refusal reason.
 
     [Fact]
     public async Task Run_FirstChunk_PublishesSpeechEndAndQueueWaitTiming()
@@ -632,7 +614,7 @@ public class PlaybackQueueTests
             EnqueuedAt: enqueuedAt);
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
-        await queue.EnqueueAsync(job);
+        queue.Enqueue(job);
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -670,7 +652,7 @@ public class PlaybackQueueTests
 
         var pump = queue.RunAsync(
             (_, _) => { order.Add("write"); return Task.CompletedTask; }, CancellationToken.None);
-        await queue.EnqueueAsync(job);
+        queue.Enqueue(job);
         queue.Complete();
         await pump.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -704,7 +686,7 @@ public class PlaybackQueueTests
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
-        await queue.EnqueueAsync(job);
+        queue.Enqueue(job);
         queue.Complete();
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
@@ -731,7 +713,7 @@ public class PlaybackQueueTests
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        await queue.EnqueueAsync(job);
+        queue.Enqueue(job);
         queue.Complete();
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
@@ -774,8 +756,8 @@ public class PlaybackQueueTests
             Audio = GenerateAudio("alarm", count: 1)
         };
 
-        await queue.EnqueueAsync(reply);
-        await queue.EnqueueAsync(alarm);
+        queue.Enqueue(reply);
+        queue.Enqueue(alarm);
         queue.Complete();
         await pumpTask;
 

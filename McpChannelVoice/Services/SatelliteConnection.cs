@@ -156,6 +156,9 @@ public sealed class SatelliteConnection(
         Coordinator.Dispose();
         Session.Playback.Complete();
         await AwaitSwallowingAsync(_playbackTask);
+        // After the loop has stopped, never before: a job whose audio finished as the link died has
+        // already earned its outcome, and this is only for what the loop never got to.
+        Session.Playback.DiscardUnplayed();
         await AwaitSwallowingAsync(_conversationTask);
         Session.ControlWriter = null;
         sessions.Unregister(Id);

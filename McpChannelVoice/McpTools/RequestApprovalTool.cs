@@ -120,7 +120,7 @@ public sealed class RequestApprovalTool
             Audio: tts.SynthesizeAsync(text, options, default),
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: _ => Task.CompletedTask);
-        await session.Playback.EnqueueAsync(job);
+        session.Playback.Enqueue(job);
     }
 
     private static async Task<bool> SpeakAndAwaitAsync(
@@ -139,7 +139,7 @@ public sealed class RequestApprovalTool
             OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
             OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
 
-        var accepted = await session.Playback.EnqueueAsync(job);
+        var accepted = session.Playback.Enqueue(job).Refused is null;
         if (!accepted)
         {
             // Satellite disconnected between session resolution and enqueue (playback channel

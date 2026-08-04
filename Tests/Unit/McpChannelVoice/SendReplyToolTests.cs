@@ -766,7 +766,7 @@ public class SendReplyToolTests
         await SendReplyTool.McpRun(_conversationId, "Segunda frase completa. ",
             ReplyContentType.Text, false, "m-1", services);       // segment two sits queued
 
-        await _session.Playback.EnqueueAsync(new PlaybackJob(
+        _session.Playback.Enqueue(new PlaybackJob(
             Label: "alarm", Kind: PlaybackKind.Alarm, Priority: AnnouncePriority.High,
             Audio: NoAudio(), OnStarted: _ => Task.CompletedTask,
             OnPreempted: _ => Task.CompletedTask));

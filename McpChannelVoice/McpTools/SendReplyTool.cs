@@ -480,7 +480,7 @@ public sealed class SendReplyTool
             segment = session.Turn.BeginSegment();
         }
 
-        var queued = await session.Playback.EnqueueAsync(job);
+        var queued = session.Playback.Enqueue(job).Refused is null;
         if (isReply && !queued)
         {
             logger.LogWarning(

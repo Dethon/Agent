@@ -89,7 +89,7 @@ public class AnnouncementService(
                     return Task.CompletedTask;
                 });
 
-            var accepted = await session.Playback.EnqueueAsync(job);
+            var accepted = session.Playback.Enqueue(job).Refused is null;
             outcomes.Add(new AnnouncementOutcome { Id = id, Status = accepted ? "queued" : "dropped" });
 
             metrics.Publish(new VoiceEvent

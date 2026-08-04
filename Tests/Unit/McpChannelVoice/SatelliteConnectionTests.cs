@@ -457,7 +457,7 @@ public class SatelliteConnectionTests
         var run = connection.RunAsync(h.Events, cts.Token);
 
         await UntilAsync(() => h.Arbiter.IsRegistered("kitchen-01"), TimeSpan.FromSeconds(5));
-        await connection.Session.Playback.EnqueueAsync(
+        connection.Session.Playback.Enqueue(
             new PlaybackJob(
                 Label: "reply",
                 Kind: PlaybackKind.Reply,

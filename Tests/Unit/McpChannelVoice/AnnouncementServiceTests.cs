@@ -115,7 +115,7 @@ public class AnnouncementServiceTests
         var started = new TaskCompletionSource();
         var preempted = new TaskCompletionSource();
         var pump = session.Playback.RunAsync((c, ct) => Task.Delay(50, ct), CancellationToken.None);
-        await session.Playback.EnqueueAsync(
+        session.Playback.Enqueue(
             new PlaybackJob("ongoing", PlaybackKind.Announce, AnnouncePriority.Normal,
                 NeverEnding(),
                 _ => { started.TrySetResult(); return Task.CompletedTask; },
