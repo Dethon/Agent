@@ -34,7 +34,7 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         _mockTopicService
             .Setup(s => s.GetHistoryAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<long>()))
-            .ReturnsAsync(new List<ChatHistoryMessage>());
+            .ReturnsAsync(HubResult<IReadOnlyList<ChatHistoryMessage>>.Answered([]));
     }
 
     private void CreateEffect()
@@ -270,7 +270,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         };
         _mockTopicService
             .Setup(s => s.GetAllTopicsAsync("agent-1", "default"))
-            .ReturnsAsync(serverTopics);
+            .ReturnsAsync(HubResult<IReadOnlyList<TopicMetadata>>.Answered(serverTopics));
 
         CreateEffect();
 

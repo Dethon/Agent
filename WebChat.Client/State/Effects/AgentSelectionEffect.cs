@@ -82,7 +82,15 @@ public sealed class AgentSelectionEffect : IDisposable
 
         var spaceSlug = _spaceStore.State.CurrentSlug;
         var serverTopics = await _topicService.GetAllTopicsAsync(agentId, spaceSlug);
-        var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
+
+        // Not live is not an empty list. Storing it as one is what empties the sidebar when a
+        // resuming phone switches agents mid-rebuild; the epoch reloads it a moment later.
+        if (!serverTopics.IsLive)
+        {
+            return;
+        }
+
+        var topics = serverTopics.Value!.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 
         // Gathered rather than detached, so awaiting an agent change means the new agent's
@@ -101,7 +109,12 @@ public sealed class AgentSelectionEffect : IDisposable
         }
 
         var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-        var messages = history.Select(h => h.ToChatMessageModel()).ToList();
+        if (!history.IsLive)
+        {
+            return;
+        }
+
+        var messages = history.Value!.Select(h => h.ToChatMessageModel()).ToList();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
 
         ResumeStream(topic);

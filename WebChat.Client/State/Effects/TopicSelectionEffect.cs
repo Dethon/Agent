@@ -62,9 +62,9 @@ public sealed class TopicSelectionEffect : IDisposable
 
             // Re-check after async work - SendMessageEffect might have added messages
             var currentMessages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []);
-            if (currentMessages.Count == 0)
+            if (history.IsLive && currentMessages.Count == 0)
             {
-                _pipeline.LoadHistory(topicId, history);
+                _pipeline.LoadHistory(topicId, history.Value!);
             }
         }
 

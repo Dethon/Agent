@@ -6,16 +6,9 @@ namespace WebChat.Client.Services;
 
 public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicService
 {
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return [];
-        }
-
-        return await hubConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId, spaceSlug);
-    }
+    public Task<HubResult<IReadOnlyList<TopicMetadata>>> GetAllTopicsAsync(
+        string agentId, string spaceSlug = "default") =>
+        liveConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId, spaceSlug);
 
     public async Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
     {
@@ -39,17 +32,9 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
         await hubConnection.InvokeAsync("DeleteTopic", agentId, topicId, chatId, threadId);
     }
 
-    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return [];
-        }
-
-        return await hubConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", agentId, chatId,
-            threadId);
-    }
+    public Task<HubResult<IReadOnlyList<ChatHistoryMessage>>> GetHistoryAsync(
+        string agentId, long chatId, long threadId) =>
+        liveConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", agentId, chatId, threadId);
 
     public async Task JoinSpaceAsync(string spaceSlug)
     {

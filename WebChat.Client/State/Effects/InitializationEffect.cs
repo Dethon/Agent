@@ -112,7 +112,12 @@ public sealed class InitializationEffect : IDisposable
         }
 
         var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id, spaceSlug);
-        var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
+        if (!serverTopics.IsLive)
+        {
+            return;
+        }
+
+        var topics = serverTopics.Value!.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 
         // Gathered rather than detached: awaiting first-load init has to mean history is in
@@ -148,7 +153,12 @@ public sealed class InitializationEffect : IDisposable
     private async Task LoadTopicHistoryAsync(StoredTopic topic)
     {
         var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-        _pipeline.LoadHistory(topic.TopicId, history);
+        if (!history.IsLive)
+        {
+            return;
+        }
+
+        _pipeline.LoadHistory(topic.TopicId, history.Value!);
 
         // If this topic is currently selected, mark it as read so no stale badges appear
         if (_topicsStore.State.SelectedTopicId == topic.TopicId)

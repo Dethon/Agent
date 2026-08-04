@@ -39,19 +39,28 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
     public IReadOnlyList<string> JoinedSpaces => _joinedSpaces;
 
-    public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
+    // Set to answer not live for every call, the way a transport between connections does.
+    public bool NotLive { get; set; }
+
+    public Task<HubResult<IReadOnlyList<TopicMetadata>>> GetAllTopicsAsync(
+        string agentId, string spaceSlug = "default")
     {
         recorder?.Record($"topics:{agentId}");
 
         if (ThrowOnGetAllTopics is not null)
         {
-            return Task.FromException<IReadOnlyList<TopicMetadata>>(ThrowOnGetAllTopics);
+            return Task.FromException<HubResult<IReadOnlyList<TopicMetadata>>>(ThrowOnGetAllTopics);
         }
 
-        return Task.FromResult<IReadOnlyList<TopicMetadata>>(
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<IReadOnlyList<TopicMetadata>>.NotLive);
+        }
+
+        return Task.FromResult(HubResult<IReadOnlyList<TopicMetadata>>.Answered(
             _seededTopics.Concat(_savedTopics)
                 .Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug)
-                .ToList());
+                .ToList()));
     }
 
     public Task JoinSpaceAsync(string spaceSlug)
@@ -81,16 +90,22 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
+    public Task<HubResult<IReadOnlyList<ChatHistoryMessage>>> GetHistoryAsync(
+        string agentId, long chatId, long threadId)
     {
         recorder?.Record($"history:{chatId}:{threadId}");
 
         if (ThrowOnGetHistory is not null)
         {
-            return Task.FromException<IReadOnlyList<ChatHistoryMessage>>(ThrowOnGetHistory);
+            return Task.FromException<HubResult<IReadOnlyList<ChatHistoryMessage>>>(ThrowOnGetHistory);
         }
 
-        return Task.FromResult<IReadOnlyList<ChatHistoryMessage>>(
-            _history.TryGetValue((chatId, threadId), out var h) ? h : []);
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<IReadOnlyList<ChatHistoryMessage>>.NotLive);
+        }
+
+        return Task.FromResult(HubResult<IReadOnlyList<ChatHistoryMessage>>.Answered(
+            _history.TryGetValue((chatId, threadId), out var h) ? h : []));
     }
 }

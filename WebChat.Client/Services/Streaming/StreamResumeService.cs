@@ -50,7 +50,12 @@ public sealed class StreamResumeService(
             if (!messagesStore.State.MessagesByTopic.ContainsKey(topic.TopicId))
             {
                 var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-                pipeline.LoadHistory(topic.TopicId, history);
+                if (!history.IsLive)
+                {
+                    return;
+                }
+
+                pipeline.LoadHistory(topic.TopicId, history.Value!);
             }
 
             var pendingApproval = await approvalService.GetPendingApprovalForTopicAsync(topic.TopicId);

@@ -42,8 +42,14 @@ public sealed class ReconnectionEffect : IDisposable
         {
             var spaceSlug = spaceStore.State.CurrentSlug;
             var serverTopics = await _topicService.GetAllTopicsAsync(agentId, spaceSlug);
-            var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
-            _dispatcher.Dispatch(new TopicsLoaded(topics));
+
+            // Catch-up can land in the next interruption. Storing a not-live answer would
+            // empty the sidebar the recovery exists to refill.
+            if (serverTopics.IsLive)
+            {
+                var topics = serverTopics.Value!.Select(StoredTopic.FromMetadata).ToList();
+                _dispatcher.Dispatch(new TopicsLoaded(topics));
+            }
         }
 
         var currentState = topicsStore.State;
@@ -70,7 +76,12 @@ public sealed class ReconnectionEffect : IDisposable
     private async Task ReloadTopicHistoryAsync(StoredTopic topic)
     {
         var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-        var messages = history.Select(h => h.ToChatMessageModel()).ToList();
+        if (!history.IsLive)
+        {
+            return;
+        }
+
+        var messages = history.Value!.Select(h => h.ToChatMessageModel()).ToList();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
     }
 

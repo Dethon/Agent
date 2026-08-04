@@ -56,10 +56,15 @@ public sealed class AgentActivityEffect : IDisposable
         foreach (var agent in agents)
         {
             var topics = await _topicService.GetAllTopicsAsync(agent.Id, slug);
-            foreach (var topic in topics)
+
+            // A map missing the agent whose read could not be made is worse than no new map:
+            // that agent's finished streams would stop marking it. Keep the one we have.
+            if (!topics.IsLive)
             {
-                map[topic.TopicId] = agent.Id;
+                return;
             }
+
+            topics.Value!.ToList().ForEach(topic => map[topic.TopicId] = agent.Id);
         }
         _dispatcher.Dispatch(new AllAgentsTopicsMapped(map));
     }
