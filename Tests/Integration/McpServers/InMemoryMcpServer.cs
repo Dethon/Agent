@@ -16,11 +16,14 @@ namespace Tests.Integration.McpServers;
 // rules are about what a caller sees, and the only way to see it is to call a tool.
 public static class InMemoryMcpServer
 {
-    public static async Task<RunningServer> StartAsync(Action<IServiceCollection> configure)
+    // A caller may name the port when it needs the address before the server exists — a connection
+    // that must retry until its channel server comes up, say.
+    public static async Task<RunningServer> StartAsync(
+        Action<IServiceCollection> configure, int? port = null)
     {
-        var port = TestPort.GetAvailable();
+        port ??= TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port.Value));
         configure(builder.Services);
 
         var app = builder.Build();

@@ -170,12 +170,9 @@ public sealed class WyomingSatelliteHost(
                 metrics.Publish(new VoiceEvent
                 {
                     Metric = VoiceMetric.TtsError,
-                    SatelliteId = id,
-                    Room = config.Room,
-                    Identity = config.Identity,
                     Error = ex.Message,
                     ConversationId = conversationManager.GetActiveConversationId(id)
-                });
+                }.About(session));
                 return Task.CompletedTask;
             }
         };

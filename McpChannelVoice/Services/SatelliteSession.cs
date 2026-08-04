@@ -24,6 +24,9 @@ public sealed class SatelliteSession
         SatelliteId = satelliteId;
         Config = config;
         Playback = playback ?? new PlaybackQueue();
+        // The fallback's own gate factory exists only so Close has somewhere to pay; the connection
+        // always supplies the one real factory, so no live satellite ever gets a second
+        // RoomNoiseMemory. A session that reaches this line is one that never listens.
         Mic = mic ?? new Microphone(satelliteId, new SilenceGateFactory(
             new VoiceSettings(), new WyomingClientSettings(), TimeProvider.System));
     }

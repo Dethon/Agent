@@ -18,7 +18,7 @@ public class ChannelConnectionHostTests
         [new AgentCatalogEntry("jonas", "Jonas", "general")];
 
     [Fact]
-    public async Task RunsEveryConnectionThatHasAnEndpoint()
+    public async Task ExecuteAsync_EveryConnectionHasAnEndpoint_RunsThemAll()
     {
         var first = new FakeMcpChannelConnection("ch-1");
         var second = new FakeMcpChannelConnection("ch-2");
@@ -41,7 +41,7 @@ public class ChannelConnectionHostTests
     }
 
     [Fact]
-    public async Task LeavesAConnectionWithNoEndpointUnstarted()
+    public async Task ExecuteAsync_AConnectionWithNoEndpoint_IsNeverRun()
     {
         var configured = new FakeMcpChannelConnection("ch-1");
         var unconfigured = new FakeMcpChannelConnection("ch-2");
@@ -56,7 +56,7 @@ public class ChannelConnectionHostTests
     }
 
     [Fact]
-    public async Task StopsOnCancellation()
+    public async Task ExecuteAsync_Cancelled_StopsWithoutThrowing()
     {
         var fake = new FakeMcpChannelConnection("ch-1");
         var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" } };

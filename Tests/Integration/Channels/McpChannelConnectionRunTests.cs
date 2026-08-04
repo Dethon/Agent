@@ -4,6 +4,7 @@ using Infrastructure.Clients.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Shouldly;
+using Tests.Integration.Fixtures;
 using Tests.Integration.McpServers;
 
 namespace Tests.Integration.Channels;
@@ -23,12 +24,7 @@ public class McpChannelConnectionRunTests
     [Fact]
     public async Task RunAsync_RegistersTheCatalogAfterConnecting_AndAgainAfterAReconnect()
     {
-        Interlocked.Exchange(ref _registerCalls, 0);
-        Interlocked.Exchange(ref _unhealthy, 0);
-        while (_registered.CurrentCount > 0)
-        {
-            await _registered.WaitAsync();
-        }
+        await ResetAsync();
 
         await using var server = await StartServerAsync();
         await using var connection = new McpChannelConnection(
@@ -51,7 +47,41 @@ public class McpChannelConnectionRunTests
         await run;
     }
 
-    private static Task<RunningServer> StartServerAsync() => InMemoryMcpServer.StartAsync(services => services
+
+    [Fact]
+    public async Task RunAsync_TheServerIsNotThereYet_KeepsRetryingUntilItIs()
+    {
+        // A channel server that starts after the agent must still get connected to, so the first
+        // connect backs off and retries rather than giving up.
+        await ResetAsync();
+        var port = TestPort.GetAvailable();
+        var endpoint = $"http://localhost:{port}/mcp";
+
+        await using var connection = new McpChannelConnection(
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var run = connection.RunAsync(endpoint, _catalog, cts.Token);
+
+        await using var server = await StartServerAsync(port);
+
+        await _registered.WaitAsync(cts.Token);
+
+        await cts.CancelAsync();
+        await run;
+    }
+
+    private static async Task ResetAsync()
+    {
+        Interlocked.Exchange(ref _registerCalls, 0);
+        Interlocked.Exchange(ref _unhealthy, 0);
+        while (_registered.CurrentCount > 0)
+        {
+            await _registered.WaitAsync();
+        }
+    }
+
+    private static Task<RunningServer> StartServerAsync(int? port = null) =>
+        InMemoryMcpServer.StartAsync(services => services
         .AddMcpServer()
         .WithHttpTransport()
         .WithTools<RegisterTools>()
@@ -63,7 +93,7 @@ public class McpChannelConnectionRunTests
                 throw new InvalidOperationException("the channel server went away");
             }
             return next(context, ct);
-        })));
+        })), port);
 
     [McpServerToolType]
     public sealed class RegisterTools

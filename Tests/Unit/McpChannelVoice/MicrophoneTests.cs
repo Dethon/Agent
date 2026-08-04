@@ -39,7 +39,7 @@ public class MicrophoneTests
         mic.Open(gates.Create("kitchen-01", _config), new ChunkHistory(TimeProvider.System, TimeSpan.FromSeconds(5)));
 
     [Fact]
-    public void Open_ThenClose_ReportsWhetherTheMicrophoneIsOpen()
+    public void IsOpen_AcrossOpenAndClose_ReportsWhetherTheMicrophoneIsListening()
     {
         var gates = Gates();
         var mic = NewMic(gates);
@@ -53,7 +53,7 @@ public class MicrophoneTests
     }
 
     [Fact]
-    public async Task Feed_ReachesTheOpenCaptureOnly()
+    public async Task Feed_NoCaptureOpen_ReachesNothingAndDoesNotThrow()
     {
         var gates = new SilenceGateFactory(
             new VoiceSettings { FollowUp = new FollowUpSettings { WindowMs = 2000 } },
@@ -100,7 +100,7 @@ public class MicrophoneTests
     }
 
     [Fact]
-    public void Activity_OpenCapture_IsVisibleToArbitration()
+    public void Activity_ACaptureIsOpen_IsVisibleToArbitration()
     {
         var gates = Gates();
         var mic = NewMic(gates);
@@ -113,7 +113,7 @@ public class MicrophoneTests
     }
 
     [Fact]
-    public async Task TryAbort_OpenCapture_AbandonsIt()
+    public async Task TryAbort_ACaptureIsOpen_AbandonsIt()
     {
         var gates = Gates();
         var mic = NewMic(gates);
