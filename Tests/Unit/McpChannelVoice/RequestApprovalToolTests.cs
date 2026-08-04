@@ -125,6 +125,22 @@ public class RequestApprovalToolTests : IDisposable
     // leading gap: the floor tracker's smoothed floor needs a full smoothing window
     // of true silence to descend enough for the next "Loud" burst to cross the entry
     // bar (a shorter gap is exactly what the smoothing is designed to ride through).
+    // The tool speaks its question, awaits that job's playback outcome, and only then opens the mic
+    // — so the mic being open is the observable end of the prompt. Bounded, so a prompt that never
+    // settles fails here instead of hanging the suite until the whole run times out.
+    private async Task PromptSpokenAndMicOpenAsync()
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (!_session.HasActiveCapture)
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("the confirmation prompt never opened its mic");
+            }
+            await Task.Delay(10);
+        }
+    }
+
     private Task FeedAnswersAsync(CancellationToken ct) => Task.Run(async () =>
     {
         while (!ct.IsCancellationRequested)
@@ -276,8 +292,7 @@ public class RequestApprovalToolTests : IDisposable
         var run = RequestApprovalTool.McpRun(
             _conversationId, ApprovalMode.Request, [MakeRequest()], services);
 
-        while (!_session.HasActiveCapture)
-        { await Task.Delay(10); }
+        await PromptSpokenAndMicOpenAsync();
         _session.RouteAudio(Level(90));
         _session.TryAbortCapture().ShouldBeTrue();
 
@@ -424,8 +439,7 @@ public class RequestApprovalToolTests : IDisposable
         var run = RequestApprovalTool.McpRun(
             _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
 
-        while (!_session.HasActiveCapture)
-        { await Task.Delay(10); }
+        await PromptSpokenAndMicOpenAsync();
 
         // The approval mic is an open capture like any wake turn's: Rule B must be able to ask
         // it, retrospectively, what it heard during another satellite's wake-word span —
@@ -448,8 +462,7 @@ public class RequestApprovalToolTests : IDisposable
         var run = RequestApprovalTool.McpRun(
             _conversationId, ApprovalMode.Request, [MakeRequest()], _services);
 
-        while (!_session.HasActiveCapture)
-        { await Task.Delay(10); }
+        await PromptSpokenAndMicOpenAsync();
 
         // The arbiter stole the turn mid-answer (and already re-armed this satellite via
         // pause-satellite): the partial audio is not an answer, and there is no one left

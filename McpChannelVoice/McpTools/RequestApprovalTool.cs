@@ -127,7 +127,6 @@ public sealed class RequestApprovalTool
         SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings,
         CancellationToken ct)
     {
-        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var job = new PlaybackJob(
             Label: $"approval:{session.SatelliteId}",
             Kind: PlaybackKind.Approval,
@@ -135,19 +134,21 @@ public sealed class RequestApprovalTool
             Audio: tts.SynthesizeAsync(
                 text, new SynthesisOptions { Voice = session.ResolveVoice(settings) }, default),
             OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => { drained.TrySetResult(); return Task.CompletedTask; },
-            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
-            OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
+            OnPreempted: _ => Task.CompletedTask);
 
-        var accepted = session.Playback.Enqueue(job).Refused is null;
-        if (!accepted)
+        var ticket = session.Playback.Enqueue(job);
+        if (ticket.Refused is not null)
         {
-            // Satellite disconnected between session resolution and enqueue (playback channel
-            // completed) — signal the caller to abandon the approval instead of opening a capture
-            // on a dead session that would block until the request is cancelled.
+            // The satellite went away between session resolution and the enqueue — signal the caller
+            // to abandon the approval instead of opening a capture on a dead session that would
+            // block until the request is cancelled.
             return false;
         }
-        await drained.Task.WaitAsync(ct);
+
+        // The token is this caller's own reason to stop waiting — the agent cancelling the approval
+        // request — not a guard against hanging: the queue settles every job it is handed, teardown
+        // included.
+        await ticket.Completed.WaitAsync(ct);
         return true;
     }
 

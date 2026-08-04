@@ -481,6 +481,94 @@ public class SatelliteConnectionTests
         connection.Session.ControlWriter.ShouldBeNull();
     }
 
+    // The reason a waiting producer no longer needs a token to avoid waiting forever. A satellite
+    // that dropped mid-answer used to settle nothing at all: neither the job being played nor
+    // anything queued behind it produced a callback of any kind.
+    [Fact]
+    public async Task Unwind_TornDownMidPlayback_DiscardsTheInFlightJobAndEverythingQueuedBehindIt()
+    {
+        using var link = new CancellationTokenSource();
+        var writeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var h = new Harness();
+        h.WriteHook = (evt, _) =>
+        {
+            if (evt.Type == "audio-chunk")
+            {
+                writeStarted.TrySetResult();
+            }
+            return Task.CompletedTask;
+        };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, link.Token);
+
+        await UntilAsync(() => h.Arbiter.IsRegistered("kitchen-01"), TimeSpan.FromSeconds(5));
+        var playing = connection.Session.Playback.Enqueue(
+            new PlaybackJob(
+                Label: "reply-1",
+                Kind: PlaybackKind.Reply,
+                Priority: AnnouncePriority.Normal,
+                Audio: NeverEndingChunks(),
+                OnStarted: _ => Task.CompletedTask,
+                OnPreempted: _ => Task.CompletedTask));
+        var queuedBehind = connection.Session.Playback.Enqueue(
+            new PlaybackJob(
+                Label: "reply-2",
+                Kind: PlaybackKind.Reply,
+                Priority: AnnouncePriority.Normal,
+                Audio: OneChunk(),
+                OnStarted: _ => Task.CompletedTask,
+                OnPreempted: _ => Task.CompletedTask));
+        await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // The connection is torn down while one job is mid-audio and another waits behind it, so
+        // the loop never reaches a terminal path of its own for either.
+        await StopAsync(run, link);
+
+        (await playing.Completed.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
+        (await queuedBehind.Completed.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
+    }
+
+    // The earcon is what tells the user the mic is open, so the mic must not open until it has been
+    // heard. It waits on its job's outcome now instead of a completion source settled by hand from
+    // three of five callbacks.
+    [Fact]
+    public async Task FollowUp_ChimeEnabled_OpensTheMicOnlyAfterTheEarconReachedTheSatellite()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        var h = new Harness
+        {
+            Voice = new VoiceSettings
+            {
+                AgentId = "mycroft",
+                FollowUp = new FollowUpSettings
+                { Enabled = true, Chime = true, PlaybackTailMs = 0, WindowMs = 800 }
+            }
+        };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 6);
+
+        await h.Emitter.ReceivedAtLeastAsync(1, TimeSpan.FromSeconds(10), cts.Token);
+        SpeakOneReplySegment(connection.Session);
+
+        await UntilAsync(() => connection.Session.HasActiveCapture, TimeSpan.FromSeconds(10));
+
+        // The earcon is generated at the satellite's fixed sink rate, which is what tells it apart
+        // from the reply audio on the wire. Its envelope is already closed by the time the mic
+        // opened, because the mic waits on the outcome that follows it.
+        h.WrittenOfType("audio-start")
+            .Any(e => e.Data["rate"]!.GetValue<int>() == 22_050).ShouldBeTrue();
+        h.WrittenOfType("audio-stop").ShouldNotBeEmpty();
+
+        await StopAsync(run, cts);
+    }
+
     [Fact]
     public async Task Dispatch_Stamp_IsTakenBeforeTheDispatchSoItsOwnWorkIsMeasured()
     {
@@ -849,6 +937,21 @@ public class SatelliteConnectionTests
 #pragma warning disable CS0162
         yield break;
 #pragma warning restore CS0162
+    }
+
+    // Audio that never ends on its own, so the job is still in flight when the link drops.
+    private static async IAsyncEnumerable<AudioChunk> NeverEndingChunks(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        while (true)
+        {
+            yield return new AudioChunk
+            {
+                Data = Pcm(1000),
+                Format = new AudioFormat { SampleRateHz = 22_050, SampleWidthBytes = 2, Channels = 1 }
+            };
+            await Task.Delay(50, ct);
+        }
     }
 
     private static async IAsyncEnumerable<AudioChunk> OneChunk()

@@ -422,19 +422,17 @@ public sealed class WyomingSatelliteHost(
 
     private async Task EnqueueChimeAsync(SatelliteSession session, CancellationToken ct)
     {
-        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var job = new PlaybackJob(
             Label: $"chime:{session.SatelliteId}",
             Kind: PlaybackKind.Chime,
             Priority: AnnouncePriority.High,
             Audio: ListeningChime.Stream(),
             OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => { drained.TrySetResult(); return Task.CompletedTask; },
-            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
-            OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
+            OnPreempted: _ => Task.CompletedTask);
 
-        session.Playback.Enqueue(job);
-        await drained.Task.WaitAsync(ct);
+        // The token is this caller's own reason to stop waiting — its connection tearing down —
+        // not a guard against hanging: the queue settles every job it is handed, teardown included.
+        await session.Playback.Enqueue(job).Completed.WaitAsync(ct);
     }
 
     private void PublishVoiceMetric(
