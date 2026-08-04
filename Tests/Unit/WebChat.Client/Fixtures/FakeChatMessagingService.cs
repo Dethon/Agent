@@ -140,10 +140,11 @@ public sealed class FakeChatMessagingService : IChatMessagingService
         }
     }
 
-    public Task<StreamState?> GetStreamStateAsync(string topicId)
+    public Task<HubResult<StreamState>> GetStreamStateAsync(string topicId)
     {
-        return Task.FromResult(
-            _streamStates.TryGetValue(topicId, out var state) ? state : null);
+        return Task.FromResult(NotLive
+            ? HubResult<StreamState>.NotLive
+            : HubResult<StreamState>.Answered(_streamStates.GetValueOrDefault(topicId)));
     }
 
     public Task CancelTopicAsync(string topicId)

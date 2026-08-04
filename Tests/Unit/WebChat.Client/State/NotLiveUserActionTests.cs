@@ -51,7 +51,7 @@ public sealed class NotLiveUserActionTests
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
         SeedTopic(client);
-        var stream = new GatedStream();
+        var stream = new GatedChatStream();
         transport.Answer("SendMessage", _ => stream.Chunks());
 
         client.Dispatcher.Dispatch(new SendMessage("topic-1", "first"));
@@ -71,7 +71,7 @@ public sealed class NotLiveUserActionTests
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
         SeedTopic(client);
-        var stream = new GatedStream();
+        var stream = new GatedChatStream();
         transport.Answer("SendMessage", _ => stream.Chunks());
         transport.Answer("EnqueueMessage", false);
 
@@ -91,7 +91,7 @@ public sealed class NotLiveUserActionTests
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
         SeedTopic(client);
-        var stream = new GatedStream();
+        var stream = new GatedChatStream();
         transport.Answer("SendMessage", _ => stream.Chunks());
         transport.Answer("EnqueueMessage", true);
 
@@ -135,21 +135,6 @@ public sealed class NotLiveUserActionTests
         {
             yield return chunk;
             await Task.Yield();
-        }
-    }
-
-    // A stream that stays open until the test lets it end, so a second send lands on a topic
-    // that really is mid-reply.
-    private sealed class GatedStream
-    {
-        private readonly TaskCompletionSource _gate = new();
-
-        public void Release() => _gate.TrySetResult();
-
-        public async IAsyncEnumerable<ChatStreamMessage> Chunks()
-        {
-            yield return new ChatStreamMessage { Content = "thinking", MessageId = "m-1" };
-            await _gate.Task;
         }
     }
 }

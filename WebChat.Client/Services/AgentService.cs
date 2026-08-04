@@ -1,19 +1,10 @@
 using Domain.DTOs.Channel;
-using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
 public sealed class AgentService(IChatLiveConnection liveConnection) : IAgentService
 {
-    public async Task<IReadOnlyList<AgentCatalogEntry>> GetAgentsAsync()
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return [];
-        }
-
-        return await hubConnection.InvokeAsync<IReadOnlyList<AgentCatalogEntry>>("GetAgents");
-    }
+    public Task<HubResult<IReadOnlyList<AgentCatalogEntry>>> GetAgentsAsync() =>
+        liveConnection.InvokeAsync<IReadOnlyList<AgentCatalogEntry>>("GetAgents");
 }

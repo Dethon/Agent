@@ -4,5 +4,5 @@ namespace WebChat.Client.Contracts;
 
 public interface IAgentService
 {
-    Task<IReadOnlyList<AgentCatalogEntry>> GetAgentsAsync();
+    Task<HubResult<IReadOnlyList<AgentCatalogEntry>>> GetAgentsAsync();
 }

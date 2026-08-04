@@ -15,16 +15,8 @@ public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : I
     public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId) =>
         liveConnection.StreamAsync<ChatStreamMessage>("ResumeStream", topicId);
 
-    public async Task<StreamState?> GetStreamStateAsync(string topicId)
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return null;
-        }
-
-        return await hubConnection.InvokeAsync<StreamState?>("GetStreamState", topicId);
-    }
+    public Task<HubResult<StreamState>> GetStreamStateAsync(string topicId) =>
+        liveConnection.InvokeAsync<StreamState>("GetStreamState", topicId);
 
     public async Task CancelTopicAsync(string topicId)
     {

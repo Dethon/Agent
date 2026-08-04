@@ -41,7 +41,16 @@ public sealed class StreamResumeService(
                 return;
             }
 
-            var state = await messagingService.GetStreamStateAsync(topic.TopicId);
+            var streamState = await messagingService.GetStreamStateAsync(topic.TopicId);
+
+            // A null answer already means something real — there is no stream in progress —
+            // so not live has to stay its own case rather than fold into the same return.
+            if (!streamState.IsLive)
+            {
+                return;
+            }
+
+            var state = streamState.Value;
             if (state is null || state is { IsProcessing: false, BufferedMessages.Count: 0 })
             {
                 return;
@@ -59,9 +68,9 @@ public sealed class StreamResumeService(
             }
 
             var pendingApproval = await approvalService.GetPendingApprovalForTopicAsync(topic.TopicId);
-            if (pendingApproval is not null)
+            if (pendingApproval is { IsLive: true, Value: not null })
             {
-                dispatcher.Dispatch(new ShowApproval(topic.TopicId, pendingApproval));
+                dispatcher.Dispatch(new ShowApproval(topic.TopicId, pendingApproval.Value));
             }
 
             // Single rebuild: buffer + history → merged result

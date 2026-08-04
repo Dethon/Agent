@@ -21,15 +21,20 @@ public sealed class FakeApprovalService : IApprovalService
 
     public IReadOnlyList<(string ApprovalId, ToolApprovalResult Result)> Responses => _responses;
 
+    // Set to answer not live for every call, the way a transport between connections does.
+    public bool NotLive { get; set; }
+
     public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {
         _responses.Add((approvalId, result));
         return Task.FromResult(true);
     }
 
-    public Task<ToolApprovalRequestMessage?> GetPendingApprovalForTopicAsync(string topicId)
+    public Task<HubResult<ToolApprovalRequestMessage>> GetPendingApprovalForTopicAsync(string topicId)
     {
-        return Task.FromResult(
-            _pendingApprovals.TryGetValue(topicId, out var approval) ? approval : null);
+        return Task.FromResult(NotLive
+            ? HubResult<ToolApprovalRequestMessage>.NotLive
+            : HubResult<ToolApprovalRequestMessage>.Answered(
+                _pendingApprovals.GetValueOrDefault(topicId)));
     }
 }

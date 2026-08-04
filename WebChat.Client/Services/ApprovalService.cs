@@ -18,14 +18,6 @@ public sealed class ApprovalService(IChatLiveConnection liveConnection) : IAppro
         return await hubConnection.InvokeAsync<bool>("RespondToApprovalAsync", approvalId, result);
     }
 
-    public async Task<ToolApprovalRequestMessage?> GetPendingApprovalForTopicAsync(string topicId)
-    {
-        var hubConnection = liveConnection.HubConnection;
-        if (hubConnection is null)
-        {
-            return null;
-        }
-
-        return await hubConnection.InvokeAsync<ToolApprovalRequestMessage?>("GetPendingApprovalForTopic", topicId);
-    }
+    public Task<HubResult<ToolApprovalRequestMessage>> GetPendingApprovalForTopicAsync(string topicId) =>
+        liveConnection.InvokeAsync<ToolApprovalRequestMessage>("GetPendingApprovalForTopic", topicId);
 }

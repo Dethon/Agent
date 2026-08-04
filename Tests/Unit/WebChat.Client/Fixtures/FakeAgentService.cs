@@ -9,12 +9,20 @@ public sealed class FakeAgentService(CallRecorder? recorder = null) : IAgentServ
 
     public Exception? ThrowOnGetAgents { get; set; }
 
-    public Task<IReadOnlyList<AgentCatalogEntry>> GetAgentsAsync()
+    // Set to answer not live for every call, the way a transport between connections does.
+    public bool NotLive { get; set; }
+
+    public Task<HubResult<IReadOnlyList<AgentCatalogEntry>>> GetAgentsAsync()
     {
         recorder?.Record("agents");
 
-        return ThrowOnGetAgents is null
-            ? Task.FromResult(Agents)
-            : Task.FromException<IReadOnlyList<AgentCatalogEntry>>(ThrowOnGetAgents);
+        if (ThrowOnGetAgents is not null)
+        {
+            return Task.FromException<HubResult<IReadOnlyList<AgentCatalogEntry>>>(ThrowOnGetAgents);
+        }
+
+        return Task.FromResult(NotLive
+            ? HubResult<IReadOnlyList<AgentCatalogEntry>>.NotLive
+            : HubResult<IReadOnlyList<AgentCatalogEntry>>.Answered(Agents));
     }
 }

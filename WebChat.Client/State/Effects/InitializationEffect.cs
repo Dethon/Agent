@@ -92,7 +92,13 @@ public sealed class InitializationEffect : IDisposable
         // previously stalled the agent list ~30s by being awaited here.
         SubscribePushAsync().LogFaults(_logger, "push subscription");
 
-        var agents = await _agentService.GetAgentsAsync();
+        var catalog = await _agentService.GetAgentsAsync();
+        if (!catalog.IsLive)
+        {
+            return;
+        }
+
+        var agents = catalog.Value!;
         _dispatcher.Dispatch(new SetAgents(agents));
         await AgentSettingsEffect.LoadAsync(agents, _localStorage, _dispatcher);
 
