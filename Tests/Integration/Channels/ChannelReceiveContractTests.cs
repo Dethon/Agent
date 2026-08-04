@@ -6,12 +6,7 @@ using Domain.Channels;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
 using Mcp.Hosting;
-using McpChannelServiceBus.Modules;
-using McpChannelSignalR.Modules;
 using McpChannelTelegram.Modules;
-using McpChannelVoice.Modules;
-using McpServerLibrary.Modules;
-using McpServerScheduling.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -23,124 +18,39 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Tests.Integration.Fixtures;
-using LibrarySettings = McpServerLibrary.Settings;
-using SchedulingSettings = McpServerScheduling.Settings;
-using ServiceBusSettings = McpChannelServiceBus.Settings;
+using Tests.Integration.McpServers;
 // Aliased because Tests.Integration has a sibling namespace named after the channel project
 // (Tests.Integration.McpChannelSignalR / .McpChannelVoice), which shadows the project namespace
 // from inside Tests.
-using SignalRSettings = McpChannelSignalR.Settings;
 using TelegramSettings = McpChannelTelegram.Settings;
-using VoiceSettings = McpChannelVoice.Settings;
 
 namespace Tests.Integration.Channels;
 
 public class ChannelReceiveContractTests
 {
-    // ConfigureChannel eagerly calls ConnectionMultiplexer.Connect. abortConnect=false makes that
-    // hand back a disconnected multiplexer instead of throwing, so the registration theory runs
-    // without a Redis container; port 1 is refused instantly and the short timeouts keep the
-    // background reconnect loop from lingering.
-    private const string UnreachableRedis =
-        "127.0.0.1:1,abortConnect=false,connectTimeout=100,connectRetry=1";
-
-    // ConfigureChannel eagerly constructs a ServiceBusClient from this, which parses the
-    // connection string without ever dialing out. Well-formed but unreachable — SharedAccessKey
-    // just needs to be valid base64.
-    private const string FakeServiceBusConnectionString =
-        "Endpoint=sb://fake.servicebus.windows.net/;SharedAccessKeyName=x;SharedAccessKey=Zm9vYmFyMTIzNDU2Nzg5MA==";
-
     // What McpChannelConnection("signalr") derives for itself, spelled out so a test that pins the
     // id cannot drift with the implementation it is pinning.
     private const string SignalRSubscriberId = ChannelProtocol.ChannelClientNamePrefix + "signalr";
 
-    // One row per channel server, driving that server's REAL registration entry point — the
-    // ConfigModule that ships. Hand-registering ChannelReceiveTool and ChannelInbox here instead
-    // would stay green against a module that forgot either (a silently dead channel), and would
-    // pin the SDK's transport defaults rather than the options each module actually passes to
-    // WithHttpTransport. Later channel migrations append exactly one row; the test bodies are
-    // written once and never copied.
+    // The channel-capable rows of the one server table. Every row drives that server's REAL
+    // registration entry point — the ConfigModule that ships. Hand-registering ChannelReceiveTool
+    // and ChannelInbox here instead would stay green against a module that forgot either (a
+    // silently dead channel), and would pin the SDK's transport defaults rather than the options
+    // each module actually passes to WithHttpTransport.
     //
-    // The declared delivery policy is part of the row, so this table is the single place where
+    // The delivery policy travels with the row, so McpServerRegistrations is the single place where
     // "this is a channel server, and this is the policy it chose" is verified against the real
     // registration. That is the check that would have caught all three rounds of the
     // stale-subscriber defect: every one of them was a server buffering differently from what its
     // caller assumed, and none of them was visible anywhere but inside the emitter.
-    //
-    // Broadcast for the two chat-shaped transports whose callers cannot retry; gate-on-live for
-    // the three whose callers settle a durable record on a confirmed delivery — a schedule, a
-    // routing entry, a broker message — and would otherwise keep the record *and* leave a buffered
-    // duplicate behind; buffer-always for the one transport with no way to tell a sender to try
-    // again later.
-    private static IReadOnlyList<(string ChannelId, Action<IServiceCollection> Configure, DeliveryPolicy Policy)>
-        Registrations =>
-    [
-        (
-            "signalr",
-            services => services.ConfigureChannel(
-                new SignalRSettings.ChannelSettings { RedisConnectionString = UnreachableRedis }),
-            DeliveryPolicy.Broadcast
-        ),
-        (
-            "telegram",
-            services => services.ConfigureChannel(
-                new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] }),
-            DeliveryPolicy.BufferAlways
-        ),
-        (
-            "servicebus",
-            services => services.ConfigureChannel(
-                new ServiceBusSettings.ChannelSettings
-                {
-                    ServiceBusConnectionString = FakeServiceBusConnectionString,
-                    PromptQueueName = "prompts",
-                    ResponseQueueName = "responses"
-                }),
-            DeliveryPolicy.GateOnLive
-        ),
-        (
-            "voice",
-            // ConfigureVoiceChannel's IConnectionMultiplexer registration is a lazy factory (unlike
-            // SignalR's eager Connect), and nothing in this registration-only test resolves it, so
-            // no live/fake Redis endpoint is needed — defaults are enough, exactly as ConfigModuleTests
-            // already relies on for the rest of the voice DI graph.
-            services => services.ConfigureVoiceChannel(new VoiceSettings.VoiceSettings()),
-            DeliveryPolicy.Broadcast
-        ),
-        (
-            "scheduling",
-            // Same lazy IConnectionMultiplexer factory as voice — never resolved here, so the
-            // connection string just needs to satisfy the required property.
-            services => services.ConfigureScheduling(
-                new SchedulingSettings.SchedulingSettings { RedisConnectionString = "unused" }),
-            DeliveryPolicy.GateOnLive
-        ),
-        (
-            "library",
-            // ConfigureMcp's IConnectionMultiplexer registration is the same lazy factory pattern,
-            // and AddJacketClient/AddQBittorrentClient only register typed HttpClients (no eager
-            // dial), so plain placeholder settings are enough to build the container.
-            services => services.ConfigureMcp(new LibrarySettings.McpSettings
-            {
-                Jackett = new LibrarySettings.JackettConfiguration { ApiKey = "x", ApiUrl = "http://jackett" },
-                QBittorrent = new LibrarySettings.QBittorrentConfiguration
-                {
-                    ApiUrl = "http://qbittorrent", UserName = "x", Password = "x"
-                },
-                DownloadLocation = "/downloads",
-                BaseLibraryPath = "/media",
-                RedisConnectionString = "unused"
-            }),
-            DeliveryPolicy.GateOnLive
-        )
-    ];
+    private static IReadOnlyList<McpServerRow> Registrations => McpServerRegistrations.ChannelServers;
 
     public static TheoryData<string, Action<IServiceCollection>> Servers =>
         Registrations.Aggregate(
             new TheoryData<string, Action<IServiceCollection>>(),
             (data, row) =>
             {
-                data.Add(row.ChannelId, row.Configure);
+                data.Add(row.Id, row.Configure);
                 return data;
             });
 
@@ -149,7 +59,7 @@ public class ChannelReceiveContractTests
             new TheoryData<string, Action<IServiceCollection>, DeliveryPolicy>(),
             (data, row) =>
             {
-                data.Add(row.ChannelId, row.Configure, row.Policy);
+                data.Add(row.Id, row.Configure, row.Policy!.Value);
                 return data;
             });
 
