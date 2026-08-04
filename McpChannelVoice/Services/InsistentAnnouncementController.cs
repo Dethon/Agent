@@ -190,7 +190,11 @@ public sealed class InsistentAnnouncementController(
             Kind: PlaybackKind.Alarm,
             Priority: AnnouncePriority.High,
             Audio: Replay(buffered, gain),
-            OnStarted: _ =>
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask,
+            // At first audio, so a round counts as played only once the alert actually reached the
+            // speaker rather than when the queue reached the job.
+            OnFirstAudio: _ =>
             {
                 metrics.Publish(new VoiceEvent
                 {
@@ -201,8 +205,7 @@ public sealed class InsistentAnnouncementController(
                     Priority = AnnouncePriority.High.ToString()
                 });
                 return Task.CompletedTask;
-            },
-            OnPreempted: _ => Task.CompletedTask);
+            });
 
     private IEnumerable<SatelliteSession> OnlineSessions(IEnumerable<string> targetIds) =>
         targetIds.Select(sessions.Get).Where(s => s is not null).Select(s => s!);

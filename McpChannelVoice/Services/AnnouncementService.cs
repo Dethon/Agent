@@ -64,43 +64,52 @@ public class AnnouncementService(
                 Kind: PlaybackKind.Announce,
                 Priority: request.Priority,
                 Audio: tts.SynthesizeAsync(request.Text, options, ct),
-                OnStarted: _ =>
+                OnStarted: _ => Task.CompletedTask,
+                OnPreempted: _ => Task.CompletedTask,
+                // Published at first audio rather than when the queue reaches the job: "played" then
+                // means audio actually reached the satellite, so an announcement whose synthesis
+                // fails is no longer counted as played with nothing else ever recorded for it.
+                OnFirstAudio: _ =>
                 {
-                    metrics.Publish(new VoiceEvent
-                    {
-                        Metric = VoiceMetric.AnnouncePlayed,
-                        SatelliteId = id,
-                        Room = session.Config.Room,
-                        Identity = session.Config.Identity,
-                        Priority = request.Priority.ToString()
-                    });
-                    return Task.CompletedTask;
-                },
-                OnPreempted: _ =>
-                {
-                    metrics.Publish(new VoiceEvent
-                    {
-                        Metric = VoiceMetric.AnnouncePreemptedReply,
-                        SatelliteId = id,
-                        Room = session.Config.Room,
-                        Identity = session.Config.Identity,
-                        Priority = request.Priority.ToString()
-                    });
+                    metrics.Publish(AnnounceEvent(VoiceMetric.AnnouncePlayed, id, session, request));
                     return Task.CompletedTask;
                 });
 
-            var accepted = session.Playback.Enqueue(job).Refused is null;
-            outcomes.Add(new AnnouncementOutcome { Id = id, Status = accepted ? "queued" : "dropped" });
-
-            metrics.Publish(new VoiceEvent
+            var ticket = session.Playback.Enqueue(job);
+            // A satellite that went away between the session lookup and the enqueue is offline, not
+            // busy — which is the truthful status the response already had a code path for. The
+            // other two reasons are a queue that had no room, which is a drop.
+            var status = ticket.Refused switch
             {
-                Metric = accepted ? VoiceMetric.AnnounceQueued : VoiceMetric.AnnounceError,
-                SatelliteId = id,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
-                Priority = request.Priority.ToString(),
-                Outcome = accepted ? "queued" : "dropped"
-            });
+                null => "queued",
+                RefusalReason.QueueClosed => "offline",
+                _ => "dropped"
+            };
+            outcomes.Add(new AnnouncementOutcome { Id = id, Status = status });
+
+            metrics.Publish(AnnounceEvent(
+                ticket.Refused is null ? VoiceMetric.AnnounceQueued : VoiceMetric.AnnounceError,
+                id, session, request) with
+            { Outcome = status });
+
+            // Runs unobserved on the queue's signal, so it guards itself.
+            _ = ticket.Completed.ContinueWith(
+                settled =>
+                {
+                    try
+                    {
+                        if (settled.Result.Kind == PlaybackOutcomeKind.Preempted)
+                        {
+                            metrics.Publish(AnnounceEvent(
+                                VoiceMetric.AnnouncePreemptedReply, id, session, request));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Announce outcome reaction failed for {Id}", id);
+                    }
+                },
+                TaskScheduler.Default);
         }
 
         logger.LogInformation("Announce {Id} -> {N} targets ({Status})",
@@ -109,4 +118,15 @@ public class AnnouncementService(
 
         return new AnnounceResponse { AnnouncementId = announcementId, Satellites = outcomes };
     }
+
+    // Every announce metric carries the same room and identity context, offline targets included.
+    private static VoiceEvent AnnounceEvent(
+        VoiceMetric metric, string id, SatelliteSession session, AnnounceRequest request) => new()
+        {
+            Metric = metric,
+            SatelliteId = id,
+            Room = session.Config.Room,
+            Identity = session.Config.Identity,
+            Priority = request.Priority.ToString()
+        };
 }

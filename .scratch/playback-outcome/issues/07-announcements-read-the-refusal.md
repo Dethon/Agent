@@ -16,19 +16,19 @@ the refcounted alert hold, the re-assert every round — and changes only to sta
 
 **Blocked by:** 04. Runs in parallel with 05 and 06.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The announcement service builds each target's status from the refusal: offline when the
+- [x] The announcement service builds each target's status from the refusal: offline when the
       satellite is gone, dropped for a full queue or a low-priority job behind a queue, queued
       when accepted.
-- [ ] The played metric is published at first audio rather than at dequeue, for both the
+- [x] The played metric is published at first audio rather than at dequeue, for both the
       announcement service and the alarm loop.
-- [ ] An announcement whose synthesis fails publishes no played metric.
-- [ ] The preempted-by-reply metric is published from the preempted outcome instead of a
+- [x] An announcement whose synthesis fails publishes no played metric.
+- [x] The preempted-by-reply metric is published from the preempted outcome instead of a
       callback.
-- [ ] The queued and error metrics still carry the same room and identity context they do now,
+- [x] The queued and error metrics still carry the same room and identity context they do now,
       including for an offline target.
-- [ ] The alarm loop states the alarm kind and is otherwise untouched.
-- [ ] Announcement tests cover all three refusal reasons mapping to their statuses, and the
+- [x] The alarm loop states the alarm kind and is otherwise untouched.
+- [x] Announcement tests cover all three refusal reasons mapping to their statuses, and the
       played metric being absent for a failed synthesis.
-- [ ] The alarm tests, including the hold and refcounted release tests, pass unchanged.
+- [x] The alarm tests, including the hold and refcounted release tests, pass unchanged.
