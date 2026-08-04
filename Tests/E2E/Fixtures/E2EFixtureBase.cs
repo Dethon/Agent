@@ -38,10 +38,12 @@ public abstract class E2EFixtureBase : IAsyncLifetime
 
         foreach (var ctx in _browser.Contexts.ToList())
         {
+            await SaveTraceAsync(ctx);
             await ctx.CloseAsync();
         }
 
         var context = await _browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true });
+        await StartTraceAsync(context);
 
         // The app references third-party CDNs (Google Fonts, avatar service) as render-blocking
         // resources. When those are unreachable — offline, or a restrictive VPN like Cloudflare
@@ -66,12 +68,59 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         return await context.NewPageAsync();
     }
 
+    // Opt-in with PLAYWRIGHT_TRACE=1. A trace zip per page, saved when the next page replaces it
+    // or the fixture shuts down, so a run that fails deep inside the suite still leaves the
+    // browser-side timeline behind. Off by default: tracing costs time on every test.
+    private static string? TraceDirectory =>
+        Environment.GetEnvironmentVariable("PLAYWRIGHT_TRACE") == "1"
+            ? Environment.GetEnvironmentVariable("PLAYWRIGHT_TRACE_DIR")
+              ?? Path.Combine(Path.GetTempPath(), "playwright-traces")
+            : null;
+
+    private int _traceIndex;
+
+    private async Task StartTraceAsync(IBrowserContext context)
+    {
+        if (TraceDirectory is null)
+        {
+            return;
+        }
+
+        await context.Tracing.StartAsync(new TracingStartOptions
+        {
+            Screenshots = true,
+            Snapshots = true,
+            Sources = false,
+            Title = $"{GetType().Name}-{Interlocked.Increment(ref _traceIndex)}"
+        });
+    }
+
+    private async Task SaveTraceAsync(IBrowserContext context)
+    {
+        if (TraceDirectory is not { } directory)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, $"{GetType().Name}-{_traceIndex}.zip");
+        await context.Tracing.StopAsync(new TracingStopOptions { Path = path });
+    }
+
     protected abstract Task BuildImagesAsync(CancellationToken ct);
     protected abstract Task StartContainersAsync(CancellationToken ct);
     protected abstract Task StopContainersAsync();
 
     public async Task DisposeAsync()
     {
+        if (_browser is not null)
+        {
+            foreach (var ctx in _browser.Contexts.ToList())
+            {
+                await SaveTraceAsync(ctx);
+            }
+        }
+
         await StopContainersAsync();
 
         if (_browser is not null)
