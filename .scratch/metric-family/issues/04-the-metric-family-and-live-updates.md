@@ -34,17 +34,17 @@ cancelled and never shown. Both settle on the same number.
 
 **Blocked by:** 03 — every family entry calls the single grouped request.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A metric family carries its name, its preference prefix, and both operations: load my events, refresh my breakdown.
-- [ ] One registration site declares all seven families and is the only place a family is declared.
-- [ ] Awaiting a family's refresh guarantees its breakdown reflects state at or after the call.
-- [ ] Triggering a family repeatedly while a response is outstanding produces two requests, not one per trigger, and the breakdown ends at the last request's value.
-- [ ] Refreshing never adds latency: no timer, no waiting window.
-- [ ] A failing refresh throws to its caller rather than swallowing.
-- [ ] The live-update effect holds no per-family cancellation state and no per-family refresh method.
-- [ ] A failure reaching the live-update path leaves that family's breakdown at its last known value, and this rule is written once.
-- [ ] A parameterised test over all seven families asserts that a refresh sends every choice currently held in that family's store, and writes the response into that family's breakdown. This is the general form of the aggregation bug and gives the six uncovered families their first unit coverage.
-- [ ] The existing rapid-events test is replaced by one asserting the coalescing count, keeping the same parameterisation over families and the same staged-delay technique.
-- [ ] The voice aggregation regression test still passes.
-- [ ] The dashboard's Playwright suite passes unchanged; if the real-time test becomes flaky, treat that as a signal about coalescing rather than lengthening its waits.
+- [x] A metric family carries its name, its preference prefix, and both operations: load my events, refresh my breakdown.
+- [x] One registration site declares all seven families and is the only place a family is declared.
+- [x] Awaiting a family's refresh guarantees its breakdown reflects state at or after the call.
+- [x] Triggering a family repeatedly while a response is outstanding produces two requests, not one per trigger, and the breakdown ends at the last request's value.
+- [x] Refreshing never adds latency: no timer, no waiting window.
+- [x] A failing refresh throws to its caller rather than swallowing.
+- [x] The live-update effect holds no per-family cancellation state and no per-family refresh method.
+- [x] A failure reaching the live-update path leaves that family's breakdown at its last known value, and this rule is written once.
+- [x] A parameterised test over all seven families asserts that a refresh sends every choice currently held in that family's store, and writes the response into that family's breakdown. This is the general form of the aggregation bug and gives the six uncovered families their first unit coverage.
+- [x] The existing rapid-events test is replaced by one asserting the coalescing count, keeping the same parameterisation over families and the same staged-delay technique.
+- [x] The voice aggregation regression test still passes.
+- [x] The dashboard's Playwright suite passes unchanged; if the real-time test becomes flaky, treat that as a signal about coalescing rather than lengthening its waits.

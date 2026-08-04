@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Dashboard.Client.Effects;
+using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
@@ -31,16 +32,19 @@ public class MetricsHubEffectTests : IAsyncDisposable
     private readonly MemoryStore _memoryStore = new();
     private readonly LatencyStore _latencyStore = new();
     private readonly VoiceStore _voiceStore = new();
+    private readonly MetricsApiService _api;
+    private readonly MetricFamilyTable _families;
     private readonly MetricsHubEffect _effect;
 
     public MetricsHubEffectTests()
     {
         var http = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
-        var api = new MetricsApiService(http);
+        _api = new MetricsApiService(http);
+        _families = new MetricFamilyTable(
+            _api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
+            _memoryStore, _latencyStore, _voiceStore);
         _effect = new MetricsHubEffect(
-            _hub, api, _metricsStore, _healthStore,
-            _tokensStore, _toolsStore, _errorsStore,
-            _schedulesStore, _connectionStore, _memoryStore, _latencyStore, _voiceStore);
+            _hub, _families, _metricsStore, _healthStore, _connectionStore);
     }
 
     public async ValueTask DisposeAsync()
@@ -56,6 +60,125 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _memoryStore.Dispose();
         _latencyStore.Dispose();
         _voiceStore.Dispose();
+    }
+
+    private static readonly DateOnly From = new(2026, 3, 1);
+    private static readonly DateOnly To = new(2026, 3, 2);
+
+    // Every family, in the general form of the aggregation bug: whatever the store holds is what
+    // goes out, and whatever comes back is what the family charts.
+    private static readonly Dictionary<
+        string,
+        (Func<MetricFamilyTable, MetricFamily> Family,
+         Action<MetricsHubEffectTests> Choose,
+         string ExpectedRequest,
+         object Breakdown,
+         Func<MetricsHubEffectTests, object?> GetBreakdown,
+         object? SecondResponse)>
+    _familyCases = new()
+    {
+        ["tokens"] = (
+            t => t.Tokens,
+            self =>
+            {
+                self._tokensStore.SetGroupBy(TokenDimension.Model);
+                self._tokensStore.SetMetric(TokenMetric.Cost);
+            },
+            "api/metrics/tokens/by/Model?metric=Cost&from=2026-03-01&to=2026-03-02",
+            new Dictionary<string, decimal> { ["gpt"] = 12m },
+            self => self._tokensStore.State.Breakdown,
+            null),
+        ["tools"] = (
+            t => t.Tools,
+            self =>
+            {
+                self._toolsStore.SetGroupBy(ToolDimension.Status);
+                self._toolsStore.SetMetric(ToolMetric.AvgDuration);
+            },
+            "api/metrics/tools/by/Status?metric=AvgDuration&from=2026-03-01&to=2026-03-02",
+            new Dictionary<string, decimal> { ["ok"] = 30m },
+            self => self._toolsStore.State.Breakdown,
+            null),
+        ["errors"] = (
+            t => t.Errors,
+            self => self._errorsStore.SetGroupBy(ErrorDimension.ErrorType),
+            "api/metrics/errors/by/ErrorType?from=2026-03-01&to=2026-03-02",
+            new Dictionary<string, int> { ["timeout"] = 4 },
+            self => self._errorsStore.State.Breakdown,
+            null),
+        ["schedules"] = (
+            t => t.Schedules,
+            self => self._schedulesStore.SetGroupBy(ScheduleDimension.Status),
+            "api/metrics/schedules/by/Status?from=2026-03-01&to=2026-03-02",
+            new Dictionary<string, int> { ["ok"] = 9 },
+            self => self._schedulesStore.State.Breakdown,
+            null),
+        ["memory"] = (
+            t => t.Memory,
+            self =>
+            {
+                self._memoryStore.SetGroupBy(MemoryDimension.Agent);
+                self._memoryStore.SetMetric(MemoryMetric.AvgDuration);
+            },
+            "api/metrics/memory/by/Agent?metric=AvgDuration&from=2026-03-01&to=2026-03-02",
+            new Dictionary<string, decimal> { ["nabu"] = 80m },
+            self => self._memoryStore.State.Breakdown,
+            null),
+        ["latency"] = (
+            t => t.Latency,
+            self =>
+            {
+                self._latencyStore.SetGroupBy(LatencyDimension.Model);
+                self._latencyStore.SetMetric(Aggregation.P99);
+            },
+            "api/metrics/latency/by/Model?metric=P99&from=2026-03-01&to=2026-03-02",
+            new Dictionary<string, decimal> { ["m1"] = 900m },
+            self => self._latencyStore.State.Breakdown,
+            new List<LatencyTrendSeries>()),
+        ["voice"] = (
+            t => t.Voice,
+            self =>
+            {
+                self._voiceStore.SetGroupBy(VoiceDimension.Identity);
+                self._voiceStore.SetMetric(VoiceMetric.SttLatencyMs);
+                self._voiceStore.SetAgg(Aggregation.P95);
+            },
+            "api/metrics/voice/by/Identity?metric=SttLatencyMs&agg=P95&from=2026-03-01&to=2026-03-02",
+            new Dictionary<string, decimal> { ["frank"] = 210m },
+            self => self._voiceStore.State.Breakdown,
+            null),
+    };
+
+    public static TheoryData<string> FamilyNames => new(_familyCases.Keys);
+
+    [Theory]
+    [MemberData(nameof(FamilyNames))]
+    public async Task RefreshAsync_AnyFamily_SendsEveryChoiceInItsStoreAndWritesTheBreakdown(string name)
+    {
+        var (family, choose, expectedRequest, breakdown, getBreakdown, secondResponse) = _familyCases[name];
+        SetDateRangeOnEveryStore();
+        choose(this);
+        _handler.EnqueueResponse(breakdown, delay: TimeSpan.Zero);
+        if (secondResponse is not null)
+        {
+            _handler.EnqueueResponse(secondResponse, delay: TimeSpan.Zero);
+        }
+
+        await family(_families).RefreshAsync();
+
+        _handler.Requests.ShouldContain(u => u != null && u.EndsWith(expectedRequest, StringComparison.Ordinal));
+        getBreakdown(this).ShouldBe(breakdown);
+    }
+
+    private void SetDateRangeOnEveryStore()
+    {
+        _tokensStore.SetDateRange(From, To);
+        _toolsStore.SetDateRange(From, To);
+        _errorsStore.SetDateRange(From, To);
+        _schedulesStore.SetDateRange(From, To);
+        _memoryStore.SetDateRange(From, To);
+        _latencyStore.SetDateRange(From, To);
+        _voiceStore.SetDateRange(From, To);
     }
 
     private static readonly
@@ -110,9 +233,12 @@ public class MetricsHubEffectTests : IAsyncDisposable
 
     public static TheoryData<string> RapidEventCaseNames => new(_rapidEventCases.Keys);
 
+    // Five events arriving during one outstanding response cost the observability service two
+    // aggregations, not five: the run in flight is shared and repeats once for the state that moved
+    // under it.
     [Theory]
     [MemberData(nameof(RapidEventCaseNames))]
-    public async Task RapidEvents_CancelsStaleApiCallAndUsesFreshData(string caseName)
+    public async Task RapidEvents_CoalesceIntoTwoRequestsEndingAtTheLastValue(string caseName)
     {
         var (staleData, freshData, fireEvent, getBreakdown) = _rapidEventCases[caseName];
 
@@ -121,12 +247,31 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _handler.EnqueueResponse(staleData, delay: TimeSpan.FromMilliseconds(500));
         _handler.EnqueueResponse(freshData, delay: TimeSpan.FromMilliseconds(10));
 
-        var task1 = fireEvent(_hub);
-        var task2 = fireEvent(_hub);
-        await Task.WhenAll(task1, task2);
-        await Task.Delay(100);
+        var fires = Enumerable.Range(0, 5).Select(_ => fireEvent(_hub)).ToArray();
+        await Task.WhenAll(fires);
 
+        _handler.Requests.Count.ShouldBe(2);
         getBreakdown(this).ShouldBe(freshData);
+    }
+
+    [Fact]
+    public async Task LiveEvent_RefreshFails_LeavesTheBreakdownAtItsLastKnownValue()
+    {
+        var lastKnown = new Dictionary<string, decimal> { ["kept"] = 42m };
+        _tokensStore.SetBreakdown(lastKnown);
+        await _effect.StartAsync();
+
+        // Nothing is staged, so the handler answers 404 and the refresh throws.
+        await _hub.FireTokenUsage(new TokenUsageEvent
+        { Sender = "test", Model = "m", InputTokens = 1, OutputTokens = 1, Cost = 0.01m });
+
+        _tokensStore.State.Breakdown.ShouldBe(lastKnown);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_Failing_ThrowsToItsCaller()
+    {
+        await Should.ThrowAsync<HttpRequestException>(() => _families.Tokens.RefreshAsync());
     }
 
     [Fact]
@@ -373,6 +518,11 @@ public sealed class FakeApiHandler : HttpMessageHandler
 
         if (_responses.TryDequeue(out var entry))
         {
+            if (entry.Delay > TimeSpan.Zero)
+            {
+                await Task.Delay(entry.Delay, cancellationToken);
+            }
+
             var json = System.Text.Json.JsonSerializer.Serialize(entry.Data);
             return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
             {

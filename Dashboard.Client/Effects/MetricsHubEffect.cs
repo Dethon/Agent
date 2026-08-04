@@ -1,150 +1,32 @@
+using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
-using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
-using Dashboard.Client.State.Latency;
-using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
-using Dashboard.Client.State.Schedules;
-using Dashboard.Client.State.Tokens;
-using Dashboard.Client.State.Tools;
-using Dashboard.Client.State.Voice;
 
 namespace Dashboard.Client.Effects;
 
 public sealed class MetricsHubEffect(
     MetricsHubService hub,
-    MetricsApiService api,
+    MetricFamilyTable families,
     MetricsStore metricsStore,
     HealthStore healthStore,
-    TokensStore tokensStore,
-    ToolsStore toolsStore,
-    ErrorsStore errorsStore,
-    SchedulesStore schedulesStore,
-    ConnectionStore connectionStore,
-    MemoryStore memoryStore,
-    LatencyStore latencyStore,
-    VoiceStore voiceStore) : IAsyncDisposable
+    ConnectionStore connectionStore) : IAsyncDisposable
 {
     private readonly List<IDisposable> _subscriptions = [];
-
-    private CancellationTokenSource _tokenBreakdownCts = new();
-    private CancellationTokenSource _toolBreakdownCts = new();
-    private CancellationTokenSource _errorBreakdownCts = new();
-    private CancellationTokenSource _scheduleBreakdownCts = new();
-    private CancellationTokenSource _memoryBreakdownCts = new();
-    private CancellationTokenSource _latencyBreakdownCts = new();
-    private CancellationTokenSource _voiceBreakdownCts = new();
-
-    private CancellationToken ResetCts(ref CancellationTokenSource cts)
-    {
-        cts.Cancel();
-        cts.Dispose();
-        cts = new CancellationTokenSource();
-        return cts.Token;
-    }
-
-    private async Task RefreshTokenBreakdownAsync(CancellationToken ct)
-    {
-        try
-        {
-            var s = tokensStore.State;
-            var result = await api.GetGroupedAsync<decimal>(
-                $"tokens/by/{s.GroupBy}", s.From, s.To, [("metric", s.Metric.ToString())], ct);
-            ct.ThrowIfCancellationRequested();
-            tokensStore.SetBreakdown(result ?? []);
-        }
-        catch (OperationCanceledException) { }
-        catch { /* Breakdown stays at last known value */ }
-    }
-
-    private async Task RefreshToolBreakdownAsync(CancellationToken ct)
-    {
-        try
-        {
-            var s = toolsStore.State;
-            var result = await api.GetGroupedAsync<decimal>(
-                $"tools/by/{s.GroupBy}", s.From, s.To, [("metric", s.Metric.ToString())], ct);
-            ct.ThrowIfCancellationRequested();
-            toolsStore.SetBreakdown(result ?? []);
-        }
-        catch (OperationCanceledException) { }
-        catch { /* Breakdown stays at last known value */ }
-    }
-
-    private async Task RefreshErrorBreakdownAsync(CancellationToken ct)
-    {
-        try
-        {
-            var s = errorsStore.State;
-            var result = await api.GetGroupedAsync<int>($"errors/by/{s.GroupBy}", s.From, s.To, ct: ct);
-            ct.ThrowIfCancellationRequested();
-            errorsStore.SetBreakdown(result ?? []);
-        }
-        catch (OperationCanceledException) { }
-        catch { /* Breakdown stays at last known value */ }
-    }
-
-    private async Task RefreshScheduleBreakdownAsync(CancellationToken ct)
-    {
-        try
-        {
-            var s = schedulesStore.State;
-            var result = await api.GetGroupedAsync<int>($"schedules/by/{s.GroupBy}", s.From, s.To, ct: ct);
-            ct.ThrowIfCancellationRequested();
-            schedulesStore.SetBreakdown(result ?? []);
-        }
-        catch (OperationCanceledException) { }
-        catch { /* Breakdown stays at last known value */ }
-    }
-
-    private async Task RefreshMemoryBreakdownAsync(CancellationToken ct)
-    {
-        try
-        {
-            var s = memoryStore.State;
-            var result = await api.GetGroupedAsync<decimal>(
-                $"memory/by/{s.GroupBy}", s.From, s.To, [("metric", s.Metric.ToString())], ct);
-            ct.ThrowIfCancellationRequested();
-            memoryStore.SetBreakdown(result ?? []);
-        }
-        catch (OperationCanceledException) { }
-        catch { /* Breakdown stays at last known value */ }
-    }
-
-    private async Task RefreshLatencyBreakdownAsync(CancellationToken ct)
-    {
-        try
-        {
-            var s = latencyStore.State;
-            var breakdown = await api.GetGroupedAsync<decimal>(
-                $"latency/by/{s.GroupBy}", s.From, s.To, [("metric", s.Metric.ToString())], ct);
-            ct.ThrowIfCancellationRequested();
-            var trend = await api.GetLatencyTrendAsync(s.Metric, s.From, s.To, ct);
-            ct.ThrowIfCancellationRequested();
-            latencyStore.SetBreakdown(breakdown ?? []);
-            latencyStore.SetTrend(trend ?? []);
-        }
-        catch (OperationCanceledException) { }
-        catch { /* Breakdown stays at last known value */ }
-    }
-
-    private async Task RefreshVoiceBreakdownAsync(CancellationToken ct)
-    {
-        try
-        {
-            var s = voiceStore.State;
-            var result = await api.GetGroupedAsync<decimal>(
-                $"voice/by/{s.GroupBy}", s.From, s.To,
-                [("metric", s.Metric.ToString()), ("agg", s.Agg.ToString())], ct);
-            ct.ThrowIfCancellationRequested();
-            voiceStore.SetBreakdown(result ?? []);
-        }
-        catch (OperationCanceledException) { }
-        catch { /* Breakdown stays at last known value */ }
-    }
-
     private bool _started;
+
+    // The live-update path's failure policy, written once: a refresh that fails leaves the family's
+    // breakdown at its last known value.
+    private static async Task RefreshAsync(MetricFamily family)
+    {
+        try
+        {
+            await family.RefreshAsync();
+        }
+        catch (OperationCanceledException) { }
+        catch { /* Breakdown stays at last known value */ }
+    }
 
     public async Task StartAsync()
     {
@@ -158,76 +40,66 @@ public sealed class MetricsHubEffect(
         _subscriptions.Add(hub.OnMemoryRecall(async evt =>
         {
             metricsStore.IncrementMemoryRecall(evt.MemoryCount);
-            memoryStore.AppendRecallEvent(evt);
-            var ct = ResetCts(ref _memoryBreakdownCts);
-            await RefreshMemoryBreakdownAsync(ct);
+            families.Memory.Store.AppendRecallEvent(evt);
+            await RefreshAsync(families.Memory);
         }));
 
         _subscriptions.Add(hub.OnMemoryExtraction(async evt =>
         {
             metricsStore.IncrementMemoryExtraction(evt.StoredCount);
-            memoryStore.AppendExtractionEvent(evt);
-            var ct = ResetCts(ref _memoryBreakdownCts);
-            await RefreshMemoryBreakdownAsync(ct);
+            families.Memory.Store.AppendExtractionEvent(evt);
+            await RefreshAsync(families.Memory);
         }));
 
         _subscriptions.Add(hub.OnMemoryDreaming(async evt =>
         {
             metricsStore.IncrementMemoryDreaming(evt.MergedCount, evt.DecayedCount);
-            memoryStore.AppendDreamingEvent(evt);
-            var ct = ResetCts(ref _memoryBreakdownCts);
-            await RefreshMemoryBreakdownAsync(ct);
+            families.Memory.Store.AppendDreamingEvent(evt);
+            await RefreshAsync(families.Memory);
         }));
 
         _subscriptions.Add(hub.OnTokenUsage(async evt =>
         {
             metricsStore.IncrementFromTokenUsage(evt);
-            tokensStore.AppendEvent(evt);
-            var ct = ResetCts(ref _tokenBreakdownCts);
-            await RefreshTokenBreakdownAsync(ct);
+            families.Tokens.Store.AppendEvent(evt);
+            await RefreshAsync(families.Tokens);
         }));
 
-        _subscriptions.Add(hub.OnContextTruncation(async evt =>
+        _subscriptions.Add(hub.OnContextTruncation(async _ =>
         {
-            tokensStore.IncrementTruncations();
-            var ct = ResetCts(ref _tokenBreakdownCts);
-            await RefreshTokenBreakdownAsync(ct);
+            families.Tokens.Store.IncrementTruncations();
+            await RefreshAsync(families.Tokens);
         }));
 
         _subscriptions.Add(hub.OnToolCall(async evt =>
         {
             metricsStore.IncrementToolCall(!evt.Success);
-            toolsStore.AppendEvent(evt);
-            var ct = ResetCts(ref _toolBreakdownCts);
-            await RefreshToolBreakdownAsync(ct);
+            families.Tools.Store.AppendEvent(evt);
+            await RefreshAsync(families.Tools);
         }));
 
         _subscriptions.Add(hub.OnError(async evt =>
         {
-            errorsStore.AppendEvent(evt);
-            var ct = ResetCts(ref _errorBreakdownCts);
-            await RefreshErrorBreakdownAsync(ct);
+            families.Errors.Store.AppendEvent(evt);
+            await RefreshAsync(families.Errors);
         }));
 
         _subscriptions.Add(hub.OnScheduleExecution(async evt =>
         {
-            schedulesStore.AppendEvent(evt);
-            var ct = ResetCts(ref _scheduleBreakdownCts);
-            await RefreshScheduleBreakdownAsync(ct);
+            families.Schedules.Store.AppendEvent(evt);
+            await RefreshAsync(families.Schedules);
         }));
 
         _subscriptions.Add(hub.OnLatency(async evt =>
         {
-            latencyStore.AppendEvent(evt);
-            var ct = ResetCts(ref _latencyBreakdownCts);
-            await RefreshLatencyBreakdownAsync(ct);
+            families.Latency.Store.AppendEvent(evt);
+            await RefreshAsync(families.Latency);
         }));
 
         _subscriptions.Add(hub.OnVoice(async evt =>
         {
-            voiceStore.AppendEvent(evt);
-            var ct = ResetCts(ref _voiceBreakdownCts);
-            await RefreshVoiceBreakdownAsync(ct);
+            families.Voice.Store.AppendEvent(evt);
+            await RefreshAsync(families.Voice);
         }));
 
         _subscriptions.Add(hub.OnHealthUpdate(evt =>
@@ -275,13 +147,6 @@ public sealed class MetricsHubEffect(
     {
         _subscriptions.ForEach(s => s.Dispose());
         _subscriptions.Clear();
-        _tokenBreakdownCts.Dispose();
-        _toolBreakdownCts.Dispose();
-        _errorBreakdownCts.Dispose();
-        _scheduleBreakdownCts.Dispose();
-        _memoryBreakdownCts.Dispose();
-        _latencyBreakdownCts.Dispose();
-        _voiceBreakdownCts.Dispose();
         await hub.DisposeAsync();
     }
 }

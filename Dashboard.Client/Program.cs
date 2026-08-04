@@ -1,5 +1,6 @@
 using Dashboard.Client;
 using Dashboard.Client.Effects;
+using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
@@ -40,6 +41,8 @@ builder.Services.AddSingleton(sp =>
     var hubUrl = new Uri(nav.ToAbsoluteUri("/hubs/metrics").ToString());
     return new MetricsHubService(hubUrl);
 });
+
+builder.Services.AddScoped<MetricFamilyTable>();
 
 builder.Services.AddScoped<DataLoadEffect>();
 builder.Services.AddScoped<MetricsHubEffect>();
