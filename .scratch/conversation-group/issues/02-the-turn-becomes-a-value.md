@@ -17,11 +17,11 @@ Behaviour is identical. This is the second of three preparatory steps.
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A turn record exists carrying the origin channel, the message, the resolved targets and the tracker.
-- [ ] The reply-update record carries the turn rather than separate targets and tracker fields.
-- [ ] The tracker is non-nullable, and the delivery loop reads it from the turn.
-- [ ] The tracker is still created when the turn starts, so first-reply latency measures the same window as before.
-- [ ] The private methods that took targets and the tracker as separate parameters take the turn instead.
-- [ ] The existing monitor test suite passes unchanged.
+- [x] A turn record exists carrying the origin channel, the message, the resolved targets and the tracker.
+- [x] The reply-update record carries the turn rather than separate targets and tracker fields.
+- [x] The tracker is non-nullable, and the delivery loop reads it from the turn.
+- [x] The tracker is still created when the turn starts, so first-reply latency measures the same window as before.
+- [x] The private methods that took targets and the tracker as separate parameters take the turn instead.
+- [x] The existing monitor test suite passes unchanged.

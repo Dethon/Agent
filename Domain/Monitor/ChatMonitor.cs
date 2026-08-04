@@ -26,9 +26,6 @@ public class ChatMonitor(
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger);
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
 
-    private sealed record TurnUpdate(
-        AgentResponseUpdate Update, IReadOnlyList<DeliveryTarget> Targets, LatencyScope? FirstReply);
-
     private sealed record GroupAnchors(
         IReadOnlyList<DeliveryTarget> Targets, IChannelConnection ApprovalChannel, AgentKey DeliveryKey);
 
@@ -100,15 +97,16 @@ public class ChatMonitor(
         var scope = new TurnScope(agentKey, anchors.DeliveryKey, anchors.Targets, agent, thread, warmup);
         var aiResponses = RunTurnsSequentiallyAsync(group.Prepend(first), scope, linkedCt);
 
-        await foreach (var turn in aiResponses.WithCancellation(ct))
+        await foreach (var turnUpdate in aiResponses.WithCancellation(ct))
         {
-            var deliveredContent = await _replyDispatcher.DeliverUpdateAsync(turn.Update, turn.Targets, ct);
+            var deliveredContent = await _replyDispatcher.DeliverUpdateAsync(
+                turnUpdate.Update, turnUpdate.Turn.Targets, ct);
             if (deliveredContent)
             {
                 // Ends the span on the first delivered chunk; the scope publishes at most once, so
                 // every later chunk of the same turn is a no-op. A turn that delivers nothing
                 // never disposes it and records no first-reply latency.
-                turn.FirstReply?.Dispose();
+                turnUpdate.Turn.FirstReply.Dispose();
             }
 
             yield return true;
@@ -233,20 +231,18 @@ public class ChatMonitor(
         var firstReply = metricsPublisher.MeasureLatency(
             LatencyStage.FirstReply, scope.DeliveryKey.ConversationId);
         var targets = await ResolveTurnTargetsAsync(x, index, scope.Targets, ct);
+        var turn = new Turn(x.Channel, x.Message, targets, firstReply);
         // Agent-initiated turns (downloads, schedules) land in conversations
         // with no live stream on the receiving channel; announce the turn so
-        // the channel can set one up before reply chunks arrive. Targets the
-        // group-opening message minted were announced by their own
-        // create_conversation; later messages reusing the group targets see
-        // those conversations as pre-existing.
-        if (x.Message.Origin is not null)
+        // the channel can set one up before reply chunks arrive.
+        if (turn.Message.Origin is not null)
         {
-            await _targetResolver.AnnounceTurnStartAsync(targets, x.Message, ct);
+            await _targetResolver.AnnounceTurnStartAsync(turn.Targets, turn.Message, ct);
         }
-        var userMessage = await BuildUserMessageAsync(x.Message, targets, scope, ct);
+        var userMessage = await BuildUserMessageAsync(turn, scope, ct);
 
         await scope.Warmup;
-        return StreamAgentTurn(scope.Agent, scope.Thread, userMessage, x.Message, targets, firstReply, ct);
+        return StreamAgentTurn(scope, userMessage, turn, ct);
     }
 
     // Deliver each message's reply to the channel that actually sent it. The
@@ -276,9 +272,9 @@ public class ChatMonitor(
             : await _targetResolver.ResolveAsync(x.Message, x.Channel, ct);
     }
 
-    private async Task<ChatMessage> BuildUserMessageAsync(
-        ChannelMessage message, IReadOnlyList<DeliveryTarget> targets, TurnScope scope, CancellationToken ct)
+    private async Task<ChatMessage> BuildUserMessageAsync(Turn turn, TurnScope scope, CancellationToken ct)
     {
+        var message = turn.Message;
         var userMessage = new ChatMessage(ChatRole.User, message.Content);
         userMessage.SetSenderId(message.Sender);
         userMessage.SetLocation(message.Location);
@@ -286,7 +282,8 @@ public class ChatMonitor(
         userMessage.SetDismissedAlert(message.DismissedAlert);
         userMessage.SetConfigPatch(message.ConfigPatch);
         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
-        userMessage.SetConversationContext(DeliveryTargetResolver.BuildConversationContext(message, targets));
+        userMessage.SetConversationContext(
+            DeliveryTargetResolver.BuildConversationContext(message, turn.Targets));
         if (memoryRecallHook is not null)
         {
             // The delivery identity again, not the message's own: recall stamps durable
@@ -300,18 +297,15 @@ public class ChatMonitor(
     }
 
     private IAsyncEnumerable<TurnUpdate> StreamAgentTurn(
-        DisposableAgent agent,
-        AgentSession thread,
+        TurnScope scope,
         ChatMessage userMessage,
-        ChannelMessage message,
-        IReadOnlyList<DeliveryTarget> targets,
-        LatencyScope firstReply,
+        Turn turn,
         CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
         // ReSharper disable once AccessToDisposedClosure
-        return agent
-            .RunStreamingAsync([userMessage], thread, cancellationToken: ct)
+        return scope.Agent
+            .RunStreamingAsync([userMessage], scope.Thread, cancellationToken: ct)
             .WithErrorHandling(ct)
             .ToUpdateAiResponsePairs()
             .Append((new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
@@ -321,7 +315,8 @@ public class ChatMonitor(
                 onCompletion: (faulted, _) =>
                 {
                     var error = faulted ? "Agent run reported an error" : null;
-                    var evt = ScheduleExecutionEvent.FromMessage(message, stopwatch.ElapsedMilliseconds, !faulted, error);
+                    var evt = ScheduleExecutionEvent.FromMessage(
+                        turn.Message, stopwatch.ElapsedMilliseconds, !faulted, error);
                     if (evt is not null)
                     {
                         metricsPublisher.Publish(evt);
@@ -330,7 +325,7 @@ public class ChatMonitor(
                     return ValueTask.CompletedTask;
                 },
                 ct)
-            .Select(pair => new TurnUpdate(pair.Item1, targets, firstReply));
+            .Select(pair => new TurnUpdate(pair.Item1, turn));
     }
 
     private static ValueTask<AgentSession> GetOrRestoreThread(
