@@ -6,7 +6,6 @@ using Domain.Monitor;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
-using Tests.Unit.Domain;
 
 namespace Tests.Unit.Domain.Monitor;
 
@@ -137,6 +136,34 @@ public class ChatMonitorConversationGroupTests
         signalr.CreatedConversations.Count.ShouldBe(2);
         signalr.CreatedConversations[0].ExistingConversationId.ShouldBeNull();
         signalr.CreatedConversations[1].ExistingConversationId.ShouldBe("minted-signalr");
+    }
+
+    [Fact]
+    public async Task Monitor_FirstTurnFailsToEstablish_EndsTheGroupAndDisposesTheAgent()
+    {
+        // Establishing the group happens inside the turn loop now, so a state store that is
+        // down has to end the group there and then. The channel stays open on purpose: a group
+        // that waited for its message stream to end would hold the agent open with it.
+        var channel = new FakeChannelConnection();
+        var fakeAgent = new FakeAiAgent { RestoreExceptionToThrow = new HttpRequestException("state store down") };
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = monitor.Monitor(cts.Token);
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage());
+
+        await fakeAgent.DisposeSignaled.Task.WaitAsync(cts.Token);
+
+        channel.Complete();
+        await run;
+        fakeAgent.DisposeCalls.ShouldBe(1);
     }
 
     private static ChannelMessage ScheduleFire(string content)

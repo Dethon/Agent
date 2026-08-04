@@ -21,6 +21,8 @@ namespace Tests.Unit.Domain;
 internal sealed class FakeAiAgent : DisposableAgent
 {
     public Exception? ExceptionToThrow { get; init; }
+    public Exception? RestoreExceptionToThrow { get; init; }
+    public int DisposeCalls;
     public AgentResponseUpdate[] UpdatesToYield { get; init; } = [];
 
     public int WarmupCalls;
@@ -62,6 +64,11 @@ internal sealed class FakeAiAgent : DisposableAgent
         JsonSerializerOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        if (RestoreExceptionToThrow is not null)
+        {
+            throw RestoreExceptionToThrow;
+        }
+
         if (serializedThread.ValueKind == JsonValueKind.String && serializedThread.GetString() is { } key)
         {
             RestoredSessionKeys.Enqueue(key);
@@ -110,8 +117,12 @@ internal sealed class FakeAiAgent : DisposableAgent
         Events.Enqueue("run-complete");
     }
 
+    public TaskCompletionSource DisposeSignaled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public override ValueTask DisposeAsync()
     {
+        Interlocked.Increment(ref DisposeCalls);
+        DisposeSignaled.TrySetResult();
         return ValueTask.CompletedTask;
     }
 

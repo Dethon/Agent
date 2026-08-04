@@ -36,6 +36,10 @@ internal sealed class ConversationGroup(
 
     private GroupState? _state;
 
+    // Held from the moment it is created, not from the moment the group is established, so a
+    // failure between the two still disposes it.
+    private DisposableAgent? _agent;
+
     private sealed record GroupState(
         ChannelMessage AnchorMessage,
         IReadOnlyList<DeliveryTarget> Targets,
@@ -67,9 +71,9 @@ internal sealed class ConversationGroup(
 
     public async ValueTask DisposeAsync()
     {
-        if (_state is not null)
+        if (_agent is not null)
         {
-            await _state.Agent.DisposeAsync();
+            await _agent.DisposeAsync();
         }
     }
 
@@ -88,7 +92,11 @@ internal sealed class ConversationGroup(
         IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages)
     {
         var pending = Channel.CreateUnbounded<(IChannelConnection Channel, ChannelMessage Message)>();
-        var reader = DispatchCommandsAndQueueTurnsAsync(messages, pending.Writer);
+        // The message pump is stopped on the way out. Without that, a turn that throws would
+        // wait here for a message stream that has no reason to end, and the error would never
+        // reach the monitor.
+        using var pumpCts = CancellationTokenSource.CreateLinkedTokenSource(_turnCt);
+        var reader = DispatchCommandsAndQueueTurnsAsync(messages, pending.Writer, pumpCts.Token);
 
         try
         {
@@ -103,17 +111,19 @@ internal sealed class ConversationGroup(
         }
         finally
         {
+            await pumpCts.CancelAsync();
             await reader;
         }
     }
 
     private async Task DispatchCommandsAndQueueTurnsAsync(
         IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
-        ChannelWriter<(IChannelConnection Channel, ChannelMessage Message)> writer)
+        ChannelWriter<(IChannelConnection Channel, ChannelMessage Message)> writer,
+        CancellationToken pumpCt)
     {
         try
         {
-            await foreach (var x in messages.IgnoreCancellation(_turnCt))
+            await foreach (var x in messages.IgnoreCancellation(pumpCt))
             {
                 switch (ChatCommandParser.Parse(x.Message.Content))
                 {
@@ -124,7 +134,7 @@ internal sealed class ConversationGroup(
                         threadResolver.Cancel(agentKey);
                         break;
                     default:
-                        await writer.WriteAsync(x, _turnCt);
+                        await writer.WriteAsync(x, pumpCt);
                         break;
                 }
             }
@@ -175,7 +185,8 @@ internal sealed class ConversationGroup(
         var (approvalChannel, deliveryKey) = targets.Count > 0
             ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, x.Message.AgentId))
             : (x.Channel, agentKey);
-        var agent = agentFactory.Create(deliveryKey, x.Message.Sender, x.Message.AgentId, approvalChannel);
+        var agent = _agent = agentFactory.Create(
+            deliveryKey, x.Message.Sender, x.Message.AgentId, approvalChannel);
         var thread = await GetOrRestoreThread(agent, deliveryKey);
 
         // Start session warmup (MCP connections + tool discovery) without awaiting it yet, so
