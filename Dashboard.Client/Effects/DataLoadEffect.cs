@@ -1,83 +1,30 @@
+using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
-using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
-using Dashboard.Client.State.Latency;
-using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
-using Dashboard.Client.State.Schedules;
-using Dashboard.Client.State.Tokens;
-using Dashboard.Client.State.Tools;
-using Dashboard.Client.State.Voice;
 
 namespace Dashboard.Client.Effects;
 
 public sealed class DataLoadEffect(
     MetricsApiService api,
+    MetricFamilyTable families,
     MetricsStore metricsStore,
     HealthStore healthStore,
-    TokensStore tokensStore,
-    ToolsStore toolsStore,
-    ErrorsStore errorsStore,
-    SchedulesStore schedulesStore,
-    ConnectionStore connectionStore,
-    MemoryStore memoryStore,
-    LatencyStore latencyStore,
-    VoiceStore voiceStore)
+    ConnectionStore connectionStore)
 {
     public async Task LoadAsync(DateOnly from, DateOnly to)
     {
         try
         {
-            tokensStore.SetDateRange(from, to);
-            toolsStore.SetDateRange(from, to);
-            errorsStore.SetDateRange(from, to);
-            schedulesStore.SetDateRange(from, to);
-            memoryStore.SetDateRange(from, to);
-            latencyStore.SetDateRange(from, to);
-            voiceStore.SetDateRange(from, to);
+            families.All.ToList().ForEach(family => family.SetDateRange(from, to));
 
             var summaryTask = api.GetSummaryAsync(from, to);
-            var tokensTask = api.GetTokensAsync(from, to);
-            var toolsTask = api.GetToolsAsync(from, to);
-            var errorsTask = api.GetErrorsAsync(from, to);
-            var schedulesTask = api.GetSchedulesAsync(from, to);
             var healthTask = api.GetHealthAsync();
+            var familyTasks = families.All
+                .SelectMany(family => new[] { family.LoadEventsAsync(), family.RefreshAsync() });
 
-            var tokenBreakdownTask = api.GetGroupedAsync<decimal>(
-                $"tokens/by/{tokensStore.State.GroupBy}", from, to,
-                [("metric", tokensStore.State.Metric.ToString())]);
-            var toolBreakdownTask = api.GetGroupedAsync<decimal>(
-                $"tools/by/{toolsStore.State.GroupBy}", from, to,
-                [("metric", toolsStore.State.Metric.ToString())]);
-            var errorBreakdownTask = api.GetGroupedAsync<int>(
-                $"errors/by/{errorsStore.State.GroupBy}", from, to);
-            var scheduleBreakdownTask = api.GetGroupedAsync<int>(
-                $"schedules/by/{schedulesStore.State.GroupBy}", from, to);
-            var memoryRecallTask = api.GetMemoryRecallAsync(from, to);
-            var memoryExtractionTask = api.GetMemoryExtractionAsync(from, to);
-            var memoryDreamingTask = api.GetMemoryDreamingAsync(from, to);
-            var memoryBreakdownTask = api.GetGroupedAsync<decimal>(
-                $"memory/by/{memoryStore.State.GroupBy}", from, to,
-                [("metric", memoryStore.State.Metric.ToString())]);
-
-            var latencyTask = api.GetLatencyAsync(from, to);
-            var latencyBreakdownTask = api.GetGroupedAsync<decimal>(
-                $"latency/by/{latencyStore.State.GroupBy}", from, to,
-                [("metric", latencyStore.State.Metric.ToString())]);
-            var latencyTrendTask = api.GetLatencyTrendAsync(latencyStore.State.Metric, from, to);
-
-            var voiceTask = api.GetVoiceEventsAsync(from, to);
-            var voiceBreakdownTask = api.GetGroupedAsync<decimal>(
-                $"voice/by/{voiceStore.State.GroupBy}", from, to,
-                [("metric", voiceStore.State.Metric.ToString()), ("agg", voiceStore.State.Agg.ToString())]);
-
-            await Task.WhenAll(summaryTask, tokensTask, toolsTask, errorsTask,
-                schedulesTask, healthTask, tokenBreakdownTask, toolBreakdownTask,
-                errorBreakdownTask, scheduleBreakdownTask,
-                memoryRecallTask, memoryExtractionTask, memoryDreamingTask, memoryBreakdownTask,
-                latencyTask, latencyBreakdownTask, latencyTrendTask,
-                voiceTask, voiceBreakdownTask);
+            await Task.WhenAll([summaryTask, healthTask, .. familyTasks]);
 
             var summary = await summaryTask;
             if (summary is not null)
@@ -98,28 +45,6 @@ public sealed class DataLoadEffect(
                 });
             }
 
-            tokensStore.SetEvents(await tokensTask ?? []);
-            toolsStore.SetEvents(await toolsTask ?? []);
-            errorsStore.SetEvents(await errorsTask ?? []);
-            schedulesStore.SetEvents(await schedulesTask ?? []);
-
-            tokensStore.SetBreakdown(await tokenBreakdownTask ?? []);
-            toolsStore.SetBreakdown(await toolBreakdownTask ?? []);
-            errorsStore.SetBreakdown(await errorBreakdownTask ?? []);
-            schedulesStore.SetBreakdown(await scheduleBreakdownTask ?? []);
-
-            memoryStore.SetRecallEvents(await memoryRecallTask ?? []);
-            memoryStore.SetExtractionEvents(await memoryExtractionTask ?? []);
-            memoryStore.SetDreamingEvents(await memoryDreamingTask ?? []);
-            memoryStore.SetBreakdown(await memoryBreakdownTask ?? []);
-
-            latencyStore.SetEvents(await latencyTask ?? []);
-            latencyStore.SetBreakdown(await latencyBreakdownTask ?? []);
-            latencyStore.SetTrend(await latencyTrendTask ?? []);
-
-            voiceStore.SetEvents(await voiceTask ?? []);
-            voiceStore.SetBreakdown(await voiceBreakdownTask ?? []);
-
             var health = await healthTask;
             if (health is not null)
             {
@@ -135,5 +60,4 @@ public sealed class DataLoadEffect(
             connectionStore.SetConnected(false);
         }
     }
-
 }

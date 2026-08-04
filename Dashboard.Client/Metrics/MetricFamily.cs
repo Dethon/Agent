@@ -1,6 +1,10 @@
 namespace Dashboard.Client.Metrics;
 
-public class MetricFamily(string name, Func<Task> refreshBreakdown, Func<Task> loadEvents)
+public class MetricFamily(
+    string name,
+    Action<DateOnly, DateOnly> setDateRange,
+    Func<Task> loadEvents,
+    Func<Task> refreshBreakdown)
 {
     private readonly object _gate = new();
     private Task? _running;
@@ -9,6 +13,8 @@ public class MetricFamily(string name, Func<Task> refreshBreakdown, Func<Task> l
     public string Name { get; } = name;
 
     public string PreferenceKeyPrefix { get; } = $"{name}.";
+
+    public void SetDateRange(DateOnly from, DateOnly to) => setDateRange(from, to);
 
     public Task LoadEventsAsync() => loadEvents();
 
@@ -66,9 +72,10 @@ public class MetricFamily(string name, Func<Task> refreshBreakdown, Func<Task> l
 public sealed class MetricFamily<TStore>(
     TStore store,
     string name,
-    Func<Task> refreshBreakdown,
-    Func<Task> loadEvents)
-    : MetricFamily(name, refreshBreakdown, loadEvents)
+    Action<DateOnly, DateOnly> setDateRange,
+    Func<Task> loadEvents,
+    Func<Task> refreshBreakdown)
+    : MetricFamily(name, setDateRange, loadEvents, refreshBreakdown)
     where TStore : class
 {
     public TStore Store { get; } = store;

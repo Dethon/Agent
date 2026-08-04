@@ -21,14 +21,14 @@ caller that has a policy, and it still swallows the reason as it does now.
 
 **Blocked by:** 04 — the family table and its event-loading operation are declared there.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The page-load effect no longer names any individual family.
-- [ ] Loading sets the date range on every family and issues both that family's event request and its breakdown request.
-- [ ] Memory still loads its three event sources.
-- [ ] Requests still go out in parallel; a page load is no slower than it is today.
-- [ ] A failure anywhere in the load still turns the connection indicator red, and that rule is written in one place.
-- [ ] The summary and health calls are unchanged.
-- [ ] A test asserts that a load sets the date range on every family and issues both requests for each, driven through the existing client seam.
-- [ ] The existing page-load regression test for the voice aggregation still passes.
-- [ ] Adding a family now means one entry in the table and no edit to either effect.
+- [x] The page-load effect no longer names any individual family.
+- [x] Loading sets the date range on every family and issues both that family's event request and its breakdown request.
+- [x] Memory still loads its three event sources.
+- [x] Requests still go out in parallel; a page load is no slower than it is today.
+- [x] A failure anywhere in the load still turns the connection indicator red, and that rule is written in one place.
+- [x] The summary and health calls are unchanged.
+- [x] A test asserts that a load sets the date range on every family and issues both requests for each, driven through the existing client seam.
+- [x] The existing page-load regression test for the voice aggregation still passes.
+- [x] Adding a family now means one entry in the table and no edit to either effect.

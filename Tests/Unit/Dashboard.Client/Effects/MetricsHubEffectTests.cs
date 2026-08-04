@@ -170,6 +170,58 @@ public class MetricsHubEffectTests : IAsyncDisposable
         getBreakdown(this).ShouldBe(breakdown);
     }
 
+    private DataLoadEffect NewDataLoadEffect() =>
+        new(_api, _families, _metricsStore, _healthStore, _connectionStore);
+
+    // A page load, per family: the events request and the breakdown request, both carrying the
+    // range the load was given. Nothing is staged, so every response is a 404 the effect swallows;
+    // the assertion is on what went out.
+    public static TheoryData<string, string, string> PageLoadRequests => new()
+    {
+        { "tokens", "api/metrics/tokens?", "api/metrics/tokens/by/User?metric=Tokens&" },
+        { "tools", "api/metrics/tools?", "api/metrics/tools/by/ToolName?metric=CallCount&" },
+        { "errors", "api/metrics/errors/range?", "api/metrics/errors/by/Service?" },
+        { "schedules", "api/metrics/schedules?", "api/metrics/schedules/by/Schedule?" },
+        { "memory", "api/metrics/memory/recall?", "api/metrics/memory/by/User?metric=Count&" },
+        { "latency", "api/metrics/latency?", "api/metrics/latency/by/Stage?metric=P95&" },
+        { "voice", "api/metrics/voice?", "api/metrics/voice/by/SatelliteId?metric=UtteranceTranscribed&agg=Avg&" },
+    };
+
+    [Theory]
+    [MemberData(nameof(PageLoadRequests))]
+    public async Task LoadAsync_AnyFamily_IssuesItsEventsAndBreakdownRequestsForTheGivenRange(
+        string _, string eventsRequest, string breakdownRequest)
+    {
+        var range = "from=2026-03-01&to=2026-03-02";
+
+        await NewDataLoadEffect().LoadAsync(From, To);
+
+        _handler.Requests.ShouldContain(u => u != null && u.Contains(eventsRequest + range, StringComparison.Ordinal));
+        _handler.Requests.ShouldContain(u => u != null && u.Contains(breakdownRequest + range, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task LoadAsync_SetsTheDateRangeOnEveryFamily()
+    {
+        await NewDataLoadEffect().LoadAsync(From, To);
+
+        _tokensStore.State.From.ShouldBe(From);
+        _toolsStore.State.From.ShouldBe(From);
+        _errorsStore.State.From.ShouldBe(From);
+        _schedulesStore.State.From.ShouldBe(From);
+        _memoryStore.State.From.ShouldBe(From);
+        _latencyStore.State.From.ShouldBe(From);
+        _voiceStore.State.To.ShouldBe(To);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ARequestFails_ReportsTheDashboardDisconnected()
+    {
+        await NewDataLoadEffect().LoadAsync(From, To);
+
+        _connectionStore.State.IsConnected.ShouldBeFalse();
+    }
+
     private void SetDateRangeOnEveryStore()
     {
         _tokensStore.SetDateRange(From, To);
@@ -360,12 +412,8 @@ public class MetricsHubEffectTests : IAsyncDisposable
         // and fall back to Avg. No response staging is needed: we only assert on the outbound
         // request, and DataLoadEffect swallows the resulting 404s from the unstaffed FakeApiHandler.
         _voiceStore.SetAgg(Aggregation.P95);
-        var http = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
-        var dataLoadEffect = new DataLoadEffect(
-            new MetricsApiService(http), _metricsStore, _healthStore, _tokensStore, _toolsStore,
-            _errorsStore, _schedulesStore, _connectionStore, _memoryStore, _latencyStore, _voiceStore);
 
-        await dataLoadEffect.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 24));
+        await NewDataLoadEffect().LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 24));
 
         _handler.Requests.ShouldContain(u => u != null && u.Contains("voice/by") && u.Contains("agg=P95"));
     }
