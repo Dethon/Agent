@@ -1,13 +1,15 @@
+using Dashboard.Client.Contracts;
 using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Health;
 using Dashboard.Client.State.Metrics;
+using Domain.DTOs.Metrics;
 
 namespace Dashboard.Client.Effects;
 
 public sealed class MetricsHubEffect(
-    MetricsHubService hub,
+    IMetricsHubConnection hub,
     MetricFamilyTable families,
     MetricsStore metricsStore,
     HealthStore healthStore,
@@ -37,72 +39,72 @@ public sealed class MetricsHubEffect(
 
         _started = true;
 
-        _subscriptions.Add(hub.OnMemoryRecall(async evt =>
+        _subscriptions.Add(hub.On<MemoryRecallEvent>("OnMemoryRecall", async evt =>
         {
             metricsStore.IncrementMemoryRecall(evt.MemoryCount);
             families.Memory.Store.AppendRecallEvent(evt);
             await RefreshAsync(families.Memory);
         }));
 
-        _subscriptions.Add(hub.OnMemoryExtraction(async evt =>
+        _subscriptions.Add(hub.On<MemoryExtractionEvent>("OnMemoryExtraction", async evt =>
         {
             metricsStore.IncrementMemoryExtraction(evt.StoredCount);
             families.Memory.Store.AppendExtractionEvent(evt);
             await RefreshAsync(families.Memory);
         }));
 
-        _subscriptions.Add(hub.OnMemoryDreaming(async evt =>
+        _subscriptions.Add(hub.On<MemoryDreamingEvent>("OnMemoryDreaming", async evt =>
         {
             metricsStore.IncrementMemoryDreaming(evt.MergedCount, evt.DecayedCount);
             families.Memory.Store.AppendDreamingEvent(evt);
             await RefreshAsync(families.Memory);
         }));
 
-        _subscriptions.Add(hub.OnTokenUsage(async evt =>
+        _subscriptions.Add(hub.On<TokenUsageEvent>("OnTokenUsage", async evt =>
         {
             metricsStore.IncrementFromTokenUsage(evt);
             families.Tokens.Store.AppendEvent(evt);
             await RefreshAsync(families.Tokens);
         }));
 
-        _subscriptions.Add(hub.OnContextTruncation(async _ =>
+        _subscriptions.Add(hub.On<ContextTruncationEvent>("OnContextTruncation", async _ =>
         {
             families.Tokens.Store.IncrementTruncations();
             await RefreshAsync(families.Tokens);
         }));
 
-        _subscriptions.Add(hub.OnToolCall(async evt =>
+        _subscriptions.Add(hub.On<ToolCallEvent>("OnToolCall", async evt =>
         {
             metricsStore.IncrementToolCall(!evt.Success);
             families.Tools.Store.AppendEvent(evt);
             await RefreshAsync(families.Tools);
         }));
 
-        _subscriptions.Add(hub.OnError(async evt =>
+        _subscriptions.Add(hub.On<ErrorEvent>("OnError", async evt =>
         {
             families.Errors.Store.AppendEvent(evt);
             await RefreshAsync(families.Errors);
         }));
 
-        _subscriptions.Add(hub.OnScheduleExecution(async evt =>
+        _subscriptions.Add(hub.On<ScheduleExecutionEvent>("OnScheduleExecution", async evt =>
         {
             families.Schedules.Store.AppendEvent(evt);
             await RefreshAsync(families.Schedules);
         }));
 
-        _subscriptions.Add(hub.OnLatency(async evt =>
+        _subscriptions.Add(hub.On<LatencyEvent>("OnLatency", async evt =>
         {
             families.Latency.Store.AppendEvent(evt);
             await RefreshAsync(families.Latency);
         }));
 
-        _subscriptions.Add(hub.OnVoice(async evt =>
+        _subscriptions.Add(hub.On<VoiceEvent>("OnVoice", async evt =>
         {
             families.Voice.Store.AppendEvent(evt);
             await RefreshAsync(families.Voice);
         }));
 
-        _subscriptions.Add(hub.OnHealthUpdate(evt =>
+        _subscriptions.Add(hub.On<ServiceHealthUpdate>("OnHealthUpdate", evt =>
         {
             var current = healthStore.State.Services.ToList();
             var idx = current.FindIndex(s => s.Service == evt.Service);
@@ -121,23 +123,23 @@ public sealed class MetricsHubEffect(
             return Task.CompletedTask;
         }));
 
-        hub.OnReconnected(_ =>
+        hub.Reconnected += _ =>
         {
             connectionStore.SetConnected(true);
             return Task.CompletedTask;
-        });
+        };
 
-        hub.OnClosed(_ =>
+        hub.Closed += _ =>
         {
             connectionStore.SetConnected(false);
             return Task.CompletedTask;
-        });
+        };
 
-        hub.OnReconnecting(_ =>
+        hub.Reconnecting += _ =>
         {
             connectionStore.SetConnected(false);
             return Task.CompletedTask;
-        });
+        };
 
         await hub.StartAsync();
         connectionStore.SetConnected(true);

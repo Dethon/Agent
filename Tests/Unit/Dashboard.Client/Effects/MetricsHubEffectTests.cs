@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Dashboard.Client.Effects;
 using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
@@ -15,12 +14,13 @@ using Dashboard.Client.State.Voice;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Shouldly;
+using Tests.Unit.Dashboard.Client.Fixtures;
 
 namespace Tests.Unit.Dashboard.Client.Effects;
 
 public class MetricsHubEffectTests : IAsyncDisposable
 {
-    private readonly FakeMetricsHub _hub = new();
+    private readonly FakeMetricsHubConnection _hub = new();
     private readonly FakeApiHandler _handler = new();
     private readonly TokensStore _tokensStore = new();
     private readonly ToolsStore _toolsStore = new();
@@ -236,49 +236,49 @@ public class MetricsHubEffectTests : IAsyncDisposable
     private static readonly
     Dictionary<
         string,
-        (object StaleData, object FreshData, Func<FakeMetricsHub, Task> FireEvent, Func<MetricsHubEffectTests, object?> GetBreakdown)>
+        (object StaleData, object FreshData, Func<FakeMetricsHubConnection, Task> FireEvent, Func<MetricsHubEffectTests, object?> GetBreakdown)>
     _rapidEventCases = new()
     {
         ["TokenUsage"] = (
             new Dictionary<string, decimal> { ["stale-model"] = 100m },
             new Dictionary<string, decimal> { ["fresh-model"] = 200m },
-            hub => hub.FireTokenUsage(new TokenUsageEvent
+            hub => hub.RaiseAsync("OnTokenUsage", new TokenUsageEvent
             { Sender = "test", Model = "m", InputTokens = 1, OutputTokens = 1, Cost = 0.01m }),
             self => self._tokensStore.State.Breakdown),
         ["ToolCall"] = (
             new Dictionary<string, decimal> { ["stale-tool"] = 10m },
             new Dictionary<string, decimal> { ["fresh-tool"] = 20m },
-            hub => hub.FireToolCall(new ToolCallEvent
+            hub => hub.RaiseAsync("OnToolCall", new ToolCallEvent
             { ToolName = "t", Success = true, DurationMs = 100 }),
             self => self._toolsStore.State.Breakdown),
         ["Error"] = (
             new Dictionary<string, int> { ["stale-err"] = 5 },
             new Dictionary<string, int> { ["fresh-err"] = 10 },
-            hub => hub.FireError(new ErrorEvent
+            hub => hub.RaiseAsync("OnError", new ErrorEvent
             { Message = "err", Service = "s", ErrorType = "e" }),
             self => self._errorsStore.State.Breakdown),
         ["ScheduleExecution"] = (
             new Dictionary<string, int> { ["stale-sched"] = 3 },
             new Dictionary<string, int> { ["fresh-sched"] = 7 },
-            hub => hub.FireScheduleExecution(new ScheduleExecutionEvent
+            hub => hub.RaiseAsync("OnScheduleExecution", new ScheduleExecutionEvent
             { ScheduleId = "s", Prompt = "p", Success = true, DurationMs = 50 }),
             self => self._schedulesStore.State.Breakdown),
         ["MemoryRecall"] = (
             new Dictionary<string, decimal> { ["stale-memory"] = 50m },
             new Dictionary<string, decimal> { ["fresh-memory"] = 100m },
-            hub => hub.FireMemoryRecall(new MemoryRecallEvent
+            hub => hub.RaiseAsync("OnMemoryRecall", new MemoryRecallEvent
             { DurationMs = 100, MemoryCount = 5, UserId = "test" }),
             self => self._memoryStore.State.Breakdown),
         ["MemoryExtraction"] = (
             new Dictionary<string, decimal> { ["stale-extract"] = 30m },
             new Dictionary<string, decimal> { ["fresh-extract"] = 60m },
-            hub => hub.FireMemoryExtraction(new MemoryExtractionEvent
+            hub => hub.RaiseAsync("OnMemoryExtraction", new MemoryExtractionEvent
             { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "test" }),
             self => self._memoryStore.State.Breakdown),
         ["MemoryDreaming"] = (
             new Dictionary<string, decimal> { ["stale-dream"] = 10m },
             new Dictionary<string, decimal> { ["fresh-dream"] = 20m },
-            hub => hub.FireMemoryDreaming(new MemoryDreamingEvent
+            hub => hub.RaiseAsync("OnMemoryDreaming", new MemoryDreamingEvent
             { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "test" }),
             self => self._memoryStore.State.Breakdown),
     };
@@ -314,7 +314,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         await _effect.StartAsync();
 
         // Nothing is staged, so the handler answers 404 and the refresh throws.
-        await _hub.FireTokenUsage(new TokenUsageEvent
+        await _hub.RaiseAsync("OnTokenUsage", new TokenUsageEvent
         { Sender = "test", Model = "m", InputTokens = 1, OutputTokens = 1, Cost = 0.01m });
 
         _tokensStore.State.Breakdown.ShouldBe(lastKnown);
@@ -333,7 +333,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _handler.EnqueueResponse(new List<LatencyTrendSeries>(), delay: TimeSpan.Zero);
         await _effect.StartAsync();
 
-        await _hub.FireLatency(new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 5 });
+        await _hub.RaiseAsync("OnLatency", new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 5 });
 
         _latencyStore.State.Events.ShouldContain(e => e.Stage == LatencyStage.LlmTotal);
     }
@@ -344,7 +344,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
         await _effect.StartAsync();
 
-        await _hub.FireVoice(new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
+        await _hub.RaiseAsync("OnVoice", new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
 
         _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
     }
@@ -358,10 +358,25 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
         await _effect.StartAsync();
 
-        await _hub.FireVoice(new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
+        await _hub.RaiseAsync("OnVoice", new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01" });
 
         _handler.LastRequestUri.ShouldNotBeNull();
         _handler.LastRequestUri!.ShouldContain("agg=P95");
+    }
+
+    // Not expressible before the seam: the old fake stubbed the lifecycle members out, so no test
+    // could raise a reconnect. What it documents is today's behaviour, which is that coming back
+    // flips a flag and nothing else — the data missed during the interruption is still missing.
+    [Fact]
+    public async Task Reconnected_AfterAnInterruption_ReportsTheDashboardConnectedAgain()
+    {
+        await _effect.StartAsync();
+        await _hub.RaiseReconnectingAsync(null);
+        _connectionStore.State.IsConnected.ShouldBeFalse();
+
+        await _hub.RaiseReconnectedAsync();
+
+        _connectionStore.State.IsConnected.ShouldBeTrue();
     }
 
     public static TheoryData<string, Func<IDisposable>, Action<object, DateOnly, DateOnly>, Func<object, DateOnly>, Func<object, DateOnly>> StoreFactories =>
@@ -416,168 +431,5 @@ public class MetricsHubEffectTests : IAsyncDisposable
         await NewDataLoadEffect().LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 24));
 
         _handler.Requests.ShouldContain(u => u != null && u.Contains("voice/by") && u.Contains("agg=P95"));
-    }
-}
-
-public sealed class FakeMetricsHub : MetricsHubService
-{
-    private readonly List<Func<TokenUsageEvent, Task>> _tokenHandlers = [];
-    private readonly List<Func<ToolCallEvent, Task>> _toolHandlers = [];
-    private readonly List<Func<ErrorEvent, Task>> _errorHandlers = [];
-    private readonly List<Func<ScheduleExecutionEvent, Task>> _scheduleHandlers = [];
-    // ReSharper disable once CollectionNeverQueried.Local
-    private readonly List<Func<ServiceHealthUpdate, Task>> _healthHandlers = [];
-    private readonly List<Func<MemoryRecallEvent, Task>> _recallHandlers = [];
-    private readonly List<Func<MemoryExtractionEvent, Task>> _extractionHandlers = [];
-    private readonly List<Func<MemoryDreamingEvent, Task>> _dreamingHandlers = [];
-    private readonly List<Func<ContextTruncationEvent, Task>> _truncationHandlers = [];
-    private readonly List<Func<LatencyEvent, Task>> _latencyHandlers = [];
-    private readonly List<Func<VoiceEvent, Task>> _voiceHandlers = [];
-
-    public override IDisposable OnTokenUsage(Func<TokenUsageEvent, Task> handler)
-    {
-        _tokenHandlers.Add(handler);
-        return new ActionDisposable(() => _tokenHandlers.Remove(handler));
-    }
-
-    public override IDisposable OnToolCall(Func<ToolCallEvent, Task> handler)
-    {
-        _toolHandlers.Add(handler);
-        return new ActionDisposable(() => _toolHandlers.Remove(handler));
-    }
-
-    public override IDisposable OnError(Func<ErrorEvent, Task> handler)
-    {
-        _errorHandlers.Add(handler);
-        return new ActionDisposable(() => _errorHandlers.Remove(handler));
-    }
-
-    public override IDisposable OnScheduleExecution(Func<ScheduleExecutionEvent, Task> handler)
-    {
-        _scheduleHandlers.Add(handler);
-        return new ActionDisposable(() => _scheduleHandlers.Remove(handler));
-    }
-
-    public override IDisposable OnHealthUpdate(Func<ServiceHealthUpdate, Task> handler)
-    {
-        _healthHandlers.Add(handler);
-        return new ActionDisposable(() => _healthHandlers.Remove(handler));
-    }
-
-    public override IDisposable OnMemoryRecall(Func<MemoryRecallEvent, Task> handler)
-    {
-        _recallHandlers.Add(handler);
-        return new ActionDisposable(() => _recallHandlers.Remove(handler));
-    }
-
-    public override IDisposable OnMemoryExtraction(Func<MemoryExtractionEvent, Task> handler)
-    {
-        _extractionHandlers.Add(handler);
-        return new ActionDisposable(() => _extractionHandlers.Remove(handler));
-    }
-
-    public override IDisposable OnMemoryDreaming(Func<MemoryDreamingEvent, Task> handler)
-    {
-        _dreamingHandlers.Add(handler);
-        return new ActionDisposable(() => _dreamingHandlers.Remove(handler));
-    }
-
-    public override IDisposable OnContextTruncation(Func<ContextTruncationEvent, Task> handler)
-    {
-        _truncationHandlers.Add(handler);
-        return new ActionDisposable(() => _truncationHandlers.Remove(handler));
-    }
-
-    public override IDisposable OnLatency(Func<LatencyEvent, Task> handler)
-    {
-        _latencyHandlers.Add(handler);
-        return new ActionDisposable(() => _latencyHandlers.Remove(handler));
-    }
-
-    public override IDisposable OnVoice(Func<VoiceEvent, Task> handler)
-    {
-        _voiceHandlers.Add(handler);
-        return new ActionDisposable(() => _voiceHandlers.Remove(handler));
-    }
-
-    public override void OnReconnected(Func<string?, Task> handler) { }
-    public override void OnClosed(Func<Exception?, Task> handler) { }
-    public override void OnReconnecting(Func<Exception?, Task> handler) { }
-
-    public override Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
-    public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
-
-    public Task FireTokenUsage(TokenUsageEvent evt) =>
-        Task.WhenAll(_tokenHandlers.Select(h => h(evt)));
-
-    public Task FireToolCall(ToolCallEvent evt) =>
-        Task.WhenAll(_toolHandlers.Select(h => h(evt)));
-
-    public Task FireError(ErrorEvent evt) =>
-        Task.WhenAll(_errorHandlers.Select(h => h(evt)));
-
-    public Task FireScheduleExecution(ScheduleExecutionEvent evt) =>
-        Task.WhenAll(_scheduleHandlers.Select(h => h(evt)));
-
-    public Task FireMemoryRecall(MemoryRecallEvent evt) =>
-        Task.WhenAll(_recallHandlers.Select(h => h(evt)));
-
-    public Task FireMemoryExtraction(MemoryExtractionEvent evt) =>
-        Task.WhenAll(_extractionHandlers.Select(h => h(evt)));
-
-    public Task FireMemoryDreaming(MemoryDreamingEvent evt) =>
-        Task.WhenAll(_dreamingHandlers.Select(h => h(evt)));
-
-    public Task FireContextTruncation(ContextTruncationEvent evt) =>
-        Task.WhenAll(_truncationHandlers.Select(h => h(evt)));
-
-    public Task FireLatency(LatencyEvent evt) =>
-        Task.WhenAll(_latencyHandlers.Select(h => h(evt)));
-
-    public Task FireVoice(VoiceEvent evt) =>
-        Task.WhenAll(_voiceHandlers.Select(h => h(evt)));
-
-    private sealed class ActionDisposable(Action action) : IDisposable
-    {
-        public void Dispose() => action();
-    }
-}
-
-public sealed class FakeApiHandler : HttpMessageHandler
-{
-    private readonly Queue<(object Data, TimeSpan Delay)> _responses = new();
-
-    public string? LastRequestUri { get; private set; }
-
-    // Concurrent bag, not a List<T>: DataLoadEffect fires ~19 requests via Task.WhenAll, so
-    // multiple SendAsync calls can race on this collection.
-    public ConcurrentBag<string?> Requests { get; } = [];
-
-    public void EnqueueResponse<T>(T data, TimeSpan delay)
-    {
-        _responses.Enqueue((data!, delay));
-    }
-
-    protected override async Task<HttpResponseMessage> SendAsync(
-        HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        LastRequestUri = request.RequestUri?.ToString();
-        Requests.Add(LastRequestUri);
-
-        if (_responses.TryDequeue(out var entry))
-        {
-            if (entry.Delay > TimeSpan.Zero)
-            {
-                await Task.Delay(entry.Delay, cancellationToken);
-            }
-
-            var json = System.Text.Json.JsonSerializer.Serialize(entry.Data);
-            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-            {
-                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
-            };
-        }
-
-        return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
     }
 }

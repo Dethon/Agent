@@ -15,7 +15,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
-using Tests.Unit.Dashboard.Client.Effects;
+using Tests.Unit.Dashboard.Client.Fixtures;
 
 namespace Tests.Unit.Dashboard.Client.Metrics;
 

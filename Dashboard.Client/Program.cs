@@ -1,4 +1,5 @@
 using Dashboard.Client;
+using Dashboard.Client.Contracts;
 using Dashboard.Client.Effects;
 using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
@@ -36,11 +37,11 @@ builder.Services.AddSingleton<VoiceStore>();
 builder.Services.AddScoped<MetricsApiService>();
 builder.Services.AddScoped<LocalStorageService>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton(sp =>
+builder.Services.AddSingleton<IMetricsHubConnection>(sp =>
 {
     var nav = sp.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
     var hubUrl = new Uri(nav.ToAbsoluteUri("/hubs/metrics").ToString());
-    return new MetricsHubService(hubUrl);
+    return new SignalRMetricsHubConnection(hubUrl);
 });
 
 builder.Services.AddScoped<MetricFamilyTable>();
