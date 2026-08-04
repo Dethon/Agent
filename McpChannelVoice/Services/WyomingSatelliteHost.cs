@@ -206,7 +206,7 @@ public sealed class WyomingSatelliteHost(
                     case "run-pipeline":
                         // Waking the satellite during an active alert dismisses it — no spoken command
                         // needed (the satellite mics only on local wake).
-                        NoteDismissals(session, alerts.Acknowledge(id));
+                        session.NoteDismissals(alerts.Acknowledge(id), time.GetUtcNow());
                         var wake = ReadWakeAnnouncement(evt.Data);
                         if (wake.Rms is not null)
                         {
@@ -238,7 +238,7 @@ public sealed class WyomingSatelliteHost(
                     // in-window dedupe if run-pipeline happens to arrive first — a satellite that
                     // reordered the two would silently lose every steal.
                     case "audio-start":
-                        NoteDismissals(session, alerts.Acknowledge(id));
+                        session.NoteDismissals(alerts.Acknowledge(id), time.GetUtcNow());
                         if (!wakeAnnounced)
                         {
                             arbiter.Claim(id, null, null, "wake");
@@ -524,7 +524,7 @@ public sealed class WyomingSatelliteHost(
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
                 // where a wake event was not observed. The registry makes a second Acknowledge a no-op.
                 // Runs AFTER this dispatch, so its snooze context lands on the NEXT transcript.
-                NoteDismissals(session, alerts.Acknowledge(session.SatelliteId));
+                session.NoteDismissals(alerts.Acknowledge(session.SatelliteId), time.GetUtcNow());
             }
             return dispatched;
         }
@@ -563,17 +563,6 @@ public sealed class WyomingSatelliteHost(
 
         await session.EnqueuePlaybackAsync(job, voiceSettings.Announce.QueueMaxDepth);
         await drained.Task.WaitAsync(ct);
-    }
-
-    private void NoteDismissals(SatelliteSession session, IReadOnlyList<DismissedAlert> dismissed)
-    {
-        if (dismissed.Count == 0)
-        {
-            return;
-        }
-        var description = string.Join(" and ", dismissed.Select(d =>
-            $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\""));
-        session.NoteDismissedAlert(description, time.GetUtcNow());
     }
 
     private void PublishVoiceMetric(

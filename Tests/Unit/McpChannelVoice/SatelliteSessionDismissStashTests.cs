@@ -1,3 +1,4 @@
+using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
 using Shouldly;
@@ -34,5 +35,45 @@ public class SatelliteSessionDismissStashTests
     public void TryConsumeDismissedAlert_NothingStashed_ReturnsNull()
     {
         Session().TryConsumeDismissedAlert(DateTimeOffset.UtcNow).ShouldBeNull();
+    }
+
+    [Fact]
+    public void NoteDismissals_OneAlert_StashesItsKindAndQuotedText()
+    {
+        var session = Session();
+        var now = DateTimeOffset.UtcNow;
+
+        session.NoteDismissals([new DismissedAlert("sacar la basura", AnnounceKind.Alarm)], now);
+
+        session.TryConsumeDismissedAlert(now).ShouldBe("alarm \"sacar la basura\"");
+    }
+
+    [Fact]
+    public void NoteDismissals_SeveralAlerts_JoinsThemWithAnd()
+    {
+        var session = Session();
+        var now = DateTimeOffset.UtcNow;
+
+        session.NoteDismissals(
+            [new DismissedAlert("sacar la basura", AnnounceKind.Alarm),
+             new DismissedAlert("la pasta", AnnounceKind.Timer)],
+            now);
+
+        session.TryConsumeDismissedAlert(now).ShouldBe("alarm \"sacar la basura\" and timer \"la pasta\"");
+    }
+
+    // A turn with nothing dismissed must not clear a description a previous wake already stashed:
+    // the fallback call site runs on every dispatched turn, so an overwrite would erase the context
+    // the very transcript it is about to be attached to needs.
+    [Fact]
+    public void NoteDismissals_NoAlerts_LeavesTheStashAlone()
+    {
+        var session = Session();
+        var now = DateTimeOffset.UtcNow;
+        session.NoteDismissals([new DismissedAlert("sacar la basura", AnnounceKind.Alarm)], now);
+
+        session.NoteDismissals([], now);
+
+        session.TryConsumeDismissedAlert(now).ShouldBe("alarm \"sacar la basura\"");
     }
 }

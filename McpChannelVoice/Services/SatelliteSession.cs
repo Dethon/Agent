@@ -222,6 +222,21 @@ public sealed class SatelliteSession
         Interlocked.Exchange(
             ref _speechEndedAt, captureClosedAt - (endpointTailMs * time.TimestampFrequency / 1000));
 
+    // Composes what was dismissed into the description the next transcript carries, and stashes it.
+    // Lives here, next to the stash it feeds, because the connection reports dismissals from the
+    // wake frame while the transcript path reports them after a dispatch — two callers that would
+    // otherwise each own a copy of this formatting.
+    public void NoteDismissals(IReadOnlyList<DismissedAlert> dismissed, DateTimeOffset now)
+    {
+        if (dismissed.Count == 0)
+        {
+            return;
+        }
+        NoteDismissedAlert(
+            string.Join(" and ", dismissed.Select(d => $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\"")),
+            now);
+    }
+
     // Wake-word dismissal context for LLM-mediated snooze: the host stashes what was dismissed; the
     // next dispatched transcript within the window consumes it (single-use).
     public void NoteDismissedAlert(string description, DateTimeOffset now)
