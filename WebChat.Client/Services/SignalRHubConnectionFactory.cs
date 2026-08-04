@@ -53,6 +53,8 @@ internal sealed class SignalRHubConnection(HubConnection connection) : IChatHubC
         remove => connection.Reconnected -= value;
     }
 
+    public IDisposable On<T>(string methodName, Action<T> handler) => connection.On(methodName, handler);
+
     public Task StartAsync(CancellationToken cancellationToken = default) => connection.StartAsync(cancellationToken);
 
     public Task<bool> PingAsync(CancellationToken cancellationToken) =>

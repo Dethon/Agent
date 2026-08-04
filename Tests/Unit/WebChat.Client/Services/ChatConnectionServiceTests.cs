@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Contracts;
 using WebChat.Client.Services;
 using WebChat.Client.State;
@@ -144,66 +145,5 @@ public class ChatConnectionServiceTests
         {
             Actions.Add(action);
         }
-    }
-
-    private sealed class FakeHubConnectionFactory : IHubConnectionFactory
-    {
-        private readonly Queue<FakeHubConnection> _scripted = new();
-
-        public List<FakeHubConnection> Created { get; } = [];
-        public Func<FakeHubConnection> CreateBehavior { get; set; } = () => new FakeHubConnection();
-
-        public void Enqueue(FakeHubConnection connection) => _scripted.Enqueue(connection);
-
-        public Task<IChatHubConnection> CreateAsync()
-        {
-            var connection = _scripted.TryDequeue(out var scripted) ? scripted : CreateBehavior();
-            Created.Add(connection);
-            return Task.FromResult<IChatHubConnection>(connection);
-        }
-    }
-
-    private sealed class FakeHubConnection : IChatHubConnection
-    {
-        public HubConnection? Connection => null;
-        public HubConnectionState State { get; set; } = HubConnectionState.Disconnected;
-        public Func<CancellationToken, Task> StartBehavior { get; set; } = _ => Task.CompletedTask;
-        public Func<CancellationToken, Task<bool>> PingBehavior { get; set; } = _ => Task.FromResult(true);
-        public bool Disposed { get; private set; }
-
-        public event Func<Exception?, Task>? Closed;
-        public event Func<Exception?, Task>? Reconnecting;
-        public event Func<string?, Task>? Reconnected;
-
-        public async Task StartAsync(CancellationToken cancellationToken = default)
-        {
-            State = HubConnectionState.Connecting;
-            try
-            {
-                await StartBehavior(cancellationToken);
-            }
-            catch
-            {
-                State = HubConnectionState.Disconnected;
-                throw;
-            }
-
-            State = HubConnectionState.Connected;
-        }
-
-        public Task<bool> PingAsync(CancellationToken cancellationToken) => PingBehavior(cancellationToken);
-
-        public ValueTask DisposeAsync()
-        {
-            Disposed = true;
-            State = HubConnectionState.Disconnected;
-            return ValueTask.CompletedTask;
-        }
-
-        public Task RaiseClosedAsync(Exception? exception) => Closed?.Invoke(exception) ?? Task.CompletedTask;
-
-        public Task RaiseReconnectingAsync(Exception? exception) => Reconnecting?.Invoke(exception) ?? Task.CompletedTask;
-
-        public Task RaiseReconnectedAsync(string? connectionId) => Reconnected?.Invoke(connectionId) ?? Task.CompletedTask;
     }
 }

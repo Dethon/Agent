@@ -16,14 +16,14 @@ scope for this spec.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The hub connection abstraction exposes a receive registration taking a wire
+- [x] The hub connection abstraction exposes a receive registration taking a wire
       method name and a typed handler, returning a disposable
-- [ ] The SignalR implementation forwards the registration to the underlying
+- [x] The SignalR implementation forwards the registration to the underlying
       transport
-- [ ] The existing fake hub connection records registrations by wire name and
+- [x] The existing fake hub connection records registrations by wire name and
       exposes a way to raise a push to the registered handler
-- [ ] A test proves that raising a push on the fake invokes the handler registered
+- [x] A test proves that raising a push on the fake invokes the handler registered
       for that wire name, and that disposing the registration stops it
-- [ ] No production behavior changes; the full unit suite passes unchanged
+- [x] No production behavior changes; the full unit suite passes unchanged

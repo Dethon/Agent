@@ -9,6 +9,7 @@ public interface IChatHubConnection : IAsyncDisposable
     event Func<Exception?, Task>? Closed;
     event Func<Exception?, Task>? Reconnecting;
     event Func<string?, Task>? Reconnected;
+    IDisposable On<T>(string methodName, Action<T> handler);
     Task StartAsync(CancellationToken cancellationToken = default);
     Task<bool> PingAsync(CancellationToken cancellationToken);
 }

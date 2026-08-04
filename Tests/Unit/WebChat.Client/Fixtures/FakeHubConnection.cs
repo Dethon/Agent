@@ -1,0 +1,80 @@
+using Microsoft.AspNetCore.SignalR.Client;
+using WebChat.Client.Contracts;
+
+namespace Tests.Unit.WebChat.Client.Fixtures;
+
+public sealed class FakeHubConnection : IChatHubConnection
+{
+    private readonly Dictionary<string, List<Delegate>> _handlers = [];
+
+    public HubConnection? Connection => null;
+    public HubConnectionState State { get; set; } = HubConnectionState.Disconnected;
+    public Func<CancellationToken, Task> StartBehavior { get; set; } = _ => Task.CompletedTask;
+    public Func<CancellationToken, Task<bool>> PingBehavior { get; set; } = _ => Task.FromResult(true);
+    public bool Disposed { get; private set; }
+
+    public IReadOnlyCollection<string> BoundWireNames => _handlers
+        .Where(pair => pair.Value.Count > 0)
+        .Select(pair => pair.Key)
+        .ToList();
+
+    public event Func<Exception?, Task>? Closed;
+    public event Func<Exception?, Task>? Reconnecting;
+    public event Func<string?, Task>? Reconnected;
+
+    public IDisposable On<T>(string methodName, Action<T> handler)
+    {
+        var registered = _handlers.TryGetValue(methodName, out var existing)
+            ? existing
+            : _handlers[methodName] = [];
+
+        registered.Add(handler);
+        return new Registration(registered, handler);
+    }
+
+    public void Raise<T>(string methodName, T payload)
+    {
+        if (!_handlers.TryGetValue(methodName, out var registered))
+        {
+            return;
+        }
+
+        registered.OfType<Action<T>>().ToList().ForEach(handler => handler(payload));
+    }
+
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        State = HubConnectionState.Connecting;
+        try
+        {
+            await StartBehavior(cancellationToken);
+        }
+        catch
+        {
+            State = HubConnectionState.Disconnected;
+            throw;
+        }
+
+        State = HubConnectionState.Connected;
+    }
+
+    public Task<bool> PingAsync(CancellationToken cancellationToken) => PingBehavior(cancellationToken);
+
+    public ValueTask DisposeAsync()
+    {
+        Disposed = true;
+        State = HubConnectionState.Disconnected;
+        return ValueTask.CompletedTask;
+    }
+
+    public Task RaiseClosedAsync(Exception? exception) => Closed?.Invoke(exception) ?? Task.CompletedTask;
+
+    public Task RaiseReconnectingAsync(Exception? exception) => Reconnecting?.Invoke(exception) ?? Task.CompletedTask;
+
+    public Task RaiseReconnectedAsync(string? connectionId) => Reconnected?.Invoke(connectionId) ?? Task.CompletedTask;
+
+    private sealed class Registration(List<Delegate> registered, Delegate handler) : IDisposable
+    {
+        public void Dispose() => registered.Remove(handler);
+    }
+}
