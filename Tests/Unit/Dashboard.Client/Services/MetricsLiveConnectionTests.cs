@@ -280,5 +280,19 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _hub.Disposed.ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task DisposeAsync_WhileTheHubIsStillUnavailable_StopsTryingAndPublishesNothing()
+    {
+        _hub.FailedStartsRemaining = 100;
+        var connecting = _liveConnection.ConnectAsync();
+
+        await _liveConnection.DisposeAsync();
+        await FinishAsync(connecting);
+
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connecting);
+        _connectionStore.State.Epoch.ShouldBe(0);
+        _hub.StartAttempts.ShouldBeLessThan(100);
+    }
+
     private sealed record VoiceEventPayload(int Metric, string SatelliteId);
 }

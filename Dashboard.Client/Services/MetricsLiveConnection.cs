@@ -40,7 +40,10 @@ public sealed class MetricsLiveConnection(
         hub.Reconnected += _ => BecomeLiveAndCatchUpAsync();
 
         connectionStore.SetConnecting();
-        await StartUntilItSucceedsAsync();
+        if (!await StartUntilItSucceedsAsync())
+        {
+            return;
+        }
 
         // The latch records a start that succeeded, not one that was attempted: setting it before
         // the work is what used to leave a failed first start believing it was already running.
@@ -73,7 +76,9 @@ public sealed class MetricsLiveConnection(
         }
     }
 
-    private async Task StartUntilItSucceedsAsync()
+    // False only when the module was disposed mid-loop, which is the one way the loop ends without
+    // a start behind it. Everything else is retried.
+    private async Task<bool> StartUntilItSucceedsAsync()
     {
         var previousRetryCount = 0L;
 
@@ -82,7 +87,7 @@ public sealed class MetricsLiveConnection(
             try
             {
                 await hub.StartAsync();
-                return;
+                return true;
             }
             catch (Exception exception)
             {
@@ -95,6 +100,8 @@ public sealed class MetricsLiveConnection(
             await Task.Delay(MetricsRetryPolicy.DelayFor(previousRetryCount), timeProvider);
             previousRetryCount++;
         }
+
+        return false;
     }
 
     public async ValueTask DisposeAsync()
