@@ -105,28 +105,14 @@ public class MemoryExtractionWorker(
         return await ExtractWithRetryAsync(window, request.UserId, ct);
     }
 
-    private async Task<List<ChatMessage>> BuildExtractionWindowAsync(MemoryExtractionRequest request)
+    private async Task<IReadOnlyList<ChatMessage>> BuildExtractionWindowAsync(MemoryExtractionRequest request)
     {
-        ChatMessage[]? thread = null;
-        if (request.ThreadStateKey is not null)
-        {
-            thread = await threadStateStore.GetMessagesAsync(request.ThreadStateKey);
-        }
+        var thread = request.ThreadStateKey is not null
+            ? await threadStateStore.GetMessagesAsync(request.ThreadStateKey)
+            : null;
 
-        var hasFallback = !string.IsNullOrEmpty(request.FallbackContent);
-        var contextSlots = hasFallback ? options.WindowMixedTurns - 1 : options.WindowMixedTurns;
-
-        var window = (thread?
-            .Take(Math.Max(0, request.Anchor.PersistedMessageCount))
-            .TakeLast(contextSlots)
-            .ToList()) ?? [];
-
-        if (hasFallback)
-        {
-            window.Add(new ChatMessage(ChatRole.User, request.FallbackContent!));
-        }
-
-        return window;
+        return ExtractionWindow.Build(
+            thread, request.Anchor, request.FallbackContent, options.WindowMixedTurns);
     }
 
     private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithRetryAsync(
