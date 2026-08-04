@@ -110,7 +110,7 @@ public class WebChatE2EFixture : E2EFixtureBase
                 {
                   "id": "test-agent",
                   "name": "Test Agent",
-                  "model": "google/gemini-2.5-flash",
+                  "model": "~deepseek/deepseek-v4-flash-latest",
                   "mcpServerEndpoints": [ "http://mcp-vault:8080/mcp" ],
                   "whitelistPatterns": ["__none__"]
                 }

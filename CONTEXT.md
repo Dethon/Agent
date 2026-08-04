@@ -142,6 +142,31 @@ conversation someone can open, so a scheduled task fires under the conversation 
 delivered into and not under the schedule.
 _Avoid_: conversation id, target conversation, delivery key
 
+## Memory
+
+**Decoration**:
+Everything prepended to a user turn on its way to the model that the user did not
+type: who sent it, from where, when, what alert they dismissed, and what the agent
+remembers about them. It exists only on the copy sent to the model and is never
+persisted.
+_Avoid_: prefix, envelope, wrapper
+
+**Recall block**:
+The decoration that carries remembered facts. The model is told to look for it by
+name.
+_Avoid_: memory context, memory prefix
+
+**Extraction window**:
+The slice of conversation the memory extractor reads, rendered with turn markers so
+the extractor knows which turn is the current one.
+_Avoid_: context window, history slice
+
+**Memory anchor**:
+The point in a conversation's persisted history that an extraction window is cut at.
+It is taken before the current turn is persisted, so it excludes the turn that
+produced it.
+_Avoid_: anchor index, offset, cursor
+
 ## Voice satellite
 
 **Satellite connection**:

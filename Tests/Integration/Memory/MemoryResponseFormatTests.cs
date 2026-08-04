@@ -28,7 +28,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["Memory:Extraction:Model"] ?? "google/gemini-2.5-flash";
+        var model = _configuration["Memory:Extraction:Model"] ?? "~deepseek/deepseek-v4-flash-latest";
         return (apiUrl, apiKey, model);
     }
 
@@ -108,7 +108,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["Memory:Dreaming:Model"] ?? "google/gemini-2.5-flash";
+        var model = _configuration["Memory:Dreaming:Model"] ?? "~deepseek/deepseek-v4-flash-latest";
         return (apiUrl, apiKey, model);
     }
 
@@ -213,7 +213,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["Memory:Dreaming:Model"] ?? "google/gemini-2.5-flash";
+        var model = _configuration["Memory:Dreaming:Model"] ?? "~deepseek/deepseek-v4-flash-latest";
         return (apiUrl, apiKey, model);
     }
 

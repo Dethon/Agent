@@ -25,7 +25,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
 
-        return new OpenRouterChatClient(apiUrl, apiKey, "google/gemini-2.5-flash");
+        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest");
     }
 
     private McpAgent CreateAgent(ToolApprovalChatClient approvalClient)
