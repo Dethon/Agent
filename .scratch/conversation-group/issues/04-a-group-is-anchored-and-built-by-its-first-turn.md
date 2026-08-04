@@ -24,16 +24,16 @@ Recorded as `docs/adr/0006-a-group-is-anchored-and-built-by-its-first-turn.md`.
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A group whose first message is a chat command constructs no agent. Asserted as a test, red before the change.
-- [ ] A group whose first message is a chat command resolves no delivery targets and mints no conversation. Asserted as a test, red before the change.
-- [ ] A leading clear still wipes the persisted thread and still ends the group.
-- [ ] The turn following a chat command is routed to the channel that sent it. Asserted as a test, green before and after, since this is the case the deleted invariant used to cover.
-- [ ] The group's anchors, agent, thread and warmup are established on its first turn, and later turns reuse them.
-- [ ] The message index no longer exists, and no comment specifies it.
-- [ ] Whether a turn uses the group anchors is decided by identity against the anchor message or by the turn carrying reply-to targets.
-- [ ] The warmup is still started before the turn-start announce and before the user message is built, so it still overlaps both.
-- [ ] First-reply latency still starts when the turn starts, and its comment says what it measures instead of claiming to cover the user's whole wait.
-- [ ] The project instruction describing the turn-start announce names whatever now makes the call, if the change makes it inaccurate.
-- [ ] The rest of the existing monitor test suite passes unchanged.
+- [x] A group whose first message is a chat command constructs no agent. Asserted as a test, red before the change.
+- [x] A group whose first message is a chat command resolves no delivery targets and mints no conversation. Asserted as a test, red before the change.
+- [x] A leading clear still wipes the persisted thread and still ends the group.
+- [x] The turn following a chat command is routed to the channel that sent it. Asserted as a test, green before and after, since this is the case the deleted invariant used to cover.
+- [x] The group's anchors, agent, thread and warmup are established on its first turn, and later turns reuse them.
+- [x] The message index no longer exists, and no comment specifies it.
+- [x] Whether a turn uses the group anchors is decided by identity against the anchor message or by the turn carrying reply-to targets.
+- [x] The warmup is still started before the turn-start announce and before the user message is built, so it still overlaps both.
+- [x] First-reply latency still starts when the turn starts, and its comment says what it measures instead of claiming to cover the user's whole wait.
+- [x] The project instruction describing the turn-start announce names whatever now makes the call, if the change makes it inaccurate.
+- [x] The rest of the existing monitor test suite passes unchanged.

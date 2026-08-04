@@ -37,14 +37,12 @@ internal sealed class ConversationGroup(
     private GroupState? _state;
 
     private sealed record GroupState(
+        ChannelMessage AnchorMessage,
         IReadOnlyList<DeliveryTarget> Targets,
         AgentKey DeliveryKey,
         DisposableAgent Agent,
         AgentSession Thread,
         Task Warmup);
-
-    private sealed record PendingTurn(
-        (IChannelConnection Channel, ChannelMessage Message) Source, int Index);
 
     public async IAsyncEnumerable<TurnUpdate> RunAsync(
         IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
@@ -61,10 +59,7 @@ internal sealed class ConversationGroup(
         using var linkedCts = context.GetLinkedTokenSource(ct);
         _turnCt = linkedCts.Token;
 
-        var first = await messages.FirstAsync(ct);
-        await EnsureEstablishedAsync(first);
-
-        await foreach (var update in RunTurnsSequentiallyAsync(messages.Prepend(first)))
+        await foreach (var update in RunTurnsSequentiallyAsync(messages))
         {
             yield return update;
         }
@@ -92,14 +87,14 @@ internal sealed class ConversationGroup(
     private async IAsyncEnumerable<TurnUpdate> RunTurnsSequentiallyAsync(
         IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages)
     {
-        var pending = Channel.CreateUnbounded<PendingTurn>();
+        var pending = Channel.CreateUnbounded<(IChannelConnection Channel, ChannelMessage Message)>();
         var reader = DispatchCommandsAndQueueTurnsAsync(messages, pending.Writer);
 
         try
         {
-            await foreach (var (x, index) in pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt))
+            await foreach (var x in pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt))
             {
-                var turn = await RunTurnAsync(x, index);
+                var turn = await RunTurnAsync(x);
                 await foreach (var update in turn.IgnoreCancellation(_turnCt))
                 {
                     yield return update;
@@ -112,14 +107,10 @@ internal sealed class ConversationGroup(
         }
     }
 
-    // The index counts every message in the group, commands included, because
-    // ResolveTurnTargetsAsync reads index 0 as "the message the group anchors were resolved
-    // from".
     private async Task DispatchCommandsAndQueueTurnsAsync(
         IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
-        ChannelWriter<PendingTurn> writer)
+        ChannelWriter<(IChannelConnection Channel, ChannelMessage Message)> writer)
     {
-        var index = 0;
         try
         {
             await foreach (var x in messages.IgnoreCancellation(_turnCt))
@@ -133,11 +124,9 @@ internal sealed class ConversationGroup(
                         threadResolver.Cancel(agentKey);
                         break;
                     default:
-                        await writer.WriteAsync(new PendingTurn(x, index), _turnCt);
+                        await writer.WriteAsync(x, _turnCt);
                         break;
                 }
-
-                index++;
             }
 
             writer.TryComplete();
@@ -169,6 +158,11 @@ internal sealed class ConversationGroup(
     //
     // These targets anchor the group; per-message reply delivery is resolved separately in
     // ResolveTurnTargetsAsync.
+    //
+    // None of it is built until the group has a turn to run. A chat command is never queued
+    // and never answered, so a group whose messages are all commands — a /clear on a
+    // conversation with no live group, routine after a restart — resolves no target, mints no
+    // conversation, builds no agent, reads no thread and opens no MCP connection.
     private async Task<GroupState> EnsureEstablishedAsync(
         (IChannelConnection Channel, ChannelMessage Message) x)
     {
@@ -190,21 +184,21 @@ internal sealed class ConversationGroup(
         // of operations is well-defined.
         var warmup = agent.WarmupSessionAsync(thread, _turnCt);
 
-        return _state = new GroupState(targets, deliveryKey, agent, thread, warmup);
+        return _state = new GroupState(x.Message, targets, deliveryKey, agent, thread, warmup);
     }
 
     private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(
-        (IChannelConnection Channel, ChannelMessage Message) x, int index)
+        (IChannelConnection Channel, ChannelMessage Message) x)
     {
         var state = await EnsureEstablishedAsync(x);
         // FirstReply times the turn from the moment it starts to its first delivered reply
         // chunk: target resolution, memory recall, the wait on session warmup and the
         // turn-start announce for agent-initiated messages. It is the turn's own window
-        // rather than the user's wall clock — a turn queued behind a running one is not
-        // measured while it waits.
+        // rather than the user's wall clock — neither the queue wait behind a running turn
+        // nor establishing the group on its first turn is measured.
         var firstReply = metricsPublisher.MeasureLatency(
             LatencyStage.FirstReply, state.DeliveryKey.ConversationId);
-        var targets = await ResolveTurnTargetsAsync(x, index, state.Targets);
+        var targets = await ResolveTurnTargetsAsync(x, state);
         var turn = new Turn(x.Channel, x.Message, targets, firstReply);
         // Agent-initiated turns (downloads, schedules) land in conversations with no live
         // stream on the receiving channel; announce the turn so the channel can set one up
@@ -226,20 +220,20 @@ internal sealed class ConversationGroup(
     // the latter would re-mint conversations); a subsequent plain interactive message is
     // routed back to its own origin instead of the opening channel.
     private async Task<IReadOnlyList<DeliveryTarget>> ResolveTurnTargetsAsync(
-        (IChannelConnection Channel, ChannelMessage Message) x,
-        int index,
-        IReadOnlyList<DeliveryTarget> groupTargets)
+        (IChannelConnection Channel, ChannelMessage Message) x, GroupState state)
     {
-        if (index == 0)
+        // The anchors belong to the turn they were resolved from — the group's first — and
+        // that is answered by identity, not by counting messages.
+        if (ReferenceEquals(x.Message, state.AnchorMessage))
         {
-            return groupTargets;
+            return state.Targets;
         }
 
         // A later turn reusing the group targets minted nothing of its own, so the marker
         // is cleared: those conversations pre-exist this turn and the announce has to set
         // their streams up again.
         return x.Message.ReplyTo is { Count: > 0 }
-            ? [.. groupTargets.Select(t => t with { Minted = false })]
+            ? [.. state.Targets.Select(t => t with { Minted = false })]
             : await targetResolver.ResolveAsync(x.Message, x.Channel, _turnCt);
     }
 
