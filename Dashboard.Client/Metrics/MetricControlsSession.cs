@@ -9,6 +9,7 @@ namespace Dashboard.Client.Metrics;
 // change to any of it is reachable without a browser.
 public sealed class MetricControlsSession(
     MetricFamily family,
+    IReadOnlyList<MetricChoice> extraChoices,
     LocalStorageService storage,
     TimeProvider time,
     DataLoadEffect dataLoad)
@@ -19,13 +20,16 @@ public sealed class MetricControlsSession(
 
     public DateOnly To { get; private set; }
 
+    // Every choice this session can save is a choice it restores, extras included. A choice that is
+    // written and never read back is how the voice aggregation quietly reset to Avg on every visit.
+    private IEnumerable<MetricChoice> Choices =>
+        new[] { family.Dimension, family.Metric }.OfType<MetricChoice>().Concat(extraChoices);
+
     public async Task InitializeAsync()
     {
-        await ApplySavedAsync(family.GroupBy);
-
-        if (family.Metric is { } metric)
+        foreach (var choice in Choices)
         {
-            await ApplySavedAsync(metric);
+            await ApplySavedAsync(choice);
         }
 
         var savedDays = await storage.GetIntAsync(KeyFor("days"));

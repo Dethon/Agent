@@ -9,7 +9,7 @@
     <MetricControls TStore="ErrorsStore" TState="ErrorsState"
                     Title="Errors"
                     Family="Families.Errors"
-                    GroupByOptions="DimensionOptions">
+                    DimensionOptions="DimensionOptions">
         <ChildContent Context="state">
             <section class="kpi-row">
                 <KpiCard Label="Total Errors" Value="@state.Events.Count.ToString("N0")" Color="var(--accent-red)" />
@@ -17,7 +17,7 @@
             </section>
 
             <section class="section">
-                <DynamicChart Data="AsDecimal(state.Breakdown)" ChartType="DynamicChart.ChartMode.HorizontalBar"
+                <DynamicChart Data="state.Breakdown.AsChartData()" ChartType="DynamicChart.ChartMode.HorizontalBar"
                               MetricLabel="Error Count" />
             </section>
 
@@ -61,9 +61,6 @@
         new("Service", nameof(ErrorDimension.Service)),
         new("Error Type", nameof(ErrorDimension.ErrorType)),
     ];
-
-    private static Dictionary<string, decimal> AsDecimal(Dictionary<string, int> breakdown) =>
-        breakdown.ToDictionary(kv => kv.Key, kv => (decimal)kv.Value);
 
     private static string Truncate(string s, int max) =>
         s.Length <= max ? s : string.Concat(s.AsSpan(0, max), "...");

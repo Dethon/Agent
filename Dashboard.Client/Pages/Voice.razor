@@ -10,8 +10,9 @@
     <MetricControls TStore="VoiceStore" TState="VoiceState"
                     Title="Voice"
                     Family="Families.Voice"
-                    GroupByOptions="DimensionOptions"
-                    MetricOptions="MetricOptions">
+                    DimensionOptions="DimensionOptions"
+                    MetricOptions="MetricOptions"
+                    ExtraChoices="_extraChoices">
         <ExtraControls Context="controls">
             <PillSelector Label="Aggregate" Options="AggOptions" Value="@_aggregation.Current"
                           OnChanged="value => controls.ChangeAsync(_aggregation, value)" />
@@ -80,9 +81,13 @@
     // pill is rendered, for the same reason the other choices are declared where the family is:
     // whoever shows a pill owns the reading and writing behind it.
     private MetricChoice _aggregation = default!;
+    private IReadOnlyList<MetricChoice> _extraChoices = [];
 
-    protected override void OnInitialized() =>
+    protected override void OnInitialized()
+    {
         _aggregation = MetricChoice.For("agg", () => Store.State.Agg, Store.SetAgg);
+        _extraChoices = [_aggregation];
+    }
 
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [

@@ -201,7 +201,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task LoadAsync_SetsTheDateRangeOnEveryFamily()
+    public async Task LoadAsync_ADashboardPageLoads_SetsTheDateRangeOnEveryFamily()
     {
         await NewDataLoadEffect().LoadAsync(From, To);
 
@@ -290,7 +290,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     // under it.
     [Theory]
     [MemberData(nameof(RapidEventCaseNames))]
-    public async Task RapidEvents_CoalesceIntoTwoRequestsEndingAtTheLastValue(string caseName)
+    public async Task RefreshAsync_EventsArriveWhileAResponseIsOutstanding_CoalescesIntoTwoRequests(string caseName)
     {
         var (staleData, freshData, fireEvent, getBreakdown) = _rapidEventCases[caseName];
 

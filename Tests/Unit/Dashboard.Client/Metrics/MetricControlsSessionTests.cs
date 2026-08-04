@@ -64,8 +64,8 @@ public class MetricControlsSessionTests : IDisposable
         _connectionStore.Dispose();
     }
 
-    private MetricControlsSession SessionFor(MetricFamily family) =>
-        new(family, _storage, new FakeTimeProvider(
+    private MetricControlsSession SessionFor(MetricFamily family, params MetricChoice[] extraChoices) =>
+        new(family, extraChoices, _storage, new FakeTimeProvider(
             new DateTimeOffset(Today, TimeOnly.MinValue, TimeSpan.Zero)), _dataLoad);
 
     // Every family, by the preference keys its page has always used.
@@ -96,7 +96,7 @@ public class MetricControlsSessionTests : IDisposable
 
         await SessionFor(family).InitializeAsync();
 
-        family.GroupBy.Current.ShouldBe(savedGroupBy);
+        family.Dimension.Current.ShouldBe(savedGroupBy);
         family.Metric?.Current.ShouldBe(savedMetric);
     }
 
@@ -113,10 +113,10 @@ public class MetricControlsSessionTests : IDisposable
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
         _handler.EnqueueResponse(new List<LatencyTrendSeries>(), delay: TimeSpan.Zero);
 
-        await session.ChangeAsync(family.GroupBy, chosenGroupBy);
+        await session.ChangeAsync(family.Dimension, chosenGroupBy);
 
         _js.Storage[$"{name}.groupBy"].ShouldBe(chosenGroupBy);
-        family.GroupBy.Current.ShouldBe(chosenGroupBy);
+        family.Dimension.Current.ShouldBe(chosenGroupBy);
         _handler.Requests.ShouldContain(u => u != null && u.Contains($"/{name}", StringComparison.Ordinal));
     }
 
@@ -150,13 +150,26 @@ public class MetricControlsSessionTests : IDisposable
         session.From.ShouldBe(new DateOnly(2026, 3, 18));
     }
 
+    // Voice's aggregate pill is the one choice the shared header does not own, so it is the one at
+    // risk of being saved and never read back.
+    [Fact]
+    public async Task InitializeAsync_TheVoiceAggregationIsSaved_AppliesIt()
+    {
+        var aggregation = MetricChoice.For("agg", () => _voiceStore.State.Agg, _voiceStore.SetAgg);
+        _js.Storage["voice.agg"] = nameof(Aggregation.P95);
+
+        await SessionFor(_families.Voice, aggregation).InitializeAsync();
+
+        _voiceStore.State.Agg.ShouldBe(Aggregation.P95);
+    }
+
     // Voice's aggregate pill is the one choice the shared header does not own. It is persisted and
     // refreshed the same way, and the refresh still carries the aggregation the user picked.
     [Fact]
     public async Task ChangeAsync_TheVoiceAggregation_PersistsAndRefreshesWithIt()
     {
         var aggregation = MetricChoice.For("agg", () => _voiceStore.State.Agg, _voiceStore.SetAgg);
-        var session = SessionFor(_families.Voice);
+        var session = SessionFor(_families.Voice, aggregation);
         await session.InitializeAsync();
         _handler.Requests.Clear();
         _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
@@ -174,6 +187,6 @@ public class MetricControlsSessionTests : IDisposable
 
         await SessionFor(_families.Tokens).InitializeAsync();
 
-        _families.Tokens.GroupBy.Current.ShouldBe(nameof(TokenDimension.User));
+        _families.Tokens.Dimension.Current.ShouldBe(nameof(TokenDimension.User));
     }
 }

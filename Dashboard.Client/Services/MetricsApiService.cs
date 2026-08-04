@@ -44,12 +44,11 @@ public sealed class MetricsApiService(HttpClient http)
         string path,
         DateOnly from,
         DateOnly to,
-        IReadOnlyList<(string Key, string Value)>? query = null,
-        CancellationToken ct = default)
+        IReadOnlyList<(string Key, string Value)>? query = null)
     {
         var values = string.Concat((query ?? []).Select(q => $"{q.Key}={q.Value}&"));
         return http.GetFromJsonAsync<Dictionary<string, TValue>>(
-            $"api/metrics/{path}?{values}from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+            $"api/metrics/{path}?{values}from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
     }
 
     public Task<List<MemoryRecallEvent>?> GetMemoryRecallAsync(DateOnly from, DateOnly to) =>
@@ -65,10 +64,9 @@ public sealed class MetricsApiService(HttpClient http)
         http.GetFromJsonAsync<List<LatencyEvent>>($"api/metrics/latency?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
     public Task<List<LatencyTrendSeries>?> GetLatencyTrendAsync(
-        Aggregation aggregation, DateOnly from, DateOnly to,
-        CancellationToken ct = default) =>
+        Aggregation aggregation, DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<LatencyTrendSeries>>(
-            $"api/metrics/latency/trend?metric={aggregation}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+            $"api/metrics/latency/trend?metric={aggregation}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
     public Task<List<VoiceEvent>?> GetVoiceEventsAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<VoiceEvent>>($"api/metrics/voice?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");

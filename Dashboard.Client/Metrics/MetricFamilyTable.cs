@@ -35,7 +35,7 @@ public sealed class MetricFamilyTable
         Tokens = new MetricFamily<TokensStore>(
             tokens,
             "tokens",
-            groupBy: MetricChoice.For("groupBy", () => tokens.State.GroupBy, tokens.SetGroupBy),
+            dimension: MetricChoice.For("groupBy", () => tokens.State.GroupBy, tokens.SetGroupBy),
             metric: MetricChoice.For("metric", () => tokens.State.Metric, tokens.SetMetric),
             setDateRange: tokens.SetDateRange,
             // Truncations are a grouped count rather than one of the family's events, but they are
@@ -63,7 +63,7 @@ public sealed class MetricFamilyTable
         Tools = new MetricFamily<ToolsStore>(
             tools,
             "tools",
-            groupBy: MetricChoice.For("groupBy", () => tools.State.GroupBy, dimension =>
+            dimension: MetricChoice.For("groupBy", () => tools.State.GroupBy, dimension =>
             {
                 tools.SetGroupBy(dimension);
                 // Grouped by status there is no error rate to show, so the pill that is about to be
@@ -92,7 +92,7 @@ public sealed class MetricFamilyTable
         Errors = new MetricFamily<ErrorsStore>(
             errors,
             "errors",
-            groupBy: MetricChoice.For("groupBy", () => errors.State.GroupBy, errors.SetGroupBy),
+            dimension: MetricChoice.For("groupBy", () => errors.State.GroupBy, errors.SetGroupBy),
             metric: null,
             setDateRange: errors.SetDateRange,
             loadEvents: async () =>
@@ -111,7 +111,7 @@ public sealed class MetricFamilyTable
         Schedules = new MetricFamily<SchedulesStore>(
             schedules,
             "schedules",
-            groupBy: MetricChoice.For("groupBy", () => schedules.State.GroupBy, schedules.SetGroupBy),
+            dimension: MetricChoice.For("groupBy", () => schedules.State.GroupBy, schedules.SetGroupBy),
             metric: null,
             setDateRange: schedules.SetDateRange,
             loadEvents: async () =>
@@ -130,7 +130,7 @@ public sealed class MetricFamilyTable
         Memory = new MetricFamily<MemoryStore>(
             memory,
             "memory",
-            groupBy: MetricChoice.For("groupBy", () => memory.State.GroupBy, dimension =>
+            dimension: MetricChoice.For("groupBy", () => memory.State.GroupBy, dimension =>
             {
                 memory.SetGroupBy(dimension);
                 // The stored, merged and decayed counts only exist per user, so grouping by
@@ -165,7 +165,7 @@ public sealed class MetricFamilyTable
         Latency = new MetricFamily<LatencyStore>(
             latency,
             "latency",
-            groupBy: MetricChoice.For("groupBy", () => latency.State.GroupBy, latency.SetGroupBy),
+            dimension: MetricChoice.For("groupBy", () => latency.State.GroupBy, latency.SetGroupBy),
             metric: MetricChoice.For("metric", () => latency.State.Metric, latency.SetMetric),
             setDateRange: latency.SetDateRange,
             loadEvents: async () =>
@@ -190,7 +190,7 @@ public sealed class MetricFamilyTable
         Voice = new MetricFamily<VoiceStore>(
             voice,
             "voice",
-            groupBy: MetricChoice.For("groupBy", () => voice.State.GroupBy, voice.SetGroupBy),
+            dimension: MetricChoice.For("groupBy", () => voice.State.GroupBy, voice.SetGroupBy),
             metric: MetricChoice.For("metric", () => voice.State.Metric, voice.SetMetric),
             setDateRange: voice.SetDateRange,
             loadEvents: async () =>

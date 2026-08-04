@@ -23,7 +23,10 @@ as it is.
 **Status:** done
 
 - [x] All seven breakdown pages render their header through the wrapper.
-- [x] No breakdown page reads or writes a preference, and none derives a date range.
+- [~] No breakdown page reads or writes a preference, and none derives a date range. Partial: no page
+  derives a date range, and no page reads or writes a *pill* preference. The memory page still reads
+  and writes `memory.activeTab` itself, because the tab is the page's own state rather than one of
+  the family's choices, so the control header has no business remembering it.
 - [x] Errors and schedules render no metric pill.
 - [x] Tools and memory still disable the metric values they disable today.
 - [x] Voice renders its aggregate pill through the extra-controls fragment, and choosing an aggregation still refreshes with that choice.

@@ -10,8 +10,8 @@
 <header class="page-header">
     <h2>@Title</h2>
     <div class="controls">
-        <PillSelector Label="Group by" Options="GroupByOptions" Value="@Family.GroupBy.Current"
-                      OnChanged="value => _session.ChangeAsync(Family.GroupBy, value)" />
+        <PillSelector Label="Group by" Options="DimensionOptions" Value="@Family.Dimension.Current"
+                      OnChanged="value => _session.ChangeAsync(Family.Dimension, value)" />
         @if (Family.Metric is { } metric)
         {
             <PillSelector Label="Metric" Options="MetricOptions" Value="@metric.Current"
@@ -29,10 +29,13 @@
 @code {
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter, EditorRequired] public MetricFamily<TStore> Family { get; set; } = default!;
-    [Parameter, EditorRequired] public IReadOnlyList<PillOption> GroupByOptions { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<PillOption> DimensionOptions { get; set; } = [];
     [Parameter] public IReadOnlyList<PillOption> MetricOptions { get; set; } = [];
     [Parameter] public Func<TState, IReadOnlySet<string>>? UnavailableMetrics { get; set; }
     [Parameter] public RenderFragment<MetricControlsSession>? ExtraControls { get; set; }
+    // The choices behind ExtraControls. They are supplied separately because the session restores
+    // and persists them, and a fragment cannot be asked what it renders.
+    [Parameter] public IReadOnlyList<MetricChoice> ExtraChoices { get; set; } = [];
     [Parameter, EditorRequired] public RenderFragment<TState> ChildContent { get; set; } = default!;
 
     private static readonly IReadOnlyList<PillOption> TimeOptions =
@@ -50,7 +53,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _session = new MetricControlsSession(Family, Storage, Time, DataLoad);
+        _session = new MetricControlsSession(Family, ExtraChoices, Storage, Time, DataLoad);
         _state = Family.Store.State;
         _sub = Family.Store.StateObservable.Subscribe(state =>
         {

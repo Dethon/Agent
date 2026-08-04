@@ -17,14 +17,14 @@ public sealed class MetricsHubEffect(
     private bool _started;
 
     // The live-update path's failure policy, written once: a refresh that fails leaves the family's
-    // breakdown at its last known value.
+    // breakdown at its last known value. Nothing cancels a refresh any more, so a request abandoned
+    // on an HTTP timeout settles the same way as any other failure and needs no arm of its own.
     private static async Task RefreshAsync(MetricFamily family)
     {
         try
         {
             await family.RefreshAsync();
         }
-        catch (OperationCanceledException) { }
         catch { /* Breakdown stays at last known value */ }
     }
 

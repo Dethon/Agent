@@ -9,7 +9,7 @@
     <MetricControls TStore="SchedulesStore" TState="SchedulesState"
                     Title="Schedule Executions"
                     Family="Families.Schedules"
-                    GroupByOptions="DimensionOptions">
+                    DimensionOptions="DimensionOptions">
         <ChildContent Context="state">
             <section class="kpi-row">
                 <KpiCard Label="Total Runs" Value="@state.Events.Count.ToString("N0")" Color="var(--accent-purple)" />
@@ -18,7 +18,7 @@
             </section>
 
             <section class="section">
-                <DynamicChart Data="AsDecimal(state.Breakdown)" ChartType="DynamicChart.ChartMode.HorizontalBar"
+                <DynamicChart Data="state.Breakdown.AsChartData()" ChartType="DynamicChart.ChartMode.HorizontalBar"
                               MetricLabel="Execution Count" />
             </section>
 
@@ -58,9 +58,6 @@
         new("Schedule", nameof(ScheduleDimension.Schedule)),
         new("Status", nameof(ScheduleDimension.Status)),
     ];
-
-    private static Dictionary<string, decimal> AsDecimal(Dictionary<string, int> breakdown) =>
-        breakdown.ToDictionary(kv => kv.Key, kv => (decimal)kv.Value);
 
     private static double SuccessRate(SchedulesState state) =>
         state.Events.Count > 0 ? state.Events.Count(e => e.Success) * 100.0 / state.Events.Count : 0;

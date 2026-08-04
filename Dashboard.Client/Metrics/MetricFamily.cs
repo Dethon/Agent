@@ -2,7 +2,7 @@ namespace Dashboard.Client.Metrics;
 
 public class MetricFamily(
     string name,
-    MetricChoice groupBy,
+    MetricChoice dimension,
     MetricChoice? metric,
     Action<DateOnly, DateOnly> setDateRange,
     Func<Task> loadEvents,
@@ -16,7 +16,7 @@ public class MetricFamily(
 
     public string PreferenceKeyPrefix { get; } = $"{name}.";
 
-    public MetricChoice GroupBy { get; } = groupBy;
+    public MetricChoice Dimension { get; } = dimension;
 
     // Null for a family with nothing to choose between: errors and schedules have no metric pill,
     // because there is no quantity to pick.
@@ -27,10 +27,12 @@ public class MetricFamily(
     public Task LoadEventsAsync() => loadEvents();
 
     // Awaiting this means the breakdown reflects the store state at or after the call. A caller
-    // arriving while a run is in flight shares that run and marks it stale, so the run repeats with
-    // the newer state and a burst of events costs two requests instead of one per event. There is
-    // no timer and no waiting window, so nothing is slower than a single refresh. Failure throws to
-    // everyone awaiting, because the two callers have different policies for it.
+    // arriving while a run is in flight shares that run and marks it stale, so one further pass
+    // serves every caller that arrived during the previous one: a burst landing on one outstanding
+    // request costs two requests rather than one per event, and a stream that never lets up keeps
+    // one pass in flight rather than one per event. There is no timer and no waiting window, so
+    // nothing is slower than a single refresh. Failure throws to everyone awaiting, because the two
+    // callers have different policies for it.
     public Task RefreshAsync()
     {
         lock (_gate)
@@ -80,12 +82,12 @@ public class MetricFamily(
 public sealed class MetricFamily<TStore>(
     TStore store,
     string name,
-    MetricChoice groupBy,
+    MetricChoice dimension,
     MetricChoice? metric,
     Action<DateOnly, DateOnly> setDateRange,
     Func<Task> loadEvents,
     Func<Task> refreshBreakdown)
-    : MetricFamily(name, groupBy, metric, setDateRange, loadEvents, refreshBreakdown)
+    : MetricFamily(name, dimension, metric, setDateRange, loadEvents, refreshBreakdown)
     where TStore : class
 {
     public TStore Store { get; } = store;
