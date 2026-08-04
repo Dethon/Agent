@@ -1,12 +1,22 @@
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
+using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
 
+// A satellite's seat at the arbitration table, carrying exactly what arbitration reads and nothing
+// else — so someone changing the satellite session can tell from this type whether arbitration is
+// affected. Capture activity and pause support are read through delegates because both change
+// after the handle is registered: the mic opens and closes per turn, and a satellite only proves it
+// understands pause-satellite when it first reports wake_rms.
 public sealed record WakeArbiterHandle(
-    SatelliteSession Session,
+    SatelliteIdentity Identity,
+    double RmsOffsetDb,
+    Func<bool> SupportsPause,
+    Func<CaptureActivity?> CaptureActivity,
+    Func<bool> TryAbortCapture,
     Func<CancellationToken, Task> PauseAsync,
     Func<CancellationToken, Task> EndLegacyAsync);
 
@@ -136,14 +146,14 @@ public sealed class WakeArbiter(
         // utterance as two conversations, with no exception and no log line to show for it.
         var openCaptures = handles
             .Where(kv => claims.All(c => c.SatelliteId != kv.Key))
-            .Select(kv => (kv.Key, Handle: kv.Value, Activity: kv.Value.Session.Mic.Activity))
+            .Select(kv => (kv.Key, Handle: kv.Value, Activity: kv.Value.CaptureActivity()))
             .Where(h => h.Activity is not null)
             .ToList();
 
         var candidates = claims
             .Where(c => handles.ContainsKey(c.SatelliteId))
             .Select(c => new ArbitrationCandidate(c, c.WakeRms is { } rms
-                ? WakeArbitrationRules.Calibrate(rms, handles[c.SatelliteId].Session.Config.RmsOffsetDb)
+                ? WakeArbitrationRules.Calibrate(rms, handles[c.SatelliteId].RmsOffsetDb)
                 : null))
             .ToList();
         // Every claimant may have disconnected inside the window, and PickWinner ends in First().
@@ -183,7 +193,7 @@ public sealed class WakeArbiter(
                 h.Activity!, spanStart, spanEnd, frequency, settings))
             .Select(h => (h.Key, h.Handle, Peak: WakeArbitrationRules.Calibrate(
                 WakeArbitrationRules.SpanPeakRms(h.Activity!, spanStart - slack, spanEnd + slack),
-                h.Handle.Session.Config.RmsOffsetDb)))
+                h.Handle.RmsOffsetDb)))
             .OrderByDescending(h => h.Peak)
             .Select(h => ((string, WakeArbiterHandle, double)?)h)
             .FirstOrDefault();
@@ -198,7 +208,7 @@ public sealed class WakeArbiter(
         {
             // Only a capture we actually aborted may be stolen from: if it already ended
             // naturally, its dispatch is in flight and these were independent turns.
-            if (!holderHandle.Session.Mic.TryAbort())
+            if (!holderHandle.TryAbortCapture())
             {
                 return;
             }
@@ -222,14 +232,14 @@ public sealed class WakeArbiter(
                 {
                     Metric = VoiceMetric.WakeSuppressed,
                     Outcome = "stale_steal"
-                }.About(holderHandle.Session)
+                }.About(holderHandle.Identity)
                 : new VoiceEvent
                 {
                     Metric = VoiceMetric.WakeHandoff,
                     Outcome = holderId,
                     WakeRms = winner.Claim.WakeRms,
                     WakeScore = winner.Claim.WakeScore
-                }.About(handles[winner.Claim.SatelliteId].Session));
+                }.About(handles[winner.Claim.SatelliteId].Identity));
             await SendReArmAsync(holderHandle);
             return;
         }
@@ -241,7 +251,7 @@ public sealed class WakeArbiter(
 
     private async Task SuppressAsync(WakeArbiterHandle handle, WakeClaim claim, string outcome)
     {
-        if (!handle.Session.Mic.TryAbort())
+        if (!handle.TryAbortCapture())
         {
             logger.LogWarning(
                 "Arbitration loser {Id} had no abortable capture (ended early); letting it proceed",
@@ -256,7 +266,7 @@ public sealed class WakeArbiter(
             Outcome = outcome,
             WakeRms = claim.WakeRms,
             WakeScore = claim.WakeScore
-        }.About(handle.Session));
+        }.About(handle.Identity));
         await SendReArmAsync(handle, claim);
     }
 
@@ -277,7 +287,7 @@ public sealed class WakeArbiter(
             // would desync the stream), so handing it the token bounds the wait for the lock and
             // nothing else. Abandoning the task is what actually bounds this call; the write's own
             // finally still releases the lock whenever it eventually completes or fails.
-            write = handle.Session.SupportsPause
+            write = handle.SupportsPause()
                 ? handle.PauseAsync(cts.Token)
                 : handle.EndLegacyAsync(cts.Token);
             await write.WaitAsync(cts.Token);
@@ -300,19 +310,19 @@ public sealed class WakeArbiter(
             logger.LogError(
                 "Re-arm write to satellite {Id} timed out after {TimeoutMs}ms — its connection is "
                 + "still up but it stays in streaming mode and will not wake again until it reconnects",
-                handle.Session.SatelliteId, ReArmWriteTimeoutMs);
+                handle.Identity.SatelliteId, ReArmWriteTimeoutMs);
             metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.WakeSuppressed,
                 Outcome = "rearm_failed",
                 WakeRms = claim?.WakeRms,
                 WakeScore = claim?.WakeScore
-            }.About(handle.Session));
+            }.About(handle.Identity));
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Re-arm write to satellite {Id} failed",
-                handle.Session.SatelliteId);
+                handle.Identity.SatelliteId);
         }
     }
 }

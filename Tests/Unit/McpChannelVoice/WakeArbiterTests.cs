@@ -51,7 +51,11 @@ public class WakeArbiterTests
         }
 
         public WakeArbiterHandle Handle => new(
-            Session,
+            SatelliteIdentity.Of(Session),
+            Session.Config.RmsOffsetDb,
+            () => Session.SupportsPause,
+            () => Session.Mic.Activity,
+            () => Session.Mic.TryAbort(),
             _ =>
             {
                 if (FailPause)

@@ -77,7 +77,11 @@ public sealed class SatelliteConnection(
         // coordinator's end-of-turn write, which already write to it concurrently — the arbiter is a
         // third caller under the same guarantees, not a new sharing model.
         arbiter.Register(Id, new WakeArbiterHandle(
-            Session,
+            SatelliteIdentity.Of(Session),
+            Session.Config.RmsOffsetDb,
+            () => Session.SupportsPause,
+            () => Session.Mic.Activity,
+            () => Session.Mic.TryAbort(),
             token => Writer(WyomingEvent.Header("pause-satellite", new JsonObject()), token),
             token => Writer(ClosingTranscript(), token)));
 
