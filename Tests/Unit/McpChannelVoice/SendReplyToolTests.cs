@@ -114,7 +114,7 @@ public class SendReplyToolTests
     {
         // Regression guard for the FIX #4 follow-up: a reply synthesis failure (e.g. a Wyoming TTS
         // 'error' event, which now throws) must resolve the per-turn handshake via the reply job's
-        // OnFailed -> the segment fails and the turn settles silent, so FollowUpConversation ends +
+        // failed outcome -> the segment fails and the turn settles silent, so FollowUpConversation ends +
         // re-arms wake. Without it the
         // mic stays wedged until the ~120s ReplyTimeoutMs. The chime and approval jobs already do this.
         _tts.Setup(t => t.SynthesizeAsync(
@@ -551,7 +551,7 @@ public class SendReplyToolTests
             "Mañana por la tarde hará sol y unos veintidós grados. ",
             ReplyContentType.Text, false, "m-1", _services);
         await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(100); // let the loop finish the drain wait and run OnDrained
+        await Task.Delay(100); // let the loop finish the drain wait and settle the segment
 
         written.Count.ShouldBe(1);        // exactly the opening sentence has reached the satellite
         turn.IsCompleted.ShouldBeFalse();
@@ -678,9 +678,8 @@ public class SendReplyToolTests
     public async Task McpRun_ReplySegmentPreemptedMidPlayback_SettlesTheTurnThroughTheRealPlaybackLoop()
     {
         // Drives a real reply job through RunPlaybackLoopAsync and preempts it, which is the only
-        // way to reach the OnPreempted -> segment.Fail() release. A preempted job never sees
-        // OnDrained, so without that release the turn waits out the ~120s ReplyTimeoutMs with the
-        // mic wedged.
+        // way to reach the preempted outcome -> segment.Fail() release. Without it the turn waits
+        // out the ~120s ReplyTimeoutMs with the mic wedged.
         // Signalled from the WRITER, not the audio source: the prefetch pump starts synthesising at
         // enqueue, so a source-side signal fires before the playback loop owns the job and the
         // preempt would land on nothing.
@@ -777,8 +776,7 @@ public class SendReplyToolTests
 
         _session.Playback.Enqueue(new PlaybackJob(
             Label: "alarm", Kind: PlaybackKind.Alarm, Priority: AnnouncePriority.High,
-            Audio: NoAudio(), OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask));
+            Audio: NoAudio()));
 
         await disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
 

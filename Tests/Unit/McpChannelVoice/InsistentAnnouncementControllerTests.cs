@@ -86,7 +86,7 @@ public class InsistentAnnouncementControllerTests
     }
 
     // The playback loop waits out each job's nominal audio duration on the injected clock
-    // (SatelliteSession: OnDrained must mean "the satellite finished PLAYING", not "we finished
+    // (PlaybackQueue: drained must mean "the satellite finished PLAYING", not "we finished
     // writing"), so a test on a FakeTimeProvider has to push the clock past that wait or the loop
     // never returns. Advance in a loop rather than once: the delay is registered asynchronously
     // after the job's last chunk, so a single Advance can land before the timer even exists.

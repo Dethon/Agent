@@ -462,9 +462,7 @@ public class SatelliteConnectionTests
                 Label: "reply",
                 Kind: PlaybackKind.Reply,
                 Priority: AnnouncePriority.Normal,
-                Audio: OneChunk(),
-                OnStarted: _ => Task.CompletedTask,
-                OnPreempted: _ => Task.CompletedTask));
+                Audio: OneChunk()));
         await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
 
         h.DropLink();
@@ -507,17 +505,13 @@ public class SatelliteConnectionTests
                 Label: "reply-1",
                 Kind: PlaybackKind.Reply,
                 Priority: AnnouncePriority.Normal,
-                Audio: NeverEndingChunks(),
-                OnStarted: _ => Task.CompletedTask,
-                OnPreempted: _ => Task.CompletedTask));
+                Audio: NeverEndingChunks()));
         var queuedBehind = connection.Session.Playback.Enqueue(
             new PlaybackJob(
                 Label: "reply-2",
                 Kind: PlaybackKind.Reply,
                 Priority: AnnouncePriority.Normal,
-                Audio: OneChunk(),
-                OnStarted: _ => Task.CompletedTask,
-                OnPreempted: _ => Task.CompletedTask));
+                Audio: OneChunk()));
         await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         // The connection is torn down while one job is mid-audio and another waits behind it, so

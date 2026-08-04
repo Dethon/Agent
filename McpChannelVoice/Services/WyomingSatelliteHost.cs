@@ -431,9 +431,7 @@ public sealed class WyomingSatelliteHost(
             Label: $"chime:{session.SatelliteId}",
             Kind: PlaybackKind.Chime,
             Priority: AnnouncePriority.High,
-            Audio: ListeningChime.Stream(),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask);
+            Audio: ListeningChime.Stream());
 
         // The token is this caller's own reason to stop waiting — its connection tearing down —
         // not a guard against hanging: the queue settles every job it is handed, teardown included.

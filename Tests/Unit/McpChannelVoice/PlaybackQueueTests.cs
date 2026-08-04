@@ -18,7 +18,6 @@ public class PlaybackQueueTests
         // 2..N had played in full. Every job queued when the High job arrives must be preempted.
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var played = new List<string>();
-        var preempted = new List<string>();
         var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         async IAsyncEnumerable<AudioChunk> gated(
@@ -35,9 +34,7 @@ public class PlaybackQueueTests
             Label: "reply-1",
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
-            Audio: gated(),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: l => { lock (preempted) { preempted.Add(l); } return Task.CompletedTask; });
+            Audio: gated());
         var segment2 = segment1 with { Label = "reply-2", Audio = GenerateAudio("s2", count: 1) };
         var segment3 = segment1 with { Label = "reply-3", Audio = GenerateAudio("s3", count: 1) };
         var alarm = segment1 with
@@ -56,18 +53,22 @@ public class PlaybackQueueTests
             },
             CancellationToken.None);
 
-        queue.Enqueue(segment1);
-        queue.Enqueue(segment2);
-        queue.Enqueue(segment3);
+        var one = queue.Enqueue(segment1);
+        var two = queue.Enqueue(segment2);
+        var three = queue.Enqueue(segment3);
         await firstChunkWritten.Task;
 
         queue.Enqueue(alarm);
         queue.Complete();
         await pumpTask;
 
-        // The alarm is heard next, not after the rest of the answer.
+        // The alarm is heard next, not after the rest of the answer — and every segment that was
+        // queued when it arrived says so itself.
         played.ShouldBe(["s1", "alarm"]);
-        preempted.ShouldBe(["reply-1", "reply-2", "reply-3"]);
+        foreach (var segment in new[] { one, two, three })
+        {
+            (await segment.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+        }
     }
 
     [Fact]
@@ -82,9 +83,7 @@ public class PlaybackQueueTests
             Label: "alarm-1",
             Kind: PlaybackKind.Alarm,
             Priority: AnnouncePriority.High,
-            Audio: GenerateAudio("alarm-1", count: 1),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask);
+            Audio: GenerateAudio("alarm-1", count: 1));
         var second = first with { Label = "alarm-2", Audio = GenerateAudio("alarm-2", count: 1) };
 
         var pumpTask = queue.RunAsync(
@@ -114,9 +113,7 @@ public class PlaybackQueueTests
             Label: "first",
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("first", count: 2),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask);
+            Audio: GenerateAudio("first", count: 2));
         var second = first with { Label = "second", Audio = GenerateAudio("second", count: 1) };
 
         var pumpTask = queue.RunAsync(
@@ -147,9 +144,7 @@ public class PlaybackQueueTests
             Label: "normal",
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("normal", count: 1),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask);
+            Audio: GenerateAudio("normal", count: 1));
         var low = normal with { Label = "low", Priority = AnnouncePriority.Low };
 
         // No playback loop is running, so the first job stays queued (Reader.Count > 0).
@@ -212,8 +207,6 @@ public class PlaybackQueueTests
     public async Task Enqueue_HighPriorityWhileIdle_PreemptsQueuedAheadButPlaysItself()
     {
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var drained = new List<string>();
-        var preempted = new List<string>();
 
         // Enqueue a normal job then a high job BEFORE the loop runs. When the high job is enqueued no
         // job is marked current, exercising the dequeue->assign gap / idle preempt-sequence path: the
@@ -223,29 +216,23 @@ public class PlaybackQueueTests
             Label: "normal",
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("normal", count: 2),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: l => { preempted.Add(l); return Task.CompletedTask; },
-            OnDrained: () => { drained.Add("normal"); return Task.CompletedTask; });
+            Audio: GenerateAudio("normal", count: 2));
         var high = new PlaybackJob(
             Label: "high",
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.High,
-            Audio: GenerateAudio("high", count: 1),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: l => { preempted.Add(l); return Task.CompletedTask; },
-            OnDrained: () => { drained.Add("high"); return Task.CompletedTask; });
+            Audio: GenerateAudio("high", count: 1));
 
-        queue.Enqueue(normal);
-        queue.Enqueue(high);
+        var queuedAhead = queue.Enqueue(normal);
+        var cuttingIn = queue.Enqueue(high);
         queue.Complete();
 
         await queue.RunAsync(
             (_, ct) => { ct.ThrowIfCancellationRequested(); return Task.CompletedTask; },
             CancellationToken.None);
 
-        preempted.ShouldBe(["normal"]);
-        drained.ShouldBe(["high"]);
+        (await queuedAhead.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+        (await cuttingIn.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
     }
 
     [Fact]
@@ -259,9 +246,7 @@ public class PlaybackQueueTests
             Label: "failing",
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.Normal,
-            Audio: ThrowingAudio(),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask);
+            Audio: ThrowingAudio());
         var next = failing with { Label = "next", Audio = GenerateAudio("next", count: 1) };
 
         var pumpTask = queue.RunAsync(
@@ -287,119 +272,20 @@ public class PlaybackQueueTests
         played.ShouldBe(["next"]);
     }
 
-    [Fact]
-    public async Task Run_OnStartedThrows_SwallowsAndKeepsLoopAlive()
-    {
-        var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var played = new List<string>();
-
-        var bad = new PlaybackJob(
-            Label: "bad-onstarted",
-            Kind: PlaybackKind.Announce,
-            Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("bad", count: 1),
-            OnStarted: _ => throw new InvalidOperationException("metrics down"),
-            OnPreempted: _ => Task.CompletedTask);
-        var next = bad with
-        {
-            Label = "next",
-            Audio = GenerateAudio("next", count: 1),
-            OnStarted = _ => Task.CompletedTask
-        };
-
-        var pumpTask = queue.RunAsync(
-            async (chunk, ct) =>
-            {
-                played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span));
-                await Task.Yield();
-            },
-            CancellationToken.None);
-
-        queue.Enqueue(bad);
-        queue.Enqueue(next);
-        queue.Complete();
-
-        await pumpTask;
-
-        // A failing OnStarted (e.g. metrics publish down) is swallowed: the job's audio still plays
-        // and the loop continues to the next job rather than tearing down.
-        played.ShouldBe(["bad", "next"]);
-    }
-
-    [Fact]
-    public async Task Run_JobDrains_InvokesOnDrained()
-    {
-        var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var drained = new List<string>();
-
-        var job = new PlaybackJob(
-            Label: "reply:kitchen-01",
-            Kind: PlaybackKind.Reply,
-            Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("hi", count: 1),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
-            OnDrained: () => { drained.Add("reply:kitchen-01"); return Task.CompletedTask; });
-
-        var pump = queue.RunAsync(
-            async (_, _) => await Task.Yield(), CancellationToken.None);
-
-        queue.Enqueue(job);
-        queue.Complete();
-        await pump;
-
-        drained.ShouldBe(["reply:kitchen-01"]);
-    }
-
-    [Fact]
-    public async Task Run_JobPreempted_DoesNotInvokeOnDrained()
-    {
-        var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var drained = new List<string>();
-        var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        async IAsyncEnumerable<AudioChunk> gated(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token = default)
-        {
-            yield return new AudioChunk { Data = new byte[16], Format = AudioFormat.WyomingStandard };
-            firstChunkWritten.TrySetResult();
-            // Block mid-drain until preempt cancels the job token. The only exit is cancellation,
-            // which throws OperationCanceledException here, so the second chunk never yields and the
-            // drain never completes normally — exactly the preemption path we are asserting.
-            await Task.Delay(Timeout.Infinite, token);
-            yield return new AudioChunk { Data = new byte[16], Format = AudioFormat.WyomingStandard };
-        }
-
-        var job = new PlaybackJob(
-            Label: "reply:kitchen-01",
-            Kind: PlaybackKind.Reply,
-            Priority: AnnouncePriority.Normal,
-            Audio: gated(),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
-            OnDrained: () => { drained.Add("reply:kitchen-01"); return Task.CompletedTask; });
-
-        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-
-        queue.Enqueue(job);
-        await firstChunkWritten.Task;       // job is mid-drain
-        queue.PreemptCurrent();           // cancel it; the gated enumerator unwinds via OCE
-        queue.Complete();
-        await pump;
-
-        drained.ShouldBeEmpty();            // OnDrained must NOT fire on preempt
-    }
+    // "a job that drains settles drained" and "a preempted job never settles drained" are the
+    // exactly-one-outcome guarantee, proved once in PlaybackQueueOutcomeTests.
 
     // The two turn-handshake tests that used to sit here moved to VoiceTurnTests: they test the
     // handshake, not playback, and they now drive the real path (begin a segment, complete it, end
     // the stream) rather than a signal method that no longer exists.
 
     [Fact]
-    public async Task Run_WaitsForAudioPlaybackDuration_BeforeOnDrained()
+    public async Task Run_WaitsForAudioPlaybackDuration_BeforeSettlingDrained()
     {
+        // Drained means the satellite finished PLAYING, not that the hub finished writing: the Pi
+        // buffers the audio and plays it at real time, and the earcon's mic must not open early.
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
-        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // 16000 bytes at 16 kHz/16-bit/mono = exactly 500 ms of audio.
         static async IAsyncEnumerable<AudioChunk> halfSecond()
@@ -412,19 +298,17 @@ public class PlaybackQueueTests
             Label: "reply:kitchen-01",
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
-            Audio: halfSecond(),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
-            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; });
+            Audio: halfSecond());
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
 
-        queue.Enqueue(job);
+        var ticket = queue.Enqueue(job);
         await Task.Delay(80); // let the loop write the audio and reach the playback wait
-        drained.Task.IsCompleted.ShouldBeFalse(); // must NOT fire on write-drain — playback (500 ms) hasn't elapsed
+        ticket.Completed.IsCompleted.ShouldBeFalse(); // the 500 ms of audio has not played out yet
 
         time.Advance(TimeSpan.FromMilliseconds(500)); // playback completes
-        await drained.Task.WaitAsync(TimeSpan.FromSeconds(2)); // now OnDrained fires
+        (await ticket.Completed.WaitAsync(TimeSpan.FromSeconds(2)))
+            .Kind.ShouldBe(PlaybackOutcomeKind.Drained);
         queue.Complete();
         await pump;
     }
@@ -452,8 +336,6 @@ public class PlaybackQueueTests
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
             Audio: audio(),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
@@ -485,8 +367,6 @@ public class PlaybackQueueTests
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
             Audio: GenerateAudio("hi", count: 1),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
@@ -511,8 +391,6 @@ public class PlaybackQueueTests
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
             Audio: GenerateAudio("x", count: 3),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: _ => { Interlocked.Increment(ref invocations); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
@@ -524,36 +402,9 @@ public class PlaybackQueueTests
     }
 
     [Fact]
-    public async Task Run_JobAudioThrows_InvokesOnFailed()
-    {
-        var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var failed = new TaskCompletionSource();
-
-        // A synthesis failure must reach OnFailed so awaiters (approval prompt, chime) that block on a
-        // drained handshake are released instead of hanging forever.
-        var failing = new PlaybackJob(
-            Label: "failing",
-            Kind: PlaybackKind.Announce,
-            Priority: AnnouncePriority.Normal,
-            Audio: ThrowingAudio(),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
-            OnFailed: _ => { failed.TrySetResult(); return Task.CompletedTask; });
-
-        queue.Enqueue(failing);
-        queue.Complete();
-
-        await queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
-
-        failed.Task.IsCompletedSuccessfully.ShouldBeTrue();
-    }
-
-    [Fact]
     public async Task Enqueue_TwoHighWhileIdle_BothPlay()
     {
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
-        var drained = new List<string>();
-        var preempted = new List<string>();
 
         // Two High jobs enqueued while idle (no job marked current). The second must NOT preempt the
         // first via the pending high-water mark; both play in FIFO order (regression guard for the
@@ -564,22 +415,19 @@ public class PlaybackQueueTests
             Label: label,
             Kind: PlaybackKind.Announce,
             Priority: AnnouncePriority.High,
-            Audio: GenerateAudio(label, count: 1),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: l => { preempted.Add(l); return Task.CompletedTask; },
-            OnDrained: () => { drained.Add(label); return Task.CompletedTask; });
+            Audio: GenerateAudio(label, count: 1));
         }
 
-        queue.Enqueue(high("h1"));
-        queue.Enqueue(high("h2"));
+        var first = queue.Enqueue(high("h1"));
+        var second = queue.Enqueue(high("h2"));
         queue.Complete();
 
         await queue.RunAsync(
             (_, ct) => { ct.ThrowIfCancellationRequested(); return Task.CompletedTask; },
             CancellationToken.None);
 
-        drained.ShouldBe(["h1", "h2"]);
-        preempted.ShouldBeEmpty();
+        (await first.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+        (await second.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
     }
 
     // Enqueueing onto a completed queue is a refusal rather than a ChannelClosedException — see
@@ -612,8 +460,6 @@ public class PlaybackQueueTests
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
             Audio: audio(),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; },
             EnqueuedAt: enqueuedAt);
 
@@ -650,8 +496,6 @@ public class PlaybackQueueTests
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
             Audio: GenerateAudio("hi", count: 2),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: _ => { order.Add("metrics"); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(
@@ -685,8 +529,6 @@ public class PlaybackQueueTests
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
             Audio: GenerateAudio("hi", count: 1),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
@@ -712,8 +554,6 @@ public class PlaybackQueueTests
             Kind: PlaybackKind.Chime,
             Priority: AnnouncePriority.Normal,
             Audio: GenerateAudio("hi", count: 1),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
         var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
@@ -750,9 +590,7 @@ public class PlaybackQueueTests
             Label: "reply",
             Kind: PlaybackKind.Reply,
             Priority: AnnouncePriority.Normal,
-            Audio: GenerateAudio("reply", count: 1),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask);
+            Audio: GenerateAudio("reply", count: 1));
         var alarm = reply with
         {
             Label = "alarm",
@@ -772,9 +610,7 @@ public class PlaybackQueueTests
         Label: label,
         Kind: kind,
         Priority: AnnouncePriority.Normal,
-        Audio: GenerateAudio(label, count: 1),
-        OnStarted: _ => Task.CompletedTask,
-        OnPreempted: _ => Task.CompletedTask);
+        Audio: GenerateAudio(label, count: 1));
 
     private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)
     {

@@ -57,7 +57,7 @@ public sealed class PrefetchedAudio : IAsyncDisposable
         catch (Exception ex)
         {
             // Surfaced to the consumer on its next read, so a synthesis error still reaches the
-            // playback loop's OnFailed and settles the turn instead of hanging the handshake.
+            // playback loop, which settles the job as failed instead of hanging whoever awaits it.
             _buffer.Writer.TryComplete(ex);
         }
     }

@@ -54,7 +54,7 @@ public sealed class RequestApprovalTool
             var pending = accumulator.Flush(p.ConversationId);
             if (!string.IsNullOrWhiteSpace(pending))
             {
-                await SpeakAsync(session, pending, tts, settings, AnnouncePriority.Normal);
+                Speak(session, pending, tts, settings, AnnouncePriority.Normal);
             }
             return "notified";
         }
@@ -108,7 +108,7 @@ public sealed class RequestApprovalTool
         return "rejected";
     }
 
-    private static async Task SpeakAsync(
+    private static void Speak(
         SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings,
         AnnouncePriority priority = AnnouncePriority.High)
     {
@@ -117,9 +117,7 @@ public sealed class RequestApprovalTool
             Label: $"approval:{session.SatelliteId}",
             Kind: PlaybackKind.Approval,
             Priority: priority,
-            Audio: tts.SynthesizeAsync(text, options, default),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask);
+            Audio: tts.SynthesizeAsync(text, options, default));
         session.Playback.Enqueue(job);
     }
 
@@ -132,9 +130,7 @@ public sealed class RequestApprovalTool
             Kind: PlaybackKind.Approval,
             Priority: AnnouncePriority.High,
             Audio: tts.SynthesizeAsync(
-                text, new SynthesisOptions { Voice = session.ResolveVoice(settings) }, default),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask);
+                text, new SynthesisOptions { Voice = session.ResolveVoice(settings) }, default));
 
         var ticket = session.Playback.Enqueue(job);
         if (ticket.Refused is not null)

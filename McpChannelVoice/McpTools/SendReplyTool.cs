@@ -314,8 +314,6 @@ public sealed class SendReplyTool
             Kind: isReply ? PlaybackKind.Reply : PlaybackKind.Preamble,
             Priority: AnnouncePriority.Normal,
             Audio: tts.SynthesizeAsync(text, options, ct),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
             EnqueuedAt: enqueuedAt,
             // Anchored to the turn's FIRST reply segment — never the preamble flush, which runs
             // with isReply: false and publishes nothing. Under streaming that segment is the first

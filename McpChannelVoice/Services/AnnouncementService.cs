@@ -64,8 +64,6 @@ public class AnnouncementService(
                 Kind: PlaybackKind.Announce,
                 Priority: request.Priority,
                 Audio: tts.SynthesizeAsync(request.Text, options, ct),
-                OnStarted: _ => Task.CompletedTask,
-                OnPreempted: _ => Task.CompletedTask,
                 // Published at first audio rather than when the queue reaches the job: "played" then
                 // means audio actually reached the satellite, so an announcement whose synthesis
                 // fails is no longer counted as played with nothing else ever recorded for it.

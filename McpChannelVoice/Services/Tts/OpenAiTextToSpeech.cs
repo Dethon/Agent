@@ -51,7 +51,8 @@ public sealed class OpenAiTextToSpeech(
         };
 
         // ResponseHeadersRead + incremental reads keep the response streaming end to end; a non-2xx
-        // throws before any audio is yielded so the playback loop's onError/OnFailed path fires.
+        // throws before any audio is yielded so the playback loop's onError hook fires and the job
+        // settles as failed.
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -93,7 +94,7 @@ public sealed class OpenAiTextToSpeech(
 
         // A Kokoro failure can close the stream cleanly with zero PCM; treating that as success
         // would play nothing and end the turn as an invisible "assistant didn't answer". Throw so
-        // the playback loop's OnFailed path fires instead.
+        // the job settles as failed instead.
         if (!yielded)
         {
             throw new InvalidOperationException("Kokoro synthesis returned no audio");

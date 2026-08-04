@@ -367,9 +367,7 @@ public class PlaybackQueueOutcomeTests
         Label: label,
         Kind: kind,
         Priority: AnnouncePriority.Normal,
-        Audio: OneChunk(label),
-        OnStarted: _ => Task.CompletedTask,
-        OnPreempted: _ => Task.CompletedTask);
+        Audio: OneChunk(label));
 
     private static AudioChunk Chunk(string label = "x") => new()
     {

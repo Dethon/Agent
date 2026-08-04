@@ -18,17 +18,17 @@ public enum PlaybackKind
     Approval
 }
 
-// Label stays free text for logs; Kind is what the queue reads.
+// Label stays free text for logs; Kind is what the queue reads. How a job ENDS is the ticket's
+// outcome, never a callback here — the three terminal callbacks this used to carry were mutually
+// exclusive with nothing in the type saying so, and each of six producers worked the rule out again.
+// OnFirstAudio survives because it is the one genuinely non-terminal observation: it reports timing
+// from between two audio writes and cannot end anything.
 public sealed record PlaybackJob(
     string Label,
     PlaybackKind Kind,
     AnnouncePriority Priority,
     IAsyncEnumerable<AudioChunk> Audio,
-    Func<string, Task> OnStarted,
-    Func<string, Task> OnPreempted,
-    Func<Task>? OnDrained = null,
     Func<FirstAudioTiming, Task>? OnFirstAudio = null,
-    Func<Exception, Task>? OnFailed = null,
     long EnqueuedAt = 0);
 
 // What queueing a job hands back. Refused says immediately whether the queue turned the job away and
@@ -299,20 +299,8 @@ public sealed class PlaybackQueue(
                 // to the audio source: WithCancellation only HANDS the token to the enumerable, so a
                 // source that does not observe it (a buffered or synthetic stream) would drain
                 // normally and the alarm would still wait behind it. Throwing here makes the decision
-                // the loop's, and lands it on the OnPreempted path below.
+                // the loop's, and lands it on the preempted outcome below.
                 jobCts.Token.ThrowIfCancellationRequested();
-
-                // OnStarted side effects (e.g. a metrics publish) must neither abort this job's
-                // playback nor tear down the loop, so swallow their failures here. Keeping it inside
-                // the try also guarantees the finally cleanup runs no matter what.
-                try
-                {
-                    await job.OnStarted(job.Label);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, "Playback OnStarted callback failed for {Label}", job.Label);
-                }
 
                 // Synthesis is lazy (the TTS enumerable is pulled here), so time it from just before
                 // the first pull to the first chunk — not from enqueue, which is a near-zero channel write.
@@ -374,14 +362,6 @@ public sealed class PlaybackQueue(
             }
             catch (OperationCanceledException) when (jobCts.IsCancellationRequested && !ct.IsCancellationRequested)
             {
-                try
-                {
-                    await job.OnPreempted(job.Label);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, "Playback OnPreempted callback failed for {Label}", job.Label);
-                }
                 queued.Settle(PlaybackOutcomeKind.Preempted);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
@@ -399,19 +379,6 @@ public sealed class PlaybackQueue(
                     catch (Exception oex)
                     {
                         logger?.LogWarning(oex, "Playback onError handler threw for {Label}", job.Label);
-                    }
-                }
-                // Signal terminal completion to anyone awaiting this job (e.g. an approval prompt or
-                // chime blocked on its drained handshake), so a synthesis failure doesn't hang them.
-                if (job.OnFailed is not null)
-                {
-                    try
-                    {
-                        await job.OnFailed(ex);
-                    }
-                    catch (Exception fex)
-                    {
-                        logger?.LogWarning(fex, "Playback OnFailed callback failed for {Label}", job.Label);
                     }
                 }
                 queued.Settle(PlaybackOutcomeKind.Failed, ex);
@@ -435,7 +402,7 @@ public sealed class PlaybackQueue(
                 }
                 if (drained && totalAudio > TimeSpan.Zero && !ct.IsCancellationRequested)
                 {
-                    // OnDrained means "the satellite finished PLAYING", not "we finished writing".
+                    // Drained means "the satellite finished PLAYING", not "we finished writing".
                     // The Pi buffers the audio and plays PCM at real time, so wait out the remaining
                     // nominal duration. Self-corrects for back-pressuring satellites (remaining <= 0).
                     var remaining = totalAudio - time.GetElapsedTime(firstChunkTimestamp);
@@ -449,17 +416,6 @@ public sealed class PlaybackQueue(
                         {
                             // Connection tearing down.
                         }
-                    }
-                }
-                if (drained && job.OnDrained is not null && !ct.IsCancellationRequested)
-                {
-                    try
-                    {
-                        await job.OnDrained();
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogWarning(ex, "Playback OnDrained callback failed for {Label}", job.Label);
                     }
                 }
                 if (drained)

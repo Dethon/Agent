@@ -133,13 +133,10 @@ public class AnnouncementServiceTests
         var (sut, sessions) = BuildSut(("kitchen-01", "Kitchen"));
         var session = sessions.Get("kitchen-01")!;
         var started = new TaskCompletionSource();
-        var preempted = new TaskCompletionSource();
         var pump = session.Playback.RunAsync((c, ct) => Task.Delay(50, ct), CancellationToken.None);
-        session.Playback.Enqueue(
-            new PlaybackJob("ongoing", PlaybackKind.Announce, AnnouncePriority.Normal,
-                NeverEnding(),
-                _ => { started.TrySetResult(); return Task.CompletedTask; },
-                _ => { preempted.TrySetResult(); return Task.CompletedTask; }));
+        var ongoing = session.Playback.Enqueue(
+            new PlaybackJob("ongoing", PlaybackKind.Announce, AnnouncePriority.Normal, NeverEnding(),
+                OnFirstAudio: _ => { started.TrySetResult(); return Task.CompletedTask; }));
 
         // Wait until the playback loop has actually picked up the ongoing job
         // before issuing the high-priority preemption (otherwise PreemptCurrent
@@ -150,7 +147,8 @@ public class AnnouncementServiceTests
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "alert", Priority = AnnouncePriority.High },
             CancellationToken.None);
 
-        (await Task.WhenAny(preempted.Task, Task.Delay(2_000))).ShouldBe(preempted.Task);
+        (await ongoing.Completed.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
     }
 
     // A speaker that went away and a speaker that is busy used to look the same to the caller: both
@@ -179,8 +177,7 @@ public class AnnouncementServiceTests
             [("kitchen-01", "Kitchen")], queue: () => new PlaybackQueue(announceMaxDepth: 1));
         // Nothing is draining, so the one job already queued fills the announce allowance.
         sessions.Get("kitchen-01")!.Playback.Enqueue(new PlaybackJob(
-            "ongoing", PlaybackKind.Announce, AnnouncePriority.Normal, FakeAudio(),
-            _ => Task.CompletedTask, _ => Task.CompletedTask));
+            "ongoing", PlaybackKind.Announce, AnnouncePriority.Normal, FakeAudio()));
 
         var response = await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi" },
@@ -195,8 +192,7 @@ public class AnnouncementServiceTests
     {
         var (sut, sessions, published) = BuildRecordingSut([("kitchen-01", "Kitchen")]);
         sessions.Get("kitchen-01")!.Playback.Enqueue(new PlaybackJob(
-            "ongoing", PlaybackKind.Announce, AnnouncePriority.Normal, FakeAudio(),
-            _ => Task.CompletedTask, _ => Task.CompletedTask));
+            "ongoing", PlaybackKind.Announce, AnnouncePriority.Normal, FakeAudio()));
 
         var response = await sut.AnnounceAsync(
             new AnnounceRequest

@@ -17,16 +17,16 @@ to the audio they frame.
 
 **Blocked by:** 05, 06, 07.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The started, preempted, drained and failed callbacks are gone from the job.
-- [ ] The job carries a label, a kind, a priority, its audio, the first-audio callback and the
+- [x] The started, preempted, drained and failed callbacks are gone from the job.
+- [x] The job carries a label, a kind, a priority, its audio, the first-audio callback and the
       enqueue stamp, and nothing else.
-- [ ] The first-audio callback no longer receives a label, because no producer ever read it.
-- [ ] The loop keeps its guard around the first-audio callback and around the owner's hooks,
+- [x] The first-audio callback no longer receives a label, because no producer ever read it.
+- [x] The loop keeps its guard around the first-audio callback and around the owner's hooks,
       and has no other swallow-everything guard.
-- [ ] The queue's tests no longer reference any terminal callback, and the exactly-one-outcome
+- [x] The queue's tests no longer reference any terminal callback, and the exactly-one-outcome
       test is the only place the guarantee is proved.
-- [ ] The voice subsystem rules name the playback queue alongside the gate factory, the turn
+- [x] The voice subsystem rules name the playback queue alongside the gate factory, the turn
       module and the capture module, and state its promise in one sentence.
-- [ ] The whole voice suite passes, unit and integration.
+- [x] The whole voice suite passes, unit and integration.

@@ -1,6 +1,6 @@
 # Spec — Playback Outcome
 
-Status: ready-for-agent
+Status: resolved
 
 Grilled from candidate 4 of `.scratch/architecture-audit-2026-08-03/candidates.md`,
 which holds the exact file and line evidence for every claim below. The settle

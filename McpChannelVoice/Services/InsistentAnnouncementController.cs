@@ -190,8 +190,6 @@ public sealed class InsistentAnnouncementController(
             Kind: PlaybackKind.Alarm,
             Priority: AnnouncePriority.High,
             Audio: Replay(buffered, gain),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask,
             // At first audio, so a round counts as played only once the alert actually reached the
             // speaker rather than when the queue reached the job.
             OnFirstAudio: _ =>
