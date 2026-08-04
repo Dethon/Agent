@@ -7,7 +7,7 @@ public readonly record struct MemoryAnchor
 
     public int PersistedMessageCount { get; }
 
-    // The only way to make one, and its name is the precondition: the count has to be read
+    // The way to make one from a count, and its name is the precondition: the count has to be read
     // while the turn is being built and before the agent persists it. An anchor taken after
     // would point past the current message, so the window would take that message out of the
     // persisted history and append the fallback copy as well — the extractor would see the
