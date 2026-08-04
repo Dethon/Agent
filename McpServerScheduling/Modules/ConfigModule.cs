@@ -34,13 +34,11 @@ public static class ConfigModule
 
         services
             .AddToolServer(settings, ToolResponse.Create)
-            .WithTools<SendReplyTool>()
-            .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
             // Gate-on-live: the dispatcher deletes or advances a schedule only on a confirmed
             // delivery, so buffering on a failed emit would keep the record *and* leave a duplicate
             // behind — the schedule would fire twice.
-            .AddChannelServer(DeliveryPolicy.GateOnLive)
+            .AddChannelServer(DeliveryPolicy.GateOnLive, noOutboundSurface: true)
             .AddFileSystemTools<ScheduleFileSystem>()
             .WithResources<FileSystemResource>()
             .WithPrompts<McpSystemPrompt>();

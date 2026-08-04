@@ -11,11 +11,16 @@ namespace Mcp.Hosting;
 // supplies only the thing that is genuinely transport-specific — how it sends a reply.
 public static class ChannelServerExtensions
 {
+    // noOutboundSurface is opt-in rather than defaulted: a server that cannot carry a reply back to a
+    // person says so, and gets the two no-op protocol tools. Defaulting it the other way would let a
+    // real channel that forgot its reply tool silently drop every reply, and at registration time
+    // nothing can tell "deliberately absent" from "forgotten".
     public static IMcpServerBuilder AddChannelServer(
         this IMcpServerBuilder builder,
         DeliveryPolicy policy,
         string? subscriberId = null,
-        Func<Exception, CallToolResult>? errorResult = null)
+        Func<Exception, CallToolResult>? errorResult = null,
+        bool noOutboundSurface = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
         DeliveryPolicyRules.ValidateSubscriberId(policy, subscriberId);
@@ -25,8 +30,9 @@ public static class ChannelServerExtensions
             .AddSingleton(sp => new ChannelNotificationEmitter(
                 sp.GetRequiredService<ChannelInbox>(), policy, subscriberId));
 
-        return builder
-            .WithTools<McpChannelReceiveTool>()
+        builder = builder.WithTools<McpChannelReceiveTool>();
+
+        return (noOutboundSurface ? builder.WithTools<NoOutboundSurfaceTools>() : builder)
             .AddCallToolErrorFilter(errorResult);
     }
 }

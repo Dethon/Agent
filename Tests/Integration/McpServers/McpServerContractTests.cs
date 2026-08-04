@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore;
@@ -76,6 +77,33 @@ public class McpServerContractTests
         options.Filters.Request.CallToolFilters.Count
             .ShouldBe(1, $"{id} must have exactly one call-tool filter");
     }
+
+    // The two dual-role servers can raise something with the agent unprompted but have nobody to
+    // speak to, so they accept the protocol tools and drop what arrives. That is a stated fact about
+    // them, and this row is where it is stated.
+    [Theory]
+    [MemberData(nameof(DualRoleServers))]
+    public void EveryDualRoleServer_AdvertisesTheChannelProtocolTools(string id)
+    {
+        var row = McpServerRegistrations.Get(id);
+        using var provider = Build(row);
+
+        var tools = provider.GetServices<McpServerTool>().Select(tool => tool.ProtocolTool.Name).ToList();
+
+        tools.ShouldContain(ChannelProtocol.SendReplyTool, $"{id} must advertise send_reply");
+        tools.ShouldContain(ChannelProtocol.RequestApprovalTool, $"{id} must advertise request_approval");
+    }
+
+    public static TheoryData<string> DualRoleServers =>
+        McpServerRegistrations.All
+            .Where(row => row.Role == McpServerRole.DualRole)
+            .Aggregate(
+                new TheoryData<string>(),
+                (data, row) =>
+                {
+                    data.Add(row.Id);
+                    return data;
+                });
 
     private static ServiceProvider Build(McpServerRow row)
     {
