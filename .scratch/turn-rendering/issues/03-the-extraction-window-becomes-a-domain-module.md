@@ -38,10 +38,10 @@ integer that would have to be retyped straight after.
 
 **Status:** ready-for-agent
 
-- [ ] A domain module owns both cutting the extraction window and rendering it with turn markers.
-- [ ] The cutting function is synchronous, takes the already-fetched history, and does no retrieval.
-- [ ] The extraction worker keeps only its fetch and delegates both cutting and rendering.
-- [ ] The old conversation window renderer no longer exists as a separate type; its tests live against the new module.
-- [ ] The four window-shape tests call the module directly and construct no fakes.
-- [ ] A test asserts the current-turn label and the context-turn prefix each appear in the extraction prompt constant.
-- [ ] The extraction worker drift test is untouched and passes.
+- [x] A domain module owns both cutting the extraction window and rendering it with turn markers.
+- [x] The cutting function is synchronous, takes the already-fetched history, and does no retrieval.
+- [x] The extraction worker keeps only its fetch and delegates both cutting and rendering.
+- [x] The old conversation window renderer no longer exists as a separate type; its tests live against the new module.
+- [x] The four window-shape tests call the module directly and construct no fakes.
+- [x] A test asserts the current-turn label and the context-turn prefix each appear in the extraction prompt constant.
+- [x] The extraction worker drift test is untouched and passes.

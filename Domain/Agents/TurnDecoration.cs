@@ -78,14 +78,16 @@ public static class TurnDecoration
             return null;
         }
 
-        var hasLocation = !string.IsNullOrWhiteSpace(message.GetLocation());
-        var hasSatellite = !string.IsNullOrWhiteSpace(message.GetSatelliteId());
+        var location = message.GetLocation();
+        var satelliteId = message.GetSatelliteId();
+        var hasLocation = !string.IsNullOrWhiteSpace(location);
+        var hasSatellite = !string.IsNullOrWhiteSpace(satelliteId);
 
         return (hasLocation, hasSatellite) switch
         {
-            (true, true) => $"Message from {sender} (in {message.GetLocation()} via {message.GetSatelliteId()})",
-            (true, false) => $"Message from {sender} (in {message.GetLocation()})",
-            (false, true) => $"Message from {sender} (via {message.GetSatelliteId()})",
+            (true, true) => $"Message from {sender} (in {location} via {satelliteId})",
+            (true, false) => $"Message from {sender} (in {location})",
+            (false, true) => $"Message from {sender} (via {satelliteId})",
             (false, false) => $"Message from {sender}"
         };
     }

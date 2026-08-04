@@ -32,8 +32,8 @@ metrics publishing and conversation group efforts. Both must have landed first.
 
 **Status:** ready-for-agent
 
-- [ ] A memory anchor type exists, built through a factory whose name states that the count is taken before the current turn is persisted.
-- [ ] The extraction request carries the anchor instead of a bare integer, and every consumer takes it.
-- [ ] The recall hook builds the anchor at the one place it builds the count today.
-- [ ] A chat monitor test asserts that the recall hook is handed a persisted count excluding the turn being built, and fails if the call moves after persistence.
-- [ ] Window boundaries are unchanged: the existing extraction worker tests and the drift test pass untouched.
+- [x] A memory anchor type exists, built through a factory whose name states that the count is taken before the current turn is persisted.
+- [x] The extraction request carries the anchor instead of a bare integer, and every consumer takes it.
+- [x] The recall hook builds the anchor at the one place it builds the count today.
+- [x] A chat monitor test asserts that the recall hook is handed a persisted count excluding the turn being built, and fails if the call moves after persistence.
+- [x] Window boundaries are unchanged: the existing extraction worker tests and the drift test pass untouched.

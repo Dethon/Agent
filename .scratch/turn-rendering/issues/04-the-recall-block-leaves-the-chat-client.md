@@ -30,9 +30,9 @@ with both. Their output must be byte-for-byte what the chat client produces toda
 
 **Status:** ready-for-agent
 
-- [ ] A domain module renders a memory context into the recall block, and the chat client calls it.
-- [ ] The private rendering method no longer exists in the chat client.
-- [ ] A test asserts the block's marker appears in the memory system prompt constant.
-- [ ] A test asserts that rendering a context that has been through a JSON round trip is byte-identical to rendering the original.
-- [ ] Tests cover a context with and without a profile, and the output matches today's exactly.
-- [ ] No test in this ticket constructs a chat client or an HTTP transport.
+- [x] A domain module renders a memory context into the recall block, and the chat client calls it.
+- [x] The private rendering method no longer exists in the chat client.
+- [x] A test asserts the block's marker appears in the memory system prompt constant.
+- [x] A test asserts that rendering a context that has been through a JSON round trip is byte-identical to rendering the original.
+- [x] Tests cover a context with and without a profile, and the output matches today's exactly.
+- [x] No test in this ticket constructs a chat client or an HTTP transport.

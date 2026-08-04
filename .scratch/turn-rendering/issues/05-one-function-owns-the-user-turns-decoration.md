@@ -32,9 +32,9 @@ to exist first.
 
 **Status:** ready-for-agent
 
-- [ ] One domain function takes a message and a time zone and returns the decorated copy.
-- [ ] It builds the sender, room, satellite, local timestamp and dismissed-alert prefix, and applies the recall block.
-- [ ] The chat client's per-message transform is a single call to it; no decoration strings remain in the client.
-- [ ] The prepend order and the role and null conditions are unchanged.
-- [ ] The twelve prefix tests assert against the function directly, with their expected strings unchanged and no mocked chat client.
-- [ ] A test covers a message carrying both a memory context and a sender prefix, pinning their order.
+- [x] One domain function takes a message and a time zone and returns the decorated copy.
+- [x] It builds the sender, room, satellite, local timestamp and dismissed-alert prefix, and applies the recall block.
+- [x] The chat client's per-message transform is a single call to it; no decoration strings remain in the client.
+- [x] The prepend order and the role and null conditions are unchanged.
+- [x] The twelve prefix tests assert against the function directly, with their expected strings unchanged and no mocked chat client.
+- [x] A test covers a message carrying both a memory context and a sender prefix, pinning their order.

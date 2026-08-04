@@ -45,8 +45,8 @@ first means the later tickets name things consistently.
 
 **Status:** ready-for-agent
 
-- [ ] `CONTEXT.md` carries the four terms under a memory heading, each with an `_Avoid_` line.
-- [ ] An ADR records that outgoing user-turn decoration lives in one domain function, with the options considered.
-- [ ] An ADR records that every user turn carries its own recall block, including why rendering at the recall hook is ruled out.
-- [ ] Both ADRs are numbered next in sequence and use the Context / Decision / Considered options / Consequences headings.
-- [ ] No code changes.
+- [x] `CONTEXT.md` carries the four terms under a memory heading, each with an `_Avoid_` line.
+- [x] An ADR records that outgoing user-turn decoration lives in one domain function, with the options considered.
+- [x] An ADR records that every user turn carries its own recall block, including why rendering at the recall hook is ruled out.
+- [x] Both ADRs are numbered next in sequence and use the Context / Decision / Considered options / Consequences headings.
+- [x] No code changes.

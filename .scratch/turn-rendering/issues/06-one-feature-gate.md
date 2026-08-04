@@ -30,9 +30,9 @@ must have landed first.
 
 **Status:** ready-for-agent
 
-- [ ] One extension on the agent definition provider answers whether an agent has a named feature enabled.
-- [ ] It takes the feature name as an argument and compares case-insensitively.
-- [ ] The recall hook and the extraction worker both use it, and neither contains the inline check.
-- [ ] The fail-open policy is stated once alongside the extension.
-- [ ] Tests cover null agent id, unknown agent id, known agent without the feature, and known agent with it.
-- [ ] The existing recall and extraction feature-gate tests pass unchanged.
+- [x] One extension on the agent definition provider answers whether an agent has a named feature enabled.
+- [x] It takes the feature name as an argument and compares case-insensitively.
+- [x] The recall hook and the extraction worker both use it, and neither contains the inline check.
+- [x] The fail-open policy is stated once alongside the extension.
+- [x] Tests cover null agent id, unknown agent id, known agent without the feature, and known agent with it.
+- [x] The existing recall and extraction feature-gate tests pass unchanged.
