@@ -13,7 +13,7 @@ public sealed class SignalRMetricsHubConnection : IMetricsHubConnection
     {
         _connection = new HubConnectionBuilder()
             .WithUrl(hubUrl)
-            .WithAutomaticReconnect()
+            .WithAutomaticReconnect(new MetricsRetryPolicy())
             .Build();
     }
 
