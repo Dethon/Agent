@@ -108,7 +108,7 @@ public sealed class ChatLiveConnectionTests : IDisposable
 
         stuck.Disposed.ShouldBeTrue();
         _factory.Created.Count.ShouldBe(2);
-        _liveConnection.IsConnected.ShouldBeTrue();
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class ChatLiveConnectionTests : IDisposable
         await reconnect;
 
         _factory.Created.Count.ShouldBe(2);
-        _liveConnection.IsConnected.ShouldBeTrue();
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
     }
 
     [Fact]
@@ -213,7 +213,7 @@ public sealed class ChatLiveConnectionTests : IDisposable
 
         hung.Disposed.ShouldBeTrue();
         _factory.Created.Count.ShouldBe(3);
-        _liveConnection.IsConnected.ShouldBeTrue();
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
     }
 
     [Fact]
@@ -230,7 +230,6 @@ public sealed class ChatLiveConnectionTests : IDisposable
         await AdvanceUntilCompleteAsync(reconnect);
 
         _factory.Created.Count.ShouldBe(5); // the original connection + 4 rebuild attempts
-        _liveConnection.IsConnected.ShouldBeFalse();
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Disconnected);
     }
 
@@ -244,7 +243,7 @@ public sealed class ChatLiveConnectionTests : IDisposable
 
         live.Disposed.ShouldBeFalse();
         _factory.Created.Count.ShouldBe(1);
-        _liveConnection.IsConnected.ShouldBeTrue();
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
     }
 
     [Fact]
@@ -258,7 +257,7 @@ public sealed class ChatLiveConnectionTests : IDisposable
 
         zombie.Disposed.ShouldBeTrue();
         _factory.Created.Count.ShouldBe(2);
-        _liveConnection.IsConnected.ShouldBeTrue();
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
     }
 
     private static TopicChangedNotification TopicCreated(string topicId) =>

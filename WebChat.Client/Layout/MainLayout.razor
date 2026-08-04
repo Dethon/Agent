@@ -1,7 +1,9 @@
 @inherits LayoutComponentBase
 @using WebChat.Client.Contracts
 @implements IDisposable
+@using System.Reactive.Linq
 @inject IChatLiveConnection LiveConnection
+@inject ConnectionStore ConnectionStore
 @inject IJSRuntime Js
 @inject SpaceStore SpaceStore
 
@@ -13,8 +15,8 @@
         <HeaderConversation />
         <div class="header-right">
             <div class="connection-status">
-                <span class="status-dot @(LiveConnection.IsConnected ? "connected" : "")"></span>
-                @(LiveConnection.IsConnected ? "Connected" : "Disconnected")
+                <span class="status-dot @(_isConnected ? "connected" : "")"></span>
+                @(_isConnected ? "Connected" : "Disconnected")
             </div>
             <UserIdentityPicker />
             <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
@@ -57,12 +59,22 @@
     private bool _disposed;
     private string _accentColor = SpaceConfig.DefaultAccentColor;
     private string _spaceName = "Main";
+    private bool _isConnected;
     private IDisposable? _spaceSubscription;
+    private IDisposable? _connectionSubscription;
     private DotNetObjectReference<MainLayout>? _selfRef;
 
     protected override Task OnInitializedAsync()
     {
-        LiveConnection.OnStateChanged += StateHasChanged;
+        _connectionSubscription = ConnectionStore.StateObservable
+            .Select(state => state.Status == ConnectionStatus.Connected)
+            .DistinctUntilChanged()
+            .Subscribe(isConnected => InvokeAsync(() =>
+            {
+                if (_disposed) return;
+                _isConnected = isConnected;
+                StateHasChanged();
+            }));
         _spaceSubscription = SpaceStore.StateObservable.Subscribe(state =>
         {
             var changed = false;
@@ -121,7 +133,7 @@
     public void Dispose()
     {
         _disposed = true;
-        LiveConnection.OnStateChanged -= StateHasChanged;
+        _connectionSubscription?.Dispose();
         _spaceSubscription?.Dispose();
         _selfRef?.Dispose();
     }

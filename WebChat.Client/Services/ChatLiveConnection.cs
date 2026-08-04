@@ -25,13 +25,7 @@ public sealed class ChatLiveConnection(
     private bool _disposed;
     private bool _hasConnectedBefore;
 
-    public bool IsConnected => _connection?.State == HubConnectionState.Connected;
-    public bool IsReconnecting => _connection?.State == HubConnectionState.Reconnecting;
-
     public HubConnection? HubConnection => _connection?.Connection;
-
-    public event Action? OnStateChanged;
-    public event Action? OnReconnecting;
 
     public async Task ConnectAsync()
     {
@@ -64,8 +58,6 @@ public sealed class ChatLiveConnection(
         connection.Reconnecting += _ =>
         {
             _connectionEventDispatcher.HandleReconnecting();
-            OnReconnecting?.Invoke();
-            OnStateChanged?.Invoke();
             return Task.CompletedTask;
         };
 
@@ -74,7 +66,6 @@ public sealed class ChatLiveConnection(
             // The status is published before recovery runs, so the UI shows Connected at once
             // and does not wait on the re-identification behind it.
             _connectionEventDispatcher.HandleReconnected();
-            OnStateChanged?.Invoke();
             return sessionRecovery.Value.RecoverAsync();
         };
 
@@ -93,7 +84,6 @@ public sealed class ChatLiveConnection(
         }
 
         _connectionEventDispatcher.HandleConnected();
-        OnStateChanged?.Invoke();
 
         // A rebuild does NOT raise SignalR's Reconnected event, so recovery has to be run
         // from here on every connect after the first. It is skipped on the first connect
@@ -166,7 +156,6 @@ public sealed class ChatLiveConnection(
     private async Task OnConnectionClosed(Exception? exception)
     {
         _connectionEventDispatcher.HandleClosed(exception);
-        OnStateChanged?.Invoke();
 
         // On mobile, the browser suspends JS when backgrounded, so SignalR's automatic
         // reconnect can't run. When the app resumes the transport may be dead and queued
@@ -212,7 +201,6 @@ public sealed class ChatLiveConnection(
         // stuck — and don't let the failure escape uncaught into OnPageVisible.
         await TearDownAsync();
         _connectionEventDispatcher.HandleClosed(null);
-        OnStateChanged?.Invoke();
     }
 
     // Null means the attempt failed; otherwise, whether session recovery is due.

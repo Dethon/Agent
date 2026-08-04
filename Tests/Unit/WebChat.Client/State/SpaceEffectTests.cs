@@ -2,6 +2,7 @@ using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.State;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
@@ -16,8 +17,8 @@ public sealed class SpaceEffectTests : IDisposable
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly SpaceStore _spaceStore;
+    private readonly ConnectionStore _connectionStore;
     private readonly FakeTopicService _topicService;
-    private readonly FakeChatLiveConnection _liveConnection = new() { IsConnected = true };
     private readonly FakeConfigService _configService;
     private readonly FakeNavigationManager _navigationManager = new();
     private readonly FakePushSubscriptionService _pushService = new();
@@ -29,13 +30,15 @@ public sealed class SpaceEffectTests : IDisposable
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _spaceStore = new SpaceStore(_dispatcher);
+        _connectionStore = new ConnectionStore(_dispatcher);
+        _dispatcher.Dispatch(new ConnectionConnected());
         _topicService = new FakeTopicService(_calls);
         _configService = new FakeConfigService(_calls);
 
         _effect = new SpaceEffect(
             _dispatcher,
             _topicService,
-            _liveConnection,
+            _connectionStore,
             _configService,
             _navigationManager,
             _pushService,
@@ -71,7 +74,7 @@ public sealed class SpaceEffectTests : IDisposable
     [Fact]
     public async Task HandleSelectSpaceAsync_UnknownSpaceWhileDisconnected_LeavesInitialisationToDoIt()
     {
-        _liveConnection.IsConnected = false;
+        _dispatcher.Dispatch(new ConnectionClosed(null));
 
         await _effect.HandleSelectSpaceAsync("ghost");
 
@@ -141,5 +144,6 @@ public sealed class SpaceEffectTests : IDisposable
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _spaceStore.Dispose();
+        _connectionStore.Dispose();
     }
 }

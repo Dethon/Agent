@@ -1,20 +1,19 @@
-@using WebChat.Client.Contracts
-@implements IDisposable
-@inject IChatLiveConnection LiveConnection
+@inherits StoreSubscriberComponent
+@inject ConnectionStore ConnectionStore
 
-<span class="status-dot @(LiveConnection.IsConnected ? "connected" : "")"
+<span class="status-dot @(_isConnected ? "connected" : "")"
       role="status"
-      aria-label="@(LiveConnection.IsConnected ? "Connected" : "Disconnected")"
-      title="@(LiveConnection.IsConnected ? "Connected" : "Disconnected")"></span>
+      aria-label="@(_isConnected ? "Connected" : "Disconnected")"
+      title="@(_isConnected ? "Connected" : "Disconnected")"></span>
 
 @code {
+    private bool _isConnected;
+
     protected override void OnInitialized()
     {
-        LiveConnection.OnStateChanged += StateHasChanged;
-    }
-
-    public void Dispose()
-    {
-        LiveConnection.OnStateChanged -= StateHasChanged;
+        Subscribe(
+            ConnectionStore.StateObservable,
+            state => state.Status == ConnectionStatus.Connected,
+            isConnected => _isConnected = isConnected);
     }
 }

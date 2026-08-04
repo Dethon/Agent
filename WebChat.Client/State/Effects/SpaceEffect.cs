@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Topics;
@@ -11,7 +12,7 @@ public sealed class SpaceEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
-    private readonly IChatLiveConnection _liveConnection;
+    private readonly ConnectionStore _connectionStore;
     private readonly IConfigService _configService;
     private readonly NavigationManager _navigationManager;
     private readonly IPushSubscriptionService _pushNotificationService;
@@ -22,7 +23,7 @@ public sealed class SpaceEffect : IDisposable
     public SpaceEffect(
         Dispatcher dispatcher,
         ITopicService topicService,
-        IChatLiveConnection liveConnection,
+        ConnectionStore connectionStore,
         IConfigService configService,
         NavigationManager navigationManager,
         IPushSubscriptionService pushNotificationService,
@@ -30,7 +31,7 @@ public sealed class SpaceEffect : IDisposable
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
-        _liveConnection = liveConnection;
+        _connectionStore = connectionStore;
         _configService = configService;
         _navigationManager = navigationManager;
         _pushNotificationService = pushNotificationService;
@@ -54,7 +55,7 @@ public sealed class SpaceEffect : IDisposable
         if (space is null)
         {
             // If hub isn't connected yet, skip — InitializationEffect handles initial join
-            if (!_liveConnection.IsConnected)
+            if (_connectionStore.State.Status != ConnectionStatus.Connected)
             {
                 return;
             }

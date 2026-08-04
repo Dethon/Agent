@@ -20,12 +20,12 @@ it is candidate 5's work and is out of scope here.
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Both connection dot renderers and the space effect read connection status
+- [x] Both connection dot renderers and the space effect read connection status
       from the connection store
-- [ ] The live connection no longer exposes connected or reconnecting flags, a
+- [x] The live connection no longer exposes connected or reconnecting flags, a
       state-changed event, or a reconnecting event
-- [ ] Nothing outside the connection store publishes connection status
-- [ ] The raw transport accessor is still present on the interface
-- [ ] The status shown in the header and in the chat panel cannot disagree
+- [x] Nothing outside the connection store publishes connection status
+- [x] The raw transport accessor is still present on the interface
+- [x] The status shown in the header and in the chat panel cannot disagree
