@@ -36,13 +36,13 @@ start that can be scripted to fail.
 
 **Status:** ready-for-agent
 
-- [ ] A live connection module owns the ordered sequence of becoming live: bind, start with retry, publish status.
-- [ ] Callers get a connect operation and asynchronous disposal, and nothing else.
-- [ ] A start that fails is retried on the same schedule as the reconnection policy and never gives up.
-- [ ] The retry loop's delays come from an injected time provider, and its tests do not wait in real time.
-- [ ] Handlers are bound once, before the first start attempt, and are not rebound per attempt.
-- [ ] The started latch records a successful start, so a failure does not lock the module out.
-- [ ] The live-update effect exposes bind and unbind, keeps its event-to-store mapping, and no longer registers lifecycle handlers or owns the connection.
-- [ ] The layout component calls connect and catches nothing.
-- [ ] Disposal releases the registrations, so a push afterwards changes nothing.
-- [ ] A dashboard opened while the hub is unavailable connects on its own once the hub comes up, with no caller retrying.
+- [x] A live connection module owns the ordered sequence of becoming live: bind, start with retry, publish status.
+- [x] Callers get a connect operation and asynchronous disposal, and nothing else.
+- [x] A start that fails is retried on the same schedule as the reconnection policy and never gives up.
+- [x] The retry loop's delays come from an injected time provider, and its tests do not wait in real time.
+- [x] Handlers are bound once, before the first start attempt, and are not rebound per attempt.
+- [x] The started latch records a successful start, so a failure does not lock the module out.
+- [x] The live-update effect exposes bind and unbind, keeps its event-to-store mapping, and no longer registers lifecycle handlers or owns the connection.
+- [x] The layout component calls connect and catches nothing.
+- [x] Disposal releases the registrations, so a push afterwards changes nothing.
+- [x] A dashboard opened while the hub is unavailable connects on its own once the hub comes up, with no caller retrying.

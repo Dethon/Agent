@@ -26,9 +26,9 @@ policy leaves a dashboard opened during a restart just as dead as it is today.
 
 **Status:** ready-for-agent
 
-- [ ] The metrics hub connection is built with an explicit retry policy rather than the parameterless automatic-reconnect call.
-- [ ] The policy's first four delays are zero, two, ten and thirty seconds.
-- [ ] Every delay after those is thirty seconds.
-- [ ] The policy never returns the value that means stop, however many attempts have been made and however long reconnection has been going.
-- [ ] The policy is testable as a pure function, with no connection involved.
-- [ ] An outage longer than the previous forty-two second window recovers on its own.
+- [x] The metrics hub connection is built with an explicit retry policy rather than the parameterless automatic-reconnect call.
+- [x] The policy's first four delays are zero, two, ten and thirty seconds.
+- [x] Every delay after those is thirty seconds.
+- [x] The policy never returns the value that means stop, however many attempts have been made and however long reconnection has been going.
+- [x] The policy is testable as a pure function, with no connection involved.
+- [x] An outage longer than the previous forty-two second window recovers on its own.

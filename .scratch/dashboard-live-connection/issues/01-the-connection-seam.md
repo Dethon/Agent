@@ -32,13 +32,13 @@ subscription block and its test file, both of which this ticket edits.
 
 **Status:** ready-for-agent
 
-- [ ] The dashboard's metrics hub connection is reached through an interface, not a concrete class.
-- [ ] That interface has one generic receive verb taking a wire method name and a typed handler and returning a disposable registration.
-- [ ] It also carries the three lifecycle events, the connection state, a start operation and asynchronous disposal, and nothing else.
-- [ ] The eleven named registration methods are gone, and the wire method names live in the live-update effect.
-- [ ] The concrete client has no `virtual` members and no `protected` parameterless constructor.
-- [ ] The test fake implements the interface rather than inheriting from the concrete client, and holds one handler registry rather than eleven lists.
-- [ ] The fake can raise all three lifecycle events, and can fail a start a scripted number of times before succeeding.
-- [ ] Every assertion in the existing effect suite still passes, driven through the new fake.
-- [ ] A new test raises a reconnect and asserts the resulting connection status, which was not expressible before.
-- [ ] No user-visible behaviour changes.
+- [x] The dashboard's metrics hub connection is reached through an interface, not a concrete class.
+- [x] That interface has one generic receive verb taking a wire method name and a typed handler and returning a disposable registration.
+- [x] It also carries the three lifecycle events, the connection state, a start operation and asynchronous disposal, and nothing else.
+- [x] The eleven named registration methods are gone, and the wire method names live in the live-update effect.
+- [x] The concrete client has no `virtual` members and no `protected` parameterless constructor.
+- [x] The test fake implements the interface rather than inheriting from the concrete client, and holds one handler registry rather than eleven lists.
+- [x] The fake can raise all three lifecycle events, and can fail a start a scripted number of times before succeeding.
+- [x] Every assertion in the existing effect suite still passes, driven through the new fake.
+- [x] A new test raises a reconnect and asserts the resulting connection status, which was not expressible before.
+- [x] No user-visible behaviour changes.

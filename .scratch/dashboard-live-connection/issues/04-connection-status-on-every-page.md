@@ -25,10 +25,10 @@ whichever lands second rebases.
 
 **Status:** ready-for-agent
 
-- [ ] Connection status is three named states — connecting, live, reconnecting — rather than a boolean.
-- [ ] There is no permanent disconnected state.
-- [ ] The live connection module publishes the states; nothing else does.
-- [ ] The connection store is the only source of connection status in the dashboard.
-- [ ] The indicator renders in the layout, so all nine pages show it.
-- [ ] The overview page reads the store rather than holding its own connection reading.
-- [ ] Each of the three states is reachable and asserted.
+- [x] Connection status is three named states — connecting, live, reconnecting — rather than a boolean.
+- [x] There is no permanent disconnected state.
+- [x] The live connection module publishes the states; nothing else does.
+- [x] The connection store is the only source of connection status in the dashboard.
+- [x] The indicator renders in the layout, so all nine pages show it.
+- [x] The overview page reads the store rather than holding its own connection reading.
+- [x] Each of the three states is reachable and asserted.

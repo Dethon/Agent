@@ -42,12 +42,12 @@ whichever lands second rebases.
 
 **Status:** ready-for-agent
 
-- [ ] The connection state carries an epoch, incremented every time the client becomes live.
-- [ ] The epoch does not advance on the connecting or reconnecting transitions.
-- [ ] Catch-up is a named collaborator with one asynchronous operation, registered in the container.
-- [ ] The module awaits catch-up as the last step of becoming live.
-- [ ] Catch-up reloads every metric family for the range the families currently hold.
-- [ ] The user's group-by, metric and time choices are unchanged by a catch-up.
-- [ ] Catch-up does not run on the first connection.
-- [ ] A failure inside catch-up leaves the previous values in place and leaves the connection live.
-- [ ] After a reconnect, a store holds data it did not hold before, asserted at the store rather than by recording a call.
+- [x] The connection state carries an epoch, incremented every time the client becomes live.
+- [x] The epoch does not advance on the connecting or reconnecting transitions.
+- [x] Catch-up is a named collaborator with one asynchronous operation, registered in the container.
+- [x] The module awaits catch-up as the last step of becoming live.
+- [x] Catch-up reloads every metric family for the range the families currently hold.
+- [x] The user's group-by, metric and time choices are unchanged by a catch-up.
+- [x] Catch-up does not run on the first connection.
+- [x] A failure inside catch-up leaves the previous values in place and leaves the connection live.
+- [x] After a reconnect, a store holds data it did not hold before, asserted at the store rather than by recording a call.
