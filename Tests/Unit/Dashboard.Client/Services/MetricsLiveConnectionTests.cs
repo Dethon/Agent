@@ -66,10 +66,10 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
 
     // The retry loop delays through the injected time provider, so nothing here waits in real time:
     // push the clock forward until the connect the module is driving on its own has completed.
-    private async Task ConnectAsync()
-    {
-        var connecting = _liveConnection.ConnectAsync();
+    private Task ConnectAsync() => FinishAsync(_liveConnection.ConnectAsync());
 
+    private async Task FinishAsync(Task connecting)
+    {
         foreach (var _ in Enumerable.Range(0, 50))
         {
             if (connecting.IsCompleted)
@@ -102,11 +102,24 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task ConnectAsync_FirstConnect_ReportsTheDashboardConnected()
+    public async Task ConnectAsync_FirstConnect_ReportsTheDashboardLive()
     {
         await ConnectAsync();
 
-        _connectionStore.State.IsConnected.ShouldBeTrue();
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
+    }
+
+    // Connecting for the first time and having lost a connection are different things to be told,
+    // because they say whether to wait or to go and check the agent.
+    [Fact]
+    public async Task ConnectAsync_TheHubHasNotAnsweredYet_ReportsConnecting()
+    {
+        _hub.FailedStartsRemaining = 1;
+
+        var connecting = _liveConnection.ConnectAsync();
+
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connecting);
+        await FinishAsync(connecting);
     }
 
     // A dashboard opened while the agent is still starting: nobody up the stack retries, and the
@@ -119,7 +132,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         await ConnectAsync();
 
         _hub.StartAttempts.ShouldBe(4);
-        _connectionStore.State.IsConnected.ShouldBeTrue();
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
     }
 
     // The old defect in one assertion: the started latch was set before the work, so a failed first
@@ -163,13 +176,24 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task ConnectAsync_TheTransportIsReconnecting_ReportsTheDashboardNotConnected()
+    public async Task ConnectAsync_TheTransportIsReconnecting_ReportsReconnecting()
     {
         await ConnectAsync();
 
         await _hub.RaiseReconnectingAsync(null);
 
-        _connectionStore.State.IsConnected.ShouldBeFalse();
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Reconnecting);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_AfterAReconnect_ReportsTheDashboardLiveAgain()
+    {
+        await ConnectAsync();
+        await _hub.RaiseReconnectingAsync(null);
+
+        await _hub.RaiseReconnectedAsync();
+
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
     }
 
     [Fact]

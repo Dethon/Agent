@@ -1,7 +1,6 @@
 using Dashboard.Client.Effects;
 using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
-using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
 using Dashboard.Client.State.Latency;
@@ -34,7 +33,6 @@ public class MetricControlsSessionTests : IDisposable
     private readonly VoiceStore _voiceStore = new();
     private readonly MetricsStore _metricsStore = new();
     private readonly HealthStore _healthStore = new();
-    private readonly ConnectionStore _connectionStore = new();
     private readonly LocalStorageService _storage;
     private readonly MetricFamilyTable _families;
     private readonly DataLoadEffect _dataLoad;
@@ -47,7 +45,7 @@ public class MetricControlsSessionTests : IDisposable
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
-        _dataLoad = new DataLoadEffect(api, _families, _metricsStore, _healthStore, _connectionStore);
+        _dataLoad = new DataLoadEffect(api, _families, _metricsStore, _healthStore);
     }
 
     public void Dispose()
@@ -61,7 +59,6 @@ public class MetricControlsSessionTests : IDisposable
         _voiceStore.Dispose();
         _metricsStore.Dispose();
         _healthStore.Dispose();
-        _connectionStore.Dispose();
     }
 
     private MetricControlsSession SessionFor(MetricFamily family, params MetricChoice[] extraChoices) =>

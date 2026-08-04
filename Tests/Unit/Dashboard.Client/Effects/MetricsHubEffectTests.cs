@@ -1,7 +1,6 @@
 using Dashboard.Client.Effects;
 using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
-using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
 using Dashboard.Client.State.Latency;
@@ -28,7 +27,6 @@ public class MetricsHubEffectTests : IAsyncDisposable
     private readonly SchedulesStore _schedulesStore = new();
     private readonly MetricsStore _metricsStore = new();
     private readonly HealthStore _healthStore = new();
-    private readonly ConnectionStore _connectionStore = new();
     private readonly MemoryStore _memoryStore = new();
     private readonly LatencyStore _latencyStore = new();
     private readonly VoiceStore _voiceStore = new();
@@ -55,7 +53,6 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _schedulesStore.Dispose();
         _metricsStore.Dispose();
         _healthStore.Dispose();
-        _connectionStore.Dispose();
         _memoryStore.Dispose();
         _latencyStore.Dispose();
         _voiceStore.Dispose();
@@ -171,7 +168,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     }
 
     private DataLoadEffect NewDataLoadEffect() =>
-        new(_api, _families, _metricsStore, _healthStore, _connectionStore);
+        new(_api, _families, _metricsStore, _healthStore);
 
     // A page load, per family: the events request and the breakdown request, both carrying the
     // range the load was given. Nothing is staged, so every response is a 404 the effect swallows;
@@ -212,14 +209,6 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _memoryStore.State.From.ShouldBe(From);
         _latencyStore.State.From.ShouldBe(From);
         _voiceStore.State.To.ShouldBe(To);
-    }
-
-    [Fact]
-    public async Task LoadAsync_ARequestFails_ReportsTheDashboardDisconnected()
-    {
-        await NewDataLoadEffect().LoadAsync(From, To);
-
-        _connectionStore.State.IsConnected.ShouldBeFalse();
     }
 
     private void SetDateRangeOnEveryStore()

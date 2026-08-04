@@ -1,6 +1,5 @@
 using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
-using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Health;
 using Dashboard.Client.State.Metrics;
 
@@ -10,8 +9,7 @@ public sealed class DataLoadEffect(
     MetricsApiService api,
     MetricFamilyTable families,
     MetricsStore metricsStore,
-    HealthStore healthStore,
-    ConnectionStore connectionStore)
+    HealthStore healthStore)
 {
     public async Task LoadAsync(DateOnly from, DateOnly to)
     {
@@ -52,12 +50,11 @@ public sealed class DataLoadEffect(
                     .Select(h => new ServiceHealth(h.Service, h.IsHealthy, h.LastSeen))
                     .ToList());
             }
-
-            connectionStore.SetConnected(true);
         }
         catch
         {
-            connectionStore.SetConnected(false);
+            // The page-load path swallows the reason a load failed, as it always has. Connection
+            // status is the live connection's to publish, and a failed request is not an outage.
         }
     }
 }

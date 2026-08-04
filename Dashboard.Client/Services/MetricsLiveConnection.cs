@@ -32,22 +32,23 @@ public sealed class MetricsLiveConnection(
         // for good when this module disposes it.
         hub.Reconnecting += _ =>
         {
-            connectionStore.SetConnected(false);
+            connectionStore.SetReconnecting();
             return Task.CompletedTask;
         };
 
         hub.Reconnected += _ =>
         {
-            connectionStore.SetConnected(true);
+            connectionStore.SetLive();
             return Task.CompletedTask;
         };
 
+        connectionStore.SetConnecting();
         await StartUntilItSucceedsAsync();
 
         // The latch records a start that succeeded, not one that was attempted: setting it before
         // the work is what used to leave a failed first start believing it was already running.
         _started = true;
-        connectionStore.SetConnected(true);
+        connectionStore.SetLive();
     }
 
     private async Task StartUntilItSucceedsAsync()

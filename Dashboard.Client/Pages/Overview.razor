@@ -27,9 +27,7 @@
         <div class="controls">
             <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
                           OnChanged="OnTimeChanged" />
-            <span class="connection-status @(_connected ? "connected" : "disconnected")">
-                @(_connected ? "Live" : "Disconnected")
-            </span>
+            <span class="connection-status @StatusModifier">@StatusLabel</span>
         </div>
     </header>
 
@@ -73,7 +71,7 @@
 @code {
     private MetricsState _metrics = new();
     private HealthState _health = new();
-    private bool _connected;
+    private ConnectionStatus _status = ConnectionStatus.Connecting;
     private int _selectedDays = 1;
     private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
     private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -81,6 +79,22 @@
     private long _voiceUtterances;
     private double _voiceLatency;
     private readonly List<IDisposable> _subscriptions = [];
+
+    // The header's own presentation of the one connection status the store holds. The layout shows
+    // the same status on every page; this is the overview's version of it.
+    private string StatusModifier => _status switch
+    {
+        ConnectionStatus.Live => "connected",
+        ConnectionStatus.Reconnecting => "reconnecting",
+        _ => "connecting"
+    };
+
+    private string StatusLabel => _status switch
+    {
+        ConnectionStatus.Live => "Live",
+        ConnectionStatus.Reconnecting => "Reconnecting",
+        _ => "Connecting"
+    };
 
     private static readonly IReadOnlyList<PillOption> TimeOptions =
     [
@@ -96,7 +110,7 @@
 
         _subscriptions.Add(Metrics.StateObservable.Subscribe(s => { _metrics = s; InvokeAsync(StateHasChanged); }));
         _subscriptions.Add(Health.StateObservable.Subscribe(s => { _health = s; InvokeAsync(StateHasChanged); }));
-        _subscriptions.Add(Connection.StateObservable.Subscribe(s => { _connected = s.IsConnected; InvokeAsync(StateHasChanged); }));
+        _subscriptions.Add(Connection.StateObservable.Subscribe(s => { _status = s.Status; InvokeAsync(StateHasChanged); }));
 
         _subscriptions.Add(Tokens.StateObservable.Subscribe(_ => { RebuildActivity(); InvokeAsync(StateHasChanged); }));
         _subscriptions.Add(Tools.StateObservable.Subscribe(_ => { RebuildActivity(); InvokeAsync(StateHasChanged); }));
@@ -160,7 +174,8 @@
     .page-header h2 { font-size: 1.4rem; font-weight: 600; }
     .connection-status { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 10px; font-weight: 600; }
     .connection-status.connected { background: rgba(74,222,128,0.15); color: var(--accent-green); }
-    .connection-status.disconnected { background: rgba(248,113,113,0.15); color: var(--accent-red); }
+    .connection-status.connecting,
+    .connection-status.reconnecting { background: rgba(251,191,36,0.15); color: var(--accent-yellow); }
     .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
     .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
     .activity-feed { display: flex; flex-direction: column; gap: 0.4rem; }
