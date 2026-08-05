@@ -1,3 +1,4 @@
+using System.Reactive.Linq;
 using Dashboard.Client.Effects;
 using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
@@ -12,6 +13,7 @@ using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.Dashboard.Client.Fixtures;
 
@@ -41,7 +43,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
         _families = new MetricFamilyTable(
             _api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
-        _binder = new MetricsHubBinder(_families, _metricsStore, _healthStore);
+        _binder = new MetricsHubBinder(_families, _metricsStore, _healthStore, NullLogger<MetricsHubBinder>.Instance);
     }
 
     public ValueTask DisposeAsync()
@@ -339,6 +341,50 @@ public class MetricsHubBinderTests : IAsyncDisposable
         await release;
 
         _voiceStore.State.Events.Select(e => e.SatelliteId).ShouldBe(["held-1", "held-2", "fresh"]);
+    }
+
+    // A store subscriber is a rendered component, and one of those throwing used to take the whole
+    // drain down: the queue stayed in place with nothing left to drain it, so every later push was
+    // enqueued and live updates stopped for good. The throw also escaped the release, through
+    // DataLoadEffect's finally and out of ConnectAsync, which catches nothing.
+    [Fact]
+    public async Task ReleaseHeldPushesAsync_AnApplyThrows_TheRestAreDeliveredAndPushesFlowAgain()
+    {
+        _binder.Bind(_hub);
+        _binder.HoldPushes();
+        await RaiseVoiceAsync("held-1");
+        await RaiseVoiceAsync("held-2");
+
+        var throwsLeft = 1;
+        using var subscription = _voiceStore.StateObservable.Skip(1).Subscribe(_ =>
+        {
+            if (throwsLeft-- > 0)
+            {
+                throw new InvalidOperationException("a subscribed component blew up");
+            }
+        });
+
+        await Should.NotThrowAsync(() => _binder.ReleaseHeldPushesAsync());
+        await RaiseVoiceAsync("fresh");
+
+        _voiceStore.State.Events.Select(e => e.SatelliteId).ShouldBe(["held-1", "held-2", "fresh"]);
+    }
+
+    // Unbinding is how a module lets go. Leaving the hold behind kept a queue of closures holding
+    // store references alive, and the next binding started out holding pushes nobody had asked to
+    // hold.
+    [Fact]
+    public async Task Unbind_PushesWereStillHeld_LetsGoOfTheQueue()
+    {
+        _binder.Bind(_hub);
+        _binder.HoldPushes();
+        await RaiseVoiceAsync("held-1");
+
+        _binder.Unbind();
+        _binder.Bind(_hub);
+        await RaiseVoiceAsync("fresh");
+
+        _voiceStore.State.Events.Select(e => e.SatelliteId).ShouldBe(["fresh"]);
     }
 
     [Fact]

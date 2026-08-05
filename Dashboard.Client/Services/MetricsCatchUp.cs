@@ -11,7 +11,23 @@ namespace Dashboard.Client.Services;
 public sealed class MetricsCatchUp(MetricFamilyTable families, OverviewFigures overview) : IMetricsCatchUp
 {
     public Task CatchUpAsync() =>
-        Task.WhenAll(new[] { overview.LoadSummaryAsync(), overview.LoadHealthAsync() }
-            .Concat(families.All
-                .SelectMany(family => new[] { family.LoadEventsAsync(), family.RefreshAsync() })));
+        Task.WhenAll(new[] { overview.LoadHealthAsync(), ReloadEventsThenSummaryAsync() }
+            .Concat(families.All.Select(family => family.RefreshAsync())));
+
+    // The KPI totals are derived from the event lists this walk has just written, so the dedupe
+    // question the release asks of those lists and the totals it lands on are one snapshot. Reading
+    // the summary as a request of its own put them an instant apart, which is a double count or a
+    // lost event depending on which of the two answered first. Every list is still reloaded
+    // concurrently; the derivation is what has to wait for them.
+    private async Task ReloadEventsThenSummaryAsync()
+    {
+        try
+        {
+            await Task.WhenAll(families.All.Select(family => family.LoadEventsAsync()));
+        }
+        finally
+        {
+            overview.DeriveSummaryFromEvents(families);
+        }
+    }
 }

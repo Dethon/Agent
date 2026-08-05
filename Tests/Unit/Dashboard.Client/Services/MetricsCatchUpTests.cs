@@ -143,12 +143,17 @@ public sealed class MetricsCatchUpTests : IDisposable
 
     // The Overview KPI row and the Service Health grid go as stale as the charts during an outage,
     // and neither is a metric family: a walk of the family table alone left both showing whatever
-    // the page load managed, with no second chance at them.
+    // the page load managed, with no second chance at them. The KPI totals are added up from the
+    // event lists this walk reloads, which is what keeps them on the same snapshot as the dedupe
+    // question the release asks of those lists.
     [Fact]
     public async Task CatchUpAsync_TheSummaryAndHealthMovedDuringTheOutage_ReReadsThemIntoTheirStores()
     {
-        _handler.AnswerFor("api/metrics/summary", new MetricsSummary(
-            InputTokens: 120, OutputTokens: 30, TotalTokens: 150, Cost: 1.5m, ToolCalls: 4, ToolErrors: 1));
+        _handler.AnswerFor("api/metrics/tokens?", new List<TokenUsagePayload>
+        {
+            new("nabu", "m", 120, 30, 1.5m),
+        });
+        _handler.AnswerFor("api/metrics/tokens/by/Model", new Dictionary<string, decimal>());
         _handler.AnswerFor("api/metrics/health", new List<ServiceHealthResponse>
         {
             new("agent", true, "2026-03-02T10:00:00Z"),
@@ -157,10 +162,12 @@ public sealed class MetricsCatchUpTests : IDisposable
         await CatchUpAsync();
 
         _metricsStore.State.InputTokens.ShouldBe(120);
+        _metricsStore.State.OutputTokens.ShouldBe(30);
         _healthStore.State.Services.ShouldContain(s => s.Service == "agent" && s.IsHealthy);
-        _handler.Requests.ShouldContain(u =>
-            u != null && u.Contains("api/metrics/summary?from=2026-03-01&to=2026-03-02", StringComparison.Ordinal));
     }
 
     private sealed record VoiceEventPayload(int Metric, string SatelliteId);
+
+    private sealed record TokenUsagePayload(
+        string Sender, string Model, int InputTokens, int OutputTokens, decimal Cost);
 }

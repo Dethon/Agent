@@ -75,6 +75,11 @@ public sealed class MetricsLiveConnection(
     // reconnects on its own — the path that used to do nothing but flip a flag.
     private async Task BecomeLiveAndCatchUpAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         connectionStore.SetLive();
 
         // Not on a first connection whose page load delivered: catching up as well would double
@@ -148,6 +153,13 @@ public sealed class MetricsLiveConnection(
     // and a push the snapshot already contains lands twice.
     private async Task CatchUpHoldingPushesAsync()
     {
+        // The last await before the hold is taken. Holding on a binder that has already been unbound
+        // is a queue nothing will ever drain.
+        if (_disposed)
+        {
+            return;
+        }
+
         binder.HoldPushes();
         try
         {
@@ -201,7 +213,11 @@ public sealed class MetricsLiveConnection(
             try
             {
                 await hub.StartAsync();
-                return true;
+
+                // Asked again on the way out, not only on the failure path: a start slow enough to
+                // span a disposal still succeeds, and answering true there would drive the whole
+                // become-live sequence on a module that is gone.
+                return !_disposed;
             }
             catch (Exception exception)
             {

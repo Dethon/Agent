@@ -12,6 +12,7 @@ using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Tests.Unit.Dashboard.Client.Fixtures;
@@ -45,7 +46,7 @@ public class MetricControlsSessionTests : IDisposable
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
-        var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore);
+        var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore, NullLogger<MetricsHubBinder>.Instance);
         _dataLoad = new DataLoadEffect(
             _families, new OverviewFigures(api, _metricsStore, _healthStore), binder);
     }

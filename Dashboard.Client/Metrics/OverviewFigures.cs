@@ -48,6 +48,39 @@ public sealed class OverviewFigures(
         });
     }
 
+    // The same totals, added up from the event lists a catch-up has just reloaded rather than read
+    // back from the summary endpoint. Catch-up holds pushes and then asks each one whether the
+    // events snapshot already delivered it; a summary read on its own clock answered a different
+    // instant, so an event written between the two responses was counted twice (events snapshot
+    // older, the held push applied on top of a total that already had it) or lost whole (summary
+    // older, the held push dropped against a total that never had it). Derived here, the totals and
+    // the dedupe answer are the same snapshot by construction. A family whose reload failed keeps
+    // the list it had, and that is also the list its pushes are deduped against, so the KPI row
+    // still agrees with what the charts show.
+    public void DeriveSummaryFromEvents(MetricFamilyTable families)
+    {
+        ArgumentNullException.ThrowIfNull(families);
+
+        var tokens = families.Tokens.Store.State.Events;
+        var tools = families.Tools.Store.State.Events;
+        var memory = families.Memory.Store.State;
+
+        metricsStore.UpdateSummary(new MetricsState
+        {
+            InputTokens = tokens.Sum(evt => (long)evt.InputTokens),
+            OutputTokens = tokens.Sum(evt => (long)evt.OutputTokens),
+            Cost = tokens.Sum(evt => evt.Cost),
+            ToolCalls = tools.Count,
+            ToolErrors = tools.Count(evt => !evt.Success),
+            TotalRecalls = memory.RecallEvents.Count,
+            TotalExtractions = memory.ExtractionEvents.Count,
+            TotalDreamings = memory.DreamingEvents.Count,
+            MemoriesStored = memory.ExtractionEvents.Sum(evt => (long)evt.StoredCount),
+            MemoriesMerged = memory.DreamingEvents.Sum(evt => (long)evt.MergedCount),
+            MemoriesDecayed = memory.DreamingEvents.Sum(evt => (long)evt.DecayedCount),
+        });
+    }
+
     public async Task LoadHealthAsync()
     {
         var health = await api.GetHealthAsync();

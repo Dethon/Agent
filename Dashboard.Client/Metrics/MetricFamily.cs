@@ -51,30 +51,41 @@ public class MetricFamily(
 
     private async Task RunAsync()
     {
-        try
+        while (true)
         {
-            while (true)
+            try
             {
                 await refreshBreakdown();
-
-                lock (_gate)
-                {
-                    if (!_dirty)
-                    {
-                        return;
-                    }
-
-                    _dirty = false;
-                }
             }
-        }
-        finally
-        {
+            catch
+            {
+                Retire();
+                throw;
+            }
+
             lock (_gate)
             {
-                _running = null;
+                // Ending the loop and retiring the run are one lock acquisition, not two. Between
+                // the two, a caller found _running still set, marked the pass stale and was handed a
+                // task that had already done its work — and then the retirement cleared the very
+                // flag it had just set, so the pass it asked for never happened.
+                if (!_dirty)
+                {
+                    _running = null;
+                    return;
+                }
+
                 _dirty = false;
             }
+        }
+    }
+
+    private void Retire()
+    {
+        lock (_gate)
+        {
+            _running = null;
+            _dirty = false;
         }
     }
 }
