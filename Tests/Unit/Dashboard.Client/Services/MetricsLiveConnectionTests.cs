@@ -448,22 +448,43 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _voiceStore.State.Events.Count(e => e.SatelliteId == "kitchen-01").ShouldBe(1);
     }
 
-    // The counter half of that same push. Catch-up re-reads the summary totals from the server, and
-    // those totals already count every event the snapshot contains, so a held push the snapshot
-    // delivered is dropped whole — counters included. Adding its increment on top of the reloaded
-    // totals would show tokens twice; dropping it without the reload used to lose them for good.
+    // The counter half of that same push. The dedupe question is asked of the events snapshot, so
+    // the KPI totals have to come from that same snapshot: reading them from a separately timed
+    // summary request put the two an instant apart, and an event written in between was either
+    // counted twice or lost whole depending on which read was older. Both tests below stage the two
+    // reads one instant apart, in either order, and the pushed event has to be counted exactly once.
     [Fact]
-    public async Task Reconnected_TheSnapshotAlreadyContainsAPushedEvent_TheSummaryIsTheReloadedTotal()
+    public async Task Reconnected_TheEventsSnapshotIsNewerThanTheSummary_TheKpiRowCountsThePushedEventOnce()
     {
-        var stamped = new DateTimeOffset(2026, 3, 24, 12, 0, 0, TimeSpan.Zero);
-        _handler.AnswerFor("api/metrics/summary", Summary(inputTokens: 100));
+        await ReconnectWithPushedTokenEventAsync(summaryInputTokens: 100, snapshot: [Prior, Pushed]);
+
+        _metricsStore.State.InputTokens.ShouldBe(107);
+    }
+
+    [Fact]
+    public async Task Reconnected_TheSummaryIsNewerThanTheEventsSnapshot_TheKpiRowCountsThePushedEventOnce()
+    {
+        await ReconnectWithPushedTokenEventAsync(summaryInputTokens: 107, snapshot: [Prior]);
+
+        _metricsStore.State.InputTokens.ShouldBe(107);
+    }
+
+    // One token event the client already knew about before the outage, and one written during it and
+    // pushed while catch-up was holding. Whether the pushed one is in the staged events snapshot is
+    // what the two tests vary.
+    private static readonly DateTimeOffset PriorStamp = new(2026, 3, 24, 11, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset PushedStamp = new(2026, 3, 24, 12, 0, 0, TimeSpan.Zero);
+    private static readonly TokenUsagePayload Prior = new("nabu", "m", 100, 10, 0.10m, PriorStamp);
+    private static readonly TokenUsagePayload Pushed = new("nabu", "m", 7, 1, 0.01m, PushedStamp);
+
+    private async Task ReconnectWithPushedTokenEventAsync(
+        long summaryInputTokens, List<TokenUsagePayload> snapshot)
+    {
+        _handler.AnswerFor("api/metrics/summary", Summary(inputTokens: 0));
         await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
         await ConnectAsync();
-        _handler.AnswerFor("api/metrics/summary", Summary(inputTokens: 120));
-        _handler.AnswerFor("api/metrics/tokens?", new List<TokenUsagePayload>
-        {
-            new("nabu", "m", 7, 1, 0.01m, stamped),
-        });
+        _handler.AnswerFor("api/metrics/summary", Summary(summaryInputTokens));
+        _handler.AnswerFor("api/metrics/tokens?", snapshot);
         _handler.AnswerFor("api/metrics/tokens/by/Model", new Dictionary<string, decimal>());
         _catchUp.GateAfter = new TaskCompletionSource();
         await _hub.RaiseReconnectingAsync(null);
@@ -477,12 +498,10 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
             InputTokens = 7,
             OutputTokens = 1,
             Cost = 0.01m,
-            Timestamp = stamped,
+            Timestamp = PushedStamp,
         });
         _catchUp.GateAfter.SetResult();
         await reconnected;
-
-        _metricsStore.State.InputTokens.ShouldBe(120);
     }
 
     // Health is a roster catch-up now re-reads, so a health push is held like any other. Applied
