@@ -53,6 +53,23 @@ public class MicrophoneTests
     }
 
     [Fact]
+    public void Close_ACaptureThatIsNoLongerTheOpenOne_LeavesTheLiveOneAttached()
+    {
+        // Closing is by identity: a late close from a capture that has already been replaced (an
+        // arbitration abort racing the next turn's open) must detach nothing, or the live capture
+        // stops receiving audio while the satellite is still streaming it.
+        var gates = Gates();
+        var mic = NewMic(gates);
+
+        var replaced = Open(mic, gates);
+        Open(mic, gates);
+
+        mic.Close(replaced);
+
+        mic.IsOpen.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Feed_NoCaptureOpen_ReachesNothingAndDoesNotThrow()
     {
         var gates = new SilenceGateFactory(
