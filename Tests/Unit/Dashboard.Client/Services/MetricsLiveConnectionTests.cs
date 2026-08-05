@@ -47,7 +47,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
-        var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore);
+        var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore, NullLogger<MetricsHubBinder>.Instance);
         var overview = new OverviewFigures(api, _metricsStore, _healthStore);
         _dataLoad = new DataLoadEffect(_families, overview, binder);
         _catchUp = new RecordingMetricsCatchUp(new MetricsCatchUp(_families, overview));

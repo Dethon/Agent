@@ -4,6 +4,7 @@ using Dashboard.Client.Services;
 using Dashboard.Client.State.Health;
 using Dashboard.Client.State.Metrics;
 using Domain.DTOs.Metrics;
+using Microsoft.Extensions.Logging;
 
 namespace Dashboard.Client.Effects;
 
@@ -12,7 +13,8 @@ namespace Dashboard.Client.Effects;
 public sealed class MetricsHubBinder(
     MetricFamilyTable families,
     MetricsStore metricsStore,
-    HealthStore healthStore)
+    HealthStore healthStore,
+    ILogger<MetricsHubBinder> logger)
 {
     private readonly List<IDisposable> _subscriptions = [];
     private Queue<Func<Task>>? _held;
@@ -41,15 +43,31 @@ public sealed class MetricsHubBinder(
         // in that gap must land behind the queue, not ahead of it — so the hold stays visible to
         // OnPush until the queue is empty. A new hold beginning mid-drain pauses the drain; its own
         // release finishes it.
-        while (_holdDepth == 0 && _held is { Count: > 0 } held)
+        try
         {
-            var deliver = held.Dequeue();
-            await deliver();
+            while (_holdDepth == 0 && _held is { Count: > 0 } held)
+            {
+                var deliver = held.Dequeue();
+                try
+                {
+                    await deliver();
+                }
+                catch (Exception exception)
+                {
+                    // One push that cannot be applied — a subscribed component throwing while it
+                    // renders — is one push lost, not the end of live updates. Letting it out of
+                    // here left the queue in place with nothing to drain it and took the throw all
+                    // the way out through ConnectAsync, which catches nothing.
+                    logger.LogWarning(exception, "Held metrics push could not be applied");
+                }
+            }
         }
-
-        if (_holdDepth == 0)
+        finally
         {
-            _held = null;
+            if (_holdDepth == 0)
+            {
+                _held = null;
+            }
         }
     }
 

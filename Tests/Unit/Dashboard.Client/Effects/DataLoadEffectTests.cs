@@ -10,6 +10,7 @@ using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Dashboard.Client.State.Voice;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.Dashboard.Client.Fixtures;
 
@@ -43,7 +44,7 @@ public sealed class DataLoadEffectTests : IDisposable
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
-        var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore);
+        var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore, NullLogger<MetricsHubBinder>.Instance);
         _dataLoad = new DataLoadEffect(
             _families, new OverviewFigures(api, _metricsStore, _healthStore), binder);
     }
