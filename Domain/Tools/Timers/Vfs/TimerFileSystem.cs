@@ -85,7 +85,7 @@ public sealed class TimerFileSystem(
         var dirs = all.Select(t => t.Id).Where(matches).Select(id => $"/{id}/");
         if (dirsOnly)
         {
-            return Glob(dirs.OrderBy(p => p, StringComparer.Ordinal).ToList());
+            return Glob(pattern, () => dirs.OrderBy(p => p, StringComparer.Ordinal).ToList());
         }
 
         var files = all.SelectMany(t => new[]
@@ -96,7 +96,7 @@ public sealed class TimerFileSystem(
             .Concat([TimerPath.DismissFileName])
             .Where(matches)
             .Select(p => $"/{p}");
-        return Glob(dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
+        return Glob(pattern, () => dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
     }
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)

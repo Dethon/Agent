@@ -274,6 +274,22 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
         });
     }
 
+    // The glob's counterpart to the search scan's timeout guard. A caller's pattern is matched under
+    // a bounded timeout there too, and every backend filters its nodes lazily inside a LINQ chain,
+    // so the timeout lands while the listing is being materialized — here. Without this the search
+    // path answered the timeout envelope and the glob path threw the raw exception out of the tool.
+    protected static FsResult<FsGlobResult> Glob(string pattern, Func<IReadOnlyList<string>> entries)
+    {
+        try
+        {
+            return Glob(entries());
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return new FsResult<FsGlobResult>.Err(GlobRegex.TimedOut(pattern));
+        }
+    }
+
     protected static FsResult<FsGlobResult> Glob(IReadOnlyList<string> entries) =>
         new FsResult<FsGlobResult>.Ok(new FsGlobResult
         {

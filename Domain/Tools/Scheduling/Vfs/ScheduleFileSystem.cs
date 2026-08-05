@@ -79,11 +79,11 @@ public sealed class ScheduleFileSystem(
         var dirs = ScheduleTree.Directories(agents, all).Where(matches).Select(p => $"/{p}/");
         if (dirsOnly)
         {
-            return Glob(dirs.OrderBy(p => p, StringComparer.Ordinal).ToList());
+            return Glob(pattern, () => dirs.OrderBy(p => p, StringComparer.Ordinal).ToList());
         }
 
         var files = ScheduleTree.Files(agents, all).Where(matches).Select(p => $"/{p}");
-        return Glob(dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
+        return Glob(pattern, () => dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
     }
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
