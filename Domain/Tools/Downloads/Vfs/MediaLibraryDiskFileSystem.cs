@@ -79,12 +79,31 @@ public sealed class MediaLibraryDiskFileSystem(
         Refuse<FsBlobWriteResult>(path)
         ?? await base.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct);
 
+    // The streamed halves of the same two operations. A cross-mount copy never calls the ranged blob
+    // tools — it streams — so a refusal installed on those alone let a real file land where the
+    // virtual status.json is: invisible afterwards (the overlay shadows reads, Merge dedupes globs)
+    // and unremovable (delete on that path answers "read-only"). These throw rather than answer an
+    // envelope because that is the shape the two chunk operations have; VfsCopyTool turns a
+    // NotSupportedException back into the same unsupported-operation envelope.
+    public override IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
+        downloads.IsVirtualPath(path)
+            ? throw new NotSupportedException(VirtualFileRefusal)
+            : base.ReadChunksAsync(path, ct);
+
+    public override Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct) =>
+        downloads.IsVirtualPath(path)
+            ? throw new NotSupportedException(VirtualFileRefusal)
+            : base.WriteChunksAsync(path, chunks, overwrite, createDirectories, ct);
+
     // status.json is a rendered view of live download state, not a file on disk: moving, copying or
     // writing it would silently produce a stale snapshot under a name that still looks live.
+    private const string VirtualFileRefusal =
+        "status.json is a virtual read-only file; read it with fs_read — it cannot be moved, copied, or written.";
+
     private FsResult<T>? Refuse<T>(params string[] paths) where T : class =>
         paths.Any(downloads.IsVirtualPath)
-            ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation,
-                "status.json is a virtual read-only file; read it with fs_read — it cannot be moved, copied, or written.")
+            ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation, VirtualFileRefusal)
             : null;
 
     private static FsGlobResult Merge(FsGlobResult disk, IReadOnlyList<string> virtualEntries)
