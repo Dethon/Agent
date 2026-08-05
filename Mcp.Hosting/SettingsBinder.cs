@@ -13,6 +13,12 @@ namespace Mcp.Hosting;
 // an environment variable. That is the reverse of the framework default and it is deliberate — see
 // docs/adr/0005-user-secrets-outrank-environment-variables.md before touching it.
 //
+// The two sources are added to the builder the caller handed in, which is the host's own
+// configuration. So the ordering applies to everything the host reads afterwards — Kestrel, logging,
+// --urls — not only to TSettings. That is deliberate: it is what each of the thirteen copied blocks
+// did before, and a server that read its settings one way and its host another would be the
+// surprise.
+//
 // The secrets id comes off the entry assembly rather than a Program type, because from here
 // typeof(Program) would resolve to this assembly. Five servers have no UserSecretsId and the source
 // is simply absent for them, which is exactly what they do today.

@@ -43,6 +43,12 @@ files happen to have copied correctly.
 it adds environment variables first and user secrets last. User secrets outrank
 environment variables, deliberately.
 
+The two sources go onto the configuration builder the caller passes in, which is
+the host's own. So this ordering applies to everything the host reads afterwards,
+not only to `TSettings` — Kestrel, logging, `--urls`. That is intended. It is what
+the thirteen copied blocks already did, and a server whose settings and whose host
+disagreed about precedence would be the confusing outcome.
+
 The user-secrets source is optional and keyed off the entry assembly rather than a
 `Program` type, because the call now lives in a shared project where `typeof(Program)`
 would resolve to the wrong assembly. Five of the thirteen servers have no
