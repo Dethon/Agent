@@ -444,7 +444,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     [Fact]
     public async Task Reconnected_TheEventsSnapshotIsNewerThanTheSummary_TheKpiRowCountsThePushedEventOnce()
     {
-        await ReconnectWithPushedTokenEventAsync(summaryInputTokens: 100, snapshot: [Prior, Pushed]);
+        await ReconnectWithPushedTokenEventAsync(summaryInputTokens: 100, snapshot: [_prior, _pushed]);
 
         _metricsStore.State.InputTokens.ShouldBe(107);
     }
@@ -452,7 +452,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     [Fact]
     public async Task Reconnected_TheSummaryIsNewerThanTheEventsSnapshot_TheKpiRowCountsThePushedEventOnce()
     {
-        await ReconnectWithPushedTokenEventAsync(summaryInputTokens: 107, snapshot: [Prior]);
+        await ReconnectWithPushedTokenEventAsync(summaryInputTokens: 107, snapshot: [_prior]);
 
         _metricsStore.State.InputTokens.ShouldBe(107);
     }
@@ -460,10 +460,10 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     // One token event the client already knew about before the outage, and one written during it and
     // pushed while catch-up was holding. Whether the pushed one is in the staged events snapshot is
     // what the two tests vary.
-    private static readonly DateTimeOffset PriorStamp = new(2026, 3, 24, 11, 0, 0, TimeSpan.Zero);
-    private static readonly DateTimeOffset PushedStamp = new(2026, 3, 24, 12, 0, 0, TimeSpan.Zero);
-    private static readonly TokenUsagePayload Prior = new("nabu", "m", 100, 10, 0.10m, PriorStamp);
-    private static readonly TokenUsagePayload Pushed = new("nabu", "m", 7, 1, 0.01m, PushedStamp);
+    private static readonly DateTimeOffset _priorStamp = new(2026, 3, 24, 11, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _pushedStamp = new(2026, 3, 24, 12, 0, 0, TimeSpan.Zero);
+    private static readonly TokenUsagePayload _prior = new("nabu", "m", 100, 10, 0.10m, _priorStamp);
+    private static readonly TokenUsagePayload _pushed = new("nabu", "m", 7, 1, 0.01m, _pushedStamp);
 
     private async Task ReconnectWithPushedTokenEventAsync(
         long summaryInputTokens, List<TokenUsagePayload> snapshot)
@@ -486,7 +486,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
             InputTokens = 7,
             OutputTokens = 1,
             Cost = 0.01m,
-            Timestamp = PushedStamp,
+            Timestamp = _pushedStamp,
         });
         _catchUp.GateAfter.SetResult();
         await reconnected;

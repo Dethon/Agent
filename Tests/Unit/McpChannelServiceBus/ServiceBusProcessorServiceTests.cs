@@ -143,7 +143,7 @@ public class ServiceBusProcessorServiceTests : IDisposable
     public async Task ProcessMessage_SubscriberWentStaleWithoutRepolling_AbandonsMessage()
     {
         await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
-        _time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
+        _time.Advance(ChannelInbox._liveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
         var receiver = new Mock<ServiceBusReceiver>();
         receiver

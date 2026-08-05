@@ -22,9 +22,9 @@ namespace Tests.Unit.Domain.Monitor;
 // the minted conversation, because that is the one an operator can open.
 public class ChatMonitorDeliveryIdentityTests
 {
-    private static readonly AgentKey MintedKey = new("7:9", "jonas");
+    private static readonly AgentKey _mintedKey = new("7:9", "jonas");
 
-    private static readonly ToolApprovalRequest AnyRequest =
+    private static readonly ToolApprovalRequest _anyRequest =
         new(null, "some_tool", new Dictionary<string, object?>());
 
     [Fact]
@@ -44,7 +44,7 @@ public class ChatMonitorDeliveryIdentityTests
         var webchat = new FakeChannelConnection
         {
             ChannelId = "webchat",
-            ConversationIdToReturn = MintedKey.ConversationId
+            ConversationIdToReturn = _mintedKey.ConversationId
         };
         webchat.Complete();
         var fakeAgent = ReplyingAgent();
@@ -63,20 +63,20 @@ public class ChatMonitorDeliveryIdentityTests
         await monitor.Monitor(CancellationToken.None);
 
         var created = agentFactory.Created.ShouldHaveSingleItem();
-        created.Key.ShouldBe(MintedKey);
-        fakeAgent.RestoredSessionKeys.ShouldHaveSingleItem().ShouldBe(MintedKey.ToString());
-        FirstReplyOf(published).ConversationId.ShouldBe(MintedKey.ConversationId);
+        created.Key.ShouldBe(_mintedKey);
+        fakeAgent.RestoredSessionKeys.ShouldHaveSingleItem().ShouldBe(_mintedKey.ToString());
+        FirstReplyOf(published).ConversationId.ShouldBe(_mintedKey.ConversationId);
         // Recall provenance is durable: a memory extracted here records its source
         // conversation, and that has to be one somebody can still open months later.
-        recallHook.ConversationIds.ShouldHaveSingleItem().ShouldBe(MintedKey.ConversationId);
+        recallHook.ConversationIds.ShouldHaveSingleItem().ShouldBe(_mintedKey.ConversationId);
 
         // The approval route the turn was built with reaches the minted channel under the
         // minted id — the conversation the answer lands in, not the scheduling origin
         // (which auto-approves silently and would hide the tool calls from the user).
         await created.ApprovalHandler.NotifyAutoApprovedAsync(
-            created.Key.ConversationId, [AnyRequest], CancellationToken.None);
+            created.Key.ConversationId, [_anyRequest], CancellationToken.None);
         webchat.NotifyAutoApprovedCalls.ShouldHaveSingleItem()
-            .ConversationId.ShouldBe(MintedKey.ConversationId);
+            .ConversationId.ShouldBe(_mintedKey.ConversationId);
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public class ChatMonitorDeliveryIdentityTests
         var webchat = new FakeChannelConnection
         {
             ChannelId = "webchat",
-            ConversationIdToReturn = MintedKey.ConversationId
+            ConversationIdToReturn = _mintedKey.ConversationId
         };
         webchat.Complete();
         var published = new List<MetricEvent>();
@@ -157,7 +157,7 @@ public class ChatMonitorDeliveryIdentityTests
             .Where(e => e.Stage == LatencyStage.FirstReply)
             .Select(e => e.ConversationId)
             .ToList();
-        firstReplies.ShouldBe([MintedKey.ConversationId, "sched-morning-news-12345"]);
+        firstReplies.ShouldBe([_mintedKey.ConversationId, "sched-morning-news-12345"]);
     }
 
     private sealed class RecordingRecallHook : IMemoryRecallHook

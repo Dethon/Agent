@@ -24,7 +24,7 @@ public class ShippedAppSettingsBindingTests
     // inherits from the test host. Passing null switches user secrets off outright, which keeps a
     // developer machine that holds real secrets for these projects from filling in a key the
     // shipped file dropped.
-    private static readonly MethodInfo BindMethod = typeof(SettingsBinder)
+    private static readonly MethodInfo _bindMethod = typeof(SettingsBinder)
         .GetMethod(nameof(SettingsBinder.BindSettings), BindingFlags.Static | BindingFlags.NonPublic)!;
 
     public static TheoryData<string> Servers => McpServerRegistrations.Ids(McpServerRegistrations.All);
@@ -71,7 +71,7 @@ public class ShippedAppSettingsBindingTests
     {
         try
         {
-            return BindMethod.MakeGenericMethod(settingsType).Invoke(null, [configBuilder, null]);
+            return _bindMethod.MakeGenericMethod(settingsType).Invoke(null, [configBuilder, null]);
         }
         catch (TargetInvocationException ex) when (ex.InnerException is not null)
         {

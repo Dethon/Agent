@@ -128,18 +128,18 @@ public class DiskFileSystem(
         long offset = 0;
         await foreach (var chunk in chunks.WithCancellation(ct))
         {
-            Write(chunk.Span, offset);
+            write(chunk.Span, offset);
             offset += chunk.Length;
         }
 
         if (offset == 0)
         {
-            Write(ReadOnlySpan<byte>.Empty, 0);
+            write(ReadOnlySpan<byte>.Empty, 0);
         }
 
         return offset;
 
-        void Write(ReadOnlySpan<byte> bytes, long at)
+        void write(ReadOnlySpan<byte> bytes, long at)
         {
             var written = _blobWrite.Run(path, Convert.ToBase64String(bytes), at, overwrite, createDirectories);
             if (!written.TryGetValue(out _, out var error))

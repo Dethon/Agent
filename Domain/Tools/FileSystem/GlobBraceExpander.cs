@@ -16,7 +16,7 @@ public static class GlobBraceExpander
     // reason the combinations are taken lazily rather than counted after the fact. A level's product
     // is alternatives × each alternative's expansion × the suffix's, and the last two can each sit
     // just under the cap, so materializing first is millions of strings for a few hundred of input.
-    private const int _stopAfter = MaxPatterns + 1;
+    private const int StopAfter = MaxPatterns + 1;
 
     public static IReadOnlyList<string> Expand(string pattern)
     {
@@ -34,7 +34,7 @@ public static class GlobBraceExpander
             from expandedAlternative in Expand(alternative)
             from suffix in suffixExpansions
             select prefix + expandedAlternative + suffix
-        ).Take(_stopAfter).ToList();
+        ).Take(StopAfter).ToList();
 
         return expanded.Count > MaxPatterns
             ? throw new ArgumentException(

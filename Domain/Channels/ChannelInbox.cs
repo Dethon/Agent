@@ -24,7 +24,7 @@ public sealed class ChannelInbox(
     // worst-case backoff between touches, and the margin absorbs network and scheduling slop past
     // that boundary. Internal, and not a parameter: six emitters passing their own value is what
     // let six near-miss variants exist and be fixed three separate times.
-    internal static readonly TimeSpan LiveSubscriberFreshness = TimeSpan.FromMilliseconds(
+    internal static readonly TimeSpan _liveSubscriberFreshness = TimeSpan.FromMilliseconds(
         ChannelProtocol.DefaultReceiveWaitMs + ChannelProtocol.MaxReceiveRetryBackoffMs + 15_000);
 
     // The liveness rule, and the only one: "is there bookkeeping for this id" stays true for up to
@@ -39,7 +39,7 @@ public sealed class ChannelInbox(
     internal bool HasLiveSubscriber()
     {
         PruneIdle();
-        var cutoff = _timeProvider.GetUtcNow() - LiveSubscriberFreshness;
+        var cutoff = _timeProvider.GetUtcNow() - _liveSubscriberFreshness;
         return _subscribers.Values.Any(subscriber => subscriber.IsLiveSince(cutoff));
     }
 
@@ -55,7 +55,7 @@ public sealed class ChannelInbox(
     private bool FanOut(ChannelInboxItem item, bool onlyIfLive)
     {
         PruneIdle();
-        var cutoff = _timeProvider.GetUtcNow() - LiveSubscriberFreshness;
+        var cutoff = _timeProvider.GetUtcNow() - _liveSubscriberFreshness;
         var results = _subscribers
             .Select(entry => (entry.Key, Result: entry.Value.Enqueue(item, _capacity, cutoff, onlyIfLive)))
             .ToArray();
@@ -79,7 +79,7 @@ public sealed class ChannelInbox(
     {
         PruneIdle();
         var now = _timeProvider.GetUtcNow();
-        var cutoff = now - LiveSubscriberFreshness;
+        var cutoff = now - _liveSubscriberFreshness;
         while (true)
         {
             // Same seeding rationale as ReceiveAsync: left at default, the stamp would sit behind

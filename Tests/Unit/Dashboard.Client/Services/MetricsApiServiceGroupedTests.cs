@@ -25,8 +25,8 @@ public class MetricsApiServiceGroupedTests
     private readonly CapturingHandler _handler = new();
     private readonly MetricsApiService _api;
 
-    private static readonly DateOnly From = new(2026, 3, 1);
-    private static readonly DateOnly To = new(2026, 3, 2);
+    private static readonly DateOnly _from = new(2026, 3, 1);
+    private static readonly DateOnly _to = new(2026, 3, 2);
 
     public MetricsApiServiceGroupedTests()
     {
@@ -74,7 +74,7 @@ public class MetricsApiServiceGroupedTests
     public async Task GetGroupedAsync_AnyFamily_RequestsTheSameUrlItAlwaysHas(
         string _, string path, (string, string)[] query, string expectedUri)
     {
-        await _api.GetGroupedAsync<decimal>(path, From, To, query);
+        await _api.GetGroupedAsync<decimal>(path, _from, _to, query);
 
         _handler.LastUri.ShouldBe(expectedUri);
     }

@@ -14,14 +14,16 @@ public class RedisFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Readiness is the port, not the log line. Redis logs "Ready to accept connections"
-        // within a second of starting, so under load the first log poll can begin after the
-        // line was already written and then wait for it forever — a hang with no timeout,
-        // which is what a full-suite run hit. Every other Redis container here waits on the
-        // port.
+        // Readiness is a PING answered, not the log line and not the port alone. The log
+        // wait can start polling after "Ready to accept connections" was already written
+        // and hang forever, and the external port is answered by Docker's proxy before
+        // Redis inside is serving, which made the ConnectAsync below flaky. The port wait
+        // still guards the mapped-port lookup; the ping proves Redis is up.
         _container = new ContainerBuilder("redis/redis-stack:latest")
             .WithPortBinding(RedisPort, true)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(RedisPort))
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilExternalTcpPortIsAvailable(RedisPort)
+                .UntilCommandIsCompleted("redis-cli", "ping"))
             .Build();
 
         await _container.StartAsync();
@@ -30,7 +32,9 @@ public class RedisFixture : IAsyncLifetime
         var port = _container.GetMappedPublicPort(RedisPort);
         ConnectionString = $"{host}:{port}";
 
-        Connection = await ConnectionMultiplexer.ConnectAsync(ConnectionString);
+        // abortConnect=false keeps the multiplexer retrying instead of throwing if the
+        // host-side proxy needs a beat after the in-container ping succeeds.
+        Connection = await ConnectionMultiplexer.ConnectAsync($"{ConnectionString},abortConnect=false");
     }
 
     public async Task DisposeAsync()

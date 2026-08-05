@@ -13,11 +13,11 @@ namespace Tests.Unit.Observability;
 
 public class MetricDateRangeTests
 {
-    private static readonly DateOnly Today = new(2026, 3, 24);
+    private static readonly DateOnly _today = new(2026, 3, 24);
 
     private static async Task<MetricDateRange?> BindAsync(string queryString)
     {
-        var time = new FakeTimeProvider(new DateTimeOffset(Today, TimeOnly.MinValue, TimeSpan.Zero));
+        var time = new FakeTimeProvider(new DateTimeOffset(_today, TimeOnly.MinValue, TimeSpan.Zero));
         var services = new ServiceCollection().AddSingleton<TimeProvider>(time).BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
         context.Request.QueryString = new QueryString(queryString);
@@ -30,7 +30,7 @@ public class MetricDateRangeTests
     {
         var range = await BindAsync("");
 
-        range.ShouldBe(new MetricDateRange(Today, Today));
+        range.ShouldBe(new MetricDateRange(_today, _today));
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public class MetricDateRangeTests
     {
         var range = await BindAsync("?from=2026-03-01");
 
-        range.ShouldBe(new MetricDateRange(new DateOnly(2026, 3, 1), Today));
+        range.ShouldBe(new MetricDateRange(new DateOnly(2026, 3, 1), _today));
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public class MetricDateRangeTests
     {
         var range = await BindAsync("?to=2026-03-31");
 
-        range.ShouldBe(new MetricDateRange(Today, new DateOnly(2026, 3, 31)));
+        range.ShouldBe(new MetricDateRange(_today, new DateOnly(2026, 3, 31)));
     }
 
     [Fact]

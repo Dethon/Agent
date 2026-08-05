@@ -61,8 +61,8 @@ public class MetricsHubBinderTests : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
-    private static readonly DateOnly From = new(2026, 3, 1);
-    private static readonly DateOnly To = new(2026, 3, 2);
+    private static readonly DateOnly _from = new(2026, 3, 1);
+    private static readonly DateOnly _to = new(2026, 3, 2);
 
     // Every family, in the general form of the aggregation bug: whatever the store holds is what
     // goes out, and whatever comes back is what the family charts.
@@ -193,7 +193,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
     {
         var range = "from=2026-03-01&to=2026-03-02";
 
-        await NewDataLoadEffect().LoadAsync(From, To, _families.All);
+        await NewDataLoadEffect().LoadAsync(_from, _to, _families.All);
 
         _handler.Requests.ShouldContain(u => u != null && u.Contains(eventsRequest + range, StringComparison.Ordinal));
         _handler.Requests.ShouldContain(u => u != null && u.Contains(breakdownRequest + range, StringComparison.Ordinal));
@@ -202,26 +202,26 @@ public class MetricsHubBinderTests : IAsyncDisposable
     [Fact]
     public async Task LoadAsync_ADashboardPageLoads_SetsTheDateRangeOnEveryFamily()
     {
-        await NewDataLoadEffect().LoadAsync(From, To, _families.All);
+        await NewDataLoadEffect().LoadAsync(_from, _to, _families.All);
 
-        _tokensStore.State.From.ShouldBe(From);
-        _toolsStore.State.From.ShouldBe(From);
-        _errorsStore.State.From.ShouldBe(From);
-        _schedulesStore.State.From.ShouldBe(From);
-        _memoryStore.State.From.ShouldBe(From);
-        _latencyStore.State.From.ShouldBe(From);
-        _voiceStore.State.To.ShouldBe(To);
+        _tokensStore.State.From.ShouldBe(_from);
+        _toolsStore.State.From.ShouldBe(_from);
+        _errorsStore.State.From.ShouldBe(_from);
+        _schedulesStore.State.From.ShouldBe(_from);
+        _memoryStore.State.From.ShouldBe(_from);
+        _latencyStore.State.From.ShouldBe(_from);
+        _voiceStore.State.To.ShouldBe(_to);
     }
 
     private void SetDateRangeOnEveryStore()
     {
-        _tokensStore.SetDateRange(From, To);
-        _toolsStore.SetDateRange(From, To);
-        _errorsStore.SetDateRange(From, To);
-        _schedulesStore.SetDateRange(From, To);
-        _memoryStore.SetDateRange(From, To);
-        _latencyStore.SetDateRange(From, To);
-        _voiceStore.SetDateRange(From, To);
+        _tokensStore.SetDateRange(_from, _to);
+        _toolsStore.SetDateRange(_from, _to);
+        _errorsStore.SetDateRange(_from, _to);
+        _schedulesStore.SetDateRange(_from, _to);
+        _memoryStore.SetDateRange(_from, _to);
+        _latencyStore.SetDateRange(_from, _to);
+        _voiceStore.SetDateRange(_from, _to);
     }
 
     private static readonly

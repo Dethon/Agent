@@ -195,7 +195,7 @@ public class TelegramBotServiceTests : IDisposable
     {
         var subscriberId = ChannelProtocol.ChannelClientNamePrefix + "telegram";
         await _inbox.ReceiveAsync(subscriberId, TimeSpan.Zero, CancellationToken.None);
-        _time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
+        _time.Advance(ChannelInbox._liveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
         SetupPollingSequence([
             new Update

@@ -22,20 +22,20 @@ public class McpServerTableTests
 {
     public static TheoryData<string> Servers => McpServerRegistrations.Ids(McpServerRegistrations.All);
 
-    private static readonly Regex SolutionProject =
+    private static readonly Regex _solutionProject =
         new(@"^Project\(""\{[^}]+\}""\) = ""(Mcp(?:Server|Channel)\w+)""", RegexOptions.Multiline);
 
-    private static readonly Regex BindSettingsCall = new(@"\bBindSettings\s*<");
+    private static readonly Regex _bindSettingsCall = new(@"\bBindSettings\s*<");
 
     // builder.Configuration.GetVoiceSettings() is deliberately not one of these: the call's own
     // type argument or parenthesis has to follow the name straight away, so a helper that wraps
     // BindSettings still reads as going through it.
-    private static readonly Regex DirectConfigurationRead =
+    private static readonly Regex _directConfigurationRead =
         new(@"[Cc]onfig(?:uration|Builder)?\s*\.\s*(?:Get|GetSection|GetValue|Bind)\s*[<(]");
 
     // A server that adds its own configuration source is stating the precedence itself, which is
     // the one decision BindSettings owns.
-    private static readonly Regex OwnConfigurationSource =
+    private static readonly Regex _ownConfigurationSource =
         new(@"\.\s*Add(?:UserSecrets|EnvironmentVariables|JsonFile)\s*[<(]");
 
     [Fact]
@@ -47,7 +47,7 @@ public class McpServerTableTests
     [Theory]
     [MemberData(nameof(Servers))]
     public void EveryServer_ReadsItsConfigurationThroughBindSettings(string id) =>
-        Sources(id).Values.Any(BindSettingsCall.IsMatch).ShouldBeTrue(
+        Sources(id).Values.Any(_bindSettingsCall.IsMatch).ShouldBeTrue(
             $"{id} must read its configuration through BindSettings<T>, which is where the "
             + "user-secrets-last order lives");
 
@@ -55,15 +55,15 @@ public class McpServerTableTests
     [MemberData(nameof(Servers))]
     public void NoServer_ReadsConfigurationItself(string id) =>
         Sources(id)
-            .Where(file => DirectConfigurationRead.IsMatch(file.Value)
-                           || OwnConfigurationSource.IsMatch(file.Value))
+            .Where(file => _directConfigurationRead.IsMatch(file.Value)
+                           || _ownConfigurationSource.IsMatch(file.Value))
             .Select(file => file.Key)
             .ShouldBeEmpty(
                 $"{id} must leave binding and configuration sources to BindSettings<T>; these files "
                 + "read configuration or add a source of their own");
 
     private static IReadOnlyList<string> SolutionServerProjects() =>
-        SolutionProject
+        _solutionProject
             .Matches(File.ReadAllText(Path.Combine(McpServerRegistrations.RepoRoot, "Ziggurat.sln")))
             .Select(match => match.Groups[1].Value)
             .Order()

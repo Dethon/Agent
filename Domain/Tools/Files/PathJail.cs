@@ -13,7 +13,7 @@ namespace Domain.Tools.Files;
 // holds the resolved path to the same prefix rule, against the root's own physical location.
 public sealed class PathJail
 {
-    private const StringComparison _comparison = StringComparison.Ordinal;
+    private const StringComparison Comparison = StringComparison.Ordinal;
 
     private readonly string _rootWithSeparator;
     private readonly Lazy<(string Root, string WithSeparator)> _physicalRoot;
@@ -62,7 +62,7 @@ public sealed class PathJail
     }
 
     private static bool IsUnder(string fullPath, string root, string rootWithSeparator) =>
-        fullPath.Equals(root, _comparison) || fullPath.StartsWith(rootWithSeparator, _comparison);
+        fullPath.Equals(root, Comparison) || fullPath.StartsWith(rootWithSeparator, Comparison);
 
     private static string WithSeparator(string root) =>
         root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;

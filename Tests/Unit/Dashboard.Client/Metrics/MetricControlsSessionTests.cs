@@ -21,7 +21,7 @@ namespace Tests.Unit.Dashboard.Client.Metrics;
 
 public class MetricControlsSessionTests : IDisposable
 {
-    private static readonly DateOnly Today = new(2026, 3, 24);
+    private static readonly DateOnly _today = new(2026, 3, 24);
 
     private readonly FakeApiHandler _handler = new();
     private readonly FakeJsRuntime _js = new();
@@ -66,7 +66,7 @@ public class MetricControlsSessionTests : IDisposable
 
     private MetricControlsSession SessionFor(MetricFamily family, params MetricChoice[] extraChoices) =>
         new(family, extraChoices, _storage, new FakeTimeProvider(
-            new DateTimeOffset(Today, TimeOnly.MinValue, TimeSpan.Zero)), _dataLoad);
+            new DateTimeOffset(_today, TimeOnly.MinValue, TimeSpan.Zero)), _dataLoad);
 
     // Every family, by the preference keys its page has always used.
     public static TheoryData<string, string, string?> Families => new()
@@ -134,7 +134,7 @@ public class MetricControlsSessionTests : IDisposable
 
         session.SelectedDays.ShouldBe(days);
         session.From.ShouldBe(DateOnly.Parse(expectedFrom));
-        session.To.ShouldBe(Today);
+        session.To.ShouldBe(_today);
         _tokensStore.State.From.ShouldBe(DateOnly.Parse(expectedFrom));
     }
 
@@ -144,13 +144,13 @@ public class MetricControlsSessionTests : IDisposable
     public async Task ChangeDaysAsync_ADayCountIsChosen_StampsOnlyTheSessionsOwnFamily()
     {
         var chosenOnTheVoicePage = new DateOnly(2026, 2, 23);
-        _voiceStore.SetDateRange(chosenOnTheVoicePage, Today);
+        _voiceStore.SetDateRange(chosenOnTheVoicePage, _today);
         var session = SessionFor(_families.Tokens);
         await session.InitializeAsync();
 
         await session.ChangeDaysAsync("1");
 
-        _tokensStore.State.From.ShouldBe(Today);
+        _tokensStore.State.From.ShouldBe(_today);
         _voiceStore.State.From.ShouldBe(chosenOnTheVoicePage);
     }
 

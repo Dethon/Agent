@@ -526,7 +526,7 @@ public class ChannelInboxTests
         var inbox = new ChannelInbox(time);
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
-        time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
+        time.Advance(ChannelInbox._liveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
         inbox.HasLiveSubscriber().ShouldBeFalse();
     }
@@ -565,7 +565,7 @@ public class ChannelInboxTests
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
         inbox.Enqueue(Message("c1"));
-        time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
+        time.Advance(ChannelInbox._liveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
         inbox.HasLiveSubscriber().ShouldBeFalse();
 
