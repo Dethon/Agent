@@ -111,6 +111,18 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 hint: "One of these filesystems does not support raw byte streaming, so it cannot be a " +
                       "source or destination for a cross-filesystem copy or move.");
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The stream fails for more than an unsupported backend: a missing source (fs_info
+            // reports exists=false without an error, so the transfer gets this far), a full disk, a
+            // refused destination. The directory path reports those per entry; here there is one
+            // entry, and it becomes the same envelope. The source is left untouched either way.
+            return ToolError.Create(
+                ToolError.Codes.InternalError,
+                $"Cannot transfer '{srcVirtual}' to '{dstVirtual}': {ex.Message}",
+                retryable: true,
+                hint: "Check that the source exists and that the destination is writable.");
+        }
 
         if (deleteSource &&
             !(await src.Backend.DeleteAsync(src.RelativePath, ct)).TryGetValue(out _, out var deleteError))
