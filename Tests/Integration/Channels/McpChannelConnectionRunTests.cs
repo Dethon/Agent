@@ -108,6 +108,33 @@ public class McpChannelConnectionRunTests
         await run;
     }
 
+    [Fact]
+    public async Task RunAsync_RegistrationFailsButTheLinkIsHealthy_RetriesWithoutReconnecting()
+    {
+        // A register_agents that errors while list_tools still answers is a server-side hiccup,
+        // not a dead link: the catalog must land on a later health tick through the same
+        // connection, or the channel serves an empty catalog indefinitely.
+        await ResetAsync();
+        Interlocked.Exchange(ref _registerRejected, 0);
+        Interlocked.Exchange(ref _clientConnects, 0);
+
+        var port = TestPort.GetAvailable();
+        await using var server = await StartFlakyRegisterServerAsync(port);
+        await using var connection = new McpChannelConnection(
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var run = connection.RunAsync($"http://localhost:{port}/mcp", _catalog, cts.Token);
+
+        await _registered.WaitAsync(cts.Token);
+        Volatile.Read(ref _registerRejected).ShouldBe(1);
+        Volatile.Read(ref _registerCalls).ShouldBe(1);
+        Volatile.Read(ref _clientConnects).ShouldBe(1);
+
+        await cts.CancelAsync();
+        await run;
+    }
+
     private static async Task ResetAsync()
     {
         Interlocked.Exchange(ref _registerCalls, 0);
@@ -152,6 +179,54 @@ public class McpChannelConnectionRunTests
     // standalone GET stream gets the 404 the client reads as "session expired" — cancelling the
     // transport's internal token — while the initialized notification is held in flight, so the
     // connect call dies with exactly an HttpClient-timeout-shaped TaskCanceledException.
+    // State for the flaky-register scenario. Every client creation opens with exactly one
+    // server/discover probe, so counting those counts connections: it is how the test tells a
+    // same-connection retry from a reconnect. The rejection is an HTTP 500, because that is what
+    // reaches the client as a thrown registration failure; a tool-level error would come back as
+    // an IsError result instead.
+    private static int _registerRejected;
+    private static int _clientConnects;
+
+    private static async Task<WebApplication> StartFlakyRegisterServerAsync(int port)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<RegisterTools>();
+
+        var app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            if (HttpMethods.IsPost(context.Request.Method))
+            {
+                context.Request.EnableBuffering();
+                string body;
+                using (var reader = new StreamReader(context.Request.Body, leaveOpen: true))
+                {
+                    body = await reader.ReadToEndAsync();
+                }
+                context.Request.Body.Position = 0;
+
+                if (body.Contains("\"server/discover\""))
+                {
+                    Interlocked.Increment(ref _clientConnects);
+                }
+                else if (body.Contains($"\"{ChannelProtocol.RegisterAgentsTool}\"") &&
+                    Interlocked.Exchange(ref _registerRejected, 1) == 0)
+                {
+                    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    return;
+                }
+            }
+            await next();
+        });
+        app.MapMcp("/mcp");
+        await app.StartAsync();
+        return app;
+    }
+
     private const string ExpiringSession = "expiring-session";
     private static int _firstInitializeSeen;
 
