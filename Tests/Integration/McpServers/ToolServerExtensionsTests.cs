@@ -109,5 +109,4 @@ public class ToolServerExtensionsTests
         IsError = true,
         Content = [new TextContentBlock { Text = $"{marker}: {ex.Message}" }]
     };
-
 }
