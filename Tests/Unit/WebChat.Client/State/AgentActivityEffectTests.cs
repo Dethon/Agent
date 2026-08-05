@@ -54,6 +54,39 @@ public sealed class AgentActivityEffectTests : IDisposable
         _activityStore.State.TopicToAgent["topic-2"].ShouldBe("agent-2");
     }
 
+    // A stuck or offline agent must not cost every other agent's already-fetched mapping — a
+    // fresh map that dropped every agent for one agent's failure would stop marking unseen
+    // activity for all of them, not just the one that could not be read.
+    [Fact]
+    public async Task MapAllAgentTopicsAsync_OneAgentNotLive_KeepsTheOthersMappedTopics()
+    {
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _topicService.SeedTopic(TestChat.Topic("topic-2", agentId: "agent-2"));
+        _topicService.NotLiveForAgentIds.Add("agent-2");
+
+        await _effect.MapAllAgentTopicsAsync([_agentOne, _agentTwo]);
+
+        _activityStore.State.TopicToAgent["topic-1"].ShouldBe("agent-1");
+        _activityStore.State.TopicToAgent.ShouldNotContainKey("topic-2");
+    }
+
+    // A retry that succeeds later must not be blocked by whatever the failed read left behind:
+    // once agent-2 answers, its topics belong in the map exactly like everyone else's.
+    [Fact]
+    public async Task MapAllAgentTopicsAsync_AfterAnEarlierFailure_ARetryAddsTheRecoveredAgentsTopics()
+    {
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _topicService.SeedTopic(TestChat.Topic("topic-2", agentId: "agent-2"));
+        _topicService.NotLiveForAgentIds.Add("agent-2");
+        await _effect.MapAllAgentTopicsAsync([_agentOne, _agentTwo]);
+        _topicService.NotLiveForAgentIds.Remove("agent-2");
+
+        await _effect.MapAllAgentTopicsAsync([_agentOne, _agentTwo]);
+
+        _activityStore.State.TopicToAgent["topic-1"].ShouldBe("agent-1");
+        _activityStore.State.TopicToAgent["topic-2"].ShouldBe("agent-2");
+    }
+
     [Fact]
     public async Task Dispatch_SetAgents_RunsTheSameWork()
     {

@@ -5,6 +5,7 @@ using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.State;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -22,6 +23,7 @@ public sealed class InitializationEffectTests : IDisposable
 
     private readonly CallRecorder _calls = new();
     private readonly Dispatcher _dispatcher = new();
+    private readonly ConnectionStore _connectionStore;
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
@@ -40,6 +42,7 @@ public sealed class InitializationEffectTests : IDisposable
 
     public InitializationEffectTests()
     {
+        _connectionStore = new ConnectionStore(_dispatcher);
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
@@ -60,6 +63,7 @@ public sealed class InitializationEffectTests : IDisposable
 
         _effect = new InitializationEffect(
             _dispatcher,
+            _connectionStore,
             _liveConnection,
             _sessionService,
             _agentService,
@@ -195,6 +199,52 @@ public sealed class InitializationEffectTests : IDisposable
         _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
     }
 
+    // Nothing broadcasts SetAgents on its own — the agent has to re-register for that. The
+    // client cannot wait on that; the next connection epoch has to retry the fetch itself, or
+    // the sidebar stays empty until a manual reload.
+    [Fact]
+    public async Task HandleInitializeAsync_TheCatalogWasNotLive_TheNextEpochRetriesAndCompletesInitialization()
+    {
+        _configService.WithSpace("default");
+        _agentService.NotLive = true;
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "first"));
+        await _effect.HandleInitializeAsync();
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _topicsStore.State.SelectedAgentId.ShouldBeNull();
+
+        _agentService.NotLive = false;
+        _agentService.Agents = [_agentOne];
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
+        await TestChat.Eventually(() =>
+            _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1", []).Count == 1);
+        _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
+    }
+
+    // A retry that also comes up not live must not clear the awaiting flag — the epoch after
+    // that one is still owed a retry.
+    [Fact]
+    public async Task HandleInitializeAsync_TheRetryIsAlsoNotLive_TheEpochAfterThatStillRetries()
+    {
+        _configService.WithSpace("default");
+        _agentService.NotLive = true;
+        await _effect.HandleInitializeAsync();
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _topicsStore.State.SelectedAgentId.ShouldBeNull();
+
+        _agentService.NotLive = false;
+        _agentService.Agents = [_agentOne];
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
+    }
+
     // The deferred completion belongs to a first load that could not fetch the catalog. A first
     // load that did fetch it has already selected and loaded, so the broadcasts that follow must
     // not load everything again.
@@ -300,11 +350,35 @@ public sealed class InitializationEffectTests : IDisposable
         _liveConnection.ConnectCalls.ShouldBe(0);
     }
 
+    // The connect HandleInitializeAsync awaits directly can throw (offline at first load). The
+    // epoch that later becomes live — via a rebuild the live connection runs on its own — is
+    // then not the one the inline steps below already covered, so recovery has to run for it
+    // or nobody ever registers the user or joins the space.
+    [Fact]
+    public async Task HandleInitializeAsync_InitialConnectThrows_ALaterEpochStillTriggersRecovery()
+    {
+        _configService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        _liveConnection.ThrowOnConnect = new InvalidOperationException("offline at first load");
+        var recovery = new FakeSessionRecovery();
+        using var sessionRecoveryEffect = new SessionRecoveryEffect(
+            _connectionStore, recovery, new RecordingLogger<SessionRecoveryEffect>());
+
+        await Should.ThrowAsync<InvalidOperationException>(() => _effect.HandleInitializeAsync());
+
+        // Simulates the live connection's own rebuild reaching Connected on its own, the way
+        // ChatLiveConnection.ReconnectIfNeededAsync does outside of HandleInitializeAsync.
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => recovery.RecoverCalls == 1);
+    }
+
     public void Dispose()
     {
         _pushService.Release();
         _streamResumeService.Release();
         _effect.Dispose();
+        _connectionStore.Dispose();
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();

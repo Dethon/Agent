@@ -15,28 +15,64 @@ public record ConnectionClosed(string? Error) : IAction;
 public sealed class ConnectionStore : IDisposable
 {
     private readonly Store<ConnectionState> _store;
+    private readonly IDisposable _suppressedEpochTracking;
+    private bool _suppressNextEpoch = true;
+    private int _suppressedEpoch = -1;
+    private bool _suppressedEpochDecided;
 
     public ConnectionStore(Dispatcher dispatcher)
     {
         _store = new Store<ConnectionState>(ConnectionState.Initial);
 
         dispatcher.RegisterCatchAll(action => _store.Dispatch(action, Reduce));
+
+        // Registered here, ahead of every external BecameLiveAgain subscriber, so the decision
+        // is made exactly once and every subscriber agrees on it — instead of each one racing
+        // to consume a shared flag off its own copy of the pipeline.
+        _suppressedEpochTracking = _store.StateObservable.Subscribe(DecideSuppressedEpoch);
     }
 
     public ConnectionState State => _store.State;
 
     public IObservable<ConnectionState> StateObservable => _store.StateObservable;
 
-    // Every epoch after the one a subscriber first sees — that is, each interruption it
-    // lived through. Both catch-up and session recovery are keyed on this, so the rule that
-    // neither runs on the first connection is written here once instead of in each of them.
+    // Suppresses recovery for the app's one connect call whose own inline steps already do
+    // what recovery exists to do — its first. Defaults to armed, matching the old assumption
+    // that the first connect is always that one; a connect that fails before reaching
+    // Connected must disarm it, or the epoch a later rebuild produces would be mistaken for
+    // the inline call and recovery would silently never run for it.
+    public void ArmInlineInitialConnect() => _suppressNextEpoch = true;
+
+    public void DisarmInlineInitialConnect() => _suppressNextEpoch = false;
+
+    private void DecideSuppressedEpoch(ConnectionState state)
+    {
+        if (_suppressedEpochDecided || state.Status != ConnectionStatus.Connected)
+        {
+            return;
+        }
+
+        _suppressedEpochDecided = true;
+        if (_suppressNextEpoch)
+        {
+            _suppressedEpoch = state.Epoch;
+        }
+    }
+
+    // Every epoch after the one accounted for above — that is, each interruption a subscriber
+    // still has to catch up on. Both catch-up and session recovery are keyed on this, so the
+    // rule lives here once instead of in each of them.
     public IObservable<int> BecameLiveAgain => _store.StateObservable
         .Where(state => state.Status == ConnectionStatus.Connected)
         .Select(state => state.Epoch)
         .DistinctUntilChanged()
-        .Skip(1);
+        .Where(epoch => epoch != _suppressedEpoch);
 
-    public void Dispose() => _store.Dispose();
+    public void Dispose()
+    {
+        _suppressedEpochTracking.Dispose();
+        _store.Dispose();
+    }
 
     private static ConnectionState Reduce(ConnectionState state, IAction action) => action switch
     {

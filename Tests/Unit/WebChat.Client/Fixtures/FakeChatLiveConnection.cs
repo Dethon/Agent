@@ -6,10 +6,18 @@ public sealed class FakeChatLiveConnection(CallRecorder? recorder = null) : ICha
 {
     public int ConnectCalls { get; private set; }
 
+    public Exception? ThrowOnConnect { get; set; }
+
     public Task ConnectAsync()
     {
         ConnectCalls++;
         recorder?.Record("connect");
+
+        if (ThrowOnConnect is { } exception)
+        {
+            return Task.FromException(exception);
+        }
+
         return Task.CompletedTask;
     }
 

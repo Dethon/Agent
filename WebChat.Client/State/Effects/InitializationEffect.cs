@@ -2,6 +2,7 @@ using Domain.DTOs.Channel;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
@@ -13,6 +14,7 @@ namespace WebChat.Client.State.Effects;
 public sealed class InitializationEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
+    private readonly ConnectionStore _connectionStore;
     private readonly IChatLiveConnection _liveConnection;
     private readonly IChatSessionService _sessionService;
     private readonly IAgentService _agentService;
@@ -30,10 +32,12 @@ public sealed class InitializationEffect : IDisposable
     private readonly IDisposable _initializeRegistration;
     private readonly IDisposable _selectUserRegistration;
     private readonly IDisposable _setAgentsRegistration;
+    private readonly IDisposable _becameLiveAgainSubscription;
     private bool _awaitingAgentCatalog;
 
     public InitializationEffect(
         Dispatcher dispatcher,
+        ConnectionStore connectionStore,
         IChatLiveConnection liveConnection,
         IChatSessionService sessionService,
         IAgentService agentService,
@@ -50,6 +54,7 @@ public sealed class InitializationEffect : IDisposable
         ILogger<InitializationEffect> logger)
     {
         _dispatcher = dispatcher;
+        _connectionStore = connectionStore;
         _liveConnection = liveConnection;
         _sessionService = sessionService;
         _agentService = agentService;
@@ -71,11 +76,30 @@ public sealed class InitializationEffect : IDisposable
             action => RegisterUserAsync(action.UserId).LogFaults(_logger, nameof(SelectUser)));
         _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(
             action => HandleAgentCatalogArrivedAsync(action.Agents).LogFaults(_logger, nameof(SetAgents)));
+
+        // Nothing else retries a not-live catalog fetch on its own: a SetAgents broadcast (the
+        // agent re-registering) is one way it completes, and the next connection epoch is the
+        // other — the client's own retry, not dependent on the agent process doing anything.
+        _becameLiveAgainSubscription = connectionStore.BecameLiveAgain.Subscribe(
+            _ => RetryAgentCatalogIfAwaitingAsync().LogFaults(_logger, nameof(ConnectionStore.BecameLiveAgain)));
     }
 
     public async Task HandleInitializeAsync()
     {
-        await _liveConnection.ConnectAsync();
+        // Armed before the call: this connect's own inline steps below already do what session
+        // recovery exists to do, so its epoch must not trigger recovery too. A connect that
+        // never reaches Connected disarms it, so whichever epoch a later rebuild produces is
+        // not mistaken for this one and recovery runs for it instead.
+        _connectionStore.ArmInlineInitialConnect();
+        try
+        {
+            await _liveConnection.ConnectAsync();
+        }
+        catch
+        {
+            _connectionStore.DisarmInlineInitialConnect();
+            throw;
+        }
 
         await RegisterUserAsync();
 
@@ -104,9 +128,9 @@ public sealed class InitializationEffect : IDisposable
         var catalog = await _agentService.GetAgentsAsync();
         if (!catalog.IsLive)
         {
-            // Nothing else retries this fetch: the next SetAgents — the OnAgentsUpdated broadcast
-            // when the agent re-registers, on this connection or the next epoch's — completes the
-            // initialization this load could not.
+            // Nothing else retries this fetch on its own: a SetAgents broadcast (the agent
+            // re-registering) or the next connection epoch (BecameLiveAgain, below) completes
+            // the initialization this load could not.
             _awaitingAgentCatalog = true;
             return;
         }
@@ -127,6 +151,27 @@ public sealed class InitializationEffect : IDisposable
 
         _awaitingAgentCatalog = false;
         await SelectAgentAndLoadTopicsAsync(agents);
+    }
+
+    // The client's own retry for a not-live first load: becoming live again is not dependent
+    // on the agent process re-registering, so this fires whether or not that ever happens. A
+    // retry that also answers not live leaves the flag set for the epoch after this one.
+    private async Task RetryAgentCatalogIfAwaitingAsync()
+    {
+        if (!_awaitingAgentCatalog)
+        {
+            return;
+        }
+
+        var catalog = await _agentService.GetAgentsAsync();
+        if (!catalog.IsLive)
+        {
+            return;
+        }
+
+        _awaitingAgentCatalog = false;
+        _dispatcher.Dispatch(new SetAgents(catalog.Value!));
+        await SelectAgentAndLoadTopicsAsync(catalog.Value!);
     }
 
     private async Task SelectAgentAndLoadTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
@@ -232,5 +277,6 @@ public sealed class InitializationEffect : IDisposable
         _initializeRegistration.Dispose();
         _selectUserRegistration.Dispose();
         _setAgentsRegistration.Dispose();
+        _becameLiveAgainSubscription.Dispose();
     }
 }

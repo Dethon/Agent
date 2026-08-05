@@ -1,4 +1,5 @@
 using Shouldly;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.State;
 using WebChat.Client.State.Connection;
 
@@ -197,5 +198,57 @@ public class ConnectionStoreTests : IDisposable
         _dispatcher.Dispatch(new ConnectionClosed("hub dropped"));
 
         _store.State.Epoch.ShouldBe(1);
+    }
+
+    // The default: nobody has said the first connect is handled inline, so BecameLiveAgain
+    // keeps its old behaviour of treating the first live epoch as already accounted for.
+    [Fact]
+    public async Task BecameLiveAgain_NeverDisarmed_StillSkipsTheFirstEpoch()
+    {
+        var epochs = new List<int>();
+        using var subscription = _store.BecameLiveAgain.Subscribe(epochs.Add);
+
+        _store.ArmInlineInitialConnect();
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => epochs.Count == 1);
+        epochs.ShouldBe([2]);
+    }
+
+    // The armed inline connect never reached Connected, so whichever epoch becomes live first
+    // — even epoch 1 — is a rebuild recovery has to run for, not the inline connect it was
+    // armed for.
+    [Fact]
+    public async Task BecameLiveAgain_ArmedInlineConnectThatFails_DoesNotSkipTheNextEpoch()
+    {
+        var epochs = new List<int>();
+        using var subscription = _store.BecameLiveAgain.Subscribe(epochs.Add);
+
+        _store.ArmInlineInitialConnect();
+        _store.DisarmInlineInitialConnect();
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => epochs.Count == 1);
+        epochs.ShouldBe([1]);
+    }
+
+    // Only the very first Connected the store ever sees is a candidate for suppression — a
+    // disarm that arrives after that decision is already made must not retroactively unskip it.
+    [Fact]
+    public async Task BecameLiveAgain_DisarmedAfterTheFirstEpoch_DoesNotUnskipIt()
+    {
+        var epochs = new List<int>();
+        using var subscription = _store.BecameLiveAgain.Subscribe(epochs.Add);
+
+        _store.ArmInlineInitialConnect();
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _store.DisarmInlineInitialConnect();
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => epochs.Count == 1);
+        epochs.ShouldBe([2]);
     }
 }

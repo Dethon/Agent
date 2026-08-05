@@ -52,20 +52,29 @@ public sealed class AgentActivityEffect : IDisposable
     public async Task MapAllAgentTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {
         var slug = _spaceStore.State.CurrentSlug;
-        var map = new Dictionary<string, string>();
-        foreach (var agent in agents)
-        {
-            var topics = await _topicService.GetAllTopicsAsync(agent.Id, slug);
+        var fetches = await Task.WhenAll(agents.Select(async agent =>
+            (Agent: agent, Topics: await _topicService.GetAllTopicsAsync(agent.Id, slug))));
 
-            // A map missing the agent whose read could not be made is worse than no new map:
-            // that agent's finished streams would stop marking it. Keep the one we have.
-            if (!topics.IsLive)
+        // Seeded with what we already know: an agent whose read failed keeps its last-known
+        // mapping instead of losing it because a sibling agent's read succeeded. Only the
+        // agents that answered get their entries replaced with the fresh read.
+        var map = new Dictionary<string, string>(_activityStore.State.TopicToAgent);
+        foreach (var (agent, topics) in fetches.Where(fetch => fetch.Topics.IsLive))
+        {
+            foreach (var staleTopicId in map
+                .Where(pair => pair.Value == agent.Id)
+                .Select(pair => pair.Key)
+                .ToList())
             {
-                return;
+                map.Remove(staleTopicId);
             }
 
-            topics.Value!.ToList().ForEach(topic => map[topic.TopicId] = agent.Id);
+            foreach (var topic in topics.Value!)
+            {
+                map[topic.TopicId] = agent.Id;
+            }
         }
+
         _dispatcher.Dispatch(new AllAgentsTopicsMapped(map));
     }
 
