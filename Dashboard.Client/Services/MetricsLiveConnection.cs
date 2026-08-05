@@ -13,6 +13,7 @@ public sealed class MetricsLiveConnection(
     MetricsHubBinder binder,
     ConnectionStore connectionStore,
     IMetricsCatchUp catchUp,
+    DataLoadEffect dataLoad,
     TimeProvider timeProvider,
     ILogger<MetricsLiveConnection> logger) : IAsyncDisposable
 {
@@ -57,9 +58,11 @@ public sealed class MetricsLiveConnection(
     {
         connectionStore.SetLive();
 
-        // Never on the first connection: ordinary page load fetches the same data there, and
-        // catching up as well would double every request on first paint.
-        if (connectionStore.State.Epoch <= 1)
+        // Not on a first connection whose page load delivered: catching up as well would double
+        // every request on first paint. A load that failed left nothing to double — a dashboard
+        // opened during an outage would otherwise show a green dot over empty pages until a manual
+        // reload — so a recorded failure makes the first epoch catch up after all.
+        if (connectionStore.State.Epoch <= 1 && !dataLoad.LastLoadFailed)
         {
             return;
         }

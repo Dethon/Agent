@@ -36,19 +36,23 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     private readonly LatencyStore _latencyStore = new();
     private readonly VoiceStore _voiceStore = new();
     private readonly MetricFamilyTable _families;
+    private readonly DataLoadEffect _dataLoad;
     private readonly RecordingMetricsCatchUp _catchUp;
     private readonly MetricsLiveConnection _liveConnection;
 
     public MetricsLiveConnectionTests()
     {
         var http = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
+        var api = new MetricsApiService(http);
         _families = new MetricFamilyTable(
-            new MetricsApiService(http), _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
+            api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
         var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore);
+        _dataLoad = new DataLoadEffect(api, _families, _metricsStore, _healthStore);
         _catchUp = new RecordingMetricsCatchUp(new MetricsCatchUp(_families));
         _liveConnection = new MetricsLiveConnection(
-            _hub, binder, _connectionStore, _catchUp, _time, NullLogger<MetricsLiveConnection>.Instance);
+            _hub, binder, _connectionStore, _catchUp, _dataLoad, _time,
+            NullLogger<MetricsLiveConnection>.Instance);
     }
 
     public async ValueTask DisposeAsync()
@@ -225,6 +229,24 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
 
         _catchUp.Runs.ShouldBe(0);
         _connectionStore.State.Epoch.ShouldBe(1);
+    }
+
+    // Opening the dashboard during an outage: the page load failed silently, so the premise behind
+    // skipping the first epoch's catch-up does not hold, and the first connection is exactly when
+    // the data can finally arrive.
+    [Fact]
+    public async Task ConnectAsync_TheInitialPageLoadFailed_TheFirstConnectionCatchesUp()
+    {
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+        _handler.AnswerFor("api/metrics/voice?", new List<VoiceEventPayload>
+        {
+            new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
+        });
+
+        await ConnectAsync();
+
+        _catchUp.Runs.ShouldBe(1);
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
     }
 
     [Fact]
