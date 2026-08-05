@@ -565,7 +565,9 @@ public sealed class PlaybackQueue(
         public void Settle(PlaybackOutcomeKind kind, Exception? error = null) =>
             _settled.TrySetResult(new PlaybackOutcome(kind, ChunksWritten, error));
 
-        // Safe on a job that drained: the pump has already finished and cancelling it is a no-op.
+        // Idempotent: the disposal latches on its first call, so the loop's finally and the drain's
+        // sweep can both release the same in-flight job, and a job that drained has nothing left to
+        // cancel.
         public ValueTask ReleaseAudioAsync() => prefetch?.DisposeAsync() ?? ValueTask.CompletedTask;
     }
 
