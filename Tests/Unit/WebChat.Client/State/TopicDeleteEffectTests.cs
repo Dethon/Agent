@@ -42,7 +42,6 @@ public sealed class TopicDeleteEffectTests : IDisposable
 
         _effect = new TopicDeleteEffect(
             _dispatcher,
-            _topicsStore,
             _streamingStore,
             _messagingService,
             _topicService,

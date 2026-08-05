@@ -12,7 +12,6 @@ namespace WebChat.Client.State.Effects;
 public sealed class TopicDeleteEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly TopicsStore _topicsStore;
     private readonly StreamingStore _streamingStore;
     private readonly IChatMessagingService _messagingService;
     private readonly ITopicService _topicService;
@@ -22,7 +21,6 @@ public sealed class TopicDeleteEffect : IDisposable
 
     public TopicDeleteEffect(
         Dispatcher dispatcher,
-        TopicsStore topicsStore,
         StreamingStore streamingStore,
         IChatMessagingService messagingService,
         ITopicService topicService,
@@ -30,7 +28,6 @@ public sealed class TopicDeleteEffect : IDisposable
         ILogger<TopicDeleteEffect> logger)
     {
         _dispatcher = dispatcher;
-        _topicsStore = topicsStore;
         _streamingStore = streamingStore;
         _messagingService = messagingService;
         _topicService = topicService;
@@ -78,21 +75,15 @@ public sealed class TopicDeleteEffect : IDisposable
             }
         }
 
-        // The user may have switched conversations while the round trip above was in flight,
-        // so whether the pending approval belongs to this one is read here, at dispatch time —
-        // and before TopicRemoved, whose reduce clears the selection.
-        var wasSelected = _topicsStore.State.SelectedTopicId == topicId;
-
         _dispatcher.Dispatch(new TopicRemoved(topicId));
 
         // Clear cached messages so re-created topics reload from server; the same action drops
         // the topic's finalized message ids, which is all the pipeline ever tracked.
         _dispatcher.Dispatch(new ClearMessages(topicId));
 
-        if (wasSelected)
-        {
-            _dispatcher.Dispatch(new ClearApproval());
-        }
+        // A deleted conversation has nothing pending. Approvals are held per conversation, so
+        // this takes only its own with it whatever the user has selected by now.
+        _dispatcher.Dispatch(new TopicApprovalsReconciled(topicId, StillPending: null));
     }
 
     public void Dispose()
