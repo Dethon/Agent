@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
@@ -21,7 +20,7 @@ public sealed class StreamingService(
     MessagesStore messagesStore,
     AgentSettingsStore agentSettingsStore) : IStreamingService
 {
-    private readonly ConcurrentDictionary<string, Task> _activeStreams = new();
+    private readonly ActiveStreams _activeStreams = new();
     private readonly SemaphoreSlim _streamLock = new(1, 1);
 
     public async Task SendMessageAsync(StoredTopic topic, string message, string? correlationId = null)
@@ -30,10 +29,7 @@ public sealed class StreamingService(
         try
         {
             var configPatch = GetConfigPatch(topic);
-            var isNewStream = !_activeStreams.TryGetValue(topic.TopicId, out var task)
-                              || task.IsCompleted;
-
-            if (isNewStream)
+            if (!_activeStreams.IsActive(topic.TopicId))
             {
                 await StartNewStreamAsync(topic, message, correlationId, configPatch);
                 return;
@@ -74,8 +70,7 @@ public sealed class StreamingService(
         await _streamLock.WaitAsync();
         try
         {
-            var hasActiveStream = _activeStreams.TryGetValue(topic.TopicId, out var task) && !task.IsCompleted;
-            if (hasActiveStream)
+            if (_activeStreams.IsActive(topic.TopicId))
             {
                 return false;
             }
@@ -103,7 +98,7 @@ public sealed class StreamingService(
         await _streamLock.WaitAsync();
         try
         {
-            return _activeStreams.TryGetValue(topicId, out var task) && !task.IsCompleted;
+            return _activeStreams.IsActive(topicId);
         }
         finally
         {
@@ -145,9 +140,7 @@ public sealed class StreamingService(
     private void Announce(StoredTopic topic, Func<Task> startStream)
     {
         dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-        var streamTask = startStream();
-        _activeStreams[topic.TopicId] = streamTask;
-        _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out var _));
+        _activeStreams.Track(topic.TopicId, startStream());
     }
 
     public async Task StreamResponseAsync(

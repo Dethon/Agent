@@ -54,6 +54,7 @@ public sealed class MessagePipelineTests
     [Fact]
     public void AccumulateChunk_SkipsDuplicateAfterFinalize()
     {
+        _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _pipeline.AccumulateChunk("topic-1", "msg-1", "Hello", null, null);
         _pipeline.FinalizeMessage("topic-1", "msg-1");
 
@@ -185,6 +186,9 @@ public sealed class MessagePipelineTests
     [Fact]
     public void ResumeFromBuffer_DispatchesStreamChunkWhenStreamingContent()
     {
+        // A resume announces the stream before replaying the buffer into it, so the buffer this
+        // dispatches into is one the topic is actually streaming.
+        _dispatcher.Dispatch(new StreamStarted("topic-1"));
         var result = new BufferResumeResult(
             [],
             new ChatMessageModel { Role = "assistant", Content = "Streaming..." });

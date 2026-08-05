@@ -54,7 +54,10 @@ public sealed class StreamingStore : IDisposable
             StreamingByTopic = state.StreamingByTopic.SetItem(a.TopicId, new StreamingContent())
         },
 
-        StreamChunk a => state with
+        // Only a topic that is streaming has a live buffer. Tool-call and approval-resolved
+        // notifications arrive on their own and one can land after the stream ended, so a chunk
+        // is not enough on its own to say a topic is streaming — StreamStarted says that.
+        StreamChunk a when state.StreamingTopics.Contains(a.TopicId) => state with
         {
             StreamingByTopic = UpdateStreamingContent(state.StreamingByTopic, a)
         },

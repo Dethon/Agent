@@ -317,6 +317,51 @@ public sealed class StreamResumeServiceTests : IDisposable
         shownTopic.ShouldBe("topic-1");
     }
 
+    // An approval can be answered from another browser, or time out, while this one is away.
+    // Resume is when this client finds out, so a prompt the server no longer lists has to come
+    // down — nothing else ever takes it off the screen.
+    [Fact]
+    public async Task TryResumeStreamAsync_TheApprovalWasResolvedWhileAway_TakesThePromptDown()
+    {
+        var topic = CreateTopic(topicId: "topic-1");
+        using var approvalStore = new ApprovalStore(_dispatcher);
+        _dispatcher.Dispatch(new ShowApproval("topic-1", new ToolApprovalRequestMessage("approval-1", [])));
+        _messagingService.SetStreamState("topic-1", new StreamState(
+            true,
+            [new ChatStreamMessage { Content = "waiting", MessageId = "msg-1" }],
+            "msg-1",
+            null,
+            null));
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+
+        await _resumeService.TryResumeStreamAsync(topic);
+
+        approvalStore.State.CurrentRequest.ShouldBeNull();
+    }
+
+    // Resume speaks for one conversation. Another conversation's prompt is not this call's to
+    // answer for, whatever the server says about this one.
+    [Fact]
+    public async Task TryResumeStreamAsync_AnotherConversationIsWaiting_LeavesItsPromptAlone()
+    {
+        var topic = CreateTopic(topicId: "topic-1");
+        using var approvalStore = new ApprovalStore(_dispatcher);
+        _dispatcher.Dispatch(new ShowApproval("topic-2", new ToolApprovalRequestMessage("approval-2", [])));
+        _messagingService.SetStreamState("topic-1", new StreamState(
+            true,
+            [new ChatStreamMessage { Content = "waiting", MessageId = "msg-1" }],
+            "msg-1",
+            null,
+            null));
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+
+        await _resumeService.TryResumeStreamAsync(topic);
+
+        approvalStore.State.CurrentRequest?.ApprovalId.ShouldBe("approval-2");
+    }
+
     #endregion
 
     #region Buffer Rebuild Tests
@@ -333,6 +378,9 @@ public sealed class StreamResumeServiceTests : IDisposable
             null,
             null));
 
+        // The resumed stream stays open, the way a stream worth resuming does: the buffer is
+        // replayed into a topic that is streaming, which is what makes the replay show up.
+        _messagingService.SetBlockUntilComplete(true);
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = " more content", MessageId = "msg-1" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
@@ -344,6 +392,7 @@ public sealed class StreamResumeServiceTests : IDisposable
         var streaming = _streamingStore.State.StreamingByTopic.GetValueOrDefault("topic-1");
         streaming.ShouldNotBeNull();
         streaming.Content.ShouldContain("buffered content");
+        _messagingService.UnblockCompletion();
     }
 
     [Fact]

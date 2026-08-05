@@ -21,6 +21,6 @@ public sealed class ApprovalResponder(IApprovalService approvalService, IDispatc
             return;
         }
 
-        dispatcher.Dispatch(new ClearApproval());
+        dispatcher.Dispatch(new ClearApproval(approvalId));
     }
 }

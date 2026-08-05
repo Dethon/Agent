@@ -12,17 +12,25 @@ public sealed class FakeAgentService(CallRecorder? recorder = null) : IAgentServ
     // Set to answer not live for every call, the way a transport between connections does.
     public bool NotLive { get; set; }
 
-    public Task<HubResult<IReadOnlyList<AgentCatalogEntry>>> GetAgentsAsync()
+    // Set to hold every fetch open, so a test can decide what else happens while one is in flight.
+    public TaskCompletionSource? Gate { get; set; }
+
+    public async Task<HubResult<IReadOnlyList<AgentCatalogEntry>>> GetAgentsAsync()
     {
         recorder?.Record("agents");
 
         if (ThrowOnGetAgents is not null)
         {
-            return Task.FromException<HubResult<IReadOnlyList<AgentCatalogEntry>>>(ThrowOnGetAgents);
+            throw ThrowOnGetAgents;
         }
 
-        return Task.FromResult(NotLive
+        if (Gate is not null)
+        {
+            await Gate.Task;
+        }
+
+        return NotLive
             ? HubResult<IReadOnlyList<AgentCatalogEntry>>.NotLive
-            : HubResult<IReadOnlyList<AgentCatalogEntry>>.Answered(Agents));
+            : HubResult<IReadOnlyList<AgentCatalogEntry>>.Answered(Agents);
     }
 }
