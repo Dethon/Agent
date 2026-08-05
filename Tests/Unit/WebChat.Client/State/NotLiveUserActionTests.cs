@@ -153,6 +153,23 @@ public sealed class NotLiveUserActionTests
         client.Topics.State.Topics.Single().TopicId.ShouldBe("topic-1");
     }
 
+    // The transport can die during the round trip: the state check passed, the invoke throws.
+    // That is the same not-live window, so the user gets the same toast and keeps the row.
+    [Fact]
+    public async Task ADelete_WhoseTransportDiesMidCall_RaisesTheToastAndLeavesTheRow()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        transport.Answer("DeleteTopic", _ => throw new InvalidOperationException(
+            "The 'InvokeCoreAsync' method cannot be called if the connection is not active"));
+
+        client.Dispatcher.Dispatch(new RemoveTopic("topic-1", "agent-1", 10, 20));
+
+        await TestChat.Eventually(() => client.Toasts.State.Toasts.Count == 1);
+        client.Topics.State.Topics.Single().TopicId.ShouldBe("topic-1");
+    }
+
     [Fact]
     public async Task ADelete_WhileLive_StillRemovesTheConversation()
     {

@@ -19,7 +19,6 @@ public sealed class StreamingService(
     ITopicService topicService,
     TopicsStore topicsStore,
     MessagesStore messagesStore,
-    StreamingStore streamingStore,
     AgentSettingsStore agentSettingsStore) : IStreamingService
 {
     private readonly ConcurrentDictionary<string, Task> _activeStreams = new();
@@ -218,17 +217,10 @@ public sealed class StreamingService(
                 }
 
                 // When a user message arrives in the stream, finalize current assistant content
-                // UNLESS SendMessageEffect already finalized (check FinalizationRequests flag)
                 if (chunk.UserMessage is not null)
                 {
-                    if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
+                    if (streamingMessage.HasContent)
                     {
-                        // SendMessageEffect already added the message, just clear the flag
-                        dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
-                    }
-                    else if (streamingMessage.HasContent)
-                    {
-                        // No finalization request - we need to add the message here
                         flush(streamingMessage, currentMessageId);
                         dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
                     }
@@ -318,15 +310,6 @@ public sealed class StreamingService(
                 }
 
                 await UpdateLastReadMessage(topic, chunk);
-            }
-
-            // Check finalization one more time before adding final message
-            // This handles the case where the stream ends right after a user message
-            // (no content chunks arrive after the finalization request was dispatched)
-            if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
-            {
-                streamingMessage = new ChatMessageModel { Role = "assistant" };
-                dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
             }
 
             if (streamingMessage.HasContent)

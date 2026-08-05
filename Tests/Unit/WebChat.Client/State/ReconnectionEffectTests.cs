@@ -1,6 +1,7 @@
 using Domain.DTOs.WebChat;
 using Moq;
 using Shouldly;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
@@ -20,6 +21,7 @@ public sealed class ReconnectionEffectTests : IDisposable
     private readonly Mock<IChatSessionService> _mockSessionService;
     private readonly Mock<IStreamResumeService> _mockStreamResumeService;
     private readonly Mock<ITopicService> _mockTopicService;
+    private readonly RecordingLogger<ReconnectionEffect> _logger = new();
     private ReconnectionEffect? _sut;
 
     public ReconnectionEffectTests()
@@ -46,7 +48,28 @@ public sealed class ReconnectionEffectTests : IDisposable
             _mockSessionService.Object,
             _mockStreamResumeService.Object,
             _dispatcher,
-            _mockTopicService.Object);
+            _mockTopicService.Object,
+            _logger);
+    }
+
+    // The catch-up task is abandoned by construction, so a fault inside it — a server that
+    // drops the topics call mid-recovery — must at least be logged rather than vanishing.
+    [Fact]
+    public async Task WhenTheCatchUpFaults_TheFaultIsLoggedRatherThanDiscarded()
+    {
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _mockTopicService
+            .Setup(s => s.GetAllTopicsAsync("agent-1", "default"))
+            .ThrowsAsync(new InvalidOperationException("catch-up failed"));
+
+        CreateEffect();
+
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        var entry = await _logger.WaitForEntryAsync();
+        entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("catch-up failed");
     }
 
     [Fact]

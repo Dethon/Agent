@@ -37,12 +37,6 @@ public sealed class AgentSettingsStore : IDisposable
         state.ByAgent.GetValueOrDefault(agentId) ?? new AgentModelSettings(null, null);
 
     private static AgentSettingsState WithEntry(
-        AgentSettingsState state, string agentId, AgentModelSettings settings)
-    {
-        var byAgent = state.ByAgent
-            .Where(kv => kv.Key != agentId)
-            .ToDictionary(kv => kv.Key, kv => kv.Value);
-        byAgent[agentId] = settings;
-        return state with { ByAgent = byAgent };
-    }
+        AgentSettingsState state, string agentId, AgentModelSettings settings) =>
+        state with { ByAgent = state.ByAgent.With(agentId, settings) };
 }

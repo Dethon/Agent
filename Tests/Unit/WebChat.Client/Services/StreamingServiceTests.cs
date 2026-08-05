@@ -44,7 +44,6 @@ public sealed class StreamingServiceTests : IDisposable
             _topicService,
             _topicsStore,
             _messagesStore,
-            _streamingStore,
             _agentSettingsStore);
     }
 
@@ -667,7 +666,7 @@ public sealed class StreamingServiceTests : IDisposable
 
     #endregion
 
-    #region TryStartResumeStreamAsync / IsStreamActiveAsync / Finalization Tests
+    #region TryStartResumeStreamAsync / IsStreamActiveAsync Tests
 
     [Fact]
     public async Task TryStartResumeStreamAsync_WithNoActiveStream_ReturnsTrue()
@@ -735,32 +734,7 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_WithFinalizationRequest_ResetsAccumulator()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
-        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Existing" };
-
-        _dispatcher.Dispatch(new RequestContentFinalization(topic.TopicId));
-
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage
-            { UserMessage = new UserMessageInfo("Alice", null), Content = "user msg", MessageId = "msg-1" },
-            new ChatStreamMessage { Content = "New response", MessageId = "msg-2" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" }
-        );
-
-        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-0");
-
-        var messages = MessagesFor(topic.TopicId);
-        messages.ShouldNotContain(m => m.Content == "Existing");
-        messages.ShouldContain(m => m.Content == "New response");
-    }
-
-    [Fact]
-    public async Task ResumeStreamResponseAsync_WithoutFinalizationRequest_PreservesContent()
+    public async Task ResumeStreamResponseAsync_PreservesTheContentAlreadyStreamed()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));

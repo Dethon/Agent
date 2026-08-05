@@ -31,10 +31,6 @@ public record SendMessage(string? TopicId, string Message) : IAction;
 
 public record CancelStreaming(string TopicId) : IAction;
 
-public record RequestContentFinalization(string TopicId) : IAction;
-
-public record ClearFinalizationRequest(string TopicId) : IAction;
-
 public sealed class StreamingStore : IDisposable
 {
     private readonly Store<StreamingState> _store;
@@ -87,16 +83,6 @@ public sealed class StreamingStore : IDisposable
         StopResuming a => state with
         {
             ResumingTopics = state.ResumingTopics.Remove(a.TopicId)
-        },
-
-        RequestContentFinalization a => state with
-        {
-            FinalizationRequests = state.FinalizationRequests.Add(a.TopicId)
-        },
-
-        ClearFinalizationRequest a => state with
-        {
-            FinalizationRequests = state.FinalizationRequests.Remove(a.TopicId)
         },
 
         _ => state

@@ -10,6 +10,7 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -23,7 +24,10 @@ public sealed class SendMessageEffectTests : IDisposable
     private readonly StreamingStore _streamingStore;
     private readonly SpaceStore _spaceStore;
     private readonly UserIdentityStore _userIdentityStore;
+    private readonly ToastStore _toastStore;
     private readonly Mock<IChatSessionService> _mockSessionService;
+    private readonly Mock<IStreamingService> _mockStreamingService;
+    private readonly RecordingLogger<SendMessageEffect> _logger = new();
     private readonly SendMessageEffect _effect;
 
     public SendMessageEffectTests()
@@ -34,8 +38,9 @@ public sealed class SendMessageEffectTests : IDisposable
         _messagesStore = new MessagesStore(_dispatcher);
         _spaceStore = new SpaceStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
+        _toastStore = new ToastStore(_dispatcher);
         _mockSessionService = new Mock<IChatSessionService>();
-        var mockStreamingService = new Mock<IStreamingService>();
+        _mockStreamingService = new Mock<IStreamingService>();
 
         var pipeline = new MessagePipeline(
             _dispatcher, _messagesStore, _streamingStore, NullLogger<MessagePipeline>.Instance);
@@ -46,12 +51,13 @@ public sealed class SendMessageEffectTests : IDisposable
             _streamingStore,
             _messagesStore,
             _mockSessionService.Object,
-            mockStreamingService.Object,
+            _mockStreamingService.Object,
             new FakeTopicService(),
             new FakeChatMessagingService(),
             _userIdentityStore,
             pipeline,
-            _spaceStore);
+            _spaceStore,
+            _logger);
     }
 
     [Fact]
@@ -141,6 +147,37 @@ public sealed class SendMessageEffectTests : IDisposable
         remaining.Count(m => m.Role == "user" && m.Content == "Second message").ShouldBe(2);
     }
 
+    // The handler task is abandoned by construction, so a fault inside it — here the topic
+    // was removed between the render and the dispatch — must be logged and told to the user
+    // rather than vanishing with the task.
+    [Fact]
+    public async Task Dispatch_SendMessageForARemovedTopic_LogsTheFaultAndRaisesTheToast()
+    {
+        _dispatcher.Dispatch(new SendMessage("missing-topic", "hello"));
+
+        var entry = await _logger.WaitForEntryAsync();
+        entry.Exception.ShouldBeOfType<InvalidOperationException>();
+        _toastStore.State.Toasts.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Dispatch_SendMessageWhoseSendTaskFaults_LogsTheFaultAndRaisesTheToast()
+    {
+        var topic = new StoredTopic
+        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _mockSessionService.Setup(s => s.CurrentTopic).Returns(topic);
+        _mockStreamingService
+            .Setup(s => s.SendMessageAsync(It.IsAny<StoredTopic>(), It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns(Task.FromException(new InvalidOperationException("send faulted")));
+
+        _dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
+
+        var entry = await _logger.WaitForEntryAsync();
+        entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("send faulted");
+        _toastStore.State.Toasts.Count.ShouldBe(1);
+    }
+
     public void Dispose()
     {
         _effect.Dispose();
@@ -149,5 +186,6 @@ public sealed class SendMessageEffectTests : IDisposable
         _streamingStore.Dispose();
         _spaceStore.Dispose();
         _userIdentityStore.Dispose();
+        _toastStore.Dispose();
     }
 }
