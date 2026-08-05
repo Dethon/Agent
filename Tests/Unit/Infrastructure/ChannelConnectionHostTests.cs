@@ -2,6 +2,7 @@ using Agent.App;
 using Agent.Settings;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 
@@ -53,6 +54,29 @@ public class ChannelConnectionHostTests
 
         await configured.WaitForRunAsync(cts.Token);
         unconfigured.RunCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AnEndpointWithNoConnection_WarnsNamingTheOrphan()
+    {
+        // A typo'd ChannelId in configuration means that endpoint is silently never run; the
+        // warning is the only trace an operator gets.
+        var connection = new FakeMcpChannelConnection("ch-1");
+        var endpoints = new[]
+        {
+            new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" },
+            new ChannelEndpoint { ChannelId = "ch-ghost", Endpoint = "http://localhost:9002" }
+        };
+        var warnings = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        using var factory = LoggerFactory.Create(builder => builder.AddProvider(warnings));
+        var sut = new ChannelConnectionHost(
+            endpoints, [connection], _catalog, factory.CreateLogger<ChannelConnectionHost>());
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _ = sut.StartAsync(cts.Token);
+        await connection.WaitForRunAsync(cts.Token);
+
+        warnings.Messages.ShouldContain(m => m.Contains("ch-ghost"));
     }
 
     [Fact]

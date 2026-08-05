@@ -17,6 +17,14 @@ public class ChannelConnectionHost(
     {
         var endpointMap = endpoints.ToDictionary(e => e.ChannelId, e => e.Endpoint);
 
+        var connectionIds = connections.Select(c => c.ChannelId).ToHashSet();
+        foreach (var orphan in endpoints.Where(e => !connectionIds.Contains(e.ChannelId)))
+        {
+            logger.LogWarning(
+                "Endpoint {ChannelId} ({Endpoint}) matches no registered channel connection and will never be run",
+                orphan.ChannelId, orphan.Endpoint);
+        }
+
         var runs = connections
             .Where(c => endpointMap.ContainsKey(c.ChannelId))
             .Select(conn =>
