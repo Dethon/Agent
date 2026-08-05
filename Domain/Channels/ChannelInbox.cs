@@ -94,11 +94,14 @@ public sealed class ChannelInbox(
     }
 
     // The other half of a drain. A poll never acknowledges what it received, so a batch handed to a
-    // request that then dies exists nowhere else — the drain already emptied the queue. A caller
-    // that finds its response dead hands the batch back here and it goes in at the front, because
-    // it is older than anything that arrived while it was away. Order across the whole queue is
-    // preserved, which is what the message/cancel sequence depends on.
-    public void Restore(string subscriberId, IReadOnlyList<ChannelInboxItem> batch)
+    // request that then dies exists nowhere else — the drain already emptied the queue. A poll that
+    // finds its response dead hands the batch back here and it goes in at the front, because it is
+    // older than anything that arrived while it was away. Order across the whole queue is preserved,
+    // which is what the message/cancel sequence depends on.
+    //
+    // Not a step a caller performs on its own: it is the tail of ReceiveAsync's own turn at the
+    // queue, taken while that turn still holds the subscriber, so nothing can drain in between.
+    internal void Restore(string subscriberId, IReadOnlyList<ChannelInboxItem> batch)
     {
         ArgumentNullException.ThrowIfNull(batch);
         if (batch.Count == 0)
@@ -141,11 +144,19 @@ public sealed class ChannelInbox(
         }
     }
 
-    public Task<IReadOnlyList<ChannelInboxItem>> ReceiveAsync(
+    // A poll's whole turn at the queue, in one call: the batch is drained, turned into whatever the
+    // caller sends back, and — if that caller is already gone — put back at the front, with no other
+    // poll on this subscriber getting in between. The three are one operation because the middle one
+    // decides whether the first one counts: a poll never acknowledges what it received, so a batch
+    // that was drained into a dead response exists nowhere else, and handing it back as a separate
+    // step let a racing poll take a message that arrived after it and dispatch it first.
+    public Task<T> ReceiveAsync<T>(
         string subscriberId,
         TimeSpan maxWait,
+        Func<IReadOnlyList<ChannelInboxItem>, T> project,
         CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(project);
         var now = _timeProvider.GetUtcNow();
         while (true)
         {
@@ -155,7 +166,8 @@ public sealed class ChannelInbox(
             var subscriber = _subscribers.GetOrAdd(subscriberId, _ => new Subscriber(now));
             if (subscriber.TryTouch(now))
             {
-                return subscriber.ReceiveAsync(maxWait, _timeProvider, ct);
+                return subscriber.ReceiveAsync(
+                    maxWait, _timeProvider, project, batch => Restore(subscriberId, batch), ct);
             }
 
             // A concurrent prune retired this instance between the lookup and the touch. Seeding
@@ -165,6 +177,14 @@ public sealed class ChannelInbox(
             _subscribers.TryRemove(new KeyValuePair<string, Subscriber>(subscriberId, subscriber));
         }
     }
+
+    // The batch itself, for a caller with nowhere to hand it back to: it is committed the moment
+    // this returns.
+    public Task<IReadOnlyList<ChannelInboxItem>> ReceiveAsync(
+        string subscriberId,
+        TimeSpan maxWait,
+        CancellationToken ct) =>
+        ReceiveAsync(subscriberId, maxWait, static batch => batch, ct);
 
     private static int ValidateCapacity(int capacity)
     {
@@ -196,6 +216,10 @@ public sealed class ChannelInbox(
     private sealed class Subscriber(DateTimeOffset createdAt)
     {
         private readonly Lock _gate = new();
+        // Held for a poll's turn at the queue — drain, project, hand back — and never while it is
+        // parked waiting. Separate from _gate on purpose: producers must not queue behind a caller
+        // building its response, and only drains have to wait for each other.
+        private readonly Lock _handoff = new();
         private readonly Queue<ChannelInboxItem> _items = new();
         private TaskCompletionSource<bool>? _waiter;
         private DateTimeOffset _lastPolledAt = createdAt;
@@ -315,9 +339,11 @@ public sealed class ChannelInbox(
             return dropped > 0 ? EnqueueOutcome.AcceptedDroppingOldest : EnqueueOutcome.Accepted;
         }
 
-        public async Task<IReadOnlyList<ChannelInboxItem>> ReceiveAsync(
+        public async Task<T> ReceiveAsync<T>(
             TimeSpan maxWait,
             TimeProvider timeProvider,
+            Func<IReadOnlyList<ChannelInboxItem>, T> project,
+            Action<IReadOnlyList<ChannelInboxItem>> handBack,
             CancellationToken ct)
         {
             // Same contract as the post-wait check below, on the path that never waits: a poll whose
@@ -326,18 +352,33 @@ public sealed class ChannelInbox(
             // is routine — and draining there hands the batch to a dead request and loses it.
             ct.ThrowIfCancellationRequested();
 
-            TaskCompletionSource<bool> waiter;
-            TaskCompletionSource<bool>? displaced;
-            lock (_gate)
+            TaskCompletionSource<bool>? waiter = null;
+            TaskCompletionSource<bool>? displaced = null;
+            lock (_handoff)
             {
-                if (_items.Count > 0)
+                IReadOnlyList<ChannelInboxItem>? pending = null;
+                lock (_gate)
                 {
-                    return Drain(ct);
+                    if (_items.Count > 0)
+                    {
+                        pending = Drain(ct);
+                    }
+                    else
+                    {
+                        // Deciding to wait and registering the waiter stay one step: an item landing
+                        // between them would find no waiter to signal, and this poll would sleep out
+                        // its whole maxWait with the item already in its queue.
+                        displaced = _waiter;
+                        waiter = new TaskCompletionSource<bool>(
+                            TaskCreationOptions.RunContinuationsAsynchronously);
+                        _waiter = waiter;
+                    }
                 }
 
-                displaced = _waiter;
-                waiter = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _waiter = waiter;
+                if (pending is not null)
+                {
+                    return Complete(pending, project, handBack, ct);
+                }
             }
 
             // A second poll for the same subscriber retires the first with an empty batch,
@@ -346,12 +387,12 @@ public sealed class ChannelInbox(
 
             if (maxWait <= TimeSpan.Zero)
             {
-                return RetireAndDrain(waiter, ct);
+                return RetireAndComplete(waiter!, project, handBack, ct);
             }
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var delay = Task.Delay(maxWait, timeProvider, timeoutCts.Token);
-            var completed = await Task.WhenAny(waiter.Task, delay);
+            var completed = await Task.WhenAny(waiter!.Task, delay);
             await timeoutCts.CancelAsync();
 
             if (ct.IsCancellationRequested)
@@ -368,20 +409,53 @@ public sealed class ChannelInbox(
 
             if (completed == waiter.Task && !waiter.Task.Result)
             {
-                return [];
+                return project([]);
             }
 
-            return RetireAndDrain(waiter, ct);
+            return RetireAndComplete(waiter, project, handBack, ct);
         }
 
-        private IReadOnlyList<ChannelInboxItem> RetireAndDrain(
-            TaskCompletionSource<bool> waiter, CancellationToken ct)
+        private T RetireAndComplete<T>(
+            TaskCompletionSource<bool> waiter,
+            Func<IReadOnlyList<ChannelInboxItem>, T> project,
+            Action<IReadOnlyList<ChannelInboxItem>> handBack,
+            CancellationToken ct)
         {
-            lock (_gate)
+            lock (_handoff)
             {
-                RetireWaiter(waiter);
-                return Drain(ct);
+                IReadOnlyList<ChannelInboxItem> batch;
+                lock (_gate)
+                {
+                    RetireWaiter(waiter);
+                    batch = Drain(ct);
+                }
+
+                return Complete(batch, project, handBack, ct);
             }
+        }
+
+        // Caller holds _handoff and nothing else: the projection is the caller's own work — building
+        // the response — so it must not run under the lock producers enqueue against.
+        //
+        // The drain emptied the queue and a poll acknowledges nothing, so from here the batch exists
+        // only in the response being built: a request aborted while it is being written takes the
+        // batch with it. Asking the token once more with the response in hand covers everything up
+        // to the write, and a batch that has nowhere to go goes back to the front of the queue. The
+        // write itself stays open — closing it needs an acknowledgement this protocol does not have.
+        private static T Complete<T>(
+            IReadOnlyList<ChannelInboxItem> batch,
+            Func<IReadOnlyList<ChannelInboxItem>, T> project,
+            Action<IReadOnlyList<ChannelInboxItem>> handBack,
+            CancellationToken ct)
+        {
+            var projected = project(batch);
+            if (batch.Count > 0 && ct.IsCancellationRequested)
+            {
+                handBack(batch);
+                ct.ThrowIfCancellationRequested();
+            }
+
+            return projected;
         }
 
         // Caller holds _gate. Only the poll that registered a waiter may retire it: a poll that

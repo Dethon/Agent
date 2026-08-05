@@ -21,27 +21,17 @@ public class ChannelReceiveTool(ChannelInbox inbox)
     // comment). An unclamped maxWaitMs from a future/misbehaving caller could park a genuinely
     // live subscriber past the freshness window, making HasLiveSubscriber read it as dead —
     // worse than the bug the freshness check exists to fix.
-    protected async Task<string> Run(string subscriberId, int maxWaitMs, CancellationToken cancellationToken)
+    protected Task<string> Run(string subscriberId, int maxWaitMs, CancellationToken cancellationToken)
     {
         var clampedWaitMs = Math.Clamp(maxWaitMs, 0, ChannelProtocol.DefaultReceiveWaitMs);
-        var items = await inbox.ReceiveAsync(
-            subscriberId, TimeSpan.FromMilliseconds(clampedWaitMs), cancellationToken);
-
-        var payload = JsonSerializer.Serialize(
-            new ChannelReceiveResult { Items = items }, ChannelProtocol.SerializerOptions);
-
-        // The drain emptied the queue and the poll acknowledges nothing, so from here the batch
-        // exists only in this response: a request aborted while it is being written takes the batch
-        // with it. Asking the token once more with the payload in hand covers everything up to the
-        // write, and a batch that has nowhere to go is handed back to the front of the queue for
-        // the next poll. The write itself stays open — that needs an acknowledgement the protocol
-        // does not have — but the wide part of the window, waiting on the wait, is closed.
-        if (items.Count > 0 && cancellationToken.IsCancellationRequested)
-        {
-            inbox.Restore(subscriberId, items);
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-
-        return payload;
+        // The response body is written inside the poll's turn at the queue, not after it: the batch
+        // is never out of the inbox's hands between leaving the queue and becoming this string, so a
+        // response that turns out to be dead puts its items back before any other poll can drain.
+        return inbox.ReceiveAsync(
+            subscriberId, TimeSpan.FromMilliseconds(clampedWaitMs), Serialize, cancellationToken);
     }
+
+    private static string Serialize(IReadOnlyList<ChannelInboxItem> items) =>
+        JsonSerializer.Serialize(
+            new ChannelReceiveResult { Items = items }, ChannelProtocol.SerializerOptions);
 }

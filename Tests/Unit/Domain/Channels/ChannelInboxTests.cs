@@ -342,6 +342,48 @@ public class ChannelInboxTests
         next.Select(i => i.Message!.ConversationId).ShouldBe(["c1", "c2", "c3"]);
     }
 
+    // Putting the batch back is not a step of its own: between the drain and the handback the queue
+    // looks empty, so a poll racing in there takes whatever arrived after the batch and dispatches
+    // it, and the older items only reappear behind it — the agent seeing a message before the cancel
+    // that preceded it. Draining, turning the batch into the caller's response and putting it back
+    // are one turn at the queue, and no other poll on this subscriber gets between them.
+    [Fact]
+    public async Task ReceiveAsync_WhenADeadPollHandsItsBatchBack_ARacingPollCannotTakeNewerItemsFirst()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("first"));
+
+        using var cts = new CancellationTokenSource();
+        using var racingStarted = new ManualResetEventSlim();
+        Task<IReadOnlyList<ChannelInboxItem>>? racing = null;
+
+        var aborted = inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, batch =>
+        {
+            // The response is being written when a newer message lands and the reconnect's fresh
+            // poll arrives — both while this batch is still in hand.
+            inbox.Enqueue(Message("second"));
+            racing = Task.Run(() =>
+            {
+                racingStarted.Set();
+                return inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+            });
+            racingStarted.Wait(_deadline);
+            Thread.Sleep(100);
+            cts.Cancel();
+            return batch;
+        }, cts.Token);
+
+        await Should.ThrowAsync<OperationCanceledException>(() => aborted);
+
+        // Everything the subscriber is ever handed, in the order it is handed over.
+        var delivered = (await racing!.WaitAsync(_deadline))
+            .Concat(await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None))
+            .Select(item => item.Message!.ConversationId);
+
+        delivered.ShouldBe(["first", "second"]);
+    }
+
     [Fact]
     public async Task Restore_WhileTheNextPollIsAlreadyParked_WakesIt()
     {
