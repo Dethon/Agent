@@ -275,6 +275,55 @@ public class MediaLibraryFileSystemTests : IDisposable
             It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // A real file left at downloads/<id>/status.json after its download is gone used to be a ghost:
+    // the overlay answered every info for that path with its virtual file (exists=false once no
+    // download owns the id) and refused every delete as read-only, so nothing could see or remove
+    // it. With no live item the disk underneath is the truth.
+    [Fact]
+    public async Task Info_ALeftoverStatusFileWithNoLiveDownload_ComesFromDisk()
+    {
+        var leftover = Path.Combine(_libraryRoot, "downloads", "99", "status.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
+        await File.WriteAllTextAsync(leftover, "{\"stale\":true}");
+
+        var info = (await _sut.InfoAsync("downloads/99/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+
+        info.Exists.ShouldBeTrue();
+        info.IsDirectory.ShouldBe(false);
+    }
+
+    [Fact]
+    public async Task Delete_ALeftoverStatusFileWithNoLiveDownload_RemovesTheRealFile()
+    {
+        var leftover = Path.Combine(_libraryRoot, "downloads", "99", "status.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
+        await File.WriteAllTextAsync(leftover, "{\"stale\":true}");
+
+        (await _sut.DeleteAsync("downloads/99/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
+
+        _disk.TrashedPaths.ShouldContain(p => p.EndsWith("status.json", StringComparison.Ordinal));
+    }
+
+    // The virtual file wins for as long as a download owns the id: it is a rendered view, not a
+    // file, so info reports the rendered size and delete still refuses it.
+    [Fact]
+    public async Task StatusFileOfALiveDownload_StaysVirtual()
+    {
+        _client.Add(Item(42));
+
+        var info = (await _sut.InfoAsync("downloads/42/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+        info.Exists.ShouldBeTrue();
+        info.Size.ShouldNotBeNull();
+
+        (await _sut.DeleteAsync("downloads/42/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>()
+            .Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        _disk.TrashedPaths.ShouldBeEmpty();
+    }
+
     private static FsResult<FileSystemResolution> Resolved(IFileSystemBackend backend, string relativePath) =>
         new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, ""));
 

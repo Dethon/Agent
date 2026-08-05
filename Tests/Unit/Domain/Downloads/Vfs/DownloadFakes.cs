@@ -108,7 +108,12 @@ public static class DownloadFakes
 
         public Task RemoveFile(string path, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task<string> MoveToTrash(string path, CancellationToken cancellationToken = default) =>
-            Task.FromResult(path);
+        public List<string> TrashedPaths { get; } = new();
+
+        public Task<string> MoveToTrash(string path, CancellationToken cancellationToken = default)
+        {
+            TrashedPaths.Add(path);
+            return Task.FromResult(path);
+        }
     }
 }

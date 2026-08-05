@@ -37,8 +37,9 @@ public sealed class MediaLibraryDiskFileSystem(
 
     public override string DescribeDelete =>
         $"Delete a download directory ({MediaFilesystem.DownloadsSubdir}/<id>): cancels the torrent "
-        + "task and cleans up its files. Also removes leftover download directories whose torrent is "
-        + "already gone. Other media paths cannot be deleted.";
+        + "task and cleans up its files. Also removes leftovers whose torrent is already gone: the "
+        + "download directory, or a real status.json file no live download owns. Other media paths "
+        + "cannot be deleted.";
 
     // The only text on this mount is the overlay's rendered status file; the media itself is bytes.
     public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
@@ -77,8 +78,8 @@ public sealed class MediaLibraryDiskFileSystem(
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
         await downloads.TryInfoAsync(path, ct) ?? await base.InfoAsync(path, ct);
 
-    public override Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
-        downloads.DeleteAsync(path, ct);
+    public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
+        await downloads.TryDeleteAsync(path, ct) ?? await base.DeleteAsync(path, ct);
 
     // Delete is the download's cancel, so it is left to the overlay; move has no such meaning and a
     // live download whose directory moved keeps writing into one qBittorrent recreates. Both ends of
