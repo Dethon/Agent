@@ -96,6 +96,18 @@ public sealed class ChatLiveConnectionTests : IDisposable
     }
 
     [Fact]
+    public async Task DisposeAsync_AClosedCallbackOnTheDisposedConnection_LeavesTheStatusAlone()
+    {
+        await _liveConnection.ConnectAsync();
+        var connection = _factory.Created.Single();
+
+        await _liveConnection.DisposeAsync();
+        await AdvanceUntilCompleteAsync(connection.RaiseClosedAsync(null));
+
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
+    }
+
+    [Fact]
     public async Task ReconnectIfNeededAsync_StuckReconnectingConnection_ReplacesItWithFreshConnection()
     {
         await _liveConnection.ConnectAsync();

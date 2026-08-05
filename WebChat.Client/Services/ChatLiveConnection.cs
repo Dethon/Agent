@@ -226,10 +226,6 @@ public sealed class ChatLiveConnection(
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
-        if (_connection is not null)
-        {
-            eventBinder.Unbind();
-            await _connection.DisposeAsync();
-        }
+        await TearDownAsync();
     }
 }
