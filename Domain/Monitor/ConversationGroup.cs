@@ -107,13 +107,20 @@ internal sealed class ConversationGroup(
         }
     }
 
-    // One turn at a time within a conversation. Three pieces of state shared across a
-    // conversation's turns depend on this and are not defended anywhere else:
-    // ToolApprovalChatClient's dynamically-approved tool set (an unsynchronised HashSet
-    // mutated mid-turn), and OpenRouterChatClient's reasoning queue and cost/cached-token
+    // One turn at a time per group key — the (ConversationId, AgentId) of the incoming message.
+    // Three pieces of state shared across a group's turns depend on this and are not defended
+    // anywhere else: ToolApprovalChatClient's dynamically-approved tool set (an unsynchronised
+    // HashSet mutated mid-turn), and OpenRouterChatClient's reasoning queue and cost/cached-token
     // queues (drained per update and per response, so two interleaved streams on one client
     // cross-attribute each other's values). Reintroducing concurrency here re-breaks all
-    // three. Different conversations and the fan-out across delivery targets stay concurrent.
+    // three. Different group keys and the fan-out across delivery targets stay concurrent.
+    //
+    // The key is the message's own conversation, not the one the replies land in, so this is
+    // not "one turn at a time per conversation": a schedule fire keyed on its synthetic id and
+    // the user typing in the WebChat conversation it delivers into are two groups, and their
+    // turns run concurrently against that one conversation and its persisted thread. The three
+    // pieces of state above survive that because each group builds its own agent, and with it
+    // its own chat client stack.
     //
     // Commands do NOT queue: /cancel is how the stop button reaches the monitor, so it has to
     // reach threadResolver while the turn it stops is still running. /clear is immediate for
