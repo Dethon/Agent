@@ -105,9 +105,12 @@ public interface ITurnAnchor
 // connection — built with the connection, whose run drives its loop and whose drain settles what was
 // never played; the satellite session exposes it as a property so producers reach it without a
 // pass-through layer.
-// The two depth limits are the queue's, not a producer's: an answer's segments get their own
-// allowance (sharing the announce depth meant one turn's answer competed with itself and lost
-// sentences out of its middle), everything else shares the announce one. A null prefetch size means
+// The two depth limits are the queue's, not a producer's, and both are thresholds on the ONE queue
+// depth rather than two separate counters: a reply segment is measured against the larger of them
+// (sharing the announce depth meant one turn's answer competed with itself and lost sentences out of
+// its middle), everything else against the announce one. So an answer is not refused for what an
+// announcement queued, but an announcement arriving behind eight pending sentences still is — that
+// is what the announce limit says: waiting behind that much speech is too long. A null prefetch size means
 // prefetching is switched off, and a segment's synthesis then starts when the loop reaches it. The
 // defaults are the settings' own, so a queue built without configuration behaves as configuration
 // would have made it.
@@ -169,8 +172,9 @@ public sealed class PlaybackQueue(
     // kind, not for a particular job: the limit is the only thing it can know in advance.
     public bool CanAccept(PlaybackKind kind) => Depth < MaxDepthFor(kind);
 
-    // Only an answer's segments get the reply allowance. The preamble cue is one job that plays
-    // ahead of an answer, not part of it, so it shares the announce depth as it always did.
+    // Which limit this kind's job is measured against — the depth it is measured on is the whole
+    // queue's either way. Only an answer's segments get the reply limit. The preamble cue is one job
+    // that plays ahead of an answer, not part of it, so it uses the announce limit as it always did.
     private int MaxDepthFor(PlaybackKind kind) =>
         kind == PlaybackKind.Reply ? replyMaxDepth : announceMaxDepth;
 
@@ -240,6 +244,13 @@ public sealed class PlaybackQueue(
         // synthesis early — the loop will not touch this job's audio until the previous segment has
         // finished its real-time drain, which would put a full TTS round trip into every sentence
         // seam — and disposes it once the job has settled.
+        //
+        // Started under the gate on purpose, cheap as that is not (the pump runs synchronously up to
+        // its first await, which for the HTTP synthesis is the request being sent). Both ways out
+        // are worse. Before the lock, a job the queue then refuses has started a synthesis nobody
+        // will play and somebody has to dispose — the disposal path this design exists to delete.
+        // After the insert, the loop can dequeue the job while its prefetch is still being built and
+        // enumerate the raw source, so the segment would be pulled twice.
         var seq = ++_enqueueSeq;
         var prefetch = job.Kind == PlaybackKind.Reply && prefetchBufferChunks is { } capacity
             ? new PrefetchedAudio(job.Audio, capacity)

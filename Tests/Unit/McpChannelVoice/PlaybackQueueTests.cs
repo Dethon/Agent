@@ -378,6 +378,26 @@ public class PlaybackQueueTests
     }
 
     [Fact]
+    public async Task Enqueue_MixedKinds_EachLimitIsMeasuredAgainstTheWholeQueueDepth()
+    {
+        // The two limits are thresholds on the one queue depth, not two counters. What the reply
+        // limit buys is that an answer is not refused for what an announcement queued; an
+        // announcement arriving behind pending sentences is still measured against the announce
+        // limit, which is exactly what that limit says — waiting behind that much speech is too
+        // long. Both single-kind tests above pass either way, so this is the one that pins it.
+        var queue = new PlaybackQueue(replyMaxDepth: 4, announceMaxDepth: 2, prefetchBufferChunks: null);
+
+        queue.Enqueue(Job("s1", PlaybackKind.Reply)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("s2", PlaybackKind.Reply)).Refused.ShouldBeNull();
+
+        queue.Enqueue(Job("announce", PlaybackKind.Announce)).Refused.ShouldBe(RefusalReason.QueueFull);
+
+        queue.Enqueue(Job("s3", PlaybackKind.Reply)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("s4", PlaybackKind.Reply)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("s5", PlaybackKind.Reply)).Refused.ShouldBe(RefusalReason.QueueFull);
+    }
+
+    [Fact]
     public async Task Enqueue_ConcurrentProducers_NeverOvershootTheKindsAllowance()
     {
         // Deciding to accept and inserting are one act under the gate. Decided outside it, two
