@@ -275,6 +275,18 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             }
         }
 
+        // A move that streamed nothing is not a move: no destination was created, and the skipped
+        // delete leaves the source in place — reporting "ok" would present that as done.
+        if (deleteSource && transferred == 0 && failed == 0)
+        {
+            return ToolError.Create(
+                ToolError.Codes.UnsupportedOperation,
+                $"'{srcVirtual}' has no files to stream, and a cross-filesystem move cannot recreate " +
+                "an empty directory on the destination; nothing was moved.",
+                retryable: false,
+                hint: "Create the directory on the destination filesystem instead, then remove the source.");
+        }
+
         if (deleteSource && failed == 0 && transferred > 0 &&
             !(await src.Backend.DeleteAsync(src.RelativePath, ct)).TryGetValue(out _, out var deleteError))
         {

@@ -42,6 +42,34 @@ public class VfsTransferDeleteSourceTests
         result["hint"]!.GetValue<string>().ShouldNotBeNullOrWhiteSpace();
     }
 
+    // A cross-mount move of a directory with nothing to stream used to answer "ok" while doing
+    // nothing: no destination was created, and the skipped delete left the source in place.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TransferDirectoryAsync_NothingToStreamOnAMove_ReportsTheRefusalNotOk(bool onlyDirMarkers)
+    {
+        string[] entries = onlyDirMarkers ? ["src/sub/"] : [];
+        var src = new Mock<IFileSystemBackend>();
+        src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
+            {
+                Entries = entries, Truncated = false, Total = entries.Length
+            }));
+        var dst = new Mock<IFileSystemBackend>();
+
+        var result = await VfsCopyTool.TransferDirectoryAsync(
+            new FileSystemResolution(src.Object, "src"),
+            new FileSystemResolution(dst.Object, "dst"),
+            "/media/src", "/vault/dst",
+            overwrite: false, createDirectories: true, deleteSource: true, CancellationToken.None);
+
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
+        result["message"]!.GetValue<string>().ShouldContain("/media/src");
+        src.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task TransferDirectoryAsync_SourceDeleteRefused_ReportsTheFailureNotOk()
     {
