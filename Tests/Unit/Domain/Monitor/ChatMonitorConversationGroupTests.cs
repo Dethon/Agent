@@ -408,6 +408,45 @@ public class ChatMonitorConversationGroupTests
         }
     }
 
+    [Fact]
+    public async Task Group_ContextDisposedBeforeItIsUsed_LogsAndCompletesTheGroup()
+    {
+        // Resolving the context is guarded, but registering the completion callback on it and
+        // linking its token are not, and both throw on a context that was disposed in between —
+        // the resolver being disposed at shutdown while this group resolves. Thrown out of
+        // RunAsync they leak the group exactly like a failed resolve, so they belong under the
+        // same guard.
+        var logger = new Mock<ILogger<ChatMonitor>>();
+        var channel = new FakeChannelConnection();
+        var threadResolver = new ChatThreadResolver();
+        var agentKey = new AgentKey("conv-1");
+        // Disposing the context does not take it out of the resolver, so this group resolves a
+        // dead one.
+        threadResolver.Resolve(agentKey).Dispose();
+        await using var group = new ConversationGroup(
+            agentKey,
+            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
+            new DeliveryTargetResolver([channel], logger.Object),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+        var grouping = new FakeGrouping(agentKey);
+        grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
+        var completed = false;
+
+        await foreach (var _ in group.RunAsync(grouping, () => completed = true, CancellationToken.None))
+        { }
+
+        completed.ShouldBeTrue();
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<ObjectDisposedException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
     private sealed class FakeGrouping(AgentKey key)
         : IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)>
     {

@@ -70,14 +70,13 @@ internal sealed class ConversationGroup(
         // completion callback and the turn token, so it exists before any message is read: a
         // command that found no live context would leave this group running against a context
         // resolved after it.
-        var context = TryResolveContext(onGroupComplete);
-        if (context is null)
+        var linked = TrySetUpContext(onGroupComplete);
+        if (linked is null)
         {
             yield break;
         }
 
-        context.RegisterCompletionCallback(onGroupComplete);
-        using var linkedCts = context.GetLinkedTokenSource(ct);
+        using var linkedCts = linked;
         _turnCt = linkedCts.Token;
 
         await foreach (var update in RunTurnsSequentiallyAsync(messages))
@@ -86,23 +85,29 @@ internal sealed class ConversationGroup(
         }
     }
 
-    // The same protection the turn loop gives a half-built group, one stage earlier. Resolving
-    // the context is the first thing the group does, and it throws once the container has
-    // disposed the resolver at shutdown. Thrown out of RunAsync it would be swallowed by the
-    // monitor's stream merge, leaving the grouping never completed and every later message for
-    // this conversation queued into a group nobody reads. Completing the grouping here ends it,
-    // so a message arriving after a resolver that is up again opens a fresh group.
-    private ChatThreadContext? TryResolveContext(Action onGroupComplete)
+    // The same protection the turn loop gives a half-built group, one stage earlier. Setting the
+    // context up is the first thing the group does, and every step of it throws: resolving,
+    // once the container has disposed the resolver at shutdown; registering the callback and
+    // linking the token, on a context disposed between resolving it and using it — the same
+    // shutdown race one step later, and the /cancel that replaced this group's context while it
+    // was starting. Thrown out of RunAsync any of them would be swallowed by the monitor's
+    // stream merge, leaving the grouping never completed and every later message for this
+    // conversation queued into a group nobody reads. Completing the grouping here ends it, so a
+    // message arriving after a resolver that is up again opens a fresh group.
+    private CancellationTokenSource? TrySetUpContext(Action onGroupComplete)
     {
         try
         {
-            _context = threadResolver.Resolve(agentKey);
-            return _context;
+            var context = threadResolver.Resolve(agentKey);
+            context.RegisterCompletionCallback(onGroupComplete);
+            var linked = context.GetLinkedTokenSource(_groupCt);
+            _context = context;
+            return linked;
         }
         catch (Exception ex)
         {
             logger.LogError(ex,
-                "Resolving the thread context failed for conversation {ConversationId} and agent {AgentId}; ending the group",
+                "Setting up the thread context failed for conversation {ConversationId} and agent {AgentId}; ending the group",
                 agentKey.ConversationId, agentKey.AgentId);
             onGroupComplete();
             return null;
