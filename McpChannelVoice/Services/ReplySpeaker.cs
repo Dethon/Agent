@@ -165,10 +165,11 @@ public sealed class ReplySpeaker(
 
         while (true)
         {
-            // Checked BEFORE taking the text, not after: TryTakeSpeakable removes the run from the
-            // buffer, so a refused enqueue used to discard it outright — the user heard an answer
-            // with a hole in the middle while the turn still settled Spoken. Leaving it buffered
-            // means the next chunk, or the StreamComplete flush, still speaks it.
+            // Asked before the text is taken, which is worth doing — a segment refused for depth
+            // costs a consumed dispatch stamp and its metrics — but it is not the guarantee: it
+            // answers for the limit only, and it answers in advance. What guarantees no text is lost
+            // is the refusal below handing the run back, because TryTakeSpeakable has already
+            // removed it from the buffer by then.
             if (!session.Playback.CanAccept(PlaybackKind.Reply))
             {
                 return;
@@ -182,13 +183,21 @@ public sealed class ReplySpeaker(
                 return;
             }
 
-            Speak(session, segment, conversationId, isReply: true);
+            if (Speak(session, segment, conversationId, isReply: true) is not null)
+            {
+                // Back in the buffer for the next chunk, or the StreamComplete flush, to speak.
+                // The flush itself never puts anything back: nothing would follow it, so the text
+                // would sit there until some later turn spoke it out of nowhere.
+                accumulator.PutBack(conversationId, segment);
+                return;
+            }
         }
     }
 
     // Synchronous, because queueing is: the segment's synthesis is handed to the queue rather than
-    // started here, and the queue answers immediately.
-    private void Speak(SatelliteSession session, string text, string conversationId, bool isReply)
+    // started here, and the queue answers immediately. Returns why the queue turned the job away, so
+    // the streaming path can hand the text it spent back.
+    private RefusalReason? Speak(SatelliteSession session, string text, string conversationId, bool isReply)
     {
         var options = new SynthesisOptions { Voice = session.ResolveVoice(settings) };
 
@@ -319,7 +328,7 @@ public sealed class ReplySpeaker(
 
         if (!isReply)
         {
-            return;
+            return ticket.Refused;
         }
 
         // One binding for every way the job can end, where there used to be a release on three
@@ -328,6 +337,8 @@ public sealed class ReplySpeaker(
         _ = ticket.Completed.ContinueWith(
             settled => SettleSegment(settled.Result, segment, session, conversationId),
             TaskScheduler.Default);
+
+        return ticket.Refused;
     }
 
     // Runs unobserved on the queue's signal, so it guards itself: the queue no longer swallows what

@@ -50,6 +50,19 @@ public sealed class ReplyTextAccumulator
         }
     }
 
+    // Hands a taken run back, for a segment the playback queue refused after TryTakeSpeakable had
+    // already removed it from the buffer. Prepended rather than appended: the run is older than
+    // anything that arrived while it was in flight, and the answer is spoken in the order it was
+    // written.
+    public void PutBack(string conversationId, string text)
+    {
+        var buffer = _buffers.GetOrAdd(conversationId, _ => new StringBuilder());
+        lock (buffer)
+        {
+            buffer.Insert(0, text);
+        }
+    }
+
     public string Flush(string conversationId)
     {
         if (!_buffers.TryRemove(conversationId, out var buffer))
