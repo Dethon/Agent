@@ -13,7 +13,7 @@ namespace Domain.Tools.Downloads.Vfs;
 public sealed class MediaLibraryDiskFileSystem(
     IFileSystemClient client,
     LibraryPathConfig root,
-    DownloadsOverlay downloads) : DiskFileSystem(Name, Mount(root), client, root)
+    DownloadsOverlay downloads) : DiskFileSystem(Name, Mount(root), client, root), ICrossMountMoveGuard
 {
     public const string Name = "media";
 
@@ -99,16 +99,28 @@ public sealed class MediaLibraryDiskFileSystem(
             : await downloads.TouchesActiveDownloadAsync(destinationPath, ct) ? destinationPath
             : null;
 
-        return offender is null
-            ? null
-            : FsError.Fail<T>(ToolError.Codes.UnsupportedOperation,
-                $"'{offender}' belongs to an active download; moving across that boundary would "
-                + "leave the download writing into files the move cannot follow, and anything moved "
-                + "inside is removed when the download is cancelled.",
-                retryable: false,
-                hint: $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
-                      + "for it to finish, then move the files.");
+        return offender is null ? null : new FsResult<T>.Err(ActiveDownloadRefusal(offender));
     }
+
+    // The cross-mount half of the same refusal. A move between two mounts never reaches MoveAsync —
+    // it streams the payload out and then deletes the source, and on this mount that delete is the
+    // download's cancel — so VfsMoveTool asks each end about its own path first, and the answer here
+    // is the envelope the same-mount refusal already returns.
+    public async Task<ToolErrorResult?> RefuseMoveAsync(string relativePath, CancellationToken ct) =>
+        await downloads.TouchesActiveDownloadAsync(relativePath, ct)
+            ? ActiveDownloadRefusal(relativePath)
+            : null;
+
+    private static ToolErrorResult ActiveDownloadRefusal(string offender) => new()
+    {
+        ErrorCode = ToolError.Codes.UnsupportedOperation,
+        Message = $"'{offender}' belongs to an active download; moving across that boundary would "
+                  + "leave the download writing into files the move cannot follow, and anything moved "
+                  + "inside is removed when the download is cancelled.",
+        Retryable = false,
+        Hint = $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
+               + "for it to finish, then move the files."
+    };
 
     public override async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
