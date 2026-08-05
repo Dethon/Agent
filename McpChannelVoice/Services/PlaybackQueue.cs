@@ -86,6 +86,20 @@ public sealed record FirstAudioTiming(
     TimeSpan? SinceSpeechEnd = null,
     TimeSpan? QueueWait = null);
 
+// Where a user turn begins and where the user stopped talking, as the playback loop needs them to
+// report its latencies. The queue is what reads them back, but every producer holds the queue and a
+// caller that is not a turn — the approval prompt's one-shot listen, say — would be one call away
+// from re-anchoring the turn actually in flight. So the anchors are not on the queue's surface: they
+// are implemented explicitly, and a caller has to hold this interface to write one. CaptureSession
+// is the type that does, which is ADR 0013's "which type a caller holds is the statement that it is
+// or is not a turn" made true rather than merely observed.
+public interface ITurnAnchor
+{
+    void MarkTurnStart(long timestamp);
+
+    void MarkSpeechEnd(long captureClosedAt, long endpointTailMs, TimeProvider time);
+}
+
 // What a satellite hears next: everything queued for playback on one connection, played one job at a
 // time in the order it was accepted, with a high-priority job cutting in. One queue per satellite
 // connection — built with the connection, whose run drives its loop and whose drain settles what was
@@ -100,7 +114,7 @@ public sealed record FirstAudioTiming(
 public sealed class PlaybackQueue(
     int replyMaxDepth = StreamingTtsConfig.DefaultMaxQueuedSegments,
     int announceMaxDepth = AnnounceSettings.DefaultQueueMaxDepth,
-    int? prefetchBufferChunks = StreamingTtsConfig.DefaultPrefetchBufferChunks)
+    int? prefetchBufferChunks = StreamingTtsConfig.DefaultPrefetchBufferChunks) : ITurnAnchor
 {
     // Play order, guarded by _gate: normal jobs append, a High job cuts in ahead of the queued
     // normal jobs (behind any High already waiting, so Highs stay FIFO among themselves). A channel
@@ -296,7 +310,7 @@ public sealed class PlaybackQueue(
 
     // Records the timestamp (from the loop's TimeProvider) at which the current user turn began, so
     // the loop can report wake/turn -> first-audio latency. Set at capture-open each turn.
-    public void MarkTurnStart(long timestamp) => Interlocked.Exchange(ref _turnStartedAt, timestamp);
+    void ITurnAnchor.MarkTurnStart(long timestamp) => Interlocked.Exchange(ref _turnStartedAt, timestamp);
 
     // Records when the user stopped talking — everything after this is machine time they wait
     // through. The caller can only observe the CLOSE of the capture, which is a whole endpointing
@@ -307,7 +321,7 @@ public sealed class PlaybackQueue(
     // so the tail's audio-domain length is also its wall-clock length; the only residual error is
     // the gate-decision -> capture-close handoff. Stamped with the same TimeProvider the loop reads,
     // exactly like MarkTurnStart, so the two spans are comparable.
-    public void MarkSpeechEnd(long captureClosedAt, long endpointTailMs, TimeProvider time) =>
+    void ITurnAnchor.MarkSpeechEnd(long captureClosedAt, long endpointTailMs, TimeProvider time) =>
         Interlocked.Exchange(
             ref _speechEndedAt, captureClosedAt - (endpointTailMs * time.TimestampFrequency / 1000));
 

@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Domain.DTOs.Voice;
@@ -14,6 +15,26 @@ namespace Tests.Unit.McpChannelVoice;
 // the loop would move a fake clock before the loop had taken its first reading.
 public class PlaybackQueueTests
 {
+    // The anchors are ITurnAnchor's, not the queue's (see the surface test below): a test that
+    // walks a turn stands in for CaptureSession, so it holds what CaptureSession holds.
+    private static ITurnAnchor Anchors(PlaybackQueue queue) => queue;
+
+    // ADR 0013: which type a caller holds is the statement that it is or is not a turn. Every
+    // producer holds the queue, so the anchors cannot sit on it — a one-shot listen that is not a
+    // turn (an approval prompt) would be one call away from corrupting the latency of the turn
+    // actually in flight. They live on ITurnAnchor, which CaptureSession is the type to hold.
+    [Fact]
+    public void PlaybackQueue_DoesNotCarryTheTurnAnchorsOnItsOwnSurface()
+    {
+        var surface = typeof(PlaybackQueue)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Select(m => m.Name)
+            .ToList();
+
+        surface.ShouldNotContain("MarkTurnStart");
+        surface.ShouldNotContain("MarkSpeechEnd");
+    }
+
     [Fact]
     public async Task Enqueue_Alarm_PreemptsSegmentsAlreadyQueuedBehindTheCurrentOne()
     {
@@ -354,7 +375,7 @@ public class PlaybackQueueTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        queue.MarkTurnStart(time.GetTimestamp());
+        Anchors(queue).MarkTurnStart(time.GetTimestamp());
         time.Advance(TimeSpan.FromSeconds(2)); // capture + STT + agent thinking before synthesis begins
 
         // Synthesis takes 300 ms to produce its first chunk; 16000 bytes = 500 ms of audio.
@@ -474,9 +495,9 @@ public class PlaybackQueueTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var fired = new TaskCompletionSource<FirstAudioTiming>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        queue.MarkTurnStart(time.GetTimestamp());
+        Anchors(queue).MarkTurnStart(time.GetTimestamp());
         time.Advance(TimeSpan.FromSeconds(3));            // the user talking
-        queue.MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 0, time);
+        Anchors(queue).MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 0, time);
         time.Advance(TimeSpan.FromSeconds(2));            // verify + STT + agent
         var enqueuedAt = time.GetTimestamp();
         time.Advance(TimeSpan.FromMilliseconds(400));     // the reply waits behind the preamble
@@ -555,7 +576,7 @@ public class PlaybackQueueTests
 
         time.Advance(TimeSpan.FromSeconds(3));            // the user talking
         time.Advance(TimeSpan.FromMilliseconds(2000));    // the endpointing tail the gate waits out
-        queue.MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 2000, time);
+        Anchors(queue).MarkSpeechEnd(time.GetTimestamp(), endpointTailMs: 2000, time);
         time.Advance(TimeSpan.FromMilliseconds(1000));    // verify + STT + agent
 
         var job = new PlaybackJob(
