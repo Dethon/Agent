@@ -35,7 +35,12 @@ public sealed class ChannelNotificationEmitter
 
     private bool Deliver(ChannelInboxItem item)
     {
-        var live = _inbox.HasLiveSubscriber();
+        // Buffer-always enqueues to one specific id, so its liveness answer is about that id: a
+        // poller under a different derived id must read as "nobody listening", or the caller's
+        // not-live warning stays silent while items pile into a queue nobody drains.
+        var live = _policy == DeliveryPolicy.BufferAlways
+            ? _inbox.HasLiveSubscriber(_subscriberId!)
+            : _inbox.HasLiveSubscriber();
         switch (_policy)
         {
             case DeliveryPolicy.GateOnLive when !live:

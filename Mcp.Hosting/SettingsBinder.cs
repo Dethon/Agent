@@ -49,7 +49,14 @@ public static class SettingsBinder
     }
 
     private static string Describe(string path) =>
-        $"{path} (environment variable {path.Replace(".", "__", StringComparison.Ordinal)})";
+        $"{path} (environment variable {EnvironmentVariableName(path)})";
+
+    // Bots[0].BotToken lives in the environment as Bots__0__BotToken: an index or key is one more
+    // path segment there, not bracket syntax.
+    private static string EnvironmentVariableName(string path) =>
+        path.Replace("[", "__", StringComparison.Ordinal)
+            .Replace("]", "", StringComparison.Ordinal)
+            .Replace(".", "__", StringComparison.Ordinal);
 
     // Null only, never empty. Three shipped servers carry required members that ship as "" and are
     // filled from secrets, and an empty optional key is how a feature is switched off; an
@@ -80,12 +87,35 @@ public static class SettingsBinder
             return IsRequired(property) && !section.GetSection(property.Name).Exists() ? [memberPath] : [];
         }
 
-        // Recurses into a nested section, which is what a missing configuration block produces. A
-        // collection's elements are data rather than sections, and no server reads one at startup.
-        return IsSection(property.PropertyType, settingsAssembly)
-            ? MissingRequiredMembers(value, section.GetSection(property.Name), memberPath, settingsAssembly)
-            : [];
+        // Recurses into a nested section, which is what a missing configuration block produces.
+        if (IsSection(property.PropertyType, settingsAssembly))
+        {
+            return MissingRequiredMembers(value, section.GetSection(property.Name), memberPath, settingsAssembly);
+        }
+
+        // Collection elements are read at startup too: Telegram materialises BotRegistry(settings.Bots)
+        // and voice SatelliteRegistry(settings.Satellites) at registration time, so a required member
+        // missing from one element must fail startup by its indexed name instead of surfacing as a
+        // null deep inside the server.
+        return Elements(value)
+            .Where(element => element.Value is not null && IsSection(element.Value.GetType(), settingsAssembly))
+            .SelectMany(element => MissingRequiredMembers(
+                element.Value!,
+                section.GetSection(property.Name).GetSection(element.Key),
+                $"{memberPath}[{element.Key}]",
+                settingsAssembly));
     }
+
+    private static IEnumerable<(string Key, object? Value)> Elements(object value) =>
+        value switch
+        {
+            string => [],
+            IDictionary dictionary => dictionary.Keys.Cast<object>()
+                .Select(key => (key.ToString()!, dictionary[key])),
+            IEnumerable enumerable => enumerable.Cast<object?>()
+                .Select((element, index) => (index.ToString(), element)),
+            _ => []
+        };
 
     private static bool IsRequired(PropertyInfo property) =>
         property.IsDefined(typeof(RequiredMemberAttribute), inherit: false);

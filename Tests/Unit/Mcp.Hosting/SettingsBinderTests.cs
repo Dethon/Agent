@@ -128,6 +128,56 @@ public class SettingsBinderTests : IDisposable
             .BindSettings<ProbeLimitsSettings>(_secretsId)
             .Output!.CapBytes.ShouldBe(0);
 
+    // Telegram constructs BotRegistry(settings.Bots) at registration time, so a bot whose token
+    // never bound used to blow up anonymously inside new TelegramBotClient(null). The walk must
+    // reach into the element and fail startup by the indexed name.
+    [Fact]
+    public void AMissingRequiredMemberOfACollectionElement_FailsNamingTheIndexedPath() =>
+        Should.Throw<InvalidOperationException>(() =>
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?> { ["Bots:0:AgentId"] = "nabu" })
+                    .BindSettings<ProbeFleetSettings>(_secretsId))
+            .Message.ShouldContain("Bots[0].BotToken (environment variable Bots__0__BotToken)");
+
+    // The null-only rule holds inside elements too: Telegram's bot tokens ship as "" and are
+    // filled from secrets.
+    [Fact]
+    public void AnEmptyRequiredMemberOfACollectionElement_Binds() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Bots:0:AgentId"] = "nabu",
+                ["Bots:0:BotToken"] = ""
+            })
+            .BindSettings<ProbeFleetSettings>(_secretsId)
+            .Bots[0].BotToken.ShouldBe("");
+
+    [Fact]
+    public void AFullyConfiguredCollection_Binds() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Bots:0:AgentId"] = "nabu",
+                ["Bots:0:BotToken"] = "token-a",
+                ["Bots:1:AgentId"] = "jack",
+                ["Bots:1:BotToken"] = "token-b"
+            })
+            .BindSettings<ProbeFleetSettings>(_secretsId)
+            .Bots.Length.ShouldBe(2);
+
+    // Voice's satellites bind as a dictionary and are materialised into SatelliteRegistry at
+    // registration time, so the walk has to follow dictionary keys the same way it follows indexes.
+    [Fact]
+    public void AMissingRequiredMemberOfADictionaryElement_FailsNamingTheKeyedPath() =>
+        Should.Throw<InvalidOperationException>(() =>
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Satellites:kitchen:Identity"] = "kitchen-sat"
+                    })
+                    .BindSettings<ProbeSatelliteSettings>(_secretsId))
+            .Message.ShouldContain("Satellites[kitchen].Room");
+
     // The lower bound of the precedence chain: environment variables are added by BindSettings
     // after the caller's file sources, so an environment variable beats an appsettings value.
     [Fact]
@@ -189,6 +239,34 @@ public record ProbeSearchConfig
 public record ProbeSolverConfig
 {
     public required string ApiKey { get; init; }
+}
+
+// Shaped like the Telegram server: a required array whose elements carry required members, read at
+// registration time by BotRegistry.
+public record ProbeFleetSettings
+{
+    public required ProbeBotConfig[] Bots { get; init; }
+}
+
+public record ProbeBotConfig
+{
+    public required string AgentId { get; init; }
+
+    public required string BotToken { get; init; }
+}
+
+// Shaped like the voice server: satellites keyed by name, read at registration time by
+// SatelliteRegistry.
+public record ProbeSatelliteSettings
+{
+    public Dictionary<string, ProbeSatelliteConfig> Satellites { get; init; } = new();
+}
+
+public record ProbeSatelliteConfig
+{
+    public required string Identity { get; init; }
+
+    public required string Room { get; init; }
 }
 
 // Shaped like the sandbox server: required value types that a null-only walk cannot see missing,
