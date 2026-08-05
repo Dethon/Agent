@@ -94,7 +94,8 @@ public sealed class InitializationEffectTests : IDisposable
             "space:default",
             "join:default",
             "agents",
-            "storage-get:agentConfigPatch:agent-1",
+            // No agentConfigPatch read here: per-agent settings hang off SetAgents, which
+            // AgentSettingsEffect handles, so they load on every catalog rather than this one.
             "storage-get:selectedAgentId",
             "storage-set:selectedAgentId",
             "topics:agent-1",

@@ -128,8 +128,6 @@ public sealed class InitializationEffect : IDisposable
 
     private async Task SelectAgentAndLoadTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {
-        await AgentSettingsEffect.LoadAsync(agents, _localStorage, _dispatcher);
-
         if (agents.Count == 0)
         {
             return;
