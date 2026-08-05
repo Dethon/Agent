@@ -146,8 +146,14 @@ public static class SettingsBinder
         && !typeof(IEnumerable).IsAssignableFrom(type)
         && !IsFrameworkType(type);
 
+    // The namespace must match a root exactly or sit under it. A bare prefix match would read
+    // "SystemX" or "MicrosoftFoo" as the BCL and walk straight past an application settings record,
+    // switching off the startup gate for it without a word.
     private static bool IsFrameworkType(Type type) =>
         type.Assembly == typeof(object).Assembly
-        || (type.Namespace?.StartsWith("System", StringComparison.Ordinal) ?? false)
-        || (type.Namespace?.StartsWith("Microsoft", StringComparison.Ordinal) ?? false);
+        || IsUnder(type.Namespace, "System")
+        || IsUnder(type.Namespace, "Microsoft");
+
+    private static bool IsUnder(string? nameSpace, string root) =>
+        nameSpace == root || (nameSpace?.StartsWith(root + ".", StringComparison.Ordinal) ?? false);
 }
