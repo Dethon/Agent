@@ -22,7 +22,6 @@ public class ChatMonitorConversationGroupTests
         stateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>())).Returns(Task.CompletedTask);
         var threadResolver = new ChatThreadResolver(stateStore.Object);
         var agentKey = new AgentKey("conv-1");
-        threadResolver.Resolve(agentKey);
         var channel = MonitorTestMocks.CreateChannel(
             messages: MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", content: "/clear"));
         var agentFactory = MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent());
