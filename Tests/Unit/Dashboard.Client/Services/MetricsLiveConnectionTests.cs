@@ -142,22 +142,10 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
     }
 
-    // The old defect in one assertion: the started latch was set before the work, so a failed first
-    // start left the module believing it was running and every later call did nothing.
-    [Fact]
-    public async Task ConnectAsync_AFailedStart_DoesNotLockTheModuleOut()
-    {
-        _hub.FailedStartsRemaining = 2;
-
-        await ConnectAsync();
-
-        await RaiseVoiceAsync("kitchen-01");
-
-        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
-    }
-
     // Handlers are bound once, before the first start attempt. Rebinding per attempt would leave
-    // every handler registered as many times as the start was retried.
+    // every handler registered as many times as the start was retried. The event arriving at all
+    // also covers the old latch defect: the started latch was set before the work, so a failed
+    // first start left the module believing it was running and every later call did nothing.
     [Fact]
     public async Task ConnectAsync_AfterRetriedStarts_BindsEachHandlerOnce()
     {

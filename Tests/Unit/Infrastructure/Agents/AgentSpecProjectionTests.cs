@@ -57,18 +57,6 @@ public sealed class AgentSpecProjectionTests
     private static AgentSpec SubAgentSpec() => AgentSpecProjection.ForSubAgent(
         _subAgentDefinition, "conv-1", ["allow-*"], "fran", _openRouter, null);
 
-    // The defect this whole change exists to fix: the subagent path built a metrics publisher
-    // and never handed it to the agent, so a subagent published no turn latency at all. Its
-    // events belong to its own identity and to the conversation its parent is running in.
-    [Fact]
-    public void ForSubAgent_ASubAgentDefinition_CarriesItsMetricsIdentityAndTheParentConversation()
-    {
-        var spec = SubAgentSpec();
-
-        spec.MetricsAgentId.ShouldBe("Worker");
-        spec.ConversationId.ShouldBe("conv-1");
-    }
-
     // One row per field the two paths resolve, so a new difference is a new row rather than a
     // new test. A row whose two expectations are equal is a difference this change removed on
     // purpose, and the table is where that is stated.

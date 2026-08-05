@@ -50,22 +50,9 @@ public class FileSystemToolFeatureTests
 
     // GetTools is a hand-written list sitting beside the one operation table, and nothing bound the
     // two together: an eleventh operation could join FileSystemOperations.All, be enabled by config
-    // and produce no tool — half-existing, which is the thing that list exists to prevent. The tools
-    // the feature builds are exactly the operations the table says have one.
+    // and produce no tool — half-existing, which is the thing that list exists to prevent.
+    // FileSystemOperationsTests binds the two together; here each declared key is driven.
     public static TheoryData<string> DeclaredToolKeys() => new(FileSystemToolFeature.AllToolKeys);
-
-    [Fact]
-    public void GetTools_AreExactlyTheOperationsTheTableGivesADomainTool()
-    {
-        var tools = _feature.GetTools(new FeatureConfig()).Select(t => t.Name).ToList();
-
-        FileSystemToolFeature.AllToolKeys.ShouldBe(
-            FileSystemOperations.All.Where(o => o.ToolKey is not null).Select(o => o.ToolKey!),
-            ignoreOrder: true);
-        tools.ShouldBe(
-            FileSystemOperations.All.Where(o => o.ToolKey is not null).Select(o => $"domain__filesystem__{o.Capability}"),
-            ignoreOrder: true);
-    }
 
     [Theory]
     [MemberData(nameof(DeclaredToolKeys))]

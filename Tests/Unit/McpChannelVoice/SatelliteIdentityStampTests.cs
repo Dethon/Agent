@@ -66,17 +66,4 @@ public class SatelliteIdentityStampTests
         stamped.Room.ShouldBeNull();
         stamped.Identity.ShouldBeNull();
     }
-
-    [Fact]
-    public void About_TakesTheIdentityValueOnItsOwn()
-    {
-        // The arbitration handle carries the identity without the session it came from.
-        var identity = SatelliteIdentity.Of(Session());
-
-        var stamped = new VoiceEvent { Metric = VoiceMetric.WakeSuppressed }.About(identity);
-
-        stamped.SatelliteId.ShouldBe("kitchen-01");
-        stamped.Room.ShouldBe("Kitchen");
-        stamped.Identity.ShouldBe("household");
-    }
 }

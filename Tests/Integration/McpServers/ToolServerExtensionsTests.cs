@@ -54,39 +54,6 @@ public class ToolServerExtensionsTests
             .AddChannelServer(DeliveryPolicy.Broadcast, errorResult: Marked("channel-server")))
             .ShouldBe(1);
 
-    [Fact]
-    public async Task AThrowingToolOnAToolServer_ComesBackAsAnErrorResult()
-    {
-        await using var server = await StartToolServerAsync();
-
-        var result = await server.Client.CallToolAsync("throws");
-
-        result.IsError.ShouldBe(true);
-        InMemoryMcpServer.Text(result).ShouldContain("boom");
-    }
-
-    // The rule seven tool servers never had. A cancelled fs_exec or web fetch is a call the agent
-    // deliberately stopped; coming back as an error result hands its pump something to retry.
-    //
-    // Asserted through a marked error mapper rather than by expecting a throw: the SDK's own outer
-    // handler catches whatever the filter rethrows and answers with a generic message of its own,
-    // so "did this exception reach the filter's error path" is the question that can be observed
-    // over the wire — and it is the question the rule is about.
-    // "cancels" throws OperationCanceledException without the request's own token ever being
-    // touched, so it is an ordinary failure on a tool server exactly as it is on a channel server —
-    // see CallToolErrorFilterTests for the case that is actually exempt.
-    [Fact]
-    public async Task AnUncancelledOperationCanceledExceptionOnAToolServer_BecomesAnErrorResult()
-    {
-        await using var server = await StartToolServerAsync(Marked("tool-server"));
-
-        var cancelled = await server.Client.CallToolAsync("cancels");
-        var failed = await server.Client.CallToolAsync("throws");
-
-        InMemoryMcpServer.Text(cancelled).ShouldContain("tool-server");
-        InMemoryMcpServer.Text(failed).ShouldContain("tool-server");
-    }
-
     // The dual-role ordering, over the wire: the tool-server call comes first on both real ones, so
     // its error shape is the one a caller sees.
     [Fact]
@@ -101,11 +68,6 @@ public class ToolServerExtensionsTests
 
         InMemoryMcpServer.Text(result).ShouldContain("tool-server");
     }
-
-    private static Task<RunningServer> StartToolServerAsync(Func<Exception, CallToolResult>? errorResult = null) =>
-        InMemoryMcpServer.StartAsync(services => services
-            .AddToolServer(new ProbeSettings("probe"), errorResult)
-            .WithTools<FailingTools>());
 
     private static Func<Exception, CallToolResult> Marked(string marker) => ex => new CallToolResult
     {

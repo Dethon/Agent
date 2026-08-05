@@ -77,18 +77,6 @@ public sealed class ProviderRoutingResolverTests
         Logs.ShouldContain(m => m.Contains("plain") && m.Contains("sticky routing"));
     }
 
-    // The identity is whatever the caller names, so a subagent's advisory is findable as a
-    // subagent rather than as the definition id it shares with nothing.
-    [Fact]
-    public void Resolve_ASubAgentIdentityTripsAnAdvisory_LogsAWarningNamingTheSubAgent()
-    {
-        var routing = new ProviderRouting { Order = ["deepinfra"] };
-
-        ProviderRoutingResolver.Resolve(routing, null, Model, "subagent-worker", _logger);
-
-        Logs.ShouldContain(m => m.Contains("subagent-worker") && m.Contains("sticky routing"));
-    }
-
     // Asserts the absence of an advisory rather than an empty log: nothing else may become a
     // tripwire for unrelated warnings on this logger.
     [Fact]

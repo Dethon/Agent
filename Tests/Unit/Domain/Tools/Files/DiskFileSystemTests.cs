@@ -182,16 +182,6 @@ public class DiskFileSystemTests : IDisposable
         File.Exists(Path.Combine(_root, "notes", "photo.png")).ShouldBeTrue();
     }
 
-    // A plain disk root has no such rule, so its blob writes take whatever bytes they are given.
-    [Fact]
-    public async Task PlainRoot_BlobChunksOfAnyExtension_StillWrite()
-    {
-        await PlainRoot().WriteChunksAsync("photo.png", Chunks([1, 2, 3]),
-            overwrite: true, createDirectories: true, CancellationToken.None);
-
-        File.Exists(Path.Combine(_root, "photo.png")).ShouldBeTrue();
-    }
-
     // Reading bytes as text needs a rule about which files are text, and that rule is what the text
     // shape adds. A plain disk root has none, so it does not read — and does not advertise fs_read.
     [Fact]

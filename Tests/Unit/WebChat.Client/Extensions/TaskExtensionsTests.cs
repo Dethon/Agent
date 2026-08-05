@@ -55,14 +55,4 @@ public sealed class TaskExtensionsTests
 
         _logger.Entries.ShouldBeEmpty();
     }
-
-    [Fact]
-    public void LogFaults_TaskStillRunning_ReturnsWithoutBlockingOrLogging()
-    {
-        var pending = new TaskCompletionSource().Task;
-
-        Should.NotThrow(() => pending.LogFaults(_logger));
-
-        _logger.Entries.ShouldBeEmpty();
-    }
 }

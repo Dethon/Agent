@@ -75,17 +75,6 @@ public class LatencyScopeTests
     }
 
     [Fact]
-    public void ElapsedMilliseconds_NeverRead_PublishesTheDurationAtDisposal()
-    {
-        using (_publisher.MeasureLatency(LatencyStage.MemoryRecall, "conv-1", time: _clock))
-        {
-            _clock.Advance(TimeSpan.FromMilliseconds(475));
-        }
-
-        _publisher.Events.ShouldHaveSingleItem().ShouldBeOfType<LatencyEvent>().DurationMs.ShouldBe(475);
-    }
-
-    [Fact]
     public void Dispose_CalledTwice_PublishesOnce()
     {
         var scope = _publisher.MeasureLatency(

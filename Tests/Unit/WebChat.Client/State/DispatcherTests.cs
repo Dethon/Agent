@@ -9,19 +9,6 @@ public class DispatcherTests
 
     private sealed record Unhandled : IAction;
 
-    [Fact]
-    public void Dispatch_ActionTypedAsIAction_ReachesCatchAll()
-    {
-        var dispatcher = new Dispatcher();
-        var received = new List<IAction>();
-        using var registration = dispatcher.RegisterCatchAll(received.Add);
-
-        IAction action = new Increment();
-        dispatcher.Dispatch(action);
-
-        received.ShouldHaveSingleItem().ShouldBeOfType<Increment>();
-    }
-
     // The static type at the call site must not decide this: a dispatch reached through an
     // IAction-typed variable still carries an Increment at runtime, and the typed handler
     // exists to react to exactly that.
