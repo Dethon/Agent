@@ -3,6 +3,7 @@ using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
@@ -58,7 +59,17 @@ public sealed class TopicSelectionEffect : IDisposable
         var hasMessages = _messagesStore.State.MessagesByTopic.ContainsKey(topicId);
         if (!hasMessages)
         {
-            await _sessionService.StartSessionAsync(topic);
+            var session = await _sessionService.StartSessionAsync(topic);
+
+            // The user tapped this conversation, so a session that could not be started says so
+            // once (ADR-0004). Carrying on would open a thread with no history and no session
+            // behind it — a blank conversation that answers nothing typed into it.
+            if (!session.IsLive)
+            {
+                _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+                return;
+            }
+
             var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
 
             // Re-check after async work - SendMessageEffect might have added messages

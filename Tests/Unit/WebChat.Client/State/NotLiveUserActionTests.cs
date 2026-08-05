@@ -5,7 +5,9 @@ using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
@@ -249,6 +251,43 @@ public sealed class NotLiveUserActionTests
 
         client.Approvals.State.CurrentRequest.ShouldBeNull();
         client.Toasts.State.Toasts.ShouldBeEmpty();
+    }
+
+    // Switching space is the user's own action. The join is what puts the browser in the
+    // server's space group, so a not-live join must not clear the sidebar and validate a space
+    // the server never joined — it says so and leaves the current space in place.
+    [Fact]
+    public async Task ASpaceSwitch_ThatCouldNotBeMade_RaisesOneToastAndKeepsTheCurrentSpace()
+    {
+        await using var client = new ScriptedChatClient();
+        await client.ConnectAsync();
+        client.ConfigService.WithSpace("hearth");
+        SeedTopic(client);
+
+        client.GoNotLive();
+        await client.Service<SpaceEffect>().HandleSelectSpaceAsync("hearth");
+
+        client.Toasts.State.Toasts.Count.ShouldBe(1);
+        client.Topics.State.Topics.ShouldNotBeEmpty();
+        client.Space.State.SpaceName.ShouldBe(SpaceState.Initial.SpaceName);
+    }
+
+    // Tapping a conversation is the user's own action too: a session that could not be started
+    // opens a thread that answers nothing, so it says so and loads nothing.
+    [Fact]
+    public async Task AConversationTapped_WhileNotLive_RaisesOneToastAndLoadsNoHistory()
+    {
+        await using var client = new ScriptedChatClient();
+        await client.ConnectAsync();
+        client.Dispatcher.Dispatch(new SetAgents([new AgentCatalogEntry("agent-1", "Agent One", null)]));
+        client.Dispatcher.Dispatch(new SelectAgent("agent-1"));
+        client.Dispatcher.Dispatch(new TopicsLoaded([StoredTopic.FromMetadata(TestChat.Topic("topic-1"))]));
+
+        client.GoNotLive();
+        client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        await TestChat.Eventually(() => client.Toasts.State.Toasts.Count == 1);
+        client.Messages.State.MessagesByTopic.ShouldNotContainKey("topic-1");
     }
 
     [Fact]

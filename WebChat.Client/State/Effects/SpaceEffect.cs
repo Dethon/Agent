@@ -4,6 +4,7 @@ using WebChat.Client.Extensions;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
@@ -52,20 +53,34 @@ public sealed class SpaceEffect : IDisposable
         }
 
         var space = await _configService.GetSpaceAsync(slug);
+
+        // Before the hub is up this is the first navigation rather than a switch the user made
+        // mid-session: InitializationEffect joins the slug the SelectSpace reducer has already
+        // stored and validates it, so there is nothing to do and nothing to say here.
+        if (_connectionStore.State.Status != ConnectionStatus.Connected)
+        {
+            return;
+        }
+
         if (space is null)
         {
-            // If hub isn't connected yet, skip — InitializationEffect handles initial join
-            if (_connectionStore.State.Status != ConnectionStatus.Connected)
-            {
-                return;
-            }
-
             _dispatcher.Dispatch(new InvalidSpace());
             _navigationManager.NavigateTo("/", replace: true);
             return;
         }
 
-        await _topicService.JoinSpaceAsync(slug);
+        var joined = await _topicService.JoinSpaceAsync(slug);
+
+        // The join is what puts this browser in the server's space group. Clearing the sidebar
+        // and validating the space without it would show an empty space the server never moved
+        // us to, so this says so once (ADR-0004) and commits nothing — including the slug it
+        // remembers, so the next attempt at the same space is a switch again and not a no-op.
+        if (!joined.IsLive)
+        {
+            _previousSlug = previousSlug;
+            _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
 
         try
         { await _pushNotificationService.ResubscribeAsync(); }
