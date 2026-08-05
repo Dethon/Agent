@@ -15,7 +15,8 @@ public enum DownloadsIntent
     TextRead,
     ByteRead,
     Land,
-    MoveOut
+    MoveOut,
+    Delete
 }
 
 // Overlays download semantics on the media filesystem's downloads/ subtree: every active
@@ -99,9 +100,33 @@ public sealed class DownloadsOverlay(
                 + "inside is removed when the download is cancelled.",
                 $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
                 + "for it to finish, then move the files."),
+            DownloadsIntent.Delete => await DeleteRefusalAsync(node, path, ct),
             _ => null
         };
     }
+
+    // Delete's two refusals. Everything it does — the cancel, the routing removal, the leftover
+    // recovery — is not here: the rule answers "may I" and never acts.
+    private async Task<ToolErrorResult?> DeleteRefusalAsync(DownloadsNode node, string path, CancellationToken ct) =>
+        node.Kind switch
+        {
+            DownloadNodeKind.DownloadDir => null,
+            // A live status file is a view of a download the agent meant to leave running; a
+            // leftover one is an ordinary file the disk removes.
+            DownloadNodeKind.StatusFile => await IsLiveStatusFileAsync(node, ct)
+                ? Error(
+                    ToolError.Codes.UnsupportedOperation,
+                    $"'{path}' is read-only while a download owns it: it is the rendered view of a "
+                    + "live download, and removing it would dismantle part of a download that is "
+                    + "still running.",
+                    $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download itself.")
+                : null,
+            _ => Error(
+                ToolError.Codes.UnsupportedOperation,
+                $"fs_delete on the {MediaLibraryDiskFileSystem.Name} filesystem only removes "
+                + $"download directories ({MediaFilesystem.DownloadsSubdir}/<id>) and leftover "
+                + $"{DownloadsPath.StatusFileName} files no live download owns.")
+        };
 
     // Reached only once the rule has allowed a text read, so the path is a status file: either the
     // rendered view of a live download or a leftover the disk owns.
@@ -199,24 +224,15 @@ public sealed class DownloadsOverlay(
         }
     }
 
-    // Null when the overlay owns nothing at this path: only the leftover status file of a download
-    // that no longer exists, which is a real file the disk must be allowed to remove. Every other
-    // path on this mount is answered here, including the refusals.
+    // Reached only once the rule has allowed a delete, so this is either a download directory —
+    // whose delete is the download's cancel — or a leftover status file, which is null: a real file
+    // the disk must be allowed to remove.
     public async Task<FsResult<FsRemoveResult>?> TryDeleteAsync(string path, CancellationToken ct)
     {
         var node = ParseNode(path);
-        if (node.Kind == DownloadNodeKind.StatusFile)
-        {
-            return await downloadClient.GetDownloadItem(node.Id!.Value, ct) is null
-                ? null
-                : new FsResult<FsRemoveResult>.Err(Error(ToolError.Codes.UnsupportedOperation, $"{path} is read-only"));
-        }
-
         if (node.Kind != DownloadNodeKind.DownloadDir)
         {
-            return new FsResult<FsRemoveResult>.Err(Error(
-                ToolError.Codes.UnsupportedOperation,
-                $"fs_delete on the media filesystem only removes download directories ({MediaFilesystem.DownloadsSubdir}/<id>)."));
+            return null;
         }
 
         var id = node.Id!.Value;

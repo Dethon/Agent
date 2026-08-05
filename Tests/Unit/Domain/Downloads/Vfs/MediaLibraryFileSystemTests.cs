@@ -478,6 +478,63 @@ public class MediaLibraryFileSystemTests : IDisposable
         _disk.TrashedPaths.ShouldContain(p => p.EndsWith("status.json", StringComparison.Ordinal));
     }
 
+    // Delete refuses two things and does everything else. Removing a live download's status file
+    // would dismantle part of a download the agent meant to leave running, and every path that is
+    // neither a download directory nor a status file is outside what delete means here.
+    [Theory]
+    [InlineData("downloads/42/status.json", "read-only")]
+    [InlineData("downloads/42/payload.mkv", "only removes download directories")]
+    [InlineData("Movies/film.mkv", "only removes download directories")]
+    [InlineData("downloads/042", "only removes download directories")]
+    [InlineData("downloads/ 42 ", "only removes download directories")]
+    [InlineData("downloads/+42", "only removes download directories")]
+    public async Task Delete_ARefusedMediaPath_CancelsNothing(string path, string reason)
+    {
+        _client.Add(Item(42));
+
+        var error = (await _sut.DeleteAsync(path, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain(reason);
+        _client.CleanedUp.ShouldBeEmpty();
+        _disk.RemovedDirectories.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("downloads/42")]
+    [InlineData("downloads/./42")]
+    [InlineData("downloads/43/../42")]
+    public async Task Delete_ALiveDownloadDirectory_CancelsIt(string path)
+    {
+        _client.Add(Item(42));
+
+        (await _sut.DeleteAsync(path, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>().Value.Message.ShouldContain("cancelled");
+
+        _client.CleanedUp.ShouldContain(42);
+    }
+
+    [Fact]
+    public async Task Delete_ALeftoverDownloadDirectory_RemovesIt()
+    {
+        Directory.CreateDirectory(Path.Combine(_libraryRoot, "downloads", "99"));
+
+        (await _sut.DeleteAsync("downloads/99", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
+
+        _client.CleanedUp.ShouldBeEmpty();
+        _disk.RemovedDirectories.ShouldContain(Path.Combine(_libraryRoot, "downloads", "99"));
+    }
+
+    [Fact]
+    public async Task Delete_ADownloadDirectoryThatExistsNowhere_IsNotFound()
+    {
+        (await _sut.DeleteAsync("downloads/99", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>()
+            .Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+    }
+
     // The virtual file wins for as long as a download owns the id: it is a rendered view, not a
     // file, so info reports the rendered size and delete still refuses it.
     [Fact]

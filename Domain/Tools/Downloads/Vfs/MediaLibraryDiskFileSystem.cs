@@ -91,8 +91,12 @@ public sealed class MediaLibraryDiskFileSystem(
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
         await downloads.TryInfoAsync(path, ct) ?? await base.InfoAsync(path, ct);
 
+    // Delete contributes its two refusals to the rule like every other operation, and keeps its
+    // effects — the cancel, the routing removal, the leftover recovery — in the overlay behind it.
     public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
-        await downloads.TryDeleteAsync(path, ct) ?? await base.DeleteAsync(path, ct);
+        await RefuseAsync<FsRemoveResult>(DownloadsIntent.Delete, path, ct)
+        ?? await downloads.TryDeleteAsync(path, ct)
+        ?? await base.DeleteAsync(path, ct);
 
     // A move has two ends, so it asks the rule twice — once per end, with the intent belonging to
     // that end. The source is asked first, so a move that offends at both ends names the source.

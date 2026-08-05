@@ -143,6 +143,27 @@ public class DownloadsOverlayTests : IDisposable
         _fs.RemovedDirectories.ShouldContain(Path.Combine(_libraryRoot, "downloads", "42"));
     }
 
+    // The cancel is deliberately non-transactional but ordered: if the manager cannot cancel, the
+    // download is still running, so nothing that belongs to it may be cleared.
+    [Fact]
+    public async Task Delete_ActiveDownloadWhoseCleanupFails_TouchesNothingElse()
+    {
+        _client.Add(Item(42));
+        _client.CleanupFailure = new InvalidOperationException("qBittorrent is unreachable");
+        await _routing.SetAsync(new DownloadRouting
+        {
+            DownloadId = 42,
+            Title = "Download 42",
+            Context = new ConversationContext("agent", "conv", "user", new ReplyTarget("library", "conv"))
+        }, CancellationToken.None);
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => _sut.TryDeleteAsync("downloads/42", CancellationToken.None));
+
+        (await _routing.ListAsync(CancellationToken.None)).ShouldNotBeEmpty();
+        _fs.RemovedDirectories.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task Delete_LeftoverDirWithoutTorrent_RemovesDirAndStaleRouting()
     {
@@ -161,52 +182,6 @@ public class DownloadsOverlayTests : IDisposable
         _client.CleanedUp.ShouldBeEmpty();
         (await _routing.ListAsync(CancellationToken.None)).ShouldBeEmpty();
         _fs.RemovedDirectories.ShouldContain(Path.Combine(_libraryRoot, "downloads", "99"));
-    }
-
-    [Fact]
-    public async Task Delete_RejectsNonDownloadTargets()
-    {
-        _client.Add(Item(42));
-
-        (await _sut.TryDeleteAsync("downloads/42/status.json", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-
-        (await _sut.TryDeleteAsync("Movies/film.mkv", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-
-        (await _sut.TryDeleteAsync("downloads/123", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("not_found");
-    }
-
-    // Every one of these used to reach a live download through a spelling the classifier did not
-    // recognise: the dotted ones bypassed the refusals entirely (the disk underneath resolves them),
-    // and the padded ones cancelled download 42 when the caller named a directory that is not it.
-    [Theory]
-    [InlineData("downloads/ 42 ")]
-    [InlineData("downloads/042")]
-    [InlineData("downloads/+42")]
-    public async Task Delete_ADirtySpellingOfADownloadId_CancelsNothing(string path)
-    {
-        _client.Add(Item(42));
-
-        (await _sut.TryDeleteAsync(path, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-
-        _client.CleanedUp.ShouldBeEmpty();
-        _fs.RemovedDirectories.ShouldBeEmpty();
-    }
-
-    [Theory]
-    [InlineData("downloads/./42")]
-    [InlineData("downloads/43/../42")]
-    public async Task Delete_ADottedSpellingOfADownloadDir_StillCancelsIt(string path)
-    {
-        _client.Add(Item(42));
-
-        (await _sut.TryDeleteAsync(path, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
-
-        _client.CleanedUp.ShouldContain(42);
     }
 
     [Theory]

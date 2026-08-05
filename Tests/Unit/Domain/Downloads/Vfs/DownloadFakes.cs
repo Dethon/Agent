@@ -48,8 +48,18 @@ public static class DownloadFakes
             Items.Add(item);
         }
 
+        // Set to make the manager-side cancel fail, which must abort the delete before any
+        // housekeeping runs — a routing entry cleared for a download that is still going would
+        // orphan it.
+        public Exception? CleanupFailure { get; set; }
+
         public Task Cleanup(int id, CancellationToken cancellationToken = default)
         {
+            if (CleanupFailure is not null)
+            {
+                throw CleanupFailure;
+            }
+
             CleanedUp.Add(id);
             Items.RemoveAll(i => i.Id == id);
             return Task.CompletedTask;
