@@ -55,6 +55,27 @@ public class PlaybackQueueOutcomeTests
     }
 
     [Fact]
+    public void Dispose_WithoutAPriorClose_StillRefusesALateProducer()
+    {
+        // Disposal is not a close, but it is the end of the queue either way: a producer arriving
+        // after it must get the refusal every closed queue gives rather than an
+        // ObjectDisposedException out of the semaphore, whichever order the two calls came in.
+        var queue = new PlaybackQueue();
+        queue.Dispose();
+
+        queue.Enqueue(Job("late", PlaybackKind.Announce)).Refused.ShouldBe(RefusalReason.QueueClosed);
+    }
+
+    [Fact]
+    public void Complete_AfterDispose_DoesNotThrow()
+    {
+        var queue = new PlaybackQueue();
+        queue.Dispose();
+
+        Should.NotThrow(queue.Complete);
+    }
+
+    [Fact]
     public void Dispose_CalledTwice_IsANoOp()
     {
         // The drain is not the only unwinding path (shutdown cancels the run token first), so

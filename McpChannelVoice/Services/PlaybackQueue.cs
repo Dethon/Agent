@@ -127,6 +127,7 @@ public sealed class PlaybackQueue(
     // the loop could reach any terminal path of its own.
     private QueuedJob? _inFlight;
     private bool _closed;
+    private bool _disposed;
     // Set by the link-drop close: the loop discards every job it dequeues from then on instead of
     // playing it, because there is no satellite left to hear it.
     private bool _discardOnDequeue;
@@ -252,7 +253,7 @@ public sealed class PlaybackQueue(
             ? _pending.FindLastIndex(p => p.Job.Priority == AnnouncePriority.High) + 1
             : _pending.Count;
         _pending.Insert(at, queued);
-        _signal.Release();
+        SignalLocked();
         return new PlaybackTicket(null, queued.Completed);
     }
 
@@ -292,8 +293,8 @@ public sealed class PlaybackQueue(
         lock (_gate)
         {
             _closed = true;
+            SignalLocked();
         }
-        _signal.Release();
     }
 
     // The link-drop close. Complete() alone is not enough there: the run token is still live, so
@@ -313,15 +314,30 @@ public sealed class PlaybackQueue(
     }
 
     // The semaphore and the drop token source are the queue's own, and there is one queue per
-    // satellite connection: undisposed they are a pair leaked on every reconnect. Disposal is not a
-    // close — Complete() is — so it belongs after the loop has stopped, which is the only place that
-    // knows nothing will wait on the semaphore again (SatelliteConnection's drain). A producer
-    // arriving later still gets the closed queue's refusal, because that answer is given before
-    // anything touches the signal.
+    // satellite connection: undisposed they are a pair leaked on every reconnect. Disposal belongs
+    // after the loop has stopped, which is the only place that knows nothing will wait on the
+    // semaphore again (SatelliteConnection's drain). It latches the queue closed as well: disposal
+    // is the end of the queue whichever order it and Complete() arrived in, and a producer arriving
+    // afterwards must get the closed queue's refusal rather than the disposed semaphore's throw.
     public void Dispose()
     {
-        _signal.Dispose();
+        lock (_gate)
+        {
+            _closed = true;
+            _disposed = true;
+            _signal.Dispose();
+        }
         _dropCts.Dispose();
+    }
+
+    // The one place the signal is touched, so no path can reach a disposed semaphore: after disposal
+    // there is no loop left to wake anyway.
+    private void SignalLocked()
+    {
+        if (!_disposed)
+        {
+            _signal.Release();
+        }
     }
 
     // The alert dismissal: the user acknowledged, so nothing of that alert may still be heard.
