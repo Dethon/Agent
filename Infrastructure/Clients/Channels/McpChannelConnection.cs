@@ -132,8 +132,15 @@ public sealed class McpChannelConnection(
                 logger?.LogInformation("Channel {ChannelId} connected", ChannelId);
                 return;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Includes an OperationCanceledException whose token is not ours: HttpClient
+                // reports its own timeouts as TaskCanceledException, and letting that shape
+                // escape here faults the run and stops the whole host.
                 var delay = TimeSpan.FromSeconds(
                     Math.Min(Math.Pow(2, attempt), _maxReconnectDelay.TotalSeconds));
                 logger?.LogWarning(
@@ -152,7 +159,11 @@ public sealed class McpChannelConnection(
             await RegisterAgentsAsync(agents, ct);
             return true;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             logger?.LogWarning(
                 "Failed to register agents with channel {ChannelId}: {Error}", ChannelId, ex.Message);
