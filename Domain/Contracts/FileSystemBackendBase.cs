@@ -80,28 +80,50 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     // because one MCP call carries one chunk. These are not a thirteenth and fourteenth operation
     // — capability still comes from the chunk methods above — only the shape the tools take. The
     // defaults drive the stream, and a backend with real random access overrides them.
+    //
+    // The read default replays the stream from the start on every call — a forward-only stream
+    // has no seek — but it buffers only the requested window; the bytes outside it are counted,
+    // never held, so TotalBytes and Eof stay exact.
     public virtual async Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
         string path, long offset, int length, CancellationToken ct)
     {
-        var all = new List<byte>();
+        var window = new List<byte>();
+        var from = Math.Max(offset, 0);
+        var take = Math.Max(length, 0);
+        long total = 0;
         await foreach (var chunk in ReadChunksAsync(path, ct))
         {
-            all.AddRange(chunk.ToArray());
+            var chunkStart = total;
+            total += chunk.Length;
+            var copyFrom = Math.Clamp(from - chunkStart, 0, chunk.Length);
+            var copyTo = Math.Clamp(from + take - chunkStart, 0, chunk.Length);
+            if (copyTo > copyFrom)
+            {
+                window.AddRange(chunk[(int)copyFrom..(int)copyTo].ToArray());
+            }
         }
 
-        var from = (int)Math.Clamp(offset, 0, all.Count);
-        var take = Math.Clamp(length, 0, all.Count - from);
         return new FsResult<FsBlobReadResult>.Ok(new FsBlobReadResult
         {
-            ContentBase64 = Convert.ToBase64String(all.GetRange(from, take).ToArray()),
-            Eof = from + take >= all.Count,
-            TotalBytes = all.Count
+            ContentBase64 = Convert.ToBase64String(window.ToArray()),
+            Eof = from + window.Count >= total,
+            TotalBytes = total
         });
     }
 
+    // The streamed default always writes from the start, so a nonzero offset cannot be honoured;
+    // dropping it would corrupt every multi-chunk transfer. A backend with real random access
+    // overrides this beside WriteChunksAsync.
     public virtual async Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
         string path, string contentBase64, long offset, bool overwrite, bool createDirectories, CancellationToken ct)
     {
+        if (offset != 0)
+        {
+            return Invalid<FsBlobWriteResult>(
+                $"The {FilesystemName} filesystem cannot write at a nonzero offset ({offset}): "
+                + "its streamed write always starts at the beginning of the file.");
+        }
+
         byte[] bytes;
         try
         {
