@@ -202,6 +202,25 @@ public class DeliveryPolicyTests
         (await DrainAsync(inbox)).ShouldBeEmpty();
     }
 
+    // Gate-on-live is the policy whose callers settle a durable record on the answer, so the answer
+    // has to be about the item, not about a moment before it. A clock that moves between reads is
+    // what a subscriber going quiet mid-emit looks like from inside: the liveness question sees a
+    // subscriber and the enqueue that follows finds it pruned. Asking and enqueueing as one
+    // operation is the only way the two can agree.
+    [Fact]
+    public async Task EmitAsync_GateOnLive_WhenTheSubscriberGoesAwayMidEmit_ReportsWhatTheItemGot()
+    {
+        var clock = new SteppingTimeProvider(TimeSpan.FromSeconds(6));
+        var inbox = new ChannelInbox(clock, subscriberIdleTimeout: TimeSpan.FromSeconds(10));
+        await RegisterAsync(inbox);
+        var sut = new ChannelNotificationEmitter(inbox, DeliveryPolicy.GateOnLive);
+
+        var live = await sut.EmitAsync(Message());
+
+        var delivered = (await DrainAsync(inbox)).Count == 1;
+        live.ShouldBe(delivered);
+    }
+
     [Fact]
     public void Constructor_BufferAlways_WithoutASubscriberId_Throws() =>
         Should.Throw<ArgumentException>(() =>
@@ -213,4 +232,19 @@ public class DeliveryPolicyTests
     public void Constructor_NonBufferingPolicy_WithASubscriberId_Throws(DeliveryPolicy policy) =>
         Should.Throw<ArgumentException>(() =>
             new ChannelNotificationEmitter(new ChannelInbox(), policy, Subscriber));
+
+    // Time moves on every read, so any two reads inside one operation see a different clock. That
+    // makes a check that merely precedes an action fail deterministically, where a fixed clock
+    // would hide it behind a race no test can lose on purpose.
+    private sealed class SteppingTimeProvider(TimeSpan step) : TimeProvider
+    {
+        private DateTimeOffset _now = DateTimeOffset.UnixEpoch;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            var now = _now;
+            _now = now + step;
+            return now;
+        }
+    }
 }

@@ -27,37 +27,43 @@ public sealed class ChannelInbox(
     internal static readonly TimeSpan LiveSubscriberFreshness = TimeSpan.FromMilliseconds(
         ChannelProtocol.DefaultReceiveWaitMs + ChannelProtocol.MaxReceiveRetryBackoffMs + 15_000);
 
-    // The only liveness question this type answers, and deliberately so. "Is there bookkeeping for
-    // this id" is true for up to an hour after a subscriber goes quiet — precisely so a channel
-    // outage doesn't discard what was buffered during it (see PruneIdle) — which makes it the wrong
-    // question for a caller about to act on "delivery". This one asks whether *someone actually
-    // polled recently*; a subscriber holding items but not repolling does not count.
-    public bool HasLiveSubscriber()
+    // The liveness rule, and the only one: "is there bookkeeping for this id" stays true for up to
+    // an hour after a subscriber goes quiet — precisely so a channel outage doesn't discard what was
+    // buffered during it (see PruneIdle) — which makes it the wrong question for a caller about to
+    // act on "delivery". This one asks whether *someone actually polled recently*; a subscriber
+    // holding items but not repolling does not count.
+    //
+    // Not the question a delivering caller asks: an answer taken before an enqueue is about a moment
+    // that has passed by the time the item lands, so the enqueues below answer it themselves and
+    // this stays here for the rule's own tests.
+    internal bool HasLiveSubscriber()
     {
         PruneIdle();
         var cutoff = _timeProvider.GetUtcNow() - LiveSubscriberFreshness;
         return _subscribers.Values.Any(subscriber => subscriber.IsLiveSince(cutoff));
     }
 
-    // The targeted variant, for a caller about to enqueue to one specific subscriber: "is anyone
-    // live" reads a poller under a different id as delivery, which is exactly the silent
-    // buffer-into-nothing failure the buffer-always policy warns about. Same freshness rule, same
-    // "actually polled recently" bar.
-    public bool HasLiveSubscriber(string subscriberId)
+    // Fans out to every subscriber whatever its freshness, and answers whether any of them was live
+    // as its copy went in.
+    public bool Enqueue(ChannelInboxItem item) => FanOut(item, onlyIfLive: false);
+
+    // The same fan-out, restricted to subscribers that are live as the item lands: for a caller that
+    // settles a durable record on the answer, so an item must never sit in a buffer the "yes" it was
+    // given claims someone is draining.
+    public bool EnqueueIfLive(ChannelInboxItem item) => FanOut(item, onlyIfLive: true);
+
+    private bool FanOut(ChannelInboxItem item, bool onlyIfLive)
     {
         PruneIdle();
         var cutoff = _timeProvider.GetUtcNow() - LiveSubscriberFreshness;
-        return _subscribers.TryGetValue(subscriberId, out var subscriber) && subscriber.IsLiveSince(cutoff);
-    }
-
-    public void Enqueue(ChannelInboxItem item)
-    {
-        PruneIdle();
-        var dropped = _subscribers
-            .Where(entry => entry.Value.Enqueue(item, _capacity) == EnqueueOutcome.AcceptedDroppingOldest)
-            .Select(entry => entry.Key)
+        var results = _subscribers
+            .Select(entry => (entry.Key, Result: entry.Value.Enqueue(item, _capacity, cutoff, onlyIfLive)))
             .ToArray();
-        WarnDroppedOldest(dropped);
+        WarnDroppedOldest(results
+            .Where(entry => entry.Result.Outcome == EnqueueOutcome.AcceptedDroppingOldest)
+            .Select(entry => entry.Key)
+            .ToArray());
+        return results.Any(entry => entry.Result.Live);
     }
 
     // The targeted variant, for channels whose delivery policy is buffer-always (Telegram): unlike
@@ -65,17 +71,22 @@ public sealed class ChannelInbox(
     // before the agent's first poll — server cold start, or just after an idle eviction — is
     // buffered instead of fanned out to nobody. Creation is bookkeeping only: the subscriber does
     // not count as live until someone actually polls it, and capacity remains the only bound.
-    public void EnqueueFor(string subscriberId, ChannelInboxItem item)
+    //
+    // Liveness comes back from the enqueue for the same reason as above, and it is about this id:
+    // "is anyone live" would read a poller under a different derived id as delivery, and the caller's
+    // not-live warning would stay silent while items pile into a queue nobody drains.
+    public bool EnqueueFor(string subscriberId, ChannelInboxItem item)
     {
         PruneIdle();
         var now = _timeProvider.GetUtcNow();
+        var cutoff = now - LiveSubscriberFreshness;
         while (true)
         {
             // Same seeding rationale as ReceiveAsync: left at default, the stamp would sit behind
             // every cutoff and a concurrent prune could retire and remove the instance this call
             // just created before the item lands in it.
             var subscriber = _subscribers.GetOrAdd(subscriberId, _ => new Subscriber(now));
-            var outcome = subscriber.Enqueue(item, _capacity);
+            var (outcome, live) = subscriber.Enqueue(item, _capacity, cutoff, onlyIfLive: false);
             if (outcome != EnqueueOutcome.Refused)
             {
                 if (outcome == EnqueueOutcome.AcceptedDroppingOldest)
@@ -83,7 +94,7 @@ public sealed class ChannelInbox(
                     WarnDroppedOldest([subscriberId]);
                 }
 
-                return;
+                return live;
             }
 
             // A concurrent prune retired this instance between the lookup and the enqueue; finish
@@ -209,6 +220,8 @@ public sealed class ChannelInbox(
     {
         // The retirement latch refused the item; the caller must not treat it as buffered.
         Refused,
+        // The subscriber was not live and the caller asked for live subscribers only.
+        NotLive,
         Accepted,
         AcceptedDroppingOldest
     }
@@ -278,10 +291,16 @@ public sealed class ChannelInbox(
             }
         }
 
-        public EnqueueOutcome Enqueue(ChannelInboxItem item, int capacity)
+        // Liveness is read in the critical section that accepts the item, so the answer is about
+        // this item and not about a moment before it: a subscriber cannot be live to the question
+        // and gone by the time the item lands, which is what let a caller settle a durable record
+        // against an item sitting in a buffer nobody drains.
+        public (EnqueueOutcome Outcome, bool Live) Enqueue(
+            ChannelInboxItem item, int capacity, DateTimeOffset liveCutoff, bool onlyIfLive)
         {
             TaskCompletionSource<bool>? toSignal;
             var droppedOldest = false;
+            bool live;
             lock (_gate)
             {
                 // Refusing here is what makes retirement safe: a prune that has already latched this
@@ -289,7 +308,13 @@ public sealed class ChannelInbox(
                 // predates the removal, or that item would be accepted into a queue nobody drains.
                 if (_retired)
                 {
-                    return EnqueueOutcome.Refused;
+                    return (EnqueueOutcome.Refused, false);
+                }
+
+                live = _hasPolled && _lastPolledAt >= liveCutoff;
+                if (onlyIfLive && !live)
+                {
+                    return (EnqueueOutcome.NotLive, false);
                 }
 
                 if (_items.Count >= capacity)
@@ -304,7 +329,7 @@ public sealed class ChannelInbox(
             }
 
             toSignal?.TrySetResult(true);
-            return droppedOldest ? EnqueueOutcome.AcceptedDroppingOldest : EnqueueOutcome.Accepted;
+            return (droppedOldest ? EnqueueOutcome.AcceptedDroppingOldest : EnqueueOutcome.Accepted, live);
         }
 
         // A batch coming back from a poll whose response died. It goes ahead of whatever arrived
