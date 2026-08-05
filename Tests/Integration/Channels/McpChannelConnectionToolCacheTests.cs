@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Shouldly;
@@ -85,6 +87,73 @@ public class McpChannelConnectionToolCacheTests
         (await staleCreate).ShouldBeNull();
 
         (await CreateAsync(connection)).ShouldBe("conv-1");
+    }
+
+    [Fact]
+    public async Task CreateConversation_AProbeLandingWhileTheNextGenerationDials_DoesNotBecomeItsToolSet()
+    {
+        // The same rule one step earlier: the old generation's probe finishes while the connection
+        // is mid-dial, before there is a new client to compare it against. What it learned belongs
+        // to the generation it asked, so it must not be waiting in the cache for the one that
+        // arrives a moment later — the redeployed server's new tool would stay invisible for the
+        // life of the new connection.
+        using var oldProbeArrived = new SemaphoreSlim(0);
+        using var oldProbeHeld = new SemaphoreSlim(0);
+        using var newServerHeld = new SemaphoreSlim(0);
+        var gateNewServer = false;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        await using var oldServer = await InMemoryMcpServer.StartAsync(services => services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<NoConversationTools>()
+            .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (context, ct) =>
+            {
+                oldProbeArrived.Release();
+                await oldProbeHeld.WaitAsync(ct);
+                return await next(context, ct);
+            })));
+        // The gate opens for the server's own start-up client and closes behind it, so only the
+        // connection under test is held mid-dial.
+        await using var newServer = await InMemoryMcpServer.StartAsync(services => services
+            .AddSingleton<IStartupFilter>(new GateFilter(newServerHeld, () => gateNewServer))
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<ConversationTools>());
+        gateNewServer = true;
+
+        await using var connection = new McpChannelConnection("test");
+        await connection.ConnectAsync(oldServer.Endpoint, CancellationToken.None);
+
+        var staleCreate = CreateAsync(connection);
+        await oldProbeArrived.WaitAsync(cts.Token);
+
+        var dialing = connection.ConnectAsync(newServer.Endpoint, cts.Token);
+        oldProbeHeld.Release();
+        (await staleCreate).ShouldBeNull();
+
+        newServerHeld.Release(int.MaxValue / 2);
+        await dialing;
+
+        (await CreateAsync(connection)).ShouldBe("conv-1");
+    }
+
+    // Holds every request until the test lets it through, so a connection can be pinned mid-dial.
+    private sealed class GateFilter(SemaphoreSlim gate, Func<bool> armed) : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (context, proceed) =>
+            {
+                if (armed())
+                {
+                    await gate.WaitAsync(context.RequestAborted);
+                }
+
+                await proceed(context);
+            });
+            next(app);
+        };
     }
 
     [Fact]

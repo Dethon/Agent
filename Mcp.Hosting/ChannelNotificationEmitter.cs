@@ -43,26 +43,15 @@ public sealed class ChannelNotificationEmitter
         return Task.FromResult(Deliver(ChannelInboxItem.ForCancel(payload)));
     }
 
-    private bool Deliver(ChannelInboxItem item)
+    // One call per policy, and each of them answers liveness about the item it just took: a check
+    // this method made first would be about a moment that has passed by the time the item lands, and
+    // the callers that settle a durable record on the answer would settle it for an item that
+    // reached nobody. Which subscribers an item goes to is the policy's difference; who was
+    // listening is never a second question.
+    private bool Deliver(ChannelInboxItem item) => _policy switch
     {
-        // Buffer-always enqueues to one specific id, so its liveness answer is about that id: a
-        // poller under a different derived id must read as "nobody listening", or the caller's
-        // not-live warning stays silent while items pile into a queue nobody drains.
-        var live = _policy == DeliveryPolicy.BufferAlways
-            ? _inbox.HasLiveSubscriber(_subscriberId!)
-            : _inbox.HasLiveSubscriber();
-        switch (_policy)
-        {
-            case DeliveryPolicy.GateOnLive when !live:
-                return false;
-            case DeliveryPolicy.BufferAlways:
-                _inbox.EnqueueFor(_subscriberId!, item);
-                break;
-            default:
-                _inbox.Enqueue(item);
-                break;
-        }
-
-        return live;
-    }
+        DeliveryPolicy.BufferAlways => _inbox.EnqueueFor(_subscriberId!, item),
+        DeliveryPolicy.GateOnLive => _inbox.EnqueueIfLive(item),
+        _ => _inbox.Enqueue(item)
+    };
 }
