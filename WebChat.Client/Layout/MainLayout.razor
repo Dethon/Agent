@@ -15,8 +15,8 @@
         <HeaderConversation />
         <div class="header-right">
             <div class="connection-status">
-                <span class="status-dot @(_isConnected ? "connected" : "")"></span>
-                @(_isConnected ? "Connected" : "Disconnected")
+                <span class="status-dot @StatusCssClass"></span>
+                @StatusLabel
             </div>
             <UserIdentityPicker />
             <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
@@ -59,20 +59,37 @@
     private bool _disposed;
     private string _accentColor = SpaceConfig.DefaultAccentColor;
     private string _spaceName = "Main";
-    private bool _isConnected;
+    private ConnectionStatus _status;
     private IDisposable? _spaceSubscription;
     private IDisposable? _connectionSubscription;
     private DotNetObjectReference<MainLayout>? _selfRef;
 
+    // The header is the third place the connection state is shown, beside ConnectionDot and
+    // the chat's ConnectionStatus. Reconnecting is its own state in both of those, so it is
+    // one here too — collapsing it to "not connected" made the three disagree on screen.
+    private string StatusLabel => _status switch
+    {
+        ConnectionStatus.Connected => "Connected",
+        ConnectionStatus.Reconnecting => "Reconnecting...",
+        _ => "Disconnected"
+    };
+
+    private string StatusCssClass => _status switch
+    {
+        ConnectionStatus.Connected => "connected",
+        ConnectionStatus.Reconnecting => "reconnecting",
+        _ => ""
+    };
+
     protected override Task OnInitializedAsync()
     {
         _connectionSubscription = ConnectionStore.StateObservable
-            .Select(state => state.Status == ConnectionStatus.Connected)
+            .Select(state => state.Status)
             .DistinctUntilChanged()
-            .Subscribe(isConnected => InvokeAsync(() =>
+            .Subscribe(status => InvokeAsync(() =>
             {
                 if (_disposed) return;
-                _isConnected = isConnected;
+                _status = status;
                 StateHasChanged();
             }));
         _spaceSubscription = SpaceStore.StateObservable.Subscribe(state =>
