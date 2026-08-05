@@ -294,6 +294,36 @@ public class PlaybackQueueOutcomeTests
     }
 
     [Fact]
+    public async Task CompleteAndDiscardQueued_WithTheWriteParkedOnADeadSocket_ReturnsPromptlyAndSettlesEveryJob()
+    {
+        // A satellite that loses power mid-reply leaves the socket write parked until the TCP
+        // retransmit timeout — minutes — and a Wyoming frame is deliberately uncancellable once it
+        // starts, so the token buys nothing there. The connection's drain awaits this loop, so that
+        // one write held the entire teardown: queued jobs never settled and the host never redialled.
+        var queue = new PlaybackQueue();
+        var writing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var inFlight = queue.Enqueue(Job("playing", PlaybackKind.Announce));
+        var behind = queue.Enqueue(Job("waiting", PlaybackKind.Announce));
+        // Never returns and never observes its token: the socket write on a satellite that vanished.
+        var pump = queue.RunAsync(
+            (_, _) => { writing.TrySetResult(); return parked.Task; }, CancellationToken.None);
+
+        await writing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        queue.CompleteAndDiscardQueued();   // the link dropped
+
+        // Bounded by the loop's own backstop (a couple of seconds), where it used to be bounded by
+        // the TCP retransmit timeout — that is, not at all as far as a reconnect is concerned.
+        await pump.WaitAsync(TimeSpan.FromSeconds(10));
+        queue.DiscardUnplayed();
+
+        (await inFlight.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
+        (await behind.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
+        parked.TrySetResult();
+    }
+
+    [Fact]
     public async Task Run_AConsumerOfOneOutcomeBlocks_TheNextJobStillPlays()
     {
         // There is no ordering between an outcome being signalled and the next job starting, and a

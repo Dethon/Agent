@@ -139,6 +139,9 @@ public sealed class PlaybackQueue(
     // preemption can't be lost to the dequeue->assign gap. High-priority jobs are exempt from this
     // mark (see the loop), so a second High job stacking in the same window never preempts the first.
     private long _preemptPendingSeq = -1;
+    // How long a frame already handed to the socket may still finish after the link dropped, before
+    // the loop abandons it. See AbandonOnDeadSocketAsync.
+    private const int LinkDropWriteGraceMs = 2000;
     private const long TurnNotStarted = long.MinValue;
     private long _turnStartedAt = TurnNotStarted;
     private const long SpeechEndNotMarked = long.MinValue;
@@ -365,6 +368,10 @@ public sealed class PlaybackQueue(
                 continue;
             }
 
+            // Deliberately NOT linked to the drop token: a job the loop is already playing ends as
+            // it really did (see CompleteAndDiscardQueued), and cancelling its source would turn a
+            // fully-written job into a cancellation. What a drop must not do is leave the loop
+            // WAITING on the socket — that is AwaitSocketWriteAsync's job.
             var jobCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             if (TakeAsCurrent(queued, jobCts))
             {
@@ -443,6 +450,13 @@ public sealed class PlaybackQueue(
                 "Playback job {Label} drained {Chunks} chunk(s)", job.Label, queued.ChunksWritten);
             drained = true;
         }
+        catch (OperationCanceledException) when (_dropCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            // The link died while this job was being written or synthesized. It was not cut short by
+            // anything the user or the agent did, so it is discarded like everything still queued
+            // behind it rather than reported as preempted or failed.
+            queued.Settle(PlaybackOutcomeKind.Discarded);
+        }
         catch (OperationCanceledException) when (jobCts.IsCancellationRequested && !ct.IsCancellationRequested)
         {
             queued.Settle(PlaybackOutcomeKind.Preempted);
@@ -518,8 +532,8 @@ public sealed class PlaybackQueue(
                     // The alert route is the alarm kind's, and only its. Priority is
                     // deliberately not the marker: confirmation prompts share High and must
                     // stay at the calibrated conversational level.
-                    await sink.OnAudioStart(
-                        chunk.Format, job.Kind == PlaybackKind.Alarm, jobToken);
+                    await AwaitSocketWriteAsync(
+                        sink.OnAudioStart(chunk.Format, job.Kind == PlaybackKind.Alarm, jobToken));
                 }
                 if (job.OnFirstAudio is not null)
                 {
@@ -528,7 +542,7 @@ public sealed class PlaybackQueue(
             }
             totalAudio += DurationOf(chunk);
             queued.ChunksWritten++;
-            await sink.Writer(chunk, jobToken);
+            await AwaitSocketWriteAsync(sink.Writer(chunk, jobToken));
             // Deliberately after the write: OnFirstAudio carries several awaited metric
             // publishes, and running them first would delay the first audio byte reaching the
             // satellite by however long the metrics backbone takes — the observer changing what
@@ -548,6 +562,49 @@ public sealed class PlaybackQueue(
         }
 
         return (firstChunkTimestamp, totalAudio);
+    }
+
+    // Every write here goes to the satellite's socket, and a Wyoming frame is deliberately
+    // uncancellable once it has started — a half-written frame desyncs the stream, so WyomingWriter
+    // honours the token at its lock and not after. A satellite that lost power leaves that write
+    // parked until the TCP retransmit timeout, minutes away, while the connection's drain is
+    // awaiting this very loop: queued jobs never settled and nothing redialled. So on a link drop
+    // the loop stops WAITING for the write rather than trying to cancel it. The abandoned write is
+    // failed by the host disposing the Wyoming client, which happens as soon as the run returns.
+    private async Task AwaitSocketWriteAsync(Task write)
+    {
+        // A write that already completed is returned as-is by WaitAsync, drop token or not, so a
+        // frame that made it out before the drop is never turned into a cancellation.
+        try
+        {
+            await write.WaitAsync(_dropCts.Token);
+        }
+        catch (OperationCanceledException) when (_dropCts.IsCancellationRequested)
+        {
+            await AbandonOnDeadSocketAsync(write);
+        }
+    }
+
+    // The link dropped with this frame still in the socket. A frame that is merely late still
+    // finishes — it is a few bytes to a LAN satellite, and letting it land keeps a job that really
+    // was written reporting Drained. Anything slower than the backstop is a dead peer, and waiting
+    // on it is the wedge: the loop stops waiting and the job ends as discarded like everything else
+    // the drop caught. The same constant and the same reasoning as WakeArbiter's re-arm write, and
+    // deliberately a constant rather than a config knob — a liveness backstop is not a tuning
+    // parameter.
+    private static async Task AbandonOnDeadSocketAsync(Task write)
+    {
+        try
+        {
+            await write.WaitAsync(TimeSpan.FromMilliseconds(LinkDropWriteGraceMs));
+        }
+        catch (TimeoutException)
+        {
+            // Nobody is left to observe what the abandoned write throws when the host disposes the
+            // Wyoming client, which is what finally fails it.
+            _ = write.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+            throw new OperationCanceledException("The satellite link dropped mid-write.");
+        }
     }
 
     private FirstAudioTiming BuildFirstAudioTiming(
@@ -571,11 +628,16 @@ public sealed class PlaybackQueue(
     // Close the playback envelope so the satellite flushes paplay (EOF on
     // disconnect_after_stop). Use the connection token: the job's token may be canceled
     // by preemption, but the satellite still needs the audio-stop. A bare
-    // audio-start with no chunks gets no stop, matching Wyoming framing.
-    private static async Task SendAudioStopAsync(
+    // audio-start with no chunks gets no stop, matching Wyoming framing. Skipped outright once the
+    // link has dropped: there is no satellite to flush, and this is another write that would park on
+    // the dead socket with the drain waiting on the loop it sits in.
+    private async Task SendAudioStopAsync(
         QueuedJob queued, PlaybackSink sink, ILogger? logger, CancellationToken ct)
     {
-        if (queued.ChunksWritten == 0 || sink.OnAudioStop is null || ct.IsCancellationRequested)
+        if (queued.ChunksWritten == 0
+            || sink.OnAudioStop is null
+            || ct.IsCancellationRequested
+            || _dropCts.IsCancellationRequested)
         {
             return;
         }
