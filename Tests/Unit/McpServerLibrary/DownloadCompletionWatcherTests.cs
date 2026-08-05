@@ -96,6 +96,32 @@ public class DownloadCompletionWatcherTests
         logs.Messages.Count(m => m.Contains("resumed")).ShouldBe(1);
     }
 
+    // "Once per outage" has to hold for the second outage too. Recovery is not always a delivered
+    // alert: the completion is often already routed by the time the agent is back, so the watcher
+    // sees only quiet ticks. If the latch waited for a successful emit to clear, the next outage
+    // would be silent — the one an operator most needs to see.
+    [Fact]
+    public async Task Sweep_ASecondOutageAfterAQuietRecovery_WarnsAgain()
+    {
+        var (client, routing, emitter) = Build(live: false);
+        client.Add(DownloadFakes.Item(42, DownloadState.Completed));
+        routing.Entries.Add(Routing(42));
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var watcher = Watcher(client, routing, emitter, logs);
+
+        await watcher.SweepAsync(CancellationToken.None);
+
+        // The agent comes back with nothing pending — the completion was handled elsewhere.
+        routing.Entries.Clear();
+        await watcher.SweepAsync(CancellationToken.None);
+
+        // And goes away again.
+        routing.Entries.Add(Routing(42));
+        await watcher.SweepAsync(CancellationToken.None);
+
+        logs.Messages.Count(m => m.Contains("until delivery resumes")).ShouldBe(2);
+    }
+
     [Fact]
     public async Task Sweep_VanishedTorrent_DropsEntrySilently()
     {

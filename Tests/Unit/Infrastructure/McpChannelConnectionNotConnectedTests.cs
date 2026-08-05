@@ -29,6 +29,15 @@ public class McpChannelConnectionNotConnectedTests
     }
 
     [Fact]
+    public async Task NotifyAutoApprovedAsync_NotConnected_Throws()
+    {
+        // The third send verb: same caller, same mid-turn moment, so the same behaviour. It is on
+        // the throwing side of the rule and nothing may quietly move it to the silent side.
+        await Should.ThrowAsync<InvalidOperationException>(() => NeverConnected().NotifyAutoApprovedAsync(
+            "conv-1", [], CancellationToken.None));
+    }
+
+    [Fact]
     public async Task CreateConversationAsync_NotConnected_ReturnsNull()
     {
         // The load-bearing one: DeliveryTargetResolver reads null as "this channel minted nothing",

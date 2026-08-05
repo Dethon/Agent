@@ -7,11 +7,13 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Integration.McpServers;
+using Tests.Unit;
 
 namespace Tests.Integration.Channels;
 
@@ -159,6 +161,79 @@ public class McpChannelConnectionRunTests
 
         await cts.CancelAsync();
         await run;
+    }
+
+    // "Not connected reports false" is about the link, not about the caller. The run's own token
+    // tripping mid-probe is the shutdown it asked for: reported as false it becomes a failed health
+    // check, and the run walks into a reconnect on a token that is already cancelled — which
+    // returns without connecting anything, so everything after it works against a dead client while
+    // believing the link is up.
+    [Fact]
+    public async Task IsHealthyAsync_TheCallersOwnTokenIsCancelled_ReportsTheAbortRatherThanIllHealth()
+    {
+        using var probeArrived = new SemaphoreSlim(0);
+        using var probeHeld = new SemaphoreSlim(0);
+        await using var server = await StartGatedListToolsServerAsync(probeArrived, probeHeld, gateFrom: 1);
+        await using var connection = new McpChannelConnection("test");
+        await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
+
+        using var cts = new CancellationTokenSource();
+        var health = connection.IsHealthyAsync(cts.Token);
+        (await probeArrived.WaitAsync(TimeSpan.FromSeconds(30))).ShouldBeTrue();
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => health);
+        probeHeld.Release();
+    }
+
+    [Fact]
+    public async Task RunAsync_CancelledDuringTheHealthCheck_StopsWithoutCallingItAFailedCheck()
+    {
+        await ResetAsync();
+        using var probeArrived = new SemaphoreSlim(0);
+        using var probeHeld = new SemaphoreSlim(0);
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+
+        // The registration's capability probe goes through; the first health check is held.
+        await using var server = await StartGatedListToolsServerAsync(probeArrived, probeHeld, gateFrom: 2);
+        await using var connection = new McpChannelConnection(
+            "test",
+            logger: new LoggerFactory([logs]).CreateLogger<McpChannelConnection>(),
+            healthCheckInterval: TimeSpan.FromMilliseconds(50));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var run = connection.RunAsync(server.Endpoint, _catalog, cts.Token);
+
+        await _registered.WaitAsync(cts.Token);
+        (await probeArrived.WaitAsync(TimeSpan.FromSeconds(30))).ShouldBeTrue();
+        await cts.CancelAsync();
+        probeHeld.Release();
+
+        await run;
+        logs.Messages.ShouldNotContain(m => m.Contains("health check failed"));
+        Volatile.Read(ref _registerCalls).ShouldBe(1);
+    }
+
+    // Lets the first `gateFrom - 1` list_tools calls through and holds every one after them.
+    private static Task<RunningServer> StartGatedListToolsServerAsync(
+        SemaphoreSlim arrived, SemaphoreSlim held, int gateFrom)
+    {
+        var seen = 0;
+        return InMemoryMcpServer.StartAsync(services => services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<RegisterTools>()
+            .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (context, ct) =>
+            {
+                if (Interlocked.Increment(ref seen) < gateFrom)
+                {
+                    return await next(context, ct);
+                }
+
+                arrived.Release();
+                await held.WaitAsync(ct);
+                return await next(context, ct);
+            })));
     }
 
     private static Task<RunningServer> StartRefusingRegisterServerAsync() =>

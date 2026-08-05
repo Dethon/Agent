@@ -372,6 +372,30 @@ public class ChannelInboxTests
             [ChannelInboxItemKind.Message, ChannelInboxItemKind.Cancel]);
     }
 
+    // The projection is the caller's own work over user-supplied content — in production a
+    // JsonSerializer.Serialize — so it can throw on one bad message. The drain already emptied the
+    // queue, so without a handback that one message takes the whole pending batch, cancels included,
+    // with it. The poll still fails; what it must not do is destroy what it was carrying.
+    [Fact]
+    public async Task ReceiveAsync_WhenTheProjectionThrows_KeepsTheBatchForTheNextPoll()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("c1"));
+        inbox.Enqueue(Cancel("c1"));
+
+        await Should.ThrowAsync<InvalidOperationException>(() => inbox.ReceiveAsync<int>(
+            Subscriber,
+            TimeSpan.Zero,
+            _ => throw new InvalidOperationException("bad content"),
+            CancellationToken.None));
+
+        var next = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        next.Select(item => item.Kind).ShouldBe(
+            [ChannelInboxItemKind.Message, ChannelInboxItemKind.Cancel]);
+    }
+
     // Putting the batch back is not a step of its own: between the drain and the handback the queue
     // looks empty, so a poll racing in there takes whatever arrived after the batch and dispatches
     // it, and the older items only reappear behind it — the agent seeing a message before the cancel

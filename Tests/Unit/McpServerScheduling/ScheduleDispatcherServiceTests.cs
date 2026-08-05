@@ -125,6 +125,33 @@ public class ScheduleDispatcherServiceTests
         logs.Messages.Count(m => m.Contains("resumed")).ShouldBe(1);
     }
 
+    // "Once per outage" has to hold for the second outage too. Recovery is not always a delivered
+    // fire: the due one-shot is often gone by the time the agent is back, so the dispatcher sees
+    // only quiet ticks. If the latch waited for a successful emit to clear, the next outage would
+    // be silent — the one an operator most needs to see.
+    [Fact]
+    public async Task DispatchDueAsync_ASecondOutageAfterAQuietRecovery_WarnsAgain()
+    {
+        var due = new List<Schedule> { OneShot() };
+        var store = new Mock<IScheduleStore>();
+        store.Setup(s => s.GetDueSchedulesAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => due);
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var dispatcher = BuildDispatcher(store.Object, Probe(delivers: false), logs: logs);
+
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        // The agent comes back with nothing due — the fire it missed was handled elsewhere.
+        due.Clear();
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        // And goes away again.
+        due.Add(OneShot());
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        logs.Messages.Count(m => m.Contains("until delivery resumes")).ShouldBe(2);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-5)]

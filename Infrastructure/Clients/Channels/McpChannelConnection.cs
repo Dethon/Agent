@@ -66,6 +66,12 @@ public sealed class McpChannelConnection(
     // simply does not recognise it. Clearing a bare field cannot say that — whichever order the
     // clear and the stale write happen in, one ordering leaves the old server's tools sitting in
     // the new connection's cache.
+    //
+    // Holding the old client past its disposal is what makes that tag readable, and it is the whole
+    // cost: the field holds one answer, so a reconnect leaves at most one disposed client reachable
+    // and the next fetch replaces it. Nulling the field here would not even remove that — a probe
+    // still in flight writes its tagged answer afterwards either way — so it would buy nothing and
+    // reintroduce the ordering the tag exists to avoid.
     private ToolSet? _tools;
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
@@ -155,6 +161,10 @@ public sealed class McpChannelConnection(
                 await Task.Delay(delay, ct);
             }
         }
+
+        // Returning from here would say "connected" to a caller that goes on to register and poll.
+        // The only way out of the loop other than a successful dial is the token, so say that.
+        ct.ThrowIfCancellationRequested();
     }
 
     private async Task<bool> TryRegisterAgentsAsync(
@@ -584,6 +594,15 @@ public sealed class McpChannelConnection(
         {
             await client.ListToolsAsync(cancellationToken: ct);
             return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // The caller's own shutdown, not ill health. Answering false here makes the run call
+            // this a failed check and reconnect on a token that is already cancelled, which returns
+            // without connecting anything — and everything after it then works against a dead
+            // client believing the link is up. Everything else, including a transport cancellation
+            // the caller never asked for, is what "not connected" means (ADR 0011).
+            throw;
         }
         catch
         {
