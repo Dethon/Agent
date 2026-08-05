@@ -344,6 +344,26 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
     }
 
+    // The gap the hold used to start too late for: SignalR resumes dispatching as soon as the
+    // transport is back, and only then runs the Reconnected handlers. A push landing in between was
+    // applied unheld and then erased by the catch-up snapshot that followed it.
+    [Fact]
+    public async Task Reconnecting_APushArrivesBeforeTheReconnectedHandlerRuns_TheSnapshotCannotEraseIt()
+    {
+        await ConnectAsync();
+        _handler.AnswerFor("api/metrics/voice?", new List<VoiceEventPayload>
+        {
+            new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
+        });
+        await _hub.RaiseReconnectingAsync(null);
+
+        await RaiseVoiceAsync("pantry-01");
+        await _hub.RaiseReconnectedAsync();
+
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "pantry-01");
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
+    }
+
     // The second half: a push the snapshot already contains, arriving after the lists were
     // replaced, used to be appended on top of its own copy.
     [Fact]
