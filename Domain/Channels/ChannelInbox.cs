@@ -467,13 +467,31 @@ public sealed class ChannelInbox(
         // batch with it. Asking the token once more with the response in hand covers everything up
         // to the write, and a batch that has nowhere to go goes back to the front of the queue. The
         // write itself stays open — closing it needs an acknowledgement this protocol does not have.
+        //
+        // A projection that throws is the same loss by another route: it is the caller's own work
+        // over content the sender chose, so one unserializable message would otherwise take the
+        // whole batch — cancels included — with it. The poll still fails; the batch goes back.
         private static T Complete<T>(
             IReadOnlyList<ChannelInboxItem> batch,
             Func<IReadOnlyList<ChannelInboxItem>, T> project,
             Action<IReadOnlyList<ChannelInboxItem>> handBack,
             CancellationToken ct)
         {
-            var projected = project(batch);
+            T projected;
+            try
+            {
+                projected = project(batch);
+            }
+            catch
+            {
+                if (batch.Count > 0)
+                {
+                    handBack(batch);
+                }
+
+                throw;
+            }
+
             if (batch.Count > 0 && ct.IsCancellationRequested)
             {
                 handBack(batch);
