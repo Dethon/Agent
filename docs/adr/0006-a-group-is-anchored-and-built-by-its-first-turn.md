@@ -73,11 +73,12 @@ it removes the thing that ends the group.
 
 ## Consequences
 
-- The documented reason for the eager order survives. `ChatMonitor.cs:93-96` starts
-  warmup early so it overlaps command parsing and memory recall. Warmup still starts
+- The documented reason for the eager order survives. Warmup now starts in
+  `ConversationGroup.EnsureEstablishedAsync`, without being awaited. It still starts
   before the turn-start announce and before `BuildUserMessageAsync`'s memory recall,
-  which are the two network stages it was overlapping. The only overlap lost is with
-  `ChatCommandParser.Parse`, a string switch.
+  which are the two network stages the old eager start in `ChatMonitor` was
+  overlapping. The only overlap lost is with `ChatCommandParser.Parse`, a string
+  switch.
 - `DeliveryTarget.Minted` changes meaning to "minted while resolving this turn".
   Reused anchors are projected with `Minted: false`, and `AnnounceTurnStartAsync`
   loses its `skipMinted` parameter. The flag has one production reader, so the
