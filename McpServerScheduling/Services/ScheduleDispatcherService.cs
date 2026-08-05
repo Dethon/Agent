@@ -56,6 +56,17 @@ public sealed class ScheduleDispatcherService(
     // listener, which is the loop's cue to slow down.
     internal async Task<bool> DispatchDueAsync(CancellationToken ct)
     {
+        var delivered = await DispatchDueSchedulesAsync(ct);
+        if (delivered)
+        {
+            NoteDeliveryResumed();
+        }
+
+        return delivered;
+    }
+
+    private async Task<bool> DispatchDueSchedulesAsync(CancellationToken ct)
+    {
         var now = timeProvider.GetUtcNow();
         var due = await store.GetDueSchedulesAsync(now.UtcDateTime, ct);
         var delivered = true;
@@ -78,7 +89,6 @@ public sealed class ScheduleDispatcherService(
                 continue;
             }
 
-            NoteDeliveryResumed();
             if (plan.DeleteAfterFire)
             {
                 await store.DeleteAsync(schedule.Id, ct);
@@ -110,12 +120,15 @@ public sealed class ScheduleDispatcherService(
             scheduleId);
     }
 
+    // Cleared on any tick that left nothing waiting on a listener, not only on a successful emit:
+    // the fire an outage held up is often gone by the time the agent returns, so waiting for a
+    // delivery to unmute would leave the next outage silent.
     private void NoteDeliveryResumed()
     {
         if (_warnedUndelivered)
         {
             _warnedUndelivered = false;
-            logger.LogInformation("Schedule delivery resumed; an active session is receiving fires again");
+            logger.LogInformation("Schedule delivery resumed; no fire is waiting on a listener");
         }
     }
 }

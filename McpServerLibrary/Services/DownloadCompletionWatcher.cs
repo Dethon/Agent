@@ -51,6 +51,17 @@ public sealed class DownloadCompletionWatcher(
     // refused for want of a listener, which is the loop's cue to slow down.
     internal async Task<bool> SweepAsync(CancellationToken ct)
     {
+        var delivered = await SweepEntriesAsync(ct);
+        if (delivered)
+        {
+            NoteDeliveryResumed();
+        }
+
+        return delivered;
+    }
+
+    private async Task<bool> SweepEntriesAsync(CancellationToken ct)
+    {
         var entries = await store.ListAsync(ct);
         if (entries.Count == 0)
         {
@@ -79,7 +90,6 @@ public sealed class DownloadCompletionWatcher(
                 continue;
             }
 
-            NoteDeliveryResumed();
             await store.RemoveAsync(entry.DownloadId, ct);
             logger.LogInformation(
                 "Emitted completion for download {DownloadId} ('{Title}')", entry.DownloadId, entry.Title);
@@ -104,12 +114,15 @@ public sealed class DownloadCompletionWatcher(
             downloadId);
     }
 
+    // Cleared on any sweep that left nothing waiting on a listener, not only on a successful emit:
+    // the completion an outage held up is often gone by the time the agent returns, so waiting for
+    // a delivery to unmute would leave the next outage silent.
     private void NoteDeliveryResumed()
     {
         if (_warnedUndelivered)
         {
             _warnedUndelivered = false;
-            logger.LogInformation("Completion delivery resumed; an active session is receiving alerts again");
+            logger.LogInformation("Completion delivery resumed; no alert is waiting on a listener");
         }
     }
 }
