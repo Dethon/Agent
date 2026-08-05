@@ -61,11 +61,13 @@ public static class DownloadsPath
         return string.Join('/', canonical);
     }
 
-    // The overlay owns exactly the ids the download manager hands out: digits, no sign, no padding,
-    // no surrounding blanks. A directory literally named '042', '+42' or ' 42 ' is a real directory
-    // on disk, and shadowing it with a virtual status file — or cancelling download 42 when asked to
-    // delete it — is not the overlay's call. Round-tripping the parse is the whole rule.
+    // The overlay owns exactly the ids the download manager hands out: an int spelled the way
+    // int.ToString spells it — a minus for negatives (ids are link hash codes, so half are), no
+    // plus, no padding, no surrounding blanks. A directory literally named '042', '+42' or ' 42 '
+    // is a real directory on disk, and shadowing it with a virtual status file — or cancelling
+    // download 42 when asked to delete it — is not the overlay's call. Round-tripping the parse is
+    // the whole rule.
     private static bool TryParseId(string segment, out int id) =>
-        int.TryParse(segment, NumberStyles.None, CultureInfo.InvariantCulture, out id)
+        int.TryParse(segment, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out id)
         && id.ToString(CultureInfo.InvariantCulture) == segment;
 }
