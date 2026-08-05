@@ -21,7 +21,7 @@ namespace Tests.Unit.Domain;
 internal sealed class FakeAiAgent : DisposableAgent
 {
     public Exception? ExceptionToThrow { get; init; }
-    public Exception? RestoreExceptionToThrow { get; init; }
+    public Exception? RestoreExceptionToThrow { get; set; }
     public int DisposeCalls;
     public AgentResponseUpdate[] UpdatesToYield { get; init; } = [];
 
@@ -676,6 +676,90 @@ public class ChatMonitorTests
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
         fakeAgent.Events.ToArray().ShouldBe(["warmup", "run"]);
+    }
+
+    [Fact]
+    public async Task Monitor_TurnQueuedBehindARunningTurn_RunsAfterIt()
+    {
+        // The second message arrives strictly while the first turn is running — written from
+        // inside that turn — so it queues, and runs only once the first turn has completed.
+        var channel = new FakeChannelConnection();
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "first"));
+        var wroteSecond = 0;
+        var fakeAgent = new FakeAiAgent
+        {
+            TurnGate = _ =>
+            {
+                if (Interlocked.Exchange(ref wroteSecond, 1) == 0)
+                {
+                    channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "second"));
+                    channel.Complete();
+                }
+
+                return Task.CompletedTask;
+            }
+        };
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        fakeAgent.Events.ToArray()
+            .ShouldBe(["warmup", "run", "run-complete", "run", "run-complete"]);
+        fakeAgent.ReceivedMessages.SelectMany(m => m).Select(m => m.Text)
+            .ShouldBe(["first", "second"]);
+    }
+
+    [Fact]
+    public async Task Monitor_ClearArrivingWithATurnQueued_DropsTheQueuedTurnAndLogsTheDrop()
+    {
+        // Commands dispatch ahead of queued turns, so a /clear behind a queued "do X" wipes
+        // the state and ends the group before "do X" runs. That immediacy is the point — the
+        // user is discarding the thread the queued turn would have written into — but the
+        // dropped turn must not vanish silently: the teardown acknowledges it in the log.
+        var channel = new FakeChannelConnection();
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "a long one"));
+        var fakeAgent = new FakeAiAgent
+        {
+            TurnGate = ct =>
+            {
+                // Written from inside the running turn, so both strictly arrive while it runs:
+                // "do X" queues behind it, then the clear tears the group down.
+                channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "do X"));
+                channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "/clear"));
+                channel.Complete();
+                return Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            }
+        };
+        var stateStore = new Mock<IThreadStateStore>();
+        stateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>())).Returns(Task.CompletedTask);
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            new ChatThreadResolver(stateStore.Object),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        // The running turn was cancelled, the queued one never ran, and the thread was wiped.
+        fakeAgent.Events.ToArray().ShouldBe(["warmup", "run"]);
+        stateStore.Verify(s => s.DeleteAsync(new AgentKey("conv-1")), Times.Once);
+        logger.Verify(l => l.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
     [Fact]

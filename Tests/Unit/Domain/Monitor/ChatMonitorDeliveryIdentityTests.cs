@@ -109,6 +109,57 @@ public class ChatMonitorDeliveryIdentityTests
         recallHook.ConversationIds.ShouldHaveSingleItem().ShouldBe(ownKey.ConversationId);
     }
 
+    [Fact]
+    public async Task Monitor_LaterTurnResolvingItsOwnTargets_AttributesFirstReplyToItsOwnConversation()
+    {
+        // The group's delivery key names the conversation the FIRST turn's reply landed in —
+        // here the minted WebChat one. A later plain message joins the group under the group
+        // key and is delivered back to its own origin, so its first-reply latency belongs to
+        // the conversation its own reply landed in, not to the group's delivery key.
+        var fire = new ChannelMessage
+        {
+            ConversationId = "sched-morning-news-12345",
+            Content = "do the thing",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "jonas",
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "morning-news"),
+            ReplyTo = [new ReplyTarget("webchat", null)]
+        };
+        var followUp = new ChannelMessage
+        {
+            ConversationId = "sched-morning-news-12345",
+            Content = "and again",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "jonas"
+        };
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", fire, followUp);
+        var webchat = new FakeChannelConnection
+        {
+            ChannelId = "webchat",
+            ConversationIdToReturn = MintedKey.ConversationId
+        };
+        webchat.Complete();
+        var published = new List<MetricEvent>();
+
+        var monitor = new ChatMonitor(
+            [scheduling, webchat],
+            MonitorTestMocks.CreateAgentFactory(ReplyingAgent()),
+            MonitorTestMocks.CreateThreadResolver(),
+            CapturingPublisher(published),
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        var firstReplies = published.OfType<LatencyEvent>()
+            .Where(e => e.Stage == LatencyStage.FirstReply)
+            .Select(e => e.ConversationId)
+            .ToList();
+        firstReplies.ShouldBe([MintedKey.ConversationId, "sched-morning-news-12345"]);
+    }
+
     private sealed class RecordingRecallHook : IMemoryRecallHook
     {
         public List<string?> ConversationIds { get; } = [];

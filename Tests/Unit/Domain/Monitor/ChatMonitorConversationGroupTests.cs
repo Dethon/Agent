@@ -139,13 +139,17 @@ public class ChatMonitorConversationGroupTests
     }
 
     [Fact]
-    public async Task Monitor_FirstTurnFailsToEstablish_EndsTheGroupAndDisposesTheAgent()
+    public async Task Monitor_FirstTurnFailsToEstablish_LogsEndsTheGroupAndTheNextMessageStartsAFreshOne()
     {
         // Establishing the group happens inside the turn loop now, so a state store that is
-        // down has to end the group there and then. The channel stays open on purpose: a group
-        // that waited for its message stream to end would hold the agent open with it.
+        // down has to end the group there and then: log the failure, complete the group and
+        // dispose the agent. The channel stays open on purpose: a group that waited for its
+        // message stream to end would hold the agent open with it — and the next message for
+        // the same conversation must open a fresh group and be answered, not queue silently
+        // into the dead one until restart.
         var channel = new FakeChannelConnection();
         var fakeAgent = new FakeAiAgent { RestoreExceptionToThrow = new HttpRequestException("state store down") };
+        var logger = new Mock<ILogger<ChatMonitor>>();
 
         var monitor = new ChatMonitor(
             [channel],
@@ -153,17 +157,28 @@ public class ChatMonitorConversationGroupTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            logger.Object);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = monitor.Monitor(cts.Token);
         channel.WriteMessage(MonitorTestMocks.CreateChannelMessage());
 
         await fakeAgent.DisposeSignaled.Task.WaitAsync(cts.Token);
+        fakeAgent.DisposeCalls.ShouldBe(1);
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<HttpRequestException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
 
+        // The store recovered; the next message opens a fresh group and is answered.
+        fakeAgent.RestoreExceptionToThrow = null;
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "again"));
         channel.Complete();
         await run;
-        fakeAgent.DisposeCalls.ShouldBe(1);
+
+        channel.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
     }
 
     private static ChannelMessage ScheduleFire(string content)

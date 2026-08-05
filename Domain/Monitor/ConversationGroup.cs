@@ -11,6 +11,7 @@ using Domain.Extensions;
 using Domain.Metrics;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
@@ -24,7 +25,8 @@ internal sealed class ConversationGroup(
     DeliveryTargetResolver targetResolver,
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
-    IMemoryRecallHook? memoryRecallHook) : IAsyncDisposable
+    IMemoryRecallHook? memoryRecallHook,
+    ILogger logger) : IAsyncDisposable
 {
     // The outer token. Establishing the group runs on it rather than on the per-turn token,
     // because a /cancel there would throw out of a stage nothing downstream can absorb.
@@ -86,8 +88,11 @@ internal sealed class ConversationGroup(
     // three. Different conversations and the fan-out across delivery targets stay concurrent.
     //
     // Commands do NOT queue: /cancel is how the stop button reaches the monitor, so it has to
-    // reach threadResolver while the turn it stops is still running. Reading messages in a
-    // separate loop keeps commands immediate and turns sequential.
+    // reach threadResolver while the turn it stops is still running. /clear is immediate for
+    // the same reason — the user is discarding the thread, so the running turn must stop
+    // writing into it and a queued turn must not run against it; the teardown acknowledges
+    // what it drops. Reading messages in a separate loop keeps commands immediate and turns
+    // sequential.
     private async IAsyncEnumerable<TurnUpdate> RunTurnsSequentiallyAsync(
         IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages)
     {
@@ -102,7 +107,41 @@ internal sealed class ConversationGroup(
         {
             await foreach (var x in pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt))
             {
-                var turn = await RunTurnAsync(x);
+                // The reader hands over items it already buffered even after the token fired,
+                // so a turn queued behind the one a /clear or /cancel just ended would start
+                // against the torn-down group. It is dropped instead, and acknowledged below.
+                if (_turnCt.IsCancellationRequested)
+                {
+                    LogDroppedTurn(x.Message);
+                    break;
+                }
+
+                IAsyncEnumerable<TurnUpdate> turn;
+                try
+                {
+                    turn = await RunTurnAsync(x);
+                }
+                catch (OperationCanceledException)
+                {
+                    // A /cancel or /clear mid-setup: the context dispose that raised this
+                    // already completed the group.
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    // A turn that fails to set up — the state store down while restoring the
+                    // thread, say — must not leave the group half-built: an exception thrown
+                    // out of here is swallowed by the monitor's stream merge, the group would
+                    // stay registered, and every later message for this conversation would
+                    // queue into it unread until restart. Cancelling the context completes
+                    // the group, so the next message opens a fresh one.
+                    logger.LogError(ex,
+                        "Turn setup failed for conversation {ConversationId} and agent {AgentId}; ending the group",
+                        agentKey.ConversationId, agentKey.AgentId);
+                    threadResolver.Cancel(agentKey);
+                    break;
+                }
+
                 await foreach (var update in turn.IgnoreCancellation(_turnCt))
                 {
                     yield return update;
@@ -113,7 +152,22 @@ internal sealed class ConversationGroup(
         {
             await pumpCts.CancelAsync();
             await reader;
+            // Anything still queued when the group ends is dropped by that end — a /clear or
+            // /cancel dispatched ahead of it, a setup failure, a shutdown. Dropping is the
+            // decided semantics (the command's immediacy is its point); vanishing silently is
+            // not, so each dropped turn is named. The pump is done, so this drains everything.
+            while (pending.Reader.TryRead(out var dropped))
+            {
+                LogDroppedTurn(dropped.Message);
+            }
         }
+    }
+
+    private void LogDroppedTurn(ChannelMessage message)
+    {
+        logger.LogWarning(
+            "Group teardown dropped a queued turn for conversation {ConversationId} and agent {AgentId}",
+            message.ConversationId, message.AgentId);
     }
 
     private async Task DispatchCommandsAndQueueTurnsAsync(
@@ -202,15 +256,20 @@ internal sealed class ConversationGroup(
         (IChannelConnection Channel, ChannelMessage Message) x)
     {
         var state = await EnsureEstablishedAsync(x);
-        // FirstReply times the turn from the moment it starts to its first delivered reply
-        // chunk: target resolution, memory recall, the wait on session warmup and the
-        // turn-start announce for agent-initiated messages. It is the turn's own window
-        // rather than the user's wall clock — neither the queue wait behind a running turn
-        // nor establishing the group on its first turn is measured.
-        var firstReply = metricsPublisher.MeasureLatency(
-            LatencyStage.FirstReply, state.DeliveryKey.ConversationId);
         var targets = await ResolveTurnTargetsAsync(x, state);
-        var turn = new Turn(x.Channel, x.Message, targets, firstReply);
+        // FirstReply times the turn from the moment it starts to its first delivered reply
+        // chunk: memory recall, the wait on session warmup and the turn-start announce for
+        // agent-initiated messages. It is the turn's own window rather than the user's wall
+        // clock — neither the queue wait behind a running turn nor establishing the group on
+        // its first turn is measured, and per-turn target resolution (an in-memory routing
+        // decision on every path; the minting resolution happened while establishing) opens
+        // the window rather than sitting inside it, so the scope can carry the turn's own
+        // anchor: the conversation this turn's reply actually lands in, which for a later
+        // interactive turn is its own origin rather than the group's delivery key.
+        var firstReply = metricsPublisher.MeasureLatency(
+            LatencyStage.FirstReply,
+            targets.Count > 0 ? targets[0].ConversationId : agentKey.ConversationId);
+        var turn = new Turn(x.Message, targets, firstReply);
         // Agent-initiated turns (downloads, schedules) land in conversations with no live
         // stream on the receiving channel; announce the turn so the channel can set one up
         // before reply chunks arrive.

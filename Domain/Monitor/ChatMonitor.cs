@@ -55,7 +55,7 @@ public class ChatMonitor(
         [EnumeratorCancellation] CancellationToken ct)
     {
         await using var conversation = new ConversationGroup(
-            agentKey, agentFactory, _targetResolver, threadResolver, metricsPublisher, memoryRecallHook);
+            agentKey, agentFactory, _targetResolver, threadResolver, metricsPublisher, memoryRecallHook, logger);
 
         await foreach (var turnUpdate in conversation.RunAsync(group, group.Complete, ct).WithCancellation(ct))
         {
