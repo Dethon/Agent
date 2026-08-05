@@ -43,8 +43,11 @@ public enum McpServerRole
     DualRole
 }
 
+// ProjectDirectory is the folder the server's shipped appsettings.json lives in, which is the only
+// thing about a server that cannot be reached from its settings object or its module.
 public sealed record McpServerRow(
     string Id,
+    string ProjectDirectory,
     McpServerRole Role,
     object Settings,
     Action<IServiceCollection> Configure,
@@ -91,17 +94,17 @@ public static class McpServerRegistrations
     // the channel rows do: registration must run with no container and no network.
     public static IReadOnlyList<McpServerRow> All =>
     [
-        Row("signalr", McpServerRole.Channel,
+        Row("signalr", "McpChannelSignalR", McpServerRole.Channel,
             new SignalRSettings.ChannelSettings { RedisConnectionString = UnreachableRedis },
             (services, settings) => services.ConfigureChannel(settings),
             DeliveryPolicy.Broadcast),
 
-        Row("telegram", McpServerRole.Channel,
+        Row("telegram", "McpChannelTelegram", McpServerRole.Channel,
             new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] },
             (services, settings) => services.ConfigureChannel(settings),
             DeliveryPolicy.BufferAlways),
 
-        Row("servicebus", McpServerRole.Channel,
+        Row("servicebus", "McpChannelServiceBus", McpServerRole.Channel,
             new ServiceBusSettings.ChannelSettings
             {
                 ServiceBusConnectionString = FakeServiceBusConnectionString,
@@ -115,21 +118,21 @@ public static class McpServerRegistrations
         // SignalR's eager Connect), and nothing in this registration-only test resolves it, so no
         // live/fake Redis endpoint is needed — defaults are enough, exactly as ConfigModuleTests
         // already relies on for the rest of the voice DI graph.
-        Row("voice", McpServerRole.Channel,
+        Row("voice", "McpChannelVoice", McpServerRole.Channel,
             new VoiceSettings.VoiceSettings(),
             (services, settings) => services.ConfigureVoiceChannel(settings),
             DeliveryPolicy.Broadcast),
 
         // Same lazy IConnectionMultiplexer factory as voice, so the connection string just needs to
         // satisfy the required property.
-        Row("scheduling", McpServerRole.DualRole,
+        Row("scheduling", "McpServerScheduling", McpServerRole.DualRole,
             new SchedulingSettings.SchedulingSettings { RedisConnectionString = UnreachableRedis },
             (services, settings) => services.ConfigureScheduling(settings),
             DeliveryPolicy.GateOnLive),
 
         // AddJacketClient/AddQBittorrentClient only register typed HttpClients (no eager dial), so
         // plain placeholder settings are enough to build the container.
-        Row("library", McpServerRole.DualRole,
+        Row("library", "McpServerLibrary", McpServerRole.DualRole,
             new LibrarySettings.McpSettings
             {
                 Jackett = new LibrarySettings.JackettConfiguration { ApiKey = "x", ApiUrl = "http://jackett" },
@@ -146,7 +149,7 @@ public static class McpServerRegistrations
 
         // MusicAssistant left absent: the podcast-episode action is the one conditional branch in
         // this module, and the row that exercises the default is the one every deployment runs.
-        Row("homeassistant", McpServerRole.Tool,
+        Row("homeassistant", "McpServerHomeAssistant", McpServerRole.Tool,
             new HaSettings.McpSettings
             {
                 HomeAssistant = new HaSettings.HomeAssistantConfiguration
@@ -156,7 +159,7 @@ public static class McpServerRegistrations
             },
             (services, settings) => services.ConfigureMcp(settings)),
 
-        Row("idealista", McpServerRole.Tool,
+        Row("idealista", "McpServerIdealista", McpServerRole.Tool,
             new IdealistaSettings.McpSettings
             {
                 Idealista = new IdealistaSettings.IdealistaConfiguration { ApiKey = "x", ApiSecret = "x" }
@@ -165,11 +168,11 @@ public static class McpServerRegistrations
 
         // The spool path is never touched during registration: PrintSpool creates its directory on
         // the first write, and nothing here writes.
-        Row("printer", McpServerRole.Tool,
+        Row("printer", "McpServerPrinter", McpServerRole.Tool,
             new PrinterSettings.PrinterSettings { PrinterUri = "ipp://printer:631/ipp/print" },
             (services, settings) => services.ConfigurePrinter(settings)),
 
-        Row("sandbox", McpServerRole.Tool,
+        Row("sandbox", "McpServerSandbox", McpServerRole.Tool,
             new SandboxSettings.McpSettings
             {
                 ContainerRoot = "/sandbox",
@@ -182,18 +185,18 @@ public static class McpServerRegistrations
             (services, settings) => services.ConfigureMcp(settings)),
 
         // The voice hub is reached through a named HttpClient, which never dials at registration.
-        Row("timers", McpServerRole.Tool,
+        Row("timers", "McpServerTimers", McpServerRole.Tool,
             new TimersSettings.TimerSettings(),
             (services, settings) => services.ConfigureTimers(settings)),
 
-        Row("vault", McpServerRole.Tool,
+        Row("vault", "McpServerVault", McpServerRole.Tool,
             new VaultSettings.McpSettings { VaultPath = "/vault", AllowedExtensions = [".md"] },
             (services, settings) => services.ConfigureMcp(settings)),
 
         // CapSolver and Camoufox left absent, which is how a deployment without them runs: the
         // solver client is not registered and the browser gets a null endpoint. PlaywrightWebBrowser
         // launches nothing until its first navigation.
-        Row("websearch", McpServerRole.Tool,
+        Row("websearch", "McpServerWebSearch", McpServerRole.Tool,
             new WebSearchSettings.McpSettings
             {
                 BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" }
@@ -215,10 +218,11 @@ public static class McpServerRegistrations
 
     private static McpServerRow Row<TSettings>(
         string id,
+        string projectDirectory,
         McpServerRole role,
         TSettings settings,
         Action<IServiceCollection, TSettings> configure,
         DeliveryPolicy? policy = null)
         where TSettings : class =>
-        new(id, role, settings, services => configure(services, settings), policy);
+        new(id, projectDirectory, role, settings, services => configure(services, settings), policy);
 }
