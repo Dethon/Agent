@@ -25,6 +25,17 @@ public static class ChannelServerExtensions
         ArgumentNullException.ThrowIfNull(builder);
         DeliveryPolicyRules.ValidateSubscriberId(policy, subscriberId);
 
+        // The call-tool filter guards itself and the first ask wins, but the inbox and the emitter
+        // are plain singletons, so a second call would silently replace the emitter and with it the
+        // declared delivery policy. A server has one inbox and one policy; asking twice is a bug in
+        // the server, and it says so here rather than surfacing later as a duplicate tool name.
+        if (builder.Services.Any(descriptor => descriptor.ServiceType == typeof(ChannelNotificationEmitter)))
+        {
+            throw new InvalidOperationException(
+                "AddChannelServer has already been called on this server. A channel server has one "
+                + "inbox and one delivery policy; a second call would replace the first policy.");
+        }
+
         builder.Services
             .AddSingleton<ChannelInbox>()
             .AddSingleton(sp => new ChannelNotificationEmitter(
