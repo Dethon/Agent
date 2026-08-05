@@ -67,10 +67,13 @@ public sealed class StreamResumeService(
                 pipeline.LoadHistory(topic.TopicId, history.Value!);
             }
 
+            // The server's answer is the whole truth for this conversation, so it both surfaces
+            // a prompt this client never saw and takes away one that was answered or timed out
+            // while it was disconnected. A read that could not be made says nothing either way.
             var pendingApproval = await approvalService.GetPendingApprovalForTopicAsync(topic.TopicId);
-            if (pendingApproval is { IsLive: true, Value: not null })
+            if (pendingApproval.IsLive)
             {
-                dispatcher.Dispatch(new ShowApproval(topic.TopicId, pendingApproval.Value));
+                dispatcher.Dispatch(new TopicApprovalsReconciled(topic.TopicId, pendingApproval.Value));
             }
 
             // Single rebuild: buffer + history → merged result
