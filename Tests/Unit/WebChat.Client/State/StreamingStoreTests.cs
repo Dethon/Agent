@@ -36,7 +36,6 @@ public class StreamingStoreTests : IDisposable
         content.Reasoning.ShouldBeNull();
         content.ToolCalls.ShouldBeNull();
         content.CurrentMessageId.ShouldBeNull();
-        content.IsError.ShouldBeFalse();
     }
 
     [Fact]
@@ -86,18 +85,6 @@ public class StreamingStoreTests : IDisposable
 
         _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
         _store.State.StreamingTopics.ShouldNotContain("topic-1");
-    }
-
-    [Fact]
-    public void StreamError_SetsIsErrorTrue()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
-        _dispatcher.Dispatch(new StreamError("topic-1", "Something went wrong"));
-
-        var content = _store.State.StreamingByTopic["topic-1"];
-        content.IsError.ShouldBeTrue();
-        content.Content.ShouldBe("Hello"); // Content preserved
     }
 
     [Fact]

@@ -178,6 +178,23 @@ public sealed class SendMessageEffectTests : IDisposable
         _toastStore.State.Toasts.Count.ShouldBe(1);
     }
 
+    [Fact]
+    public async Task Disposed_StopsHandlingSendMessage()
+    {
+        var topic = new StoredTopic
+        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _mockSessionService.Setup(s => s.CurrentTopic).Returns(topic);
+        _effect.Dispose();
+
+        _dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
+
+        await Task.Delay(50);
+        _mockStreamingService.Verify(
+            s => s.SendMessageAsync(It.IsAny<StoredTopic>(), It.IsAny<string>(), It.IsAny<string?>()),
+            Times.Never);
+    }
+
     public void Dispose()
     {
         _effect.Dispose();

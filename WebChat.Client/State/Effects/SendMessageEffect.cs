@@ -26,6 +26,9 @@ public sealed class SendMessageEffect : IDisposable
     private readonly IMessagePipeline _pipeline;
     private readonly SpaceStore _spaceStore;
     private readonly ILogger<SendMessageEffect> _logger;
+    private readonly IDisposable _sendMessageRegistration;
+    private readonly IDisposable _cancelStreamingRegistration;
+    private readonly IDisposable _retryLastMessageRegistration;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
@@ -54,11 +57,11 @@ public sealed class SendMessageEffect : IDisposable
         _spaceStore = spaceStore;
         _logger = logger;
 
-        dispatcher.RegisterHandler<SendMessage>(action =>
+        _sendMessageRegistration = dispatcher.RegisterHandler<SendMessage>(action =>
             HandleSendMessageAsync(action).LogFaults(_logger, nameof(SendMessage)));
-        dispatcher.RegisterHandler<CancelStreaming>(action =>
+        _cancelStreamingRegistration = dispatcher.RegisterHandler<CancelStreaming>(action =>
             HandleCancelStreamingAsync(action.TopicId).LogFaults(_logger, nameof(CancelStreaming)));
-        dispatcher.RegisterHandler<RetryLastMessage>(HandleRetryLastMessage);
+        _retryLastMessageRegistration = dispatcher.RegisterHandler<RetryLastMessage>(HandleRetryLastMessage);
     }
 
     private async Task HandleCancelStreamingAsync(string topicId)
@@ -191,6 +194,8 @@ public sealed class SendMessageEffect : IDisposable
 
     public void Dispose()
     {
-        // No subscription to dispose, handler is registered with dispatcher
+        _sendMessageRegistration.Dispose();
+        _cancelStreamingRegistration.Dispose();
+        _retryLastMessageRegistration.Dispose();
     }
 }

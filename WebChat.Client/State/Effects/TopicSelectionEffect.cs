@@ -17,6 +17,7 @@ public sealed class TopicSelectionEffect : IDisposable
     private readonly IStreamResumeService _streamResumeService;
     private readonly IMessagePipeline _pipeline;
     private readonly ILogger<TopicSelectionEffect> _logger;
+    private readonly IDisposable _selectTopicRegistration;
 
     public TopicSelectionEffect(
         Dispatcher dispatcher,
@@ -37,7 +38,7 @@ public sealed class TopicSelectionEffect : IDisposable
         _pipeline = pipeline;
         _logger = logger;
 
-        dispatcher.RegisterHandler<SelectTopic>(action =>
+        _selectTopicRegistration = dispatcher.RegisterHandler<SelectTopic>(action =>
         {
             if (action.TopicId is not null)
             {
@@ -102,6 +103,6 @@ public sealed class TopicSelectionEffect : IDisposable
 
     public void Dispose()
     {
-        // No subscription to dispose
+        _selectTopicRegistration.Dispose();
     }
 }

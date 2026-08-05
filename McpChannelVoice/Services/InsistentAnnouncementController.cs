@@ -41,11 +41,8 @@ public sealed class InsistentAnnouncementController(
         offlineIds.ForEach(id => metrics.Publish(new VoiceEvent
         {
             Metric = VoiceMetric.AlarmOffline,
-            SatelliteId = id,
-            Room = registry.GetById(id)?.Room,
-            Identity = registry.GetById(id)?.Identity,
             Outcome = "offline"
-        }));
+        }.About(SatelliteIdentity.Of(id, registry.GetById(id)))));
 
         if (offlineIds.Count == targetIds.Count)
         {
@@ -205,17 +202,15 @@ public sealed class InsistentAnnouncementController(
     private IEnumerable<SatelliteSession> OnlineSessions(IEnumerable<string> targetIds) =>
         targetIds.Select(sessions.Get).Where(s => s is not null).Select(s => s!);
 
+    // Reported about the first target: an alert covering several satellites is one ring, and the
+    // metric names where it was aimed. Stamped through the same identity as every other report, so
+    // the room and the household cannot go missing from it.
     private VoiceEvent AlarmEvent(VoiceMetric metric, IReadOnlyList<string> targetIds, int rounds)
     {
-        var first = targetIds.Count > 0 ? registry.GetById(targetIds[0]) : null;
-        return new VoiceEvent
-        {
-            Metric = metric,
-            SatelliteId = targetIds.Count > 0 ? targetIds[0] : null,
-            Room = first?.Room,
-            Identity = first?.Identity,
-            DurationMs = rounds
-        };
+        var evt = new VoiceEvent { Metric = metric, DurationMs = rounds };
+        return targetIds.Count == 0
+            ? evt
+            : evt.About(SatelliteIdentity.Of(targetIds[0], registry.GetById(targetIds[0])));
     }
 
     private static async IAsyncEnumerable<AudioChunk> Replay(IReadOnlyList<AudioChunk> chunks, double gain)

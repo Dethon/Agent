@@ -1,15 +1,8 @@
 using Dashboard.Client.Metrics;
-using Dashboard.Client.Services;
-using Dashboard.Client.State.Health;
-using Dashboard.Client.State.Metrics;
 
 namespace Dashboard.Client.Effects;
 
-public sealed class DataLoadEffect(
-    MetricsApiService api,
-    MetricFamilyTable families,
-    MetricsStore metricsStore,
-    HealthStore healthStore)
+public sealed class DataLoadEffect(MetricFamilyTable families, OverviewFigures overview)
 {
     // The one trace the swallowed failure leaves behind. The live connection skips catch-up on its
     // first epoch on the premise that this load delivered the same data; a recorded failure is how
@@ -23,56 +16,45 @@ public sealed class DataLoadEffect(
 
     public async Task LoadAsync(DateOnly from, DateOnly to)
     {
-        try
+        families.All.ToList().ForEach(family => family.SetDateRange(from, to));
+        overview.SetDateRange(from, to);
+
+        var requests = new Func<Task>[]
         {
-            families.All.ToList().ForEach(family => family.SetDateRange(from, to));
-
-            var summaryTask = api.GetSummaryAsync(from, to);
-            var healthTask = api.GetHealthAsync();
-            var familyTasks = families.All
-                .SelectMany(family => new[] { family.LoadEventsAsync(), family.RefreshAsync() });
-
-            await Task.WhenAll([summaryTask, healthTask, .. familyTasks]);
-
-            var summary = await summaryTask;
-            if (summary is not null)
-            {
-                metricsStore.UpdateSummary(new MetricsState
-                {
-                    InputTokens = summary.InputTokens,
-                    OutputTokens = summary.OutputTokens,
-                    Cost = summary.Cost,
-                    ToolCalls = summary.ToolCalls,
-                    ToolErrors = summary.ToolErrors,
-                    TotalRecalls = summary.TotalRecalls,
-                    TotalExtractions = summary.TotalExtractions,
-                    TotalDreamings = summary.TotalDreamings,
-                    MemoriesStored = summary.MemoriesStored,
-                    MemoriesMerged = summary.MemoriesMerged,
-                    MemoriesDecayed = summary.MemoriesDecayed,
-                });
-            }
-
-            var health = await healthTask;
-            if (health is not null)
-            {
-                healthStore.UpdateHealth(health
-                    .Select(h => new ServiceHealth(h.Service, h.IsHealthy, h.LastSeen))
-                    .ToList());
-            }
-
-            LastLoadFailed = false;
-        }
-        catch
+            overview.LoadSummaryAsync,
+            overview.LoadHealthAsync,
+        }.Concat(families.All.SelectMany(family => new Func<Task>[]
         {
-            // The page-load path swallows the reason a load failed, as it always has. Connection
-            // status is the live connection's to publish, and a failed request is not an outage.
-            LastLoadFailed = true;
-        }
+            family.LoadEventsAsync,
+            family.RefreshAsync,
+        }));
+
+        var outcomes = await Task.WhenAll(requests.Select(SettleAsync));
+
+        LastLoadFailed = outcomes.Contains(false);
 
         if (LoadCompleted is { } completed)
         {
             await completed();
+        }
+    }
+
+    // Each request settles on its own, because one endpoint that fails must not take the panels that
+    // did answer off the screen: the KPI row and the health grid used to go blank whenever any of
+    // the nineteen breakdown requests failed. A refresh can also hand back a run started by a live
+    // push and already failing, which is a failure this load never issued and still has to survive.
+    // The page-load path swallows the reason, as it always has — connection status is the live
+    // connection's to publish, and a failed request is not an outage.
+    private static async Task<bool> SettleAsync(Func<Task> request)
+    {
+        try
+        {
+            await request();
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

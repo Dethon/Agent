@@ -17,8 +17,6 @@ public sealed class SignalRMetricsHubConnection : IMetricsHubConnection
             .Build();
     }
 
-    public HubConnectionState State => _connection.State;
-
     public event Func<Exception?, Task>? Closed
     {
         add => _connection.Closed += value;

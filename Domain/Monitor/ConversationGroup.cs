@@ -28,8 +28,13 @@ internal sealed class ConversationGroup(
     IMemoryRecallHook? memoryRecallHook,
     ILogger logger) : IAsyncDisposable
 {
-    // The outer token. Establishing the group runs on it rather than on the per-turn token,
-    // because a /cancel there would throw out of a stage nothing downstream can absorb.
+    // The outer token: it ends with the monitor, not with a turn. The two establishing stages
+    // that reach outside — minting the delivery targets and restoring the thread — run on it
+    // rather than on the per-turn token, so a /cancel arriving mid-establish lets them finish
+    // instead of leaving a conversation minted on one channel and unknown to the group, or a
+    // half-read thread. The turn is dropped all the same: the warmup does start on the turn
+    // token, so the wait on it raises the cancellation that RunTurnsSequentiallyAsync absorbs
+    // to end the group.
     private CancellationToken _groupCt;
 
     // The group token: the outer one linked with the thread context's, so a /cancel or /clear
@@ -57,10 +62,16 @@ internal sealed class ConversationGroup(
     {
         _groupCt = ct;
 
-        // The context is what a /clear disposes and what ends the group, so it exists before
-        // any message is read: ChatThreadResolver.ClearAsync only deletes persisted state when
-        // it finds a live one.
-        var context = threadResolver.Resolve(agentKey);
+        // The context is what a /clear or /cancel disposes to end the group, and it carries the
+        // completion callback and the turn token, so it exists before any message is read: a
+        // command that found no live context would leave this group running against a context
+        // resolved after it.
+        var context = TryResolveContext(onGroupComplete);
+        if (context is null)
+        {
+            yield break;
+        }
+
         context.RegisterCompletionCallback(onGroupComplete);
         using var linkedCts = context.GetLinkedTokenSource(ct);
         _turnCt = linkedCts.Token;
@@ -68,6 +79,28 @@ internal sealed class ConversationGroup(
         await foreach (var update in RunTurnsSequentiallyAsync(messages))
         {
             yield return update;
+        }
+    }
+
+    // The same protection the turn loop gives a half-built group, one stage earlier. Resolving
+    // the context is the first thing the group does, and it throws once the container has
+    // disposed the resolver at shutdown. Thrown out of RunAsync it would be swallowed by the
+    // monitor's stream merge, leaving the grouping never completed and every later message for
+    // this conversation queued into a group nobody reads. Completing the grouping here ends it,
+    // so a message arriving after a resolver that is up again opens a fresh group.
+    private ChatThreadContext? TryResolveContext(Action onGroupComplete)
+    {
+        try
+        {
+            return threadResolver.Resolve(agentKey);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Resolving the thread context failed for conversation {ConversationId} and agent {AgentId}; ending the group",
+                agentKey.ConversationId, agentKey.AgentId);
+            onGroupComplete();
+            return null;
         }
     }
 
@@ -79,13 +112,20 @@ internal sealed class ConversationGroup(
         }
     }
 
-    // One turn at a time within a conversation. Three pieces of state shared across a
-    // conversation's turns depend on this and are not defended anywhere else:
-    // ToolApprovalChatClient's dynamically-approved tool set (an unsynchronised HashSet
-    // mutated mid-turn), and OpenRouterChatClient's reasoning queue and cost/cached-token
+    // One turn at a time per group key — the (ConversationId, AgentId) of the incoming message.
+    // Three pieces of state shared across a group's turns depend on this and are not defended
+    // anywhere else: ToolApprovalChatClient's dynamically-approved tool set (an unsynchronised
+    // HashSet mutated mid-turn), and OpenRouterChatClient's reasoning queue and cost/cached-token
     // queues (drained per update and per response, so two interleaved streams on one client
     // cross-attribute each other's values). Reintroducing concurrency here re-breaks all
-    // three. Different conversations and the fan-out across delivery targets stay concurrent.
+    // three. Different group keys and the fan-out across delivery targets stay concurrent.
+    //
+    // The key is the message's own conversation, not the one the replies land in, so this is
+    // not "one turn at a time per conversation": a schedule fire keyed on its synthetic id and
+    // the user typing in the WebChat conversation it delivers into are two groups, and their
+    // turns run concurrently against that one conversation and its persisted thread. The three
+    // pieces of state above survive that because each group builds its own agent, and with it
+    // its own chat client stack.
     //
     // Commands do NOT queue: /cancel is how the stop button reaches the monitor, so it has to
     // reach threadResolver while the turn it stops is still running. /clear is immediate for

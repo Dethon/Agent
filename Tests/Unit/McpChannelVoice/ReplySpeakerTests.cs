@@ -18,6 +18,10 @@ namespace Tests.Unit.McpChannelVoice;
 public class ReplySpeakerTests
 {
     private readonly SatelliteSession _session;
+
+    // Standing in for CaptureSession: the turn anchors belong to ITurnAnchor, not to the
+    // playback queue every producer holds.
+    private ITurnAnchor Anchors => _session.Playback;
     private readonly SatelliteSessionRegistry _sessions = new();
     private readonly ReplyTextAccumulator _accumulator = new();
     private readonly Mock<ITextToSpeech> _tts = new();
@@ -260,7 +264,7 @@ public class ReplySpeakerTests
     {
         // One clock throughout: a second FakeTimeProvider here used to stamp EnqueuedAt while this
         // one drained playback, so the queue-wait span was computed across two unrelated timelines.
-        _session.Playback.MarkTurnStart(_clock.GetTimestamp());
+        Anchors.MarkTurnStart(_clock.GetTimestamp());
         _session.Turn.MarkDispatched(_clock.GetTimestamp()); // turn-anchored spans need the dispatch proof
         _clock.Advance(TimeSpan.FromMilliseconds(1000)); // STT + agent thinking before the reply arrives
 
@@ -289,8 +293,8 @@ public class ReplySpeakerTests
     public async Task SpeakUtteranceReply_StreamComplete_PublishesSpeechEndAndQueueWaitMetrics()
     {
         _session.Turn.Reset();
-        _session.Playback.MarkTurnStart(_clock.GetTimestamp());
-        _session.Playback.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
+        Anchors.MarkTurnStart(_clock.GetTimestamp());
+        Anchors.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         Say(_speaker, "listo", ReplyContentType.Text, false);
@@ -314,8 +318,8 @@ public class ReplySpeakerTests
         // anchors from the earlier real turn are never invalidated, so without a gate this publishes
         // SpeechEndToFirstAudioMs ≈ 120000: one sample that wrecks Avg/P95/Max on the headline metric.
         _session.Turn.Reset();
-        _session.Playback.MarkTurnStart(_clock.GetTimestamp());
-        _session.Playback.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
+        Anchors.MarkTurnStart(_clock.GetTimestamp());
+        Anchors.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
         _clock.Advance(TimeSpan.FromMinutes(2));
 
         Say(_speaker, "son las diez", ReplyContentType.Text, false);
@@ -447,8 +451,8 @@ public class ReplySpeakerTests
         // All three anchors coincide, so SpeechEndToFirstAudioMs is the whole dispatch -> first-audio
         // span and the three sub-spans must tile it exactly.
         _session.Turn.Reset();
-        _session.Playback.MarkTurnStart(_clock.GetTimestamp());
-        _session.Playback.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
+        Anchors.MarkTurnStart(_clock.GetTimestamp());
+        Anchors.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
         _clock.Advance(TimeSpan.FromSeconds(2)); // the agent thinking
 
@@ -543,8 +547,8 @@ public class ReplySpeakerTests
         // SpeechEndToFirstAudioMs/WakeToFirstAudioMs measure time-to-FIRST-audio, so N segments must
         // not publish N samples. The single-use dispatch stamp is what enforces it.
         _session.Turn.Reset();
-        _session.Playback.MarkTurnStart(_clock.GetTimestamp());
-        _session.Playback.MarkSpeechEnd(_clock.GetTimestamp(), 0, _clock);
+        Anchors.MarkTurnStart(_clock.GetTimestamp());
+        Anchors.MarkSpeechEnd(_clock.GetTimestamp(), 0, _clock);
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
 
         Say(_speaker, "Mañana por la tarde hará sol y unos veintidós grados. ", ReplyContentType.Text, false);

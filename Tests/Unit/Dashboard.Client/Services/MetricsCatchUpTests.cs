@@ -1,8 +1,10 @@
 using Dashboard.Client.Metrics;
 using Dashboard.Client.Services;
 using Dashboard.Client.State.Errors;
+using Dashboard.Client.State.Health;
 using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
+using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
@@ -26,16 +28,21 @@ public sealed class MetricsCatchUpTests : IDisposable
     private readonly MemoryStore _memoryStore = new();
     private readonly LatencyStore _latencyStore = new();
     private readonly VoiceStore _voiceStore = new();
+    private readonly MetricsStore _metricsStore = new();
+    private readonly HealthStore _healthStore = new();
     private readonly MetricFamilyTable _families;
     private readonly MetricsCatchUp _catchUp;
 
     public MetricsCatchUpTests()
     {
         var http = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
+        var api = new MetricsApiService(http);
         _families = new MetricFamilyTable(
-            new MetricsApiService(http), _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
+            api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
-        _catchUp = new MetricsCatchUp(_families);
+        var overview = new OverviewFigures(api, _metricsStore, _healthStore);
+        overview.SetDateRange(From, To);
+        _catchUp = new MetricsCatchUp(_families, overview);
 
         _tokensStore.SetDateRange(From, To);
         _toolsStore.SetDateRange(From, To);
@@ -55,6 +62,8 @@ public sealed class MetricsCatchUpTests : IDisposable
         _memoryStore.Dispose();
         _latencyStore.Dispose();
         _voiceStore.Dispose();
+        _metricsStore.Dispose();
+        _healthStore.Dispose();
     }
 
     // Catch-up reloads every family whatever any one of them answers, and reports the failure to
@@ -130,6 +139,27 @@ public sealed class MetricsCatchUpTests : IDisposable
         await CatchUpAsync();
 
         _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
+    }
+
+    // The Overview KPI row and the Service Health grid go as stale as the charts during an outage,
+    // and neither is a metric family: a walk of the family table alone left both showing whatever
+    // the page load managed, with no second chance at them.
+    [Fact]
+    public async Task CatchUpAsync_TheSummaryAndHealthMovedDuringTheOutage_ReReadsThemIntoTheirStores()
+    {
+        _handler.AnswerFor("api/metrics/summary", new MetricsSummary(
+            InputTokens: 120, OutputTokens: 30, TotalTokens: 150, Cost: 1.5m, ToolCalls: 4, ToolErrors: 1));
+        _handler.AnswerFor("api/metrics/health", new List<ServiceHealthResponse>
+        {
+            new("agent", true, "2026-03-02T10:00:00Z"),
+        });
+
+        await CatchUpAsync();
+
+        _metricsStore.State.InputTokens.ShouldBe(120);
+        _healthStore.State.Services.ShouldContain(s => s.Service == "agent" && s.IsHealthy);
+        _handler.Requests.ShouldContain(u =>
+            u != null && u.Contains("api/metrics/summary?from=2026-03-01&to=2026-03-02", StringComparison.Ordinal));
     }
 
     private sealed record VoiceEventPayload(int Metric, string SatelliteId);

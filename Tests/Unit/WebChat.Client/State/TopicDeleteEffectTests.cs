@@ -183,6 +183,18 @@ public sealed class TopicDeleteEffectTests : IDisposable
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("delete rejected");
     }
 
+    [Fact]
+    public async Task Disposed_StopsHandlingRemoveTopic()
+    {
+        GivenTopicWithMessages("topic-1");
+        _effect.Dispose();
+
+        _dispatcher.Dispatch(new RemoveTopic("topic-1", "agent-1", 10, 20));
+
+        await Task.Delay(50);
+        _topicService.DeletedTopicIds.ShouldBeEmpty();
+    }
+
     private static StoredTopic Topic(string topicId) => new()
     {
         TopicId = topicId,

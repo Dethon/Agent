@@ -263,11 +263,6 @@ internal static class MonitorTestMocks
     {
         return new ChatThreadResolver();
     }
-
-    public static Func<IChannelConnection, string, IToolApprovalHandler> CreateApprovalHandlerFactory()
-    {
-        return (_, _) => new Mock<IToolApprovalHandler>().Object;
-    }
 }
 
 public class ChatMonitorTests

@@ -32,12 +32,19 @@ public sealed class SendReplyTool
         var speaker = services.GetRequiredService<ReplySpeaker>();
         var manager = services.GetRequiredService<VoiceConversationManager>();
 
+        var delivery = services.GetRequiredService<VoiceDeliveryRegistry>();
         var satelliteId = manager.ResolveSatelliteId(p.ConversationId);
         var session = satelliteId is null
             ? null
             : services.GetRequiredService<SatelliteSessionRegistry>().Get(satelliteId);
         if (session is not null)
         {
+            // A live session owns this conversation, which supersedes any delivery binding left over
+            // from an announce that landed while the satellite happened to be disconnected: that
+            // binding is now unreachable — this branch answers every reply — and its expiry would
+            // flush the shared accumulator in the middle of the turn being spoken here. Dropping it
+            // is the same rule create_conversation applies when it declines to bind at all.
+            delivery.Remove(p.ConversationId);
             speaker.SpeakUtteranceReply(session, p);
             return "ok";
         }
@@ -48,7 +55,6 @@ public sealed class SendReplyTool
         // (recording a binding there would let its expiry flush the accumulator mid-turn); if that
         // session died before the reply arrived, the mapping is the fallback announce target —
         // never a silent drop that returns ok.
-        var delivery = services.GetRequiredService<VoiceDeliveryRegistry>();
         var target = delivery.Resolve(p.ConversationId)
             ?? (satelliteId is null ? null : new AnnounceTarget { SatelliteId = satelliteId });
         if (target is not null)

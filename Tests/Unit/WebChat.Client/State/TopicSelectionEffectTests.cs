@@ -159,6 +159,18 @@ public sealed class TopicSelectionEffectTests : IDisposable
     private static ChatMessageModel Message(string messageId, string content) =>
         new() { Role = "assistant", Content = content, MessageId = messageId };
 
+    [Fact]
+    public async Task Disposed_StopsHandlingSelectTopic()
+    {
+        GivenTopic("topic-1");
+        _effect.Dispose();
+
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        await Task.Delay(50);
+        _sessionService.Verify(s => s.StartSessionAsync(It.IsAny<StoredTopic>()), Times.Never);
+    }
+
     public void Dispose()
     {
         _effect.Dispose();

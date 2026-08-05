@@ -40,18 +40,15 @@ public class AnnouncementService(
             if (session is null)
             {
                 // No live session, but the registry still knows the satellite's room/identity, so the
-                // offline error carries the same context fields as the online announce metrics.
-                var offlineConfig = registry.GetById(id);
+                // offline error carries the same context fields as the online announce metrics —
+                // through the same stamp, which is what keeps all three of them present.
                 outcomes.Add(new AnnouncementOutcome { Id = id, Status = "offline" });
                 metrics.Publish(new VoiceEvent
                 {
                     Metric = VoiceMetric.AnnounceError,
-                    SatelliteId = id,
-                    Room = offlineConfig?.Room,
-                    Identity = offlineConfig?.Identity,
                     Priority = request.Priority.ToString(),
                     Outcome = "offline"
-                });
+                }.About(SatelliteIdentity.Of(id, registry.GetById(id))));
                 continue;
             }
 
