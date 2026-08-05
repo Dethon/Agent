@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -133,6 +134,59 @@ public class McpChannelConnectionRunTests
 
         await cts.CancelAsync();
         await run;
+    }
+
+    [Fact]
+    public async Task RunAsync_RegisterAgentsAnswersWithAToolError_RetriesUntilTheCatalogIsAccepted()
+    {
+        // The other shape of a refused registration: the channel-side call-tool error filter turns
+        // every non-cancellation exception into an IsError *result*, so a server-side failure
+        // arrives as a value rather than a throw. A run that only watches for exceptions latches
+        // "registered" on it and never asks again, leaving the channel serving an empty catalog.
+        await ResetAsync();
+        Interlocked.Exchange(ref _registerRefused, 0);
+
+        await using var server = await StartRefusingRegisterServerAsync();
+        await using var connection = new McpChannelConnection(
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var run = connection.RunAsync(server.Endpoint, _catalog, cts.Token);
+
+        await _registered.WaitAsync(cts.Token);
+        await _registered.WaitAsync(cts.Token);
+        Volatile.Read(ref _registerCalls).ShouldBeGreaterThanOrEqualTo(2);
+
+        await cts.CancelAsync();
+        await run;
+    }
+
+    private static Task<RunningServer> StartRefusingRegisterServerAsync() =>
+        InMemoryMcpServer.StartAsync(services => services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<RefusingRegisterTools>());
+
+    // Refuses the first ask the way a real channel server does — with an IsError result — and
+    // accepts every one after it.
+    private static int _registerRefused;
+
+    [McpServerToolType]
+    public sealed class RefusingRegisterTools
+    {
+        [McpServerTool(Name = ChannelProtocol.RegisterAgentsTool)]
+        [Description("Take the agent catalog, refusing the first ask.")]
+        public static CallToolResult Register(IReadOnlyList<AgentCatalogEntry> agents)
+        {
+            Interlocked.Increment(ref _registerCalls);
+            var refused = Interlocked.Exchange(ref _registerRefused, 1) == 0;
+            _registered.Release();
+            return new CallToolResult
+            {
+                IsError = refused,
+                Content = [new TextContentBlock { Text = refused ? "catalog rejected" : "ok" }]
+            };
+        }
     }
 
     private static async Task ResetAsync()

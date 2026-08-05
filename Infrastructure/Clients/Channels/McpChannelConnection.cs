@@ -534,10 +534,21 @@ public sealed class McpChannelConnection(
             return;
         }
 
-        await _client.CallToolAsync(
+        var result = await _client.CallToolAsync(
             ChannelProtocol.RegisterAgentsTool,
             ChannelProtocol.ToArguments(new RegisterAgentsParams { Agents = agents }),
             cancellationToken: ct);
+
+        // A refused registration reaches the caller as a value, not a throw: the channel-side
+        // call-tool error filter turns every non-cancellation exception into an IsError result.
+        // Failing here is what keeps the run retrying — swallowing it latches "registered" on a
+        // catalog the channel never took.
+        if (result.IsError == true)
+        {
+            var text = result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
+            throw new InvalidOperationException(
+                $"{ChannelProtocol.RegisterAgentsTool} was refused by {ChannelId}: {text}");
+        }
     }
 
     public async ValueTask DisposeAsync()
