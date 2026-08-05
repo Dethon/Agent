@@ -172,6 +172,65 @@ public class ServiceBusProcessorServiceTests : IDisposable
         (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
     }
 
+    [Fact]
+    public async Task ProcessMessage_NullCorrelationId_EmitsGeneratedConversationId()
+    {
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
+
+        var receiver = new Mock<ServiceBusReceiver>();
+        receiver
+            .Setup(r => r.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var message = CreateReceivedMessage(new ServiceBusPromptMessage
+        {
+            CorrelationId = null,
+            Prompt = "Hello"
+        });
+
+        var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
+        await _sut.ProcessMessageAsync(args);
+
+        // Neither the payload nor the broker message carries a correlation id, so the service
+        // must mint a guid for the conversation rather than emit an empty one.
+        var notification = (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None))
+            .ShouldHaveSingleItem().Message.ShouldNotBeNull();
+        Guid.TryParse(notification.ConversationId, out _).ShouldBeTrue();
+        notification.Content.ShouldBe("Hello");
+        receiver.Verify(r => r.CompleteMessageAsync(
+            It.IsAny<ServiceBusReceivedMessage>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessMessage_NullSender_EmitsServiceBusDefaultSender()
+    {
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
+
+        var receiver = new Mock<ServiceBusReceiver>();
+        receiver
+            .Setup(r => r.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var message = CreateReceivedMessage(new ServiceBusPromptMessage
+        {
+            CorrelationId = "corr-1",
+            Prompt = "Hello",
+            Sender = null
+        });
+
+        var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
+        await _sut.ProcessMessageAsync(args);
+
+        var notification = (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None))
+            .ShouldHaveSingleItem().Message.ShouldNotBeNull();
+        notification.Sender.ShouldBe("service-bus");
+        notification.ConversationId.ShouldBe("corr-1");
+        receiver.Verify(r => r.CompleteMessageAsync(
+            It.IsAny<ServiceBusReceivedMessage>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private async Task StartAndStopService()
     {
         _cts.CancelAfter(TimeSpan.FromMilliseconds(100));
