@@ -139,6 +139,11 @@ public sealed class PlaybackQueue(
     // preemption can't be lost to the dequeue->assign gap. High-priority jobs are exempt from this
     // mark (see the loop), so a second High job stacking in the same window never preempts the first.
     private long _preemptPendingSeq = -1;
+    // High-water sequence the alert dismissal covers. Same mechanism as the alarm mark and separate
+    // from it because the two answer different questions: this one drops the alert ROUNDS queued
+    // when the user acknowledged (which are High, and so exempt from the mark above), and nothing
+    // else — an answer being streamed while a timer rang is not the dismissal's to swallow.
+    private long _dismissedThroughSeq = -1;
     // How long a frame already handed to the socket may still finish after the link dropped, before
     // the loop abandons it. See AbandonOnDeadSocketAsync.
     private const int LinkDropWriteGraceMs = 2000;
@@ -319,10 +324,17 @@ public sealed class PlaybackQueue(
         _dropCts.Dispose();
     }
 
+    // The alert dismissal: the user acknowledged, so nothing of that alert may still be heard.
+    // Cancelling the job being played is not enough — the ring loop enqueues the next round before
+    // it learns of the acknowledgment, and a round sitting in the queue (or caught in the
+    // dequeue->assign gap, where there is no current job to cancel) then rang in full after the
+    // dismissal. So a dismissal takes a mark over everything queued right now, exactly as an alarm's
+    // enqueue does, and the loop drops the alert rounds it covers as they start.
     public void PreemptCurrent()
     {
         lock (_gate)
         {
+            _dismissedThroughSeq = _enqueueSeq;
             _currentCts?.Cancel();
         }
     }
@@ -416,8 +428,14 @@ public sealed class PlaybackQueue(
             _inFlight = queued;
             // Exempt High jobs: the mark exists to drop lower-priority jobs queued ahead of a
             // High request; a second High stacking in the gap must still play, not be preempted.
-            var preemptOnStart = _preemptPendingSeq >= 0 && queued.Seq <= _preemptPendingSeq
-                && queued.Job.Priority != AnnouncePriority.High;
+            var preemptOnStart =
+                (_preemptPendingSeq >= 0 && queued.Seq <= _preemptPendingSeq
+                    && queued.Job.Priority != AnnouncePriority.High)
+                // The dismissal's own mark, which covers the alert rounds the mark above spares for
+                // being High — and only those, so a sentence of an answer queued while the alert
+                // rang is still spoken.
+                || (_dismissedThroughSeq >= 0 && queued.Seq <= _dismissedThroughSeq
+                    && queued.Job.Kind == PlaybackKind.Alarm);
             // Cleared once nothing at or below the mark is left queued, so every job that was
             // already there when the alarm arrived is preempted — not just the first one dequeued
             // after it. Asking the pending list rather than this job's sequence keeps that true
@@ -426,6 +444,10 @@ public sealed class PlaybackQueue(
             if (!_pending.Any(p => p.Seq <= _preemptPendingSeq))
             {
                 _preemptPendingSeq = -1;
+            }
+            if (!_pending.Any(p => p.Seq <= _dismissedThroughSeq))
+            {
+                _dismissedThroughSeq = -1;
             }
             return preemptOnStart;
         }
