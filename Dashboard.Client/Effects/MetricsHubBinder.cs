@@ -15,24 +15,40 @@ public sealed class MetricsHubBinder(
     HealthStore healthStore)
 {
     private readonly List<IDisposable> _subscriptions = [];
-    private List<Func<Task>>? _held;
+    private Queue<Func<Task>>? _held;
+    private int _holdDepth;
 
     // Catch-up replaces the event lists wholesale while pushes keep arriving: a push applied before
     // the response lands is erased by the older snapshot, and one the snapshot already contains
     // would be appended on top of its own copy. So the live connection holds pushes for the
     // duration of a catch-up and releases them against the reloaded lists, where each held event is
     // skipped exactly when the snapshot already delivered it — record value equality is the
-    // identity.
-    public void HoldPushes() => _held = [];
+    // identity. Holds nest, because a reconnect can land while a catch-up is still holding: the
+    // overlapping hold shares the queue instead of discarding it, and only the last release
+    // delivers.
+    public void HoldPushes()
+    {
+        _holdDepth++;
+        _held ??= new Queue<Func<Task>>();
+    }
 
     public async Task ReleaseHeldPushesAsync()
     {
-        var held = _held;
-        _held = null;
+        _holdDepth = Math.Max(0, _holdDepth - 1);
 
-        foreach (var deliver in held ?? [])
+        // Drained in place rather than swapped out: each delivery is awaited, and a push arriving
+        // in that gap must land behind the queue, not ahead of it — so the hold stays visible to
+        // OnPush until the queue is empty. A new hold beginning mid-drain pauses the drain; its own
+        // release finishes it.
+        while (_holdDepth == 0 && _held is { Count: > 0 } held)
         {
+            var deliver = held.Dequeue();
             await deliver();
+        }
+
+        if (_holdDepth == 0)
+        {
+            _held = null;
         }
     }
 
@@ -43,7 +59,7 @@ public sealed class MetricsHubBinder(
             {
                 // The dedupe question is asked on release, once the snapshot has written the list
                 // this event may already be in.
-                held.Add(() => alreadyCaughtUp(evt) ? Task.CompletedTask : apply(evt));
+                held.Enqueue(() => alreadyCaughtUp(evt) ? Task.CompletedTask : apply(evt));
                 return Task.CompletedTask;
             }
 

@@ -295,6 +295,52 @@ public class MetricsHubBinderTests : IAsyncDisposable
         getBreakdown(this).ShouldBe(freshData);
     }
 
+    private Task RaiseVoiceAsync(string satelliteId) =>
+        _hub.RaiseAsync("OnVoice", new VoiceEvent
+        {
+            Metric = VoiceMetric.UtteranceTranscribed,
+            SatelliteId = satelliteId,
+        });
+
+    // A reconnect can land while a catch-up is still holding pushes. The second hold must not
+    // discard what the first one captured, and the first release must not deliver anything the
+    // overlapping hold still wants held.
+    [Fact]
+    public async Task ReleaseHeldPushesAsync_ASecondHoldOverlappedTheFirst_NothingIsDroppedAndOrderHolds()
+    {
+        _binder.Bind(_hub);
+        _binder.HoldPushes();
+        await RaiseVoiceAsync("held-1");
+        _binder.HoldPushes();
+        await RaiseVoiceAsync("held-2");
+
+        await _binder.ReleaseHeldPushesAsync();
+        _voiceStore.State.Events.ShouldBeEmpty();
+
+        await _binder.ReleaseHeldPushesAsync();
+        _voiceStore.State.Events.Select(e => e.SatelliteId).ShouldBe(["held-1", "held-2"]);
+    }
+
+    // Release delivers the held events one awaited apply at a time. A push arriving in one of those
+    // gaps must land behind the rest of the queue, or the TakeLast tables show events out of order.
+    [Fact]
+    public async Task ReleaseHeldPushesAsync_APushArrivesMidRelease_LandsBehindTheHeldEvents()
+    {
+        _binder.Bind(_hub);
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.FromMilliseconds(200));
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+        _binder.HoldPushes();
+        await RaiseVoiceAsync("held-1");
+        await RaiseVoiceAsync("held-2");
+
+        var release = _binder.ReleaseHeldPushesAsync();
+        await RaiseVoiceAsync("fresh");
+        await release;
+
+        _voiceStore.State.Events.Select(e => e.SatelliteId).ShouldBe(["held-1", "held-2", "fresh"]);
+    }
+
     [Fact]
     public async Task LiveEvent_RefreshFails_LeavesTheBreakdownAtItsLastKnownValue()
     {
