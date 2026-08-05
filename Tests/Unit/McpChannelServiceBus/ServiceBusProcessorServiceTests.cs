@@ -172,6 +172,41 @@ public class ServiceBusProcessorServiceTests : IDisposable
         (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
     }
 
+    // The mirror of the case above: once the emit has handed the prompt to a live subscriber, a
+    // failed settle must not abandon. Abandoning gives the same prompt back to the broker and
+    // redelivery replays it to the agent — the duplicate gate-on-live exists to prevent.
+    [Fact]
+    public async Task ProcessMessage_TheSettleFailsAfterADeliveredEmit_DoesNotAbandonTheMessage()
+    {
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
+
+        var receiver = new Mock<ServiceBusReceiver>();
+        receiver
+            .Setup(r => r.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ServiceBusException("lock lost", ServiceBusFailureReason.MessageLockLost));
+        receiver
+            .Setup(r => r.AbandonMessageAsync(
+                It.IsAny<ServiceBusReceivedMessage>(),
+                It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var message = CreateReceivedMessage(new ServiceBusPromptMessage
+        {
+            CorrelationId = "corr-1",
+            Prompt = "Hello"
+        });
+
+        var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
+        await _sut.ProcessMessageAsync(args);
+
+        receiver.Verify(r => r.AbandonMessageAsync(
+            It.IsAny<ServiceBusReceivedMessage>(),
+            It.IsAny<IDictionary<string, object>>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None)).ShouldHaveSingleItem();
+    }
+
     [Fact]
     public async Task ProcessMessage_NullCorrelationId_EmitsGeneratedConversationId()
     {

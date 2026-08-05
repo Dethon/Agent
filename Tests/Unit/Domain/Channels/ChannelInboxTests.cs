@@ -319,6 +319,86 @@ public class ChannelInboxTests
         (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token)).ShouldBeEmpty();
     }
 
+    // The drain is destructive and a poll never acknowledges what it received, so a batch handed to
+    // a request that then dies exists nowhere else. Restore is how the caller that knows its
+    // response is dead hands the batch back: at the front, because it is older than anything that
+    // arrived while it was away.
+    [Fact]
+    public async Task Restore_AfterAnAbortedPoll_PutsTheBatchBackAheadOfWhatArrivedMeanwhile()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("c1"));
+        inbox.Enqueue(Message("c2"));
+
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        batch.Count.ShouldBe(2);
+
+        // The response died with the batch in it, and a third message landed in the meantime.
+        inbox.Enqueue(Message("c3"));
+        inbox.Restore(Subscriber, batch);
+
+        var next = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        next.Select(i => i.Message!.ConversationId).ShouldBe(["c1", "c2", "c3"]);
+    }
+
+    [Fact]
+    public async Task Restore_WhileTheNextPollIsAlreadyParked_WakesIt()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("c1"));
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        var pending = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
+        await Task.Delay(50);
+
+        inbox.Restore(Subscriber, batch);
+
+        (await pending.WaitAsync(_deadline)).Count.ShouldBe(1);
+    }
+
+    // A restored batch is subject to the same single bound as everything else, and crossing it is
+    // still the moment a message is lost, so it still warns.
+    [Fact]
+    public async Task Restore_BeyondCapacity_DropsOldestAndWarns()
+    {
+        var warnings = new List<string>();
+        var inbox = new ChannelInbox(
+            new FakeTimeProvider(), capacity: 2, logger: new CapturingLogger(warnings));
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("c1"));
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        inbox.Enqueue(Message("c2"));
+        inbox.Enqueue(Message("c3"));
+        warnings.ShouldBeEmpty();
+
+        inbox.Restore(Subscriber, batch);
+
+        warnings.ShouldHaveSingleItem().ShouldContain(Subscriber);
+        var next = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        next.Select(i => i.Message!.ConversationId).ShouldBe(["c2", "c3"]);
+    }
+
+    [Fact]
+    public async Task Restore_ForASubscriberThatWasEvicted_MintsTheQueueAgain()
+    {
+        using var cts = new CancellationTokenSource(_deadline);
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+        inbox.Enqueue(Message("c1"));
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+
+        time.Advance(TimeSpan.FromMinutes(6));
+
+        inbox.Restore(Subscriber, batch);
+
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token))
+            .Select(i => i.Message!.ConversationId).ShouldBe(["c1"]);
+    }
+
     [Fact]
     public void Constructor_WithNonPositiveCapacity_Throws()
     {

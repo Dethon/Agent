@@ -27,7 +27,21 @@ public class ChannelReceiveTool(ChannelInbox inbox)
         var items = await inbox.ReceiveAsync(
             subscriberId, TimeSpan.FromMilliseconds(clampedWaitMs), cancellationToken);
 
-        return JsonSerializer.Serialize(
+        var payload = JsonSerializer.Serialize(
             new ChannelReceiveResult { Items = items }, ChannelProtocol.SerializerOptions);
+
+        // The drain emptied the queue and the poll acknowledges nothing, so from here the batch
+        // exists only in this response: a request aborted while it is being written takes the batch
+        // with it. Asking the token once more with the payload in hand covers everything up to the
+        // write, and a batch that has nowhere to go is handed back to the front of the queue for
+        // the next poll. The write itself stays open — that needs an acknowledgement the protocol
+        // does not have — but the wide part of the window, waiting on the wait, is closed.
+        if (items.Count > 0 && cancellationToken.IsCancellationRequested)
+        {
+            inbox.Restore(subscriberId, items);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        return payload;
     }
 }

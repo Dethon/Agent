@@ -102,6 +102,27 @@ public class McpChannelConnectionToolCacheTests
     }
 
     [Fact]
+    public async Task CreateConversation_AfterAReconnectThatCouldNotDial_YieldsNull()
+    {
+        // A failed reconnect leaves the connection with no client and no cached tool set, so the
+        // capability probe runs against exactly the state ReconnectAsync leaves behind. Every
+        // operation works from one snapshot of the client, so this answers null (ADR 0011) rather
+        // than faulting on a field that was read a second time.
+        await using var server = await StartServerAsync();
+        await using var connection = new McpChannelConnection("test");
+        await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
+        (await CreateAsync(connection)).ShouldBe("conv-1");
+
+        await Should.ThrowAsync<Exception>(
+            () => connection.ReconnectAsync("http://localhost:1/mcp", CancellationToken.None));
+
+        (await CreateAsync(connection)).ShouldBeNull();
+        await Should.NotThrowAsync(() => connection.RegisterAgentsAsync(
+            [new AgentCatalogEntry("jonas", "Jonas", null)], CancellationToken.None));
+        (await connection.IsHealthyAsync(CancellationToken.None)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task CreateConversation_ServerWithoutTheTool_StillYieldsNull()
     {
         await using var server = await InMemoryMcpServer.StartAsync(services => services

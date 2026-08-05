@@ -19,8 +19,14 @@ public sealed class ChatHub(
     ChannelNotificationEmitter notificationEmitter,
     IAgentCatalog catalog,
     RedisStateService redisStateService,
-    IPushSubscriptionStore pushSubscriptionStore) : Hub
+    IPushSubscriptionStore pushSubscriptionStore,
+    ILogger<ChatHub> logger) : Hub
 {
+    // What the browser is told when the emit reached nobody. The message may still be sitting in a
+    // buffer for an agent that comes back, so this says the turn cannot be answered now rather
+    // than claiming it was thrown away.
+    private const string NotLiveError = "No agent is connected right now, so this message has not been answered.";
+
     private bool IsRegistered => Context.Items.ContainsKey("UserId");
 
     private string? CurrentSpaceSlug =>
@@ -173,10 +179,11 @@ public sealed class ChatHub(
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
 
-        await notificationEmitter.EmitAsync(
+        var conversationId = $"{session.ChatId}:{session.ThreadId}";
+        var delivered = await notificationEmitter.EmitAsync(
             new ChannelMessageNotification
             {
-                ConversationId = $"{session.ChatId}:{session.ThreadId}",
+                ConversationId = conversationId,
                 Sender = userId,
                 Content = message,
                 AgentId = session.AgentId,
@@ -184,6 +191,15 @@ public sealed class ChatHub(
                 Timestamp = DateTimeOffset.UtcNow
             },
             cancellationToken);
+
+        if (!delivered)
+        {
+            // Nobody is polling, so no reply is coming and the loop below would hold the browser
+            // open forever. The error goes through the stream rather than straight back to this
+            // caller so every browser on the topic sees the same end, and it ends the turn: one
+            // pending prompt finished, in error.
+            await AnswerNotLiveAsync(topicId, conversationId);
+        }
 
         // Stream responses back to the browser — the loop ends when the channel completes
         // (i.e. when the last pending agent finishes), not on individual IsComplete messages.
@@ -220,9 +236,10 @@ public sealed class ChatHub(
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
 
-        await notificationEmitter.EmitAsync(new ChannelMessageNotification
+        var conversationId = $"{session.ChatId}:{session.ThreadId}";
+        var delivered = await notificationEmitter.EmitAsync(new ChannelMessageNotification
         {
-            ConversationId = $"{session.ChatId}:{session.ThreadId}",
+            ConversationId = conversationId,
             Sender = userId,
             Content = message,
             AgentId = session.AgentId,
@@ -230,7 +247,35 @@ public sealed class ChatHub(
             Timestamp = DateTimeOffset.UtcNow
         });
 
+        if (!delivered)
+        {
+            await AnswerNotLiveAsync(topicId, conversationId);
+        }
+
+        // True either way, and deliberately: false is the client's signal that there was no stream
+        // to enqueue onto, which makes it open a second one and send the same prompt again. The
+        // channel took this prompt; what it could not do is find anyone listening, and the stream
+        // above has just been told so.
         return true;
+    }
+
+    // The not-live answer, in the shape a turn already ends in: an error reply on the topic's
+    // stream. That is what releases the pending prompt this call added, so a topic is not left
+    // showing "processing" for a reply that is never coming.
+    private async Task AnswerNotLiveAsync(string topicId, string conversationId)
+    {
+        logger.LogWarning(
+            "Nothing is polling for conversation {ConversationId} (topic {TopicId}); " +
+            "answering not live instead of streaming a reply that cannot arrive",
+            conversationId, topicId);
+
+        await streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = conversationId,
+            Content = NotLiveError,
+            ContentType = ReplyContentType.Error,
+            IsComplete = true
+        });
     }
 
     public async Task CancelTopic(string topicId)
