@@ -182,6 +182,93 @@ public class ChatMonitorConversationGroupTests
     }
 
     [Fact]
+    public async Task Monitor_FirstTurnSetupTimesOut_EndsTheGroupAndTheNextMessageStartsAFreshOne()
+    {
+        // A transport timeout — the HttpClient one behind CreateConversationAsync or behind the
+        // thread restore — surfaces as a TaskCanceledException, which is an
+        // OperationCanceledException nobody asked for. Only a /cancel or /clear has already
+        // ended this group; a timeout has to take the failure path like any other setup
+        // failure, or the group stays registered and every later message queues into it unread.
+        var channel = new FakeChannelConnection();
+        var fakeAgent = new FakeAiAgent
+        {
+            RestoreExceptionToThrow = new TaskCanceledException("the request timed out")
+        };
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = monitor.Monitor(cts.Token);
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage());
+
+        await fakeAgent.DisposeSignaled.Task.WaitAsync(cts.Token);
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<TaskCanceledException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+
+        // The timeout was transient; the next message opens a fresh group and is answered.
+        fakeAgent.RestoreExceptionToThrow = null;
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "again"));
+        channel.Complete();
+        await run;
+
+        channel.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
+    }
+
+    [Fact]
+    public async Task Group_LaterTurnFailsToSetUp_LogsAndCompletesTheGroup()
+    {
+        // The group is already established, so this is not the first turn — and a setup failure
+        // on it leaks the same way: swallowed by the stream merge, the group stays registered
+        // and later messages queue into it unread. It ends the group too.
+        var logger = new Mock<ILogger<ChatMonitor>>();
+        var channel = new FakeChannelConnection();
+        var threadResolver = new ChatThreadResolver();
+        await using var group = new ConversationGroup(
+            new AgentKey("conv-1"),
+            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
+            new DeliveryTargetResolver([channel], logger.Object),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            new FailingRecallHook(2, new HttpRequestException("memory store down")),
+            logger.Object);
+        var grouping = new FakeGrouping(new AgentKey("conv-1"));
+        grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
+        grouping.Write((channel, MonitorTestMocks.CreateChannelMessage(content: "and again")));
+        var completed = false;
+
+        // The grouping is never completed by the producer: ending it is the group's own job.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await foreach (var _ in group.RunAsync(
+            grouping,
+            () =>
+            {
+                completed = true;
+                grouping.Complete();
+            },
+            cts.Token))
+        { }
+
+        completed.ShouldBeTrue();
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<HttpRequestException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Group_TurnBufferedBehindACancel_IsDrainedAndNamedAtTeardown()
     {
         // The /cancel tears the group down while "left behind" is already routed into this
@@ -248,6 +335,25 @@ public class ChatMonitorConversationGroupTests
             It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
             It.IsAny<ObjectDisposedException>(),
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    // Fails the nth recall, so a test can pick which turn's setup goes down.
+    private sealed class FailingRecallHook(int failingCall, Exception exception) : IMemoryRecallHook
+    {
+        private int _calls;
+
+        public Task EnrichAsync(
+            Microsoft.Extensions.AI.ChatMessage message,
+            string userId,
+            string? conversationId,
+            string? agentId,
+            Microsoft.Agents.AI.AgentSession thread,
+            CancellationToken ct)
+        {
+            return Interlocked.Increment(ref _calls) == failingCall
+                ? Task.FromException(exception)
+                : Task.CompletedTask;
+        }
     }
 
     private sealed class FakeGrouping(AgentKey key)

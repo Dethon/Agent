@@ -161,10 +161,15 @@ internal sealed class ConversationGroup(
                 {
                     turn = await RunTurnAsync(x);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (_turnCt.IsCancellationRequested)
                 {
                     // A /cancel or /clear mid-setup: the context dispose that raised this
-                    // already completed the group.
+                    // already completed the group. The filter is what tells that apart from a
+                    // cancellation nobody asked for — the establishing stages run on the group
+                    // token, and an HttpClient timeout inside minting a conversation or
+                    // restoring the thread arrives as a TaskCanceledException. Without it that
+                    // timeout would break out of here with the group never completed, leaving
+                    // every later message queued into a channel nobody reads.
                     await ObserveAbandonedWarmupAsync();
                     break;
                 }
