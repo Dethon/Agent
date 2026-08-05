@@ -13,10 +13,13 @@ public sealed record FileSystemOperation
     public required string MethodName { get; init; }
     public required Type ResultType { get; init; }
 
-    // The second backend method that implements the same operation, for the two byte-streaming ones
-    // alone: they have a streamed shape and a ranged shape, and a backend with real random access is
-    // invited to override the ranged one beside — or instead of — the streamed one. Overriding
-    // either is implementing the operation, so either declares the capability.
+    // The second backend method that implements the same operation, for the streamed read alone: it
+    // has a streamed shape and a ranged shape, and either one really serves the tool — the base's
+    // ranged default replays the stream and honours the window, so overriding either declares the
+    // capability. The write has no such pair: its ranged default cannot honour a nonzero offset (a
+    // forward-only write has no position to seek to), and the transfer driver sends one per 256 KiB
+    // chunk, so only the ranged override declares fs_blob_write. A backend that merely streams
+    // writes advertises nothing rather than a tool that works below one chunk and fails above it.
     public string? AlternateMethodName { get; init; }
 
     // Null for the two byte-streaming operations: they are the agent's transfer machinery, not
@@ -54,8 +57,7 @@ public static class FileSystemOperations
             VfsExecTool.Key, VfsExecTool.Name),
         Op("fs_blob_read", nameof(IFileSystemBackend.ReadChunksAsync), typeof(FsBlobReadResult),
             alternate: nameof(FileSystemBackendBase.ReadBlobAsync)),
-        Op("fs_blob_write", nameof(IFileSystemBackend.WriteChunksAsync), typeof(FsBlobWriteResult),
-            alternate: nameof(FileSystemBackendBase.WriteBlobAsync))
+        Op("fs_blob_write", nameof(FileSystemBackendBase.WriteBlobAsync), typeof(FsBlobWriteResult))
     ];
 
     public static readonly IReadOnlySet<string> ToolNames =

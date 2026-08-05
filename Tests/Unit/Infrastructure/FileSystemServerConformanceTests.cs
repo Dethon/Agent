@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
@@ -267,6 +268,46 @@ public class FileSystemServerConformanceTests
 
         provider.GetServices<McpServerTool>().Select(t => t.ProtocolTool.Name)
             .ShouldBe(["fs_blob_read", "fs_blob_write"], ignoreOrder: true);
+    }
+
+    // The other direction, and the one that could ship a lie: the wire dispatches fs_blob_write to
+    // the ranged method, and the streamed default underneath it refuses every nonzero offset while
+    // the transfer driver sends one per 256 KiB chunk. So a backend that only streams bytes serves
+    // reads fine — the read default replays the stream — and advertises no ranged write at all,
+    // rather than one that works only for files smaller than a single chunk.
+    [Fact]
+    public void ABackendThatOnlyStreamsBytes_AdvertisesTheBlobReadItCanServeAndNoBlobWrite()
+    {
+        FileSystemServerTools.SupportedToolNames(typeof(StreamingBlobBackend)).ShouldBe(["fs_blob_read"]);
+    }
+
+    [Fact]
+    public void ABackendThatOnlyStreamsBytes_RegistersNoBlobWriteTool()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new StreamingBlobBackend());
+        services.AddMcpServer().AddFileSystemTools<StreamingBlobBackend>();
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetServices<McpServerTool>().Select(t => t.ProtocolTool.Name).ShouldBe(["fs_blob_read"]);
+    }
+
+    private sealed class StreamingBlobBackend : FileSystemBackendBase
+    {
+        public override string FilesystemName => "streamed";
+
+        public override string DescribeMount => "Bytes, forward-only.";
+
+        public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+            string path, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield return new byte[] { 1, 2, 3 };
+        }
+
+        public override Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+            bool overwrite, bool createDirectories, CancellationToken ct) =>
+            Task.FromResult(0L);
     }
 
     private sealed class RangedBlobBackend : FileSystemBackendBase
