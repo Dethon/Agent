@@ -62,11 +62,15 @@ public static class SettingsBinder
     // filled from secrets — ServiceBus, Telegram, WebSearch, HomeAssistant, Idealista and Library —
     // and an empty optional key is how a feature is switched off; an empty-is-invalid rule would
     // refuse to start them.
+    // A property with no setter is computed rather than configured: nothing binds into it, so
+    // validating it says nothing about the deployment, and a section-typed one that returns a fresh
+    // instance of its own type would walk forever — a StackOverflowException at startup, which no
+    // catch block can turn into a message.
     private static IEnumerable<string> MissingRequiredMembers(
         object instance, IConfiguration section, string path) =>
         instance.GetType()
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(property => property.GetIndexParameters().Length == 0)
+            .Where(property => property.GetIndexParameters().Length == 0 && property.SetMethod is not null)
             .SelectMany(property => Inspect(property, instance, section, path));
 
     private static IEnumerable<string> Inspect(

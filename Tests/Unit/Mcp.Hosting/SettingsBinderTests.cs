@@ -132,6 +132,18 @@ public class SettingsBinderTests : IDisposable
             .BindSettings<ProbeStructSectionSettings>(_secretsId)
             .Window.Seconds.ShouldBe(30);
 
+    // A property with no setter is computed, not configuration: nothing binds into it, so validating
+    // it says nothing about the deployment. SignalR's WebPush.IsConfigured and Home Assistant's
+    // McpSettings.IsConfigured are the shipped shape, and a section-typed one that hands back a
+    // fresh instance of its own type walks forever — a StackOverflowException at startup, which no
+    // catch block can turn into a message.
+    [Fact]
+    public void AComputedSectionProperty_IsNotWalked() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ChannelId"] = "probe" })
+            .BindSettings<ProbeComputedSettings>(_secretsId)
+            .ChannelId.ShouldBe("probe");
+
     // The presence check must follow the section path, not the display path: a member two levels
     // down lives at "Output:CapBytes", and a walk that asked the root for "Output.CapBytes" would
     // flag every nested value type as absent.
@@ -359,6 +371,15 @@ public record ProbeTtsConfig
 public record ProbeStructSectionSettings
 {
     public ProbeWindowConfig Window { get; init; }
+}
+
+// A settings type with a computed section-typed property, the shape that recurses forever: every
+// read of Reloaded is a new instance, so a walk that follows it never runs out of instances.
+public record ProbeComputedSettings
+{
+    public required string ChannelId { get; init; }
+
+    public ProbeComputedSettings Reloaded => this with { ChannelId = ChannelId.Trim() };
 }
 
 public readonly record struct ProbeWindowConfig
