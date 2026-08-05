@@ -443,6 +443,22 @@ public sealed class StreamingServiceTests : IDisposable
 
     #region SendMessageAsync Tests
 
+    // Announce marks a topic streaming before the stream body runs; a fault inside that body
+    // must still leave the topic markable as not-streaming, or a bug earlier in the chunk
+    // stream would strand the topic looking permanently busy.
+    [Fact]
+    public async Task SendMessageAsync_ExceptionMidStream_LeavesNoActiveStream()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _messagingService.SetExceptionToThrow(new InvalidOperationException("mid-stream fault"));
+
+        await _service.SendMessageAsync(topic, "test");
+
+        (await _service.IsStreamActiveAsync(topic.TopicId)).ShouldBeFalse();
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
+    }
+
     [Fact]
     public async Task SendMessageAsync_WithNoActiveStream_CreatesNewStream()
     {
