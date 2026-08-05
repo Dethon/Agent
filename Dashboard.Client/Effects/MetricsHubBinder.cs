@@ -213,9 +213,14 @@ public sealed class MetricsHubBinder(
         })));
     }
 
+    // Letting go of the pushes means letting go of the ones still queued too. A module disposed
+    // mid-catch-up used to leave the hold standing, so the queued closures kept their store
+    // references and whatever bound next inherited a hold nobody had asked for.
     public void Unbind()
     {
         _subscriptions.ForEach(subscription => subscription.Dispose());
         _subscriptions.Clear();
+        _holdDepth = 0;
+        _held = null;
     }
 }

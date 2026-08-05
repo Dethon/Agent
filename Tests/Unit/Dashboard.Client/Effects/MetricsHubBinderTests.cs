@@ -370,6 +370,23 @@ public class MetricsHubBinderTests : IAsyncDisposable
         _voiceStore.State.Events.Select(e => e.SatelliteId).ShouldBe(["held-1", "held-2", "fresh"]);
     }
 
+    // Unbinding is how a module lets go. Leaving the hold behind kept a queue of closures holding
+    // store references alive, and the next binding started out holding pushes nobody had asked to
+    // hold.
+    [Fact]
+    public async Task Unbind_PushesWereStillHeld_LetsGoOfTheQueue()
+    {
+        _binder.Bind(_hub);
+        _binder.HoldPushes();
+        await RaiseVoiceAsync("held-1");
+
+        _binder.Unbind();
+        _binder.Bind(_hub);
+        await RaiseVoiceAsync("fresh");
+
+        _voiceStore.State.Events.Select(e => e.SatelliteId).ShouldBe(["fresh"]);
+    }
+
     [Fact]
     public async Task LiveEvent_RefreshFails_LeavesTheBreakdownAtItsLastKnownValue()
     {
