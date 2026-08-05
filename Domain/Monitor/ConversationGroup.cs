@@ -11,6 +11,7 @@ using Domain.Extensions;
 using Domain.Metrics;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
@@ -24,7 +25,8 @@ internal sealed class ConversationGroup(
     DeliveryTargetResolver targetResolver,
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
-    IMemoryRecallHook? memoryRecallHook) : IAsyncDisposable
+    IMemoryRecallHook? memoryRecallHook,
+    ILogger logger) : IAsyncDisposable
 {
     // The outer token. Establishing the group runs on it rather than on the per-turn token,
     // because a /cancel there would throw out of a stage nothing downstream can absorb.
@@ -102,7 +104,32 @@ internal sealed class ConversationGroup(
         {
             await foreach (var x in pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt))
             {
-                var turn = await RunTurnAsync(x);
+                IAsyncEnumerable<TurnUpdate> turn;
+                try
+                {
+                    turn = await RunTurnAsync(x);
+                }
+                catch (OperationCanceledException)
+                {
+                    // A /cancel or /clear mid-setup: the context dispose that raised this
+                    // already completed the group.
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    // A turn that fails to set up — the state store down while restoring the
+                    // thread, say — must not leave the group half-built: an exception thrown
+                    // out of here is swallowed by the monitor's stream merge, the group would
+                    // stay registered, and every later message for this conversation would
+                    // queue into it unread until restart. Cancelling the context completes
+                    // the group, so the next message opens a fresh one.
+                    logger.LogError(ex,
+                        "Turn setup failed for conversation {ConversationId} and agent {AgentId}; ending the group",
+                        agentKey.ConversationId, agentKey.AgentId);
+                    threadResolver.Cancel(agentKey);
+                    break;
+                }
+
                 await foreach (var update in turn.IgnoreCancellation(_turnCt))
                 {
                     yield return update;

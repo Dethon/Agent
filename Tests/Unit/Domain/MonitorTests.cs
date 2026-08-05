@@ -21,7 +21,7 @@ namespace Tests.Unit.Domain;
 internal sealed class FakeAiAgent : DisposableAgent
 {
     public Exception? ExceptionToThrow { get; init; }
-    public Exception? RestoreExceptionToThrow { get; init; }
+    public Exception? RestoreExceptionToThrow { get; set; }
     public int DisposeCalls;
     public AgentResponseUpdate[] UpdatesToYield { get; init; } = [];
 
