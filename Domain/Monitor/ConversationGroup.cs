@@ -125,6 +125,7 @@ internal sealed class ConversationGroup(
                 {
                     // A /cancel or /clear mid-setup: the context dispose that raised this
                     // already completed the group.
+                    await ObserveAbandonedWarmupAsync();
                     break;
                 }
                 catch (Exception ex)
@@ -139,6 +140,7 @@ internal sealed class ConversationGroup(
                         "Turn setup failed for conversation {ConversationId} and agent {AgentId}; ending the group",
                         agentKey.ConversationId, agentKey.AgentId);
                     threadResolver.Cancel(agentKey);
+                    await ObserveAbandonedWarmupAsync();
                     break;
                 }
 
@@ -167,6 +169,32 @@ internal sealed class ConversationGroup(
             {
                 LogDroppedTurn(logger, message);
             }
+        }
+    }
+
+    // A setup that exits before the deterministic wait on the warmup — the /cancel that
+    // cancelled it, or an earlier stage failing — leaves the fire-and-forget warmup with no
+    // one to observe it. Its cancellation is just the teardown arriving there too; anything
+    // else is a real session failure that would otherwise die as an unobserved task exception.
+    private async Task ObserveAbandonedWarmupAsync()
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _state.Warmup;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Session warmup failed for conversation {ConversationId} and agent {AgentId}",
+                agentKey.ConversationId, agentKey.AgentId);
         }
     }
 

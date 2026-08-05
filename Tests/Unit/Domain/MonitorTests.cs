@@ -34,9 +34,16 @@ internal sealed class FakeAiAgent : DisposableAgent
     public ConcurrentQueue<string> RestoredSessionKeys { get; } = new();
     public ConcurrentQueue<IReadOnlyList<ChatMessage>> ReceivedMessages { get; } = new();
 
+    public Exception? WarmupExceptionToThrow { get; init; }
+
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
         Interlocked.Increment(ref WarmupCalls);
+        if (WarmupExceptionToThrow is not null)
+        {
+            throw WarmupExceptionToThrow;
+        }
+
         if (WarmupDelay > TimeSpan.Zero)
         {
             await Task.Delay(WarmupDelay, ct);
@@ -793,6 +800,85 @@ public class ChatMonitorTests
             It.IsAny<EventId>(),
             It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
             It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Monitor_CancelDuringTurnSetup_SurfacesAWarmupFault()
+    {
+        // A /cancel lands while the turn is still setting up (blocked in memory recall).
+        // Setup exits on the cancellation, but the warmup it started fire-and-forget had
+        // already failed for a real reason — that failure must be logged, not become an
+        // unobserved task exception.
+        var channel = new FakeChannelConnection();
+        var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
+        var recallHook = new Mock<IMemoryRecallHook>();
+        recallHook
+            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
+            .Returns(async (ChatMessage _, string _, string? _, string? _, AgentSession _, CancellationToken ct) =>
+            {
+                channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "/cancel"));
+                channel.Complete();
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            });
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            recallHook.Object,
+            logger.Object);
+
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage());
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<HttpRequestException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Monitor_TurnSetupFailsAfterWarmupStarted_SurfacesTheWarmupFaultToo()
+    {
+        // Turn setup fails for its own reason (memory recall down); that is already logged
+        // and ends the group. The warmup started before it carries a distinct failure of
+        // its own, which must not go to the grave unobserved.
+        var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
+        var recallHook = new Mock<IMemoryRecallHook>();
+        recallHook
+            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("recall down"));
+        var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage());
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            recallHook.Object,
+            logger.Object);
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.IsAny<It.IsAnyType>(),
+            It.IsAny<InvalidOperationException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<HttpRequestException>(),
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
