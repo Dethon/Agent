@@ -51,7 +51,7 @@ internal sealed class ConversationGroup(
         Task Warmup);
 
     public async IAsyncEnumerable<TurnUpdate> RunAsync(
-        IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
+        IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)> messages,
         Action onGroupComplete,
         [EnumeratorCancellation] CancellationToken ct)
     {
@@ -94,7 +94,7 @@ internal sealed class ConversationGroup(
     // what it drops. Reading messages in a separate loop keeps commands immediate and turns
     // sequential.
     private async IAsyncEnumerable<TurnUpdate> RunTurnsSequentiallyAsync(
-        IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages)
+        IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)> messages)
     {
         var pending = Channel.CreateUnbounded<(IChannelConnection Channel, ChannelMessage Message)>();
         // The message pump is stopped on the way out. Without that, a turn that throws would
@@ -112,7 +112,7 @@ internal sealed class ConversationGroup(
                 // against the torn-down group. It is dropped instead, and acknowledged below.
                 if (_turnCt.IsCancellationRequested)
                 {
-                    LogDroppedTurn(x.Message);
+                    LogDroppedTurn(logger, x.Message);
                     break;
                 }
 
@@ -125,6 +125,7 @@ internal sealed class ConversationGroup(
                 {
                     // A /cancel or /clear mid-setup: the context dispose that raised this
                     // already completed the group.
+                    await ObserveAbandonedWarmupAsync();
                     break;
                 }
                 catch (Exception ex)
@@ -139,6 +140,7 @@ internal sealed class ConversationGroup(
                         "Turn setup failed for conversation {ConversationId} and agent {AgentId}; ending the group",
                         agentKey.ConversationId, agentKey.AgentId);
                     threadResolver.Cancel(agentKey);
+                    await ObserveAbandonedWarmupAsync();
                     break;
                 }
 
@@ -155,15 +157,48 @@ internal sealed class ConversationGroup(
             // Anything still queued when the group ends is dropped by that end — a /clear or
             // /cancel dispatched ahead of it, a setup failure, a shutdown. Dropping is the
             // decided semantics (the command's immediacy is its point); vanishing silently is
-            // not, so each dropped turn is named. The pump is done, so this drains everything.
+            // not, so each dropped turn is named — whether the pump had already queued it or
+            // it still sits unread in the grouping's channel. The pump is done, so between
+            // them these two drains cover everything.
             while (pending.Reader.TryRead(out var dropped))
             {
-                LogDroppedTurn(dropped.Message);
+                LogDroppedTurn(logger, dropped.Message);
+            }
+
+            foreach (var (_, message) in messages.DrainPending())
+            {
+                LogDroppedTurn(logger, message);
             }
         }
     }
 
-    private void LogDroppedTurn(ChannelMessage message)
+    // A setup that exits before the deterministic wait on the warmup — the /cancel that
+    // cancelled it, or an earlier stage failing — leaves the fire-and-forget warmup with no
+    // one to observe it. Its cancellation is just the teardown arriving there too; anything
+    // else is a real session failure that would otherwise die as an unobserved task exception.
+    private async Task ObserveAbandonedWarmupAsync()
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _state.Warmup;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Session warmup failed for conversation {ConversationId} and agent {AgentId}",
+                agentKey.ConversationId, agentKey.AgentId);
+        }
+    }
+
+    internal static void LogDroppedTurn(ILogger logger, ChannelMessage message)
     {
         logger.LogWarning(
             "Group teardown dropped a queued turn for conversation {ConversationId} and agent {AgentId}",
@@ -182,13 +217,17 @@ internal sealed class ConversationGroup(
                 switch (ChatCommandParser.Parse(x.Message.Content))
                 {
                     case ChatCommand.Clear:
-                        await threadResolver.ClearAsync(agentKey);
+                        await ClearThreadAsync();
                         break;
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
                         break;
                     default:
-                        await writer.WriteAsync(x, pumpCt);
+                        // TryWrite, not WriteAsync with the pump token: on an unbounded
+                        // channel it always lands, so a message read just as teardown
+                        // cancels the pump still reaches the pending queue, where the
+                        // teardown drain names it instead of losing it to a cancelled write.
+                        writer.TryWrite(x);
                         break;
                 }
             }
@@ -202,6 +241,27 @@ internal sealed class ConversationGroup(
         catch (Exception ex)
         {
             writer.TryComplete(ex);
+        }
+    }
+
+    // ClearAsync disposes the live context before it deletes the persisted state — that
+    // order is load-bearing: a message arriving during a slow delete must open a fresh
+    // group, not join this dying one. The cost is that a failed delete surfaces after the
+    // group already completed, when the reader is exiting on the cancellation the dispose
+    // raised and never observes a fault folded into the pending channel. So the failure is
+    // named here, at the only site that still sees it: the live thread is gone, the
+    // persisted one survived, and the cleared history returns on the next message.
+    private async Task ClearThreadAsync()
+    {
+        try
+        {
+            await threadResolver.ClearAsync(agentKey);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Wiping persisted thread state failed for conversation {ConversationId} and agent {AgentId}; the cleared history returns on the next message",
+                agentKey.ConversationId, agentKey.AgentId);
         }
     }
 

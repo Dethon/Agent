@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Extensions;
 using Domain.Monitor;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -179,6 +180,67 @@ public class ChatMonitorConversationGroupTests
         await run;
 
         channel.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
+    }
+
+    [Fact]
+    public async Task Group_TurnBufferedBehindACancel_IsDrainedAndNamedAtTeardown()
+    {
+        // The /cancel tears the group down while "left behind" is already routed into this
+        // group's message channel. Wherever the race leaves it — read by the pump into the
+        // pending queue, or still buffered in the grouping — the teardown must name it,
+        // exactly like a turn queued behind a running one.
+        var logger = new Mock<ILogger<ChatMonitor>>();
+        var channel = new FakeChannelConnection();
+        var threadResolver = new ChatThreadResolver();
+        await using var group = new ConversationGroup(
+            new AgentKey("conv-1"),
+            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
+            new DeliveryTargetResolver([channel], logger.Object),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+        var grouping = new FakeGrouping(new AgentKey("conv-1"));
+        grouping.Write((channel, MonitorTestMocks.CreateChannelMessage(content: "/cancel")));
+        grouping.Write((channel, MonitorTestMocks.CreateChannelMessage(content: "left behind")));
+        grouping.Complete();
+
+        await foreach (var _ in group.RunAsync(grouping, grouping.Complete, CancellationToken.None))
+        { }
+
+        logger.Verify(l => l.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    private sealed class FakeGrouping(AgentKey key)
+        : IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)>
+    {
+        private readonly System.Threading.Channels.Channel<(IChannelConnection Channel, ChannelMessage Message)> _channel =
+            System.Threading.Channels.Channel.CreateUnbounded<(IChannelConnection Channel, ChannelMessage Message)>();
+
+        public AgentKey Key => key;
+
+        public void Complete() => _channel.Writer.TryComplete();
+
+        public IEnumerable<(IChannelConnection Channel, ChannelMessage Message)> DrainPending()
+        {
+            while (_channel.Reader.TryRead(out var item))
+            {
+                yield return item;
+            }
+        }
+
+        public void Write((IChannelConnection Channel, ChannelMessage Message) item) => _channel.Writer.TryWrite(item);
+
+        public IAsyncEnumerator<(IChannelConnection Channel, ChannelMessage Message)> GetAsyncEnumerator(
+            CancellationToken ct = default)
+        {
+            return _channel.Reader.ReadAllAsync(ct).GetAsyncEnumerator(ct);
+        }
     }
 
     private static ChannelMessage ScheduleFire(string content)
