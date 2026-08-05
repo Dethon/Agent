@@ -20,7 +20,8 @@ Read against the code, the four sharing claims do not hold.
 **The two stores are not used the same way.** `WebChat.Client/State/Store.cs` is
 `sealed`. Each WebChat store holds one privately and registers a catch-all with a
 central `Dispatcher`, so every store sees every action and reduces it through a
-single `Reduce(state, IAction)` switch — `WebChat.Client/State/Topics/TopicsStore.cs:32-45`.
+single `Reduce(state, IAction)` switch — see `TopicsStore`'s constructor and its
+`Reduce` in `WebChat.Client/State/Topics/TopicsStore.cs`.
 `Dashboard.Client/State/Store.cs` is a public base class that all ten dashboard
 stores inherit, each calling `Dispatch(action, reducer)` with its own per-action
 lambda. The dashboard has no dispatcher at all. Deleting the dashboard's copy and

@@ -6,12 +6,13 @@ Date: 2026-08-04
 ## Context
 
 `McpChannelConnection` asks the channel server what tools it has before two of its
-calls, every time. `CreateConversationAsync` runs `ListToolsAsync` at `:362` to check for
-`create_conversation`, and `RegisterAgentsAsync` runs it again at `:403` to check for
-`register_agents`.
+calls, every time. `CreateConversationAsync` runs `ListToolsAsync` to check for
+`create_conversation`, and `RegisterAgentsAsync` runs it again to check for
+`register_agents`. (Members rather than line numbers throughout: the file moves often.)
 
-The probe is not free. `Domain/Monitor/DeliveryTargetResolver.cs:51` and `:91` call
-`CreateConversationAsync` per turn per delivery target on agent-initiated turns, so a
+The probe is not free. `DeliveryTargetResolver` calls `CreateConversationAsync` per
+delivery target on agent-initiated turns — once in `ResolveAsync` to mint a missing
+conversation, once in `AnnounceTurnStartAsync` to announce the turn start — so a
 scheduled announcement to three targets pays three round trips before any of them is
 asked to do anything.
 
@@ -24,9 +25,10 @@ every one of them.
 ## Decision
 
 The tool set is fetched once per **connection generation** — one successful connect or
-reconnect — and the two capability probes read the cached set. A reconnect discards the
-cache, so a server that restarted with different tools is seen correctly the moment the
-connection is rebuilt.
+reconnect — and both capability questions go through one private `OffersToolAsync`, which
+reads the cached set. A reconnect discards the cache (`ConnectAsync` clears it), so a
+server that restarted with different tools is seen correctly the moment the connection is
+rebuilt.
 
 The generation is the unit rather than the process, the connection object, or a timed
 expiry, because a reconnect is the only event that can put a different server process on
