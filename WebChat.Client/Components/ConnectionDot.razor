@@ -1,19 +1,33 @@
 @inherits StoreSubscriberComponent
 @inject ConnectionStore ConnectionStore
 
-<span class="status-dot @(_isConnected ? "connected" : "")"
+<span class="status-dot @CssClass"
       role="status"
-      aria-label="@(_isConnected ? "Connected" : "Disconnected")"
-      title="@(_isConnected ? "Connected" : "Disconnected")"></span>
+      aria-label="@Label"
+      title="@Label"></span>
 
 @code {
-    private bool _isConnected;
+    private ConnectionStatus _status;
+
+    private string Label => _status switch
+    {
+        ConnectionStatus.Connected => "Connected",
+        ConnectionStatus.Reconnecting => "Reconnecting...",
+        _ => "Disconnected"
+    };
+
+    private string CssClass => _status switch
+    {
+        ConnectionStatus.Connected => "connected",
+        ConnectionStatus.Reconnecting => "reconnecting",
+        _ => ""
+    };
 
     protected override void OnInitialized()
     {
         Subscribe(
             ConnectionStore.StateObservable,
-            state => state.Status == ConnectionStatus.Connected,
-            isConnected => _isConnected = isConnected);
+            state => state.Status,
+            status => _status = status);
     }
 }
