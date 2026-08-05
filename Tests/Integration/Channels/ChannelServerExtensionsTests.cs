@@ -54,6 +54,24 @@ public class ChannelServerExtensionsTests
         Should.Throw<ArgumentException>(() =>
             new ServiceCollection().AddMcpServer().AddChannelServer(DeliveryPolicy.Broadcast, "channel-x"));
 
+    private sealed record ProbeSettings(string Name);
+
+    // A channel server has one inbox and one delivery policy. The call-tool filter already guards
+    // itself, so a second call used to leave the filter alone and silently swap the emitter — last
+    // policy wins, and a server that meant Broadcast would start gating on live subscribers. Today
+    // it only fails incidentally, on the duplicate channel_receive tool name, which says nothing
+    // about the policy that was lost.
+    [Fact]
+    public void AddChannelServer_CalledTwice_FailsInsteadOfSwappingThePolicy()
+    {
+        var builder = new ServiceCollection().AddMcpHost(new ProbeSettings("probe"));
+        builder.AddChannelServer(DeliveryPolicy.Broadcast);
+
+        Should.Throw<InvalidOperationException>(
+                () => builder.AddChannelServer(DeliveryPolicy.GateOnLive))
+            .Message.ShouldContain("AddChannelServer");
+    }
+
     // The rule the six copies of this filter all had to state for themselves: a long poll ends in
     // cancellation whenever the agent hangs up or the server shuts down, and mapping that to an
     // error result would hand the agent's pump something to retry on. What decides that is the
