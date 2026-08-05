@@ -8,7 +8,6 @@ public sealed record StreamingContent
     public string? Reasoning { get; init; }
     public string? ToolCalls { get; init; }
     public string? CurrentMessageId { get; init; }
-    public bool IsError { get; init; }
 
     public bool HasContent =>
         !string.IsNullOrEmpty(Content) ||

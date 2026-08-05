@@ -8,8 +8,6 @@ public record AddMessage(string TopicId, ChatMessageModel Message, string? Strea
 
 public record UpdateMessage(string TopicId, string MessageId, ChatMessageModel Message) : IAction;
 
-public record RemoveLastMessage(string TopicId) : IAction;
-
 public record ClearMessages(string TopicId) : IAction;
 
 public record RemoveTrailingErrors(string TopicId) : IAction;
@@ -55,15 +53,6 @@ public sealed class MessagesStore : IDisposable
         {
             MessagesByTopic = UpdateMessageInTopic(state.MessagesByTopic, a.TopicId, a.MessageId, a.Message)
         },
-
-        RemoveLastMessage a when state.MessagesByTopic.TryGetValue(a.TopicId, out var messages) && messages.Count > 0 =>
-            state with
-            {
-                MessagesByTopic = state.MessagesByTopic.With(
-                    a.TopicId, messages.Take(messages.Count - 1).ToList())
-            },
-
-        RemoveLastMessage => state, // No messages to remove
 
         RemoveTrailingErrors a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) =>
             state with
