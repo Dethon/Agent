@@ -84,6 +84,60 @@ public class SettingsBinderTests : IDisposable
     public void AnEmptyRequiredMember_Binds() =>
         Bind(("Search:ApiKey", "")).Search.ApiKey.ShouldBe("");
 
+    // A required int has no null to reveal an absent key: it binds to 0 and passes a null-only
+    // walk. The sandbox server's MaxTimeoutSeconds is the shipped case — a deployment missing it
+    // would start cleanly and then every fs_exec would throw from Math.Clamp(…, 1, 0).
+    [Fact]
+    public void AnAbsentRequiredValueType_FailsNamingTheMember() =>
+        Should.Throw<InvalidOperationException>(() =>
+                new ConfigurationBuilder().BindSettings<ProbeLimitsSettings>(_secretsId))
+            .Message.ShouldContain("MaxTimeoutSeconds");
+
+    // The counterpart that keeps the check honest: presence in configuration is what is validated,
+    // never the bound value, so a deliberate 0 stays legal even though it equals the type default.
+    [Fact]
+    public void AnExplicitDefaultForARequiredValueType_Binds() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["MaxTimeoutSeconds"] = "0" })
+            .BindSettings<ProbeLimitsSettings>(_secretsId)
+            .MaxTimeoutSeconds.ShouldBe(0);
+
+    // The presence check must follow the section path, not the display path: a member two levels
+    // down lives at "Output:CapBytes", and a walk that asked the root for "Output.CapBytes" would
+    // flag every nested value type as absent.
+    [Fact]
+    public void AnAbsentRequiredValueTypeInASection_FailsNamingThePathToIt() =>
+        Should.Throw<InvalidOperationException>(() =>
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["MaxTimeoutSeconds"] = "5",
+                        ["Output:Label"] = "x"
+                    })
+                    .BindSettings<ProbeLimitsSettings>(_secretsId))
+            .Message.ShouldContain("Output.CapBytes");
+
+    [Fact]
+    public void ANestedRequiredValueTypePresentInConfig_Binds() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MaxTimeoutSeconds"] = "5",
+                ["Output:CapBytes"] = "0"
+            })
+            .BindSettings<ProbeLimitsSettings>(_secretsId)
+            .Output!.CapBytes.ShouldBe(0);
+
+    // The lower bound of the precedence chain: environment variables are added by BindSettings
+    // after the caller's file sources, so an environment variable beats an appsettings value.
+    [Fact]
+    public void AnEnvironmentVariable_BeatsAnAppSettingsValue()
+    {
+        Environment.SetEnvironmentVariable(SearchKeyEnvironmentVariable, "from-the-environment");
+
+        Bind(("Search:ApiKey", "from-appsettings")).Search.ApiKey.ShouldBe("from-the-environment");
+    }
+
     // Five servers ask for user secrets from a project with no UserSecretsId. The source is simply
     // absent for them, which is exactly today's behaviour, and they must keep starting.
     [Fact]
@@ -135,4 +189,20 @@ public record ProbeSearchConfig
 public record ProbeSolverConfig
 {
     public required string ApiKey { get; init; }
+}
+
+// Shaped like the sandbox server: required value types that a null-only walk cannot see missing,
+// one of them nested so the presence check has to navigate configuration sections.
+public record ProbeLimitsSettings
+{
+    public required int MaxTimeoutSeconds { get; init; }
+
+    public ProbeOutputConfig? Output { get; init; }
+}
+
+public record ProbeOutputConfig
+{
+    public required int CapBytes { get; init; }
+
+    public string? Label { get; init; }
 }

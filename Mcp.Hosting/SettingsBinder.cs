@@ -38,9 +38,10 @@ public static class SettingsBinder
         // Non-null even from completely empty configuration: the binder builds the instance and
         // leaves unbound members at their defaults. What a missing section really produces is a null
         // sub-record, which is what the walk below is for.
-        var settings = configBuilder.Build().Get<TSettings>()!;
+        var configuration = configBuilder.Build();
+        var settings = configuration.Get<TSettings>()!;
 
-        var missing = MissingRequiredMembers(settings, path: "", typeof(TSettings).Assembly).ToList();
+        var missing = MissingRequiredMembers(settings, configuration, path: "", typeof(TSettings).Assembly).ToList();
         return missing.Count == 0
             ? settings
             : throw new InvalidOperationException(
@@ -53,29 +54,41 @@ public static class SettingsBinder
     // Null only, never empty. Three shipped servers carry required members that ship as "" and are
     // filled from secrets, and an empty optional key is how a feature is switched off; an
     // empty-is-invalid rule would refuse to start them.
-    private static IEnumerable<string> MissingRequiredMembers(object instance, string path, Assembly settingsAssembly) =>
+    private static IEnumerable<string> MissingRequiredMembers(
+        object instance, IConfiguration section, string path, Assembly settingsAssembly) =>
         instance.GetType()
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(property => property.GetIndexParameters().Length == 0)
-            .SelectMany(property => Inspect(property, instance, path, settingsAssembly));
+            .SelectMany(property => Inspect(property, instance, section, path, settingsAssembly));
 
     private static IEnumerable<string> Inspect(
-        PropertyInfo property, object instance, string path, Assembly settingsAssembly)
+        PropertyInfo property, object instance, IConfiguration section, string path, Assembly settingsAssembly)
     {
         var memberPath = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
         var value = property.GetValue(instance);
 
         if (value is null)
         {
-            return property.IsDefined(typeof(RequiredMemberAttribute), inherit: false) ? [memberPath] : [];
+            return IsRequired(property) ? [memberPath] : [];
+        }
+
+        // A required value type has no null to reveal an absent key — it binds to the type's
+        // default and would sail past the null walk. Presence is therefore asked of the
+        // configuration itself, so an explicit default written in config stays legal.
+        if (property.PropertyType.IsValueType)
+        {
+            return IsRequired(property) && !section.GetSection(property.Name).Exists() ? [memberPath] : [];
         }
 
         // Recurses into a nested section, which is what a missing configuration block produces. A
         // collection's elements are data rather than sections, and no server reads one at startup.
         return IsSection(property.PropertyType, settingsAssembly)
-            ? MissingRequiredMembers(value, memberPath, settingsAssembly)
+            ? MissingRequiredMembers(value, section.GetSection(property.Name), memberPath, settingsAssembly)
             : [];
     }
+
+    private static bool IsRequired(PropertyInfo property) =>
+        property.IsDefined(typeof(RequiredMemberAttribute), inherit: false);
 
     private static bool IsSection(Type type, Assembly settingsAssembly) =>
         type.IsClass
