@@ -399,10 +399,12 @@ public sealed class PlaybackQueue(
             // High request; a second High stacking in the gap must still play, not be preempted.
             var preemptOnStart = _preemptPendingSeq >= 0 && queued.Seq <= _preemptPendingSeq
                 && queued.Job.Priority != AnnouncePriority.High;
-            // Cleared only once the queue has drained PAST the mark, so every job that was
-            // already queued when the High job arrived is preempted — not just the first one
-            // dequeued after it.
-            if (queued.Seq > _preemptPendingSeq)
+            // Cleared once nothing at or below the mark is left queued, so every job that was
+            // already there when the alarm arrived is preempted — not just the first one dequeued
+            // after it. Asking the pending list rather than this job's sequence keeps that true
+            // whatever order jobs are inserted in: a High cut-in carries a sequence above the mark,
+            // and clearing on that alone would spare whatever the alarm marked behind it.
+            if (!_pending.Any(p => p.Seq <= _preemptPendingSeq))
             {
                 _preemptPendingSeq = -1;
             }
