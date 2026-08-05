@@ -84,21 +84,28 @@ public sealed class ChatLiveConnection(
 
     // The transport-fault family, named: an invocation in flight when the connection dies
     // faults with whatever closed it — a cancellation on a clean close, the socket, WebSocket
-    // or IO error otherwise, an HTTP or timeout failure from the outer layers — and a call
-    // that races the state check throws InvalidOperationException (which ObjectDisposedException
-    // derives from). These verbs carry no caller token, so a cancellation surfacing here is
-    // never the caller's own. Anything outside the family — a HubException, which is the server
-    // answering, or a client-side serialization or argument bug — is not "not live": it
-    // propagates to the caller's fault logging instead of raising a connectivity toast over a
-    // programming error.
-    private static bool IsTransportFault(Exception exception) => exception
-        is OperationCanceledException
-        or InvalidOperationException
-        or HttpRequestException
-        or TimeoutException
-        or IOException
-        or SocketException
-        or WebSocketException;
+    // or IO error otherwise, an HTTP or timeout failure from the outer layers, and an
+    // ObjectDisposedException from a connection torn down mid-call. These verbs carry no
+    // caller token, so a cancellation surfacing here is never the caller's own. A call that
+    // races the state check gets SignalR's own InvalidOperationException for it — that exact
+    // message is the one signal that a live check just lost the race, so only that message (or
+    // ObjectDisposedException, which derives from it) folds an InvalidOperationException into
+    // this family. Anything else — a HubException, which is the server answering, or a
+    // client-side serialization or argument bug — is not "not live": it propagates to the
+    // caller's fault logging instead of raising a connectivity toast over a programming error.
+    private static bool IsTransportFault(Exception exception) => exception switch
+    {
+        ObjectDisposedException => true,
+        InvalidOperationException e => IsConnectionInactiveMessage(e.Message),
+        OperationCanceledException or HttpRequestException or TimeoutException or IOException
+            or SocketException or WebSocketException => true,
+        _ => false
+    };
+
+    // SignalR's own wording for a call that reached the transport after it stopped being live:
+    // "The '{methodName}' method cannot be called if the connection is not active".
+    private static bool IsConnectionInactiveMessage(string message) =>
+        message.Contains("connection is not active", StringComparison.OrdinalIgnoreCase);
 
     public Task ConnectAsync() => StartLiveConnectionAsync(CancellationToken.None);
 

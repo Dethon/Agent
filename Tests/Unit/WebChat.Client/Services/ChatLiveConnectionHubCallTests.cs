@@ -123,7 +123,12 @@ public sealed class ChatLiveConnectionHubCallTests : IDisposable
     {
         new System.Text.Json.JsonException("cannot serialize the argument"),
         new ArgumentException("argument does not match the hub method"),
-        new NotSupportedException("type is not supported")
+        new NotSupportedException("type is not supported"),
+        // Not every InvalidOperationException is the connection dying — a caller can trip one
+        // for reasons that have nothing to do with the transport (a hub handler misused, a
+        // fake collaborator asserting its own state). Only the message SignalR itself throws
+        // when a call races a dead connection is the transport speaking.
+        new InvalidOperationException("The collection was modified after the enumerator was instantiated")
     };
 
     [Theory]
