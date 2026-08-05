@@ -235,6 +235,39 @@ public class PlaybackQueueOutcomeTests
     }
 
     [Fact]
+    public async Task CompleteAndDiscardQueued_DuringTheRealtimeTail_ReturnsPromptlyAndSettlesTheJob()
+    {
+        // A fully-buffered job's audio can be written seconds before the satellite finishes playing
+        // it, and the loop waits that tail out under the still-live run token. When the link drops
+        // in that window the drain awaits the loop, so reconnect stalled for the remaining audio
+        // duration. The link-drop close must cut the tail; the audio was already written, so the
+        // job keeps the Drained outcome it earned.
+        var queue = new PlaybackQueue();
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 160000 bytes at 16 kHz/16-bit/mono = 5 s of audio, written in one chunk.
+        static async IAsyncEnumerable<AudioChunk> fiveSeconds()
+        {
+            yield return new AudioChunk { Data = new byte[160000], Format = AudioFormat.WyomingStandard };
+            await Task.CompletedTask;
+        }
+
+        var ticket = queue.Enqueue(Job("announce", PlaybackKind.Announce) with { Audio = fiveSeconds() });
+        var pump = queue.RunAsync(
+            (_, _) => { wrote.TrySetResult(); return Task.CompletedTask; },
+            CancellationToken.None, time);
+
+        await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(80);               // let the loop reach the real-time tail wait
+        queue.CompleteAndDiscardQueued();   // the link dropped
+
+        // The fake clock never advances: only cutting the tail lets the loop return.
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        (await ticket.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+    }
+
+    [Fact]
     public async Task Run_AConsumerOfOneOutcomeBlocks_TheNextJobStillPlays()
     {
         // There is no ordering between an outcome being signalled and the next job starting, and a
