@@ -71,8 +71,23 @@ public sealed class ServiceBusProcessorService(
                 return;
             }
 
-            await args.CompleteMessageAsync(args.Message);
-            logger.LogDebug("Processed message correlationId={CorrelationId}", correlationId);
+            // Past this point the prompt has been delivered, so the outer catch must not reach the
+            // settle: abandoning a delivered prompt hands it back to the broker and redelivery
+            // replays it to the agent — the duplicate gate-on-live exists to prevent. A settle that
+            // fails (an expired lock, say) is logged and left alone; the broker redelivers of its
+            // own accord when the lock runs out, and that path goes through the liveness gate again.
+            try
+            {
+                await args.CompleteMessageAsync(args.Message);
+                logger.LogDebug("Processed message correlationId={CorrelationId}", correlationId);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex,
+                    "Delivered prompt correlationId={CorrelationId} but could not settle the broker message; " +
+                    "leaving it for the lock to expire rather than abandoning a delivered prompt",
+                    correlationId);
+            }
         }
         catch (Exception ex)
         {
