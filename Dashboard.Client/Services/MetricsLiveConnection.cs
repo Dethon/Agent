@@ -20,6 +20,7 @@ public sealed class MetricsLiveConnection(
     private Task? _connecting;
     private bool _started;
     private bool _disposed;
+    private bool _awaitingFirstLoadOutcome;
 
     public Task ConnectAsync() => _started ? Task.CompletedTask : _connecting ??= BecomeLiveAsync();
 
@@ -29,6 +30,8 @@ public sealed class MetricsLiveConnection(
         // its registrations intact, so rebinding per attempt would double every handler, and a
         // reconnect reuses the same hub connection, so nothing needs rebinding there either.
         binder.Bind(hub);
+
+        dataLoad.LoadCompleted += OnLoadCompletedAsync;
 
         // Closed is not handled: with a retry policy that never gives up, the transport only closes
         // for good when this module disposes it.
@@ -64,12 +67,34 @@ public sealed class MetricsLiveConnection(
         // reload — so a recorded failure makes the first epoch catch up after all.
         if (connectionStore.State.Epoch <= 1 && !dataLoad.LastLoadFailed)
         {
+            // The load may still be in flight when this decision is taken, so its outcome settles
+            // the skipped premise later: OnLoadCompletedAsync catches up if the load fails.
+            _awaitingFirstLoadOutcome = true;
             return;
         }
 
-        // Pushes are held while catch-up replaces the event lists, then released against what the
-        // reload delivered: without the hold, an older snapshot erases a push that arrived first,
-        // and a push the snapshot already contains lands twice.
+        await CatchUpHoldingPushesAsync();
+    }
+
+    // The first load to settle after the first epoch skipped its catch-up answers whether the skip
+    // was right: a delivery confirms it, a failure asks for the catch-up it was owed. Later loads
+    // are ordinary failed requests and settle nothing.
+    private Task OnLoadCompletedAsync()
+    {
+        if (!_awaitingFirstLoadOutcome)
+        {
+            return Task.CompletedTask;
+        }
+
+        _awaitingFirstLoadOutcome = false;
+        return dataLoad.LastLoadFailed ? CatchUpHoldingPushesAsync() : Task.CompletedTask;
+    }
+
+    // Pushes are held while catch-up replaces the event lists, then released against what the
+    // reload delivered: without the hold, an older snapshot erases a push that arrived first,
+    // and a push the snapshot already contains lands twice.
+    private async Task CatchUpHoldingPushesAsync()
+    {
         binder.HoldPushes();
         try
         {
@@ -118,6 +143,7 @@ public sealed class MetricsLiveConnection(
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        dataLoad.LoadCompleted -= OnLoadCompletedAsync;
         binder.Unbind();
         await hub.DisposeAsync();
     }

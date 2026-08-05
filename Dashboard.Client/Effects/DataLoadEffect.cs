@@ -16,6 +16,11 @@ public sealed class DataLoadEffect(
     // it knows that premise did not hold.
     public bool LastLoadFailed { get; private set; }
 
+    // Raised after every load has settled, success or failure. The hub can become live while the
+    // initial load is still in flight, so the flag alone is not enough: whoever skipped catch-up on
+    // its promise needs to hear when the load actually delivers or fails.
+    public event Func<Task>? LoadCompleted;
+
     public async Task LoadAsync(DateOnly from, DateOnly to)
     {
         try
@@ -63,6 +68,11 @@ public sealed class DataLoadEffect(
             // The page-load path swallows the reason a load failed, as it always has. Connection
             // status is the live connection's to publish, and a failed request is not an outage.
             LastLoadFailed = true;
+        }
+
+        if (LoadCompleted is { } completed)
+        {
+            await completed();
         }
     }
 }
