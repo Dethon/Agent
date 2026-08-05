@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
@@ -97,37 +98,41 @@ public sealed class DownloadsOverlay(
         }
     }
 
-    public async Task<IReadOnlyList<string>> GlobEntriesAsync(string? basePath, string pattern, CancellationToken ct)
+    // The overlay half of a media glob, under the same two guards as every other mount: the shared
+    // prologue answers the invalid-argument envelope for a pattern past the brace-expansion cap, and
+    // a pathological pattern that backtracks while matching ends as the timeout envelope instead of
+    // an exception out of fs_glob. Candidates are library-root-relative, the same convention the
+    // disk glob results use, and the scope's matcher already carries basePath.
+    public async Task<FsResult<IReadOnlyList<string>>> GlobEntriesAsync(
+        string? basePath, string pattern, CancellationToken ct)
     {
-        var prefix = (basePath ?? "").Trim('/');
+        if (!GlobScope.Create(basePath, pattern).TryGetValue(out var scope, out var scopeError))
+        {
+            return new FsResult<IReadOnlyList<string>>.Err(scopeError);
+        }
+
         var items = await downloadClient.GetDownloadItems(ct);
-
-        var dirsOnly = pattern.EndsWith('/');
-        var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
-        var matches = GlobRegex.CompileMatcher(effectivePattern);
-
-        // Candidates are library-root-relative (same convention as the disk glob results);
-        // the pattern applies relative to basePath, mirroring the disk matcher root.
-        string? relative(string candidate) =>
-            prefix.Length == 0 ? candidate
-            : candidate.StartsWith(prefix + "/", StringComparison.Ordinal) ? candidate[(prefix.Length + 1)..]
-            : null;
 
         var dirs = items
             .Select(i => $"{MediaFilesystem.DownloadsSubdir}/{i.Id}")
-            .Where(c => relative(c) is { } rel && matches(rel))
+            .Where(scope.Matches)
             .Select(c => c + "/");
 
-        if (dirsOnly)
+        IEnumerable<string> files = scope.DirsOnly
+            ? []
+            : items
+                .Select(i => $"{MediaFilesystem.DownloadsSubdir}/{i.Id}/{DownloadsPath.StatusFileName}")
+                .Where(scope.Matches);
+
+        try
         {
-            return dirs.OrderBy(p => p, StringComparer.Ordinal).ToList();
+            return new FsResult<IReadOnlyList<string>>.Ok(
+                dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
         }
-
-        var files = items
-            .Select(i => $"{MediaFilesystem.DownloadsSubdir}/{i.Id}/{DownloadsPath.StatusFileName}")
-            .Where(c => relative(c) is { } rel && matches(rel));
-
-        return dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList();
+        catch (RegexMatchTimeoutException)
+        {
+            return new FsResult<IReadOnlyList<string>>.Err(GlobRegex.TimedOut(pattern));
+        }
     }
 
     public async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)

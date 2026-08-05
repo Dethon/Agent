@@ -63,10 +63,15 @@ public sealed class MediaLibraryDiskFileSystem(
         var scoped = GlobFilesTool.ToMatcherRelative(
             GlobFilesTool.MatcherRoot(_rootPath, basePath), pattern);
 
-        return scoped is null
-            ? disk
-            : new FsResult<FsGlobResult>.Ok(Merge(
-                entries, await downloads.GlobEntriesAsync(basePath, scoped.Replace('\\', '/'), ct)));
+        if (scoped is null)
+        {
+            return disk;
+        }
+
+        var overlay = await downloads.GlobEntriesAsync(basePath, scoped.Replace('\\', '/'), ct);
+        return overlay.TryGetValue(out var virtualEntries, out var overlayError)
+            ? new FsResult<FsGlobResult>.Ok(Merge(entries, virtualEntries))
+            : new FsResult<FsGlobResult>.Err(overlayError);
     }
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>

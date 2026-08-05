@@ -1,6 +1,7 @@
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Domain.Tools.Downloads.Vfs;
 using Shouldly;
 using static Tests.Unit.Domain.Downloads.Vfs.DownloadFakes;
@@ -87,30 +88,49 @@ public class DownloadsOverlayTests : IDisposable
         (await _sut.TryInfoAsync("Movies", CancellationToken.None)).ShouldBeNull();
     }
 
+    // The overlay compiled the caller's pattern itself, outside the guard every other mount's glob
+    // goes through, so a pattern past the brace-expansion cap left the overlay throwing where the
+    // rest of the filesystem answers an envelope. Only the disk half erroring first hid it.
+    [Fact]
+    public async Task GlobEntries_APatternPastTheBraceCap_IsTheInvalidArgumentEnvelope()
+    {
+        _client.Add(Item(42));
+
+        var glob = await _sut.GlobEntriesAsync(
+            "", string.Concat(Enumerable.Repeat("{a,b}", 12)) + "**", CancellationToken.None);
+
+        glob.ShouldBeOfType<FsResult<IReadOnlyList<string>>.Err>()
+            .Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+    }
+
     [Fact]
     public async Task GlobEntries_MatchRootAndBasePathPatterns()
     {
         _client.Add(Item(42));
         _client.Add(Item(7, DownloadState.Completed));
 
-        var all = await _sut.GlobEntriesAsync("", "**", CancellationToken.None);
+        var all = await Entries("", "**");
         all.ShouldContain("downloads/42/");
         all.ShouldContain("downloads/42/status.json");
         all.ShouldContain("downloads/7/");
         all.ShouldContain("downloads/7/status.json");
 
-        var statusOnly = await _sut.GlobEntriesAsync("", "downloads/*/status.json", CancellationToken.None);
+        var statusOnly = await Entries("", "downloads/*/status.json");
         statusOnly.ShouldBe(new[] { "downloads/42/status.json", "downloads/7/status.json" }, ignoreOrder: true);
 
-        var dirsOnly = await _sut.GlobEntriesAsync("", "downloads/*/", CancellationToken.None);
+        var dirsOnly = await Entries("", "downloads/*/");
         dirsOnly.ShouldBe(new[] { "downloads/42/", "downloads/7/" }, ignoreOrder: true);
 
-        var based = await _sut.GlobEntriesAsync("downloads", "*/status.json", CancellationToken.None);
+        var based = await Entries("downloads", "*/status.json");
         based.ShouldBe(new[] { "downloads/42/status.json", "downloads/7/status.json" }, ignoreOrder: true);
 
-        var elsewhere = await _sut.GlobEntriesAsync("Movies", "**", CancellationToken.None);
+        var elsewhere = await Entries("Movies", "**");
         elsewhere.ShouldBeEmpty();
     }
+
+    private async Task<IReadOnlyList<string>> Entries(string basePath, string pattern) =>
+        (await _sut.GlobEntriesAsync(basePath, pattern, CancellationToken.None))
+        .ShouldBeOfType<FsResult<IReadOnlyList<string>>.Ok>().Value;
 
     [Fact]
     public async Task Delete_ActiveDownload_CleansUpEverything()
