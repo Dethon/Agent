@@ -45,10 +45,11 @@ the anchors were resolved from" and "the first turn the group ran" are the same
 message by construction. The counter is deleted: the group knows whether it has
 anchors yet, and whether this turn is the one they came from, from its own state.
 
-The thread context and its `group.Complete` callback stay eager. `ChatThreadResolver.ClearAsync`
-only deletes persisted state when it finds a live context, so deferring the context
-would make a leading `/clear` stop wiping the stored thread — the exact case this
-change exists to serve — and would leave nothing to end the group.
+The thread context and its `group.Complete` callback stay eager. The context carries
+the completion callback and the turn token, and disposing it is how a command ends the
+group — deferring it would leave nothing to end a group whose messages are all commands.
+(`ChatThreadResolver.ClearAsync` now deletes persisted state unconditionally, so the
+wipe itself no longer depends on a live context.)
 
 Everything a group owns for the length of its life — the anchors, the agent, the
 thread, the warmup, the pending-turn queue, the command dispatch — moves into one
