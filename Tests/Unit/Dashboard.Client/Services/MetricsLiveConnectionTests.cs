@@ -268,6 +268,56 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _voiceStore.State.Breakdown.ShouldBe(lastKnown);
     }
 
+    // The first half of the ordering defect: a push that arrives while catch-up is still waiting
+    // for its response used to land in the list and be erased when the older snapshot replaced it.
+    [Fact]
+    public async Task Reconnected_APushArrivesBeforeTheCatchUpResponseLands_TheOlderSnapshotCannotEraseIt()
+    {
+        await ConnectAsync();
+        _handler.AnswerFor("api/metrics/voice?", new List<VoiceEventPayload>
+        {
+            new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
+        });
+        _catchUp.Gate = new TaskCompletionSource();
+        await _hub.RaiseReconnectingAsync(null);
+
+        var reconnected = _hub.RaiseReconnectedAsync();
+        await RaiseVoiceAsync("pantry-01");
+        _catchUp.Gate.SetResult();
+        await reconnected;
+
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "pantry-01");
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
+    }
+
+    // The second half: a push the snapshot already contains, arriving after the lists were
+    // replaced, used to be appended on top of its own copy.
+    [Fact]
+    public async Task Reconnected_TheSnapshotAlreadyContainsAPushedEvent_TheStoreHoldsItOnce()
+    {
+        var stamped = new DateTimeOffset(2026, 3, 24, 12, 0, 0, TimeSpan.Zero);
+        await ConnectAsync();
+        _handler.AnswerFor("api/metrics/voice?", new List<StampedVoiceEventPayload>
+        {
+            new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01", stamped),
+        });
+        _catchUp.GateAfter = new TaskCompletionSource();
+        await _hub.RaiseReconnectingAsync(null);
+
+        var reconnected = _hub.RaiseReconnectedAsync();
+        await WaitForAsync(() => _voiceStore.State.Events.Count > 0);
+        await _hub.RaiseAsync("OnVoice", new VoiceEvent
+        {
+            Metric = VoiceMetric.UtteranceTranscribed,
+            SatelliteId = "kitchen-01",
+            Timestamp = stamped,
+        });
+        _catchUp.GateAfter.SetResult();
+        await reconnected;
+
+        _voiceStore.State.Events.Count(e => e.SatelliteId == "kitchen-01").ShouldBe(1);
+    }
+
     [Fact]
     public async Task DisposeAsync_AfterConnecting_APushAfterwardsChangesNothing()
     {
@@ -294,5 +344,22 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _hub.StartAttempts.ShouldBeLessThan(100);
     }
 
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        foreach (var _ in Enumerable.Range(0, 100))
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(1);
+        }
+    }
+
     private sealed record VoiceEventPayload(int Metric, string SatelliteId);
+
+    // Carries the timestamp so the deserialized snapshot event and the pushed event are equal by
+    // record value, which is the identity catch-up reconciles by.
+    private sealed record StampedVoiceEventPayload(int Metric, string SatelliteId, DateTimeOffset Timestamp);
 }

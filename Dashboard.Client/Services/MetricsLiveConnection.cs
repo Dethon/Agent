@@ -64,6 +64,10 @@ public sealed class MetricsLiveConnection(
             return;
         }
 
+        // Pushes are held while catch-up replaces the event lists, then released against what the
+        // reload delivered: without the hold, an older snapshot erases a push that arrived first,
+        // and a push the snapshot already contains lands twice.
+        binder.HoldPushes();
         try
         {
             await catchUp.CatchUpAsync();
@@ -73,6 +77,10 @@ public sealed class MetricsLiveConnection(
             // The connection is live whether or not the reload worked, and every family keeps the
             // values it already had.
             logger.LogWarning(exception, "Metrics catch-up failed");
+        }
+        finally
+        {
+            await binder.ReleaseHeldPushesAsync();
         }
     }
 
