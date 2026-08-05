@@ -28,8 +28,13 @@ internal sealed class ConversationGroup(
     IMemoryRecallHook? memoryRecallHook,
     ILogger logger) : IAsyncDisposable
 {
-    // The outer token. Establishing the group runs on it rather than on the per-turn token,
-    // because a /cancel there would throw out of a stage nothing downstream can absorb.
+    // The outer token: it ends with the monitor, not with a turn. The two establishing stages
+    // that reach outside — minting the delivery targets and restoring the thread — run on it
+    // rather than on the per-turn token, so a /cancel arriving mid-establish lets them finish
+    // instead of leaving a conversation minted on one channel and unknown to the group, or a
+    // half-read thread. The turn is dropped all the same: the warmup does start on the turn
+    // token, so the wait on it raises the cancellation that RunTurnsSequentiallyAsync absorbs
+    // to end the group.
     private CancellationToken _groupCt;
 
     // The group token: the outer one linked with the thread context's, so a /cancel or /clear
