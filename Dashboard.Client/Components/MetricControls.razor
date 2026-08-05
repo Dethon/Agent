@@ -57,8 +57,11 @@
         _state = Family.Store.State;
         _sub = Family.Store.StateObservable.Subscribe(state =>
         {
-            _state = state;
-            InvokeAsync(StateHasChanged);
+            InvokeAsync(() =>
+            {
+                _state = state;
+                StateHasChanged();
+            });
         });
 
         await _session.InitializeAsync();

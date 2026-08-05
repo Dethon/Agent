@@ -45,8 +45,9 @@ public class MetricControlsSessionTests : IDisposable
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
+        var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore);
         _dataLoad = new DataLoadEffect(
-            _families, new OverviewFigures(api, _metricsStore, _healthStore));
+            _families, new OverviewFigures(api, _metricsStore, _healthStore), binder);
     }
 
     public void Dispose()

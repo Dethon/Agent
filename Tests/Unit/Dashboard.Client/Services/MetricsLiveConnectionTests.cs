@@ -49,7 +49,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
             _memoryStore, _latencyStore, _voiceStore);
         var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore);
         var overview = new OverviewFigures(api, _metricsStore, _healthStore);
-        _dataLoad = new DataLoadEffect(_families, overview);
+        _dataLoad = new DataLoadEffect(_families, overview, binder);
         _catchUp = new RecordingMetricsCatchUp(new MetricsCatchUp(_families, overview));
         _liveConnection = new MetricsLiveConnection(
             _hub, binder, _connectionStore, _catchUp, _dataLoad, _time,
@@ -281,6 +281,62 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _catchUp.Runs.ShouldBe(1);
     }
 
+    // The reconnect landed before the first load's outcome was known and ran the catch-up the skip
+    // was waiting to hear about. That settles the premise: the first load failing afterwards is an
+    // ordinary failed request, not a second missed catch-up.
+    [Fact]
+    public async Task LoadAsync_TheFirstLoadFailsAfterAReconnectAlreadyCaughtUp_DoesNotCatchUpAgain()
+    {
+        await ConnectAsync();
+
+        await _hub.RaiseReconnectingAsync(null);
+        await _hub.RaiseReconnectedAsync();
+
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+
+        _catchUp.Runs.ShouldBe(1);
+    }
+
+    // The page-load path replaces the same lists a catch-up does, but only catch-up used to hold
+    // pushes against it. A push landing while an ordinary load is still in flight was applied
+    // straight to the store and then erased when the load's older snapshot replaced the list.
+    [Fact]
+    public async Task LoadAsync_APushArrivesWhileTheLoadIsInFlight_TheStaleSnapshotCannotEraseIt()
+    {
+        await ConnectAsync();
+        StageEveryRequestExceptVoiceEvents();
+        // The only request left unanswered by StageEveryRequestExceptVoiceEvents, so this is the
+        // one response the delay lands on.
+        _handler.EnqueueResponse(new List<VoiceEventPayload>(), TimeSpan.FromMilliseconds(30));
+
+        var loading = _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+        await RaiseVoiceAsync("pantry-01");
+        await loading;
+
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "pantry-01");
+    }
+
+    // Every endpoint a page load reaches for except the voice events list, which the caller answers
+    // separately — usually delayed, so a push can land while that one request is still in flight.
+    private void StageEveryRequestExceptVoiceEvents()
+    {
+        _handler.AnswerFor("api/metrics/summary", Summary(inputTokens: 0));
+        _handler.AnswerFor("api/metrics/health", new List<ServiceHealthResponse>());
+
+        new[]
+        {
+            "api/metrics/tokens?", "api/metrics/tools?", "api/metrics/errors/range?",
+            "api/metrics/schedules?", "api/metrics/memory/recall?", "api/metrics/memory/extraction?",
+            "api/metrics/memory/dreaming?", "api/metrics/latency?", "api/metrics/latency/trend?",
+        }.ToList().ForEach(fragment => _handler.AnswerFor(fragment, Array.Empty<object>()));
+
+        new[]
+        {
+            "tokens/by/", "tools/by/", "errors/by/", "schedules/by/",
+            "memory/by/", "latency/by/", "voice/by/",
+        }.ToList().ForEach(fragment => _handler.AnswerFor(fragment, new Dictionary<string, decimal>()));
+    }
+
     [Fact]
     public async Task Reconnected_AfterAnInterruption_CatchesUpOnce()
     {
@@ -451,6 +507,47 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _healthStore.State.Services.ShouldContain(s => s.Service == "agent" && s.IsHealthy);
     }
 
+    // A close with no Reconnecting before it: the server disallowed automatic reconnect, or the
+    // transport was never configured for it. The comment that nothing needs to handle Closed used
+    // to be the whole defense; without a restart the module sat dead while the indicator still read
+    // Live.
+    [Fact]
+    public async Task Closed_NoReconnectWasAttempted_TheModuleRestartsAndBecomesLiveAgain()
+    {
+        await ConnectAsync();
+        var attemptsBeforeClose = _hub.StartAttempts;
+
+        await FinishAsync(_hub.RaiseClosedAsync(new InvalidOperationException("server closed the connection")));
+
+        _hub.StartAttempts.ShouldBeGreaterThan(attemptsBeforeClose);
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
+        _catchUp.Runs.ShouldBe(1);
+        await RaiseVoiceAsync("kitchen-01");
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
+    }
+
+    // The same push-survival guarantee a reconnect gives applies to a close-triggered restart: a
+    // push landing while the module is starting the hub back up cannot be erased by the catch-up
+    // snapshot that follows it.
+    [Fact]
+    public async Task Closed_APushArrivesWhileRestarting_TheOlderSnapshotCannotEraseIt()
+    {
+        await ConnectAsync();
+        _handler.AnswerFor("api/metrics/voice?", new List<VoiceEventPayload>
+        {
+            new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
+        });
+        _catchUp.Gate = new TaskCompletionSource();
+
+        var closed = _hub.RaiseClosedAsync(new InvalidOperationException("server closed the connection"));
+        await RaiseVoiceAsync("pantry-01");
+        _catchUp.Gate.SetResult();
+        await FinishAsync(closed);
+
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "pantry-01");
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
+    }
+
     [Fact]
     public async Task DisposeAsync_AfterConnecting_APushAfterwardsChangesNothing()
     {
@@ -477,6 +574,22 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _catchUp.Runs.ShouldBe(0);
         _connectionStore.State.Epoch.ShouldBe(1);
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
+    }
+
+    // The delay between retries used to run out its full schedule even after disposal, because
+    // nothing tied it to the module going away. Wiring the disposal token into it is what lets
+    // dispose return without the fake clock ever being advanced here.
+    [Fact]
+    public async Task DisposeAsync_DuringTheRetryDelay_TheDelayIsCancelledInsteadOfWaitedOut()
+    {
+        _hub.FailedStartsRemaining = 100;
+        var connecting = _liveConnection.ConnectAsync();
+        await WaitForAsync(() => _hub.StartAttempts >= 1);
+
+        await _liveConnection.DisposeAsync();
+
+        var settled = await Task.WhenAny(connecting, Task.Delay(TimeSpan.FromSeconds(5)));
+        settled.ShouldBeSameAs(connecting);
     }
 
     [Fact]
