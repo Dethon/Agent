@@ -279,12 +279,14 @@ public class MediaLibraryFileSystemTests : IDisposable
     // The other half of the same boundary. A payload file inside a live download is not "above" the
     // download directory, so the ancestor rule never saw it: moving it out left qBittorrent
     // rewriting the file it still owns and the moved copy orphaned. And a move whose destination
-    // lands inside the directory puts the file where delete-as-cancel destroys it.
+    // lands inside the directory puts the file where delete-as-cancel destroys it. Each end gets
+    // the reason belonging to that end, so the agent is told which one offended.
     [Theory]
-    [InlineData("downloads/42/payload.mkv", "Movies/payload.mkv")]
-    [InlineData("Movies/payload.mkv", "downloads/42/payload.mkv")]
-    [InlineData("Movies/payload.mkv", "downloads/42")]
-    public async Task Move_AcrossALiveDownloadsBoundary_IsRefused(string source, string destination)
+    [InlineData("downloads/42/payload.mkv", "Movies/payload.mkv", "moving across that boundary")]
+    [InlineData("downloads/42/status.json", "Movies/status.json", "moving across that boundary")]
+    [InlineData("Movies/payload.mkv", "downloads/42/payload.mkv", "lands inside")]
+    [InlineData("Movies/payload.mkv", "downloads/42", "lands inside")]
+    public async Task Move_AcrossALiveDownloadsBoundary_IsRefused(string source, string destination, string reason)
     {
         _client.Add(Item(42));
 
@@ -292,7 +294,23 @@ public class MediaLibraryFileSystemTests : IDisposable
 
         var error = move.ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error;
         error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
-        error.Message.ShouldContain("active download");
+        error.Message.ShouldContain(reason);
+    }
+
+    // Both ends offend; the source is the one named, because that is the end the agent has to stop
+    // asking about.
+    [Fact]
+    public async Task Move_BetweenTwoLiveDownloads_NamesTheSource()
+    {
+        _client.Add(Item(42));
+        _client.Add(Item(43));
+
+        var move = await _sut.MoveAsync("downloads/42/payload.mkv", "downloads/43/payload.mkv",
+            CancellationToken.None);
+
+        var error = move.ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error;
+        error.Message.ShouldContain("downloads/42/payload.mkv");
+        error.Message.ShouldContain("moving across that boundary");
     }
 
     [Fact]
@@ -303,6 +321,19 @@ public class MediaLibraryFileSystemTests : IDisposable
         (await _sut.MoveAsync("Movies/old", "Movies/new", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
         (await _sut.MoveAsync("downloads/7", "Movies/7", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
+    }
+
+    // A leftover is an ordinary file wherever it sits, so moving one is an ordinary move.
+    [Theory]
+    [InlineData("downloads/99")]
+    [InlineData("downloads/99/status.json")]
+    public async Task Move_ALeftover_StillMoves(string source)
+    {
+        _client.Add(Item(42));
+        await WriteLeftoverStatus();
+
+        (await _sut.MoveAsync(source, "Movies/archived", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
     }
 

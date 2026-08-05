@@ -14,7 +14,8 @@ public enum DownloadsIntent
 {
     TextRead,
     ByteRead,
-    Land
+    Land,
+    MoveOut
 }
 
 // Overlays download semantics on the media filesystem's downloads/ subtree: every active
@@ -89,6 +90,15 @@ public sealed class DownloadsOverlay(
                 + "removed when the download is cancelled.",
                 "Wait for the download to finish, or put the file somewhere outside "
                 + $"{MediaFilesystem.DownloadsSubdir}/<id>."),
+            // The way out of the boundary: the download keeps writing and recreates what it lost,
+            // so the moved copy is orphaned the moment it lands.
+            DownloadsIntent.MoveOut when await TouchesActiveDownloadAsync(path, ct) => Error(
+                ToolError.Codes.UnsupportedOperation,
+                $"'{path}' belongs to an active download; moving across that boundary would leave "
+                + "the download writing into files the move cannot follow, and anything moved "
+                + "inside is removed when the download is cancelled.",
+                $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
+                + "for it to finish, then move the files."),
             _ => null
         };
     }

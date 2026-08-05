@@ -94,47 +94,20 @@ public sealed class MediaLibraryDiskFileSystem(
     public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
         await downloads.TryDeleteAsync(path, ct) ?? await base.DeleteAsync(path, ct);
 
-    // Delete is the download's cancel, so it is left to the overlay; move has no such meaning and a
-    // live download whose directory moved keeps writing into one qBittorrent recreates. Both ends of
-    // the move are asked, because the boundary is crossed just as badly on the way in.
+    // A move has two ends, so it asks the rule twice — once per end, with the intent belonging to
+    // that end. The source is asked first, so a move that offends at both ends names the source.
     public override async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
-        Refuse<FsMoveResult>(sourcePath, destinationPath)
-        ?? await RefuseActiveDownloadAsync<FsMoveResult>(sourcePath, destinationPath, ct)
+        await RefuseAsync<FsMoveResult>(DownloadsIntent.MoveOut, sourcePath, ct)
+        ?? await RefuseAsync<FsMoveResult>(DownloadsIntent.Land, destinationPath, ct)
         ?? await base.MoveAsync(sourcePath, destinationPath, ct);
-
-    // A live download owns its directory and everything in it. Moving any of that out leaves the
-    // download rewriting files the moved copy no longer tracks; moving anything in puts it where
-    // delete-as-cancel destroys it. Either side of the move naming such a path is the refusal.
-    private async Task<FsResult<T>?> RefuseActiveDownloadAsync<T>(
-        string sourcePath, string destinationPath, CancellationToken ct) where T : class
-    {
-        var offender =
-            await downloads.TouchesActiveDownloadAsync(sourcePath, ct) ? sourcePath
-            : await downloads.TouchesActiveDownloadAsync(destinationPath, ct) ? destinationPath
-            : null;
-
-        return offender is null ? null : new FsResult<T>.Err(ActiveDownloadRefusal(offender));
-    }
 
     // The cross-mount half of the same refusal. A move between two mounts never reaches MoveAsync —
     // it streams the payload out and then deletes the source, and on this mount that delete is the
-    // download's cancel — so VfsMoveTool asks each end about its own path first, and the answer here
-    // is the envelope the same-mount refusal already returns.
+    // download's cancel — so VfsMoveTool asks each end about its own path first, with no way to say
+    // which end it is holding: one intent answers for both, and the move-out reason is the one that
+    // explains the cancel.
     public async Task<ToolErrorResult?> RefuseMoveAsync(string relativePath, CancellationToken ct) =>
-        await downloads.TouchesActiveDownloadAsync(relativePath, ct)
-            ? ActiveDownloadRefusal(relativePath)
-            : null;
-
-    private static ToolErrorResult ActiveDownloadRefusal(string offender) => new()
-    {
-        ErrorCode = ToolError.Codes.UnsupportedOperation,
-        Message = $"'{offender}' belongs to an active download; moving across that boundary would "
-                  + "leave the download writing into files the move cannot follow, and anything moved "
-                  + "inside is removed when the download is cancelled.",
-        Retryable = false,
-        Hint = $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
-               + "for it to finish, then move the files."
-    };
+        await downloads.RefuseAsync(DownloadsIntent.MoveOut, relativePath, ct);
 
     // Copy and blob-write only land content, so unlike move only the destination side of the
     // boundary is asked: the way out is harmless (the source keeps its file), but whatever lands
