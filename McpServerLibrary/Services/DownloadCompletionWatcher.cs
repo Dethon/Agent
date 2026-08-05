@@ -14,6 +14,8 @@ public sealed class DownloadCompletionWatcher(
     McpSettings settings,
     ILogger<DownloadCompletionWatcher> logger) : BackgroundService
 {
+    private bool _warnedUndelivered;
+
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         var interval = TimeSpan.FromSeconds(Math.Max(1, settings.CompletionPollSeconds));
@@ -58,14 +60,39 @@ public sealed class DownloadCompletionWatcher(
 
             if (!await emitter.EmitAsync(DownloadCompletionPlanner.BuildPayload(entry), ct))
             {
-                logger.LogWarning(
-                    "No active session received completion for download {DownloadId}; will retry", entry.DownloadId);
+                WarnUndeliveredOncePerOutage(entry.DownloadId);
                 continue;
             }
 
+            NoteDeliveryResumed();
             await store.RemoveAsync(entry.DownloadId, ct);
             logger.LogInformation(
                 "Emitted completion for download {DownloadId} ('{Title}')", entry.DownloadId, entry.Title);
+        }
+    }
+
+    // One warning per outage rather than one per pending download per tick: an overnight
+    // disconnection with a single completed download used to produce thousands of identical
+    // lines. The retry semantics are untouched — the routing entry stays either way.
+    private void WarnUndeliveredOncePerOutage(int downloadId)
+    {
+        if (_warnedUndelivered)
+        {
+            return;
+        }
+
+        _warnedUndelivered = true;
+        logger.LogWarning(
+            "No active session received completion for download {DownloadId}; retrying pending completions and muting this warning until delivery resumes",
+            downloadId);
+    }
+
+    private void NoteDeliveryResumed()
+    {
+        if (_warnedUndelivered)
+        {
+            _warnedUndelivered = false;
+            logger.LogInformation("Completion delivery resumed; an active session is receiving alerts again");
         }
     }
 }

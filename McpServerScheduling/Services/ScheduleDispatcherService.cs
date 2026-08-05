@@ -14,6 +14,8 @@ public sealed class ScheduleDispatcherService(
     ILogger<ScheduleDispatcherService> logger,
     TimeProvider timeProvider) : BackgroundService
 {
+    private bool _warnedUndelivered;
+
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         var interval = ResolveInterval(settings.DispatchIntervalSeconds);
@@ -57,11 +59,11 @@ public sealed class ScheduleDispatcherService(
             // successful emit can double-fire — at-least-once is the safer default here.)
             if (!await emitter.EmitAsync(plan.Payload, ct))
             {
-                logger.LogWarning(
-                    "No active session received schedule {ScheduleId}; leaving it due for retry", schedule.Id);
+                WarnUndeliveredOncePerOutage(schedule.Id);
                 continue;
             }
 
+            NoteDeliveryResumed();
             if (plan.DeleteAfterFire)
             {
                 await store.DeleteAsync(schedule.Id, ct);
@@ -72,6 +74,31 @@ public sealed class ScheduleDispatcherService(
             }
 
             logger.LogInformation("Fired schedule {ScheduleId} for agent {AgentId}", schedule.Id, schedule.AgentId);
+        }
+    }
+
+    // One warning per outage rather than one per due schedule per tick: an overnight
+    // disconnection with a single due schedule used to produce thousands of identical lines.
+    // The retry semantics are untouched — the schedule stays due either way.
+    private void WarnUndeliveredOncePerOutage(string scheduleId)
+    {
+        if (_warnedUndelivered)
+        {
+            return;
+        }
+
+        _warnedUndelivered = true;
+        logger.LogWarning(
+            "No active session received schedule {ScheduleId}; leaving due schedules for retry and muting this warning until delivery resumes",
+            scheduleId);
+    }
+
+    private void NoteDeliveryResumed()
+    {
+        if (_warnedUndelivered)
+        {
+            _warnedUndelivered = false;
+            logger.LogInformation("Schedule delivery resumed; an active session is receiving fires again");
         }
     }
 }

@@ -3,6 +3,7 @@ using Domain.DTOs.Channel;
 using Mcp.Hosting;
 using McpServerLibrary.Services;
 using McpServerLibrary.Settings;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.Domain.Downloads.Vfs;
@@ -56,6 +57,45 @@ public class DownloadCompletionWatcherTests
         routing.Entries.Count.ShouldBe(1);
     }
 
+    // One warning per outage, not one per pending download per tick: an overnight disconnection
+    // with a single completed download used to produce thousands of identical lines. The retry
+    // semantics are untouched — the routing entry stays either way.
+    [Fact]
+    public async Task Sweep_AgentStaysDownAcrossTicks_WarnsOnce()
+    {
+        var (client, routing, emitter) = Build(live: false);
+        client.Add(DownloadFakes.Item(42, DownloadState.Completed));
+        routing.Entries.Add(Routing(42));
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var watcher = Watcher(client, routing, emitter, logs);
+
+        await watcher.SweepAsync(CancellationToken.None);
+        await watcher.SweepAsync(CancellationToken.None);
+        await watcher.SweepAsync(CancellationToken.None);
+
+        logs.Messages.ShouldHaveSingleItem().ShouldContain("until delivery resumes");
+    }
+
+    // The other half of the muted warning: exactly one line says the outage ended, and a healthy
+    // watcher never mentions it at all.
+    [Fact]
+    public async Task Sweep_DeliveryResumes_SaysSoOnce()
+    {
+        var (client, routing, emitter) = Build(live: false);
+        client.Add(DownloadFakes.Item(42, DownloadState.Completed));
+        client.Add(DownloadFakes.Item(43, DownloadState.Completed));
+        routing.Entries.Add(Routing(42));
+        routing.Entries.Add(Routing(43));
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Information);
+        var watcher = Watcher(client, routing, emitter, logs);
+        await watcher.SweepAsync(CancellationToken.None);
+
+        emitter.GoLive();
+        await watcher.SweepAsync(CancellationToken.None);
+
+        logs.Messages.Count(m => m.Contains("resumed")).ShouldBe(1);
+    }
+
     [Fact]
     public async Task Sweep_VanishedTorrent_DropsEntrySilently()
     {
@@ -80,8 +120,18 @@ public class DownloadCompletionWatcherTests
     };
 
     private static DownloadCompletionWatcher Watcher(
-        DownloadFakes.FakeDownloadClient client, DownloadFakes.FakeRoutingStore routing, ChannelInboxProbe emitter) =>
-        new(routing, client, emitter.Emitter, Settings(), NullLogger<DownloadCompletionWatcher>.Instance);
+        DownloadFakes.FakeDownloadClient client,
+        DownloadFakes.FakeRoutingStore routing,
+        ChannelInboxProbe emitter,
+        CapturingLoggerProvider? logs = null) =>
+        new(
+            routing,
+            client,
+            emitter.Emitter,
+            Settings(),
+            logs is null
+                ? NullLogger<DownloadCompletionWatcher>.Instance
+                : new LoggerFactory([logs]).CreateLogger<DownloadCompletionWatcher>());
 
     private static McpSettings Settings() => new()
     {

@@ -29,8 +29,7 @@ internal sealed class ChannelInboxProbe
         // as a delivery failure.
         if (live)
         {
-            Collect(_inbox.ReceiveAsync(_subscriberId, TimeSpan.Zero, CancellationToken.None)
-                .GetAwaiter().GetResult());
+            GoLive();
         }
 
         Emitter = new ChannelNotificationEmitter(
@@ -38,6 +37,12 @@ internal sealed class ChannelInboxProbe
     }
 
     public ChannelNotificationEmitter Emitter { get; }
+
+    // The agent coming online mid-test, expressed the way production expresses it: a first poll
+    // registers the subscriber, and every emit after it reports delivery.
+    public void GoLive() =>
+        Collect(_inbox.ReceiveAsync(_subscriberId, TimeSpan.Zero, CancellationToken.None)
+            .GetAwaiter().GetResult());
 
     // A method rather than a property: it drains the inbox, so it is not free and not idempotent
     // to call twice in the same expression.

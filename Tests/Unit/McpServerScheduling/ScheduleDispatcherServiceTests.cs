@@ -90,6 +90,41 @@ public class ScheduleDispatcherServiceTests
         probe.Received().ShouldBeEmpty();
     }
 
+    // One warning per outage, not one per schedule per tick: an overnight disconnection with a
+    // single due schedule used to produce thousands of identical lines. The retry semantics are
+    // untouched — the schedule stays due either way.
+    [Fact]
+    public async Task DispatchDueAsync_AgentStaysDownAcrossTicks_WarnsOnce()
+    {
+        var store = StoreWithDue(OneShot());
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var dispatcher = BuildDispatcher(store.Object, Probe(delivers: false), logs: logs);
+
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        logs.Messages.ShouldHaveSingleItem().ShouldContain("until delivery resumes");
+    }
+
+    // The other half of the muted warning: an operator who saw the outage line gets exactly one
+    // line saying it ended, and a healthy dispatcher never mentions it at all.
+    [Fact]
+    public async Task DispatchDueAsync_DeliveryResumes_SaysSoOnce()
+    {
+        var store = StoreWithDue(OneShot());
+        var probe = Probe(delivers: false);
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Information);
+        var dispatcher = BuildDispatcher(store.Object, probe, logs: logs);
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        probe.GoLive();
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        logs.Messages.Count(m => m.Contains("resumed")).ShouldBe(1);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-5)]
@@ -121,12 +156,18 @@ public class ScheduleDispatcherServiceTests
         new("scheduling", DeliveryPolicy.GateOnLive, live: delivers);
 
     private static ScheduleDispatcherService BuildDispatcher(
-        IScheduleStore store, ChannelInboxProbe emitter, ICronValidator? cron = null, TimeProvider? clock = null) =>
+        IScheduleStore store,
+        ChannelInboxProbe emitter,
+        ICronValidator? cron = null,
+        TimeProvider? clock = null,
+        CapturingLoggerProvider? logs = null) =>
         new(
             store,
             cron ?? new Mock<ICronValidator>().Object,
             emitter.Emitter,
             new SchedulingSettings { RedisConnectionString = "x", DefaultDeliverTo = ["signalr"] },
-            new Mock<ILogger<ScheduleDispatcherService>>().Object,
+            logs is null
+                ? new Mock<ILogger<ScheduleDispatcherService>>().Object
+                : new LoggerFactory([logs]).CreateLogger<ScheduleDispatcherService>(),
             clock ?? TimeProvider.System);
 }
