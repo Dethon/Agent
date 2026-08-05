@@ -389,6 +389,50 @@ public class ChatMonitorConversationGroupTests
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
+    [Fact]
+    public async Task Group_MessagePumpFaults_LogsAndCompletesTheGroup()
+    {
+        // The pump folds its own failures into the pending channel, and reading them out
+        // rethrows past both per-turn catches and out of RunAsync, where the stream merge
+        // swallows it and the group is left registered and unread. A wire message that
+        // deserialized with no content is enough to get there: parsing it for a command throws.
+        var logger = new Mock<ILogger<ChatMonitor>>();
+        var channel = new FakeChannelConnection();
+        var threadResolver = new ChatThreadResolver();
+        var agentKey = new AgentKey("conv-1");
+        await using var group = new ConversationGroup(
+            agentKey,
+            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
+            new DeliveryTargetResolver([channel], logger.Object),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+        var grouping = new FakeGrouping(agentKey);
+        grouping.Write((channel, MonitorTestMocks.CreateChannelMessage() with { Content = null! }));
+        var completed = false;
+
+        // The grouping is never completed by the producer: ending it is the group's own job.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await foreach (var _ in group.RunAsync(
+            grouping,
+            () =>
+            {
+                completed = true;
+                grouping.Complete();
+            },
+            cts.Token))
+        { }
+
+        completed.ShouldBeTrue();
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<Exception>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
     // Fails the nth recall, so a test can pick which turn's setup goes down.
     private sealed class FailingRecallHook(int failingCall, Exception exception) : IMemoryRecallHook
     {

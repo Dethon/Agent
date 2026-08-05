@@ -153,10 +153,39 @@ internal sealed class ConversationGroup(
         using var pumpCts = CancellationTokenSource.CreateLinkedTokenSource(_turnCt);
         var reader = DispatchCommandsAndQueueTurnsAsync(messages, pending.Writer, pumpCts.Token);
 
+        // Enumerated by hand rather than with await foreach, because reading is itself a
+        // failure site: the pump folds anything it throws — a wire message that deserialized
+        // with no content, say — into the channel, and it comes back out here. Out of an
+        // await foreach that fault would pass both per-turn catches and leave RunAsync, where
+        // the monitor's stream merge swallows it and the group stays registered and unread. It
+        // ends the group instead, exactly like a turn that fails to set up.
+        var queue = pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt).GetAsyncEnumerator();
+
         try
         {
-            await foreach (var x in pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt))
+            while (true)
             {
+                bool hasTurn;
+                try
+                {
+                    hasTurn = await queue.MoveNextAsync();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex,
+                        "The message pump failed for conversation {ConversationId} and agent {AgentId}; ending the group",
+                        agentKey.ConversationId, agentKey.AgentId);
+                    CancelOwnContext();
+                    await ObserveAbandonedWarmupAsync();
+                    break;
+                }
+
+                if (!hasTurn)
+                {
+                    break;
+                }
+
+                var x = queue.Current;
                 // The reader hands over items it already buffered even after the token fired,
                 // so a turn queued behind the one a /clear or /cancel just ended would start
                 // against the torn-down group. It is dropped instead, and acknowledged below.
@@ -207,6 +236,7 @@ internal sealed class ConversationGroup(
         }
         finally
         {
+            await queue.DisposeAsync();
             await pumpCts.CancelAsync();
             await reader;
             // Anything still queued when the group ends is dropped by that end — a /clear or
