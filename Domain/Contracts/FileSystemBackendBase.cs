@@ -190,14 +190,11 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
 
     // Applies the two glob conventions the tool advertises to the model and every mount must
     // honour: basePath scopes the pattern, and a trailing slash asks for directories only.
-    // Candidates handed to the returned matcher are mount-root-relative, without a leading slash.
-    protected static (bool DirsOnly, Func<string, bool> Matches) GlobPrologue(string? basePath, string pattern)
-    {
-        var prefix = string.IsNullOrEmpty(basePath?.Trim('/')) ? string.Empty : basePath.Trim('/') + "/";
-        var dirsOnly = pattern.EndsWith('/');
-        var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
-        return (dirsOnly, GlobRegex.CompileMatcher(prefix + effectivePattern));
-    }
+    // Candidates handed to the scope's matcher are mount-root-relative, without a leading slash.
+    // A pattern that cannot be compiled (the brace-expansion cap) answers the invalid-argument
+    // envelope, so no backend leaks a raw exception through fs_glob.
+    protected static FsResult<GlobScope> GlobPrologue(string? basePath, string pattern) =>
+        GlobScope.Create(basePath, pattern);
 
     protected FsResult<Regex> CompileSearchRegex(string query, bool regex) =>
         SearchRegex.Compile(query, regex, SearchMatchTimeout);

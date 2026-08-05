@@ -440,6 +440,20 @@ public class ScheduleFileSystemJourneyTests
             .ShouldBeOfType<FsResult<FsExecResult>.Err>();
     }
 
+    // A non-disk mount reaches the brace-expansion cap through the shared prologue; the caller
+    // gets the invalid-argument envelope, not a raw ArgumentException.
+    [Fact]
+    public async Task Glob_TooManyBraceAlternatives_ReturnsInvalidArgumentEnvelope()
+    {
+        var fs = Build();
+        var group = "{a,b,c,d,e,f,g,h,i}";
+
+        var result = await fs.GlobAsync("", string.Concat(group, group, group), CancellationToken.None);
+
+        result.TryGetValue(out _, out var error).ShouldBeFalse();
+        error!.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+    }
+
     // Build() freezes the clock at 2026-01-01; run_now.sh must stamp that instant, not the wall clock.
     [Fact]
     public async Task Exec_RunNow_StampsNextRunAtFromTheInjectedClock()

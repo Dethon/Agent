@@ -68,8 +68,13 @@ public sealed class ScheduleFileSystem(
     // directories only, and directory results are marked with a trailing slash.
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
+        if (!GlobPrologue(basePath, pattern).TryGetValue(out var scope, out var invalidPattern))
+        {
+            return new FsResult<FsGlobResult>.Err(invalidPattern);
+        }
+
+        var (dirsOnly, matches) = scope;
         var all = await store.ListAsync(ct);
-        var (dirsOnly, matches) = GlobPrologue(basePath, pattern);
 
         var dirs = ScheduleTree.Directories(agents, all).Where(matches).Select(p => $"/{p}/");
         if (dirsOnly)

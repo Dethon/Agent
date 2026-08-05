@@ -52,9 +52,13 @@ public sealed partial class HaFileSystem(
     // Glob is uncapped: the result set is bounded by the home's entity count.
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
+        if (!GlobPrologue(basePath, pattern).TryGetValue(out var scope, out var invalidPattern))
+        {
+            return new FsResult<FsGlobResult>.Err(invalidPattern);
+        }
+
         var catalog = await catalogProvider.GetAsync(ct);
-        var hits = HaTree.Glob(catalog, basePath, pattern);
-        var entries = hits.ToList();
+        var entries = HaTree.Glob(catalog, scope);
         return new FsResult<FsGlobResult>.Ok(new FsGlobResult
         {
             Entries = entries,

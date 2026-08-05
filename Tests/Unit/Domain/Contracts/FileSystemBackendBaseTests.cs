@@ -16,7 +16,7 @@ public class FileSystemBackendBaseTests
 
         public override string DescribeMount => "A bare mount that implements nothing.";
 
-        public (bool DirsOnly, Func<string, bool> Matches) Prologue(string? basePath, string pattern) =>
+        public FsResult<GlobScope> Prologue(string? basePath, string pattern) =>
             GlobPrologue(basePath, pattern);
 
         public FsResult<Regex> Compile(string query, bool regex) =>
@@ -85,7 +85,8 @@ public class FileSystemBackendBaseTests
     [Fact]
     public void GlobPrologue_BasePath_ScopesThePattern()
     {
-        var (dirsOnly, matches) = _bare.Prologue("/docs", "*.md");
+        var (dirsOnly, matches) = _bare.Prologue("/docs", "*.md")
+            .ShouldBeOfType<FsResult<GlobScope>.Ok>().Value;
 
         dirsOnly.ShouldBeFalse();
         matches("docs/notes.md").ShouldBeTrue();
@@ -95,10 +96,25 @@ public class FileSystemBackendBaseTests
     [Fact]
     public void GlobPrologue_TrailingSlash_AsksForDirectoriesOnly()
     {
-        var (dirsOnly, matches) = _bare.Prologue(null, "*/");
+        var (dirsOnly, matches) = _bare.Prologue(null, "*/")
+            .ShouldBeOfType<FsResult<GlobScope>.Ok>().Value;
 
         dirsOnly.ShouldBeTrue();
         matches("docs").ShouldBeTrue();
+    }
+
+    // The brace-expansion cap used to escape as a raw ArgumentException; only the disk glob caught
+    // it. The prologue answers the standard envelope so every mount reports the pattern as invalid.
+    [Fact]
+    public void GlobPrologue_TooManyBraceAlternatives_ReturnsInvalidArgument()
+    {
+        var group = "{a,b,c,d,e,f,g,h,i}";
+
+        var result = _bare.Prologue(null, string.Concat(group, group, group));
+
+        result.TryGetValue(out _, out var error).ShouldBeFalse();
+        error!.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+        error.Message.ShouldContain("brace");
     }
 
     [Fact]

@@ -74,8 +74,13 @@ public sealed class TimerFileSystem(
 
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
+        if (!GlobPrologue(basePath, pattern).TryGetValue(out var scope, out var invalidPattern))
+        {
+            return new FsResult<FsGlobResult>.Err(invalidPattern);
+        }
+
+        var (dirsOnly, matches) = scope;
         var all = await store.ListAsync(ct);
-        var (dirsOnly, matches) = GlobPrologue(basePath, pattern);
 
         var dirs = all.Select(t => t.Id).Where(matches).Select(id => $"/{id}/");
         if (dirsOnly)

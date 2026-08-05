@@ -293,7 +293,12 @@ public sealed class PrinterQueueFileSystem(
     // directories to list and nothing below the root to scope to.
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
-        var (dirsOnly, matches) = GlobPrologue(basePath, pattern);
+        if (!GlobPrologue(basePath, pattern).TryGetValue(out var scope, out var invalidPattern))
+        {
+            return new FsResult<FsGlobResult>.Err(invalidPattern);
+        }
+
+        var (dirsOnly, matches) = scope;
         if (dirsOnly)
         {
             return Glob([]);

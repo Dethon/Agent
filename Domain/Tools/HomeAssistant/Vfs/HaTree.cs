@@ -54,20 +54,15 @@ public static class HaTree
         }
     }
 
-    public static IReadOnlyList<string> Glob(HaCatalog catalog, string basePath, string pattern)
+    public static IReadOnlyList<string> Glob(HaCatalog catalog, GlobScope scope)
     {
-        var dirsOnly = pattern.EndsWith('/');
-        var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
-        var prefix = string.IsNullOrEmpty(basePath) ? string.Empty : basePath.Trim('/') + "/";
-        var matches = GlobRegex.CompileMatcher(prefix + effectivePattern);
-
-        var dirs = Directories(catalog).Where(matches).Select(p => p + "/");
-        if (dirsOnly)
+        var dirs = Directories(catalog).Where(scope.Matches).Select(p => p + "/");
+        if (scope.DirsOnly)
         {
             return dirs.OrderBy(p => p, StringComparer.Ordinal).ToList();
         }
 
-        var files = Files(catalog).Where(matches);
+        var files = Files(catalog).Where(scope.Matches);
         return dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList();
     }
 }
