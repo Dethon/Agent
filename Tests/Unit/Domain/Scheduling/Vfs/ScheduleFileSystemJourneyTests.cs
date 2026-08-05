@@ -440,6 +440,19 @@ public class ScheduleFileSystemJourneyTests
             .ShouldBeOfType<FsResult<FsExecResult>.Err>();
     }
 
+    // Build() freezes the clock at 2026-01-01; run_now.sh must stamp that instant, not the wall clock.
+    [Fact]
+    public async Task Exec_RunNow_StampsNextRunAtFromTheInjectedClock()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule(id: "n", prompt: "p", nextRunAt: DateTime.UtcNow.AddDays(1)));
+        var fs = Build(store);
+
+        await fs.ExecAsync("/jonas/n", "run_now.sh", null, CancellationToken.None);
+
+        store.Items["n"].NextRunAt.ShouldBe(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+    }
+
     [Fact]
     public async Task Create_BareRunAt_InDstGap_ReturnsInvalidArgumentError()
     {

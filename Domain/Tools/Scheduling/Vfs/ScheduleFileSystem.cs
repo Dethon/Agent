@@ -397,7 +397,7 @@ public sealed class ScheduleFileSystem(
 
         // Queue the schedule for the dispatcher's next tick by setting NextRunAt=now. LastRunAt is left
         // untouched (null = don't change it); the dispatcher stamps the real fire-time when it actually runs.
-        await store.UpdateLastRunAsync(schedule.Id, null, DateTime.UtcNow, ct);
+        await store.UpdateLastRunAsync(schedule.Id, null, timeProvider.GetUtcNow().UtcDateTime, ct);
         return Exec($"queued '{schedule.Id}' to run now\n", "", 0, path);
     }
 
