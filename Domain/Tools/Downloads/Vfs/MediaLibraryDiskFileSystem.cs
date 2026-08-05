@@ -51,8 +51,18 @@ public sealed class MediaLibraryDiskFileSystem(
             return disk;
         }
 
-        return new FsResult<FsGlobResult>.Ok(
-            Merge(entries, await downloads.GlobEntriesAsync(basePath, pattern, ct)));
+        // The overlay matches mount-relative candidates, so it must see the pattern the disk matcher
+        // ran, not the caller's absolute spelling of it — no candidate ever carries the root prefix,
+        // so an absolute pattern used to list the real files and omit every virtual status.json.
+        // Separators are normalized because virtual paths are always '/'-separated. A pattern
+        // outside the glob root matched nothing on disk and owns no download either.
+        var scoped = GlobFilesTool.ToMatcherRelative(
+            GlobFilesTool.MatcherRoot(root.BaseLibraryPath, basePath), pattern);
+
+        return scoped is null
+            ? disk
+            : new FsResult<FsGlobResult>.Ok(Merge(
+                entries, await downloads.GlobEntriesAsync(basePath, scoped.Replace('\\', '/'), ct)));
     }
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>

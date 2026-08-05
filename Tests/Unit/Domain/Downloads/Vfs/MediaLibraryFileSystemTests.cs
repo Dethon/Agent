@@ -108,6 +108,37 @@ public class MediaLibraryFileSystemTests : IDisposable
             .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
     }
 
+    // The disk glob relativizes an absolute pattern against the root it matches from; the overlay
+    // used to match the caller's original spelling, whose leading root no mount-relative candidate
+    // can ever have. So an absolute pattern listed the real files and silently omitted every
+    // virtual status.json — the one thing on this mount that only the overlay knows about.
+    [Theory]
+    [InlineData("downloads/*/status.json", "downloads/42/status.json")]
+    [InlineData("downloads/*", "downloads/42/")]
+    public async Task Glob_WithAnAbsolutePattern_StillListsWhatTheOverlayOwns(string relative, string expected)
+    {
+        _client.Add(Item(42));
+        _disk.GlobResults.Add(Path.Combine(_libraryRoot, "downloads", "42", "payload.mkv"));
+
+        var absolute = Path.Combine(_libraryRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+        var glob = (await _sut.GlobAsync("", absolute, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldContain(expected);
+        glob.Entries.ShouldContain("downloads/42/payload.mkv");
+    }
+
+    [Fact]
+    public async Task Glob_WithARelativePattern_IsUnchanged()
+    {
+        _client.Add(Item(42));
+
+        var glob = (await _sut.GlobAsync("downloads", "*/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldContain("downloads/42/status.json");
+    }
+
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> Chunks(string content)
     {
         await Task.CompletedTask;
