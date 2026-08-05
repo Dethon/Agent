@@ -21,13 +21,15 @@ public sealed class ReconnectionEffect : IDisposable
         IChatSessionService sessionService,
         IStreamResumeService streamResumeService,
         Dispatcher dispatcher,
-        ITopicService topicService)
+        ITopicService topicService,
+        ILogger<ReconnectionEffect> logger)
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
 
         _subscription = connectionStore.BecameLiveAgain.Subscribe(
-            epoch => _ = HandleReconnectedAsync(topicsStore, spaceStore, sessionService, streamResumeService));
+            _ => HandleReconnectedAsync(topicsStore, spaceStore, sessionService, streamResumeService)
+                .LogFaults(logger, "became live again"));
     }
 
     private async Task HandleReconnectedAsync(
