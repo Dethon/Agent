@@ -256,14 +256,19 @@ internal sealed class ConversationGroup(
         (IChannelConnection Channel, ChannelMessage Message) x)
     {
         var state = await EnsureEstablishedAsync(x);
-        // FirstReply times the turn from the moment it starts to its first delivered reply
-        // chunk: target resolution, memory recall, the wait on session warmup and the
-        // turn-start announce for agent-initiated messages. It is the turn's own window
-        // rather than the user's wall clock — neither the queue wait behind a running turn
-        // nor establishing the group on its first turn is measured.
-        var firstReply = metricsPublisher.MeasureLatency(
-            LatencyStage.FirstReply, state.DeliveryKey.ConversationId);
         var targets = await ResolveTurnTargetsAsync(x, state);
+        // FirstReply times the turn from the moment it starts to its first delivered reply
+        // chunk: memory recall, the wait on session warmup and the turn-start announce for
+        // agent-initiated messages. It is the turn's own window rather than the user's wall
+        // clock — neither the queue wait behind a running turn nor establishing the group on
+        // its first turn is measured, and per-turn target resolution (an in-memory routing
+        // decision on every path; the minting resolution happened while establishing) opens
+        // the window rather than sitting inside it, so the scope can carry the turn's own
+        // anchor: the conversation this turn's reply actually lands in, which for a later
+        // interactive turn is its own origin rather than the group's delivery key.
+        var firstReply = metricsPublisher.MeasureLatency(
+            LatencyStage.FirstReply,
+            targets.Count > 0 ? targets[0].ConversationId : agentKey.ConversationId);
         var turn = new Turn(x.Channel, x.Message, targets, firstReply);
         // Agent-initiated turns (downloads, schedules) land in conversations with no live
         // stream on the receiving channel; announce the turn so the channel can set one up
