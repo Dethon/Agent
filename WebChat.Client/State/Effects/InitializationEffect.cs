@@ -2,6 +2,7 @@ using Domain.DTOs.Channel;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
@@ -13,6 +14,7 @@ namespace WebChat.Client.State.Effects;
 public sealed class InitializationEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
+    private readonly ConnectionStore _connectionStore;
     private readonly IChatLiveConnection _liveConnection;
     private readonly IChatSessionService _sessionService;
     private readonly IAgentService _agentService;
@@ -34,6 +36,7 @@ public sealed class InitializationEffect : IDisposable
 
     public InitializationEffect(
         Dispatcher dispatcher,
+        ConnectionStore connectionStore,
         IChatLiveConnection liveConnection,
         IChatSessionService sessionService,
         IAgentService agentService,
@@ -50,6 +53,7 @@ public sealed class InitializationEffect : IDisposable
         ILogger<InitializationEffect> logger)
     {
         _dispatcher = dispatcher;
+        _connectionStore = connectionStore;
         _liveConnection = liveConnection;
         _sessionService = sessionService;
         _agentService = agentService;
@@ -75,7 +79,20 @@ public sealed class InitializationEffect : IDisposable
 
     public async Task HandleInitializeAsync()
     {
-        await _liveConnection.ConnectAsync();
+        // Armed before the call: this connect's own inline steps below already do what session
+        // recovery exists to do, so its epoch must not trigger recovery too. A connect that
+        // never reaches Connected disarms it, so whichever epoch a later rebuild produces is
+        // not mistaken for this one and recovery runs for it instead.
+        _connectionStore.ArmInlineInitialConnect();
+        try
+        {
+            await _liveConnection.ConnectAsync();
+        }
+        catch
+        {
+            _connectionStore.DisarmInlineInitialConnect();
+            throw;
+        }
 
         await RegisterUserAsync();
 

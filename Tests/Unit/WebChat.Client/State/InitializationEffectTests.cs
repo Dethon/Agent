@@ -5,6 +5,7 @@ using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.State;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -22,6 +23,7 @@ public sealed class InitializationEffectTests : IDisposable
 
     private readonly CallRecorder _calls = new();
     private readonly Dispatcher _dispatcher = new();
+    private readonly ConnectionStore _connectionStore;
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
@@ -40,6 +42,7 @@ public sealed class InitializationEffectTests : IDisposable
 
     public InitializationEffectTests()
     {
+        _connectionStore = new ConnectionStore(_dispatcher);
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
@@ -60,6 +63,7 @@ public sealed class InitializationEffectTests : IDisposable
 
         _effect = new InitializationEffect(
             _dispatcher,
+            _connectionStore,
             _liveConnection,
             _sessionService,
             _agentService,
@@ -300,11 +304,35 @@ public sealed class InitializationEffectTests : IDisposable
         _liveConnection.ConnectCalls.ShouldBe(0);
     }
 
+    // The connect HandleInitializeAsync awaits directly can throw (offline at first load). The
+    // epoch that later becomes live — via a rebuild the live connection runs on its own — is
+    // then not the one the inline steps below already covered, so recovery has to run for it
+    // or nobody ever registers the user or joins the space.
+    [Fact]
+    public async Task HandleInitializeAsync_InitialConnectThrows_ALaterEpochStillTriggersRecovery()
+    {
+        _configService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        _liveConnection.ThrowOnConnect = new InvalidOperationException("offline at first load");
+        var recovery = new FakeSessionRecovery();
+        using var sessionRecoveryEffect = new SessionRecoveryEffect(
+            _connectionStore, recovery, new RecordingLogger<SessionRecoveryEffect>());
+
+        await Should.ThrowAsync<InvalidOperationException>(() => _effect.HandleInitializeAsync());
+
+        // Simulates the live connection's own rebuild reaching Connected on its own, the way
+        // ChatLiveConnection.ReconnectIfNeededAsync does outside of HandleInitializeAsync.
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => recovery.RecoverCalls == 1);
+    }
+
     public void Dispose()
     {
         _pushService.Release();
         _streamResumeService.Release();
         _effect.Dispose();
+        _connectionStore.Dispose();
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();
