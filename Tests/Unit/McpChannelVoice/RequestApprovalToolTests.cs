@@ -76,7 +76,8 @@ public class RequestApprovalToolTests : IDisposable
     }
 
     private IServiceProvider BuildServices(
-        VoiceSettings voice, WyomingClientSettings wyoming, SilenceGateFactory gates)
+        VoiceSettings voice, WyomingClientSettings wyoming, SilenceGateFactory gates,
+        TimeProvider? time = null)
     {
         // A capture pays back into the room-noise memory of the factory that supplied its gate, so
         // a test running against its own factory listens on a microphone built over that factory.
@@ -97,7 +98,7 @@ public class RequestApprovalToolTests : IDisposable
             .AddSingleton(gates)
             .AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>())
             .AddSingleton<ILogger<RequestApprovalTool>>(NullLogger<RequestApprovalTool>.Instance)
-            .AddSingleton(TimeProvider.System)
+            .AddSingleton(time ?? TimeProvider.System)
             .BuildServiceProvider();
     }
 
@@ -540,6 +541,54 @@ public class RequestApprovalToolTests : IDisposable
         _tts.Verify(
             t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task RequestMode_EchoGuardTail_WaitsOnTheInjectedClockNotTheWall()
+    {
+        // The echo guard between the prompt finishing and the answer mic opening is a timed wait
+        // like FollowUpConversation's identical one, so it runs on the injected TimeProvider — a
+        // two-minute tail on the injected clock must cost this test nothing on the wall.
+        var fake = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var voice = new VoiceSettings
+        { FollowUp = new FollowUpSettings { PlaybackTailMs = 120_000, WindowMs = 2000 } };
+        var wyoming = new WyomingClientSettings
+        {
+            SilenceRmsThreshold = 500,
+            TrailingSilenceMs = 200,
+            MaxUtteranceMs = 3000,
+            MinSpeechMs = 100
+        };
+        var services = BuildServices(
+            voice, wyoming, new SilenceGateFactory(voice, wyoming, TimeProvider.System), fake);
+
+        var run = RequestApprovalTool.McpRun(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], services);
+
+        // The prompt has been heard once a job queued behind it drains (same FIFO queue).
+        var behindThePrompt = _session.Playback.Enqueue(new PlaybackJob(
+            Label: "after-the-prompt",
+            Kind: PlaybackKind.Announce,
+            Priority: AnnouncePriority.Normal,
+            Audio: Audio()));
+        (await behindThePrompt.Completed.WaitAsync(TimeSpan.FromSeconds(10)))
+            .Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+
+        // Advancing repeatedly instead of once, so the advance cannot land before the tool has
+        // registered its delay on the fake clock.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (!_session.Mic.IsOpen)
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("the echo guard never elapsed on the injected clock");
+            }
+            fake.Advance(TimeSpan.FromMilliseconds(120_000));
+            await Task.Delay(20);
+        }
+
+        _session.Mic.TryAbort().ShouldBeTrue();
+        (await run).ShouldBe("rejected");
     }
 
     [Fact]
