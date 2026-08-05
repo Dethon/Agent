@@ -127,6 +127,27 @@ public class GlobFilesToolTests
         await ShouldBeInvalid(() => _tool.TestRun("**/*", basePath, CancellationToken.None));
     }
 
+    // An absolute pattern must be relativized against the root the matcher actually runs from:
+    // relativizing against the mount root while matching under root+basePath searched books/books.
+    [Fact]
+    public async Task Run_AbsolutePatternWithBasePath_RelativizesAgainstTheBasePathRoot()
+    {
+        var expectedRoot = Path.Combine(BasePath, "books");
+        _mockClient.Setup(c => c.Glob(expectedRoot, "*.epub", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Path.Combine(expectedRoot, "moby-dick.epub")]);
+
+        var result = await _tool.TestRun("/library/books/*.epub", "books", CancellationToken.None);
+
+        result["entries"]!.AsArray().Count.ShouldBe(1);
+        _mockClient.Verify(c => c.Glob(expectedRoot, "*.epub", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_AbsolutePatternOutsideTheBasePath_ReturnsInvalidArgument()
+    {
+        await ShouldBeInvalid(() => _tool.TestRun("/library/movies/*.mkv", "books", CancellationToken.None));
+    }
+
     // ".." inside a name is not a traversal segment; only a whole ".." path segment escapes.
     [Fact]
     public async Task Run_WithANameContainingConsecutiveDots_MatchesInsteadOfRefusing()

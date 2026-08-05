@@ -34,17 +34,6 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             return FsError.Invalid<FsGlobResult>("Pattern and basePath must not contain '..' segments.");
         }
 
-        if (Path.IsPathRooted(pattern))
-        {
-            if (!_jail.Contains(pattern.TrimEnd('/')))
-            {
-                return FsError.Invalid<FsGlobResult>("Absolute pattern must be under the mount root.");
-            }
-
-            var dirsOnly = pattern.EndsWith('/');
-            pattern = Path.GetRelativePath(_jail.Root, pattern).TrimEnd('/') + (dirsOnly ? "/" : "");
-        }
-
         var matcherRoot = string.IsNullOrEmpty(basePath)
             ? _jail.Root
             : Path.GetFullPath(Path.Combine(_jail.Root, basePath.TrimStart('/')));
@@ -52,6 +41,22 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
         if (!_jail.Contains(matcherRoot))
         {
             return FsError.Invalid<FsGlobResult>("basePath must resolve under the mount root.");
+        }
+
+        // An absolute pattern is relativized against the root the matcher actually runs from —
+        // relativizing against the mount root while matching under root+basePath double-scoped.
+        if (Path.IsPathRooted(pattern))
+        {
+            var dirsOnly = pattern.EndsWith('/');
+            var trimmed = pattern.TrimEnd('/');
+            if (!trimmed.Equals(matcherRoot, StringComparison.Ordinal) &&
+                !trimmed.StartsWith(matcherRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                return FsError.Invalid<FsGlobResult>(
+                    "Absolute pattern must be under the glob root (the mount root plus basePath).");
+            }
+
+            pattern = Path.GetRelativePath(matcherRoot, trimmed) + (dirsOnly ? "/" : "");
         }
 
         string[] result;
