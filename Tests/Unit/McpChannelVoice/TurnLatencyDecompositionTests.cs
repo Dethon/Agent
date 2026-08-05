@@ -41,6 +41,10 @@ public class TurnLatencyDecompositionTests
 
     private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
     private readonly SatelliteSession _session;
+
+    // Standing in for CaptureSession: the turn anchors belong to ITurnAnchor, not to the
+    // playback queue every producer holds.
+    private ITurnAnchor Anchors => _session.Playback;
     private readonly SatelliteSessionRegistry _sessions = new();
     private readonly ReplyTextAccumulator _accumulator = new();
     private readonly string _conversationId;
@@ -121,7 +125,7 @@ public class TurnLatencyDecompositionTests
         // production code actually published, and every millisecond advanced between speech end and
         // first audio is claimed by exactly one term — which is the property under test.
         var capture = _session.Mic.Open(NewGate());
-        _session.Playback.MarkTurnStart(_clock.GetTimestamp());
+        Anchors.MarkTurnStart(_clock.GetTimestamp());
 
         // Audio arrives in real time, so advance the clock in step with each frame's duration: that
         // equivalence between audio-domain and wall-clock time is what lets the tail be rewound.
@@ -133,7 +137,7 @@ public class TurnLatencyDecompositionTests
         capture.Stats.TrailingSilenceMs.ShouldBe(EndpointTailMs);
 
         _session.Mic.Close(capture);
-        _session.Playback.MarkSpeechEnd(_clock.GetTimestamp(), capture.Stats.TrailingSilenceMs, _clock);
+        Anchors.MarkSpeechEnd(_clock.GetTimestamp(), capture.Stats.TrailingSilenceMs, _clock);
 
         _clock.Advance(TimeSpan.FromMilliseconds(VerifyMs)); // final speaker-verify pass (ONNX embed)
         _clock.Advance(TimeSpan.FromMilliseconds(SttMs));    // whisper decode

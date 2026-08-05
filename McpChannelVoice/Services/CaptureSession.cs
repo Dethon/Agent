@@ -20,10 +20,15 @@ public sealed class CaptureSession(
     // the wake metric is published.
     Action<WakeAnnouncement?> onWakeTurn)
 {
+    // The playback anchors, which the queue carries but does not expose: holding ITurnAnchor is
+    // what says this type's captures are turns, and the microphone the approval prompt holds has
+    // no way to reach them.
+    private readonly ITurnAnchor _turn = session.Playback;
+
     public UtteranceCapture OpenWakeTurn(WakeAnnouncement? announcement)
     {
         // The turn opens here, so the playback loop can report turn -> first-audio latency.
-        session.Playback.MarkTurnStart(time.GetTimestamp());
+        _turn.MarkTurnStart(time.GetTimestamp());
         onWakeTurn(announcement);
         // Paid in immediately before the gate below reads it back, so "record before the gate is
         // built" is a fact about this method rather than an order two files have to agree on. A
@@ -43,7 +48,7 @@ public sealed class CaptureSession(
     // is no announcement to carry and no wake to report.
     public UtteranceCapture OpenFollowUpTurn()
     {
-        session.Playback.MarkTurnStart(time.GetTimestamp());
+        _turn.MarkTurnStart(time.GetTimestamp());
         return Open();
     }
 
@@ -66,7 +71,7 @@ public sealed class CaptureSession(
         // which reads it back. The frozen endpointing tail rewinds the close to the instant the user
         // actually stopped talking; read here, at the close, because it is the last point where the
         // tail is known to be the one the gate ended on.
-        session.Playback.MarkSpeechEnd(time.GetTimestamp(), stats.TrailingSilenceMs, time);
+        _turn.MarkSpeechEnd(time.GetTimestamp(), stats.TrailingSilenceMs, time);
         return stats;
     }
 

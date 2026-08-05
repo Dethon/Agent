@@ -26,11 +26,12 @@ public class SendReplyToolTests
     private readonly VoiceConversationManager _manager;
     private readonly List<VoiceEvent> _published = [];
     private readonly IServiceProvider _services;
+    private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
 
     public SendReplyToolTests()
     {
         var accumulator = new ReplyTextAccumulator();
-        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var clock = _clock;
         var settings = new VoiceSettings();
         var metrics = new Mock<IMetricsPublisher>();
         metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
@@ -63,6 +64,7 @@ public class SendReplyToolTests
         _services = new ServiceCollection()
             .AddSingleton(_sessions)
             .AddSingleton(_manager)
+            .AddSingleton(registry)
             .AddSingleton(new VoiceDeliveryRegistry(
                 clock, TimeSpan.FromMinutes(5), accumulator,
                 NullLogger<VoiceDeliveryRegistry>.Instance))
@@ -121,6 +123,40 @@ public class SendReplyToolTests
         _tts.Verify(
             t => t.SynthesizeAsync(
                 "La película terminó de descargarse.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    // The other side of that gap: the announce landed while the satellite was down, so
+    // create_conversation DID bind a delivery. The satellite comes back, the user speaks, and the
+    // answer to that live turn buffers under the same conversation id — while the stray binding is
+    // still counting down to an expiry that flushes exactly that buffer. A live turn owns the
+    // conversation, so taking a reply through the live session has to supersede the binding.
+    [Fact]
+    public async Task McpRun_LiveTurnAfterAnAnnounceBoundWhileTheSatelliteWasDown_StillSpeaksTheAnswer()
+    {
+        var session = new SatelliteSession(
+            "office-01", new SatelliteConfig { Identity = "household", Room = "Office" });
+        _sessions.Register(session);
+        var convId = await _manager.GetOrCreateAsync(session, "mycroft", "hola", CancellationToken.None);
+        _sessions.Unregister("office-01");   // the satellite drops off
+
+        // The download alert announces into the conversation and, seeing no live session, binds.
+        await CreateConversationTool.McpRun(
+            "mycroft", string.Empty, "fran", _services, "[download-complete] film.mkv", "office-01", convId);
+
+        _clock.Advance(TimeSpan.FromMinutes(2));
+        _sessions.Register(session);   // reconnected, and the user speaks into the same conversation
+        await _manager.GetOrCreateAsync(session, "mycroft", "qué hora es", CancellationToken.None);
+        await SendReplyTool.McpRun(convId, "Son las cinco.", ReplyContentType.Text, false, "m-1", _services);
+
+        // The binding's 5-minute expiry falls inside the turn (the conversation's own timer was
+        // renewed when the user spoke, so it is not what fires here).
+        _clock.Advance(TimeSpan.FromMinutes(3.5));
+
+        await SendReplyTool.McpRun(convId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _tts.Verify(
+            t => t.SynthesizeAsync("Son las cinco.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

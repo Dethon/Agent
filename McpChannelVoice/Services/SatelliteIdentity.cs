@@ -1,4 +1,5 @@
 using Domain.DTOs.Metrics;
+using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
 
@@ -9,6 +10,11 @@ public readonly record struct SatelliteIdentity(string SatelliteId, string? Room
 {
     public static SatelliteIdentity Of(SatelliteSession session) =>
         new(session.SatelliteId, session.Config.Room, session.Config.Identity);
+
+    // An offline target has no session: the registry's config is all there is to name it by. Null
+    // config means the registry does not know the satellite, and the id alone is the whole identity.
+    public static SatelliteIdentity Of(string satelliteId, SatelliteConfig? config) =>
+        new(satelliteId, config?.Room, config?.Identity);
 }
 
 // Stamping lives here rather than on VoiceEvent because the event is a Domain DTO and must not
