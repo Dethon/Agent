@@ -14,6 +14,10 @@ public record TranscriptionOptions
     // attribute their events to the satellite/room the way the host's own publishes do.
     public string? SatelliteId { get; init; }
     public string? Room { get; init; }
+    // The satellite's configured identity, which is what Identity means on every voice event. It
+    // travels with the id and the room so a decorator naming the satellite names all three, and so
+    // the target speaker above never has to stand in for it.
+    public string? Identity { get; init; }
     public string? Locality { get; init; }
 
     // Per-satellite override of the configured whisper biasing prompt; null falls back to the

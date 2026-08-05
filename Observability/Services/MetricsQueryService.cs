@@ -413,6 +413,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
             VoiceDimension.Identity => e => e.Identity,
             VoiceDimension.Outcome => e => e.Outcome,
             VoiceDimension.Priority => e => e.Priority,
+            VoiceDimension.Speaker => e => e.Speaker,
             _ => e => e.SatelliteId
         };
 

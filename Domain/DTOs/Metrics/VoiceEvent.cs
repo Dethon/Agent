@@ -8,6 +8,9 @@ public record VoiceEvent : MetricEvent
     public string? SatelliteId { get; init; }
     public string? Room { get; init; }
     public string? Identity { get; init; }
+    // The enrolled person a report is about, where Identity is the satellite's own configured
+    // identity. The two are different questions and one field cannot answer both.
+    public string? Speaker { get; init; }
     public string? Outcome { get; init; }
     public string? Priority { get; init; }
     public long? DurationMs { get; init; }
