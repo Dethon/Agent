@@ -1,6 +1,5 @@
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Contracts;
@@ -10,6 +9,7 @@ using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace Tests.Unit.WebChat.Client.State;
@@ -21,10 +21,11 @@ public sealed class TopicSelectionEffectTests : IDisposable
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
-    private readonly Mock<IChatSessionService> _sessionService = new();
+    private readonly FakeChatSessionService _sessionService;
     private readonly FakeTopicService _topicService;
     private readonly FakeStreamResumeService _streamResumeService = new();
     private readonly RecordingLogger<TopicSelectionEffect> _logger = new();
+    private readonly ToastStore _toastStore;
     private readonly TopicSelectionEffect _effect;
 
     public TopicSelectionEffectTests()
@@ -32,7 +33,9 @@ public sealed class TopicSelectionEffectTests : IDisposable
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
+        _toastStore = new ToastStore(_dispatcher);
         _topicService = new FakeTopicService(_calls);
+        _sessionService = new FakeChatSessionService(_calls);
 
         var pipeline = new MessagePipeline(
             _dispatcher, _messagesStore, _streamingStore, NullLogger<MessagePipeline>.Instance);
@@ -41,7 +44,7 @@ public sealed class TopicSelectionEffectTests : IDisposable
             _dispatcher,
             _topicsStore,
             _messagesStore,
-            _sessionService.Object,
+            _sessionService,
             _topicService,
             _streamResumeService,
             pipeline,
@@ -56,7 +59,7 @@ public sealed class TopicSelectionEffectTests : IDisposable
 
         await _effect.HandleSelectTopicAsync("topic-1");
 
-        _sessionService.Verify(s => s.StartSessionAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-1")), Times.Once);
+        _calls.Calls.ShouldContain("start-session:topic-1");
         _messagesStore.State.MessagesByTopic["topic-1"].Single().Content.ShouldBe("hello");
         _streamResumeService.ResumedTopicIds.ShouldBe(["topic-1"]);
     }
@@ -95,6 +98,22 @@ public sealed class TopicSelectionEffectTests : IDisposable
         await _effect.HandleSelectTopicAsync("topic-1");
 
         _topicService.SavedTopics.ShouldBeEmpty();
+    }
+
+    // Tapping a conversation is the user's own action, so a session that could not be started
+    // says so (ADR-0004) instead of opening an empty thread that answers nothing.
+    [Fact]
+    public async Task HandleSelectTopicAsync_SessionThatCouldNotBeStarted_RaisesOneToastAndLoadsNothing()
+    {
+        GivenTopic("topic-1");
+        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "hello"));
+        _sessionService.NotLive = true;
+
+        await _effect.HandleSelectTopicAsync("topic-1");
+
+        _toastStore.State.Toasts.Count.ShouldBe(1);
+        _messagesStore.State.MessagesByTopic.ShouldNotContainKey("topic-1");
+        _streamResumeService.ResumedTopicIds.ShouldBeEmpty();
     }
 
     [Fact]
@@ -168,7 +187,7 @@ public sealed class TopicSelectionEffectTests : IDisposable
         _dispatcher.Dispatch(new SelectTopic("topic-1"));
 
         await Task.Delay(50);
-        _sessionService.Verify(s => s.StartSessionAsync(It.IsAny<StoredTopic>()), Times.Never);
+        _calls.Calls.ShouldBeEmpty();
     }
 
     public void Dispose()
@@ -177,5 +196,6 @@ public sealed class TopicSelectionEffectTests : IDisposable
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();
+        _toastStore.Dispose();
     }
 }

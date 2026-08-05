@@ -71,8 +71,11 @@ internal sealed class SignalRHubConnection(HubConnection connection) : IChatHubC
         return HubResult<Nothing>.Answered(default);
     }
 
-    public Task<HubResult<IAsyncEnumerable<T>>> StreamAsync<T>(string methodName, params object?[] args) =>
-        Task.FromResult(HubResult<IAsyncEnumerable<T>>.Answered(connection.StreamAsyncCore<T>(methodName, args)));
+    // Opened rather than handed back lazy: the answer this returns is what the caller branches
+    // on, so the transport has to have been reached before it is given one.
+    public async Task<HubResult<IAsyncEnumerable<T>>> StreamAsync<T>(string methodName, params object?[] args) =>
+        HubResult<IAsyncEnumerable<T>>.Answered(
+            await HubStream.OpenAsync(connection.StreamAsyncCore<T>(methodName, args)));
 
     public ValueTask DisposeAsync() => connection.DisposeAsync();
 }

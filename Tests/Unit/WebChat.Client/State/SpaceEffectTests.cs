@@ -6,6 +6,7 @@ using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace Tests.Unit.WebChat.Client.State;
@@ -18,6 +19,7 @@ public sealed class SpaceEffectTests : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly SpaceStore _spaceStore;
     private readonly ConnectionStore _connectionStore;
+    private readonly ToastStore _toastStore;
     private readonly FakeTopicService _topicService;
     private readonly FakeConfigService _configService;
     private readonly FakeNavigationManager _navigationManager = new();
@@ -31,6 +33,7 @@ public sealed class SpaceEffectTests : IDisposable
         _messagesStore = new MessagesStore(_dispatcher);
         _spaceStore = new SpaceStore(_dispatcher);
         _connectionStore = new ConnectionStore(_dispatcher);
+        _toastStore = new ToastStore(_dispatcher);
         _dispatcher.Dispatch(new ConnectionConnected());
         _topicService = new FakeTopicService(_calls);
         _configService = new FakeConfigService(_calls);
@@ -80,6 +83,51 @@ public sealed class SpaceEffectTests : IDisposable
 
         _topicService.JoinedSpaces.ShouldBeEmpty();
         _navigationManager.NavigatedTo.ShouldBeEmpty();
+    }
+
+    // Switching space is the user's own action, so a join that could not be made says so
+    // (ADR-0004) rather than clearing the sidebar for a space the server never put us in.
+    [Fact]
+    public async Task HandleSelectSpaceAsync_JoinThatCouldNotBeMade_RaisesOneToastAndKeepsTheSidebar()
+    {
+        _configService.WithSpace("other", name: "Other", accentColor: "#445566");
+        GivenLoadedTopicsAndMessages();
+        _topicService.NotLive = true;
+
+        await _effect.HandleSelectSpaceAsync("other");
+
+        _toastStore.State.Toasts.Count.ShouldBe(1);
+        _topicsStore.State.Topics.ShouldNotBeEmpty();
+        _messagesStore.State.MessagesByTopic.ShouldNotBeEmpty();
+        _spaceStore.State.SpaceName.ShouldBe(SpaceState.Initial.SpaceName);
+    }
+
+    [Fact]
+    public async Task HandleSelectSpaceAsync_AfterAJoinThatCouldNotBeMade_TheNextAttemptRetriesIt()
+    {
+        _configService.WithSpace("other", name: "Other");
+        _topicService.NotLive = true;
+        await _effect.HandleSelectSpaceAsync("other");
+
+        _topicService.NotLive = false;
+        await _effect.HandleSelectSpaceAsync("other");
+
+        _topicService.JoinedSpaces.ShouldBe(["other"]);
+        _spaceStore.State.SpaceName.ShouldBe("Other");
+    }
+
+    // Before the hub is up this is the first navigation, not a switch: InitializationEffect
+    // joins the slug the reducer already stored and validates it, so there is nothing to say.
+    [Fact]
+    public async Task HandleSelectSpaceAsync_KnownSpaceWhileDisconnected_LeavesInitialisationToDoItSilently()
+    {
+        _configService.WithSpace("other", name: "Other");
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+
+        await _effect.HandleSelectSpaceAsync("other");
+
+        _topicService.JoinedSpaces.ShouldBeEmpty();
+        _toastStore.State.Toasts.ShouldBeEmpty();
     }
 
     [Fact]
@@ -145,5 +193,6 @@ public sealed class SpaceEffectTests : IDisposable
         _messagesStore.Dispose();
         _spaceStore.Dispose();
         _connectionStore.Dispose();
+        _toastStore.Dispose();
     }
 }

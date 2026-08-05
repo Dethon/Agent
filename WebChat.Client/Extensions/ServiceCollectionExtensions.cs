@@ -57,8 +57,12 @@ public static class ServiceCollectionExtensions
 
         public IServiceCollection AddWebChatEffects()
         {
-            // Ahead of the catch-up effect: both are keyed on the epoch, and the server
-            // should learn who the client is before it is asked to re-read anything.
+            // Registration order sequences nothing here, and nothing needs it to. Effects are
+            // constructed in the order Program.cs resolves them, each subscribes to the epoch
+            // on its own, and recovery's own work is detached — so recovery and catch-up
+            // overlap by design. No hub method catch-up calls requires the client to have
+            // registered first: only SendMessage, EnqueueMessage and the push verbs do, and
+            // those are user actions, not catch-up.
             services.AddScoped<SessionRecoveryEffect>();
             services.AddScoped<ReconnectionEffect>();
             services.AddScoped<SendMessageEffect>();

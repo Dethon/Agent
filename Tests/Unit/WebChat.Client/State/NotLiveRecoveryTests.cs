@@ -12,19 +12,6 @@ namespace Tests.Unit.WebChat.Client.State;
 public sealed class NotLiveRecoveryTests
 {
     [Fact]
-    public async Task ASpaceJoin_ThatCouldNotBeMade_SaysNothing()
-    {
-        await using var client = new ScriptedChatClient();
-        await client.ConnectAsync();
-        client.ConfigService.WithSpace("hearth");
-
-        client.GoNotLive();
-        await client.Service<SpaceEffect>().HandleSelectSpaceAsync("hearth");
-
-        client.Toasts.State.Toasts.ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task AUserRegistration_ThatCouldNotBeMade_SaysNothing()
     {
         await using var client = new ScriptedChatClient();
