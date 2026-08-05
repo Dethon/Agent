@@ -219,5 +219,12 @@ public readonly struct SegmentToken(VoiceTurn? turn, long epoch, bool isFirst)
 // a turn is the one whose end belongs to it — and ending it against any later turn is a no-op.
 public readonly struct StreamToken(VoiceTurn? turn, long epoch)
 {
+    // Whether this token can still reach the given turn at all. The epoch guard inside the turn
+    // answers "is this the turn I opened against?" only for turns it was issued by; a token held
+    // past a satellite redial names a turn that was discarded with the old session, and no epoch
+    // makes it settle the new one. Asked before a stream is adopted, so a leftover token is
+    // replaced rather than ended against nothing.
+    public bool BelongsTo(VoiceTurn other) => ReferenceEquals(turn, other);
+
     public void End() => turn?.EndStream(epoch);
 }
