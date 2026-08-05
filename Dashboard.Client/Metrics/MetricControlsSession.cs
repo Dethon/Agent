@@ -36,7 +36,7 @@ public sealed class MetricControlsSession(
         }
 
         DeriveRange();
-        await dataLoad.LoadAsync(From, To);
+        await dataLoad.LoadAsync(From, To, [family]);
     }
 
     public async Task ChangeAsync(MetricChoice choice, string value)
@@ -68,7 +68,7 @@ public sealed class MetricControlsSession(
         SelectedDays = int.Parse(value, CultureInfo.InvariantCulture);
         DeriveRange();
         await storage.SetAsync(KeyFor("days"), value);
-        await dataLoad.LoadAsync(From, To);
+        await dataLoad.LoadAsync(From, To, [family]);
     }
 
     // The dimension is restored last because applying it is what coerces a disallowed metric.

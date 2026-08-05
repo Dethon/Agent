@@ -238,7 +238,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     [Fact]
     public async Task ConnectAsync_TheInitialPageLoadFailed_TheFirstConnectionCatchesUp()
     {
-        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2), _families.All);
         _handler.AnswerFor("api/metrics/voice?", new List<VoiceEventPayload>
         {
             new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
@@ -262,7 +262,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
             new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
         });
 
-        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2), _families.All);
 
         _catchUp.Runs.ShouldBe(1);
         _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
@@ -274,9 +274,9 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     public async Task LoadAsync_ALaterLoadFailsAfterTheFirstEpochWasSettled_DoesNotCatchUpAgain()
     {
         await ConnectAsync();
-        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2), _families.All);
 
-        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2), _families.All);
 
         _catchUp.Runs.ShouldBe(1);
     }
@@ -292,7 +292,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         await _hub.RaiseReconnectingAsync(null);
         await _hub.RaiseReconnectedAsync();
 
-        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2), _families.All);
 
         _catchUp.Runs.ShouldBe(1);
     }
@@ -309,7 +309,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         // one response the delay lands on.
         _handler.EnqueueResponse(new List<VoiceEventPayload>(), TimeSpan.FromMilliseconds(30));
 
-        var loading = _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+        var loading = _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2), _families.All);
         await RaiseVoiceAsync("pantry-01");
         await loading;
 
@@ -481,7 +481,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         long summaryInputTokens, List<TokenUsagePayload> snapshot)
     {
         _handler.AnswerFor("api/metrics/summary", Summary(inputTokens: 0));
-        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2), _families.All);
         await ConnectAsync();
         _handler.AnswerFor("api/metrics/summary", Summary(summaryInputTokens));
         _handler.AnswerFor("api/metrics/tokens?", snapshot);

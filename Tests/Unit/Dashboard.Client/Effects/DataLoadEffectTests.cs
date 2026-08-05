@@ -70,7 +70,7 @@ public sealed class DataLoadEffectTests : IDisposable
     {
         StageSummaryAndHealth();
 
-        await _dataLoad.LoadAsync(From, To);
+        await _dataLoad.LoadAsync(From, To, _families.All);
 
         _metricsStore.State.InputTokens.ShouldBe(120);
         _metricsStore.State.Cost.ShouldBe(1.5m);
@@ -84,7 +84,7 @@ public sealed class DataLoadEffectTests : IDisposable
     {
         StageSummaryAndHealth();
 
-        await _dataLoad.LoadAsync(From, To);
+        await _dataLoad.LoadAsync(From, To, _families.All);
 
         _dataLoad.LastLoadFailed.ShouldBeTrue();
     }
@@ -94,7 +94,7 @@ public sealed class DataLoadEffectTests : IDisposable
     {
         StageEveryRequest();
 
-        await _dataLoad.LoadAsync(From, To);
+        await _dataLoad.LoadAsync(From, To, _families.All);
 
         _dataLoad.LastLoadFailed.ShouldBeFalse();
     }
@@ -108,11 +108,27 @@ public sealed class DataLoadEffectTests : IDisposable
         StageSummaryAndHealth();
         var failing = _families.Tokens.RefreshAsync();
 
-        await _dataLoad.LoadAsync(From, To);
+        await _dataLoad.LoadAsync(From, To, _families.All);
         await Should.ThrowAsync<HttpRequestException>(() => failing);
 
         _metricsStore.State.InputTokens.ShouldBe(120);
         _healthStore.State.Services.ShouldContain(s => s.Service == "agent");
+    }
+
+    // A page load is the range for the families that page draws, and for no others. Stamping all
+    // seven meant a live push or a catch-up for a family whose own page had chosen thirty days
+    // refreshed it over whatever range the page the user happens to be on had asked for.
+    [Fact]
+    public async Task LoadAsync_APageDisplaysOneFamily_LeavesTheOtherFamiliesRangesAlone()
+    {
+        var chosenElsewhere = new DateOnly(2026, 2, 1);
+        _voiceStore.SetDateRange(chosenElsewhere, To);
+        StageEveryRequest();
+
+        await _dataLoad.LoadAsync(From, To, [_families.Tokens]);
+
+        _tokensStore.State.From.ShouldBe(From);
+        _voiceStore.State.From.ShouldBe(chosenElsewhere);
     }
 
     private void StageSummaryAndHealth()

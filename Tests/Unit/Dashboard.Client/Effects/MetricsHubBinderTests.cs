@@ -193,7 +193,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
     {
         var range = "from=2026-03-01&to=2026-03-02";
 
-        await NewDataLoadEffect().LoadAsync(From, To);
+        await NewDataLoadEffect().LoadAsync(From, To, _families.All);
 
         _handler.Requests.ShouldContain(u => u != null && u.Contains(eventsRequest + range, StringComparison.Ordinal));
         _handler.Requests.ShouldContain(u => u != null && u.Contains(breakdownRequest + range, StringComparison.Ordinal));
@@ -202,7 +202,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
     [Fact]
     public async Task LoadAsync_ADashboardPageLoads_SetsTheDateRangeOnEveryFamily()
     {
-        await NewDataLoadEffect().LoadAsync(From, To);
+        await NewDataLoadEffect().LoadAsync(From, To, _families.All);
 
         _tokensStore.State.From.ShouldBe(From);
         _toolsStore.State.From.ShouldBe(From);
@@ -454,7 +454,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
         // request, and DataLoadEffect swallows the resulting 404s from the unstaffed FakeApiHandler.
         _voiceStore.SetAgg(Aggregation.P95);
 
-        await NewDataLoadEffect().LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 24));
+        await NewDataLoadEffect().LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 24), _families.All);
 
         _handler.Requests.ShouldContain(u => u != null && u.Contains("voice/by") && u.Contains("agg=P95"));
     }

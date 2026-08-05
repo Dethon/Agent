@@ -226,6 +226,7 @@ public sealed class MetricFamilyTable
             });
 
         All = [Tokens, Tools, Errors, Schedules, Memory, Latency, Voice];
+        OverviewFamilies = [Tokens, Tools, Errors, Schedules, Voice];
     }
 
     public MetricFamily<TokensStore> Tokens { get; }
@@ -237,4 +238,9 @@ public sealed class MetricFamilyTable
     public MetricFamily<VoiceStore> Voice { get; }
 
     public IReadOnlyList<MetricFamily> All { get; }
+
+    // The families the Overview page draws, and therefore the ones its own time pill stamps: the
+    // four behind the activity feed plus voice behind its two KPI cards. Every other page draws one
+    // family and stamps that one.
+    public IReadOnlyList<MetricFamily> OverviewFamilies { get; }
 }
