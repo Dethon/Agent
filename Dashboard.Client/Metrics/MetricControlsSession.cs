@@ -45,8 +45,25 @@ public sealed class MetricControlsSession(
     public async Task ChangeAsync(MetricChoice choice, string value)
     {
         choice.Apply(value);
-        await storage.SetAsync(KeyFor(choice.Key), value);
-        await family.RefreshAsync();
+
+        // Every choice, not just the one that moved: applying a group-by can swap the metric when
+        // the combination is disallowed, and persisting only the moved pill would restore that
+        // disallowed combination on the next visit.
+        foreach (var each in Choices)
+        {
+            await storage.SetAsync(KeyFor(each.Key), each.Current);
+        }
+
+        try
+        {
+            await family.RefreshAsync();
+        }
+        catch
+        {
+            // The pill has moved and is saved; a refresh that fails leaves the breakdown at its
+            // last known value, exactly as the page-load path settles the same failure. Letting it
+            // out of a UI event handler would put the whole page into Blazor's unhandled-error UI.
+        }
     }
 
     public async Task ChangeDaysAsync(string value)

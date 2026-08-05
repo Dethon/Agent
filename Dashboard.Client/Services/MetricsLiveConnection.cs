@@ -13,6 +13,7 @@ public sealed class MetricsLiveConnection(
     MetricsHubBinder binder,
     ConnectionStore connectionStore,
     IMetricsCatchUp catchUp,
+    DataLoadEffect dataLoad,
     TimeProvider timeProvider,
     ILogger<MetricsLiveConnection> logger) : IAsyncDisposable
 {
@@ -57,13 +58,19 @@ public sealed class MetricsLiveConnection(
     {
         connectionStore.SetLive();
 
-        // Never on the first connection: ordinary page load fetches the same data there, and
-        // catching up as well would double every request on first paint.
-        if (connectionStore.State.Epoch <= 1)
+        // Not on a first connection whose page load delivered: catching up as well would double
+        // every request on first paint. A load that failed left nothing to double — a dashboard
+        // opened during an outage would otherwise show a green dot over empty pages until a manual
+        // reload — so a recorded failure makes the first epoch catch up after all.
+        if (connectionStore.State.Epoch <= 1 && !dataLoad.LastLoadFailed)
         {
             return;
         }
 
+        // Pushes are held while catch-up replaces the event lists, then released against what the
+        // reload delivered: without the hold, an older snapshot erases a push that arrived first,
+        // and a push the snapshot already contains lands twice.
+        binder.HoldPushes();
         try
         {
             await catchUp.CatchUpAsync();
@@ -73,6 +80,10 @@ public sealed class MetricsLiveConnection(
             // The connection is live whether or not the reload worked, and every family keeps the
             // values it already had.
             logger.LogWarning(exception, "Metrics catch-up failed");
+        }
+        finally
+        {
+            await binder.ReleaseHeldPushesAsync();
         }
     }
 

@@ -11,6 +11,11 @@ public sealed class DataLoadEffect(
     MetricsStore metricsStore,
     HealthStore healthStore)
 {
+    // The one trace the swallowed failure leaves behind. The live connection skips catch-up on its
+    // first epoch on the premise that this load delivered the same data; a recorded failure is how
+    // it knows that premise did not hold.
+    public bool LastLoadFailed { get; private set; }
+
     public async Task LoadAsync(DateOnly from, DateOnly to)
     {
         try
@@ -50,11 +55,14 @@ public sealed class DataLoadEffect(
                     .Select(h => new ServiceHealth(h.Service, h.IsHealthy, h.LastSeen))
                     .ToList());
             }
+
+            LastLoadFailed = false;
         }
         catch
         {
             // The page-load path swallows the reason a load failed, as it always has. Connection
             // status is the live connection's to publish, and a failed request is not an outage.
+            LastLoadFailed = true;
         }
     }
 }

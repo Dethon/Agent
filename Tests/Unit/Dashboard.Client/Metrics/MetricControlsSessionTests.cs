@@ -177,6 +177,46 @@ public class MetricControlsSessionTests : IDisposable
         _handler.Requests.ShouldContain(u => u != null && u.Contains("agg=P95", StringComparison.Ordinal));
     }
 
+    // The guard swaps the metric when a group-by makes it invalid. The swap has to be persisted
+    // with the group-by, or the next visit restores the disallowed combination and selects a
+    // disabled pill.
+    [Fact]
+    public async Task ChangeAsync_AGroupByGuardSwapsTheMetric_TheSwapSurvivesTheNextVisit()
+    {
+        var session = SessionFor(_families.Tools);
+        await session.InitializeAsync();
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+        await session.ChangeAsync(_families.Tools.Metric!, nameof(ToolMetric.ErrorRate));
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+
+        await session.ChangeAsync(_families.Tools.Dimension, nameof(ToolDimension.Status));
+
+        _js.Storage["tools.metric"].ShouldBe(nameof(ToolMetric.CallCount));
+
+        await SessionFor(_families.Tools).InitializeAsync();
+
+        _toolsStore.State.GroupBy.ShouldBe(ToolDimension.Status);
+        _toolsStore.State.Metric.ShouldBe(ToolMetric.CallCount);
+    }
+
+    // A pill click during an API outage: the choice sticks and is saved, the breakdown keeps its
+    // last known value, and nothing escapes into Blazor's unhandled-error UI.
+    [Fact]
+    public async Task ChangeAsync_TheRefreshFails_ThePillStillMovesAndNothingEscapes()
+    {
+        var lastKnown = new Dictionary<string, decimal> { ["kept"] = 42m };
+        _tokensStore.SetBreakdown(lastKnown);
+        var session = SessionFor(_families.Tokens);
+        await session.InitializeAsync();
+        // Nothing is staged, so the refresh's request answers 404 and the family throws.
+
+        await session.ChangeAsync(_families.Tokens.Dimension, nameof(TokenDimension.Agent));
+
+        _js.Storage["tokens.groupBy"].ShouldBe(nameof(TokenDimension.Agent));
+        _tokensStore.State.GroupBy.ShouldBe(TokenDimension.Agent);
+        _tokensStore.State.Breakdown.ShouldBe(lastKnown);
+    }
+
     [Fact]
     public async Task InitializeAsync_APreferenceNoLongerParses_LeavesTheChoiceAlone()
     {

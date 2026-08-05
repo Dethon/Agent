@@ -10,6 +10,10 @@ public sealed class RecordingMetricsCatchUp(IMetricsCatchUp inner) : IMetricsCat
 
     public TaskCompletionSource? Gate { get; set; }
 
+    // Holds catch-up open after the real reload has written the stores, which is the window where a
+    // push already contained in the snapshot can arrive.
+    public TaskCompletionSource? GateAfter { get; set; }
+
     public Exception? Failure { get; set; }
 
     public async Task CatchUpAsync()
@@ -26,6 +30,18 @@ public sealed class RecordingMetricsCatchUp(IMetricsCatchUp inner) : IMetricsCat
             throw failure;
         }
 
-        await inner.CatchUpAsync();
+        try
+        {
+            await inner.CatchUpAsync();
+        }
+        finally
+        {
+            // Held open even when a family's reload failed: what matters is that the stores the
+            // reload did write are in place while the gate is held.
+            if (GateAfter is { } after)
+            {
+                await after.Task;
+            }
+        }
     }
 }
