@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
@@ -43,10 +44,8 @@ public sealed class MediaLibraryDiskFileSystem(
 
     // The only text on this mount is the overlay's rendered status file; the media itself is bytes.
     public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
-        await downloads.TryReadAsync(path, ct)
-        ?? FsError.Fail<FsReadResult>(ToolError.Codes.UnsupportedOperation,
-            $"fs_read on the {FilesystemName} filesystem only reads "
-            + $"{MediaFilesystem.DownloadsSubdir}/<id>/status.json.");
+        await RefuseAsync<FsReadResult>(DownloadsIntent.TextRead, path, ct)
+        ?? await downloads.ReadAsync(path, ct);
 
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
@@ -151,7 +150,7 @@ public sealed class MediaLibraryDiskFileSystem(
     // unreadable, so the refusal asks for liveness instead of the path's spelling.
     public override async Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
         string path, long offset, int length, CancellationToken ct) =>
-        await RefuseLiveVirtualAsync<FsBlobReadResult>(path, ct)
+        await RefuseAsync<FsBlobReadResult>(DownloadsIntent.ByteRead, path, ct)
         ?? await base.ReadBlobAsync(path, offset, length, ct);
 
     public override async Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
@@ -166,10 +165,19 @@ public sealed class MediaLibraryDiskFileSystem(
     // and unremovable (delete on that path answers "read-only"). These throw rather than answer an
     // envelope because that is the shape the two chunk operations have; VfsCopyTool turns a
     // NotSupportedException back into the same unsupported-operation envelope.
-    public override IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
-        downloads.IsVirtualPath(path)
-            ? throw new NotSupportedException(VirtualFileRefusal)
-            : base.ReadChunksAsync(path, ct);
+    public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+        string path, [EnumeratorCancellation] CancellationToken ct)
+    {
+        if (await downloads.RefuseAsync(DownloadsIntent.ByteRead, path, ct) is { } refusal)
+        {
+            throw new FileSystemOperationException(refusal);
+        }
+
+        await foreach (var chunk in base.ReadChunksAsync(path, ct).WithCancellation(ct))
+        {
+            yield return chunk;
+        }
+    }
 
     public override async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
         bool overwrite, bool createDirectories, CancellationToken ct)
@@ -199,10 +207,11 @@ public sealed class MediaLibraryDiskFileSystem(
             ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation, VirtualFileRefusal)
             : null;
 
-    private async Task<FsResult<T>?> RefuseLiveVirtualAsync<T>(string path, CancellationToken ct) where T : class =>
-        await downloads.IsLiveVirtualPathAsync(path, ct)
-            ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation, VirtualFileRefusal)
-            : null;
+    // Every operation on this mount asks the overlay's one rule before it acts, and falls through
+    // to the disk beneath when the rule says nothing.
+    private async Task<FsResult<T>?> RefuseAsync<T>(DownloadsIntent intent, string path, CancellationToken ct)
+        where T : class =>
+        await downloads.RefuseAsync(intent, path, ct) is { } refusal ? new FsResult<T>.Err(refusal) : null;
 
     private async Task<FsResult<T>?> RefuseLandingInActiveDownloadAsync<T>(
         string destinationPath, CancellationToken ct) where T : class =>

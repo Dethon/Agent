@@ -56,18 +56,38 @@ public class MediaLibraryFileSystemTests : IDisposable
         File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
     }
 
-    // The same refusal on the way out: ReadBlobAsync already answered it, and the streamed half of
-    // the same operation must not quietly serve the disk's idea of the file instead.
+    // Both halves of a read of a live download's status file answer the same thing: it is a
+    // rendered view, so read it as text. The streamed half says so through the typed filesystem
+    // exception, which is the only shape its signature has.
     [Fact]
-    public async Task ReadChunks_OfTheVirtualStatusFile_IsRefused()
+    public async Task ReadsOfALiveDownloadsStatusFile_AreRefusedTheSameWay()
     {
         _client.Add(Item(42));
 
-        var read = Should.Throw<NotSupportedException>(() =>
-            _sut.ReadChunksAsync("downloads/42/status.json", CancellationToken.None));
+        var ranged = (await _sut.ReadBlobAsync("downloads/42/status.json", 0, 10, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobReadResult>.Err>().Error;
+        ranged.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        ranged.Message.ShouldContain("fs_read");
 
-        read.Message.ShouldContain("read-only");
-        await Task.CompletedTask;
+        var streamed = await Should.ThrowAsync<FileSystemOperationException>(
+            () => Collect("downloads/42/status.json"));
+        streamed.Error.ErrorCode.ShouldBe(ranged.ErrorCode);
+        streamed.Error.Message.ShouldBe(ranged.Message);
+    }
+
+    // A status.json no live download owns is a leftover: an ordinary file the disk owns. A ranged
+    // read already served it while the streamed read refused it as a virtual file, so the same file
+    // read differently depending on which side of the MCP seam the caller sat on.
+    [Fact]
+    public async Task ReadsOfALeftoverStatusFile_BothServeTheRealFile()
+    {
+        await WriteLeftoverStatus();
+
+        var ranged = (await _sut.ReadBlobAsync("downloads/99/status.json", 0, 1024, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobReadResult>.Ok>().Value;
+
+        Encoding.UTF8.GetString(Convert.FromBase64String(ranged.ContentBase64)).ShouldContain("stale");
+        (await Collect("downloads/99/status.json")).ShouldContain("stale");
     }
 
     // The disk resolves '.' and '..' before it writes, so a dotted spelling of the status path lands
@@ -100,6 +120,79 @@ public class MediaLibraryFileSystemTests : IDisposable
         write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>()
             .Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
         File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
+    }
+
+    // A read intent classifies one path, whichever way that path is spelled: the dotted and
+    // absolute forms resolve to the same file, and a directory whose name merely looks like an id
+    // is an ordinary directory no download owns.
+    [Theory]
+    [InlineData("downloads/42/./status.json")]
+    [InlineData("downloads/43/../42/status.json")]
+    public async Task StreamedReadOfALiveStatusFile_IsRefusedWhicheverWayItIsSpelled(string path)
+    {
+        _client.Add(Item(42));
+
+        var streamed = await Should.ThrowAsync<FileSystemOperationException>(() => Collect(path));
+
+        streamed.Error.Message.ShouldContain("fs_read");
+    }
+
+    [Fact]
+    public async Task StreamedReadOfAnAbsoluteSpellingOfALiveStatusFile_IsRefused()
+    {
+        _client.Add(Item(42));
+
+        var streamed = await Should.ThrowAsync<FileSystemOperationException>(
+            () => Collect(Path.Combine(_libraryRoot, "downloads", "42", "status.json")));
+
+        streamed.Error.Message.ShouldContain("fs_read");
+    }
+
+    // 'downloads/042' is a real directory on disk, not download 42, so a status.json under it is an
+    // ordinary file both reads serve.
+    [Theory]
+    [InlineData("042")]
+    [InlineData("+42")]
+    public async Task ReadsOfAStatusFileUnderALookalikeId_ServeTheRealFile(string dir)
+    {
+        _client.Add(Item(42));
+        var file = Path.Combine(_libraryRoot, "downloads", dir, "status.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        await File.WriteAllTextAsync(file, "{\"real\":true}");
+
+        (await _sut.ReadBlobAsync($"downloads/{dir}/status.json", 0, 1024, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobReadResult>.Ok>();
+        (await Collect($"downloads/{dir}/status.json")).ShouldContain("real");
+    }
+
+    // The only text this mount reads is a status file; everything else on it is bytes. That is true
+    // of a leftover status file too — it reads as the ordinary file it is.
+    [Theory]
+    [InlineData("downloads/42")]
+    [InlineData("downloads/42/payload.mkv")]
+    [InlineData("downloads/99")]
+    [InlineData("Movies/film.mkv")]
+    public async Task TextRead_OfAPathThatIsNotAStatusFile_IsRefused(string path)
+    {
+        _client.Add(Item(42));
+
+        var error = (await _sut.ReadAsync(path, null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain("status.json");
+    }
+
+    [Fact]
+    public async Task TextRead_OfALiveDownloadsStatusFile_ReportsItsState()
+    {
+        _client.Add(Item(42));
+
+        var read = (await _sut.ReadAsync("downloads/42/status.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+
+        read.Content.ShouldContain("InProgress");
+        read.Content.ShouldContain("etaMinutes");
     }
 
     [Fact]
@@ -459,6 +552,24 @@ public class MediaLibraryFileSystemTests : IDisposable
 
     private static FsResult<FileSystemResolution> Resolved(IFileSystemBackend backend, string relativePath) =>
         new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, ""));
+
+    private async Task<string> Collect(string path)
+    {
+        var bytes = new List<byte>();
+        await foreach (var chunk in _sut.ReadChunksAsync(path, CancellationToken.None))
+        {
+            bytes.AddRange(chunk.ToArray());
+        }
+
+        return Encoding.UTF8.GetString(bytes.ToArray());
+    }
+
+    private async Task WriteLeftoverStatus()
+    {
+        var leftover = Path.Combine(_libraryRoot, "downloads", "99", "status.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
+        await File.WriteAllTextAsync(leftover, "{\"stale\":true}");
+    }
 
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> Chunks(string content)
     {

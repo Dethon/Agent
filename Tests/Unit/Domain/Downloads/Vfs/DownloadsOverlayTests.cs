@@ -32,35 +32,27 @@ public class DownloadsOverlayTests : IDisposable
     }
 
     [Fact]
-    public async Task TryRead_StatusJson_RendersStateWithoutSavePath()
+    public async Task Read_StatusJson_RendersStateWithoutSavePath()
     {
         _client.Add(Item(42));
 
-        var read = (await _sut.TryReadAsync("downloads/42/status.json", CancellationToken.None))
+        var read = (await _sut.ReadAsync("downloads/42/status.json", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
         read.Content.ShouldContain("42");
         read.Content.ShouldContain("InProgress");
         read.Content.ShouldContain("Download 42");
         read.Content.ShouldNotContain("savePath");
 
-        var missing = await _sut.TryReadAsync("downloads/99/status.json", CancellationToken.None);
+        var missing = await _sut.ReadAsync("downloads/99/status.json", CancellationToken.None);
         missing.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.ErrorCode.ShouldBe("not_found");
     }
 
     [Fact]
-    public async Task TryRead_NonOverlayPath_ReturnsNull()
-    {
-        (await _sut.TryReadAsync("Movies/film.mkv", CancellationToken.None)).ShouldBeNull();
-        (await _sut.TryReadAsync("downloads/42/payload.mkv", CancellationToken.None)).ShouldBeNull();
-        (await _sut.TryReadAsync("downloads", CancellationToken.None)).ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task TryRead_AbsolutePathUnderLibraryRoot_IsNormalized()
+    public async Task Read_AbsolutePathUnderLibraryRoot_IsNormalized()
     {
         _client.Add(Item(42));
 
-        var read = await _sut.TryReadAsync(
+        var read = await _sut.ReadAsync(
             Path.Combine(_libraryRoot, "downloads", "42", "status.json"), CancellationToken.None);
         read.ShouldBeOfType<FsResult<FsReadResult>.Ok>();
     }

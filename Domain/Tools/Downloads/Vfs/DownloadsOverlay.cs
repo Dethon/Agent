@@ -8,6 +8,14 @@ using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Downloads.Vfs;
 
+// What an operation is about to do to one path on the media mount. Every operation names one of
+// these before it acts, and an operation with two ends names one per end.
+public enum DownloadsIntent
+{
+    TextRead,
+    ByteRead
+}
+
 // Overlays download semantics on the media filesystem's downloads/ subtree: every active
 // download surfaces a virtual read-only downloads/<id>/status.json, and deleting
 // downloads/<id> cancels the download and cleans up its files. Payload files inside a
@@ -26,12 +34,6 @@ public sealed class DownloadsOverlay(
     };
 
     public bool IsVirtualPath(string path) => ParseNode(path).Kind == DownloadNodeKind.StatusFile;
-
-    // Virtual AND currently owned by a live download — the distinction that decides whether a
-    // status.json path is the rendered view or a leftover real file the disk should serve.
-    public async Task<bool> IsLiveVirtualPathAsync(string path, CancellationToken ct) =>
-        ParseNode(path) is { Kind: DownloadNodeKind.StatusFile, Id: { } id }
-        && await downloadClient.GetDownloadItem(id, ct) is not null;
 
     // True when this path and a live download's directory overlap: the directory itself, any
     // ancestor of it (moving a parent takes the directory with it), and anything under it (the
@@ -57,22 +59,45 @@ public sealed class DownloadsOverlay(
                         || candidate.StartsWith(dir + "/", StringComparison.Ordinal));
     }
 
-    public async Task<FsResult<FsReadResult>?> TryReadAsync(string path, CancellationToken ct)
+    // The one question every operation on this mount asks before it acts: may I do this to this
+    // path? Null means yes. One path per call, so a refusal always names the path that offended,
+    // and one reason per intent, so two operations can never disagree about the same path.
+    public async Task<ToolErrorResult?> RefuseAsync(DownloadsIntent intent, string path, CancellationToken ct)
     {
         var node = ParseNode(path);
-        if (node.Kind != DownloadNodeKind.StatusFile)
+        return intent switch
         {
-            return null;
-        }
-
-        var item = await downloadClient.GetDownloadItem(node.Id!.Value, ct);
-        if (item is null)
-        {
-            return await ReadLeftoverAsync(path, node.Id.Value, ct);
-        }
-
-        return Read(path, RenderStatus(item));
+            // The only text on this mount is a status file; the media itself is bytes. A leftover
+            // status file is still a status file by name, and reads as the ordinary file it is.
+            DownloadsIntent.TextRead when node.Kind != DownloadNodeKind.StatusFile => Error(
+                ToolError.Codes.UnsupportedOperation,
+                $"fs_read on the {MediaLibraryDiskFileSystem.Name} filesystem only reads "
+                + $"{MediaFilesystem.DownloadsSubdir}/<id>/{DownloadsPath.StatusFileName}.",
+                $"Use fs_blob_read for the raw bytes of any other file on {MediaLibraryDiskFileSystem.Name}."),
+            DownloadsIntent.ByteRead when await IsLiveStatusFileAsync(node, ct) => Error(
+                ToolError.Codes.UnsupportedOperation,
+                $"'{path}' is a live download's status file: a view rendered when it is read, not "
+                + "bytes on disk. Read it as text with fs_read.",
+                "fs_read on this path reports the download's state, progress and eta."),
+            _ => null
+        };
     }
+
+    // Reached only once the rule has allowed a text read, so the path is a status file: either the
+    // rendered view of a live download or a leftover the disk owns.
+    public async Task<FsResult<FsReadResult>> ReadAsync(string path, CancellationToken ct)
+    {
+        var id = ParseNode(path).Id!.Value;
+        return await downloadClient.GetDownloadItem(id, ct) is { } item
+            ? Read(path, RenderStatus(item))
+            : await ReadLeftoverAsync(path, id, ct);
+    }
+
+    // Virtual AND currently owned by a live download — the distinction that decides whether a
+    // status.json path is the rendered view or a leftover real file the disk should serve.
+    private async Task<bool> IsLiveStatusFileAsync(DownloadsNode node, CancellationToken ct) =>
+        node is { Kind: DownloadNodeKind.StatusFile, Id: { } id }
+        && await downloadClient.GetDownloadItem(id, ct) is not null;
 
     // No live download owns the id, but info and delete already treat a real file left at this
     // path as the disk's; reads must agree, or the leftover is visible and removable yet
@@ -264,6 +289,6 @@ public sealed class DownloadsOverlay(
             TrashPath = ""
         });
 
-    private static ToolErrorResult Error(string code, string message) =>
-        new() { ErrorCode = code, Message = message, Retryable = false };
+    private static ToolErrorResult Error(string code, string message, string? hint = null) =>
+        new() { ErrorCode = code, Message = message, Retryable = false, Hint = hint };
 }
