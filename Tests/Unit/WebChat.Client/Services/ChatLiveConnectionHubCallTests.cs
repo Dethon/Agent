@@ -203,6 +203,21 @@ public sealed class ChatLiveConnectionHubCallTests : IDisposable
         result.IsLive.ShouldBeFalse();
     }
 
+    // A hub stream is lazy: asking for it touches nothing, and the first pull is what reaches
+    // the wire. So this is where a dead transport actually faults, and it has to answer not
+    // live before the caller starts iterating rather than throwing into its consumer loop.
+    [Theory]
+    [MemberData(nameof(TransportFaults))]
+    public async Task StreamAsync_TransportIsDeadOnTheFirstPull_AnswersNotLive(Exception fault)
+    {
+        var connection = await ConnectAsync();
+        connection.Answer("Count", _ => FaultingStream(fault));
+
+        var result = await _liveConnection.StreamAsync<int>("Count");
+
+        result.IsLive.ShouldBeFalse();
+    }
+
     // A HubException is the server answering: the call arrived and the handler faulted it.
     // Mapping that to not live would tell the user to retry a call the server already refused.
     [Fact]
@@ -294,6 +309,15 @@ public sealed class ChatLiveConnectionHubCallTests : IDisposable
     {
         await _liveConnection.ConnectAsync();
         return _factory.Created.Single();
+    }
+
+    private static async IAsyncEnumerable<int> FaultingStream(Exception fault)
+    {
+        await Task.Yield();
+        throw fault;
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
     }
 
     private static async IAsyncEnumerable<int> Numbers(params int[] values)

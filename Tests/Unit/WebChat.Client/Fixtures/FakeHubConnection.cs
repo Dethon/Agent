@@ -83,13 +83,15 @@ public sealed class FakeHubConnection : IChatHubConnection
         return Task.FromResult(HubResult<Nothing>.Answered(default));
     }
 
-    public Task<HubResult<IAsyncEnumerable<T>>> StreamAsync<T>(string methodName, params object?[] args)
+    // Opened through the same helper the real hub connection uses, so a scripted stream that
+    // dies on its first pull answers here exactly when it would answer on the wire.
+    public async Task<HubResult<IAsyncEnumerable<T>>> StreamAsync<T>(string methodName, params object?[] args)
     {
         _calls.Add(new HubCall(methodName, args));
         var stream = _answers.TryGetValue(methodName, out var scripted)
             ? (IAsyncEnumerable<T>)scripted(args)!
             : EmptyStream<T>();
-        return Task.FromResult(HubResult<IAsyncEnumerable<T>>.Answered(stream));
+        return HubResult<IAsyncEnumerable<T>>.Answered(await HubStream.OpenAsync(stream));
     }
 
     private static async IAsyncEnumerable<T> EmptyStream<T>()

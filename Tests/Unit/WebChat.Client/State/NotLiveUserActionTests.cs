@@ -1,3 +1,4 @@
+using System.Net.WebSockets;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
@@ -9,6 +10,7 @@ using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace Tests.Unit.WebChat.Client.State;
@@ -108,6 +110,30 @@ public sealed class NotLiveUserActionTests
         transport.Calls.Count(call => call.MethodName == "SendMessage").ShouldBe(1);
         client.Toasts.State.Toasts.ShouldBeEmpty();
         stream.Release();
+    }
+
+    // A hub stream touches the wire on its first pull, not when it is asked for, so a transport
+    // that is already dead faults there. That is the same not-live window as any other call:
+    // one toast, and no raw SignalR message left in the transcript as an error bubble.
+    [Fact]
+    public async Task ASend_WhoseStreamDiesOnOpen_RaisesTheNotLiveToastAndAddsNoErrorBubble()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        var stream = new GatedChatStream
+        {
+            FaultOnOpen = new WebSocketException(WebSocketError.ConnectionClosedPrematurely)
+        };
+        transport.Answer("SendMessage", _ => stream.Chunks());
+
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
+
+        await TestChat.Eventually(() => client.Toasts.State.Toasts.Count == 1);
+        client.Toasts.State.Toasts.Single().Message.ShouldBe(NotLiveToast.Message);
+        client.Messages.State.MessagesByTopic
+            .GetValueOrDefault("topic-1", [])
+            .ShouldNotContain(message => message.IsError);
     }
 
     [Fact]
