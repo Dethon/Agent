@@ -33,7 +33,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly IDisposable _selectUserRegistration;
     private readonly IDisposable _setAgentsRegistration;
     private readonly IDisposable _becameLiveAgainSubscription;
-    private bool _awaitingAgentCatalog;
+    private int _awaitingAgentCatalog;
 
     public InitializationEffect(
         Dispatcher dispatcher,
@@ -131,7 +131,7 @@ public sealed class InitializationEffect : IDisposable
             // Nothing else retries this fetch on its own: a SetAgents broadcast (the agent
             // re-registering) or the next connection epoch (BecameLiveAgain, below) completes
             // the initialization this load could not.
-            _awaitingAgentCatalog = true;
+            Volatile.Write(ref _awaitingAgentCatalog, 1);
             return;
         }
 
@@ -144,12 +144,11 @@ public sealed class InitializationEffect : IDisposable
     // here, exactly once.
     private async Task HandleAgentCatalogArrivedAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {
-        if (!_awaitingAgentCatalog || agents.Count == 0)
+        if (agents.Count == 0 || !ClaimAgentCatalog())
         {
             return;
         }
 
-        _awaitingAgentCatalog = false;
         await SelectAgentAndLoadTopicsAsync(agents);
     }
 
@@ -158,21 +157,28 @@ public sealed class InitializationEffect : IDisposable
     // retry that also answers not live leaves the flag set for the epoch after this one.
     private async Task RetryAgentCatalogIfAwaitingAsync()
     {
-        if (!_awaitingAgentCatalog)
+        if (Volatile.Read(ref _awaitingAgentCatalog) == 0)
         {
             return;
         }
 
         var catalog = await _agentService.GetAgentsAsync();
-        if (!catalog.IsLive)
+
+        // The same reconnect also carries the agent's re-registration broadcast, so the catalog
+        // may have arrived that way while this fetch was in flight. Claiming after the await is
+        // what keeps the two from both completing initialization — the second run would fetch
+        // every topic again and re-select the agent, dropping the conversation on screen.
+        if (!catalog.IsLive || !ClaimAgentCatalog())
         {
             return;
         }
 
-        _awaitingAgentCatalog = false;
         _dispatcher.Dispatch(new SetAgents(catalog.Value!));
         await SelectAgentAndLoadTopicsAsync(catalog.Value!);
     }
+
+    // The deferred completion is owed exactly once, to whichever path gets here first.
+    private bool ClaimAgentCatalog() => Interlocked.Exchange(ref _awaitingAgentCatalog, 0) == 1;
 
     private async Task SelectAgentAndLoadTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {

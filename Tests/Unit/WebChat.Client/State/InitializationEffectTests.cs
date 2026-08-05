@@ -245,6 +245,37 @@ public sealed class InitializationEffectTests : IDisposable
         await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
     }
 
+    // A reconnect both retries the catalog fetch and carries the agent's re-registration
+    // broadcast with it. Only one of the two may finish the deferred initialization: running it
+    // twice fetches every topic again and re-selects the agent, which drops the conversation the
+    // user is reading.
+    [Fact]
+    public async Task HandleInitializeAsync_ARetryAndABroadcastOnTheSameEpoch_CompleteInitializationOnce()
+    {
+        _configService.WithSpace("default");
+        _agentService.NotLive = true;
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        await _effect.HandleInitializeAsync();
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        _agentService.NotLive = false;
+        _agentService.Agents = [_agentOne];
+        _agentService.Gate = new TaskCompletionSource();
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        _dispatcher.Dispatch(new SetAgents([_agentOne]));
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+        _calls.Reset();
+
+        _agentService.Gate.SetResult();
+
+        await Task.Delay(50);
+        _calls.Calls.ShouldNotContain(call => call.StartsWith("topics:"));
+        _topicsStore.State.SelectedTopicId.ShouldBe("topic-1");
+    }
+
     // The deferred completion belongs to a first load that could not fetch the catalog. A first
     // load that did fetch it has already selected and loaded, so the broadcasts that follow must
     // not load everything again.
