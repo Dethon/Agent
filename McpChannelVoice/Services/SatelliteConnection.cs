@@ -163,7 +163,12 @@ public sealed class SatelliteConnection(
     private async Task DrainAsync()
     {
         Coordinator.Dispose();
-        Session.Playback.Complete();
+        // The link-drop close, not a plain Complete(): on a drop the run token is still live, so the
+        // loop would otherwise be handed every queued job to synthesize and write into the dead
+        // socket, one spurious error report each. Queued jobs settle Discarded instead; the job
+        // being played ends as it really did. On shutdown the token has already stopped the loop
+        // and the discard mark changes nothing.
+        Session.Playback.CompleteAndDiscardQueued();
         await AwaitSwallowingAsync(_playbackTask);
         // After the loop has stopped, never before: a job whose audio finished as the link died has
         // already earned its outcome, and this is only for what the loop never got to.

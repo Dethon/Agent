@@ -190,6 +190,51 @@ public class PlaybackQueueOutcomeTests
     }
 
     [Fact]
+    public async Task CompleteAndDiscardQueued_TheLinkDropped_DiscardsQueuedJobsWithoutPlayingThem()
+    {
+        // A link drop is not a shutdown: the run token stays uncancelled, so Complete() alone let
+        // ReadAllAsync hand the loop every job still queued — each synthesized and written into the
+        // dead socket, settling Failed and firing one spurious error report per job. The link-drop
+        // close discards them instead, while the job being played still ends as it really did.
+        var queue = new PlaybackQueue();
+        var reachedFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pulled = 0;
+        var errors = new List<Exception>();
+
+        async IAsyncEnumerable<AudioChunk> holdThenEnd()
+        {
+            yield return Chunk();
+            reachedFirst.TrySetResult();
+            await releaseFirst.Task;
+        }
+
+        var inFlight = queue.Enqueue(Job("playing", PlaybackKind.Announce) with { Audio = holdThenEnd() });
+        var queuedBehind = queue.Enqueue(
+            Job("waiting", PlaybackKind.Announce) with { Audio = Counting(() => Interlocked.Increment(ref pulled)) });
+        var pump = queue.RunAsync(
+            new PlaybackSink(
+                (_, _) => Task.CompletedTask,
+                OnError: (_, ex) =>
+                {
+                    lock (errors)
+                    { errors.Add(ex); }
+                    return Task.CompletedTask;
+                }),
+            CancellationToken.None);
+
+        await reachedFirst.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        queue.CompleteAndDiscardQueued();
+        releaseFirst.TrySetResult();
+        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+
+        (await inFlight.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+        (await queuedBehind.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
+        Volatile.Read(ref pulled).ShouldBe(0);   // its synthesis was never pulled
+        errors.ShouldBeEmpty();                  // and no spurious error report fired
+    }
+
+    [Fact]
     public async Task Run_AConsumerOfOneOutcomeBlocks_TheNextJobStillPlays()
     {
         // There is no ordering between an outcome being signalled and the next job starting, and a
