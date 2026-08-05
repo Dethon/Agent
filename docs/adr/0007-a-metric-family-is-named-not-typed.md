@@ -33,25 +33,30 @@ The seven families do not have one call shape. They have four:
 A metric family is identified by name, not by its enum types.
 
 ```csharp
-record BreakdownFamily(
-    string Name,
-    string PreferenceKeyPrefix,
-    Func<CancellationToken, Task> RefreshAsync,
-    Func<CancellationToken, Task> LoadEventsAsync);
+class MetricFamily(
+    string name,
+    MetricChoice dimension,
+    MetricChoice? metric,
+    Action<DateOnly, DateOnly> setDateRange,
+    Func<Task> loadEvents,
+    Func<Task> refreshBreakdown);
 
-record BreakdownFamily<TState>(...) : BreakdownFamily
+sealed class MetricFamily<TStore>(TStore store, ...) : MetricFamily
 {
-    Store<TState> Store { get; }
+    public TStore Store { get; }
 }
 ```
 
-The generic parameter carries the store, which the pages and the wrapper component
-need typed. It does not carry the dimension or the metric. Each family's call shape
-lives in the closure that builds its `RefreshAsync`, at the single registration site
-where the family table is constructed.
+Shipped as `Dashboard.Client/Metrics/MetricFamily.cs`. The generic parameter carries
+the store, which the pages and the wrapper component need typed. It does not carry
+the dimension or metric enums: each pill is a `MetricChoice`, which round-trips
+through strings, and a family with no quantity to pick (errors, schedules) passes a
+null metric. Each family's call shape lives in the closure that builds its
+`refreshBreakdown`, at the single registration site where `MetricFamilyTable` is
+constructed.
 
-`MetricsHubEffect` and `DataLoadEffect` iterate the non-generic base. A page names
-one family and gets its state typed.
+`MetricsHubBinder` and `DataLoadEffect` iterate the non-generic base. A page names
+one family and gets its store typed.
 
 ## Considered options
 
@@ -88,9 +93,10 @@ the aggregation-default bug documented at `MetricsApiService.cs:100-102` happene
   name suffix. There is no shared shape there to extract.
 - `LatencyMetric` is renamed `Aggregation`. It is a reduction over a set of durations
   and is the "Metric" pill on the latency page and the "Aggregate" pill on the voice
-  page. It is query-string only and never persisted, so the rename is value-safe.
-  `VoiceMetric` keeps its name: it is persisted by integer value in Redis and its
-  members are pinned.
+  page. It reaches the API as a query string, and `MetricControlsSession` saves the
+  pill to localStorage by member name; a saved name that no longer parses is ignored,
+  so the rename cannot break a stored preference. `VoiceMetric` keeps its name: it is
+  persisted by integer value in Redis and its members are pinned.
 - Sequenced before candidate 11. That candidate was surveyed as a shared Blazor client
   seam and regrilled into a dashboard live-connection fix;
   `docs/adr/0008-the-two-browser-clients-stay-separate.md` records why the sharing half
