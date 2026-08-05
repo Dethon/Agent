@@ -6,11 +6,13 @@ namespace Tests.Unit.Domain.Tools.Files;
 public class PathJailTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"jail-{Guid.NewGuid():N}");
+    private readonly string _outside = Path.Combine(Path.GetTempPath(), $"jail-outside-{Guid.NewGuid():N}");
     private readonly PathJail _jail;
 
     public PathJailTests()
     {
         Directory.CreateDirectory(_root);
+        Directory.CreateDirectory(_outside);
         _jail = new PathJail(_root);
     }
 
@@ -20,6 +22,102 @@ public class PathJailTests : IDisposable
         {
             Directory.Delete(_root, true);
         }
+
+        if (Directory.Exists(_outside))
+        {
+            Directory.Delete(_outside, true);
+        }
+    }
+
+    // Creation fails without symlink permission (e.g. Windows without developer mode); the symlink
+    // tests pass vacuously there rather than fail on the platform.
+    private static bool TryCreateSymlink(string link, string target, bool directory)
+    {
+        try
+        {
+            if (directory)
+            {
+                Directory.CreateSymbolicLink(link, target);
+            }
+            else
+            {
+                File.CreateSymbolicLink(link, target);
+            }
+
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    // Lexically the path sits under the root, but the directory it goes through is a symlink out
+    // of the jail — reading through it would serve foreign bytes.
+    [Fact]
+    public void Contains_AFileBehindADirectorySymlinkPointingOutside_IsOutside()
+    {
+        File.WriteAllText(Path.Combine(_outside, "secret.txt"), "foreign");
+        if (!TryCreateSymlink(Path.Combine(_root, "escape"), _outside, directory: true))
+        {
+            return;
+        }
+
+        _jail.Contains(Path.Combine(_root, "escape", "secret.txt")).ShouldBeFalse();
+        _jail.TryResolve("escape/secret.txt", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Contains_AFileSymlinkPointingOutside_IsOutside()
+    {
+        var target = Path.Combine(_outside, "secret.txt");
+        File.WriteAllText(target, "foreign");
+        if (!TryCreateSymlink(Path.Combine(_root, "alias.txt"), target, directory: false))
+        {
+            return;
+        }
+
+        _jail.Contains(Path.Combine(_root, "alias.txt")).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Contains_ASymlinkPointingInsideTheRoot_IsInside()
+    {
+        var target = Path.Combine(_root, "real");
+        Directory.CreateDirectory(target);
+        if (!TryCreateSymlink(Path.Combine(_root, "alias"), target, directory: true))
+        {
+            return;
+        }
+
+        _jail.Contains(Path.Combine(_root, "alias", "note.md")).ShouldBeTrue();
+        _jail.TryResolve("alias/note.md", out _).ShouldBeTrue();
+    }
+
+    // A leaf that does not exist yet is judged by where its parent physically lives — writing
+    // "escape/new.bin" would create the file outside.
+    [Fact]
+    public void TryResolve_AMissingLeafUnderAnOutwardSymlinkedDirectory_IsRefused()
+    {
+        if (!TryCreateSymlink(Path.Combine(_root, "escape"), _outside, directory: true))
+        {
+            return;
+        }
+
+        _jail.TryResolve("escape/new.bin", out _).ShouldBeFalse();
+    }
+
+    // A broken symlink still has a target: opening it for write would create the file there.
+    [Fact]
+    public void Contains_ABrokenSymlinkPointingOutside_IsOutside()
+    {
+        if (!TryCreateSymlink(Path.Combine(_root, "dangling.txt"),
+                Path.Combine(_outside, "not-yet.txt"), directory: false))
+        {
+            return;
+        }
+
+        _jail.Contains(Path.Combine(_root, "dangling.txt")).ShouldBeFalse();
     }
 
     [Fact]

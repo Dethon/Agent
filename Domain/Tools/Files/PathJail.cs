@@ -6,11 +6,17 @@ namespace Domain.Tools.Files;
 // A prefix counts as containment only when a separator follows it, so a sibling directory whose
 // name merely extends the root's — /library-backup under /library — is outside. One comparison
 // rule applies everywhere, replacing the three the hand-written copies had drifted into.
+//
+// The prefix check alone is lexical, and a symlink physically inside the root can point outside
+// it — reading through one would serve foreign bytes. So containment also resolves every existing
+// component (a leaf that does not exist yet is judged by where its parent physically lives) and
+// holds the resolved path to the same prefix rule, against the root's own physical location.
 public sealed class PathJail
 {
     private const StringComparison _comparison = StringComparison.Ordinal;
 
     private readonly string _rootWithSeparator;
+    private readonly Lazy<(string Root, string WithSeparator)> _physicalRoot;
 
     public PathJail(string root)
     {
@@ -18,9 +24,14 @@ public sealed class PathJail
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         // A root that is itself the filesystem root already ends in a separator; appending another
         // would make every path under it look outside.
-        _rootWithSeparator = Root.EndsWith(Path.DirectorySeparatorChar)
-            ? Root
-            : Root + Path.DirectorySeparatorChar;
+        _rootWithSeparator = WithSeparator(Root);
+        // Resolved lazily so a jail can be built before its root directory exists, and resolved at
+        // all so a root reached through a symlink still admits its own contents.
+        _physicalRoot = new Lazy<(string, string)>(() =>
+        {
+            var physical = ResolvePhysical(Root);
+            return (physical, WithSeparator(physical));
+        });
     }
 
     public string Root { get; }
@@ -28,7 +39,36 @@ public sealed class PathJail
     public string DeniedMessage => $"Access denied: path must be within {Root}";
 
     public bool Contains(string fullPath) =>
-        fullPath.Equals(Root, _comparison) || fullPath.StartsWith(_rootWithSeparator, _comparison);
+        IsUnder(fullPath, Root, _rootWithSeparator) &&
+        IsUnder(
+            ResolvePhysical(Path.TrimEndingDirectorySeparator(fullPath)),
+            _physicalRoot.Value.Root,
+            _physicalRoot.Value.WithSeparator);
+
+    private static bool IsUnder(string fullPath, string root, string rootWithSeparator) =>
+        fullPath.Equals(root, _comparison) || fullPath.StartsWith(rootWithSeparator, _comparison);
+
+    private static string WithSeparator(string root) =>
+        root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+
+    // The physical location of a path: every existing component resolved to its final link target,
+    // components that do not exist (yet) carried through unchanged.
+    private static string ResolvePhysical(string fullPath)
+    {
+        var parent = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrEmpty(parent))
+        {
+            return fullPath;
+        }
+
+        var combined = Path.Combine(ResolvePhysical(parent), Path.GetFileName(fullPath));
+        var info = Directory.Exists(combined)
+            ? (FileSystemInfo)new DirectoryInfo(combined)
+            : new FileInfo(combined);
+        return info.LinkTarget is null
+            ? combined
+            : info.ResolveLinkTarget(returnFinalTarget: true)!.FullName;
+    }
 
     // The resolution the disk tools share: an absolute path is taken as given, a relative one is
     // combined with the root, and '/' separators are accepted on any platform.
