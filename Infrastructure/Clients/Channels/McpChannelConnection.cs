@@ -509,6 +509,17 @@ public sealed class McpChannelConnection(
         {
             return null;
         }
+        catch (ObjectDisposedException)
+        {
+            return null;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // A reconnect disposes the client under a create still in flight, which cancels the
+            // transport's own token — not the caller's. That is "not connected", and not connected
+            // returns null here (ADR 0011); an abort the caller asked for still propagates.
+            return null;
+        }
     }
 
     public async Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)

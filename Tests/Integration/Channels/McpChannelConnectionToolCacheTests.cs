@@ -88,6 +88,20 @@ public class McpChannelConnectionToolCacheTests
     }
 
     [Fact]
+    public async Task CreateConversation_RacingTheClientDisposal_YieldsNull()
+    {
+        // A reconnect disposes the client while a create can still be in flight. What the disposed
+        // client throws must not escape: DeliveryTargetResolver reads null as "this channel minted
+        // nothing" and moves to the next target, per ADR 0011.
+        await using var server = await StartServerAsync();
+        var connection = new McpChannelConnection("test");
+        await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
+        await connection.DisposeAsync();
+
+        (await CreateAsync(connection)).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task CreateConversation_ServerWithoutTheTool_StillYieldsNull()
     {
         await using var server = await InMemoryMcpServer.StartAsync(services => services
