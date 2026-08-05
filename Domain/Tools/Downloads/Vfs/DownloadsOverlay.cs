@@ -27,6 +27,12 @@ public sealed class DownloadsOverlay(
 
     public bool IsVirtualPath(string path) => ParseNode(path).Kind == DownloadNodeKind.StatusFile;
 
+    // Virtual AND currently owned by a live download — the distinction that decides whether a
+    // status.json path is the rendered view or a leftover real file the disk should serve.
+    public async Task<bool> IsLiveVirtualPathAsync(string path, CancellationToken ct) =>
+        ParseNode(path) is { Kind: DownloadNodeKind.StatusFile, Id: { } id }
+        && await downloadClient.GetDownloadItem(id, ct) is not null;
+
     // True when this path and a live download's directory overlap: the directory itself, any
     // ancestor of it (moving a parent takes the directory with it), and anything under it (the
     // payload files the download is still writing). Deleting such a path is the documented cancel,
@@ -62,18 +68,31 @@ public sealed class DownloadsOverlay(
         var item = await downloadClient.GetDownloadItem(node.Id!.Value, ct);
         if (item is null)
         {
-            return new FsResult<FsReadResult>.Err(Error(ToolError.Codes.NotFound, $"Path not found: {path}"));
+            return await ReadLeftoverAsync(path, node.Id.Value, ct);
         }
 
-        var content = RenderStatus(item);
-        return new FsResult<FsReadResult>.Ok(new FsReadResult
+        return Read(path, RenderStatus(item));
+    }
+
+    // No live download owns the id, but info and delete already treat a real file left at this
+    // path as the disk's; reads must agree, or the leftover is visible and removable yet
+    // unreadable.
+    private async Task<FsResult<FsReadResult>> ReadLeftoverAsync(string path, int id, CancellationToken ct)
+    {
+        var file = Path.Combine(DiskDir(id), DownloadsPath.StatusFileName);
+        return File.Exists(file)
+            ? Read(path, await File.ReadAllTextAsync(file, ct))
+            : new FsResult<FsReadResult>.Err(Error(ToolError.Codes.NotFound, $"Path not found: {path}"));
+    }
+
+    private static FsResult<FsReadResult> Read(string path, string content) =>
+        new FsResult<FsReadResult>.Ok(new FsReadResult
         {
             FilePath = path,
             Content = content,
             TotalLines = content.Split('\n').Length,
             Truncated = false
         });
-    }
 
     public async Task<FsResult<FsInfoResult>?> TryInfoAsync(string path, CancellationToken ct)
     {

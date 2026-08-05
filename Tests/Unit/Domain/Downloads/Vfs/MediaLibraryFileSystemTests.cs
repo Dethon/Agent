@@ -324,6 +324,139 @@ public class MediaLibraryFileSystemTests : IDisposable
         _disk.TrashedPaths.ShouldBeEmpty();
     }
 
+    // fs_info answers Exists=true for an active download's directory before qBittorrent has
+    // created it on disk, so the glob's not_found short-circuit contradicted info on the very path
+    // the mount's prose advertises. When the disk has nothing, the overlay still owns its answer.
+    [Fact]
+    public async Task Glob_AnActiveDownloadDirectoryNotYetOnDisk_ListsTheVirtualStatusFile()
+    {
+        _client.Add(Item(42));
+        _disk.ThrowIfBaseMissing = true;
+
+        var glob = (await _sut.GlobAsync("downloads/42", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldContain("downloads/42/status.json");
+    }
+
+    [Fact]
+    public async Task Glob_AMissingDirectoryNoDownloadOwns_IsStillNotFound()
+    {
+        _disk.ThrowIfBaseMissing = true;
+
+        (await _sut.GlobAsync("Movies/nope", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Err>()
+            .Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+    }
+
+    // A move into a live download's directory is refused because delete-as-cancel destroys
+    // whatever landed there — and a copy or blob write lands a file in exactly the same place.
+    // The original survives, but the copy is silently destroyed on cancel, so the boundary
+    // refuses the way in for every write-shaped operation. The way out stays open: copying from
+    // a live download leaves the download's own files untouched.
+    [Fact]
+    public async Task Copy_IntoALiveDownloadDirectory_IsRefused()
+    {
+        _client.Add(Item(42));
+        await File.WriteAllTextAsync(Path.Combine(_libraryRoot, "book.epub"), "book");
+
+        (await _sut.CopyAsync("book.epub", "downloads/42/book.epub", overwrite: false,
+                createDirectories: true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCopyResult>.Err>()
+            .Error.Message.ShouldContain("active download");
+
+        File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "book.epub")).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task BlobWrite_IntoALiveDownloadDirectory_IsRefused()
+    {
+        _client.Add(Item(42));
+
+        (await _sut.WriteBlobAsync("downloads/42/book.epub", Convert.ToBase64String("book"u8.ToArray()),
+                offset: 0, overwrite: true, createDirectories: true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>()
+            .Error.Message.ShouldContain("active download");
+
+        File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "book.epub")).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task WriteChunks_IntoALiveDownloadDirectory_IsRefused()
+    {
+        _client.Add(Item(42));
+
+        var thrown = await Should.ThrowAsync<FileSystemOperationException>(() => _sut.WriteChunksAsync(
+            "downloads/42/book.epub", Chunks("book"), overwrite: true, createDirectories: true,
+            CancellationToken.None));
+
+        thrown.Error.Message.ShouldContain("active download");
+        File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "book.epub")).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Copy_OutOfALiveDownloadDirectory_StillCopies()
+    {
+        _client.Add(Item(42));
+        var payload = Path.Combine(_libraryRoot, "downloads", "42", "book.epub");
+        Directory.CreateDirectory(Path.GetDirectoryName(payload)!);
+        await File.WriteAllTextAsync(payload, "book");
+
+        (await _sut.CopyAsync("downloads/42/book.epub", "Books/book.epub", overwrite: false,
+                createDirectories: true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCopyResult>.Ok>();
+
+        File.Exists(Path.Combine(_libraryRoot, "Books", "book.epub")).ShouldBeTrue();
+    }
+
+    // The leftover fix made a dead download's real status.json visible and removable; reading it
+    // still answered not_found (fs_read) or the read-only refusal (fs_blob_read) — info said the
+    // file exists while both read paths denied it. With no live item the disk is the truth for
+    // reads too.
+    [Fact]
+    public async Task Read_ALeftoverStatusFileWithNoLiveDownload_ServesTheRealFile()
+    {
+        var leftover = Path.Combine(_libraryRoot, "downloads", "99", "status.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
+        await File.WriteAllTextAsync(leftover, "{\"stale\":true}");
+
+        var read = (await _sut.ReadAsync("downloads/99/status.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+
+        read.Content.ShouldContain("stale");
+    }
+
+    [Fact]
+    public async Task BlobRead_ALeftoverStatusFileWithNoLiveDownload_ServesTheRealFile()
+    {
+        var leftover = Path.Combine(_libraryRoot, "downloads", "99", "status.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
+        await File.WriteAllTextAsync(leftover, "{\"stale\":true}");
+
+        var blob = (await _sut.ReadBlobAsync("downloads/99/status.json", 0, 1024, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobReadResult>.Ok>().Value;
+
+        Encoding.UTF8.GetString(Convert.FromBase64String(blob.ContentBase64)).ShouldContain("stale");
+    }
+
+    [Fact]
+    public async Task Read_AStatusPathWithNoLiveDownloadAndNoFile_IsNotFound()
+    {
+        (await _sut.ReadAsync("downloads/99/status.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Err>()
+            .Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+    }
+
+    [Fact]
+    public async Task BlobRead_OfALiveDownloadsStatusFile_IsStillRefused()
+    {
+        _client.Add(Item(42));
+
+        (await _sut.ReadBlobAsync("downloads/42/status.json", 0, 10, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobReadResult>.Err>()
+            .Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+    }
+
     private static FsResult<FileSystemResolution> Resolved(IFileSystemBackend backend, string relativePath) =>
         new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, ""));
 

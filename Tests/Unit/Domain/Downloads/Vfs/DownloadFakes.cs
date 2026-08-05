@@ -100,8 +100,14 @@ public static class DownloadFakes
         public Task<Dictionary<string, string[]>> DescribeDirectory(string path, CancellationToken cancellationToken = default) =>
             Task.FromResult(new Dictionary<string, string[]>());
 
+        // Mirrors the real client, which throws when the glob's base directory is missing —
+        // opt-in so the suites that never touch the disk keep their empty-result shortcut.
+        public bool ThrowIfBaseMissing { get; set; }
+
         public Task<string[]> Glob(string basePath, string pattern, CancellationToken cancellationToken = default) =>
-            Task.FromResult(GlobResults.ToArray());
+            ThrowIfBaseMissing && !Directory.Exists(basePath)
+                ? throw new DirectoryNotFoundException(basePath)
+                : Task.FromResult(GlobResults.ToArray());
 
         public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
