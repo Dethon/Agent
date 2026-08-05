@@ -112,11 +112,15 @@ public static class FileSystemServerTools
             .ToList();
 
     // The backend's own declaration of what it can do. An operation it never overrode is still the
-    // base's unsupported default, so there is nothing to register.
+    // base's unsupported default, so there is nothing to register. Only a true override counts:
+    // a `new`-shadowing method shares the name but not the base's virtual slot, and the handlers
+    // dispatch through a base-typed reference, which would land on the unsupported default.
     private static bool Overrides(Type backendType, string methodName) =>
         backendType
-            .GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance)
-            ?.DeclaringType != typeof(FileSystemBackendBase);
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Any(m => m.Name == methodName
+                      && m.DeclaringType != typeof(FileSystemBackendBase)
+                      && m.GetBaseDefinition().DeclaringType == typeof(FileSystemBackendBase));
 
     // The wire hands outputMode over as a string; a value that names neither mode is the caller's
     // error and answers the invalid-argument envelope instead of silently becoming Content.

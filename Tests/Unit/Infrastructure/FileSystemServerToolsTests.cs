@@ -36,6 +36,35 @@ public class FileSystemServerToolsTests
         }
     }
 
+    // A `new`-shadowing method is not an override: the registrar's handlers dispatch through a
+    // base-typed reference, which lands on the base's unsupported default — so a shadowed
+    // operation must not be advertised as a capability.
+    private sealed class ShadowingBackend : FileSystemBackendBase
+    {
+        public override string FilesystemName => "shadowing";
+
+        public override string DescribeMount => "Shadows InfoAsync instead of overriding it.";
+
+        public new Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
+            Task.FromResult<FsResult<FsInfoResult>>(new FsResult<FsInfoResult>.Ok(new FsInfoResult
+            {
+                Exists = true, Path = path
+            }));
+
+        public override Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit,
+            CancellationToken ct) =>
+            Task.FromResult(FsError.NotFound<FsReadResult>(path));
+    }
+
+    [Fact]
+    public void SupportedToolNames_ShadowingMethod_IsNotRegisteredAsCapability()
+    {
+        var tools = FileSystemServerTools.SupportedToolNames(typeof(ShadowingBackend));
+
+        tools.ShouldNotContain("fs_info");
+        tools.ShouldContain("fs_read");
+    }
+
     [Theory]
     [InlineData("content", VfsTextSearchOutputMode.Content)]
     [InlineData("filesOnly", VfsTextSearchOutputMode.FilesOnly)]
