@@ -104,6 +104,24 @@ public class InsistentAnnouncementControllerTests
         await pump;
     }
 
+    // Pushes the fake clock forward until the condition holds, rather than once by the nominal gap.
+    // Same hazard as above, on the other side of the round: both the gap delay and the previous
+    // round's playback tail are registered AFTER the chunk write that moves the play counter, so a
+    // single Advance can land before either timer exists — and then nothing ever moves the clock
+    // again, leaving the ring loop and the pump waiting on each other until the test times out.
+    private static async Task AdvanceUntilAsync(
+        FakeTimeProvider time, Func<bool> condition, TimeSpan timeout)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (!condition())
+        {
+            if (sw.Elapsed > timeout)
+            { throw new TimeoutException("condition not met while advancing the clock"); }
+            time.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(20);
+        }
+    }
+
     // Runs each online session's playback loop so enqueued jobs actually play; the writer counts
     // one invocation per round (the mock TTS yields exactly one chunk).
     private static (Task Pump, Func<int> Count) PumpPlays(SatelliteSession session, FakeTimeProvider time)
@@ -303,8 +321,7 @@ public class InsistentAnnouncementControllerTests
         await WaitUntilAsync(() => plays() >= 2, TimeSpan.FromSeconds(5)); // round 1 (tone + TTS)
         actions().Count(a => a == "alert-hold").ShouldBe(1);
 
-        time.Advance(TimeSpan.FromSeconds(30));
-        await WaitUntilAsync(() => plays() >= 4, TimeSpan.FromSeconds(5)); // round 2 (tone + TTS)
+        await AdvanceUntilAsync(time, () => plays() >= 4, TimeSpan.FromSeconds(5)); // round 2 (tone + TTS)
         await WaitUntilAsync(
             () => actions().Count(a => a == "alert-hold") >= 2, TimeSpan.FromSeconds(5));
 
@@ -428,10 +445,8 @@ public class InsistentAnnouncementControllerTests
             CancellationToken.None);
 
         await WaitUntilAsync(() => plays() >= 2, TimeSpan.FromSeconds(5)); // round 1 (tone + TTS)
-        time.Advance(TimeSpan.FromSeconds(30));
-        await WaitUntilAsync(() => plays() >= 4, TimeSpan.FromSeconds(5)); // round 2 (tone + TTS)
-        time.Advance(TimeSpan.FromSeconds(30));
-        await WaitUntilAsync(() => plays() >= 6, TimeSpan.FromSeconds(5)); // round 3 (== cap, tone + TTS)
+        await AdvanceUntilAsync(time, () => plays() >= 4, TimeSpan.FromSeconds(5)); // round 2 (tone + TTS)
+        await AdvanceUntilAsync(time, () => plays() >= 6, TimeSpan.FromSeconds(5)); // round 3 (== cap)
 
         await WaitUntilAsync(
             () => h.Publisher.Events.Any(e => e.Metric == VoiceMetric.AlarmUnacknowledged),
