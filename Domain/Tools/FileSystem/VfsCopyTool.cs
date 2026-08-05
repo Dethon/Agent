@@ -112,9 +112,10 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                       "source or destination for a cross-filesystem copy or move.");
         }
 
-        if (deleteSource)
+        if (deleteSource &&
+            !(await src.Backend.DeleteAsync(src.RelativePath, ct)).TryGetValue(out _, out var deleteError))
         {
-            await src.Backend.DeleteAsync(src.RelativePath, ct);
+            return SourceNotRemoved(srcVirtual, dstVirtual, deleteError);
         }
 
         return new JsonObject
@@ -250,9 +251,10 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             }
         }
 
-        if (deleteSource && failed == 0 && transferred > 0)
+        if (deleteSource && failed == 0 && transferred > 0 &&
+            !(await src.Backend.DeleteAsync(src.RelativePath, ct)).TryGetValue(out _, out var deleteError))
         {
-            await src.Backend.DeleteAsync(src.RelativePath, ct);
+            return SourceNotRemoved(srcVirtual, dstVirtual, deleteError);
         }
 
         var status = (transferred, failed) switch
@@ -275,6 +277,16 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             ["entries"] = perEntry
         };
     }
+
+    // A streamed move is copy + delete; a refused delete must not present the duplicate-leaving
+    // copy as a completed move. The envelope keeps the source's code so the caller can tell a
+    // read-only refusal from a transient failure.
+    private static JsonNode SourceNotRemoved(string srcVirtual, string dstVirtual, ToolErrorResult error) =>
+        ToolError.Create(
+            error.ErrorCode,
+            $"Copied '{srcVirtual}' to '{dstVirtual}', but the source could not be removed: {error.Message}",
+            retryable: error.Retryable,
+            hint: $"The destination holds a complete copy. Remove '{srcVirtual}' yourself, or keep both copies.");
 
     private static string? ExtractTail(string srcRel, string sourceDir)
     {
