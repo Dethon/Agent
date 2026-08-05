@@ -34,7 +34,19 @@ public sealed class ReplySpeaker(
 
     public void SpeakUtteranceReply(SatelliteSession session, SendReplyParams p)
     {
-        var stream = _streams.GetOrAdd(p.ConversationId, _ => session.Turn.OpenStream());
+        // A stream normally clears its entry on the terminal event that ends it. One that never gets
+        // a terminal event — the agent's connection to this server drops mid-answer — leaves its
+        // token behind instead, and the satellite outlives that: it redials, the hub builds a new
+        // session with a new turn, and the conversation is the same one (the mapping outlives the
+        // connection). Adopting the leftover token there would end a turn discarded with the old
+        // session, so the live turn never settles and the satellite is unresponsive until
+        // FollowUpConversation gives up at ReplyTimeoutMs. A token that cannot reach this session's
+        // turn is therefore replaced; one that can is kept, because within a session the epoch guard
+        // is what tells an abandoned answer's late completion from this turn's own.
+        var stream = _streams.AddOrUpdate(
+            p.ConversationId,
+            _ => session.Turn.OpenStream(),
+            (_, held) => held.BelongsTo(session.Turn) ? held : session.Turn.OpenStream());
 
         switch (p.ContentType)
         {

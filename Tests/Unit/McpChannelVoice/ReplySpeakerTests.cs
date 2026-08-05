@@ -834,6 +834,37 @@ public class ReplySpeakerTests
     }
 
     [Fact]
+    public async Task SpeakUtteranceReply_AStreamThatNeverEndedAndTheSatelliteRedialled_StillSettlesTheNewTurn()
+    {
+        // A reply stream can end without any terminal event at all: the agent's connection to this
+        // server drops mid-answer (a restart or a deploy), so no Error and no StreamComplete ever
+        // arrive and the stream's token stays behind. The satellite then redials and the hub builds
+        // a fresh session — a fresh turn — for the same conversation, because the manager's
+        // satellite -> conversation mapping outlives the connection. Adopting the leftover token
+        // there ends a turn that was discarded with the old session, so the live turn never settles
+        // and FollowUpConversation recovers only at the ~120 s reply timeout, with the satellite
+        // unresponsive for all of it.
+        _session.Turn.Reset();
+        Say(_speaker, "", ReplyContentType.ToolCall, false); // the stream opens and never terminates
+
+        _sessions.Register(new SatelliteSession("kitchen-01", _session.Config));
+        var session = _sessions.Get("kitchen-01")!;
+        session.Turn.Reset();
+        var turn = session.Turn.AwaitSpoken();
+
+        Say(_speaker, "hola mundo", ReplyContentType.Text, false);
+        Say(_speaker, "", ReplyContentType.StreamComplete, true);
+
+        var pump = session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        session.Playback.Complete();
+
+        var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        spoke.ShouldBeTrue();
+    }
+
+    [Fact]
     public void SpeakUtteranceReply_TheEnqueueIsRefusedAfterTheTextWasTaken_HandsItBackToTheBuffer()
     {
         // Asking the queue first only answers for the depth limit, and it answers in advance: a
