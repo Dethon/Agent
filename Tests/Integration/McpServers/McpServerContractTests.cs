@@ -26,12 +26,12 @@ public class McpServerContractTests
     public void EveryServer_ResolvesItsSettingsAsASingleton(string id)
     {
         var row = McpServerRegistrations.Get(id);
-        using var provider = Build(row);
+        using var server = new ConfiguredServer(row);
 
-        var settings = provider.GetService(row.Settings.GetType());
+        var settings = server.Provider.GetService(row.Settings.GetType());
 
         settings.ShouldBeSameAs(row.Settings, $"{id} must register the settings it was handed");
-        provider.GetService(row.Settings.GetType())
+        server.Provider.GetService(row.Settings.GetType())
             .ShouldBeSameAs(settings, $"{id} must register its settings as a singleton");
     }
 
@@ -39,17 +39,15 @@ public class McpServerContractTests
     [MemberData(nameof(Servers))]
     public void EveryServer_RegistersTheMcpHost(string id)
     {
-        var row = McpServerRegistrations.Get(id);
-        var services = new ServiceCollection();
-        row.Configure(services);
+        using var server = new ConfiguredServer(McpServerRegistrations.Get(id));
 
         // Both halves are asserted on the descriptors the two calls add, not by resolving IOptions:
         // an IOptions<T> resolves to a default instance whether or not anyone configured it, so
         // resolving it would stay green against a module that never started a server at all.
-        services.ShouldContain(
+        server.Services.ShouldContain(
             descriptor => descriptor.ServiceType == typeof(IConfigureOptions<McpServerOptions>),
             $"{id} must start an MCP server");
-        services.ShouldContain(
+        server.Services.ShouldContain(
             descriptor => descriptor.ServiceType == typeof(IConfigureOptions<HttpServerTransportOptions>),
             $"{id} must add the HTTP transport");
     }
@@ -61,10 +59,9 @@ public class McpServerContractTests
     [MemberData(nameof(Servers))]
     public void EveryServer_HasExactlyOneCallToolFilter(string id)
     {
-        var services = new ServiceCollection();
-        McpServerRegistrations.Get(id).Configure(services);
+        using var server = new ConfiguredServer(McpServerRegistrations.Get(id));
 
-        McpServerProbe.CallToolFilterCount(services)
+        McpServerProbe.CallToolFilterCount(server.Services)
             .ShouldBe(1, $"{id} must have exactly one call-tool filter");
     }
 
@@ -75,10 +72,10 @@ public class McpServerContractTests
     [MemberData(nameof(DualRoleServers))]
     public void EveryDualRoleServer_AdvertisesTheChannelProtocolTools(string id)
     {
-        var row = McpServerRegistrations.Get(id);
-        using var provider = Build(row);
+        using var server = new ConfiguredServer(McpServerRegistrations.Get(id));
 
-        var tools = provider.GetServices<McpServerTool>().Select(tool => tool.ProtocolTool.Name).ToList();
+        var tools = server.Provider.GetServices<McpServerTool>()
+            .Select(tool => tool.ProtocolTool.Name).ToList();
 
         tools.ShouldContain(ChannelProtocol.SendReplyTool, $"{id} must advertise send_reply");
         tools.ShouldContain(ChannelProtocol.RequestApprovalTool, $"{id} must advertise request_approval");
@@ -87,10 +84,36 @@ public class McpServerContractTests
     public static TheoryData<string> DualRoleServers => McpServerRegistrations.Ids(
         McpServerRegistrations.All.Where(row => row.Role == McpServerRole.DualRole));
 
-    private static ServiceProvider Build(McpServerRow row)
+    // The SignalR module connects its Redis multiplexer and ServiceBus its client eagerly, at
+    // Configure time, and registers them as instance singletons — which DI never disposes, in the
+    // shipped server or here. There each instance lives exactly as long as the process; here a row
+    // is configured once per theory case, so without this wrapper every case would leak a
+    // multiplexer whose background reconnect loop runs until the test process exits.
+    private sealed class ConfiguredServer : IDisposable
     {
-        var services = new ServiceCollection();
-        row.Configure(services);
-        return services.BuildServiceProvider();
+        private ServiceProvider? _provider;
+
+        public ConfiguredServer(McpServerRow row) => row.Configure(Services);
+
+        public ServiceCollection Services { get; } = [];
+
+        public ServiceProvider Provider => _provider ??= Services.BuildServiceProvider();
+
+        public void Dispose()
+        {
+            _provider?.Dispose();
+            foreach (var instance in Services.Select(descriptor => descriptor.ImplementationInstance))
+            {
+                switch (instance)
+                {
+                    case IDisposable disposable:
+                        disposable.Dispose();
+                        break;
+                    case IAsyncDisposable asyncDisposable:
+                        asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                        break;
+                }
+            }
+        }
     }
 }
