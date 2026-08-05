@@ -199,6 +199,52 @@ public sealed class InitializationEffectTests : IDisposable
         _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
     }
 
+    // Nothing broadcasts SetAgents on its own — the agent has to re-register for that. The
+    // client cannot wait on that; the next connection epoch has to retry the fetch itself, or
+    // the sidebar stays empty until a manual reload.
+    [Fact]
+    public async Task HandleInitializeAsync_TheCatalogWasNotLive_TheNextEpochRetriesAndCompletesInitialization()
+    {
+        _configService.WithSpace("default");
+        _agentService.NotLive = true;
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "first"));
+        await _effect.HandleInitializeAsync();
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _topicsStore.State.SelectedAgentId.ShouldBeNull();
+
+        _agentService.NotLive = false;
+        _agentService.Agents = [_agentOne];
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
+        await TestChat.Eventually(() =>
+            _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1", []).Count == 1);
+        _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
+    }
+
+    // A retry that also comes up not live must not clear the awaiting flag — the epoch after
+    // that one is still owed a retry.
+    [Fact]
+    public async Task HandleInitializeAsync_TheRetryIsAlsoNotLive_TheEpochAfterThatStillRetries()
+    {
+        _configService.WithSpace("default");
+        _agentService.NotLive = true;
+        await _effect.HandleInitializeAsync();
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _topicsStore.State.SelectedAgentId.ShouldBeNull();
+
+        _agentService.NotLive = false;
+        _agentService.Agents = [_agentOne];
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
+    }
+
     // The deferred completion belongs to a first load that could not fetch the catalog. A first
     // load that did fetch it has already selected and loaded, so the broadcasts that follow must
     // not load everything again.
