@@ -9,6 +9,7 @@ using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace Tests.Unit.WebChat.Client.State;
@@ -21,6 +22,7 @@ public sealed class TopicDeleteEffectTests : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
     private readonly ApprovalStore _approvalStore;
+    private readonly ToastStore _toastStore;
     private readonly FakeChatMessagingService _messagingService = new();
     private readonly FakeTopicService _topicService;
     private readonly RecordingLogger<TopicDeleteEffect> _logger = new();
@@ -32,6 +34,7 @@ public sealed class TopicDeleteEffectTests : IDisposable
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
         _approvalStore = new ApprovalStore(_dispatcher);
+        _toastStore = new ToastStore(_dispatcher);
         _topicService = new FakeTopicService(_calls);
 
         var pipeline = new MessagePipeline(
@@ -79,6 +82,39 @@ public sealed class TopicDeleteEffectTests : IDisposable
 
         _messagingService.CancelledTopics.ShouldBe(["topic-1"]);
         _streamingStore.State.StreamingByTopic.ShouldNotContainKey("topic-1");
+    }
+
+    // The server already deleted the topic; the notification only reports it. A cancel that cannot
+    // be made is best-effort cleanup, not a failed user action — the row must still leave, and no
+    // toast may blame the user for something they never did.
+    [Fact]
+    public async Task HandleRemoveTopicAsync_ServerDeletedAStreamingTopicWhileNotLive_RemovesTheRowWithoutAToast()
+    {
+        GivenTopicWithMessages("topic-1");
+        _dispatcher.Dispatch(new StreamStarted("topic-1"));
+        _messagingService.NotLive = true;
+
+        await _effect.HandleRemoveTopicAsync("topic-1");
+
+        _topicsStore.State.Topics.ShouldBeEmpty();
+        _messagesStore.State.MessagesByTopic.ShouldNotContainKey("topic-1");
+        _streamingStore.State.StreamingByTopic.ShouldNotContainKey("topic-1");
+        _toastStore.State.Toasts.ShouldBeEmpty();
+    }
+
+    // The user asked for this one, so a cancel that cannot be made keeps its answer: the row stays
+    // and the toast says the delete did not go through.
+    [Fact]
+    public async Task HandleRemoveTopicAsync_UserDeletesAStreamingTopicWhileNotLive_KeepsTheRowAndShowsTheToast()
+    {
+        GivenTopicWithMessages("topic-1");
+        _dispatcher.Dispatch(new StreamStarted("topic-1"));
+        _messagingService.NotLive = true;
+
+        await _effect.HandleRemoveTopicAsync("topic-1", "agent-1", chatId: 10, threadId: 20);
+
+        _topicsStore.State.Topics.ShouldNotBeEmpty();
+        _toastStore.State.Toasts.Count.ShouldBe(1);
     }
 
     [Fact]
@@ -171,5 +207,6 @@ public sealed class TopicDeleteEffectTests : IDisposable
         _messagesStore.Dispose();
         _streamingStore.Dispose();
         _approvalStore.Dispose();
+        _toastStore.Dispose();
     }
 }

@@ -44,10 +44,19 @@ public sealed class TopicDeleteEffect
     public async Task HandleRemoveTopicAsync(
         string topicId, string? agentId = null, long? chatId = null, long? threadId = null)
     {
+        // AgentId/ChatId/ThreadId present means the user asked for this delete. A server
+        // notification carries none of them, because the server already deleted the topic.
+        var userInitiated = agentId is not null && chatId.HasValue && threadId.HasValue;
+
         if (_streamingStore.State.StreamingByTopic.ContainsKey(topicId))
         {
             var cancelled = await _messagingService.CancelTopicAsync(topicId);
-            if (!cancelled.IsLive)
+
+            // Only a user-initiated delete stops on a cancel that could not be made. For a
+            // server-initiated removal the cancel is best-effort cleanup of a stream the server
+            // already ended: toasting would blame the user for an action they never took, and
+            // stopping would leave a ghost row for a topic that no longer exists.
+            if (!cancelled.IsLive && userInitiated)
             {
                 _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
                 return;
