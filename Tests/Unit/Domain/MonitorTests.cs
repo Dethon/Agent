@@ -66,11 +66,18 @@ internal sealed class FakeAiAgent : DisposableAgent
         return ValueTask.FromResult(JsonSerializer.SerializeToElement(new { }));
     }
 
-    protected override ValueTask<AgentSession> DeserializeSessionCoreAsync(
+    public Func<Task>? RestoreGate { get; init; }
+
+    protected override async ValueTask<AgentSession> DeserializeSessionCoreAsync(
         JsonElement serializedThread,
         JsonSerializerOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        if (RestoreGate is not null)
+        {
+            await RestoreGate();
+        }
+
         if (RestoreExceptionToThrow is not null)
         {
             throw RestoreExceptionToThrow;
@@ -80,7 +87,7 @@ internal sealed class FakeAiAgent : DisposableAgent
         {
             RestoredSessionKeys.Enqueue(key);
         }
-        return ValueTask.FromResult<AgentSession>(new FakeAgentThread());
+        return new FakeAgentThread();
     }
 
     protected override Task<AgentResponse> RunCoreAsync(

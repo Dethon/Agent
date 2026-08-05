@@ -50,12 +50,31 @@ public class ChatThreadResolverTests
         stateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>())).Returns(Task.CompletedTask);
         var resolver = new ChatThreadResolver(stateStore.Object);
         var key = new AgentKey("1:1");
-        resolver.Resolve(key);
-        resolver.Cancel(key);
+        var context = resolver.Resolve(key);
+        resolver.Cancel(key, context);
 
         await resolver.ClearAsync(key);
 
         stateStore.Verify(s => s.DeleteAsync(key), Times.Once);
+    }
+
+    [Fact]
+    public void Cancel_WhenAFreshContextReplacedTheCallersOne_LeavesTheReplacementAlone()
+    {
+        // The dying group asks to cancel the context it resolved, not "whatever is under this
+        // key now". A group torn down by a /cancel can still be inside its establish path, and
+        // by the time it fails the next message has opened a fresh group with a fresh context.
+        // Disposing that one would kill the successor's turn and drop the user's new message.
+        var resolver = new ChatThreadResolver();
+        var key = new AgentKey("1:1");
+        var first = resolver.Resolve(key);
+        resolver.Cancel(key, first);
+        var second = resolver.Resolve(key);
+
+        resolver.Cancel(key, first);
+
+        second.Cts.IsCancellationRequested.ShouldBeFalse();
+        resolver.AgentKeys.ShouldContain(key);
     }
 
     [Fact]

@@ -43,6 +43,14 @@ internal sealed class ConversationGroup(
 
     private GroupState? _state;
 
+    // The one this group resolved. Cancelling is addressed at it, so a group that fails after
+    // a /cancel already replaced it under the same key cannot tear its successor down.
+    private ChatThreadContext? _context;
+
+    // Set once a turn has waited on the warmup, so its failure has already been reported as
+    // that turn's failure.
+    private bool _warmupSurfaced;
+
     // Held from the moment it is created, not from the moment the group is established, so a
     // failure between the two still disposes it.
     private DisposableAgent? _agent;
@@ -66,14 +74,13 @@ internal sealed class ConversationGroup(
         // completion callback and the turn token, so it exists before any message is read: a
         // command that found no live context would leave this group running against a context
         // resolved after it.
-        var context = TryResolveContext(onGroupComplete);
-        if (context is null)
+        var linked = TrySetUpContext(onGroupComplete);
+        if (linked is null)
         {
             yield break;
         }
 
-        context.RegisterCompletionCallback(onGroupComplete);
-        using var linkedCts = context.GetLinkedTokenSource(ct);
+        using var linkedCts = linked;
         _turnCt = linkedCts.Token;
 
         await foreach (var update in RunTurnsSequentiallyAsync(messages))
@@ -82,22 +89,29 @@ internal sealed class ConversationGroup(
         }
     }
 
-    // The same protection the turn loop gives a half-built group, one stage earlier. Resolving
-    // the context is the first thing the group does, and it throws once the container has
-    // disposed the resolver at shutdown. Thrown out of RunAsync it would be swallowed by the
-    // monitor's stream merge, leaving the grouping never completed and every later message for
-    // this conversation queued into a group nobody reads. Completing the grouping here ends it,
-    // so a message arriving after a resolver that is up again opens a fresh group.
-    private ChatThreadContext? TryResolveContext(Action onGroupComplete)
+    // The same protection the turn loop gives a half-built group, one stage earlier. Setting the
+    // context up is the first thing the group does, and every step of it throws: resolving,
+    // once the container has disposed the resolver at shutdown; registering the callback and
+    // linking the token, on a context disposed between resolving it and using it — the same
+    // shutdown race one step later, and the /cancel that replaced this group's context while it
+    // was starting. Thrown out of RunAsync any of them would be swallowed by the monitor's
+    // stream merge, leaving the grouping never completed and every later message for this
+    // conversation queued into a group nobody reads. Completing the grouping here ends it, so a
+    // message arriving after a resolver that is up again opens a fresh group.
+    private CancellationTokenSource? TrySetUpContext(Action onGroupComplete)
     {
         try
         {
-            return threadResolver.Resolve(agentKey);
+            var context = threadResolver.Resolve(agentKey);
+            context.RegisterCompletionCallback(onGroupComplete);
+            var linked = context.GetLinkedTokenSource(_groupCt);
+            _context = context;
+            return linked;
         }
         catch (Exception ex)
         {
             logger.LogError(ex,
-                "Resolving the thread context failed for conversation {ConversationId} and agent {AgentId}; ending the group",
+                "Setting up the thread context failed for conversation {ConversationId} and agent {AgentId}; ending the group",
                 agentKey.ConversationId, agentKey.AgentId);
             onGroupComplete();
             return null;
@@ -143,10 +157,39 @@ internal sealed class ConversationGroup(
         using var pumpCts = CancellationTokenSource.CreateLinkedTokenSource(_turnCt);
         var reader = DispatchCommandsAndQueueTurnsAsync(messages, pending.Writer, pumpCts.Token);
 
+        // Enumerated by hand rather than with await foreach, because reading is itself a
+        // failure site: the pump folds anything it throws — a wire message that deserialized
+        // with no content, say — into the channel, and it comes back out here. Out of an
+        // await foreach that fault would pass both per-turn catches and leave RunAsync, where
+        // the monitor's stream merge swallows it and the group stays registered and unread. It
+        // ends the group instead, exactly like a turn that fails to set up.
+        var queue = pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt).GetAsyncEnumerator();
+
         try
         {
-            await foreach (var x in pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt))
+            while (true)
             {
+                bool hasTurn;
+                try
+                {
+                    hasTurn = await queue.MoveNextAsync();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex,
+                        "The message pump failed for conversation {ConversationId} and agent {AgentId}; ending the group",
+                        agentKey.ConversationId, agentKey.AgentId);
+                    CancelOwnContext();
+                    await ObserveAbandonedWarmupAsync();
+                    break;
+                }
+
+                if (!hasTurn)
+                {
+                    break;
+                }
+
+                var x = queue.Current;
                 // The reader hands over items it already buffered even after the token fired,
                 // so a turn queued behind the one a /clear or /cancel just ended would start
                 // against the torn-down group. It is dropped instead, and acknowledged below.
@@ -161,10 +204,15 @@ internal sealed class ConversationGroup(
                 {
                     turn = await RunTurnAsync(x);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (_turnCt.IsCancellationRequested)
                 {
                     // A /cancel or /clear mid-setup: the context dispose that raised this
-                    // already completed the group.
+                    // already completed the group. The filter is what tells that apart from a
+                    // cancellation nobody asked for — the establishing stages run on the group
+                    // token, and an HttpClient timeout inside minting a conversation or
+                    // restoring the thread arrives as a TaskCanceledException. Without it that
+                    // timeout would break out of here with the group never completed, leaving
+                    // every later message queued into a channel nobody reads.
                     await ObserveAbandonedWarmupAsync();
                     break;
                 }
@@ -179,7 +227,7 @@ internal sealed class ConversationGroup(
                     logger.LogError(ex,
                         "Turn setup failed for conversation {ConversationId} and agent {AgentId}; ending the group",
                         agentKey.ConversationId, agentKey.AgentId);
-                    threadResolver.Cancel(agentKey);
+                    CancelOwnContext();
                     await ObserveAbandonedWarmupAsync();
                     break;
                 }
@@ -192,6 +240,7 @@ internal sealed class ConversationGroup(
         }
         finally
         {
+            await queue.DisposeAsync();
             await pumpCts.CancelAsync();
             await reader;
             // Anything still queued when the group ends is dropped by that end — a /clear or
@@ -230,11 +279,17 @@ internal sealed class ConversationGroup(
         catch (OperationCanceledException)
         {
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!_warmupSurfaced)
         {
             logger.LogError(ex,
                 "Session warmup failed for conversation {ConversationId} and agent {AgentId}",
                 agentKey.ConversationId, agentKey.AgentId);
+        }
+        catch (Exception)
+        {
+            // The turn already waited on this warmup, so its failure came out as the turn's
+            // own setup failure and was logged there. Awaiting it again is only about not
+            // leaving an unobserved task exception behind.
         }
     }
 
@@ -260,7 +315,7 @@ internal sealed class ConversationGroup(
                         await ClearThreadAsync();
                         break;
                     case ChatCommand.Cancel:
-                        threadResolver.Cancel(agentKey);
+                        CancelOwnContext();
                         break;
                     default:
                         // TryWrite, not WriteAsync with the pump token: on an unbounded
@@ -291,6 +346,14 @@ internal sealed class ConversationGroup(
     // raised and never observes a fault folded into the pending channel. So the failure is
     // named here, at the only site that still sees it: the live thread is gone, the
     // persisted one survived, and the cleared history returns on the next message.
+    private void CancelOwnContext()
+    {
+        if (_context is not null)
+        {
+            threadResolver.Cancel(agentKey, _context);
+        }
+    }
+
     private async Task ClearThreadAsync()
     {
         try
@@ -379,6 +442,9 @@ internal sealed class ConversationGroup(
         }
         var userMessage = await BuildUserMessageAsync(turn, state);
 
+        // From here a warmup failure is this turn's failure and is reported as one, so the
+        // abandoned-warmup observer must not name it a second time.
+        _warmupSurfaced = true;
         await state.Warmup;
         return StreamAgentTurn(state, userMessage, turn);
     }
