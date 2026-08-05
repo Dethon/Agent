@@ -144,6 +144,23 @@ public class DeliveryPolicyTests
         (await sut.EmitAsync(Message("second"))).ShouldBeFalse();
     }
 
+    // Buffer-always targets one subscriber id, so its liveness answer must be about that id. "Is
+    // anyone live" would read an agent polling under a different derived id as delivery, and the
+    // only diagnostic — the caller's not-live warning — would never fire while items pile into a
+    // queue nobody drains: exactly the silent failure DeliveryPolicyRules warns about.
+    [Fact]
+    public async Task EmitAsync_BufferAlways_WithOnlyADifferentIdLive_BuffersAndReportsNotLive()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync("channel-other", TimeSpan.Zero, CancellationToken.None);
+        var sut = new ChannelNotificationEmitter(inbox, DeliveryPolicy.BufferAlways, Subscriber);
+
+        var live = await sut.EmitAsync(Message());
+
+        live.ShouldBeFalse();
+        (await DrainAsync(inbox)).Count.ShouldBe(1);
+    }
+
     [Fact]
     public void Constructor_BufferAlways_WithoutASubscriberId_Throws() =>
         Should.Throw<ArgumentException>(() =>

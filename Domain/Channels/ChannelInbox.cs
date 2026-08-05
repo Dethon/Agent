@@ -39,6 +39,17 @@ public sealed class ChannelInbox(
         return _subscribers.Values.Any(subscriber => subscriber.IsLiveSince(cutoff));
     }
 
+    // The targeted variant, for a caller about to enqueue to one specific subscriber: "is anyone
+    // live" reads a poller under a different id as delivery, which is exactly the silent
+    // buffer-into-nothing failure the buffer-always policy warns about. Same freshness rule, same
+    // "actually polled recently" bar.
+    public bool HasLiveSubscriber(string subscriberId)
+    {
+        PruneIdle();
+        var cutoff = _timeProvider.GetUtcNow() - LiveSubscriberFreshness;
+        return _subscribers.TryGetValue(subscriberId, out var subscriber) && subscriber.IsLiveSince(cutoff);
+    }
+
     public void Enqueue(ChannelInboxItem item)
     {
         PruneIdle();
