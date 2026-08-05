@@ -571,14 +571,26 @@ public sealed class McpChannelConnection(
 
     // Two targets resolving at once can both find the set unfetched and each ask; that costs one
     // extra round trip on the first turn of a generation and settles on the same answer, which is
-    // cheaper than serialising every probe behind a lock.
+    // cheaper than serialising every probe behind a lock. The client is captured before the ask
+    // and compared after, because a probe can outlive its generation: a reconnect mid-flight
+    // swaps the client, and storing the old generation's answer then would pin the new connection
+    // to a tool set its server may not have.
     private async Task<bool> OffersToolAsync(string toolName, CancellationToken ct)
     {
-        _toolNames ??= (await _client!.ListToolsAsync(cancellationToken: ct))
-            .Select(tool => tool.Name)
-            .ToHashSet(StringComparer.Ordinal);
+        var names = _toolNames;
+        if (names is null)
+        {
+            var client = _client!;
+            names = (await client.ListToolsAsync(cancellationToken: ct))
+                .Select(tool => tool.Name)
+                .ToHashSet(StringComparer.Ordinal);
+            if (ReferenceEquals(_client, client))
+            {
+                _toolNames = names;
+            }
+        }
 
-        return _toolNames.Contains(toolName);
+        return names.Contains(toolName);
     }
 
     private void EnsureConnected()

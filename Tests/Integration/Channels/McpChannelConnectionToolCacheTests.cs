@@ -53,6 +53,41 @@ public class McpChannelConnectionToolCacheTests
     }
 
     [Fact]
+    public async Task CreateConversation_AProbeFinishingAfterReconnect_DoesNotResurrectTheOldToolSet()
+    {
+        // The tool set is per connection generation. A probe still in flight when the connection
+        // moves to a new generation must not store the old generation's answer, or a server
+        // redeployed with a new tool would stay invisible for the life of the new connection —
+        // exactly what the reconnect is meant to fix.
+        using var oldProbeArrived = new SemaphoreSlim(0);
+        using var oldProbeHeld = new SemaphoreSlim(0);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        await using var oldServer = await InMemoryMcpServer.StartAsync(services => services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<NoConversationTools>()
+            .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (context, ct) =>
+            {
+                oldProbeArrived.Release();
+                await oldProbeHeld.WaitAsync(ct);
+                return await next(context, ct);
+            })));
+        await using var newServer = await StartServerAsync();
+        await using var connection = new McpChannelConnection("test");
+        await connection.ConnectAsync(oldServer.Endpoint, CancellationToken.None);
+
+        var staleCreate = CreateAsync(connection);
+        await oldProbeArrived.WaitAsync(cts.Token);
+
+        await connection.ConnectAsync(newServer.Endpoint, CancellationToken.None);
+        oldProbeHeld.Release();
+        (await staleCreate).ShouldBeNull();
+
+        (await CreateAsync(connection)).ShouldBe("conv-1");
+    }
+
+    [Fact]
     public async Task CreateConversation_ServerWithoutTheTool_StillYieldsNull()
     {
         await using var server = await InMemoryMcpServer.StartAsync(services => services
