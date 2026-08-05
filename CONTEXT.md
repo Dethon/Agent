@@ -259,10 +259,15 @@ job learns it from that one fact and nothing else.
 _Avoid_: playback result, callback, completion
 
 **Refusal**:
-The queue declining a job outright, so it never waits and is never heard. A refusal
-is an outcome like any other, not a failure — the caller is told why, and the three
-reasons are that the satellite is gone, that the queue already holds as much of that
-kind as it will, and that a low-priority job arrived while anything was queued.
+An operation declined outright with a stated reason. A refusal is not a failure: the
+caller is told why, and nothing was attempted. Two places use the word. The playback
+queue refuses a job so it never waits and is never heard, for three reasons — the
+satellite is gone, the queue already holds as much of that kind as it will, or a
+low-priority job arrived while anything was queued. The media library refuses a file
+operation that a live download owns, for five reasons — reading text that is not a
+status file, reading a rendered status file as bytes, landing anything inside a live
+download's directory, moving any of that directory out, and deleting a path that is
+neither a download nor its status file.
 _Avoid_: rejection, drop, error
 
 **Preemption**:
@@ -311,6 +316,26 @@ _Avoid_: inbound surface, reply channel, delivery path
 The one name a filesystem mount is known by. Its resource address, its mount point
 and the name it publishes to the agent all come from it, so they cannot disagree.
 _Avoid_: mount name, filesystem name, mount point
+
+## Media library
+
+**Live download**:
+A download the download manager still knows about. While it is live it owns its
+directory and everything in it, which is what every refusal on the media library is
+asking about. When it ends, it stops owning anything: what is left is ordinary files.
+_Avoid_: active torrent, running download, download task
+
+**Status file**:
+The live state of one download, shown as a file. It is a view rendered when asked, so
+it can be read and nothing else — copying or writing it would produce a stale snapshot
+under a name that still looks live.
+_Avoid_: status.json, virtual file, progress file
+
+**Leftover**:
+A file or directory left where a download used to be, after the download itself is
+gone. It is an ordinary file: it can be listed, read and removed like any other, and
+it is never mistaken for a status file.
+_Avoid_: orphan, stale download, ghost
 
 ## Agents
 
