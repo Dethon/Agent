@@ -24,9 +24,13 @@ public sealed class Microphone(string satelliteId, SilenceGateFactory gates)
 
     // Returns the gate statistics frozen at this instant. Feed keeps accepting frames until the
     // satellite is told the turn is over, so a later read would report a different tail.
+    //
+    // Detaching is by identity: only the capture being closed is unhooked, so a late close from one
+    // that has already been replaced leaves the live capture receiving audio. The stats are the
+    // closed capture's either way — they are read off the argument, not off whatever is attached.
     public CaptureStats Close(UtteranceCapture capture)
     {
-        Volatile.Write(ref _capture, null);
+        Interlocked.CompareExchange(ref _capture, null, capture);
         var stats = capture.Stats;
         gates.RecordCaptureClose(satelliteId, stats);
         return stats;

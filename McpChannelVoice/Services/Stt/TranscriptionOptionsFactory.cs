@@ -21,6 +21,7 @@ public static class TranscriptionOptionsFactory
             NoiseFloorRms = stats.FloorRms,
             SatelliteId = satelliteId,
             Room = config.Room,
+            Identity = config.Identity,
             Locality = config.Locality
         };
 }

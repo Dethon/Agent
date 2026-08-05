@@ -114,7 +114,7 @@ public interface ITurnAnchor
 public sealed class PlaybackQueue(
     int replyMaxDepth = StreamingTtsConfig.DefaultMaxQueuedSegments,
     int announceMaxDepth = AnnounceSettings.DefaultQueueMaxDepth,
-    int? prefetchBufferChunks = StreamingTtsConfig.DefaultPrefetchBufferChunks) : ITurnAnchor
+    int? prefetchBufferChunks = StreamingTtsConfig.DefaultPrefetchBufferChunks) : ITurnAnchor, IDisposable
 {
     // Play order, guarded by _gate: normal jobs append, a High job cuts in ahead of the queued
     // normal jobs (behind any High already waiting, so Highs stay FIFO among themselves). A channel
@@ -195,18 +195,22 @@ public sealed class PlaybackQueue(
             }
         }
 
-        if (job.Priority == AnnouncePriority.Low && Depth > 0)
-        {
-            return Refuse(RefusalReason.LowPriorityBehindQueue);
-        }
-
-        if (!CanAccept(job.Kind))
-        {
-            return Refuse(RefusalReason.QueueFull);
-        }
-
+        // Decided and inserted under one lock hold: read outside it, two producers racing for the
+        // last slot both see room and both insert, and a kind holds one more job than its allowance
+        // says it ever will. CanAccept above stays an advance question a caller may ask; this is the
+        // answer that binds.
         lock (_gate)
         {
+            if (job.Priority == AnnouncePriority.Low && _pending.Count > 0)
+            {
+                return Refuse(RefusalReason.LowPriorityBehindQueue);
+            }
+
+            if (_pending.Count >= MaxDepthFor(job.Kind))
+            {
+                return Refuse(RefusalReason.QueueFull);
+            }
+
             return WriteLocked(job, cutAheadOfQueued: false);
         }
     }
@@ -298,6 +302,18 @@ public sealed class PlaybackQueue(
         Volatile.Write(ref _discardOnDequeue, true);
         Complete();
         _dropCts.Cancel();
+    }
+
+    // The semaphore and the drop token source are the queue's own, and there is one queue per
+    // satellite connection: undisposed they are a pair leaked on every reconnect. Disposal is not a
+    // close — Complete() is — so it belongs after the loop has stopped, which is the only place that
+    // knows nothing will wait on the semaphore again (SatelliteConnection's drain). A producer
+    // arriving later still gets the closed queue's refusal, because that answer is given before
+    // anything touches the signal.
+    public void Dispose()
+    {
+        _signal.Dispose();
+        _dropCts.Dispose();
     }
 
     public void PreemptCurrent()
@@ -395,10 +411,12 @@ public sealed class PlaybackQueue(
             // High request; a second High stacking in the gap must still play, not be preempted.
             var preemptOnStart = _preemptPendingSeq >= 0 && queued.Seq <= _preemptPendingSeq
                 && queued.Job.Priority != AnnouncePriority.High;
-            // Cleared only once the queue has drained PAST the mark, so every job that was
-            // already queued when the High job arrived is preempted — not just the first one
-            // dequeued after it.
-            if (queued.Seq > _preemptPendingSeq)
+            // Cleared once nothing at or below the mark is left queued, so every job that was
+            // already there when the alarm arrived is preempted — not just the first one dequeued
+            // after it. Asking the pending list rather than this job's sequence keeps that true
+            // whatever order jobs are inserted in: a High cut-in carries a sequence above the mark,
+            // and clearing on that alone would spare whatever the alarm marked behind it.
+            if (!_pending.Any(p => p.Seq <= _preemptPendingSeq))
             {
                 _preemptPendingSeq = -1;
             }

@@ -174,6 +174,10 @@ public sealed class SatelliteConnection(
         // already earned its outcome, and this is only for what the loop never got to.
         Session.Playback.DiscardUnplayed();
         await AwaitSwallowingAsync(_conversationTask);
+        // Last, and only here: the queue's semaphore and drop token are safe to release once both
+        // tasks have stopped, and this connection's queue is never used again — the host builds a
+        // new session, and a new queue with it, for every dial.
+        Session.Playback.Dispose();
         Session.ControlWriter = null;
         sessions.Unregister(Id);
     }

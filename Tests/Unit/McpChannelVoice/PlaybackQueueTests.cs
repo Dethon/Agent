@@ -157,6 +157,70 @@ public class PlaybackQueueTests
     }
 
     [Fact]
+    public async Task Enqueue_HighCutInAfterAnAlarm_DoesNotSpareTheSegmentsTheAlarmMarked()
+    {
+        // The mark is cleared by having drained past it, and "past" is about the jobs still queued,
+        // not about the sequence of whatever was dequeued last: an approval prompt cutting in after
+        // the alarm carries a higher sequence than the mark, and clearing on that alone would let
+        // the reply sentences the alarm marked play in full before it rings.
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
+        var played = new List<string>();
+        var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async IAsyncEnumerable<AudioChunk> gated(
+            [EnumeratorCancellation] CancellationToken token = default)
+        {
+            yield return new AudioChunk
+            { Data = Encoding.UTF8.GetBytes("s1"), Format = AudioFormat.WyomingStandard };
+            firstChunkWritten.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+        }
+
+        var segment1 = new PlaybackJob(
+            Label: "reply-1",
+            Kind: PlaybackKind.Reply,
+            Priority: AnnouncePriority.Normal,
+            Audio: gated());
+        var segment2 = segment1 with { Label = "reply-2", Audio = Audio("s2", count: 1) };
+        var alarm = segment1 with
+        {
+            Label = "alarm",
+            Kind = PlaybackKind.Alarm,
+            Priority = AnnouncePriority.High,
+            Audio = Audio("alarm", count: 1)
+        };
+        var prompt = new PlaybackJob(
+            Label: "approval",
+            Kind: PlaybackKind.Approval,
+            Priority: AnnouncePriority.High,
+            Audio: Audio("approval", count: 1));
+
+        var pumpTask = queue.RunAsync(
+            async (chunk, _) =>
+            {
+                lock (played)
+                { played.Add(Encoding.UTF8.GetString(chunk.Data.Span)); }
+                await Task.Yield();
+            },
+            CancellationToken.None);
+
+        var one = queue.Enqueue(segment1);
+        var two = queue.Enqueue(segment2);
+        await firstChunkWritten.Task;
+
+        queue.Enqueue(alarm);
+        var approval = queue.Enqueue(prompt);
+        queue.Complete();
+        await pumpTask;
+
+        // Exactly as if the cut-in had not landed: neither marked segment is heard.
+        played.ShouldNotContain("s2");
+        (await one.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+        (await two.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+        (await approval.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+    }
+
+    [Fact]
     public async Task Enqueue_SecondHighStackedBehindAHigh_StillPlays()
     {
         // The preempt mark must not swallow a second alarm that stacks in the gap — the High
@@ -242,6 +306,32 @@ public class PlaybackQueueTests
         queue.Enqueue(Job("announce", PlaybackKind.Announce)).Refused.ShouldBeNull();
         queue.Enqueue(Job("preamble", PlaybackKind.Preamble)).Refused.ShouldBeNull();
         queue.Enqueue(Job("approval", PlaybackKind.Approval)).Refused.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Enqueue_ConcurrentProducers_NeverOvershootTheKindsAllowance()
+    {
+        // Deciding to accept and inserting are one act under the gate. Decided outside it, two
+        // producers racing for the last slot both read a depth below the limit and both insert, so a
+        // queue that holds one announcement holds two — and the user waits out speech the limit
+        // exists to refuse. Nothing drains here (no loop runs), so what was accepted is the depth.
+        foreach (var attempt in Enumerable.Range(0, 200))
+        {
+            var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1, prefetchBufferChunks: null);
+            using var start = new Barrier(8);
+            var accepted = 0;
+
+            await Task.WhenAll(Enumerable.Range(0, 8).Select(i => Task.Run(() =>
+            {
+                start.SignalAndWait();
+                if (queue.Enqueue(Job($"a{attempt}-{i}", PlaybackKind.Announce)).Refused is null)
+                {
+                    Interlocked.Increment(ref accepted);
+                }
+            })));
+
+            accepted.ShouldBe(1);
+        }
     }
 
     [Fact]

@@ -126,7 +126,8 @@ public class TseSpeechToTextTests
             NoiseFloorRms = floor,
             Language = "es",
             SatelliteId = "office-01",
-            Room = "Office"
+            Room = "Office",
+            Identity = "household"
         };
 
     private static (ISpeechToText Stt, RecordingInner Inner, StubClient Client, RecordingMetrics Metrics) Build(
@@ -211,7 +212,7 @@ public class TseSpeechToTextTests
         client.LastCall!.Value.Speaker.ShouldBe("Dethon");
         WavCodec.Decode(client.LastCall.Value.Wav).Data.ToArray().ShouldBe(_rawPcm);
         metrics.Events.Select(e => e.Metric).ShouldBe([VoiceMetric.TseInvoked, VoiceMetric.TseLatencyMs]);
-        metrics.Events[0].Identity.ShouldBe("Dethon");
+        metrics.Events[0].Speaker.ShouldBe("Dethon");
     }
 
     [Fact]
@@ -262,6 +263,22 @@ public class TseSpeechToTextTests
         await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
         metrics.Events.ShouldNotBeEmpty();
         metrics.Events.ShouldAllBe(e => e.SatelliteId == "office-01" && e.Room == "Office");
+    }
+
+    [Fact]
+    public async Task PublishedEventsNameTheSatelliteIdentity_NotTheTargetSpeaker()
+    {
+        // Identity means the satellite's configured identity on every other voice event (the
+        // dispatcher says so where it routes an enrolled speaker into the sender instead). This was
+        // the one publisher writing the target speaker there, so a dashboard grouped by identity
+        // mixed satellites and people. The speaker has its own field.
+        var reply = WavCodec.Encode([new AudioChunk { Data = new byte[] { 7 }, Format = AudioFormat.WyomingStandard }]);
+        var (stt, _, _, metrics) = Build(TseMode.Auto, reply);
+
+        await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
+
+        metrics.Events.ShouldNotBeEmpty();
+        metrics.Events.ShouldAllBe(e => e.Identity == "household" && e.Speaker == "Dethon");
     }
 
     [Fact]

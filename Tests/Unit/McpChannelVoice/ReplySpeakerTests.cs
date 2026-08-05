@@ -776,6 +776,40 @@ public class ReplySpeakerTests
     }
 
     [Fact]
+    public void SpeakUtteranceReply_StreamCompleteFromAnAbandonedTurn_DoesNotSettleTheNewOne()
+    {
+        // FollowUpConversation gives a turn up at ReplyTimeoutMs and the next transcript resets it,
+        // while the agent is still finishing the abandoned answer. That answer's StreamComplete
+        // arrives afterwards: off the new turn it settles a reply nobody has spoken yet, so the
+        // chime plays and the mic reopens over the answer still coming.
+        _session.Turn.Reset();
+        Say(_speaker, "", ReplyContentType.ToolCall, false);   // the abandoned answer's stream opens
+
+        _session.Turn.Reset();                                 // the next turn is dispatched
+        var turn = _session.Turn.AwaitSpoken();
+
+        Say(_speaker, "", ReplyContentType.StreamComplete, true);
+
+        turn.IsCompleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SpeakUtteranceReply_TheEnqueueIsRefusedAfterTheTextWasTaken_HandsItBackToTheBuffer()
+    {
+        // Asking the queue first only answers for the depth limit, and it answers in advance: a
+        // satellite that disconnects mid-answer completes the queue, which is not full and still
+        // refuses — and the sentence has already left the accumulator by then. The refusal is what
+        // must hand the text back, not the question asked before it.
+        var speaker = Speaker(Streaming(firstSegmentMinChars: 10, minChars: 10));
+        _session.Turn.Reset();
+        _session.Playback.Complete();
+
+        Say(speaker, "Primera frase completa. ", ReplyContentType.Text, false);
+
+        _accumulator.Flush(_conversationId).ShouldContain("Primera frase completa.");
+    }
+
+    [Fact]
     public async Task SpeakUtteranceReply_TurnEndsWithNoAudio_DoesNotLeaveTheDispatchStampForALaterReply()
     {
         // A tool-only turn never reaches SpeakAsync, so TryConsumeDispatchedAt never runs and the

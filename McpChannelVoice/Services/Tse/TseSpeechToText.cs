@@ -116,18 +116,19 @@ public sealed class TseSpeechToText(
         : settings.Mode == TseMode.Auto && (options.NoiseFloorRms ?? 0) < settings.NoiseFloorThreshold ? "quiet"
         : null;
 
+    // Stamped like every other voice report: Identity is the satellite's configured identity, and
+    // the person being extracted is the Speaker. This publisher used to write the target speaker
+    // into Identity, which is the one place the two meanings crossed.
     private void Publish(
         VoiceMetric metric, TranscriptionOptions options, string? outcome = null, long? durationMs = null) =>
         metrics.Publish(new VoiceEvent
         {
             Metric = metric,
-            SatelliteId = options.SatelliteId,
-            Room = options.Room,
-            Identity = options.TargetSpeaker,
+            Speaker = options.TargetSpeaker,
             Outcome = outcome,
             DurationMs = durationMs,
             FloorRms = options.NoiseFloorRms
-        });
+        }.About(SatelliteIdentity.Of(options)));
 
     private static async IAsyncEnumerable<AudioChunk> Replay(IReadOnlyList<AudioChunk> chunks)
     {

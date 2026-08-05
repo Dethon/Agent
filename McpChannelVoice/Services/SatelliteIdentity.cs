@@ -1,4 +1,5 @@
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Voice;
 using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
@@ -15,6 +16,12 @@ public readonly record struct SatelliteIdentity(string SatelliteId, string? Room
     // config means the registry does not know the satellite, and the id alone is the whole identity.
     public static SatelliteIdentity Of(string satelliteId, SatelliteConfig? config) =>
         new(satelliteId, config?.Room, config?.Identity);
+
+    // A decorator inside the STT chain is handed the satellite as three fields on its options rather
+    // than the session, so it names the satellite through the same triple as everything else. An
+    // unattributed call (no host filled these in) keeps the empty id it arrived with.
+    public static SatelliteIdentity Of(TranscriptionOptions options) =>
+        new(options.SatelliteId ?? string.Empty, options.Room, options.Identity);
 }
 
 // Stamping lives here rather than on VoiceEvent because the event is a Domain DTO and must not
