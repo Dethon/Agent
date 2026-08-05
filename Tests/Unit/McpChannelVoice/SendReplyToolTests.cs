@@ -1,5 +1,11 @@
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
+using Domain.DTOs.Voice;
+using Domain.DTOs.WebChat;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
@@ -16,6 +22,9 @@ namespace Tests.Unit.McpChannelVoice;
 public class SendReplyToolTests
 {
     private readonly Mock<ITextToSpeech> _tts = new();
+    private readonly SatelliteSessionRegistry _sessions = new();
+    private readonly VoiceConversationManager _manager;
+    private readonly List<VoiceEvent> _published = [];
     private readonly IServiceProvider _services;
 
     public SendReplyToolTests()
@@ -23,23 +32,45 @@ public class SendReplyToolTests
         var accumulator = new ReplyTextAccumulator();
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var settings = new VoiceSettings();
-        var metrics = Mock.Of<IMetricsPublisher>();
-        var sessions = new SatelliteSessionRegistry();
-        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>());
+        var metrics = new Mock<IMetricsPublisher>();
+        metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt =>
+            {
+                if (evt is VoiceEvent voiceEvent)
+                {
+                    lock (_published)
+                    { _published.Add(voiceEvent); }
+                }
+            });
+        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
+        {
+            ["office-01"] = new() { Identity = "household", Room = "Office" }
+        });
+
+        var factory = new Mock<IConversationFactory>();
+        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var identity = ConversationIdGenerator.CreateFor("topic-office");
+                var topic = new TopicMetadata("topic-office", identity.ChatId, identity.ThreadId, "mycroft",
+                    "household @ Office", DateTimeOffset.UtcNow, null);
+                return new ConversationCreation(identity, topic);
+            });
+        _manager = new VoiceConversationManager(
+            factory.Object, accumulator, clock,
+            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
 
         _services = new ServiceCollection()
-            .AddSingleton(sessions)
-            .AddSingleton(new VoiceConversationManager(
-                Mock.Of<IConversationFactory>(), accumulator, clock,
-                TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance))
+            .AddSingleton(_sessions)
+            .AddSingleton(_manager)
             .AddSingleton(new VoiceDeliveryRegistry(
                 clock, TimeSpan.FromMinutes(5), accumulator,
                 NullLogger<VoiceDeliveryRegistry>.Instance))
             .AddSingleton(new ReplySpeaker(
-                accumulator, _tts.Object, settings, metrics, clock,
+                accumulator, _tts.Object, settings, metrics.Object, clock,
                 NullLogger<ReplySpeaker>.Instance))
             .AddSingleton(new AnnouncementService(
-                registry, sessions, _tts.Object, settings, metrics,
+                registry, _sessions, _tts.Object, settings, metrics.Object,
                 NullLogger<AnnouncementService>.Instance))
             .BuildServiceProvider();
     }
@@ -62,5 +93,56 @@ public class SendReplyToolTests
 
         result.ShouldBe("ok");
         _tts.VerifyNoOtherCalls();
+    }
+
+    // The gap create_conversation leaves open: it acknowledged the conversation without a binding
+    // because a live session owned it, and that session died before the reply arrived. The manager
+    // still maps the conversation to its satellite, and that mapping is the fallback target.
+    [Fact]
+    public async Task McpRun_SatelliteRebootsBetweenAnnounceAndReply_TheChunksSentWhileItWasDownStillSpeak()
+    {
+        var session = new SatelliteSession(
+            "office-01", new SatelliteConfig { Identity = "household", Room = "Office" });
+        _sessions.Register(session);
+        var convId = await _manager.GetOrCreateAsync(session, "mycroft", "hola", CancellationToken.None);
+        _sessions.Unregister("office-01");   // the reboot window opens
+
+        var result = await SendReplyTool.McpRun(
+            convId, "La película terminó de descargarse.", ReplyContentType.Text, false, "m-1", _services);
+
+        result.ShouldBe("ok");
+        _tts.VerifyNoOtherCalls();   // nothing to speak on yet — but the text must not be dropped
+
+        // The satellite is back before the stream completes; the buffered text speaks with the rest.
+        _sessions.Register(new SatelliteSession(
+            "office-01", new SatelliteConfig { Identity = "household", Room = "Office" }));
+        await SendReplyTool.McpRun(convId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _tts.Verify(
+            t => t.SynthesizeAsync(
+                "La película terminó de descargarse.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task McpRun_SatelliteStillDownAtStreamComplete_AnnouncesOnItsSatelliteInsteadOfDroppingSilently()
+    {
+        var session = new SatelliteSession(
+            "office-01", new SatelliteConfig { Identity = "household", Room = "Office" });
+        _sessions.Register(session);
+        var convId = await _manager.GetOrCreateAsync(session, "mycroft", "hola", CancellationToken.None);
+        _sessions.Unregister("office-01");
+
+        await SendReplyTool.McpRun(convId, "Recordatorio.", ReplyContentType.Text, false, "m-1", _services);
+        var result = await SendReplyTool.McpRun(convId, "", ReplyContentType.StreamComplete, true, null, _services);
+
+        result.ShouldBe("ok");
+        // The reply reached the announce path and reported the satellite offline — an observable
+        // outcome, not a silent drop returning ok.
+        lock (_published)
+        {
+            _published.ShouldContain(e =>
+                e.Metric == VoiceMetric.AnnounceError && e.SatelliteId == "office-01" && e.Outcome == "offline");
+        }
     }
 }
