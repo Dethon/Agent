@@ -210,6 +210,53 @@ public sealed class ChatLiveConnectionTests : IDisposable
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Disconnected);
     }
 
+    // A first connect that never reaches Connected used to leave the failed connection in
+    // place, bound and with its handlers attached, and the next trigger found it non-null and
+    // returned. Nothing then retried until the tab was re-foregrounded into a rebuild.
+    [Fact]
+    public async Task ConnectAsync_FirstConnectFails_TheNextTriggerConnectsFromScratch()
+    {
+        _factory.Enqueue(new FakeHubConnection
+        {
+            StartBehavior = _ => Task.FromException(new IOException("connection refused"))
+        });
+
+        await Should.ThrowAsync<IOException>(() => _liveConnection.ConnectAsync());
+        await _liveConnection.ConnectAsync();
+
+        _factory.Created.Count.ShouldBe(2);
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_FirstConnectFails_DropsTheFailedConnectionThere()
+    {
+        var failed = new FakeHubConnection
+        {
+            StartBehavior = _ => Task.FromException(new IOException("connection refused"))
+        };
+        _factory.Enqueue(failed);
+
+        await Should.ThrowAsync<IOException>(() => _liveConnection.ConnectAsync());
+
+        failed.Disposed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ReconnectIfNeededAsync_AfterAFailedFirstConnect_Recovers()
+    {
+        _factory.Enqueue(new FakeHubConnection
+        {
+            StartBehavior = _ => Task.FromException(new IOException("connection refused"))
+        });
+        await Should.ThrowAsync<IOException>(() => _liveConnection.ConnectAsync());
+
+        await AdvanceUntilCompleteAsync(_liveConnection.ReconnectIfNeededAsync());
+
+        _factory.Created.Count.ShouldBe(2);
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
+    }
+
     [Fact]
     public async Task ReconnectIfNeededAsync_ConnectedAndPingSucceeds_KeepsConnection()
     {

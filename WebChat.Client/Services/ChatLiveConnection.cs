@@ -130,7 +130,20 @@ public sealed class ChatLiveConnection(
         connection.Reconnected += OnConnectionReconnected;
 
         _connectionEventDispatcher.HandleConnecting();
-        await connection.StartAsync(cancellationToken);
+
+        try
+        {
+            await connection.StartAsync(cancellationToken);
+        }
+        catch
+        {
+            // A connection that never started is not a connection: left in place it is bound,
+            // has its handlers attached, will never auto-reconnect, and makes the next attempt
+            // return early because it found one. Drop it here so the next trigger — a rebuild
+            // or another connect — starts from scratch, and let the caller see the failure.
+            await TearDownAsync();
+            throw;
+        }
 
         // The live connection may have been disposed while StartAsync was in flight (e.g. the circuit
         // tore down mid-rebuild). Don't publish state or fire recovery into a dead store —
