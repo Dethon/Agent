@@ -50,10 +50,12 @@ public class RemoveToolTests
         _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // A '..' segment is judged by where it lands, not by its spelling: both of these resolve
+    // outside the library, and that is what the jail refuses them for.
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Run_WithPathContainingDoubleDot_ReturnsInvalidArgument(bool isAbsolute)
+    public async Task Run_WithPathTraversingOutOfTheLibrary_ReturnsInvalidArgument(bool isAbsolute)
     {
         // Arrange
         var tool = CreateTool();
@@ -64,9 +66,27 @@ public class RemoveToolTests
         // Act & Assert
         (await tool.TestRun(maliciousPath, CancellationToken.None))
             .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>()
-            .ShouldContain("must not contain '..'");
+            .ShouldContain("must be within the library");
         _fileSystemClientMock.Verify(m => m.MoveToTrash(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    // MoveTool screens by whole segment, because the jail judges the resolved path; RemoveTool kept
+    // rejecting the substring, so a file that could be created, globbed and moved through the mount
+    // could never be removed through it.
+    [Fact]
+    public async Task Run_WithADoubleDotInsideAName_RemovesIt()
+    {
+        var tool = CreateTool();
+        var filePath = Path.Combine(_libraryPath, "movies", "v1..2.mkv");
+        _fileSystemClientMock
+            .Setup(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()))
+            .ReturnsAsync("trash-path");
+
+        var result = await tool.TestRun(filePath, CancellationToken.None);
+
+        result["status"]!.ToString().ShouldBe("success");
+        _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

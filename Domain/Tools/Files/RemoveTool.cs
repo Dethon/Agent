@@ -17,11 +17,9 @@ public class RemoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 
     public async Task<FsResult<FsRemoveResult>> Run(string path, CancellationToken cancellationToken)
     {
-        if (path.Contains("..", StringComparison.Ordinal))
-        {
-            return FsError.Invalid<FsRemoveResult>($"{nameof(RemoveTool)} path must not contain '..' segments.");
-        }
-
+        // No '..' screening here, exactly as in MoveTool: the jail judges the canonical resolved
+        // path, so a traversal segment is caught by where it lands, and a name like v1..2.mkv is
+        // just a name — one this tool used to refuse for a file it had happily created and moved.
         path = Path.IsPathRooted(path) ? path : Path.Combine(libraryPath.BaseLibraryPath, path);
         var canonical = Path.GetFullPath(path);
 
