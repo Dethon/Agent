@@ -342,6 +342,36 @@ public class ChannelInboxTests
         next.Select(i => i.Message!.ConversationId).ShouldBe(["c1", "c2", "c3"]);
     }
 
+    // The handback answers exactly one case: the drain succeeded and the request died while its
+    // response was being built. Nothing else in a poll reaches it — every earlier cancellation check
+    // refuses to drain at all — so this is the only test that keeps it from being deleted.
+    [Fact]
+    public async Task ReceiveAsync_CancelledWhileTheResponseIsBuilt_HandsTheBatchBackAndRethrows()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("c1"));
+        inbox.Enqueue(Cancel("c1"));
+
+        using var cts = new CancellationTokenSource();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => inbox.ReceiveAsync(
+            Subscriber,
+            TimeSpan.Zero,
+            batch =>
+            {
+                // The request hangs up with the batch already out of the queue and nowhere else.
+                cts.Cancel();
+                return batch.Count;
+            },
+            cts.Token));
+
+        var next = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        next.Select(item => item.Kind).ShouldBe(
+            [ChannelInboxItemKind.Message, ChannelInboxItemKind.Cancel]);
+    }
+
     // Putting the batch back is not a step of its own: between the drain and the handback the queue
     // looks empty, so a poll racing in there takes whatever arrived after the batch and dispatches
     // it, and the older items only reappear behind it — the agent seeing a message before the cancel
