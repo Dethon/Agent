@@ -16,14 +16,21 @@ public sealed class DownloadCompletionWatcher(
 {
     private bool _warnedUndelivered;
 
+    // Liveness is only ever the return value of emitting (see CLAUDE.md) — never a separate
+    // property to query. This is not that: it is the loop remembering the outcome of its own last
+    // attempt, to decide how soon to try again. Six missed ticks between qBittorrent and
+    // routing-store queries while nobody is listening, rather than one.
+    internal const int IdleBackoffMultiplier = 6;
+
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         var interval = TimeSpan.FromSeconds(Math.Max(1, settings.CompletionPollSeconds));
         while (!ct.IsCancellationRequested)
         {
+            var delivered = true;
             try
             {
-                await SweepAsync(ct);
+                delivered = await SweepAsync(ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -31,20 +38,27 @@ public sealed class DownloadCompletionWatcher(
             }
 
             try
-            { await Task.Delay(interval, ct); }
+            { await Task.Delay(NextDelay(interval, delivered), ct); }
             catch (OperationCanceledException) { break; }
         }
     }
 
-    internal async Task SweepAsync(CancellationToken ct)
+    internal static TimeSpan NextDelay(TimeSpan interval, bool delivered) =>
+        delivered ? interval : interval * IdleBackoffMultiplier;
+
+    // Returns whether the sweep needs no back-off: nothing was pending, or every completed
+    // download it tried to hand off was actually delivered. False means at least one delivery was
+    // refused for want of a listener, which is the loop's cue to slow down.
+    internal async Task<bool> SweepAsync(CancellationToken ct)
     {
         var entries = await store.ListAsync(ct);
         if (entries.Count == 0)
         {
-            return;
+            return true;
         }
 
         var items = (await client.GetDownloadItems(ct)).ToDictionary(i => i.Id);
+        var delivered = true;
         foreach (var entry in entries)
         {
             if (!items.TryGetValue(entry.DownloadId, out var item))
@@ -61,6 +75,7 @@ public sealed class DownloadCompletionWatcher(
             if (!await emitter.EmitAsync(DownloadCompletionPlanner.BuildPayload(entry), ct))
             {
                 WarnUndeliveredOncePerOutage(entry.DownloadId);
+                delivered = false;
                 continue;
             }
 
@@ -69,6 +84,8 @@ public sealed class DownloadCompletionWatcher(
             logger.LogInformation(
                 "Emitted completion for download {DownloadId} ('{Title}')", entry.DownloadId, entry.Title);
         }
+
+        return delivered;
     }
 
     // One warning per outage rather than one per pending download per tick: an overnight

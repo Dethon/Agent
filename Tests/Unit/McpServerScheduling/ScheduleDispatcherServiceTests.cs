@@ -135,6 +135,54 @@ public class ScheduleDispatcherServiceTests
     public void ResolveInterval_Positive_IsUnchanged() =>
         ScheduleDispatcherService.ResolveInterval(30).ShouldBe(TimeSpan.FromSeconds(30));
 
+    // The return value is what lets the loop back off the schedule-store query without a separate
+    // liveness property: a failed delivery says so directly.
+    [Fact]
+    public async Task DispatchDueAsync_NoLiveSubscriber_ReturnsFalse()
+    {
+        var store = StoreWithDue(OneShot());
+
+        var delivered = await BuildDispatcher(store.Object, Probe(delivers: false)).DispatchDueAsync(CancellationToken.None);
+
+        delivered.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task DispatchDueAsync_DeliveredSuccessfully_ReturnsTrue()
+    {
+        var store = StoreWithDue(OneShot());
+
+        var delivered = await BuildDispatcher(store.Object, Probe(delivers: true)).DispatchDueAsync(CancellationToken.None);
+
+        delivered.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task DispatchDueAsync_NothingDue_ReturnsTrue()
+    {
+        var store = new Mock<IScheduleStore>();
+        store.Setup(s => s.GetDueSchedulesAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var delivered = await BuildDispatcher(store.Object, Probe(delivers: false)).DispatchDueAsync(CancellationToken.None);
+
+        delivered.ShouldBeTrue();
+    }
+
+    // The whole fix: while nobody is listening, the loop waits the backed-off interval instead of
+    // the normal one, so a tick that would just be told "no" again by the emitter never happens.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void NextDelay_UsesTheBackedOffIntervalOnlyWhenNothingWasDelivered(bool delivered)
+    {
+        var interval = TimeSpan.FromSeconds(30);
+
+        var next = ScheduleDispatcherService.NextDelay(interval, delivered);
+
+        next.ShouldBe(delivered ? interval : interval * ScheduleDispatcherService.IdleBackoffMultiplier);
+    }
+
     private static Schedule OneShot() =>
         new() { Id = "once", AgentId = "jack", Prompt = "p", RunAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow };
 

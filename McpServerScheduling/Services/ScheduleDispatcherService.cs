@@ -16,14 +16,21 @@ public sealed class ScheduleDispatcherService(
 {
     private bool _warnedUndelivered;
 
+    // Liveness is only ever the return value of emitting (see CLAUDE.md) — never a separate
+    // property to query. This is not that: it is the loop remembering the outcome of its own last
+    // attempt, to decide how soon to try again. Six missed ticks against the schedule store while
+    // nobody is listening, rather than one.
+    internal const int IdleBackoffMultiplier = 6;
+
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         var interval = ResolveInterval(settings.DispatchIntervalSeconds);
         while (!ct.IsCancellationRequested)
         {
+            var delivered = true;
             try
             {
-                await DispatchDueAsync(ct);
+                delivered = await DispatchDueAsync(ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -31,7 +38,7 @@ public sealed class ScheduleDispatcherService(
             }
 
             try
-            { await Task.Delay(interval, ct); }
+            { await Task.Delay(NextDelay(interval, delivered), ct); }
             catch (OperationCanceledException) { break; }
         }
     }
@@ -41,10 +48,17 @@ public sealed class ScheduleDispatcherService(
     internal static TimeSpan ResolveInterval(int dispatchIntervalSeconds) =>
         TimeSpan.FromSeconds(Math.Max(1, dispatchIntervalSeconds));
 
-    internal async Task DispatchDueAsync(CancellationToken ct)
+    internal static TimeSpan NextDelay(TimeSpan interval, bool delivered) =>
+        delivered ? interval : interval * IdleBackoffMultiplier;
+
+    // Returns whether the dispatch needs no back-off: nothing was due, or every fire it tried to
+    // hand off was actually delivered. False means at least one fire was refused for want of a
+    // listener, which is the loop's cue to slow down.
+    internal async Task<bool> DispatchDueAsync(CancellationToken ct)
     {
         var now = timeProvider.GetUtcNow();
         var due = await store.GetDueSchedulesAsync(now.UtcDateTime, ct);
+        var delivered = true;
         foreach (var schedule in due)
         {
             var nextRun = schedule.CronExpression is null
@@ -60,6 +74,7 @@ public sealed class ScheduleDispatcherService(
             if (!await emitter.EmitAsync(plan.Payload, ct))
             {
                 WarnUndeliveredOncePerOutage(schedule.Id);
+                delivered = false;
                 continue;
             }
 
@@ -75,6 +90,8 @@ public sealed class ScheduleDispatcherService(
 
             logger.LogInformation("Fired schedule {ScheduleId} for agent {AgentId}", schedule.Id, schedule.AgentId);
         }
+
+        return delivered;
     }
 
     // One warning per outage rather than one per due schedule per tick: an overnight

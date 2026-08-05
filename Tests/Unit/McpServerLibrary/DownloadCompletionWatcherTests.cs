@@ -108,6 +108,56 @@ public class DownloadCompletionWatcherTests
         routing.Entries.ShouldBeEmpty();
     }
 
+    // The return value is what lets the loop back off the qBittorrent and routing-store queries
+    // without a separate liveness property: a failed delivery says so directly.
+    [Fact]
+    public async Task Sweep_NoLiveSubscriber_ReturnsFalse()
+    {
+        var (client, routing, emitter) = Build(live: false);
+        client.Add(DownloadFakes.Item(42, DownloadState.Completed));
+        routing.Entries.Add(Routing(42));
+
+        var delivered = await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
+
+        delivered.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Sweep_DeliveredSuccessfully_ReturnsTrue()
+    {
+        var (client, routing, emitter) = Build();
+        client.Add(DownloadFakes.Item(42, DownloadState.Completed));
+        routing.Entries.Add(Routing(42));
+
+        var delivered = await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
+
+        delivered.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Sweep_NothingPending_ReturnsTrue()
+    {
+        var (client, routing, emitter) = Build(live: false);
+
+        var delivered = await Watcher(client, routing, emitter).SweepAsync(CancellationToken.None);
+
+        delivered.ShouldBeTrue();
+    }
+
+    // The whole fix: while nobody is listening, the loop waits the backed-off interval instead of
+    // the normal one, so a tick that would just be told "no" again by the emitter never happens.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void NextDelay_UsesTheBackedOffIntervalOnlyWhenNothingWasDelivered(bool delivered)
+    {
+        var interval = TimeSpan.FromSeconds(30);
+
+        var next = DownloadCompletionWatcher.NextDelay(interval, delivered);
+
+        next.ShouldBe(delivered ? interval : interval * DownloadCompletionWatcher.IdleBackoffMultiplier);
+    }
+
     private static (DownloadFakes.FakeDownloadClient, DownloadFakes.FakeRoutingStore, ChannelInboxProbe) Build(
         bool live = true) =>
         (new DownloadFakes.FakeDownloadClient(), new DownloadFakes.FakeRoutingStore(), new ChannelInboxProbe("library", DeliveryPolicy.GateOnLive, live));
