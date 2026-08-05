@@ -54,6 +54,16 @@ public class BlobWriteTool(string rootPath)
         }
         else
         {
+            // A nonzero offset is only legal as the continuation of a write this caller started at
+            // offset 0, and a continuation lands exactly at the current end. Without overwrite, a
+            // cold call whose offset is anywhere else must not open the file it did not create.
+            var currentLength = File.Exists(resolved) ? new FileInfo(resolved).Length : (long?)null;
+            if (!overwrite && currentLength != offset)
+            {
+                return FsError.Invalid<FsBlobWriteResult>(
+                    $"offset {offset} does not continue {path} (current length: {currentLength?.ToString() ?? "no file"}); "
+                    + "without overwrite, a nonzero-offset chunk must append exactly at the end of the file.");
+            }
             using var stream = new FileStream(resolved, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None);
             stream.Seek(offset, SeekOrigin.Begin);
             stream.Write(bytes, 0, bytes.Length);

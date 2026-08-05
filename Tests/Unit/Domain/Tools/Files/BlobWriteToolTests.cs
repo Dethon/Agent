@@ -145,6 +145,44 @@ public class BlobWriteToolTests : IDisposable
         last["totalBytes"]!.GetValue<long>().ShouldBe(10);
     }
 
+    // A chunked upload with overwrite=false is the normal cross-filesystem copy: the guard's
+    // decision at offset 0 governs, and each later chunk continues exactly at the current end.
+    [Fact]
+    public void Run_ContinuationChunksWithoutOverwrite_AppendAtTheCurrentEnd()
+    {
+        _tool.TestRun("multi.bin", Convert.ToBase64String([1, 2, 3]), offset: 0,
+            overwrite: false, createDirectories: true);
+        var last = _tool.TestRun("multi.bin", Convert.ToBase64String([4, 5]), offset: 3,
+            overwrite: false, createDirectories: true);
+
+        File.ReadAllBytes(Path.Combine(_root, "multi.bin")).ShouldBe(new byte[] { 1, 2, 3, 4, 5 });
+        last["totalBytes"]!.GetValue<long>().ShouldBe(5);
+    }
+
+    // A cold nonzero-offset call is not a continuation of anything: the file's end is not at the
+    // offset, so with overwrite=false it must not touch the existing file.
+    [Fact]
+    public void Run_NonzeroOffsetIntoAnExistingFileWithoutOverwrite_RefusesAndLeavesTheFileAlone()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "out.bin"), [1, 2, 3, 4]);
+
+        _tool.TestRun("out.bin", Convert.ToBase64String([9]), offset: 2,
+                overwrite: false, createDirectories: true)
+            .ShouldBeError(ToolError.Codes.InvalidArgument);
+
+        File.ReadAllBytes(Path.Combine(_root, "out.bin")).ShouldBe(new byte[] { 1, 2, 3, 4 });
+    }
+
+    [Fact]
+    public void Run_NonzeroOffsetIntoAMissingFileWithoutOverwrite_Refuses()
+    {
+        _tool.TestRun("missing.bin", Convert.ToBase64String([9]), offset: 2,
+                overwrite: false, createDirectories: true)
+            .ShouldBeError(ToolError.Codes.InvalidArgument);
+
+        File.Exists(Path.Combine(_root, "missing.bin")).ShouldBeFalse();
+    }
+
     private class TestableBlobWriteTool(string root) : BlobWriteTool(root)
     {
         public JsonNode TestRun(string path, string contentBase64, long offset, bool overwrite, bool createDirectories)
