@@ -269,7 +269,7 @@ internal sealed class ConversationGroup(
         var firstReply = metricsPublisher.MeasureLatency(
             LatencyStage.FirstReply,
             targets.Count > 0 ? targets[0].ConversationId : agentKey.ConversationId);
-        var turn = new Turn(x.Channel, x.Message, targets, firstReply);
+        var turn = new Turn(x.Message, targets, firstReply);
         // Agent-initiated turns (downloads, schedules) land in conversations with no live
         // stream on the receiving channel; announce the turn so the channel can set one up
         // before reply chunks arrive.
