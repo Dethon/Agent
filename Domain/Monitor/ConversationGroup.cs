@@ -57,9 +57,10 @@ internal sealed class ConversationGroup(
     {
         _groupCt = ct;
 
-        // The context is what a /clear disposes and what ends the group, so it exists before
-        // any message is read: ChatThreadResolver.ClearAsync only deletes persisted state when
-        // it finds a live one.
+        // The context is what a /clear or /cancel disposes to end the group, and it carries the
+        // completion callback and the turn token, so it exists before any message is read: a
+        // command that found no live context would leave this group running against a context
+        // resolved after it.
         var context = threadResolver.Resolve(agentKey);
         context.RegisterCompletionCallback(onGroupComplete);
         using var linkedCts = context.GetLinkedTokenSource(ct);
