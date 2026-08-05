@@ -134,9 +134,18 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             ? new FsSearchFileResult { File = file, MatchCount = matches.Count }
             : new FsSearchFileResult { File = file, Matches = matches };
 
+    // The jail vets the search root, but a symlink discovered inside the tree can point
+    // anywhere — following it would serve foreign file content as search results (or recurse
+    // forever on a cycle), so the scan skips symlinks wholesale.
+    private static readonly EnumerationOptions _skipSymlinks = new()
+    {
+        RecurseSubdirectories = true,
+        AttributesToSkip = FileAttributes.ReparsePoint
+    };
+
     private IEnumerable<string> EnumerateAllowedFiles(string fullPath, string? filePattern) =>
         Directory
-            .EnumerateFiles(fullPath, filePattern ?? "*", SearchOption.AllDirectories)
+            .EnumerateFiles(fullPath, filePattern ?? "*", _skipSymlinks)
             .Where(IsAllowedExtension);
 
     private bool IsAllowedExtension(string filePath) =>

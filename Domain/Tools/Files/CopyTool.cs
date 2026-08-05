@@ -60,16 +60,24 @@ public class CopyTool(string rootPath)
         });
     }
 
+    // The jail vets the argument path, but a symlink discovered inside the tree can point
+    // anywhere — following it would copy the target's content out of its jail (or recurse
+    // forever on a cycle), so the recursive copy skips symlinks wholesale.
+    private static readonly EnumerationOptions _skipSymlinks = new()
+    {
+        AttributesToSkip = FileAttributes.ReparsePoint
+    };
+
     private static long CopyDirectoryRecursive(string source, string destination, bool overwrite)
     {
         Directory.CreateDirectory(destination);
-        var fileBytes = Directory.EnumerateFiles(source).Sum(f =>
+        var fileBytes = Directory.EnumerateFiles(source, "*", _skipSymlinks).Sum(f =>
         {
             var target = Path.Combine(destination, Path.GetFileName(f));
             File.Copy(f, target, overwrite);
             return new FileInfo(target).Length;
         });
-        var dirBytes = Directory.EnumerateDirectories(source).Sum(d =>
+        var dirBytes = Directory.EnumerateDirectories(source, "*", _skipSymlinks).Sum(d =>
             CopyDirectoryRecursive(d, Path.Combine(destination, Path.GetFileName(d)), overwrite));
         return fileBytes + dirBytes;
     }

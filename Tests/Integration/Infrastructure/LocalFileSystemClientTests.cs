@@ -403,4 +403,60 @@ public class LocalFileSystemClientTests : IDisposable
         await Should.ThrowAsync<IOException>(async () =>
             await _client.MoveToTrash(nonExistentPath));
     }
+
+    // The jail vets the argument path, but a symlink discovered inside the tree can point
+    // anywhere — recursive walks must not follow it (or cycle on one), so glob skips symlinks.
+    [Fact]
+    public async Task Glob_SymlinksInsideTheTree_AreNotFollowedOrListed()
+    {
+        var outside = _testDir + "-outside";
+        Directory.CreateDirectory(outside);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(outside, "secret.txt"), "secret");
+            await BuildTempTree(["real.txt"]);
+            Directory.CreateSymbolicLink(Path.Combine(_testDir, "linkdir"), outside);
+            File.CreateSymbolicLink(Path.Combine(_testDir, "link.txt"), Path.Combine(outside, "secret.txt"));
+
+            var hits = await _client.Glob(_testDir, "**/*");
+
+            hits.ShouldContain(h => h.EndsWith("real.txt"));
+            hits.ShouldNotContain(h => h.Contains("linkdir"));
+            hits.ShouldNotContain(h => h.EndsWith("link.txt"));
+            hits.ShouldNotContain(h => h.Contains("secret"));
+        }
+        finally
+        {
+            Directory.Delete(outside, true);
+        }
+    }
+
+    // Directory.Move to an existing destination throws IOException, which drives the same
+    // recursive copy + delete fallback as an EXDEV cross-device move. The copy must not follow a
+    // symlink out of the tree — it would exfiltrate the target's content into the destination.
+    [Fact]
+    public async Task Move_FallbackCopy_DoesNotFollowSymlinksOutOfTheTree()
+    {
+        var outside = _testDir + "-outside";
+        Directory.CreateDirectory(outside);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(outside, "secret.txt"), "secret");
+            await BuildTempTree(["src/real.txt"]);
+            Directory.CreateSymbolicLink(Path.Combine(_testDir, "src", "linkdir"), outside);
+
+            var destination = Path.Combine(_testDir, "dst");
+            Directory.CreateDirectory(destination);
+
+            await _client.Move(Path.Combine(_testDir, "src"), destination);
+
+            File.Exists(Path.Combine(destination, "real.txt")).ShouldBeTrue();
+            Directory.Exists(Path.Combine(destination, "linkdir")).ShouldBeFalse();
+            File.Exists(Path.Combine(outside, "secret.txt")).ShouldBeTrue();
+        }
+        finally
+        {
+            Directory.Delete(outside, true);
+        }
+    }
 }

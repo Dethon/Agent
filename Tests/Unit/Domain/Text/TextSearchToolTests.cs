@@ -207,6 +207,31 @@ public class TextSearchToolTests : IDisposable
         contentFirstResult["matches"]!.AsArray().Count.ShouldBeGreaterThan(0);
     }
 
+    // The jail vets the search root, but a symlink discovered inside the tree can point
+    // anywhere — the recursive scan must not follow it, or foreign file content gets served
+    // as search results (and a cycle would recurse forever).
+    [Fact]
+    public void Run_SymlinkedDirectoryInsideVault_IsNotSearched()
+    {
+        var outside = _testDir + "-outside";
+        Directory.CreateDirectory(outside);
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "leak.md"), "kubernetes secret");
+            Directory.CreateSymbolicLink(Path.Combine(_testDir, "linked"), outside);
+            CreateTestFile("real.md", "kubernetes real");
+
+            var result = _tool.TestRun("kubernetes");
+
+            result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
+            result["totalMatches"]!.GetValue<int>().ShouldBe(1);
+        }
+        finally
+        {
+            Directory.Delete(outside, true);
+        }
+    }
+
     private void CreateTestFile(string relativePath, string content)
     {
         var fullPath = Path.Combine(_testDir, relativePath);

@@ -102,6 +102,34 @@ public class CopyToolTests : IDisposable
         }
     }
 
+    // The jail vets the argument path, but a symlink discovered inside the tree can point
+    // anywhere — the recursive copy must not follow it, or the target's content leaks into
+    // the destination (and a cycle would recurse forever).
+    [Fact]
+    public void Run_DirectoryContainingSymlinks_DoesNotFollowThem()
+    {
+        var outside = _root + "-outside";
+        Directory.CreateDirectory(outside);
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "secret.txt"), "secret");
+            Directory.CreateDirectory(Path.Combine(_root, "src"));
+            File.WriteAllText(Path.Combine(_root, "src", "real.txt"), "real");
+            Directory.CreateSymbolicLink(Path.Combine(_root, "src", "linkdir"), outside);
+            File.CreateSymbolicLink(Path.Combine(_root, "src", "link.txt"), Path.Combine(outside, "secret.txt"));
+
+            _tool.TestRun("src", "dst", overwrite: false, createDirectories: true);
+
+            File.ReadAllText(Path.Combine(_root, "dst", "real.txt")).ShouldBe("real");
+            Directory.Exists(Path.Combine(_root, "dst", "linkdir")).ShouldBeFalse();
+            File.Exists(Path.Combine(_root, "dst", "link.txt")).ShouldBeFalse();
+        }
+        finally
+        {
+            Directory.Delete(outside, true);
+        }
+    }
+
     private class TestableCopyTool(string root) : CopyTool(root)
     {
         public JsonNode TestRun(string source, string destination, bool overwrite, bool createDirectories)
