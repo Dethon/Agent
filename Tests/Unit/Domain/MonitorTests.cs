@@ -616,6 +616,40 @@ public class ChatMonitorTests
         mockStateStore.Verify(s => s.DeleteAsync(agentKey), Times.Once);
     }
 
+    [Fact]
+    public async Task Monitor_ClearWhenPersistedDeleteFails_LogsTheFailureAndStillEndsTheGroup()
+    {
+        // A /clear that cannot reach the state store must not pass silently: the live thread
+        // is gone, the persisted one survives and returns on the next message, and the only
+        // trace of that mismatch is this log line.
+        var stateStore = new Mock<IThreadStateStore>();
+        stateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>()))
+            .ThrowsAsync(new HttpRequestException("state store down"));
+        var threadResolver = new ChatThreadResolver(stateStore.Object);
+        var context = threadResolver.Resolve(new AgentKey("conv-1"));
+        var channel = MonitorTestMocks.CreateChannel(
+            messages: MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", content: "/clear"));
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        context.Cts.IsCancellationRequested.ShouldBeTrue();
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<HttpRequestException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
     // The next three tests state the trade in one place: turns within a conversation
     // serialise, while conversations and delivery fan-out stay concurrent.
     [Fact]

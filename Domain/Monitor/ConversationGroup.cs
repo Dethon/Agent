@@ -182,7 +182,7 @@ internal sealed class ConversationGroup(
                 switch (ChatCommandParser.Parse(x.Message.Content))
                 {
                     case ChatCommand.Clear:
-                        await threadResolver.ClearAsync(agentKey);
+                        await ClearThreadAsync();
                         break;
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
@@ -202,6 +202,27 @@ internal sealed class ConversationGroup(
         catch (Exception ex)
         {
             writer.TryComplete(ex);
+        }
+    }
+
+    // ClearAsync disposes the live context before it deletes the persisted state — that
+    // order is load-bearing: a message arriving during a slow delete must open a fresh
+    // group, not join this dying one. The cost is that a failed delete surfaces after the
+    // group already completed, when the reader is exiting on the cancellation the dispose
+    // raised and never observes a fault folded into the pending channel. So the failure is
+    // named here, at the only site that still sees it: the live thread is gone, the
+    // persisted one survived, and the cleared history returns on the next message.
+    private async Task ClearThreadAsync()
+    {
+        try
+        {
+            await threadResolver.ClearAsync(agentKey);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Wiping persisted thread state failed for conversation {ConversationId} and agent {AgentId}; the cleared history returns on the next message",
+                agentKey.ConversationId, agentKey.AgentId);
         }
     }
 
