@@ -60,7 +60,13 @@ public sealed class McpChannelConnection(
     // repo registers its tools before its transport starts, so the answer cannot change while one
     // connection is up; a reconnect may be talking to a different process, so it starts over.
     // See docs/adr/0012-a-servers-tool-set-is-fixed-for-a-connection-generation.md.
-    private IReadOnlySet<string>? _toolNames;
+    //
+    // The answer carries the client it came from rather than being cleared when a generation ends:
+    // a probe still in flight writes a tagged answer whenever it lands, and a later generation
+    // simply does not recognise it. Clearing a bare field cannot say that — whichever order the
+    // clear and the stale write happen in, one ordering leaves the old server's tools sitting in
+    // the new connection's cache.
+    private ToolSet? _tools;
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
 
@@ -176,7 +182,6 @@ public sealed class McpChannelConnection(
         // Never leave a second pump alive on this connection: two of them share one subscriberId
         // and displace each other's waiter, which the inbox retires with an instant empty batch.
         await StopPumpAsync();
-        _toolNames = null;
 
         var client = await McpClient.CreateAsync(
             new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }),
@@ -601,25 +606,26 @@ public sealed class McpChannelConnection(
     // Two targets resolving at once can both find the set unfetched and each ask; that costs one
     // extra round trip on the first turn of a generation and settles on the same answer, which is
     // cheaper than serialising every probe behind a lock. The client comes in as the caller's own
-    // snapshot and is compared against the field after the ask, because a probe can outlive its
-    // generation: a reconnect mid-flight swaps the client, and storing the old generation's answer
-    // then would pin the new connection to a tool set its server may not have.
+    // snapshot and is what a cached answer is matched against, because a probe can outlive its
+    // generation: a reconnect mid-flight swaps the client, and a probe that asked the old server
+    // must not pin the new connection to a tool set its server may not have.
     private async Task<bool> OffersToolAsync(McpClient client, string toolName, CancellationToken ct)
     {
-        var names = _toolNames;
-        if (names is null)
+        var tools = _tools;
+        if (tools is null || !ReferenceEquals(tools.Owner, client))
         {
-            names = (await client.ListToolsAsync(cancellationToken: ct))
-                .Select(tool => tool.Name)
-                .ToHashSet(StringComparer.Ordinal);
-            if (ReferenceEquals(_client, client))
-            {
-                _toolNames = names;
-            }
+            tools = new ToolSet(
+                client,
+                (await client.ListToolsAsync(cancellationToken: ct))
+                    .Select(tool => tool.Name)
+                    .ToHashSet(StringComparer.Ordinal));
+            _tools = tools;
         }
 
-        return names.Contains(toolName);
+        return tools.Names.Contains(toolName);
     }
+
+    private sealed record ToolSet(McpClient Owner, IReadOnlySet<string> Names);
 
     // The client every operation works against, read once. Re-reading the field after a guard —
     // or behind a null-forgiving operator — races ReconnectAsync nulling it and turns the five
