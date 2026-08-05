@@ -22,6 +22,8 @@ public sealed class MetricsLiveConnection(
     private bool _disposed;
     private bool _awaitingFirstLoadOutcome;
     private bool _holdingUntilCaughtUp;
+    private Func<Exception?, Task>? _onReconnecting;
+    private Func<string?, Task>? _onReconnected;
 
     public Task ConnectAsync() => _started ? Task.CompletedTask : _connecting ??= BecomeLiveAsync();
 
@@ -35,8 +37,10 @@ public sealed class MetricsLiveConnection(
         dataLoad.LoadCompleted += OnLoadCompletedAsync;
 
         // Closed is not handled: with a retry policy that never gives up, the transport only closes
-        // for good when this module disposes it.
-        hub.Reconnecting += _ =>
+        // for good when this module disposes it. The other two are kept in fields because disposal
+        // has to take them off again: a reconnect landing afterwards would otherwise drive a whole
+        // become-live sequence on a module that is gone.
+        _onReconnecting = _ =>
         {
             connectionStore.SetReconnecting();
 
@@ -47,7 +51,10 @@ public sealed class MetricsLiveConnection(
             return Task.CompletedTask;
         };
 
-        hub.Reconnected += _ => BecomeLiveAndCatchUpAsync();
+        _onReconnected = _ => BecomeLiveAndCatchUpAsync();
+
+        hub.Reconnecting += _onReconnecting;
+        hub.Reconnected += _onReconnected;
 
         connectionStore.SetConnecting();
         if (!await StartUntilItSucceedsAsync())
@@ -176,6 +183,8 @@ public sealed class MetricsLiveConnection(
     {
         _disposed = true;
         dataLoad.LoadCompleted -= OnLoadCompletedAsync;
+        hub.Reconnecting -= _onReconnecting;
+        hub.Reconnected -= _onReconnected;
         binder.Unbind();
         await hub.DisposeAsync();
     }

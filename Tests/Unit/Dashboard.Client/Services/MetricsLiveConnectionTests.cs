@@ -463,6 +463,22 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _hub.Disposed.ShouldBeTrue();
     }
 
+    // Unbinding the pushes was not the whole of letting go: the lifecycle handlers stayed attached,
+    // so a reconnect landing after disposal drove a whole become-live sequence on a dead module.
+    [Fact]
+    public async Task DisposeAsync_TheTransportReconnectsAfterwards_TheModuleDoesNothing()
+    {
+        await ConnectAsync();
+
+        await _liveConnection.DisposeAsync();
+        await _hub.RaiseReconnectingAsync(null);
+        await _hub.RaiseReconnectedAsync();
+
+        _catchUp.Runs.ShouldBe(0);
+        _connectionStore.State.Epoch.ShouldBe(1);
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
+    }
+
     [Fact]
     public async Task DisposeAsync_WhileTheHubIsStillUnavailable_StopsTryingAndPublishesNothing()
     {
