@@ -2,7 +2,7 @@ using Dashboard.Client.Metrics;
 
 namespace Dashboard.Client.Effects;
 
-public sealed class DataLoadEffect(MetricFamilyTable families, OverviewFigures overview)
+public sealed class DataLoadEffect(MetricFamilyTable families, OverviewFigures overview, MetricsHubBinder binder)
 {
     // The one trace the swallowed failure leaves behind. The live connection skips catch-up on its
     // first epoch on the premise that this load delivered the same data; a recorded failure is how
@@ -29,7 +29,19 @@ public sealed class DataLoadEffect(MetricFamilyTable families, OverviewFigures o
             family.RefreshAsync,
         }));
 
-        var outcomes = await Task.WhenAll(requests.Select(SettleAsync));
+        // Held for the same reason catch-up holds: this walk replaces the same event lists a push
+        // writes into, and without the hold a push landing mid-load is erased when the load's
+        // older response lands after it.
+        binder.HoldPushes();
+        bool[] outcomes;
+        try
+        {
+            outcomes = await Task.WhenAll(requests.Select(SettleAsync));
+        }
+        finally
+        {
+            await binder.ReleaseHeldPushesAsync();
+        }
 
         LastLoadFailed = outcomes.Contains(false);
 

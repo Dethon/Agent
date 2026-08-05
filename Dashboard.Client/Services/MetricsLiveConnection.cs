@@ -17,6 +17,7 @@ public sealed class MetricsLiveConnection(
     TimeProvider timeProvider,
     ILogger<MetricsLiveConnection> logger) : IAsyncDisposable
 {
+    private readonly CancellationTokenSource _disposalCts = new();
     private Task? _connecting;
     private bool _started;
     private bool _disposed;
@@ -24,6 +25,7 @@ public sealed class MetricsLiveConnection(
     private bool _holdingUntilCaughtUp;
     private Func<Exception?, Task>? _onReconnecting;
     private Func<string?, Task>? _onReconnected;
+    private Func<Exception?, Task>? _onClosed;
 
     public Task ConnectAsync() => _started ? Task.CompletedTask : _connecting ??= BecomeLiveAsync();
 
@@ -36,10 +38,9 @@ public sealed class MetricsLiveConnection(
 
         dataLoad.LoadCompleted += OnLoadCompletedAsync;
 
-        // Closed is not handled: with a retry policy that never gives up, the transport only closes
-        // for good when this module disposes it. The other two are kept in fields because disposal
-        // has to take them off again: a reconnect landing afterwards would otherwise drive a whole
-        // become-live sequence on a module that is gone.
+        // All three are kept in fields because disposal has to take them off again: a lifecycle
+        // event landing afterwards would otherwise drive a whole become-live sequence on a module
+        // that is gone.
         _onReconnecting = _ =>
         {
             connectionStore.SetReconnecting();
@@ -52,9 +53,11 @@ public sealed class MetricsLiveConnection(
         };
 
         _onReconnected = _ => BecomeLiveAndCatchUpAsync();
+        _onClosed = OnClosedAsync;
 
         hub.Reconnecting += _onReconnecting;
         hub.Reconnected += _onReconnected;
+        hub.Closed += _onClosed;
 
         connectionStore.SetConnecting();
         if (!await StartUntilItSucceedsAsync())
@@ -87,7 +90,43 @@ public sealed class MetricsLiveConnection(
             return;
         }
 
+        // A catch-up run here answers whatever the first epoch's skip was waiting to hear, most
+        // often a reconnect landing before the first load's outcome was known. Leaving the flag set
+        // would have the first load failing afterwards ask OnLoadCompletedAsync for a second,
+        // redundant catch-up.
+        _awaitingFirstLoadOutcome = false;
+
         await CatchUpHoldingPushesAsync();
+    }
+
+    // A close with no Reconnecting before it means automatic reconnect is not going to run: the
+    // server disallowed it, or the transport was never configured to retry. The retry loop that
+    // covers the very first connection is the only path back to live from here, so a close just
+    // re-enters it.
+    private Task OnClosedAsync(Exception? exception)
+    {
+        if (_disposed)
+        {
+            return Task.CompletedTask;
+        }
+
+        connectionStore.SetConnecting();
+
+        // Same reasoning as the Reconnecting hold: the transport can resume dispatching before this
+        // handler finishes, and a push landing in that gap must not be applied ahead of the
+        // catch-up that follows.
+        HoldUntilCaughtUp();
+        return RestartAfterCloseAsync();
+    }
+
+    private async Task RestartAfterCloseAsync()
+    {
+        if (!await StartUntilItSucceedsAsync())
+        {
+            return;
+        }
+
+        await BecomeLiveAndCatchUpAsync();
     }
 
     // The first load to settle after the first epoch skipped its catch-up answers whether the skip
@@ -172,7 +211,18 @@ public sealed class MetricsLiveConnection(
                 logger.LogWarning(exception, "Metrics hub start failed, retrying");
             }
 
-            await Task.Delay(MetricsRetryPolicy.DelayFor(previousRetryCount), timeProvider);
+            try
+            {
+                // The disposal token, not just the loop condition: without it, dispose would still
+                // have to wait out whatever's left of the current delay before this loop next checks
+                // _disposed.
+                await Task.Delay(MetricsRetryPolicy.DelayFor(previousRetryCount), timeProvider, _disposalCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Disposed mid-delay: the loop condition above ends it on the next check.
+            }
+
             previousRetryCount++;
         }
 
@@ -182,9 +232,16 @@ public sealed class MetricsLiveConnection(
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+
+        // Not disposed here: StartUntilItSucceedsAsync can still be mid-loop reading the token when
+        // dispose is called without anyone awaiting the connect it started, and Dispose() racing
+        // that read is an ObjectDisposedException nobody asked for. Cancel is enough to unblock the
+        // delay; a CancellationTokenSource never disposed lives exactly as long as this module.
+        await _disposalCts.CancelAsync();
         dataLoad.LoadCompleted -= OnLoadCompletedAsync;
         hub.Reconnecting -= _onReconnecting;
         hub.Reconnected -= _onReconnected;
+        hub.Closed -= _onClosed;
         binder.Unbind();
         await hub.DisposeAsync();
     }

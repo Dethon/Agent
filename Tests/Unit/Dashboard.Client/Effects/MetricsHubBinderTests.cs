@@ -168,7 +168,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
     }
 
     private DataLoadEffect NewDataLoadEffect() =>
-        new(_families, new OverviewFigures(_api, _metricsStore, _healthStore));
+        new(_families, new OverviewFigures(_api, _metricsStore, _healthStore), _binder);
 
     // A page load, per family: the events request and the breakdown request, both carrying the
     // range the load was given. Nothing is staged, so every response is a 404 the effect swallows;
