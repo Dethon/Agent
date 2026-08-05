@@ -14,9 +14,18 @@ public sealed class DataLoadEffect(MetricFamilyTable families, OverviewFigures o
     // its promise needs to hear when the load actually delivers or fails.
     public event Func<Task>? LoadCompleted;
 
-    public async Task LoadAsync(DateOnly from, DateOnly to)
+    // The range belongs to the page that asked for it, so only the families that page draws are
+    // stamped with it; the rest keep the range their own page chose. Stamping all seven meant a
+    // live push or a catch-up for a family whose page had picked thirty days re-read it over
+    // whatever the page in front of the user was showing, which is the opposite of what
+    // .claude/rules/observability.md promises about catch-up keeping the user's time choices.
+    // Everything is still loaded, each family over its own range: whatever a load can put on screen
+    // is what an outage can leave stale.
+    public async Task LoadAsync(DateOnly from, DateOnly to, IReadOnlyList<MetricFamily> displayed)
     {
-        families.All.ToList().ForEach(family => family.SetDateRange(from, to));
+        ArgumentNullException.ThrowIfNull(displayed);
+
+        displayed.ToList().ForEach(family => family.SetDateRange(from, to));
         overview.SetDateRange(from, to);
 
         var requests = new Func<Task>[]

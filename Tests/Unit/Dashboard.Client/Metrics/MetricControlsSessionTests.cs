@@ -138,6 +138,22 @@ public class MetricControlsSessionTests : IDisposable
         _tokensStore.State.From.ShouldBe(DateOnly.Parse(expectedFrom));
     }
 
+    // A page's time pill moves that page's family, and nothing else. Voice keeps the thirty days its
+    // own page persisted while the tokens page is showing today.
+    [Fact]
+    public async Task ChangeDaysAsync_ADayCountIsChosen_StampsOnlyTheSessionsOwnFamily()
+    {
+        var chosenOnTheVoicePage = new DateOnly(2026, 2, 23);
+        _voiceStore.SetDateRange(chosenOnTheVoicePage, Today);
+        var session = SessionFor(_families.Tokens);
+        await session.InitializeAsync();
+
+        await session.ChangeDaysAsync("1");
+
+        _tokensStore.State.From.ShouldBe(Today);
+        _voiceStore.State.From.ShouldBe(chosenOnTheVoicePage);
+    }
+
     [Fact]
     public async Task InitializeAsync_ADayCountIsSaved_DerivesTheRangeFromIt()
     {

@@ -53,6 +53,20 @@ fail — it keeps trying.
   decision is taken, so the module waits for that first load to settle and catches up if it failed.
   Later epochs always catch up. A failure inside the catch-up is logged and leaves the connection
   live.
+- **A page load stamps only the families that page draws.** `DataLoadEffect.LoadAsync` is given
+  them — one family for every breakdown page, `MetricFamilyTable.OverviewFamilies` (the four behind
+  the activity feed plus voice) for the Overview. Every family is still reloaded, each over the
+  range its own page chose, which is what makes the catch-up promise above true: stamping all seven
+  meant a push or a catch-up for a family re-read it over whatever page the user was on.
+- **Only the latest load writes.** A family fetches its events and hands back the store write, which
+  `MetricFamily.LoadEventsAsync` runs only while no later load has started; `OverviewFigures` stamps
+  its summary read the same way. Two quick time-pill clicks overlap, the thirty-day responses are
+  the slower ones, and an event list has nothing that re-reads it the way the refresh coalescer
+  brings a breakdown back into line.
+- **An append is bounded.** Every store writes its event lists through `EventWindow.Append`, so a tab
+  left open cannot grow them without limit. A load writes whatever the range answered with; an
+  append keeps the list at the length the load left it, or grows it to `EventWindow.Cap`, whichever
+  is longer.
 - **The catch-up holds pushes while it runs.** `MetricsHubBinder.HoldPushes` queues incoming pushes,
   and `ReleaseHeldPushesAsync` replays them once the snapshot has landed. Without the hold, a
   snapshot fetched before a push arrived would erase that push, and a push the snapshot already

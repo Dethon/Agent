@@ -5,12 +5,13 @@ public class MetricFamily(
     MetricChoice dimension,
     MetricChoice? metric,
     Action<DateOnly, DateOnly> setDateRange,
-    Func<Task> loadEvents,
+    Func<Task<Action>> loadEvents,
     Func<Task> refreshBreakdown)
 {
     private readonly object _gate = new();
     private Task? _running;
     private bool _dirty;
+    private int _loadGeneration;
 
     public string Name { get; } = name;
 
@@ -24,7 +25,21 @@ public class MetricFamily(
 
     public void SetDateRange(DateOnly from, DateOnly to) => setDateRange(from, to);
 
-    public Task LoadEventsAsync() => loadEvents();
+    // Fetching the events and writing them to the store are two steps, and the second only happens
+    // while this load is still the latest one. Two quick time-pill clicks start two loads over
+    // different ranges: the thirty-day responses are the slower ones and used to land after Today's,
+    // leaving thirty days of events under a Today header until the next load. Unlike a breakdown,
+    // which the refresh coalescer brings back into line on its own, nothing re-reads an event list.
+    public async Task LoadEventsAsync()
+    {
+        var generation = Interlocked.Increment(ref _loadGeneration);
+        var apply = await loadEvents();
+
+        if (Volatile.Read(ref _loadGeneration) == generation)
+        {
+            apply();
+        }
+    }
 
     // Awaiting this means the breakdown reflects the store state at or after the call. A caller
     // arriving while a run is in flight shares that run and marks it stale, so one further pass
@@ -96,7 +111,7 @@ public sealed class MetricFamily<TStore>(
     MetricChoice dimension,
     MetricChoice? metric,
     Action<DateOnly, DateOnly> setDateRange,
-    Func<Task> loadEvents,
+    Func<Task<Action>> loadEvents,
     Func<Task> refreshBreakdown)
     : MetricFamily(name, dimension, metric, setDateRange, loadEvents, refreshBreakdown)
     where TStore : class

@@ -19,7 +19,7 @@ public sealed class VoiceStore : Store<VoiceState>
         Dispatch(new SetVoiceEvents(events), static (s, a) => s with { Events = a.Events });
 
     public void AppendEvent(VoiceEvent evt) =>
-        Dispatch(new AppendVoiceEvent(evt), static (s, a) => s with { Events = [.. s.Events, a.Event] });
+        Dispatch(new AppendVoiceEvent(evt), static (s, a) => s with { Events = EventWindow.Append(s.Events, a.Event) });
 
     public void SetBreakdown(Dictionary<string, decimal> breakdown) =>
         Dispatch(new SetVoiceBreakdown(breakdown), static (s, a) => s with { Breakdown = a.Breakdown });

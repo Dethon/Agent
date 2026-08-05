@@ -13,12 +13,19 @@ public sealed class OverviewFigures(
     HealthStore healthStore)
 {
     private (DateOnly From, DateOnly To)? _range;
+    private int _summaryGeneration;
 
     public void SetDateRange(DateOnly from, DateOnly to) => _range = (from, to);
 
     // The summary is per range and catch-up is never told one, so it re-reads over the range the
     // last page load set, exactly as the family walk reads its range from the families. Before any
     // load has set one there is no summary on screen to correct, so there is nothing to read.
+    //
+    // Only the latest read writes, for the reason MetricFamily's load only lets the latest one
+    // write: two quick time-pill clicks issue two summary requests, and the thirty-day one is the
+    // slower of the two, so the KPI row used to settle on totals from a range the header no longer
+    // shows. Deriving the totals from the event lists takes the same stamp, so a read still in
+    // flight cannot land on top of a catch-up's derivation either.
     public async Task LoadSummaryAsync()
     {
         if (_range is not { } range)
@@ -26,8 +33,9 @@ public sealed class OverviewFigures(
             return;
         }
 
+        var generation = Interlocked.Increment(ref _summaryGeneration);
         var summary = await api.GetSummaryAsync(range.From, range.To);
-        if (summary is null)
+        if (summary is null || Volatile.Read(ref _summaryGeneration) != generation)
         {
             return;
         }
@@ -60,6 +68,8 @@ public sealed class OverviewFigures(
     public void DeriveSummaryFromEvents(MetricFamilyTable families)
     {
         ArgumentNullException.ThrowIfNull(families);
+
+        Interlocked.Increment(ref _summaryGeneration);
 
         var tokens = families.Tokens.Store.State.Events;
         var tools = families.Tools.Store.State.Events;

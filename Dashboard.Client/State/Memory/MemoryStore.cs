@@ -39,19 +39,19 @@ public sealed class MemoryStore : Store<MemoryState>
     public void AppendRecallEvent(MemoryRecallEvent evt) =>
         Dispatch(new AppendMemoryRecallEvent(evt), static (s, a) => s with
         {
-            RecallEvents = [.. s.RecallEvents, a.Event],
+            RecallEvents = EventWindow.Append(s.RecallEvents, a.Event),
         });
 
     public void AppendExtractionEvent(MemoryExtractionEvent evt) =>
         Dispatch(new AppendMemoryExtractionEvent(evt), static (s, a) => s with
         {
-            ExtractionEvents = [.. s.ExtractionEvents, a.Event],
+            ExtractionEvents = EventWindow.Append(s.ExtractionEvents, a.Event),
         });
 
     public void AppendDreamingEvent(MemoryDreamingEvent evt) =>
         Dispatch(new AppendMemoryDreamingEvent(evt), static (s, a) => s with
         {
-            DreamingEvents = [.. s.DreamingEvents, a.Event],
+            DreamingEvents = EventWindow.Append(s.DreamingEvents, a.Event),
         });
 
     public void SetDateRange(DateOnly from, DateOnly to) =>

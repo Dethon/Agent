@@ -40,6 +40,8 @@ public sealed class MetricFamilyTable
             setDateRange: tokens.SetDateRange,
             // Truncations are a grouped count rather than one of the family's events, but they are
             // the tokens page's fourth headline figure, so they load with them.
+            // A load fetches here and hands back the store write, which MetricFamily runs only if
+            // no later load has started meanwhile.
             loadEvents: async () =>
             {
                 var state = tokens.State;
@@ -48,8 +50,13 @@ public sealed class MetricFamilyTable
                     $"tokens/by/{TokenDimension.Model}", state.From, state.To,
                     [("metric", nameof(TokenMetric.TruncationCount))]);
                 await Task.WhenAll(events, truncations);
-                tokens.SetEvents(await events ?? []);
-                tokens.SetTruncations((long)((await truncations)?.Values.Sum() ?? 0));
+                var loaded = await events ?? [];
+                var truncated = (long)((await truncations)?.Values.Sum() ?? 0);
+                return () =>
+                {
+                    tokens.SetEvents(loaded);
+                    tokens.SetTruncations(truncated);
+                };
             },
             refreshBreakdown: async () =>
             {
@@ -78,7 +85,8 @@ public sealed class MetricFamilyTable
             loadEvents: async () =>
             {
                 var state = tools.State;
-                tools.SetEvents(await api.GetToolsAsync(state.From, state.To) ?? []);
+                var loaded = await api.GetToolsAsync(state.From, state.To) ?? [];
+                return () => tools.SetEvents(loaded);
             },
             refreshBreakdown: async () =>
             {
@@ -98,7 +106,8 @@ public sealed class MetricFamilyTable
             loadEvents: async () =>
             {
                 var state = errors.State;
-                errors.SetEvents(await api.GetErrorsAsync(state.From, state.To) ?? []);
+                var loaded = await api.GetErrorsAsync(state.From, state.To) ?? [];
+                return () => errors.SetEvents(loaded);
             },
             refreshBreakdown: async () =>
             {
@@ -117,7 +126,8 @@ public sealed class MetricFamilyTable
             loadEvents: async () =>
             {
                 var state = schedules.State;
-                schedules.SetEvents(await api.GetSchedulesAsync(state.From, state.To) ?? []);
+                var loaded = await api.GetSchedulesAsync(state.From, state.To) ?? [];
+                return () => schedules.SetEvents(loaded);
             },
             refreshBreakdown: async () =>
             {
@@ -149,9 +159,15 @@ public sealed class MetricFamilyTable
                 var extraction = api.GetMemoryExtractionAsync(state.From, state.To);
                 var dreaming = api.GetMemoryDreamingAsync(state.From, state.To);
                 await Task.WhenAll(recall, extraction, dreaming);
-                memory.SetRecallEvents(await recall ?? []);
-                memory.SetExtractionEvents(await extraction ?? []);
-                memory.SetDreamingEvents(await dreaming ?? []);
+                var loadedRecall = await recall ?? [];
+                var loadedExtraction = await extraction ?? [];
+                var loadedDreaming = await dreaming ?? [];
+                return () =>
+                {
+                    memory.SetRecallEvents(loadedRecall);
+                    memory.SetExtractionEvents(loadedExtraction);
+                    memory.SetDreamingEvents(loadedDreaming);
+                };
             },
             refreshBreakdown: async () =>
             {
@@ -171,7 +187,8 @@ public sealed class MetricFamilyTable
             loadEvents: async () =>
             {
                 var state = latency.State;
-                latency.SetEvents(await api.GetLatencyAsync(state.From, state.To) ?? []);
+                var loaded = await api.GetLatencyAsync(state.From, state.To) ?? [];
+                return () => latency.SetEvents(loaded);
             },
             // The trend is the second panel on the latency page. It is fetched alongside the
             // breakdown and written with it, so the two panels can never disagree.
@@ -196,7 +213,8 @@ public sealed class MetricFamilyTable
             loadEvents: async () =>
             {
                 var state = voice.State;
-                voice.SetEvents(await api.GetVoiceEventsAsync(state.From, state.To) ?? []);
+                var loaded = await api.GetVoiceEventsAsync(state.From, state.To) ?? [];
+                return () => voice.SetEvents(loaded);
             },
             refreshBreakdown: async () =>
             {
@@ -208,6 +226,7 @@ public sealed class MetricFamilyTable
             });
 
         All = [Tokens, Tools, Errors, Schedules, Memory, Latency, Voice];
+        OverviewFamilies = [Tokens, Tools, Errors, Schedules, Voice];
     }
 
     public MetricFamily<TokensStore> Tokens { get; }
@@ -219,4 +238,9 @@ public sealed class MetricFamilyTable
     public MetricFamily<VoiceStore> Voice { get; }
 
     public IReadOnlyList<MetricFamily> All { get; }
+
+    // The families the Overview page draws, and therefore the ones its own time pill stamps: the
+    // four behind the activity feed plus voice behind its two KPI cards. Every other page draws one
+    // family and stamps that one.
+    public IReadOnlyList<MetricFamily> OverviewFamilies { get; }
 }
