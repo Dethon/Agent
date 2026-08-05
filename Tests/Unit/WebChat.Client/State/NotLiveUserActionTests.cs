@@ -163,7 +163,7 @@ public sealed class NotLiveUserActionTests
         client.Dispatcher.Dispatch(new RemoveTopic("topic-1", "agent-1", 10, 20));
 
         await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "DeleteTopic"));
-        client.Topics.State.Topics.ShouldBeEmpty();
+        await TestChat.Eventually(() => client.Topics.State.Topics.Count == 0);
         client.Toasts.State.Toasts.ShouldBeEmpty();
     }
 

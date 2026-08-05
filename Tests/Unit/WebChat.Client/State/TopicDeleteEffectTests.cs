@@ -148,7 +148,6 @@ public sealed class TopicDeleteEffectTests : IDisposable
 
     public void Dispose()
     {
-        _effect.Dispose();
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();

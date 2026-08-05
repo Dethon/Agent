@@ -9,7 +9,7 @@ using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
 
-public sealed class TopicDeleteEffect : IDisposable
+public sealed class TopicDeleteEffect
 {
     private readonly Dispatcher _dispatcher;
     private readonly TopicsStore _topicsStore;
@@ -18,9 +18,6 @@ public sealed class TopicDeleteEffect : IDisposable
     private readonly ITopicService _topicService;
     private readonly IMessagePipeline _pipeline;
     private readonly ILogger<TopicDeleteEffect> _logger;
-    private readonly IDisposable _subscription;
-    private TopicsState _beforeLastChange = TopicsState.Initial;
-    private TopicsState _lastSeen = TopicsState.Initial;
 
     public TopicDeleteEffect(
         Dispatcher dispatcher,
@@ -39,15 +36,6 @@ public sealed class TopicDeleteEffect : IDisposable
         _pipeline = pipeline;
         _logger = logger;
 
-        // The reducer has already dropped the topic by the time this effect's handler runs,
-        // so putting it back needs the list as it stood one change ago. The store emits during
-        // that reduce, which is before the handler, so the pair is always one behind it.
-        _subscription = topicsStore.StateObservable.Subscribe(state =>
-        {
-            _beforeLastChange = _lastSeen;
-            _lastSeen = state;
-        });
-
         dispatcher.RegisterHandler<RemoveTopic>(action =>
             HandleRemoveTopicAsync(action.TopicId, action.AgentId, action.ChatId, action.ThreadId)
                 .LogFaults(_logger, nameof(RemoveTopic)));
@@ -56,12 +44,16 @@ public sealed class TopicDeleteEffect : IDisposable
     public async Task HandleRemoveTopicAsync(
         string topicId, string? agentId = null, long? chatId = null, long? threadId = null)
     {
+        // TopicRemoved clears the selection during its reduce, so whether the pending
+        // approval belongs to this conversation has to be read before it is dispatched.
+        var wasSelected = _topicsStore.State.SelectedTopicId == topicId;
+
         if (_streamingStore.State.StreamingByTopic.ContainsKey(topicId))
         {
             var cancelled = await _messagingService.CancelTopicAsync(topicId);
             if (!cancelled.IsLive)
             {
-                RestoreTopic(topicId);
+                _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
                 return;
             }
 
@@ -73,49 +65,22 @@ public sealed class TopicDeleteEffect : IDisposable
         if (agentId is not null && chatId.HasValue && threadId.HasValue)
         {
             var deleted = await _topicService.DeleteTopicAsync(agentId, topicId, chatId.Value, threadId.Value);
-
-            // The reducer removed the row optimistically. A delete that never reached the
-            // server would otherwise look done until the next reload brought it back.
             if (!deleted.IsLive)
             {
-                RestoreTopic(topicId);
+                _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
                 return;
             }
         }
+
+        _dispatcher.Dispatch(new TopicRemoved(topicId));
 
         // Clear cached messages so re-created topics reload from server; the same action drops
         // the topic's finalized message ids, which is all the pipeline ever tracked.
         _dispatcher.Dispatch(new ClearMessages(topicId));
 
-        if (_topicsStore.State.SelectedTopicId == topicId)
+        if (wasSelected)
         {
             _dispatcher.Dispatch(new ClearApproval());
         }
     }
-
-    private void RestoreTopic(string topicId)
-    {
-        // Read the snapshot before dispatching anything: a dispatch that changes topic state
-        // moves the pair along, and the next read would see what this method just produced.
-        var before = _beforeLastChange;
-
-        _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
-
-        var removed = before.Topics.FirstOrDefault(topic => topic.TopicId == topicId);
-        if (removed is null)
-        {
-            return;
-        }
-
-        _dispatcher.Dispatch(new AddTopic(removed));
-
-        // The same reduce cleared the selection. Putting the row back without it would leave
-        // the user looking at an empty transcript beside the conversation they still have.
-        if (before.SelectedTopicId == topicId)
-        {
-            _dispatcher.Dispatch(new SelectTopic(topicId));
-        }
-    }
-
-    public void Dispose() => _subscription.Dispose();
 }

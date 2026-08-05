@@ -13,7 +13,11 @@ public record AddTopic(StoredTopic Topic) : IAction;
 
 public record UpdateTopic(StoredTopic Topic) : IAction;
 
+// The command: ask for a delete. The row itself only leaves on TopicRemoved, once the
+// server confirmed — so a delete that could not be made never touches the sidebar.
 public record RemoveTopic(string TopicId, string? AgentId = null, long? ChatId = null, long? ThreadId = null) : IAction;
+
+public record TopicRemoved(string TopicId) : IAction;
 
 public record SetAgents(IReadOnlyList<AgentCatalogEntry> Agents) : IAction;
 
@@ -78,7 +82,7 @@ public sealed class TopicsStore : IDisposable
             Error = null
         },
 
-        RemoveTopic a => state with
+        TopicRemoved a => state with
         {
             Topics = state.Topics
                 .Where(t => t.TopicId != a.TopicId)

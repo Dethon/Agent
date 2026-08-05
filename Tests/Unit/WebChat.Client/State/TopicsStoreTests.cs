@@ -97,7 +97,7 @@ public class TopicsStoreTests : IDisposable
     }
 
     [Fact]
-    public void RemoveTopic_RemovesFromTopicsList()
+    public void TopicRemoved_RemovesFromTopicsList()
     {
         // Arrange
         var topics = new List<StoredTopic>
@@ -108,7 +108,7 @@ public class TopicsStoreTests : IDisposable
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 
         // Act
-        _dispatcher.Dispatch(new RemoveTopic("topic-1"));
+        _dispatcher.Dispatch(new TopicRemoved("topic-1"));
 
         // Assert
         _store.State.Topics.Count.ShouldBe(1);
@@ -116,7 +116,7 @@ public class TopicsStoreTests : IDisposable
     }
 
     [Fact]
-    public void RemoveTopic_ClearsSelectionIfSelectedTopicRemoved()
+    public void TopicRemoved_ClearsSelectionIfSelectedTopicRemoved()
     {
         // Arrange
         var topics = new List<StoredTopic> { CreateTopic("topic-1", "Topic One") };
@@ -124,10 +124,25 @@ public class TopicsStoreTests : IDisposable
         _dispatcher.Dispatch(new SelectTopic("topic-1"));
 
         // Act
-        _dispatcher.Dispatch(new RemoveTopic("topic-1"));
+        _dispatcher.Dispatch(new TopicRemoved("topic-1"));
 
         // Assert
         _store.State.SelectedTopicId.ShouldBeNull();
+    }
+
+    [Fact]
+    public void RemoveTopic_IsACommandAndLeavesTheListAlone()
+    {
+        // The row leaves the sidebar only on TopicRemoved, after the server confirmed
+        // the delete — never optimistically on the RemoveTopic command itself.
+        var topics = new List<StoredTopic> { CreateTopic("topic-1", "Topic One") };
+        _dispatcher.Dispatch(new TopicsLoaded(topics));
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        _dispatcher.Dispatch(new RemoveTopic("topic-1"));
+
+        _store.State.Topics.Count.ShouldBe(1);
+        _store.State.SelectedTopicId.ShouldBe("topic-1");
     }
 
     [Fact]
