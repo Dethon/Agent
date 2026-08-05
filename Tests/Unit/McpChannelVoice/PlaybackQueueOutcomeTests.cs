@@ -41,6 +41,32 @@ public class PlaybackQueueOutcomeTests
     }
 
     [Fact]
+    public void Dispose_AfterTheLinkDropClose_LeavesALateEnqueueRefusingRatherThanThrowing()
+    {
+        // The queue owns a semaphore and a token source, one pair per satellite connection, and the
+        // drain disposes them once the loop has stopped. A producer can still arrive after that —
+        // send_reply resolving a session the drain has just torn down — and it must get the refusal
+        // every closed queue gives, never an ObjectDisposedException out of a metrics-free path.
+        var queue = new PlaybackQueue();
+        queue.CompleteAndDiscardQueued();
+        queue.Dispose();
+
+        queue.Enqueue(Job("late", PlaybackKind.Announce)).Refused.ShouldBe(RefusalReason.QueueClosed);
+    }
+
+    [Fact]
+    public void Dispose_CalledTwice_IsANoOp()
+    {
+        // The drain is not the only unwinding path (shutdown cancels the run token first), so
+        // disposal has to survive being asked for twice.
+        var queue = new PlaybackQueue();
+        queue.CompleteAndDiscardQueued();
+        queue.Dispose();
+
+        Should.NotThrow(() => queue.Dispose());
+    }
+
+    [Fact]
     public void Enqueue_WhenTheKindsAllowanceIsFull_RefusesAsQueueFull()
     {
         var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1);

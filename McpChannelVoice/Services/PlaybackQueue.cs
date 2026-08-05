@@ -114,7 +114,7 @@ public interface ITurnAnchor
 public sealed class PlaybackQueue(
     int replyMaxDepth = StreamingTtsConfig.DefaultMaxQueuedSegments,
     int announceMaxDepth = AnnounceSettings.DefaultQueueMaxDepth,
-    int? prefetchBufferChunks = StreamingTtsConfig.DefaultPrefetchBufferChunks) : ITurnAnchor
+    int? prefetchBufferChunks = StreamingTtsConfig.DefaultPrefetchBufferChunks) : ITurnAnchor, IDisposable
 {
     // Play order, guarded by _gate: normal jobs append, a High job cuts in ahead of the queued
     // normal jobs (behind any High already waiting, so Highs stay FIFO among themselves). A channel
@@ -302,6 +302,18 @@ public sealed class PlaybackQueue(
         Volatile.Write(ref _discardOnDequeue, true);
         Complete();
         _dropCts.Cancel();
+    }
+
+    // The semaphore and the drop token source are the queue's own, and there is one queue per
+    // satellite connection: undisposed they are a pair leaked on every reconnect. Disposal is not a
+    // close — Complete() is — so it belongs after the loop has stopped, which is the only place that
+    // knows nothing will wait on the semaphore again (SatelliteConnection's drain). A producer
+    // arriving later still gets the closed queue's refusal, because that answer is given before
+    // anything touches the signal.
+    public void Dispose()
+    {
+        _signal.Dispose();
+        _dropCts.Dispose();
     }
 
     public void PreemptCurrent()
