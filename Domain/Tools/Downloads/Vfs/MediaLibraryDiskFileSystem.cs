@@ -121,7 +121,7 @@ public sealed class MediaLibraryDiskFileSystem(
         await RefuseAsync<FsCopyResult>(DownloadsIntent.Land, destinationPath, ct)
         ?? await base.CopyAsync(sourcePath, destinationPath, overwrite, createDirectories, ct);
 
-    // The virtual file only exists while a download owns the id. A leftover real status.json with
+    // The rendered view only exists while a download owns the id. A leftover real status.json with
     // no live download is the disk's file — refusing to read it left it visible and removable yet
     // unreadable, so the refusal asks for liveness instead of the path's spelling.
     public override async Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
@@ -134,10 +134,10 @@ public sealed class MediaLibraryDiskFileSystem(
         await RefuseAsync<FsBlobWriteResult>(DownloadsIntent.Land, path, ct)
         ?? await base.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct);
 
-    // The streamed halves of the same two operations, asking the same rule with the same intent —
-    // which is what makes the two halves unable to disagree. They throw rather than answer an
-    // envelope because that is the shape the chunk contract has, and VfsCopyTool turns the typed
-    // exception back into the envelope the ranged half returns directly.
+    // The streamed halves of the read and the write, asking the same rule with the same intent as
+    // their ranged counterparts — which is what makes the two halves unable to disagree. They throw
+    // rather than answer an envelope because that is the shape the chunk contract has, and
+    // VfsCopyTool turns the typed exception back into the envelope the ranged half returns.
     public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
         string path, [EnumeratorCancellation] CancellationToken ct)
     {
@@ -164,16 +164,6 @@ public sealed class MediaLibraryDiskFileSystem(
 
         return await base.WriteChunksAsync(path, chunks, overwrite, createDirectories, ct);
     }
-
-    // status.json is a rendered view of live download state, not a file on disk: moving, copying or
-    // writing it would silently produce a stale snapshot under a name that still looks live.
-    private const string VirtualFileRefusal =
-        "status.json is a virtual read-only file; read it with fs_read — it cannot be moved, copied, or written.";
-
-    private FsResult<T>? Refuse<T>(params string[] paths) where T : class =>
-        paths.Any(downloads.IsVirtualPath)
-            ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation, VirtualFileRefusal)
-            : null;
 
     // Every operation on this mount asks the overlay's one rule before it acts, and falls through
     // to the disk beneath when the rule says nothing.

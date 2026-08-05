@@ -109,6 +109,36 @@ public class MediaLibraryFileSystemTests : IDisposable
         (await Collect("downloads/99/status.json")).ShouldContain("stale");
     }
 
+    // Only the status file of a live download is a rendered view. The payload files that download
+    // is writing are plain disk entries, so reading their bytes while it runs is allowed.
+    [Fact]
+    public async Task ReadsOfAPayloadInsideALiveDownload_BothServeTheRealFile()
+    {
+        _client.Add(Item(42));
+        var payload = Path.Combine(_libraryRoot, "downloads", "42", "book.epub");
+        Directory.CreateDirectory(Path.GetDirectoryName(payload)!);
+        await File.WriteAllTextAsync(payload, "book");
+
+        (await _sut.ReadBlobAsync("downloads/42/book.epub", 0, 1024, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobReadResult>.Ok>();
+        (await Collect("downloads/42/book.epub")).ShouldBe("book");
+    }
+
+    // A leftover download directory owns nothing, so writing into it is an ordinary write.
+    [Fact]
+    public async Task WritesIntoALeftoverDownloadDirectory_Succeed()
+    {
+        _client.Add(Item(42));
+        Directory.CreateDirectory(Path.Combine(_libraryRoot, "downloads", "99"));
+
+        (await _sut.WriteBlobAsync("downloads/99/book.epub", Convert.ToBase64String("book"u8.ToArray()),
+                offset: 0, overwrite: true, createDirectories: false, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobWriteResult>.Ok>();
+
+        (await _sut.WriteChunksAsync("downloads/99/other.epub", Chunks("book"),
+            overwrite: true, createDirectories: false, CancellationToken.None)).ShouldBe(4);
+    }
+
     // The disk resolves '.' and '..' before it writes, so a dotted spelling of the status path lands
     // on exactly the file the overlay shadows. The classifier used to read the caller's literal
     // spelling, so every refusal on this mount was one '.' away from being switched off.

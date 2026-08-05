@@ -19,11 +19,11 @@ public enum DownloadsIntent
     Delete
 }
 
-// Overlays download semantics on the media filesystem's downloads/ subtree: every active
-// download surfaces a virtual read-only downloads/<id>/status.json, and deleting
-// downloads/<id> cancels the download and cleans up its files. Payload files inside a
-// download directory stay plain disk entries served by the regular media tools, so the
-// Try* methods return null for paths the overlay does not own.
+// Overlays download semantics on the media filesystem's downloads/ subtree: every live
+// download surfaces a rendered downloads/<id>/status.json, and deleting downloads/<id> cancels
+// the download and cleans up its files. A download owns a path only while it is live, so a
+// status.json nothing owns is a leftover the disk serves — which is why liveness, and never a
+// path's spelling, is what RefuseAsync asks about.
 public sealed class DownloadsOverlay(
     IDownloadClient downloadClient,
     IDownloadRoutingStore routingStore,
@@ -36,15 +36,13 @@ public sealed class DownloadsOverlay(
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public bool IsVirtualPath(string path) => ParseNode(path).Kind == DownloadNodeKind.StatusFile;
-
     // True when this path and a live download's directory overlap: the directory itself, any
     // ancestor of it (moving a parent takes the directory with it), and anything under it (the
     // payload files the download is still writing). Deleting such a path is the documented cancel,
     // but moving it is not — on the way out the download keeps writing and recreates what it lost,
     // leaving the moved copy orphaned, and on the way in whatever landed inside is destroyed the
     // moment the download is cancelled.
-    public async Task<bool> TouchesActiveDownloadAsync(string path, CancellationToken ct)
+    private async Task<bool> TouchesActiveDownloadAsync(string path, CancellationToken ct)
     {
         // The same canonical spelling the classifier uses, so 'downloads/./42' overlaps the live
         // download it names instead of reading as an unrelated string.

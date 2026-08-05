@@ -183,46 +183,4 @@ public class DownloadsOverlayTests : IDisposable
         (await _routing.ListAsync(CancellationToken.None)).ShouldBeEmpty();
         _fs.RemovedDirectories.ShouldContain(Path.Combine(_libraryRoot, "downloads", "99"));
     }
-
-    [Theory]
-    [InlineData("downloads/42")]
-    [InlineData("downloads/./42")]
-    [InlineData("downloads/42/./payload.mkv")]
-    [InlineData("Movies/../downloads/42")]
-    [InlineData("downloads")]
-    public async Task TouchesActiveDownload_ADottedSpellingOfTheBoundary_StillOverlaps(string path)
-    {
-        _client.Add(Item(42));
-
-        (await _sut.TouchesActiveDownloadAsync(path, CancellationToken.None)).ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task TouchesActiveDownload_APathOutsideEveryDownload_DoesNot()
-    {
-        _client.Add(Item(42));
-
-        (await _sut.TouchesActiveDownloadAsync("Movies/film.mkv", CancellationToken.None)).ShouldBeFalse();
-        (await _sut.TouchesActiveDownloadAsync("downloads/7", CancellationToken.None)).ShouldBeFalse();
-    }
-
-    [Fact]
-    public void IsVirtualPath_DottedAndPaddedSpellings()
-    {
-        _sut.IsVirtualPath("downloads/42/./status.json").ShouldBeTrue();
-        _sut.IsVirtualPath("downloads/43/../42/status.json").ShouldBeTrue();
-        _sut.IsVirtualPath("downloads/042/status.json").ShouldBeFalse();
-        _sut.IsVirtualPath("downloads/ 42 /status.json").ShouldBeFalse();
-    }
-
-    [Fact]
-    public void IsVirtualPath_TrueOnlyForStatusFiles()
-    {
-        _sut.IsVirtualPath("downloads/42/status.json").ShouldBeTrue();
-        _sut.IsVirtualPath("/downloads/42/status.json").ShouldBeTrue();
-        _sut.IsVirtualPath(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeTrue();
-        _sut.IsVirtualPath("downloads/42").ShouldBeFalse();
-        _sut.IsVirtualPath("downloads/42/file.mkv").ShouldBeFalse();
-        _sut.IsVirtualPath("Movies/status.json").ShouldBeFalse();
-    }
 }
