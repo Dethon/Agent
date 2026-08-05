@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+using System.Net.WebSockets;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -105,8 +107,60 @@ public sealed class ChatLiveConnectionHubCallTests : IDisposable
         new InvalidOperationException(
             "The 'InvokeCoreAsync' method cannot be called if the connection is not active"),
         new TaskCanceledException("Invocation canceled: the connection closed mid-call"),
-        new ObjectDisposedException(nameof(HubConnection))
+        new ObjectDisposedException(nameof(HubConnection)),
+        new HttpRequestException("connection refused"),
+        new TimeoutException("Server timeout elapsed without receiving a message"),
+        new SocketException((int)SocketError.ConnectionReset),
+        new WebSocketException(WebSocketError.ConnectionClosedPrematurely),
+        new IOException("The transport aborted the connection")
     };
+
+    // A client-side bug — a payload that cannot serialize, an argument the hub method rejects —
+    // is not the transport answering. Calling it not live would toast connectivity advice over a
+    // programming error and swallow the exception with no log; propagating it hands the fault to
+    // the effect's fault logging instead.
+    public static TheoryData<Exception> ProgrammingFaults => new()
+    {
+        new System.Text.Json.JsonException("cannot serialize the argument"),
+        new ArgumentException("argument does not match the hub method"),
+        new NotSupportedException("type is not supported")
+    };
+
+    [Theory]
+    [MemberData(nameof(ProgrammingFaults))]
+    public async Task InvokeAsync_AClientSideBugFaultsTheCall_PropagatesInsteadOfAnsweringNotLive(Exception fault)
+    {
+        var connection = await ConnectAsync();
+        connection.Answer("GetCount", _ => throw fault);
+
+        var thrown = await Should.ThrowAsync<Exception>(() => _liveConnection.InvokeAsync<int>("GetCount"));
+
+        thrown.ShouldBe(fault);
+    }
+
+    [Theory]
+    [MemberData(nameof(ProgrammingFaults))]
+    public async Task VoidInvokeAsync_AClientSideBugFaultsTheCall_PropagatesInsteadOfAnsweringNotLive(Exception fault)
+    {
+        var connection = await ConnectAsync();
+        connection.Answer("SaveTopic", _ => throw fault);
+
+        var thrown = await Should.ThrowAsync<Exception>(() => _liveConnection.InvokeAsync("SaveTopic", "topic-1"));
+
+        thrown.ShouldBe(fault);
+    }
+
+    [Theory]
+    [MemberData(nameof(ProgrammingFaults))]
+    public async Task StreamAsync_AClientSideBugFaultsTheCall_PropagatesInsteadOfAnsweringNotLive(Exception fault)
+    {
+        var connection = await ConnectAsync();
+        connection.Answer("Count", _ => throw fault);
+
+        var thrown = await Should.ThrowAsync<Exception>(() => _liveConnection.StreamAsync<int>("Count"));
+
+        thrown.ShouldBe(fault);
+    }
 
     [Theory]
     [MemberData(nameof(TransportFaults))]

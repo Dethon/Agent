@@ -249,6 +249,37 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
     }
 
+    // The premise can fail the other way round too: the hub connects fast and the initial load is
+    // still in flight when the first epoch decides to skip. The load settling as a failure is what
+    // asks for the catch-up the skip assumed the load would deliver.
+    [Fact]
+    public async Task LoadAsync_TheFirstLoadFailsAfterTheHubBecameLive_CatchesUpOnItsCompletion()
+    {
+        await ConnectAsync();
+        _handler.AnswerFor("api/metrics/voice?", new List<VoiceEventPayload>
+        {
+            new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
+        });
+
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+
+        _catchUp.Runs.ShouldBe(1);
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
+    }
+
+    // That answer is given once. A later load that fails is an ordinary failed request whose values
+    // stay at their last known state, not a missed catch-up.
+    [Fact]
+    public async Task LoadAsync_ALaterLoadFailsAfterTheFirstEpochWasSettled_DoesNotCatchUpAgain()
+    {
+        await ConnectAsync();
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+
+        _catchUp.Runs.ShouldBe(1);
+    }
+
     [Fact]
     public async Task Reconnected_AfterAnInterruption_CatchesUpOnce()
     {

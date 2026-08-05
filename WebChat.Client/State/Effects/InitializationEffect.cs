@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
@@ -26,6 +27,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly IMessagePipeline _pipeline;
     private readonly SpaceStore _spaceStore;
     private readonly ILogger<InitializationEffect> _logger;
+    private bool _awaitingAgentCatalog;
 
     public InitializationEffect(
         Dispatcher dispatcher,
@@ -64,6 +66,8 @@ public sealed class InitializationEffect : IDisposable
             _ => HandleInitializeAsync().LogFaults(_logger, nameof(Initialize)));
         dispatcher.RegisterHandler<SelectUser>(
             action => RegisterUserAsync(action.UserId).LogFaults(_logger, nameof(SelectUser)));
+        dispatcher.RegisterHandler<SetAgents>(
+            action => HandleAgentCatalogArrivedAsync(action.Agents).LogFaults(_logger, nameof(SetAgents)));
     }
 
     public async Task HandleInitializeAsync()
@@ -97,11 +101,33 @@ public sealed class InitializationEffect : IDisposable
         var catalog = await _agentService.GetAgentsAsync();
         if (!catalog.IsLive)
         {
+            // Nothing else retries this fetch: the next SetAgents — the OnAgentsUpdated broadcast
+            // when the agent re-registers, on this connection or the next epoch's — completes the
+            // initialization this load could not.
+            _awaitingAgentCatalog = true;
             return;
         }
 
-        var agents = catalog.Value!;
-        _dispatcher.Dispatch(new SetAgents(agents));
+        _dispatcher.Dispatch(new SetAgents(catalog.Value!));
+        await SelectAgentAndLoadTopicsAsync(catalog.Value!);
+    }
+
+    // A catalog arriving after a first load that could not fetch it. The reducer has already stored
+    // the agents; what first load never got to do — pick the agent and load its topics — happens
+    // here, exactly once.
+    private async Task HandleAgentCatalogArrivedAsync(IReadOnlyList<AgentCatalogEntry> agents)
+    {
+        if (!_awaitingAgentCatalog || agents.Count == 0)
+        {
+            return;
+        }
+
+        _awaitingAgentCatalog = false;
+        await SelectAgentAndLoadTopicsAsync(agents);
+    }
+
+    private async Task SelectAgentAndLoadTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
+    {
         await AgentSettingsEffect.LoadAsync(agents, _localStorage, _dispatcher);
 
         if (agents.Count == 0)
@@ -119,7 +145,7 @@ public sealed class InitializationEffect : IDisposable
             await _localStorage.SetAsync("selectedAgentId", agentToSelect.Id);
         }
 
-        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id, spaceSlug);
+        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id, _spaceStore.State.CurrentSlug);
         if (!serverTopics.IsLive)
         {
             return;

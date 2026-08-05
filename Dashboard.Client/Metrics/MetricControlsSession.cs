@@ -27,10 +27,7 @@ public sealed class MetricControlsSession(
 
     public async Task InitializeAsync()
     {
-        foreach (var choice in Choices)
-        {
-            await ApplySavedAsync(choice);
-        }
+        await RestoreChoicesAsync();
 
         var savedDays = await storage.GetIntAsync(KeyFor("days"));
         if (savedDays is > 0)
@@ -74,13 +71,33 @@ public sealed class MetricControlsSession(
         await dataLoad.LoadAsync(From, To);
     }
 
-    private async Task ApplySavedAsync(MetricChoice choice)
+    // The dimension is restored last because applying it is what coerces a disallowed metric.
+    // Restored first, the saved metric would land on top of that coercion and resurrect a stale
+    // combination an older build persisted, selecting a disabled pill. Whatever the coercion moved
+    // is saved back, so the stale pair cannot return on the next visit either.
+    private async Task RestoreChoicesAsync()
+    {
+        var saved = new Dictionary<string, string?>();
+        foreach (var choice in Choices.Where(c => c != family.Dimension).Append(family.Dimension))
+        {
+            saved[choice.Key] = await ApplySavedAsync(choice);
+        }
+
+        foreach (var coerced in Choices.Where(c => !string.IsNullOrEmpty(saved[c.Key]) && saved[c.Key] != c.Current))
+        {
+            await storage.SetAsync(KeyFor(coerced.Key), coerced.Current);
+        }
+    }
+
+    private async Task<string?> ApplySavedAsync(MetricChoice choice)
     {
         var saved = await storage.GetAsync(KeyFor(choice.Key));
         if (!string.IsNullOrEmpty(saved))
         {
             choice.Apply(saved);
         }
+
+        return saved;
     }
 
     private string KeyFor(string key) => $"{family.PreferenceKeyPrefix}{key}";
