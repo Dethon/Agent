@@ -245,6 +245,32 @@ public class PlaybackQueueTests
     }
 
     [Fact]
+    public async Task Enqueue_ConcurrentProducers_NeverOvershootTheKindsAllowance()
+    {
+        // Deciding to accept and inserting are one act under the gate. Decided outside it, two
+        // producers racing for the last slot both read a depth below the limit and both insert, so a
+        // queue that holds one announcement holds two — and the user waits out speech the limit
+        // exists to refuse. Nothing drains here (no loop runs), so what was accepted is the depth.
+        foreach (var attempt in Enumerable.Range(0, 200))
+        {
+            var queue = new PlaybackQueue(replyMaxDepth: 1, announceMaxDepth: 1, prefetchBufferChunks: null);
+            using var start = new Barrier(8);
+            var accepted = 0;
+
+            await Task.WhenAll(Enumerable.Range(0, 8).Select(i => Task.Run(() =>
+            {
+                start.SignalAndWait();
+                if (queue.Enqueue(Job($"a{attempt}-{i}", PlaybackKind.Announce)).Refused is null)
+                {
+                    Interlocked.Increment(ref accepted);
+                }
+            })));
+
+            accepted.ShouldBe(1);
+        }
+    }
+
+    [Fact]
     public async Task CanAccept_AnswersPerKind_SoTheReplyPathCanAskBeforeItSpendsItsText()
     {
         // TryTakeSpeakable removes a sentence run from the accumulator, so the reply path asks

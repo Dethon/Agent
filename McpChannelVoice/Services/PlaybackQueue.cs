@@ -195,18 +195,22 @@ public sealed class PlaybackQueue(
             }
         }
 
-        if (job.Priority == AnnouncePriority.Low && Depth > 0)
-        {
-            return Refuse(RefusalReason.LowPriorityBehindQueue);
-        }
-
-        if (!CanAccept(job.Kind))
-        {
-            return Refuse(RefusalReason.QueueFull);
-        }
-
+        // Decided and inserted under one lock hold: read outside it, two producers racing for the
+        // last slot both see room and both insert, and a kind holds one more job than its allowance
+        // says it ever will. CanAccept above stays an advance question a caller may ask; this is the
+        // answer that binds.
         lock (_gate)
         {
+            if (job.Priority == AnnouncePriority.Low && _pending.Count > 0)
+            {
+                return Refuse(RefusalReason.LowPriorityBehindQueue);
+            }
+
+            if (_pending.Count >= MaxDepthFor(job.Kind))
+            {
+                return Refuse(RefusalReason.QueueFull);
+            }
+
             return WriteLocked(job, cutAheadOfQueued: false);
         }
     }
