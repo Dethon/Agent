@@ -88,8 +88,11 @@ internal sealed class ConversationGroup(
     // three. Different conversations and the fan-out across delivery targets stay concurrent.
     //
     // Commands do NOT queue: /cancel is how the stop button reaches the monitor, so it has to
-    // reach threadResolver while the turn it stops is still running. Reading messages in a
-    // separate loop keeps commands immediate and turns sequential.
+    // reach threadResolver while the turn it stops is still running. /clear is immediate for
+    // the same reason — the user is discarding the thread, so the running turn must stop
+    // writing into it and a queued turn must not run against it; the teardown acknowledges
+    // what it drops. Reading messages in a separate loop keeps commands immediate and turns
+    // sequential.
     private async IAsyncEnumerable<TurnUpdate> RunTurnsSequentiallyAsync(
         IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages)
     {
@@ -104,6 +107,15 @@ internal sealed class ConversationGroup(
         {
             await foreach (var x in pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt))
             {
+                // The reader hands over items it already buffered even after the token fired,
+                // so a turn queued behind the one a /clear or /cancel just ended would start
+                // against the torn-down group. It is dropped instead, and acknowledged below.
+                if (_turnCt.IsCancellationRequested)
+                {
+                    LogDroppedTurn(x.Message);
+                    break;
+                }
+
                 IAsyncEnumerable<TurnUpdate> turn;
                 try
                 {
@@ -140,7 +152,22 @@ internal sealed class ConversationGroup(
         {
             await pumpCts.CancelAsync();
             await reader;
+            // Anything still queued when the group ends is dropped by that end — a /clear or
+            // /cancel dispatched ahead of it, a setup failure, a shutdown. Dropping is the
+            // decided semantics (the command's immediacy is its point); vanishing silently is
+            // not, so each dropped turn is named. The pump is done, so this drains everything.
+            while (pending.Reader.TryRead(out var dropped))
+            {
+                LogDroppedTurn(dropped.Message);
+            }
         }
+    }
+
+    private void LogDroppedTurn(ChannelMessage message)
+    {
+        logger.LogWarning(
+            "Group teardown dropped a queued turn for conversation {ConversationId} and agent {AgentId}",
+            message.ConversationId, message.AgentId);
     }
 
     private async Task DispatchCommandsAndQueueTurnsAsync(
