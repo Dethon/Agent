@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Reflection;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -46,9 +47,9 @@ public static class FileSystemServerTools
             async (string query, bool regex = false, string? path = null, string? directoryPath = null,
                     string? filePattern = null, int maxResults = 50, int contextLines = 1,
                     string outputMode = "content", CancellationToken ct = default) =>
-                ToolResponse.Create(await b.SearchAsync(
-                    query, regex, path, directoryPath, filePattern, maxResults, contextLines,
-                    ParseOutputMode(outputMode), ct))),
+                ToolResponse.Create(await SearchAsync(
+                    b, query, regex, path, directoryPath, filePattern, maxResults, contextLines,
+                    outputMode, ct))),
 
         ["fs_create"] = new(b => b.DescribeCreate, b =>
             async (string path, string content, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
@@ -117,8 +118,22 @@ public static class FileSystemServerTools
             .GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance)
             ?.DeclaringType != typeof(FileSystemBackendBase);
 
-    private static VfsTextSearchOutputMode ParseOutputMode(string outputMode) =>
-        outputMode.Equals("filesOnly", StringComparison.OrdinalIgnoreCase)
+    // The wire hands outputMode over as a string; a value that names neither mode is the caller's
+    // error and answers the invalid-argument envelope instead of silently becoming Content.
+    internal static async Task<FsResult<FsSearchResult>> SearchAsync(FileSystemBackendBase backend,
+        string query, bool regex, string? path, string? directoryPath, string? filePattern,
+        int maxResults, int contextLines, string outputMode, CancellationToken ct) =>
+        TryParseOutputMode(outputMode, out var mode)
+            ? await backend.SearchAsync(
+                query, regex, path, directoryPath, filePattern, maxResults, contextLines, mode, ct)
+            : FsError.Invalid<FsSearchResult>($"outputMode must be 'content' or 'filesOnly'; got '{outputMode}'.");
+
+    private static bool TryParseOutputMode(string outputMode, out VfsTextSearchOutputMode mode)
+    {
+        mode = outputMode.Equals("filesOnly", StringComparison.OrdinalIgnoreCase)
             ? VfsTextSearchOutputMode.FilesOnly
             : VfsTextSearchOutputMode.Content;
+        return mode is VfsTextSearchOutputMode.FilesOnly
+            || outputMode.Equals("content", StringComparison.OrdinalIgnoreCase);
+    }
 }
