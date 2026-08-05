@@ -31,7 +31,7 @@ public sealed class LatencyStore : Store<LatencyState>
         Dispatch(new SetLatencyMetric(metric), static (s, a) => s with { Metric = a.Metric });
 
     public void AppendEvent(LatencyEvent evt) =>
-        Dispatch(new AppendLatencyEvent(evt), static (s, a) => s with { Events = [.. s.Events, a.Event] });
+        Dispatch(new AppendLatencyEvent(evt), static (s, a) => s with { Events = EventWindow.Append(s.Events, a.Event) });
 
     public void SetDateRange(DateOnly from, DateOnly to) =>
         Dispatch(new SetLatencyDateRange(from, to), static (s, a) => s with { From = a.From, To = a.To });
