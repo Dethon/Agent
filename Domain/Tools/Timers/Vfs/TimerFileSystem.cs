@@ -51,8 +51,6 @@ public sealed class TimerFileSystem(
     public override string DescribeCreate =>
         "Arm a timer: fs_create /<descriptive-id>/timer.json with JSON {durationSeconds, text?, target}";
 
-    public override string DescribeEdit => "Unsupported on timers (immutable) — kept for VFS surface completeness";
-
     public override string DescribeDelete => "Cancel a timer by deleting its directory /<timerId>";
 
     public override string DescribeExec =>
@@ -226,20 +224,9 @@ public sealed class TimerFileSystem(
         });
     }
 
-    public override async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
-    {
-        var node = TimerPath.Parse(path);
-        return node.Kind switch
-        {
-            TimerNodeKind.TimerFile when await GetTimerAsync(node, ct) is not null =>
-                Fail<FsEditResult>(ToolError.Codes.UnsupportedOperation,
-                    "Timers are immutable — delete the timer and create a new one."),
-            TimerNodeKind.StatusFile when await GetTimerAsync(node, ct) is not null =>
-                ReadOnly<FsEditResult>(path),
-            TimerNodeKind.DismissFile => ReadOnly<FsEditResult>(path),
-            _ => NotFound<FsEditResult>(path)
-        };
-    }
+    // No EditAsync override: a timer is immutable, so an edit here could only ever fail, and
+    // capability is declared by overriding — advertising fs_edit would promise an operation this
+    // mount does not have.
 
     public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {

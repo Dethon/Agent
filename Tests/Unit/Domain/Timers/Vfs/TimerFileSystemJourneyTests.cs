@@ -269,8 +269,10 @@ public class TimerFileSystemJourneyTests
         result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
     }
 
+    // A timer is immutable, so the mount does not implement edit at all: no override, nothing
+    // advertised, and the base's unsupported envelope is the answer.
     [Fact]
-    public async Task Edit_IsUnsupported_TimersAreImmutable()
+    public async Task Edit_IsNotAnOperationThisMountHas()
     {
         var (fs, _, _, _) = Build();
         await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
@@ -279,7 +281,9 @@ public class TimerFileSystemJourneyTests
             [new TextEdit("300", "600")], CancellationToken.None);
 
         var err = result.ShouldBeOfType<FsResult<FsEditResult>.Err>();
-        err.Error.Message.ShouldContain("immutable");
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        typeof(TimerFileSystem).GetMethod(nameof(TimerFileSystem.EditAsync))!
+            .DeclaringType.ShouldNotBe(typeof(TimerFileSystem));
     }
 
     [Fact]
