@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.FileSystem;
 
@@ -26,6 +27,16 @@ public class VfsFileInfoTool(IVirtualFileSystemRegistry registry)
             return unresolved.ToNode();
         }
 
-        return (await resolution.Backend.InfoAsync(resolution.RelativePath, cancellationToken)).ToNode();
+        var result = await resolution.Backend.InfoAsync(resolution.RelativePath, cancellationToken);
+        return Normalize(result, path).ToNode();
     }
+
+    // The backend reports the path in its own coordinates — a disk root even reports the
+    // container-absolute one, which the registry would refuse if reused. Echoing the virtual path
+    // the caller passed keeps the result reusable as input to every other filesystem tool,
+    // mirroring the glob normalization.
+    private static FsResult<FsInfoResult> Normalize(FsResult<FsInfoResult> result, string virtualPath) =>
+        result is FsResult<FsInfoResult>.Ok ok
+            ? new FsResult<FsInfoResult>.Ok(ok.Value with { Path = virtualPath })
+            : result;
 }
