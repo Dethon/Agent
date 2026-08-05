@@ -86,13 +86,14 @@ public sealed class SatelliteConnection(
             token => Writer(ClosingTranscript(), token)));
 
         _playbackTask = Task.Run(() => Session.Playback.RunAsync(
-            WritePlaybackFrameAsync,
-            ct, time, logger,
-            onAudioStart: (format, alert, token) => Writer(
-                WyomingEvent.Header("audio-start", BuildAudioStart(format, alert)), token),
-            onAudioStop: token => Writer(
-                WyomingEvent.Header("audio-stop", new JsonObject { ["timestamp"] = 0 }), token),
-            onError: (_, ex) => OnPlaybackError(ex)), ct);
+            new PlaybackSink(
+                WritePlaybackFrameAsync,
+                OnAudioStart: (format, alert, token) => Writer(
+                    WyomingEvent.Header("audio-start", BuildAudioStart(format, alert)), token),
+                OnAudioStop: token => Writer(
+                    WyomingEvent.Header("audio-stop", new JsonObject { ["timestamp"] = 0 }), token),
+                OnError: (_, ex) => OnPlaybackError(ex)),
+            ct, time, logger), ct);
 
         _conversationTask = Task.Run(() => Coordinator.RunAsync(ct), ct);
     }

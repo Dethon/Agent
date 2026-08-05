@@ -32,6 +32,15 @@ public sealed record PlaybackJob(
     Func<FirstAudioTiming, Task>? OnFirstAudio = null,
     long EnqueuedAt = 0);
 
+// The wire side of the loop, as one collaborator: where chunks go, the audio envelope around
+// them, and the per-job error report. These are the connection's hooks and the only callbacks
+// the loop awaits (a producer's reaction to an outcome runs on its own, off the ticket).
+public sealed record PlaybackSink(
+    Func<AudioChunk, CancellationToken, Task> Writer,
+    Func<AudioFormat, bool, CancellationToken, Task>? OnAudioStart = null,
+    Func<CancellationToken, Task>? OnAudioStop = null,
+    Func<PlaybackJob, Exception, Task>? OnError = null);
+
 // What queueing a job hands back. Refused says immediately whether the queue turned the job away and
 // why; Completed is the one outcome that will end it. A refused ticket's Completed is already
 // settled, so a caller has one settle path rather than a branch.
@@ -259,191 +268,258 @@ public sealed class PlaybackQueue(
         Interlocked.Exchange(
             ref _speechEndedAt, captureClosedAt - (endpointTailMs * time.TimestampFrequency / 1000));
 
-    public async Task RunAsync(
+    // Most callers only have chunks to write; the connection passes a full sink.
+    public Task RunAsync(
         Func<AudioChunk, CancellationToken, Task> writer,
         CancellationToken ct,
         TimeProvider? time = null,
-        ILogger? logger = null,
-        Func<AudioFormat, bool, CancellationToken, Task>? onAudioStart = null,
-        Func<CancellationToken, Task>? onAudioStop = null,
-        Func<PlaybackJob, Exception, Task>? onError = null)
+        ILogger? logger = null) =>
+        RunAsync(new PlaybackSink(writer), ct, time, logger);
+
+    public async Task RunAsync(
+        PlaybackSink sink,
+        CancellationToken ct,
+        TimeProvider? time = null,
+        ILogger? logger = null)
     {
         time ??= TimeProvider.System;
         await foreach (var queued in _jobs.Reader.ReadAllAsync(ct))
         {
-            var (seq, job) = (queued.Seq, queued.Job);
             var jobCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            bool preemptOnStart;
-            lock (_gate)
-            {
-                _currentCts = jobCts;
-                _inFlight = queued;
-                // Exempt High jobs: the mark exists to drop lower-priority jobs queued ahead of a
-                // High request; a second High stacking in the gap must still play, not be preempted.
-                preemptOnStart = _preemptPendingSeq >= 0 && seq <= _preemptPendingSeq
-                    && job.Priority != AnnouncePriority.High;
-                // Cleared only once the queue has drained PAST the mark, so every job that was
-                // already queued when the High job arrived is preempted — not just the first one
-                // dequeued after it.
-                if (seq > _preemptPendingSeq)
-                {
-                    _preemptPendingSeq = -1;
-                }
-            }
-            if (preemptOnStart)
+            if (TakeAsCurrent(queued, jobCts))
             {
                 jobCts.Cancel();
             }
 
-            var drained = false;
-            long firstChunkTimestamp = 0;
-            var totalAudio = TimeSpan.Zero;
-            try
-            {
-                // A job marked preempt-on-start must not play a single chunk, and that cannot be left
-                // to the audio source: WithCancellation only HANDS the token to the enumerable, so a
-                // source that does not observe it (a buffered or synthetic stream) would drain
-                // normally and the alarm would still wait behind it. Throwing here makes the decision
-                // the loop's, and lands it on the preempted outcome below.
-                jobCts.Token.ThrowIfCancellationRequested();
+            await PlayAsync(queued, jobCts, sink, time, logger, ct);
+        }
+    }
 
-                // Synthesis is lazy (the TTS enumerable is pulled here), so time it from just before
-                // the first pull to the first chunk — not from enqueue, which is a near-zero channel write.
-                var synthesisStart = time.GetTimestamp();
-                await foreach (var chunk in job.Audio.WithCancellation(jobCts.Token))
-                {
-                    FirstAudioTiming? firstAudio = null;
-                    if (queued.ChunksWritten == 0)
-                    {
-                        firstChunkTimestamp = time.GetTimestamp();
-                        if (onAudioStart is not null)
-                        {
-                            // The alert route is the alarm kind's, and only its. Priority is
-                            // deliberately not the marker: confirmation prompts share High and must
-                            // stay at the calibrated conversational level.
-                            await onAudioStart(
-                                chunk.Format, job.Kind == PlaybackKind.Alarm, jobCts.Token);
-                        }
-                        if (job.OnFirstAudio is not null)
-                        {
-                            var turnStart = Interlocked.Read(ref _turnStartedAt);
-                            var speechEnd = Interlocked.Read(ref _speechEndedAt);
-                            firstAudio = new FirstAudioTiming(
-                                time.GetElapsedTime(synthesisStart, firstChunkTimestamp),
-                                turnStart == TurnNotStarted
-                                    ? null
-                                    : time.GetElapsedTime(turnStart, firstChunkTimestamp),
-                                speechEnd == SpeechEndNotMarked
-                                    ? null
-                                    : time.GetElapsedTime(speechEnd, firstChunkTimestamp),
-                                job.EnqueuedAt == 0
-                                    ? null
-                                    : time.GetElapsedTime(job.EnqueuedAt, synthesisStart));
-                        }
-                    }
-                    totalAudio += DurationOf(chunk);
-                    queued.ChunksWritten++;
-                    await writer(chunk, jobCts.Token);
-                    // Deliberately after the write: OnFirstAudio carries several awaited metric
-                    // publishes, and running them first would delay the first audio byte reaching the
-                    // satellite by however long the metrics backbone takes — the observer changing what
-                    // it observes. Every timestamp above is already captured, so accuracy is unaffected.
-                    // A failing metrics publish must neither abort playback nor tear down the loop.
-                    if (firstAudio is { } timing)
-                    {
-                        try
-                        {
-                            await job.OnFirstAudio!(timing);
-                        }
-                        catch (Exception ex)
-                        {
-                            logger?.LogWarning(ex, "Playback OnFirstAudio callback failed for {Label}", job.Label);
-                        }
-                    }
-                }
-                logger?.LogInformation(
-                    "Playback job {Label} drained {Chunks} chunk(s)", job.Label, queued.ChunksWritten);
-                drained = true;
-            }
-            catch (OperationCanceledException) when (jobCts.IsCancellationRequested && !ct.IsCancellationRequested)
+    // Marks the job current, and answers whether it must be preempted before its first chunk.
+    private bool TakeAsCurrent(QueuedJob queued, CancellationTokenSource jobCts)
+    {
+        lock (_gate)
+        {
+            _currentCts = jobCts;
+            _inFlight = queued;
+            // Exempt High jobs: the mark exists to drop lower-priority jobs queued ahead of a
+            // High request; a second High stacking in the gap must still play, not be preempted.
+            var preemptOnStart = _preemptPendingSeq >= 0 && queued.Seq <= _preemptPendingSeq
+                && queued.Job.Priority != AnnouncePriority.High;
+            // Cleared only once the queue has drained PAST the mark, so every job that was
+            // already queued when the High job arrived is preempted — not just the first one
+            // dequeued after it.
+            if (queued.Seq > _preemptPendingSeq)
             {
-                queued.Settle(PlaybackOutcomeKind.Preempted);
+                _preemptPendingSeq = -1;
             }
-            catch (Exception ex) when (!ct.IsCancellationRequested)
+            return preemptOnStart;
+        }
+    }
+
+    private async Task PlayAsync(
+        QueuedJob queued,
+        CancellationTokenSource jobCts,
+        PlaybackSink sink,
+        TimeProvider time,
+        ILogger? logger,
+        CancellationToken ct)
+    {
+        var job = queued.Job;
+        var drained = false;
+        long firstChunkTimestamp = 0;
+        var totalAudio = TimeSpan.Zero;
+        try
+        {
+            (firstChunkTimestamp, totalAudio) = await DrainAudioAsync(queued, jobCts.Token, sink, time, logger);
+            logger?.LogInformation(
+                "Playback job {Label} drained {Chunks} chunk(s)", job.Label, queued.ChunksWritten);
+            drained = true;
+        }
+        catch (OperationCanceledException) when (jobCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            queued.Settle(PlaybackOutcomeKind.Preempted);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            // One job's audio failing (TTS synthesis or a transient write) must not tear down the
+            // whole playback loop: log it, surface it via the sink's OnError, and continue.
+            logger?.LogWarning(
+                ex, "Playback job {Label} failed after {Chunks} chunk(s)", job.Label, queued.ChunksWritten);
+            if (sink.OnError is not null)
             {
-                // One job's audio failing (TTS synthesis or a transient write) must not tear down the
-                // whole playback loop: log it, surface it via onError, and continue to the next job.
-                logger?.LogWarning(
-                    ex, "Playback job {Label} failed after {Chunks} chunk(s)", job.Label, queued.ChunksWritten);
-                if (onError is not null)
+                try
                 {
-                    try
-                    {
-                        await onError(job, ex);
-                    }
-                    catch (Exception oex)
-                    {
-                        logger?.LogWarning(oex, "Playback onError handler threw for {Label}", job.Label);
-                    }
+                    await sink.OnError(job, ex);
                 }
-                queued.Settle(PlaybackOutcomeKind.Failed, ex);
+                catch (Exception oex)
+                {
+                    logger?.LogWarning(oex, "Playback onError handler threw for {Label}", job.Label);
+                }
             }
-            finally
+            queued.Settle(PlaybackOutcomeKind.Failed, ex);
+        }
+        finally
+        {
+            await SendAudioStopAsync(queued, sink, logger, ct);
+            if (drained)
             {
-                // Close the playback envelope so the satellite flushes paplay (EOF on
-                // disconnect_after_stop). Use the connection token: jobCts may be canceled
-                // by preemption, but the satellite still needs the audio-stop. A bare
-                // audio-start with no chunks gets no stop, matching Wyoming framing.
-                if (queued.ChunksWritten > 0 && onAudioStop is not null && !ct.IsCancellationRequested)
+                await WaitOutRealtimeTailAsync(totalAudio, firstChunkTimestamp, time, ct);
+                // Settled even when teardown cut the real-time tail short: the audio was written,
+                // so the satellite has it. Reporting nothing at all there is what left a waiting
+                // producer with no answer but its own timeout.
+                queued.Settle(PlaybackOutcomeKind.Drained);
+            }
+            ReleaseCurrent(queued);
+            jobCts.Dispose();
+            // Whatever the job's audio was wrapped in is the queue's to release, on every way
+            // the job ended — no producer disposes anything.
+            await queued.ReleaseAudioAsync();
+        }
+    }
+
+    private async Task<(long FirstChunkTimestamp, TimeSpan TotalAudio)> DrainAudioAsync(
+        QueuedJob queued,
+        CancellationToken jobToken,
+        PlaybackSink sink,
+        TimeProvider time,
+        ILogger? logger)
+    {
+        var job = queued.Job;
+
+        // A job marked preempt-on-start must not play a single chunk, and that cannot be left
+        // to the audio source: WithCancellation only HANDS the token to the enumerable, so a
+        // source that does not observe it (a buffered or synthetic stream) would drain
+        // normally and the alarm would still wait behind it. Throwing here makes the decision
+        // the loop's, and lands it on the preempted outcome.
+        jobToken.ThrowIfCancellationRequested();
+
+        long firstChunkTimestamp = 0;
+        var totalAudio = TimeSpan.Zero;
+
+        // Synthesis is lazy (the TTS enumerable is pulled here), so time it from just before
+        // the first pull to the first chunk — not from enqueue, which is a near-zero channel write.
+        var synthesisStart = time.GetTimestamp();
+        await foreach (var chunk in job.Audio.WithCancellation(jobToken))
+        {
+            FirstAudioTiming? firstAudio = null;
+            if (queued.ChunksWritten == 0)
+            {
+                firstChunkTimestamp = time.GetTimestamp();
+                if (sink.OnAudioStart is not null)
                 {
-                    try
-                    {
-                        await onAudioStop(ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogWarning(ex, "Failed to send audio-stop for {Label}", job.Label);
-                    }
+                    // The alert route is the alarm kind's, and only its. Priority is
+                    // deliberately not the marker: confirmation prompts share High and must
+                    // stay at the calibrated conversational level.
+                    await sink.OnAudioStart(
+                        chunk.Format, job.Kind == PlaybackKind.Alarm, jobToken);
                 }
-                if (drained && totalAudio > TimeSpan.Zero && !ct.IsCancellationRequested)
+                if (job.OnFirstAudio is not null)
                 {
-                    // Drained means "the satellite finished PLAYING", not "we finished writing".
-                    // The Pi buffers the audio and plays PCM at real time, so wait out the remaining
-                    // nominal duration. Self-corrects for back-pressuring satellites (remaining <= 0).
-                    var remaining = totalAudio - time.GetElapsedTime(firstChunkTimestamp);
-                    if (remaining > TimeSpan.Zero)
-                    {
-                        try
-                        {
-                            await Task.Delay(remaining, time, ct);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // Connection tearing down.
-                        }
-                    }
+                    firstAudio = BuildFirstAudioTiming(job, synthesisStart, firstChunkTimestamp, time);
                 }
-                if (drained)
+            }
+            totalAudio += DurationOf(chunk);
+            queued.ChunksWritten++;
+            await sink.Writer(chunk, jobToken);
+            // Deliberately after the write: OnFirstAudio carries several awaited metric
+            // publishes, and running them first would delay the first audio byte reaching the
+            // satellite by however long the metrics backbone takes — the observer changing what
+            // it observes. Every timestamp above is already captured, so accuracy is unaffected.
+            // A failing metrics publish must neither abort playback nor tear down the loop.
+            if (firstAudio is { } timing)
+            {
+                try
                 {
-                    // Settled even when teardown cut the real-time tail short: the audio was written,
-                    // so the satellite has it. Reporting nothing at all there is what left a waiting
-                    // producer with no answer but its own timeout.
-                    queued.Settle(PlaybackOutcomeKind.Drained);
+                    await job.OnFirstAudio!(timing);
                 }
-                lock (_gate)
+                catch (Exception ex)
                 {
-                    _currentCts = null;
-                    // Left set when this job never reached a terminal path — the connection died
-                    // mid-job — so the drain can find it and settle it as discarded.
-                    if (queued.Completed.IsCompleted)
-                    {
-                        _inFlight = null;
-                    }
+                    logger?.LogWarning(ex, "Playback OnFirstAudio callback failed for {Label}", job.Label);
                 }
-                jobCts.Dispose();
-                // Whatever the job's audio was wrapped in is the queue's to release, on every way
-                // the job ended — no producer disposes anything.
-                await queued.ReleaseAudioAsync();
+            }
+        }
+
+        return (firstChunkTimestamp, totalAudio);
+    }
+
+    private FirstAudioTiming BuildFirstAudioTiming(
+        PlaybackJob job, long synthesisStart, long firstChunkTimestamp, TimeProvider time)
+    {
+        var turnStart = Interlocked.Read(ref _turnStartedAt);
+        var speechEnd = Interlocked.Read(ref _speechEndedAt);
+        return new FirstAudioTiming(
+            time.GetElapsedTime(synthesisStart, firstChunkTimestamp),
+            turnStart == TurnNotStarted
+                ? null
+                : time.GetElapsedTime(turnStart, firstChunkTimestamp),
+            speechEnd == SpeechEndNotMarked
+                ? null
+                : time.GetElapsedTime(speechEnd, firstChunkTimestamp),
+            job.EnqueuedAt == 0
+                ? null
+                : time.GetElapsedTime(job.EnqueuedAt, synthesisStart));
+    }
+
+    // Close the playback envelope so the satellite flushes paplay (EOF on
+    // disconnect_after_stop). Use the connection token: the job's token may be canceled
+    // by preemption, but the satellite still needs the audio-stop. A bare
+    // audio-start with no chunks gets no stop, matching Wyoming framing.
+    private static async Task SendAudioStopAsync(
+        QueuedJob queued, PlaybackSink sink, ILogger? logger, CancellationToken ct)
+    {
+        if (queued.ChunksWritten == 0 || sink.OnAudioStop is null || ct.IsCancellationRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            await sink.OnAudioStop(ct);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "Failed to send audio-stop for {Label}", queued.Job.Label);
+        }
+    }
+
+    // Drained means "the satellite finished PLAYING", not "we finished writing".
+    // The Pi buffers the audio and plays PCM at real time, so wait out the remaining
+    // nominal duration. Self-corrects for back-pressuring satellites (remaining <= 0).
+    private static async Task WaitOutRealtimeTailAsync(
+        TimeSpan totalAudio, long firstChunkTimestamp, TimeProvider time, CancellationToken ct)
+    {
+        if (totalAudio <= TimeSpan.Zero || ct.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var remaining = totalAudio - time.GetElapsedTime(firstChunkTimestamp);
+        if (remaining <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(remaining, time, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // Connection tearing down.
+        }
+    }
+
+    private void ReleaseCurrent(QueuedJob queued)
+    {
+        lock (_gate)
+        {
+            _currentCts = null;
+            // Left set when this job never reached a terminal path — the connection died
+            // mid-job — so the drain can find it and settle it as discarded.
+            if (queued.Completed.IsCompleted)
+            {
+                _inFlight = null;
             }
         }
     }

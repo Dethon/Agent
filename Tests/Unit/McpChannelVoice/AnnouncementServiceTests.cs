@@ -267,14 +267,15 @@ public class AnnouncementServiceTests
         var session = sessions.Get("kitchen-01")!;
         var flags = new List<bool>();
         var pump = session.Playback.RunAsync(
-            (_, _) => Task.CompletedTask,
-            CancellationToken.None,
-            onAudioStart: (_, alert, _) =>
-            {
-                lock (flags)
-                { flags.Add(alert); }
-                return Task.CompletedTask;
-            });
+            new PlaybackSink(
+                (_, _) => Task.CompletedTask,
+                OnAudioStart: (_, alert, _) =>
+                {
+                    lock (flags)
+                    { flags.Add(alert); }
+                    return Task.CompletedTask;
+                }),
+            CancellationToken.None);
 
         await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "download done" },

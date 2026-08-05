@@ -223,17 +223,18 @@ public class PlaybackQueueTests
         var next = failing with { Label = "next", Audio = Audio("next", count: 1) };
 
         var pumpTask = queue.RunAsync(
-            async (chunk, ct) =>
-            {
-                played.Add(Encoding.UTF8.GetString(chunk.Data.Span));
-                await Task.Yield();
-            },
-            CancellationToken.None,
-            onError: (job, ex) =>
-            {
-                errors.Add(job.Label);
-                return Task.CompletedTask;
-            });
+            new PlaybackSink(
+                async (chunk, ct) =>
+                {
+                    played.Add(Encoding.UTF8.GetString(chunk.Data.Span));
+                    await Task.Yield();
+                },
+                OnError: (job, ex) =>
+                {
+                    errors.Add(job.Label);
+                    return Task.CompletedTask;
+                }),
+            CancellationToken.None);
 
         queue.Enqueue(failing);
         queue.Enqueue(next);
@@ -573,14 +574,15 @@ public class PlaybackQueueTests
         var flags = new List<bool>();
 
         var pumpTask = queue.RunAsync(
-            (_, _) => Task.CompletedTask,
-            CancellationToken.None,
-            onAudioStart: (_, alert, _) =>
-            {
-                lock (flags)
-                { flags.Add(alert); }
-                return Task.CompletedTask;
-            });
+            new PlaybackSink(
+                (_, _) => Task.CompletedTask,
+                OnAudioStart: (_, alert, _) =>
+                {
+                    lock (flags)
+                    { flags.Add(alert); }
+                    return Task.CompletedTask;
+                }),
+            CancellationToken.None);
 
         var reply = new PlaybackJob(
             Label: "reply",
