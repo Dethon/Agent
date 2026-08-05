@@ -104,10 +104,14 @@ public static class FileSystemServerTools
         return builder;
     }
 
-    // The operations a backend really implements, in the one list's canonical order.
+    // The operations a backend really implements, in the one list's canonical order. An operation
+    // with two shapes — the two byte-streaming ones — counts as implemented when either is
+    // overridden, because either one is a working tool: the registered handler dispatches to the
+    // ranged method, whose base default drives the chunk stream.
     public static IReadOnlyList<string> SupportedToolNames(Type backendType) =>
         FileSystemOperations.All
-            .Where(o => Overrides(backendType, o.MethodName))
+            .Where(o => Overrides(backendType, o.MethodName)
+                        || (o.AlternateMethodName is { } alternate && Overrides(backendType, alternate)))
             .Select(o => o.ToolName)
             .ToList();
 

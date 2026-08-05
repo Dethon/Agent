@@ -245,6 +245,48 @@ public class FileSystemServerConformanceTests
         tools.Single().ProtocolTool.Description.ShouldBe(new PickyBackend().DescribeRead);
     }
 
+    // The two blob operations have two shapes — the chunk stream the transfer machinery drives and
+    // the ranged pair the wire carries — and the base invites a backend with real random access to
+    // override the ranged pair beside, or instead of, the streamed one. Capability was keyed on the
+    // chunk methods alone, so such a backend advertised no fs_blob_read at all while the registrar
+    // dispatched fs_blob_read to exactly the method it had overridden.
+    [Fact]
+    public void ABackendThatOverridesOnlyTheRangedBlobPair_StillAdvertisesTheBlobTools()
+    {
+        FileSystemServerTools.SupportedToolNames(typeof(RangedBlobBackend))
+            .ShouldBe(["fs_blob_read", "fs_blob_write"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void ABackendThatOverridesOnlyTheRangedBlobPair_RegistersTheToolsThatDispatchToIt()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new RangedBlobBackend());
+        services.AddMcpServer().AddFileSystemTools<RangedBlobBackend>();
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetServices<McpServerTool>().Select(t => t.ProtocolTool.Name)
+            .ShouldBe(["fs_blob_read", "fs_blob_write"], ignoreOrder: true);
+    }
+
+    private sealed class RangedBlobBackend : FileSystemBackendBase
+    {
+        public override string FilesystemName => "ranged";
+
+        public override string DescribeMount => "Bytes, addressed by range.";
+
+        public override Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
+            string path, long offset, int length, CancellationToken ct) =>
+            Task.FromResult<FsResult<FsBlobReadResult>>(new FsResult<FsBlobReadResult>.Ok(
+                new FsBlobReadResult { ContentBase64 = "", Eof = true, TotalBytes = 0 }));
+
+        public override Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
+            string path, string contentBase64, long offset, bool overwrite, bool createDirectories,
+            CancellationToken ct) =>
+            Task.FromResult<FsResult<FsBlobWriteResult>>(new FsResult<FsBlobWriteResult>.Ok(
+                new FsBlobWriteResult { Path = path, BytesWritten = 0, TotalBytes = 0 }));
+    }
+
     private sealed class PickyBackend : FileSystemBackendBase
     {
         public override string FilesystemName => "picky";
