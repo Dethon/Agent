@@ -199,6 +199,24 @@ public class MetricControlsSessionTests : IDisposable
         _toolsStore.State.Metric.ShouldBe(ToolMetric.CallCount);
     }
 
+    // A pill click during an API outage: the choice sticks and is saved, the breakdown keeps its
+    // last known value, and nothing escapes into Blazor's unhandled-error UI.
+    [Fact]
+    public async Task ChangeAsync_TheRefreshFails_ThePillStillMovesAndNothingEscapes()
+    {
+        var lastKnown = new Dictionary<string, decimal> { ["kept"] = 42m };
+        _tokensStore.SetBreakdown(lastKnown);
+        var session = SessionFor(_families.Tokens);
+        await session.InitializeAsync();
+        // Nothing is staged, so the refresh's request answers 404 and the family throws.
+
+        await session.ChangeAsync(_families.Tokens.Dimension, nameof(TokenDimension.Agent));
+
+        _js.Storage["tokens.groupBy"].ShouldBe(nameof(TokenDimension.Agent));
+        _tokensStore.State.GroupBy.ShouldBe(TokenDimension.Agent);
+        _tokensStore.State.Breakdown.ShouldBe(lastKnown);
+    }
+
     [Fact]
     public async Task InitializeAsync_APreferenceNoLongerParses_LeavesTheChoiceAlone()
     {

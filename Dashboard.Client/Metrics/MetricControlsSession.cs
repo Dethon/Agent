@@ -54,7 +54,16 @@ public sealed class MetricControlsSession(
             await storage.SetAsync(KeyFor(each.Key), each.Current);
         }
 
-        await family.RefreshAsync();
+        try
+        {
+            await family.RefreshAsync();
+        }
+        catch
+        {
+            // The pill has moved and is saved; a refresh that fails leaves the breakdown at its
+            // last known value, exactly as the page-load path settles the same failure. Letting it
+            // out of a UI event handler would put the whole page into Blazor's unhandled-error UI.
+        }
     }
 
     public async Task ChangeDaysAsync(string value)
