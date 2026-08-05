@@ -121,7 +121,7 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
             var blobError = ToolErrorResult.FromEnvelope(node);
             if (blobError is not null)
             {
-                throw new IOException($"fs_blob_read failed: {blobError.Message}");
+                throw Refused("fs_blob_read", blobError);
             }
 
             var bytes = Convert.FromBase64String(node["contentBase64"]!.GetValue<string>());
@@ -163,7 +163,7 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
             var blobError = ToolErrorResult.FromEnvelope(node);
             if (blobError is not null)
             {
-                throw new IOException($"fs_blob_write failed: {blobError.Message}");
+                throw Refused("fs_blob_write", blobError);
             }
 
             offset += chunk.Length;
@@ -184,12 +184,18 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
             var blobError = ToolErrorResult.FromEnvelope(node);
             if (blobError is not null)
             {
-                throw new IOException($"fs_blob_write failed: {blobError.Message}");
+                throw Refused("fs_blob_write", blobError);
             }
         }
 
         return offset;
     }
+
+    // The server refused, and the chunk operations are streams with no envelope to say so in. The
+    // refusal travels as the typed exception so the far end's code and retryability reach
+    // VfsCopyTool intact — flattening it left a permanent denial looking retryable.
+    private static FileSystemOperationException Refused(string toolName, ToolErrorResult error) =>
+        new(error with { Message = $"{toolName} failed: {error.Message}" });
 
     private Dictionary<string, object?> WithFilesystem(Dictionary<string, object?> args)
     {
