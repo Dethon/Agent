@@ -146,9 +146,14 @@ public sealed class TimerFileSystem(
     {
         var scope = path ?? directoryPath;
 
+        if (!CompileFilePattern(filePattern).TryGetValue(out var admits, out var patternError))
+        {
+            return new FsResult<FsSearchResult>.Err(patternError);
+        }
+
         // timer.json is the only searchable file per timer, so a filePattern either includes it
         // (search the scoped timers) or excludes it entirely (nothing to search).
-        var scoped = VfsContentSearch.MatchesFilePattern(filePattern, TimerPath.TimerFileName)
+        var scoped = admits(TimerPath.TimerFileName)
             ? await ScopeTimersAsync(scope, ct)
             : [];
 

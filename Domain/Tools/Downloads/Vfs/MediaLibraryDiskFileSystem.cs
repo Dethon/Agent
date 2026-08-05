@@ -17,6 +17,10 @@ public sealed class MediaLibraryDiskFileSystem(
 {
     public const string Name = "media";
 
+    // Read off the parameter here rather than in a member body: the same value goes to the base
+    // constructor, and capturing the parameter itself would leave two copies of the disk root.
+    private readonly string _rootPath = root.BaseLibraryPath;
+
     // Composed here rather than handed in like the generic disk root's: this type is the media
     // library, so its prose belongs with it, and it already holds the path that text names.
     private static string Mount(LibraryPathConfig root) =>
@@ -57,7 +61,7 @@ public sealed class MediaLibraryDiskFileSystem(
         // Separators are normalized because virtual paths are always '/'-separated. A pattern
         // outside the glob root matched nothing on disk and owns no download either.
         var scoped = GlobFilesTool.ToMatcherRelative(
-            GlobFilesTool.MatcherRoot(root.BaseLibraryPath, basePath), pattern);
+            GlobFilesTool.MatcherRoot(_rootPath, basePath), pattern);
 
         return scoped is null
             ? disk

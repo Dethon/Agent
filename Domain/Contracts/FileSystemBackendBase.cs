@@ -199,6 +199,13 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     protected FsResult<Regex> CompileSearchRegex(string query, bool regex) =>
         SearchRegex.Compile(query, regex, SearchMatchTimeout);
 
+    // The search's other caller-supplied pattern, under the same bounded timeout. A backend whose
+    // every node has the same one searchable file name asks this about that name; one whose file
+    // names are the caller's own runs it over each of them, inside the scan below, where a timeout
+    // is already the timeout envelope.
+    protected FsResult<Func<string, bool>> CompileFilePattern(string? filePattern) =>
+        VfsContentSearch.CompileFilePattern(filePattern, SearchMatchTimeout);
+
     // The scan every backend used to reimplement: walk the scoped nodes, stop at maxResults, count
     // files searched and matched, and report a truncation. `render` returns the path to report and
     // the searchable text, or null content for a node that has nothing to search (a binary blob).
