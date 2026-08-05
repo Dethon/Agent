@@ -58,9 +58,10 @@ public static class SettingsBinder
             .Replace("]", "", StringComparison.Ordinal)
             .Replace(".", "__", StringComparison.Ordinal);
 
-    // Null only, never empty. Three shipped servers carry required members that ship as "" and are
-    // filled from secrets, and an empty optional key is how a feature is switched off; an
-    // empty-is-invalid rule would refuse to start them.
+    // Null only, never empty. Six shipped servers carry required members that ship as "" and are
+    // filled from secrets — ServiceBus, Telegram, WebSearch, HomeAssistant, Idealista and Library —
+    // and an empty optional key is how a feature is switched off; an empty-is-invalid rule would
+    // refuse to start them.
     private static IEnumerable<string> MissingRequiredMembers(
         object instance, IConfiguration section, string path, Assembly settingsAssembly) =>
         instance.GetType()

@@ -12,12 +12,15 @@ Between them they describe none of what the connection does when it has no clien
 There is no client between construction and the first `ConnectAsync`, and again for the
 whole of a reconnect. In that window the type behaves five different ways:
 
-- `SendReplyAsync` (`:288`) and `RequestApprovalAsync` (`:312`, `:334`) throw
-  `InvalidOperationException`, via `EnsureConnected` at `:455-461`
-- `CreateConversationAsync` (`:355-358`) returns null
-- `RegisterAgentsAsync` (`:396-401`) returns silently
-- `IsHealthyAsync` (`:427-430`) returns false
-- `Messages` (`:54`) yields forever, because the channel reader has nothing to give
+- `SendReplyAsync`, `RequestApprovalAsync` and `NotifyAutoApprovedAsync` throw
+  `InvalidOperationException`, via the private `EnsureConnected`
+- `CreateConversationAsync` returns null
+- `RegisterAgentsAsync` returns silently
+- `IsHealthyAsync` returns false
+- `Messages` yields forever, because the channel reader has nothing to give
+
+(Members, not line numbers: the file moves often enough that a line reference goes stale
+faster than the behaviour it describes.)
 
 Reading the five side by side invites the conclusion that they drifted and should be
 unified. They did not all drift, and unifying them would break a caller.
@@ -27,12 +30,14 @@ unified. They did not all drift, and unifying them would break a caller.
 The five behaviours stay exactly as they are, and the interface states them.
 
 `CreateConversationAsync`'s null is the load-bearing one.
-`Domain/Monitor/DeliveryTargetResolver.cs:51` and `:91` read null as **this channel
-minted nothing** — which is also what an attach-only channel returns, and what a channel
-whose server has no `create_conversation` tool returns. The resolver's job is to try each
-candidate target and move on, so all three "no conversation here" answers being one value
-is the point, not an accident. An exception would make the resolver catch in order to
-continue.
+`DeliveryTargetResolver.ResolveAsync` (`Domain/Monitor/DeliveryTargetResolver.cs`) reads
+null as **this channel minted nothing**, and skips the target — which is also what an
+attach-only channel returns, and what a channel whose server has no
+`create_conversation` tool returns. The resolver's job is to try each candidate target
+and move on, so all three "no conversation here" answers being one value is the point,
+not an accident. An exception would make the resolver catch in order to continue.
+`AnnounceTurnStartAsync` calls the same method for its turn-start announce but discards
+the result, so it is the resolve path alone that depends on the null.
 
 `Messages` yielding forever is the same shape from the other side: the agent's read loop
 awaits messages for the process lifetime and a reconnect is invisible to it. A completed
