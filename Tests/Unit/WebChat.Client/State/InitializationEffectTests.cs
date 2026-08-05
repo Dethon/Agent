@@ -287,6 +287,19 @@ public sealed class InitializationEffectTests : IDisposable
         _calls.Calls.ShouldBe(["register-user"]);
     }
 
+    [Fact]
+    public async Task Disposed_StopsHandlingInitialize()
+    {
+        _configService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        _effect.Dispose();
+
+        _dispatcher.Dispatch(new Initialize());
+
+        await Task.Delay(50);
+        _liveConnection.ConnectCalls.ShouldBe(0);
+    }
+
     public void Dispose()
     {
         _pushService.Release();

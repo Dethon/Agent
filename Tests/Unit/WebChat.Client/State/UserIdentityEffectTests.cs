@@ -97,6 +97,17 @@ public sealed class UserIdentityEffectTests : IDisposable
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("config unavailable");
     }
 
+    [Fact]
+    public async Task Disposed_StopsHandlingSelectUser()
+    {
+        _effect.Dispose();
+
+        _dispatcher.Dispatch(new SelectUser("alice"));
+
+        await Task.Delay(50);
+        _localStorage.Values.ShouldNotContainKey("selectedUserId");
+    }
+
     private void GivenUsers(params string[] userIds) =>
         _configService.Config = new AppConfig(null, userIds.Select(id => new UserConfig(id, "")).ToArray());
 
