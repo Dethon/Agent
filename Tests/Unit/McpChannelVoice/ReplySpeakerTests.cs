@@ -173,6 +173,46 @@ public class ReplySpeakerTests
     }
 
     [Fact]
+    public async Task SpeakUtteranceReply_Error_FlaggedComplete_EndsTheStreamSoTheTurnResolves()
+    {
+        // A transport that flags the error itself is the end of the answer, so the stream has to end
+        // here as it does on StreamComplete. Without it the turn never learns the agent stopped
+        // sending: FollowUpConversation waits out the whole ~120 s reply timeout with the mic shut.
+        _session.Turn.Reset();
+        var turn = _session.Turn.AwaitSpoken();
+
+        Say(_speaker, "boom", ReplyContentType.Error, true);
+
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        _session.Playback.Complete();
+
+        var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        spoke.ShouldBeTrue(); // the error reached the satellite, so the turn was spoken
+    }
+
+    [Fact]
+    public async Task SpeakUtteranceReply_TextFlaggedComplete_EndsTheStreamSoTheTurnResolves()
+    {
+        // The same for a text chunk that carries the completion flag — the defensive branch the
+        // speaker keeps for a transport that ever sends one. It spoke the answer and then left the
+        // turn outstanding.
+        _session.Turn.Reset();
+        var turn = _session.Turn.AwaitSpoken();
+
+        Say(_speaker, "hola mundo", ReplyContentType.Text, true);
+
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        _session.Playback.Complete();
+
+        var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
+        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+
+        spoke.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task SpeakUtteranceReply_PartialTextThenError_SpeaksPartialAndErrorOnceInOrder()
     {
         // Faulted agent run as ChatMonitor emits it: buffered Text (never isComplete) -> Error

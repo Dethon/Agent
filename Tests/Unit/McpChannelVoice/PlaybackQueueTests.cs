@@ -253,6 +253,75 @@ public class PlaybackQueueTests
     }
 
     [Fact]
+    public async Task PreemptCurrent_AnAcknowledgedRoundStillQueued_NeverRings()
+    {
+        // The user acknowledges by waking a satellite, which can land between the ring loop
+        // enqueueing a round and the loop dequeueing it — or inside the dequeue->assign gap, where
+        // there is no current job to cancel at all. Cancelling _currentCts alone let that round ring
+        // in full after the alarm had been dismissed.
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
+        var played = new List<string>();
+
+        var round = new PlaybackJob(
+            Label: "alarm",
+            Kind: PlaybackKind.Alarm,
+            Priority: AnnouncePriority.High,
+            Audio: Audio("alarm", count: 1));
+
+        var ticket = queue.Enqueue(round);
+        queue.PreemptCurrent();
+        queue.Complete();
+
+        await queue.RunAsync(
+            (chunk, _) =>
+            {
+                played.Add(Encoding.UTF8.GetString(chunk.Data.Span));
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        played.ShouldBeEmpty();
+        (await ticket.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+    }
+
+    [Fact]
+    public async Task PreemptCurrent_AnswerSegmentsQueuedWhileItRang_AreNotTheDismissalsToDrop()
+    {
+        // A dismissal says the ALERT is over, nothing more. The agent can be answering while a timer
+        // rings, and those sentences are queued behind the round: dropping them would swallow an
+        // answer the user is waiting for, which is the mirror of the bug above.
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
+        var played = new List<string>();
+
+        var round = new PlaybackJob(
+            Label: "alarm",
+            Kind: PlaybackKind.Alarm,
+            Priority: AnnouncePriority.High,
+            Audio: Audio("alarm", count: 1));
+        var sentence = new PlaybackJob(
+            Label: "reply-1",
+            Kind: PlaybackKind.Reply,
+            Priority: AnnouncePriority.Normal,
+            Audio: Audio("s1", count: 1));
+
+        queue.Enqueue(round);
+        var reply = queue.Enqueue(sentence);
+        queue.PreemptCurrent();
+        queue.Complete();
+
+        await queue.RunAsync(
+            (chunk, _) =>
+            {
+                played.Add(Encoding.UTF8.GetString(chunk.Data.Span));
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        played.ShouldBe(["s1"]);
+        (await reply.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+    }
+
+    [Fact]
     public async Task Enqueue_Normal_RunsAfterCurrent()
     {
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
@@ -306,6 +375,26 @@ public class PlaybackQueueTests
         queue.Enqueue(Job("announce", PlaybackKind.Announce)).Refused.ShouldBeNull();
         queue.Enqueue(Job("preamble", PlaybackKind.Preamble)).Refused.ShouldBeNull();
         queue.Enqueue(Job("approval", PlaybackKind.Approval)).Refused.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Enqueue_MixedKinds_EachLimitIsMeasuredAgainstTheWholeQueueDepth()
+    {
+        // The two limits are thresholds on the one queue depth, not two counters. What the reply
+        // limit buys is that an answer is not refused for what an announcement queued; an
+        // announcement arriving behind pending sentences is still measured against the announce
+        // limit, which is exactly what that limit says — waiting behind that much speech is too
+        // long. Both single-kind tests above pass either way, so this is the one that pins it.
+        var queue = new PlaybackQueue(replyMaxDepth: 4, announceMaxDepth: 2, prefetchBufferChunks: null);
+
+        queue.Enqueue(Job("s1", PlaybackKind.Reply)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("s2", PlaybackKind.Reply)).Refused.ShouldBeNull();
+
+        queue.Enqueue(Job("announce", PlaybackKind.Announce)).Refused.ShouldBe(RefusalReason.QueueFull);
+
+        queue.Enqueue(Job("s3", PlaybackKind.Reply)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("s4", PlaybackKind.Reply)).Refused.ShouldBeNull();
+        queue.Enqueue(Job("s5", PlaybackKind.Reply)).Refused.ShouldBe(RefusalReason.QueueFull);
     }
 
     [Fact]

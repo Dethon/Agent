@@ -105,9 +105,12 @@ public interface ITurnAnchor
 // connection — built with the connection, whose run drives its loop and whose drain settles what was
 // never played; the satellite session exposes it as a property so producers reach it without a
 // pass-through layer.
-// The two depth limits are the queue's, not a producer's: an answer's segments get their own
-// allowance (sharing the announce depth meant one turn's answer competed with itself and lost
-// sentences out of its middle), everything else shares the announce one. A null prefetch size means
+// The two depth limits are the queue's, not a producer's, and both are thresholds on the ONE queue
+// depth rather than two separate counters: a reply segment is measured against the larger of them
+// (sharing the announce depth meant one turn's answer competed with itself and lost sentences out of
+// its middle), everything else against the announce one. So an answer is not refused for what an
+// announcement queued, but an announcement arriving behind eight pending sentences still is — that
+// is what the announce limit says: waiting behind that much speech is too long. A null prefetch size means
 // prefetching is switched off, and a segment's synthesis then starts when the loop reaches it. The
 // defaults are the settings' own, so a queue built without configuration behaves as configuration
 // would have made it.
@@ -127,6 +130,7 @@ public sealed class PlaybackQueue(
     // the loop could reach any terminal path of its own.
     private QueuedJob? _inFlight;
     private bool _closed;
+    private bool _disposed;
     // Set by the link-drop close: the loop discards every job it dequeues from then on instead of
     // playing it, because there is no satellite left to hear it.
     private bool _discardOnDequeue;
@@ -139,6 +143,14 @@ public sealed class PlaybackQueue(
     // preemption can't be lost to the dequeue->assign gap. High-priority jobs are exempt from this
     // mark (see the loop), so a second High job stacking in the same window never preempts the first.
     private long _preemptPendingSeq = -1;
+    // High-water sequence the alert dismissal covers. Same mechanism as the alarm mark and separate
+    // from it because the two answer different questions: this one drops the alert ROUNDS queued
+    // when the user acknowledged (which are High, and so exempt from the mark above), and nothing
+    // else — an answer being streamed while a timer rang is not the dismissal's to swallow.
+    private long _dismissedThroughSeq = -1;
+    // How long a frame already handed to the socket may still finish after the link dropped, before
+    // the loop abandons it. See AbandonOnDeadSocketAsync.
+    private const int LinkDropWriteGraceMs = 2000;
     private const long TurnNotStarted = long.MinValue;
     private long _turnStartedAt = TurnNotStarted;
     private const long SpeechEndNotMarked = long.MinValue;
@@ -160,8 +172,9 @@ public sealed class PlaybackQueue(
     // kind, not for a particular job: the limit is the only thing it can know in advance.
     public bool CanAccept(PlaybackKind kind) => Depth < MaxDepthFor(kind);
 
-    // Only an answer's segments get the reply allowance. The preamble cue is one job that plays
-    // ahead of an answer, not part of it, so it shares the announce depth as it always did.
+    // Which limit this kind's job is measured against — the depth it is measured on is the whole
+    // queue's either way. Only an answer's segments get the reply limit. The preamble cue is one job
+    // that plays ahead of an answer, not part of it, so it uses the announce limit as it always did.
     private int MaxDepthFor(PlaybackKind kind) =>
         kind == PlaybackKind.Reply ? replyMaxDepth : announceMaxDepth;
 
@@ -231,6 +244,13 @@ public sealed class PlaybackQueue(
         // synthesis early — the loop will not touch this job's audio until the previous segment has
         // finished its real-time drain, which would put a full TTS round trip into every sentence
         // seam — and disposes it once the job has settled.
+        //
+        // Started under the gate on purpose, cheap as that is not (the pump runs synchronously up to
+        // its first await, which for the HTTP synthesis is the request being sent). Both ways out
+        // are worse. Before the lock, a job the queue then refuses has started a synthesis nobody
+        // will play and somebody has to dispose — the disposal path this design exists to delete.
+        // After the insert, the loop can dequeue the job while its prefetch is still being built and
+        // enumerate the raw source, so the segment would be pulled twice.
         var seq = ++_enqueueSeq;
         var prefetch = job.Kind == PlaybackKind.Reply && prefetchBufferChunks is { } capacity
             ? new PrefetchedAudio(job.Audio, capacity)
@@ -244,7 +264,7 @@ public sealed class PlaybackQueue(
             ? _pending.FindLastIndex(p => p.Job.Priority == AnnouncePriority.High) + 1
             : _pending.Count;
         _pending.Insert(at, queued);
-        _signal.Release();
+        SignalLocked();
         return new PlaybackTicket(null, queued.Completed);
     }
 
@@ -284,8 +304,8 @@ public sealed class PlaybackQueue(
         lock (_gate)
         {
             _closed = true;
+            SignalLocked();
         }
-        _signal.Release();
     }
 
     // The link-drop close. Complete() alone is not enough there: the run token is still live, so
@@ -305,21 +325,43 @@ public sealed class PlaybackQueue(
     }
 
     // The semaphore and the drop token source are the queue's own, and there is one queue per
-    // satellite connection: undisposed they are a pair leaked on every reconnect. Disposal is not a
-    // close — Complete() is — so it belongs after the loop has stopped, which is the only place that
-    // knows nothing will wait on the semaphore again (SatelliteConnection's drain). A producer
-    // arriving later still gets the closed queue's refusal, because that answer is given before
-    // anything touches the signal.
+    // satellite connection: undisposed they are a pair leaked on every reconnect. Disposal belongs
+    // after the loop has stopped, which is the only place that knows nothing will wait on the
+    // semaphore again (SatelliteConnection's drain). It latches the queue closed as well: disposal
+    // is the end of the queue whichever order it and Complete() arrived in, and a producer arriving
+    // afterwards must get the closed queue's refusal rather than the disposed semaphore's throw.
     public void Dispose()
     {
-        _signal.Dispose();
+        lock (_gate)
+        {
+            _closed = true;
+            _disposed = true;
+            _signal.Dispose();
+        }
         _dropCts.Dispose();
     }
 
+    // The one place the signal is touched, so no path can reach a disposed semaphore: after disposal
+    // there is no loop left to wake anyway.
+    private void SignalLocked()
+    {
+        if (!_disposed)
+        {
+            _signal.Release();
+        }
+    }
+
+    // The alert dismissal: the user acknowledged, so nothing of that alert may still be heard.
+    // Cancelling the job being played is not enough — the ring loop enqueues the next round before
+    // it learns of the acknowledgment, and a round sitting in the queue (or caught in the
+    // dequeue->assign gap, where there is no current job to cancel) then rang in full after the
+    // dismissal. So a dismissal takes a mark over everything queued right now, exactly as an alarm's
+    // enqueue does, and the loop drops the alert rounds it covers as they start.
     public void PreemptCurrent()
     {
         lock (_gate)
         {
+            _dismissedThroughSeq = _enqueueSeq;
             _currentCts?.Cancel();
         }
     }
@@ -365,6 +407,10 @@ public sealed class PlaybackQueue(
                 continue;
             }
 
+            // Deliberately NOT linked to the drop token: a job the loop is already playing ends as
+            // it really did (see CompleteAndDiscardQueued), and cancelling its source would turn a
+            // fully-written job into a cancellation. What a drop must not do is leave the loop
+            // WAITING on the socket — that is AwaitSocketWriteAsync's job.
             var jobCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             if (TakeAsCurrent(queued, jobCts))
             {
@@ -409,8 +455,14 @@ public sealed class PlaybackQueue(
             _inFlight = queued;
             // Exempt High jobs: the mark exists to drop lower-priority jobs queued ahead of a
             // High request; a second High stacking in the gap must still play, not be preempted.
-            var preemptOnStart = _preemptPendingSeq >= 0 && queued.Seq <= _preemptPendingSeq
-                && queued.Job.Priority != AnnouncePriority.High;
+            var preemptOnStart =
+                (_preemptPendingSeq >= 0 && queued.Seq <= _preemptPendingSeq
+                    && queued.Job.Priority != AnnouncePriority.High)
+                // The dismissal's own mark, which covers the alert rounds the mark above spares for
+                // being High — and only those, so a sentence of an answer queued while the alert
+                // rang is still spoken.
+                || (_dismissedThroughSeq >= 0 && queued.Seq <= _dismissedThroughSeq
+                    && queued.Job.Kind == PlaybackKind.Alarm);
             // Cleared once nothing at or below the mark is left queued, so every job that was
             // already there when the alarm arrived is preempted — not just the first one dequeued
             // after it. Asking the pending list rather than this job's sequence keeps that true
@@ -419,6 +471,10 @@ public sealed class PlaybackQueue(
             if (!_pending.Any(p => p.Seq <= _preemptPendingSeq))
             {
                 _preemptPendingSeq = -1;
+            }
+            if (!_pending.Any(p => p.Seq <= _dismissedThroughSeq))
+            {
+                _dismissedThroughSeq = -1;
             }
             return preemptOnStart;
         }
@@ -442,6 +498,13 @@ public sealed class PlaybackQueue(
             logger?.LogInformation(
                 "Playback job {Label} drained {Chunks} chunk(s)", job.Label, queued.ChunksWritten);
             drained = true;
+        }
+        catch (OperationCanceledException) when (_dropCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            // The link died while this job was being written or synthesized. It was not cut short by
+            // anything the user or the agent did, so it is discarded like everything still queued
+            // behind it rather than reported as preempted or failed.
+            queued.Settle(PlaybackOutcomeKind.Discarded);
         }
         catch (OperationCanceledException) when (jobCts.IsCancellationRequested && !ct.IsCancellationRequested)
         {
@@ -518,8 +581,8 @@ public sealed class PlaybackQueue(
                     // The alert route is the alarm kind's, and only its. Priority is
                     // deliberately not the marker: confirmation prompts share High and must
                     // stay at the calibrated conversational level.
-                    await sink.OnAudioStart(
-                        chunk.Format, job.Kind == PlaybackKind.Alarm, jobToken);
+                    await AwaitSocketWriteAsync(
+                        sink.OnAudioStart(chunk.Format, job.Kind == PlaybackKind.Alarm, jobToken));
                 }
                 if (job.OnFirstAudio is not null)
                 {
@@ -528,7 +591,7 @@ public sealed class PlaybackQueue(
             }
             totalAudio += DurationOf(chunk);
             queued.ChunksWritten++;
-            await sink.Writer(chunk, jobToken);
+            await AwaitSocketWriteAsync(sink.Writer(chunk, jobToken));
             // Deliberately after the write: OnFirstAudio carries several awaited metric
             // publishes, and running them first would delay the first audio byte reaching the
             // satellite by however long the metrics backbone takes — the observer changing what
@@ -548,6 +611,49 @@ public sealed class PlaybackQueue(
         }
 
         return (firstChunkTimestamp, totalAudio);
+    }
+
+    // Every write here goes to the satellite's socket, and a Wyoming frame is deliberately
+    // uncancellable once it has started — a half-written frame desyncs the stream, so WyomingWriter
+    // honours the token at its lock and not after. A satellite that lost power leaves that write
+    // parked until the TCP retransmit timeout, minutes away, while the connection's drain is
+    // awaiting this very loop: queued jobs never settled and nothing redialled. So on a link drop
+    // the loop stops WAITING for the write rather than trying to cancel it. The abandoned write is
+    // failed by the host disposing the Wyoming client, which happens as soon as the run returns.
+    private async Task AwaitSocketWriteAsync(Task write)
+    {
+        // A write that already completed is returned as-is by WaitAsync, drop token or not, so a
+        // frame that made it out before the drop is never turned into a cancellation.
+        try
+        {
+            await write.WaitAsync(_dropCts.Token);
+        }
+        catch (OperationCanceledException) when (_dropCts.IsCancellationRequested)
+        {
+            await AbandonOnDeadSocketAsync(write);
+        }
+    }
+
+    // The link dropped with this frame still in the socket. A frame that is merely late still
+    // finishes — it is a few bytes to a LAN satellite, and letting it land keeps a job that really
+    // was written reporting Drained. Anything slower than the backstop is a dead peer, and waiting
+    // on it is the wedge: the loop stops waiting and the job ends as discarded like everything else
+    // the drop caught. The same constant and the same reasoning as WakeArbiter's re-arm write, and
+    // deliberately a constant rather than a config knob — a liveness backstop is not a tuning
+    // parameter.
+    private static async Task AbandonOnDeadSocketAsync(Task write)
+    {
+        try
+        {
+            await write.WaitAsync(TimeSpan.FromMilliseconds(LinkDropWriteGraceMs));
+        }
+        catch (TimeoutException)
+        {
+            // Nobody is left to observe what the abandoned write throws when the host disposes the
+            // Wyoming client, which is what finally fails it.
+            _ = write.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+            throw new OperationCanceledException("The satellite link dropped mid-write.");
+        }
     }
 
     private FirstAudioTiming BuildFirstAudioTiming(
@@ -571,11 +677,16 @@ public sealed class PlaybackQueue(
     // Close the playback envelope so the satellite flushes paplay (EOF on
     // disconnect_after_stop). Use the connection token: the job's token may be canceled
     // by preemption, but the satellite still needs the audio-stop. A bare
-    // audio-start with no chunks gets no stop, matching Wyoming framing.
-    private static async Task SendAudioStopAsync(
+    // audio-start with no chunks gets no stop, matching Wyoming framing. Skipped outright once the
+    // link has dropped: there is no satellite to flush, and this is another write that would park on
+    // the dead socket with the drain waiting on the loop it sits in.
+    private async Task SendAudioStopAsync(
         QueuedJob queued, PlaybackSink sink, ILogger? logger, CancellationToken ct)
     {
-        if (queued.ChunksWritten == 0 || sink.OnAudioStop is null || ct.IsCancellationRequested)
+        if (queued.ChunksWritten == 0
+            || sink.OnAudioStop is null
+            || ct.IsCancellationRequested
+            || _dropCts.IsCancellationRequested)
         {
             return;
         }

@@ -55,6 +55,27 @@ public class PlaybackQueueOutcomeTests
     }
 
     [Fact]
+    public void Dispose_WithoutAPriorClose_StillRefusesALateProducer()
+    {
+        // Disposal is not a close, but it is the end of the queue either way: a producer arriving
+        // after it must get the refusal every closed queue gives rather than an
+        // ObjectDisposedException out of the semaphore, whichever order the two calls came in.
+        var queue = new PlaybackQueue();
+        queue.Dispose();
+
+        queue.Enqueue(Job("late", PlaybackKind.Announce)).Refused.ShouldBe(RefusalReason.QueueClosed);
+    }
+
+    [Fact]
+    public void Complete_AfterDispose_DoesNotThrow()
+    {
+        var queue = new PlaybackQueue();
+        queue.Dispose();
+
+        Should.NotThrow(queue.Complete);
+    }
+
+    [Fact]
     public void Dispose_CalledTwice_IsANoOp()
     {
         // The drain is not the only unwinding path (shutdown cancels the run token first), so
@@ -291,6 +312,36 @@ public class PlaybackQueueOutcomeTests
         // The fake clock never advances: only cutting the tail lets the loop return.
         await pump.WaitAsync(TimeSpan.FromSeconds(2));
         (await ticket.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+    }
+
+    [Fact]
+    public async Task CompleteAndDiscardQueued_WithTheWriteParkedOnADeadSocket_ReturnsPromptlyAndSettlesEveryJob()
+    {
+        // A satellite that loses power mid-reply leaves the socket write parked until the TCP
+        // retransmit timeout — minutes — and a Wyoming frame is deliberately uncancellable once it
+        // starts, so the token buys nothing there. The connection's drain awaits this loop, so that
+        // one write held the entire teardown: queued jobs never settled and the host never redialled.
+        var queue = new PlaybackQueue();
+        var writing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var inFlight = queue.Enqueue(Job("playing", PlaybackKind.Announce));
+        var behind = queue.Enqueue(Job("waiting", PlaybackKind.Announce));
+        // Never returns and never observes its token: the socket write on a satellite that vanished.
+        var pump = queue.RunAsync(
+            (_, _) => { writing.TrySetResult(); return parked.Task; }, CancellationToken.None);
+
+        await writing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        queue.CompleteAndDiscardQueued();   // the link dropped
+
+        // Bounded by the loop's own backstop (a couple of seconds), where it used to be bounded by
+        // the TCP retransmit timeout — that is, not at all as far as a reconnect is concerned.
+        await pump.WaitAsync(TimeSpan.FromSeconds(10));
+        queue.DiscardUnplayed();
+
+        (await inFlight.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
+        (await behind.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
+        parked.TrySetResult();
     }
 
     [Fact]
