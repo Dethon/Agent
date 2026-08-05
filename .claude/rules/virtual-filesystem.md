@@ -1,0 +1,22 @@
+---
+paths:
+  - "Domain/Contracts/**"
+  - "Domain/Tools/FileSystem/**"
+  - "Infrastructure/**"
+  - "McpServer*/**"
+---
+
+# Virtual Filesystem Architecture
+
+Each MCP server can expose a `filesystem://` resource (`vault`, `media`, `ha`, `schedules`, `print-queue`, `timers`). At session start `McpFileSystemDiscovery` detects them and mounts them into `VirtualFileSystemRegistry` with longest-prefix path resolution. `FileSystemToolFeature` provides 10 domain tools (`VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsCopy`, `VfsRemove`, `VfsExec`, `VfsFileInfo`) dispatching through the registry; raw MCP `fs_*` tools are filtered out while domain tools are active. `VfsExec` is filesystem-conditional — backends without `fs_exec` return a "tool missing" envelope.
+
+Each mount is its own backend — **tools cannot reach across mounts**; data needed elsewhere must be copied there first. Backends derive from `FileSystemBackendBase` (`Domain/Contracts/`), which implements `IFileSystemBackend`'s twelve operations as unsupported and provides what every backend used to copy: the error envelopes, the glob prologue (base path plus the trailing-slash dirs-only rule), a search regex compiled with a match timeout and guarded against a bad pattern, and the search template. New filesystems need no agent changes.
+
+- **A backend declares its capability by overriding.** `AddFileSystemTools<TBackend>()` (`Infrastructure/Utils/FileSystemServerTools.cs`) reflects over which methods `TBackend` overrides and registers an `fs_*` tool for exactly those, taking each description from the backend's `Describe*` hook. Nothing is declared, so nothing can drift — capability is declared by overriding, so a server cannot advertise an operation its backend has no override for (an override that merely delegates to base still advertises; don't write one). Never hand-write an `fs_*` MCP tool. `Tests/Unit/Infrastructure/FileSystemServerConformanceTests.cs` asserts, per server, that advertised tools, overridden operations and published capabilities are one set.
+- **A mount's identity comes from the backend too.** `AddFileSystemResource<TBackend>()` (`Infrastructure/Utils/FileSystemServerResource.cs`) sits beside the tool registrar and publishes the `filesystem://` resource, deriving the address, the published name and the mount point from the backend's one `FilesystemName`, with the prose from its `DescribeMount` hook. They cannot disagree, so there is nothing to keep in sync. Never hand-write a filesystem resource. `DescribeMount` is abstract on the base and satisfied by a constructor argument on the generic disk root, exactly as the name already is — otherwise "Obsidian vault" ends up hardcoded into a reusable type.
+- **Capability is per operation, not per path.** A backend may override an operation and still refuse particular paths; the list tells the model which operations exist on a mount, not which will succeed on a given file. Do not refine it into a per-path check the registrar cannot answer.
+- **`FileSystemOperations.All` (`Domain/Contracts/`) is the one list.** The registrar, `FsResultContract.ResultTypes`, the discovery capability map, `ThreadSession`'s filter set and `FileSystemToolFeature.AllToolKeys` all derive from it, so a new operation cannot half-exist.
+- **Disk roots are `DiskFileSystem`** (glob, info, move, delete, copy, blob read/write — no read, because reading bytes as text needs a rule about which files are text), `TextDiskFileSystem` (adds read, create, edit and text search where a root has allowed extensions), `SandboxFileSystem` (adds exec) and `MediaLibraryDiskFileSystem` (adds the `DownloadsOverlay`: a virtual `downloads/<id>/status.json` per active download, delete that cancels the download, and a refusal to move or write that virtual file). The generic disk root knows about none of them. Containment is decided once, by `PathJail`.
+- **Resolution is data.** `IVirtualFileSystemRegistry.Resolve` returns `FsResult<FileSystemResolution>`; an unmounted path becomes the error envelope the prompt promises, at every tool site.
+
+Globs support brace expansion (`GlobBraceExpander`): `**/*.{jpg,png}` = union of both patterns (lone/unbalanced `{...}` stay literal). All backends normalize glob entries to full virtual paths.
