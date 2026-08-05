@@ -500,11 +500,9 @@ public sealed class ChannelInbox(
         // response nobody reads, and nothing here is acknowledged, so they would be gone. Asking
         // before the queue is emptied means there is nothing to put back.
         //
-        // What is left of the window is the handoff itself — the batch is serialised into the
-        // response after this returns, and a request that dies during that write still loses it.
-        // ChannelReceiveTool asks once more after serialising and hands the batch back through
-        // Restore, which is as far as this side can get; closing it completely needs an
-        // acknowledgement from the poller that this protocol does not have.
+        // What is left of the window is the response itself, which Complete covers: it asks once
+        // more with the response built and hands the batch back. Only the write is left open, and
+        // closing that needs an acknowledgement from the poller this protocol does not have.
         private IReadOnlyList<ChannelInboxItem> Drain(CancellationToken ct)
         {
             var drained = _items.ToArray();
