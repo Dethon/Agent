@@ -1,6 +1,7 @@
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Domain.Tools.Downloads.Vfs;
 using Shouldly;
 using static Tests.Unit.Domain.Downloads.Vfs.DownloadFakes;
@@ -87,30 +88,49 @@ public class DownloadsOverlayTests : IDisposable
         (await _sut.TryInfoAsync("Movies", CancellationToken.None)).ShouldBeNull();
     }
 
+    // The overlay compiled the caller's pattern itself, outside the guard every other mount's glob
+    // goes through, so a pattern past the brace-expansion cap left the overlay throwing where the
+    // rest of the filesystem answers an envelope. Only the disk half erroring first hid it.
+    [Fact]
+    public async Task GlobEntries_APatternPastTheBraceCap_IsTheInvalidArgumentEnvelope()
+    {
+        _client.Add(Item(42));
+
+        var glob = await _sut.GlobEntriesAsync(
+            "", string.Concat(Enumerable.Repeat("{a,b}", 12)) + "**", CancellationToken.None);
+
+        glob.ShouldBeOfType<FsResult<IReadOnlyList<string>>.Err>()
+            .Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+    }
+
     [Fact]
     public async Task GlobEntries_MatchRootAndBasePathPatterns()
     {
         _client.Add(Item(42));
         _client.Add(Item(7, DownloadState.Completed));
 
-        var all = await _sut.GlobEntriesAsync("", "**", CancellationToken.None);
+        var all = await Entries("", "**");
         all.ShouldContain("downloads/42/");
         all.ShouldContain("downloads/42/status.json");
         all.ShouldContain("downloads/7/");
         all.ShouldContain("downloads/7/status.json");
 
-        var statusOnly = await _sut.GlobEntriesAsync("", "downloads/*/status.json", CancellationToken.None);
+        var statusOnly = await Entries("", "downloads/*/status.json");
         statusOnly.ShouldBe(new[] { "downloads/42/status.json", "downloads/7/status.json" }, ignoreOrder: true);
 
-        var dirsOnly = await _sut.GlobEntriesAsync("", "downloads/*/", CancellationToken.None);
+        var dirsOnly = await Entries("", "downloads/*/");
         dirsOnly.ShouldBe(new[] { "downloads/42/", "downloads/7/" }, ignoreOrder: true);
 
-        var based = await _sut.GlobEntriesAsync("downloads", "*/status.json", CancellationToken.None);
+        var based = await Entries("downloads", "*/status.json");
         based.ShouldBe(new[] { "downloads/42/status.json", "downloads/7/status.json" }, ignoreOrder: true);
 
-        var elsewhere = await _sut.GlobEntriesAsync("Movies", "**", CancellationToken.None);
+        var elsewhere = await Entries("Movies", "**");
         elsewhere.ShouldBeEmpty();
     }
+
+    private async Task<IReadOnlyList<string>> Entries(string basePath, string pattern) =>
+        (await _sut.GlobEntriesAsync(basePath, pattern, CancellationToken.None))
+        .ShouldBeOfType<FsResult<IReadOnlyList<string>>.Ok>().Value;
 
     [Fact]
     public async Task Delete_ActiveDownload_CleansUpEverything()
@@ -165,6 +185,68 @@ public class DownloadsOverlayTests : IDisposable
 
         (await _sut.DeleteAsync("downloads/123", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("not_found");
+    }
+
+    // Every one of these used to reach a live download through a spelling the classifier did not
+    // recognise: the dotted ones bypassed the refusals entirely (the disk underneath resolves them),
+    // and the padded ones cancelled download 42 when the caller named a directory that is not it.
+    [Theory]
+    [InlineData("downloads/ 42 ")]
+    [InlineData("downloads/042")]
+    [InlineData("downloads/+42")]
+    public async Task Delete_ADirtySpellingOfADownloadId_CancelsNothing(string path)
+    {
+        _client.Add(Item(42));
+
+        (await _sut.DeleteAsync(path, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
+
+        _client.CleanedUp.ShouldBeEmpty();
+        _fs.RemovedDirectories.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("downloads/./42")]
+    [InlineData("downloads/43/../42")]
+    public async Task Delete_ADottedSpellingOfADownloadDir_StillCancelsIt(string path)
+    {
+        _client.Add(Item(42));
+
+        (await _sut.DeleteAsync(path, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
+
+        _client.CleanedUp.ShouldContain(42);
+    }
+
+    [Theory]
+    [InlineData("downloads/42")]
+    [InlineData("downloads/./42")]
+    [InlineData("downloads/42/./payload.mkv")]
+    [InlineData("Movies/../downloads/42")]
+    [InlineData("downloads")]
+    public async Task TouchesActiveDownload_ADottedSpellingOfTheBoundary_StillOverlaps(string path)
+    {
+        _client.Add(Item(42));
+
+        (await _sut.TouchesActiveDownloadAsync(path, CancellationToken.None)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task TouchesActiveDownload_APathOutsideEveryDownload_DoesNot()
+    {
+        _client.Add(Item(42));
+
+        (await _sut.TouchesActiveDownloadAsync("Movies/film.mkv", CancellationToken.None)).ShouldBeFalse();
+        (await _sut.TouchesActiveDownloadAsync("downloads/7", CancellationToken.None)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void IsVirtualPath_DottedAndPaddedSpellings()
+    {
+        _sut.IsVirtualPath("downloads/42/./status.json").ShouldBeTrue();
+        _sut.IsVirtualPath("downloads/43/../42/status.json").ShouldBeTrue();
+        _sut.IsVirtualPath("downloads/042/status.json").ShouldBeFalse();
+        _sut.IsVirtualPath("downloads/ 42 /status.json").ShouldBeFalse();
     }
 
     [Fact]

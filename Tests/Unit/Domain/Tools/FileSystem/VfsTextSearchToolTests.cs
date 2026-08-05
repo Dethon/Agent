@@ -67,6 +67,41 @@ public class VfsTextSearchToolTests
         _registry.Verify(r => r.Resolve(It.IsAny<string>()), Times.Never);
     }
 
+    // A backend reports its hits in its own coordinates — mount-relative, and a disk root without a
+    // leading slash. Handing those back unchanged made the obvious next call fail: feeding a hit
+    // straight to text_read answered "No filesystem mounted". Search answers full virtual paths, so
+    // its results are reusable as input, exactly like read, info and glob.
+    [Fact]
+    public async Task RunAsync_BackendLocalResultPaths_AreReplacedWithFullVirtualPaths()
+    {
+        _registry.Setup(r => r.Resolve("/vault/notes"))
+            .Returns(Resolved(_backend.Object, "notes", "/vault"));
+        _backend.Setup(b => b.SearchAsync("api", false, null, "notes", null, 50, 1,
+                VfsTextSearchOutputMode.Content, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Found("notes/api.md"));
+
+        var result = await _tool.RunAsync("api", directoryPath: "/vault/notes");
+
+        result!["path"]!.GetValue<string>().ShouldBe("/vault/notes");
+        result["results"]![0]!["file"]!.GetValue<string>().ShouldBe("/vault/notes/api.md");
+    }
+
+    // The single-file scope, and a backend whose paths carry a leading slash (the non-disk mounts).
+    [Fact]
+    public async Task RunAsync_SingleFileScope_ReportsTheCallersVirtualPath()
+    {
+        _registry.Setup(r => r.Resolve("/ha/light/kitchen/state.json"))
+            .Returns(Resolved(_backend.Object, "light/kitchen/state.json", "/ha"));
+        _backend.Setup(b => b.SearchAsync("on", false, "light/kitchen/state.json", null, null, 50, 1,
+                VfsTextSearchOutputMode.Content, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Found("/light/kitchen/state.json"));
+
+        var result = await _tool.RunAsync("on", filePath: "/ha/light/kitchen/state.json");
+
+        result!["path"]!.GetValue<string>().ShouldBe("/ha/light/kitchen/state.json");
+        result["results"]![0]!["file"]!.GetValue<string>().ShouldBe("/ha/light/kitchen/state.json");
+    }
+
     private static FsResult<FsSearchResult> Found(string file) =>
         new FsResult<FsSearchResult>.Ok(new FsSearchResult
         {
@@ -80,6 +115,7 @@ public class VfsTextSearchToolTests
             Results = [new FsSearchFileResult { File = file, MatchCount = 1 }]
         });
 
-    private static FsResult<FileSystemResolution> Resolved(IFileSystemBackend backend, string relativePath) =>
-        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath));
+    private static FsResult<FileSystemResolution> Resolved(
+        IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
+        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
 }

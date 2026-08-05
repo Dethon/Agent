@@ -131,6 +131,31 @@ public class DiskFileSystemTests : IDisposable
         readBack.ShouldBe(bytes);
     }
 
+    // What advertising fs_blob_write commits a backend to: the transfer driver sends one 256 KiB
+    // chunk per wire call at an increasing offset, so anything bigger than a chunk arrives as a
+    // sequence of ranged writes that must append rather than restart. A backend that cannot do this
+    // — one that only streams, whose ranged default refuses every nonzero offset — does not
+    // advertise the tool at all.
+    [Fact]
+    public async Task PlainRoot_RangedBlobWritesAtIncreasingOffsets_AppendTheWholeTransfer()
+    {
+        var fs = PlainRoot();
+        var chunks = new byte[][] { [1, 2, 3], [4, 5, 6], [7, 8] };
+
+        long offset = 0;
+        foreach (var chunk in chunks)
+        {
+            var write = await fs.WriteBlobAsync("blob.bin", Convert.ToBase64String(chunk), offset,
+                overwrite: offset == 0, createDirectories: true, CancellationToken.None);
+
+            write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Ok>();
+            offset += chunk.Length;
+        }
+
+        (await File.ReadAllBytesAsync(Path.Combine(_root, "blob.bin")))
+            .ShouldBe(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+    }
+
     // The allowed extensions govern what the agent may author as text — create, edit, read. Blob
     // writes are the transfer path: cross-mount copy and move stream through them, and a disk root
     // must take whatever file arrives (a .png attachment into the vault, a dataset into the

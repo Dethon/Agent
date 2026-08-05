@@ -14,19 +14,24 @@ namespace Tests.Unit.Domain.Contracts;
 // operation added to the list reaches every surface without a second edit.
 public class FileSystemOperationsTests
 {
+    // Every operation is declared by a method a backend can override. All but one live on the
+    // contract; fs_blob_write is declared by the ranged WriteBlobAsync on the base, because the
+    // streamed contract has no ranged shape and the streamed default cannot honour the increasing
+    // offsets the wire sends.
     [Fact]
     public void EveryOperation_NamesABackendMethodThatExists()
     {
         foreach (var operation in FileSystemOperations.All)
         {
-            typeof(IFileSystemBackend).GetMethod(operation.MethodName)
-                .ShouldNotBeNull($"{operation.ToolName} names no method on the backend contract");
+            (typeof(IFileSystemBackend).GetMethod(operation.MethodName)
+             ?? typeof(FileSystemBackendBase).GetMethod(operation.MethodName))
+                .ShouldNotBeNull($"{operation.ToolName} names no method on the backend contract or base");
         }
     }
 
-    // The second shape of the two byte-streaming operations lives on the base rather than the
-    // contract — it is the wire's ranged form, not part of what a backend must answer — and
-    // overriding it is as much an implementation of the operation as overriding the stream.
+    // The second shape of the streamed read lives on the base rather than the contract — it is the
+    // wire's ranged form, not part of what a backend must answer — and overriding it is as much an
+    // implementation of the operation as overriding the stream.
     [Fact]
     public void EveryAlternateOperation_NamesAnOverridableBaseMethod()
     {
@@ -163,5 +168,11 @@ public class FileSystemOperationsTests
         public override Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
             bool overwrite, bool createDirectories, CancellationToken ct) =>
             base.WriteChunksAsync(path, chunks, overwrite, createDirectories, ct);
+
+        // The ranged write is its own override: streaming bytes is not enough to advertise
+        // fs_blob_write, because the wire sends one chunk per call at an increasing offset.
+        public override Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(string path, string contentBase64,
+            long offset, bool overwrite, bool createDirectories, CancellationToken ct) =>
+            base.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct);
     }
 }
