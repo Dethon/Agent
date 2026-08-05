@@ -155,6 +155,10 @@ public sealed class McpChannelConnection(
                 await Task.Delay(delay, ct);
             }
         }
+
+        // Returning from here would say "connected" to a caller that goes on to register and poll.
+        // The only way out of the loop other than a successful dial is the token, so say that.
+        ct.ThrowIfCancellationRequested();
     }
 
     private async Task<bool> TryRegisterAgentsAsync(
@@ -584,6 +588,15 @@ public sealed class McpChannelConnection(
         {
             await client.ListToolsAsync(cancellationToken: ct);
             return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // The caller's own shutdown, not ill health. Answering false here makes the run call
+            // this a failed check and reconnect on a token that is already cancelled, which returns
+            // without connecting anything — and everything after it then works against a dead
+            // client believing the link is up. Everything else, including a transport cancellation
+            // the caller never asked for, is what "not connected" means (ADR 0011).
+            throw;
         }
         catch
         {
