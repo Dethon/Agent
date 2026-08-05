@@ -390,6 +390,34 @@ public class ChatMonitorConversationGroupTests
     }
 
     [Fact]
+    public async Task Monitor_WarmupIsTheOnlyThingThatFailed_LogsThatFailureOnce()
+    {
+        // The turn waits on the warmup, so its failure arrives as the turn's setup failure and
+        // is logged there. Observing the abandoned warmup afterwards must not report the same
+        // exception a second time under a different name.
+        var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
+        var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage());
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.IsAny<It.IsAnyType>(),
+            It.IsAny<HttpRequestException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Group_MessagePumpFaults_LogsAndCompletesTheGroup()
     {
         // The pump folds its own failures into the pending channel, and reading them out

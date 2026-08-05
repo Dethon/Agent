@@ -47,6 +47,10 @@ internal sealed class ConversationGroup(
     // a /cancel already replaced it under the same key cannot tear its successor down.
     private ChatThreadContext? _context;
 
+    // Set once a turn has waited on the warmup, so its failure has already been reported as
+    // that turn's failure.
+    private bool _warmupSurfaced;
+
     // Held from the moment it is created, not from the moment the group is established, so a
     // failure between the two still disposes it.
     private DisposableAgent? _agent;
@@ -275,11 +279,17 @@ internal sealed class ConversationGroup(
         catch (OperationCanceledException)
         {
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!_warmupSurfaced)
         {
             logger.LogError(ex,
                 "Session warmup failed for conversation {ConversationId} and agent {AgentId}",
                 agentKey.ConversationId, agentKey.AgentId);
+        }
+        catch (Exception)
+        {
+            // The turn already waited on this warmup, so its failure came out as the turn's
+            // own setup failure and was logged there. Awaiting it again is only about not
+            // leaving an unobserved task exception behind.
         }
     }
 
@@ -432,6 +442,9 @@ internal sealed class ConversationGroup(
         }
         var userMessage = await BuildUserMessageAsync(turn, state);
 
+        // From here a warmup failure is this turn's failure and is reported as one, so the
+        // abandoned-warmup observer must not name it a second time.
+        _warmupSurfaced = true;
         await state.Warmup;
         return StreamAgentTurn(state, userMessage, turn);
     }
