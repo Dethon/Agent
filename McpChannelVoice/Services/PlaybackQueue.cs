@@ -1,4 +1,3 @@
-using System.Threading.Channels;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services.Tts;
 using McpChannelVoice.Settings;
@@ -103,7 +102,12 @@ public sealed class PlaybackQueue(
     int announceMaxDepth = AnnounceSettings.DefaultQueueMaxDepth,
     int? prefetchBufferChunks = StreamingTtsConfig.DefaultPrefetchBufferChunks)
 {
-    private readonly Channel<QueuedJob> _jobs = Channel.CreateUnbounded<QueuedJob>();
+    // Play order, guarded by _gate: normal jobs append, a High job cuts in ahead of the queued
+    // normal jobs (behind any High already waiting, so Highs stay FIFO among themselves). A channel
+    // could not express the cut-in, so the pending list is its own structure and the semaphore is
+    // the loop's wake-up.
+    private readonly List<QueuedJob> _pending = [];
+    private readonly SemaphoreSlim _signal = new(0);
     private CancellationTokenSource? _currentCts;
     // The job the loop is playing, kept so the drain can settle it when the connection dies before
     // the loop could reach any terminal path of its own.
@@ -114,17 +118,25 @@ public sealed class PlaybackQueue(
     private bool _discardOnDequeue;
     private readonly Lock _gate = new();
     private long _enqueueSeq;
-    // High-water sequence whose jobs must be preempted as they start. Set only when a high-priority
-    // job arrives while no job is marked current (the gap between dequeue and assignment, or idle),
-    // so a preemption can't be lost to that race. High-priority jobs are exempt from this mark (see
-    // the loop), so a second High job stacking in the same window never preempts the first.
+    // High-water sequence whose jobs must be preempted as they start. Set only by an ALARM, so a
+    // preemption can't be lost to the dequeue->assign gap. High-priority jobs are exempt from this
+    // mark (see the loop), so a second High job stacking in the same window never preempts the first.
     private long _preemptPendingSeq = -1;
     private const long TurnNotStarted = long.MinValue;
     private long _turnStartedAt = TurnNotStarted;
     private const long SpeechEndNotMarked = long.MinValue;
     private long _speechEndedAt = SpeechEndNotMarked;
 
-    private int Depth => _jobs.Reader.Count;
+    private int Depth
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _pending.Count;
+            }
+        }
+    }
 
     // Lets a caller decide whether a job of this kind can be queued BEFORE it consumes the text and
     // starts its synthesis, rather than finding out after both are already spent. It answers for the
@@ -144,25 +156,29 @@ public sealed class PlaybackQueue(
     {
         if (job.Priority == AnnouncePriority.High)
         {
-            long seq;
             lock (_gate)
             {
-                // Mark EVERY job queued so far, then cancel the in-flight one. Cancelling only the
-                // current job was enough when a reply was a single job; now that it is several
-                // sentence jobs, an alarm cut sentence one and was then heard only after sentences
-                // 2..N had played in full — and a queued alarm the user had already acknowledged
-                // still rang, because dismissal preempts the current job. The mark is taken before
-                // this job's seq is issued, so its own seq exceeds it and the loop's High exemption
-                // keeps a stacked second High playing. It also closes the original race, where
-                // _currentCts is momentarily null during the dequeue->assign gap.
-                _preemptPendingSeq = _enqueueSeq;
+                if (job.Kind == PlaybackKind.Alarm)
+                {
+                    // Mark EVERY job queued so far, then cancel the in-flight one. Cancelling only
+                    // the current job was enough when a reply was a single job; now that it is
+                    // several sentence jobs, an alarm cut sentence one and was then heard only
+                    // after sentences 2..N had played in full — and a queued alarm the user had
+                    // already acknowledged still rang, because dismissal preempts the current job.
+                    // The mark is taken before this job's seq is issued, so its own seq exceeds it
+                    // and the loop's High exemption keeps a stacked second High playing. It also
+                    // closes the original race, where _currentCts is momentarily null during the
+                    // dequeue->assign gap. The flush is the alarm's alone: an approval prompt or a
+                    // chime cuts in ahead of the queued jobs instead, and they play after it — a
+                    // prompt that flushed a streamed answer swallowed its remaining sentences.
+                    _preemptPendingSeq = _enqueueSeq;
+                }
                 _currentCts?.Cancel();
-                seq = ++_enqueueSeq;
+                return WriteLocked(job, cutAheadOfQueued: job.Kind != PlaybackKind.Alarm);
             }
-            return Write(seq, job);
         }
 
-        if (job.Priority == AnnouncePriority.Low && _jobs.Reader.Count > 0)
+        if (job.Priority == AnnouncePriority.Low && Depth > 0)
         {
             return Refuse(RefusalReason.LowPriorityBehindQueue);
         }
@@ -172,21 +188,20 @@ public sealed class PlaybackQueue(
             return Refuse(RefusalReason.QueueFull);
         }
 
-        long normalSeq;
         lock (_gate)
         {
-            normalSeq = ++_enqueueSeq;
+            return WriteLocked(job, cutAheadOfQueued: false);
         }
-        return Write(normalSeq, job);
     }
 
     // A completed queue means the satellite disconnected and the loop tore down. Checked before the
-    // job is accepted rather than by a failed write, so the prefetch below is only ever created for
-    // a job that was taken: a refused job has nothing to dispose, and the trickiest disposal path
-    // stops existing instead of being handled.
-    private PlaybackTicket Write(long seq, PlaybackJob job)
+    // job is accepted rather than after, so the prefetch below is only ever created for a job that
+    // was taken: a refused job has nothing to dispose, and the trickiest disposal path stops
+    // existing instead of being handled. The closed check and the insert share one lock hold, so
+    // acceptance cannot race Complete().
+    private PlaybackTicket WriteLocked(PlaybackJob job, bool cutAheadOfQueued)
     {
-        if (Volatile.Read(ref _closed))
+        if (_closed)
         {
             return Refuse(RefusalReason.QueueClosed);
         }
@@ -195,21 +210,21 @@ public sealed class PlaybackQueue(
         // synthesis early — the loop will not touch this job's audio until the previous segment has
         // finished its real-time drain, which would put a full TTS round trip into every sentence
         // seam — and disposes it once the job has settled.
+        var seq = ++_enqueueSeq;
         var prefetch = job.Kind == PlaybackKind.Reply && prefetchBufferChunks is { } capacity
             ? new PrefetchedAudio(job.Audio, capacity)
             : null;
         var queued = new QueuedJob(
             seq, prefetch is null ? job : job with { Audio = prefetch.Chunks }, prefetch);
 
-        if (_jobs.Writer.TryWrite(queued))
-        {
-            return new PlaybackTicket(null, queued.Completed);
-        }
-
-        // Lost a race with Complete(): the job is accepted-then-closed rather than refused outright,
-        // so it is the one case where an already-started synthesis has to be let go of here.
-        _ = queued.ReleaseAudioAsync();
-        return Refuse(RefusalReason.QueueClosed);
+        // A cut-in lands behind the Highs already waiting and ahead of everything else; an alarm
+        // appends instead, so the jobs its mark preempts drain (and settle) before it rings.
+        var at = cutAheadOfQueued
+            ? _pending.FindLastIndex(p => p.Job.Priority == AnnouncePriority.High) + 1
+            : _pending.Count;
+        _pending.Insert(at, queued);
+        _signal.Release();
+        return new PlaybackTicket(null, queued.Completed);
     }
 
     // A refused job has an outcome like any other, already settled, so nobody writes a second settle
@@ -223,9 +238,12 @@ public sealed class PlaybackQueue(
     public void DiscardUnplayed()
     {
         QueuedJob? inFlight;
+        List<QueuedJob> unplayed;
         lock (_gate)
         {
             inFlight = _inFlight;
+            unplayed = [.. _pending];
+            _pending.Clear();
         }
         if (inFlight is not null)
         {
@@ -233,7 +251,7 @@ public sealed class PlaybackQueue(
             _ = inFlight.ReleaseAudioAsync();
         }
 
-        while (_jobs.Reader.TryRead(out var queued))
+        foreach (var queued in unplayed)
         {
             queued.Settle(PlaybackOutcomeKind.Discarded);
             _ = queued.ReleaseAudioAsync();
@@ -242,12 +260,15 @@ public sealed class PlaybackQueue(
 
     public void Complete()
     {
-        Volatile.Write(ref _closed, true);
-        _jobs.Writer.TryComplete();
+        lock (_gate)
+        {
+            _closed = true;
+        }
+        _signal.Release();
     }
 
     // The link-drop close. Complete() alone is not enough there: the run token is still live, so
-    // ReadAllAsync would hand the loop every queued job to synthesize and write into the dead
+    // the loop would otherwise be handed every queued job to synthesize and write into the dead
     // socket — each settling Failed with an error report the producer never earned. Marking the
     // discard first makes the loop settle those jobs Discarded as it dequeues them, while the job
     // being played is left to end as it really did. Shutdown needs none of this: cancelling the run
@@ -298,7 +319,7 @@ public sealed class PlaybackQueue(
         ILogger? logger = null)
     {
         time ??= TimeProvider.System;
-        await foreach (var queued in _jobs.Reader.ReadAllAsync(ct))
+        while (await TakeNextAsync(ct) is { } queued)
         {
             if (Volatile.Read(ref _discardOnDequeue))
             {
@@ -314,6 +335,31 @@ public sealed class PlaybackQueue(
             }
 
             await PlayAsync(queued, jobCts, sink, time, logger, ct);
+        }
+    }
+
+    // Null means the queue closed and nothing is left to play. The semaphore may wake the loop more
+    // often than there are jobs (each Complete releases it once too), so an empty wake just parks
+    // again — the pending list under the gate is the truth, the semaphore only a wake-up.
+    private async Task<QueuedJob?> TakeNextAsync(CancellationToken ct)
+    {
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            lock (_gate)
+            {
+                if (_pending.Count > 0)
+                {
+                    var queued = _pending[0];
+                    _pending.RemoveAt(0);
+                    return queued;
+                }
+                if (_closed)
+                {
+                    return null;
+                }
+            }
+            await _signal.WaitAsync(ct);
         }
     }
 

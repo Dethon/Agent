@@ -15,11 +15,12 @@ namespace Tests.Unit.McpChannelVoice;
 public class PlaybackQueueTests
 {
     [Fact]
-    public async Task Enqueue_High_PreemptsSegmentsAlreadyQueuedBehindTheCurrentOne()
+    public async Task Enqueue_Alarm_PreemptsSegmentsAlreadyQueuedBehindTheCurrentOne()
     {
         // A reply is several sentence jobs now, so cancelling only _currentCts left an alarm
         // queued behind the REST of the answer: it cut sentence 1 and was then heard after sentences
-        // 2..N had played in full. Every job queued when the High job arrives must be preempted.
+        // 2..N had played in full. Every job queued when an ALARM arrives must be preempted — the
+        // flush is the alarm kind's alone, not every High job's.
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var played = new List<string>();
         var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -44,6 +45,7 @@ public class PlaybackQueueTests
         var alarm = segment1 with
         {
             Label = "alarm",
+            Kind = PlaybackKind.Alarm,
             Priority = AnnouncePriority.High,
             Audio = Audio("alarm", count: 1)
         };
@@ -73,6 +75,64 @@ public class PlaybackQueueTests
         {
             (await segment.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
         }
+    }
+
+    [Fact]
+    public async Task Enqueue_HighApprovalMidStream_QueuedReplySegmentsStillPlayAfterThePrompt()
+    {
+        // Only an alarm may flush the sentences queued behind the current one. An approval prompt
+        // (or a chime) dropped mid-stream cuts the sentence being spoken and plays next, and the
+        // rest of the answer follows it — marking every queued segment for preemption meant
+        // sentence 2 of an answer was never spoken at all.
+        var queue = new PlaybackQueue(prefetchBufferChunks: null);
+        var played = new List<string>();
+        var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async IAsyncEnumerable<AudioChunk> gated(
+            [EnumeratorCancellation] CancellationToken token = default)
+        {
+            yield return new AudioChunk
+            { Data = Encoding.UTF8.GetBytes("s1"), Format = AudioFormat.WyomingStandard };
+            firstChunkWritten.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+        }
+
+        var segment1 = new PlaybackJob(
+            Label: "reply-1",
+            Kind: PlaybackKind.Reply,
+            Priority: AnnouncePriority.Normal,
+            Audio: gated());
+        var segment2 = segment1 with { Label = "reply-2", Audio = Audio("s2", count: 1) };
+        var segment3 = segment1 with { Label = "reply-3", Audio = Audio("s3", count: 1) };
+        var prompt = new PlaybackJob(
+            Label: "approval",
+            Kind: PlaybackKind.Approval,
+            Priority: AnnouncePriority.High,
+            Audio: Audio("approval", count: 1));
+
+        var pumpTask = queue.RunAsync(
+            async (chunk, _) =>
+            {
+                lock (played)
+                { played.Add(Encoding.UTF8.GetString(chunk.Data.Span)); }
+                await Task.Yield();
+            },
+            CancellationToken.None);
+
+        var one = queue.Enqueue(segment1);
+        var two = queue.Enqueue(segment2);
+        var three = queue.Enqueue(segment3);
+        await firstChunkWritten.Task;
+
+        var approval = queue.Enqueue(prompt);
+        queue.Complete();
+        await pumpTask;
+
+        played.ShouldBe(["s1", "approval", "s2", "s3"]);
+        (await one.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+        (await approval.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+        (await two.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+        (await three.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
     }
 
     [Fact]
@@ -177,13 +237,13 @@ public class PlaybackQueueTests
     }
 
     [Fact]
-    public async Task Enqueue_HighPriorityWhileIdle_PreemptsQueuedAheadButPlaysItself()
+    public async Task Enqueue_AlarmWhileIdle_PreemptsQueuedAheadButPlaysItself()
     {
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
 
-        // Enqueue a normal job then a high job BEFORE the loop runs. When the high job is enqueued no
+        // Enqueue a normal job then an alarm BEFORE the loop runs. When the alarm is enqueued no
         // job is marked current, exercising the dequeue->assign gap / idle preempt-sequence path: the
-        // already-queued normal must be preempted, while the high job must still play (a high job must
+        // already-queued normal must be preempted, while the alarm must still play (a high job must
         // never preempt itself).
         var normal = new PlaybackJob(
             Label: "normal",
@@ -192,7 +252,7 @@ public class PlaybackQueueTests
             Audio: Audio("normal", count: 2));
         var high = new PlaybackJob(
             Label: "high",
-            Kind: PlaybackKind.Announce,
+            Kind: PlaybackKind.Alarm,
             Priority: AnnouncePriority.High,
             Audio: Audio("high", count: 1));
 
