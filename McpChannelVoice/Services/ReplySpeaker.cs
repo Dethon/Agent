@@ -65,8 +65,13 @@ public sealed class ReplySpeaker(
                 accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
                 if (p.IsComplete)
                 {
+                    // An error the transport itself flags as complete IS the end of the answer, so
+                    // the stream ends here exactly as it does on StreamComplete. Left open, the turn
+                    // never learns the agent stopped sending and the mic stays shut for the whole
+                    // ~120 s reply timeout.
                     FlushAndSpeak(session, p.ConversationId);
                     _streams.TryRemove(p.ConversationId, out _);
+                    stream.End();
                 }
                 return;
 
@@ -90,6 +95,7 @@ public sealed class ReplySpeaker(
                 {
                     FlushAndSpeak(session, p.ConversationId);
                     _streams.TryRemove(p.ConversationId, out _);
+                    stream.End();
                     return;
                 }
                 SpeakReadySegments(session, p.ConversationId);
