@@ -108,6 +108,41 @@ public sealed class ChatLiveConnectionTests : IDisposable
     }
 
     [Fact]
+    public async Task ConnectAsync_TheLiveConnectionReconnects_TheStoreFollowsBothEvents()
+    {
+        await _liveConnection.ConnectAsync();
+        var connection = _factory.Created.Single();
+
+        await connection.RaiseReconnectingAsync(new IOException("transport dropped"));
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Reconnecting);
+
+        await connection.RaiseReconnectedAsync("connection-2");
+
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
+        _connectionStore.State.Epoch.ShouldBe(2);
+    }
+
+    // A connection torn down while its own reconnect was still in flight can still raise these
+    // two. Left attached, a stale Reconnected advances the epoch — which is what session
+    // recovery and catch-up are keyed on — over a transport that is already dead, and a stale
+    // Reconnecting flips the UI over a live socket.
+    [Fact]
+    public async Task ReconnectIfNeededAsync_AfterRebuild_ReconnectEventsOnTheTornDownConnectionChangeNothing()
+    {
+        await _liveConnection.ConnectAsync();
+        var tornDown = _factory.Created.Single();
+        tornDown.State = HubConnectionState.Reconnecting;
+        await _liveConnection.ReconnectIfNeededAsync();
+        var epochAfterRebuild = _connectionStore.State.Epoch;
+
+        await tornDown.RaiseReconnectingAsync(new IOException("stale"));
+        await tornDown.RaiseReconnectedAsync("stale-connection");
+
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
+        _connectionStore.State.Epoch.ShouldBe(epochAfterRebuild);
+    }
+
+    [Fact]
     public async Task ReconnectIfNeededAsync_StuckReconnectingConnection_ReplacesItWithFreshConnection()
     {
         await _liveConnection.ConnectAsync();

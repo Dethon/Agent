@@ -126,18 +126,8 @@ public sealed class ChatLiveConnection(
         eventBinder.Bind(connection);
 
         connection.Closed += OnConnectionClosed;
-
-        connection.Reconnecting += _ =>
-        {
-            _connectionEventDispatcher.HandleReconnecting();
-            return Task.CompletedTask;
-        };
-
-        connection.Reconnected += _ =>
-        {
-            _connectionEventDispatcher.HandleReconnected();
-            return Task.CompletedTask;
-        };
+        connection.Reconnecting += OnConnectionReconnecting;
+        connection.Reconnected += OnConnectionReconnected;
 
         _connectionEventDispatcher.HandleConnecting();
         await connection.StartAsync(cancellationToken);
@@ -147,9 +137,7 @@ public sealed class ChatLiveConnection(
         // drop the just-started connection instead of leaking it.
         if (_disposed)
         {
-            eventBinder.Unbind();
-            await connection.DisposeAsync();
-            _connection = null;
+            await TearDownAsync();
             return;
         }
 
@@ -217,6 +205,18 @@ public sealed class ChatLiveConnection(
         }
     }
 
+    private Task OnConnectionReconnecting(Exception? exception)
+    {
+        _connectionEventDispatcher.HandleReconnecting();
+        return Task.CompletedTask;
+    }
+
+    private Task OnConnectionReconnected(string? connectionId)
+    {
+        _connectionEventDispatcher.HandleReconnected();
+        return Task.CompletedTask;
+    }
+
     private async Task OnConnectionClosed(Exception? exception)
     {
         _connectionEventDispatcher.HandleClosed(exception);
@@ -278,11 +278,14 @@ public sealed class ChatLiveConnection(
             return;
         }
 
-        // Detach first: the connection we're tearing down dispatches its Closed callback
-        // fire-and-forget off the receive loop, so leaving it attached lets that stale
-        // callback later race the fresh connection (flip the UI to Disconnected over a live
-        // socket, or fire a redundant reconnect).
+        // Detach all three first: the connection we're tearing down dispatches its callbacks
+        // fire-and-forget off the receive loop, so leaving one attached lets a stale callback
+        // later race the fresh connection — flip the UI to Disconnected or Reconnecting over a
+        // live socket, fire a redundant reconnect, or advance the connection epoch (which
+        // session recovery and catch-up are keyed on) for a transport that is already dead.
         _connection.Closed -= OnConnectionClosed;
+        _connection.Reconnecting -= OnConnectionReconnecting;
+        _connection.Reconnected -= OnConnectionReconnected;
         eventBinder.Unbind();
         await _connection.DisposeAsync();
         _connection = null;
