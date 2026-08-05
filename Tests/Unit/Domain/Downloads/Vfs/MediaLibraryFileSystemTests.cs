@@ -67,6 +67,38 @@ public class MediaLibraryFileSystemTests : IDisposable
         await Task.CompletedTask;
     }
 
+    // The disk resolves '.' and '..' before it writes, so a dotted spelling of the status path lands
+    // on exactly the file the overlay shadows. The classifier used to read the caller's literal
+    // spelling, so every refusal on this mount was one '.' away from being switched off.
+    [Theory]
+    [InlineData("downloads/42/./status.json")]
+    [InlineData("downloads/43/../42/status.json")]
+    public async Task WriteChunks_OntoADottedSpellingOfTheVirtualStatusFile_IsRefused(string path)
+    {
+        _client.Add(Item(42));
+
+        var write = await Should.ThrowAsync<NotSupportedException>(() => _sut.WriteChunksAsync(
+            path, Chunks("stale snapshot"), overwrite: true, createDirectories: true, CancellationToken.None));
+
+        write.Message.ShouldContain("read-only");
+        File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("downloads/42/./status.json")]
+    [InlineData("downloads/43/../42/status.json")]
+    public async Task BlobWrite_OntoADottedSpellingOfTheVirtualStatusFile_IsRefused(string path)
+    {
+        _client.Add(Item(42));
+
+        var write = await _sut.WriteBlobAsync(path, Convert.ToBase64String("stale"u8.ToArray()),
+            offset: 0, overwrite: true, createDirectories: true, CancellationToken.None);
+
+        write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>()
+            .Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
+    }
+
     [Fact]
     public async Task WriteChunks_OntoAPlainMediaPath_StillWrites()
     {
@@ -86,6 +118,9 @@ public class MediaLibraryFileSystemTests : IDisposable
     [InlineData("downloads/42")]
     [InlineData("downloads")]
     [InlineData("/downloads/42")]
+    [InlineData("downloads/./42")]
+    [InlineData("downloads/43/../42")]
+    [InlineData("./downloads")]
     public async Task Move_APathHoldingALiveDownload_IsRefused(string source)
     {
         _client.Add(Item(42));

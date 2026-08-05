@@ -34,7 +34,13 @@ public sealed class DownloadsOverlay(
     // moment the download is cancelled.
     public async Task<bool> TouchesActiveDownloadAsync(string path, CancellationToken ct)
     {
-        var candidate = ToMountRelative(path).Trim('/');
+        // The same canonical spelling the classifier uses, so 'downloads/./42' overlaps the live
+        // download it names instead of reading as an unrelated string.
+        if (DownloadsPath.Canonicalize(ToMountRelative(path)) is not { } candidate)
+        {
+            return false;
+        }
+
         var items = await downloadClient.GetDownloadItems(ct);
         return items
             .Select(i => $"{MediaFilesystem.DownloadsSubdir}/{i.Id}")
