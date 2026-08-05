@@ -209,6 +209,24 @@ public static class McpServerRegistrations
 
     public static McpServerRow Get(string id) => All.Single(row => row.Id == id);
 
+    // The working tree, never AppContext.BaseDirectory: a server's shipped files live beside its
+    // csproj, and every one of these projects copies its appsettings.json to the same test output,
+    // so Tests/bin/.../appsettings.json is whichever project won the copy race.
+    public static string RepoRoot { get; } = FindRepoRoot();
+
+    public static string ProjectPath(McpServerRow row) =>
+        Path.Combine(RepoRoot, row.ProjectDirectory);
+
+    private static string FindRepoRoot()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null && !File.Exists(Path.Combine(dir, "Ziggurat.sln")))
+        {
+            dir = Path.GetDirectoryName(dir);
+        }
+        return dir ?? throw new InvalidOperationException("Ziggurat.sln not found above test directory");
+    }
+
     public static TheoryData<string> Ids(IEnumerable<McpServerRow> rows) =>
         rows.Aggregate(new TheoryData<string>(), (data, row) =>
         {
