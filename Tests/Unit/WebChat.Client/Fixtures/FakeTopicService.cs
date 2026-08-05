@@ -45,6 +45,10 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     // Set to answer not live for every call, the way a transport between connections does.
     public bool NotLive { get; set; }
 
+    // Answers not live for only the named agents, so a test can prove a sibling agent's
+    // successful read survives this one's failure.
+    public HashSet<string> NotLiveForAgentIds { get; } = [];
+
     public Task<HubResult<IReadOnlyList<TopicMetadata>>> GetAllTopicsAsync(
         string agentId, string spaceSlug = "default")
     {
@@ -55,7 +59,7 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
             return Task.FromException<HubResult<IReadOnlyList<TopicMetadata>>>(ThrowOnGetAllTopics);
         }
 
-        if (NotLive)
+        if (NotLive || NotLiveForAgentIds.Contains(agentId))
         {
             return Task.FromResult(HubResult<IReadOnlyList<TopicMetadata>>.NotLive);
         }
