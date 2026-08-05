@@ -127,6 +127,30 @@ public class GlobFilesToolTests
         await ShouldBeInvalid(() => _tool.TestRun("**/*", basePath, CancellationToken.None));
     }
 
+    // ".." inside a name is not a traversal segment; only a whole ".." path segment escapes.
+    [Fact]
+    public async Task Run_WithANameContainingConsecutiveDots_MatchesInsteadOfRefusing()
+    {
+        _mockClient.Setup(c => c.Glob(BasePath, "**/v1..2.md", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["/library/docs/v1..2.md"]);
+
+        var result = await _tool.TestRun("**/v1..2.md", CancellationToken.None);
+
+        result["entries"]!.AsArray().Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Run_WithABasePathNameContainingConsecutiveDots_IsAccepted()
+    {
+        var expectedRoot = Path.Combine(BasePath, "v1..2");
+        _mockClient.Setup(c => c.Glob(expectedRoot, "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Path.Combine(expectedRoot, "a.txt")]);
+
+        var result = await _tool.TestRun("**/*", "v1..2", CancellationToken.None);
+
+        result["entries"]!.AsArray().Count.ShouldBe(1);
+    }
+
     // The client refuses a pattern whose brace expansion overflows the cap; the tool turns that
     // refusal into the same invalid-pattern envelope every other bad pattern gets.
     [Fact]

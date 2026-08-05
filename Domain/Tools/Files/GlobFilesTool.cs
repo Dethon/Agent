@@ -27,7 +27,9 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             return FsError.Invalid<FsGlobResult>("Pattern must not be empty.");
         }
 
-        if (pattern.Contains("..") || basePath?.Contains("..") == true)
+        // A whole '..' segment, not the substring: v1..2.md is just a name. The check stays here
+        // because a relative pattern is handed raw to the matcher, never resolved through the jail.
+        if (HasDotDotSegment(pattern) || (basePath is not null && HasDotDotSegment(basePath)))
         {
             return FsError.Invalid<FsGlobResult>("Pattern and basePath must not contain '..' segments.");
         }
@@ -80,6 +82,9 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             Total = relative.Length
         });
     }
+
+    private static bool HasDotDotSegment(string path) =>
+        path.Split('/', '\\').Any(segment => segment == "..");
 
     private static string ToMountRelative(string baseRoot, string absolute)
     {

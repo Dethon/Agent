@@ -109,6 +109,20 @@ public class MoveToolTests
             .ShouldBeError(ToolError.Codes.InvalidArgument);
     }
 
+    // ".." as a substring of a name is not a traversal — the jail judges the resolved path.
+    [Fact]
+    public async Task Run_WithANameContainingConsecutiveDots_Succeeds()
+    {
+        var tool = CreateTool();
+        var source = Path.Combine(_libraryPath, "movies", "v1..2.mkv");
+        var destination = Path.Combine(_libraryPath, "movies", "v1..3.mkv");
+
+        var result = await tool.TestRun(source, destination, CancellationToken.None);
+
+        result["status"]!.ToString().ShouldBe("success");
+        _clientMock.Verify(m => m.Move(source, destination, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private class TestableMoveToolWrapper(
         IFileSystemClient client,
         LibraryPathConfig libraryPath)
