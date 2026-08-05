@@ -41,7 +41,7 @@ public static class SettingsBinder
         var configuration = configBuilder.Build();
         var settings = configuration.Get<TSettings>()!;
 
-        var missing = MissingRequiredMembers(settings, configuration, path: "", typeof(TSettings).Assembly).ToList();
+        var missing = MissingRequiredMembers(settings, configuration, path: "").ToList();
         return missing.Count == 0
             ? settings
             : throw new InvalidOperationException(
@@ -63,14 +63,14 @@ public static class SettingsBinder
     // and an empty optional key is how a feature is switched off; an empty-is-invalid rule would
     // refuse to start them.
     private static IEnumerable<string> MissingRequiredMembers(
-        object instance, IConfiguration section, string path, Assembly settingsAssembly) =>
+        object instance, IConfiguration section, string path) =>
         instance.GetType()
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(property => property.GetIndexParameters().Length == 0)
-            .SelectMany(property => Inspect(property, instance, section, path, settingsAssembly));
+            .SelectMany(property => Inspect(property, instance, section, path));
 
     private static IEnumerable<string> Inspect(
-        PropertyInfo property, object instance, IConfiguration section, string path, Assembly settingsAssembly)
+        PropertyInfo property, object instance, IConfiguration section, string path)
     {
         var memberPath = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
         var value = property.GetValue(instance);
@@ -89,9 +89,12 @@ public static class SettingsBinder
         }
 
         // Recurses into a nested section, which is what a missing configuration block produces.
-        if (IsSection(property.PropertyType, settingsAssembly))
+        // A settings type is not required to live in the same assembly as its root — a server can
+        // bind a shared Domain record straight into its own settings — so this asks what the type
+        // looks like, not where it was declared.
+        if (IsSection(property.PropertyType))
         {
-            return MissingRequiredMembers(value, section.GetSection(property.Name), memberPath, settingsAssembly);
+            return MissingRequiredMembers(value, section.GetSection(property.Name), memberPath);
         }
 
         // Collection elements are read at startup too: Telegram materialises BotRegistry(settings.Bots)
@@ -99,12 +102,11 @@ public static class SettingsBinder
         // missing from one element must fail startup by its indexed name instead of surfacing as a
         // null deep inside the server.
         return Elements(value)
-            .Where(element => element.Value is not null && IsSection(element.Value.GetType(), settingsAssembly))
+            .Where(element => element.Value is not null && IsSection(element.Value.GetType()))
             .SelectMany(element => MissingRequiredMembers(
                 element.Value!,
                 section.GetSection(property.Name).GetSection(element.Key),
-                $"{memberPath}[{element.Key}]",
-                settingsAssembly));
+                $"{memberPath}[{element.Key}]"));
     }
 
     private static IEnumerable<(string Key, object? Value)> Elements(object value) =>
@@ -121,9 +123,17 @@ public static class SettingsBinder
     private static bool IsRequired(PropertyInfo property) =>
         property.IsDefined(typeof(RequiredMemberAttribute), inherit: false);
 
-    private static bool IsSection(Type type, Assembly settingsAssembly) =>
+    // A section is any bindable class the framework didn't ship — a settings root or a Domain
+    // record nested inside one, from any assembly. Excluding the BCL rather than requiring
+    // assembly equality with TSettings is what lets a nested type live somewhere else.
+    private static bool IsSection(Type type) =>
         type.IsClass
         && type != typeof(string)
         && !typeof(IEnumerable).IsAssignableFrom(type)
-        && type.Assembly == settingsAssembly;
+        && !IsFrameworkType(type);
+
+    private static bool IsFrameworkType(Type type) =>
+        type.Assembly == typeof(object).Assembly
+        || (type.Namespace?.StartsWith("System", StringComparison.Ordinal) ?? false)
+        || (type.Namespace?.StartsWith("Microsoft", StringComparison.Ordinal) ?? false);
 }

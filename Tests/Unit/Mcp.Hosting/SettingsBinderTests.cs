@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using Mcp.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.UserSecrets;
@@ -166,6 +167,24 @@ public class SettingsBinderTests : IDisposable
             .BindSettings<ProbeFleetSettings>(_secretsId)
             .Bots.Length.ShouldBe(2);
 
+    // A nested settings type does not have to live in the same assembly as the settings root — a
+    // server can bind a shared Domain record straight into its own settings. IsSection used to
+    // require assembly equality with TSettings, so a section like this walked past validation
+    // entirely and a missing required member surfaced later as a bare null deep in the server
+    // instead of failing startup by name.
+    [Fact]
+    public void AMissingRequiredMemberOfANestedSectionFromAnotherAssembly_FailsNamingThePathToIt() =>
+        Should.Throw<InvalidOperationException>(() =>
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["SubAgent:Id"] = "researcher",
+                        ["SubAgent:Model"] = "anthropic/claude",
+                        ["SubAgent:McpServerEndpoints:0"] = "http://localhost/mcp"
+                    })
+                    .BindSettings<ProbeSubAgentSettings>(_secretsId))
+            .Message.ShouldContain("SubAgent.Name");
+
     // Voice's satellites bind as a dictionary and are materialised into SatelliteRegistry at
     // registration time, so the walk has to follow dictionary keys the same way it follows indexes.
     [Fact]
@@ -268,6 +287,13 @@ public record ProbeSatelliteConfig
     public required string Identity { get; init; }
 
     public required string Room { get; init; }
+}
+
+// Shaped like a server that binds a shared Domain record straight into its own settings, rather
+// than a record declared alongside the settings root.
+public record ProbeSubAgentSettings
+{
+    public required SubAgentDefinition SubAgent { get; init; }
 }
 
 // Shaped like the sandbox server: required value types that a null-only walk cannot see missing,
