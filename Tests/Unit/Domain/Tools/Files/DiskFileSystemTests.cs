@@ -131,44 +131,30 @@ public class DiskFileSystemTests : IDisposable
         readBack.ShouldBe(bytes);
     }
 
-    // The allowed extensions are the rule about what this root's files are, and a blob write is a
-    // write like any other. It used to bypass them entirely: a cross-mount copy streams through the
-    // chunk path, so any binary could land under any name in a .md-only vault — and overwrite a
-    // note on the way. The refusal is the envelope both shapes of the operation answer with.
+    // The allowed extensions govern what the agent may author as text — create, edit, read. Blob
+    // writes are the transfer path: cross-mount copy and move stream through them, and a disk root
+    // must take whatever file arrives (a .png attachment into the vault, a dataset into the
+    // sandbox). Gating them by extension would make every disk root refuse exactly those transfers,
+    // so blob writes are deliberately ungated on text roots too.
     [Fact]
-    public async Task TextRoot_BlobWriteOfADisallowedExtension_IsRefused()
+    public async Task TextRoot_BlobWriteOfAnyExtension_Writes()
     {
         var fs = TextRoot();
 
         var write = await fs.WriteBlobAsync("photo.png", Convert.ToBase64String([1, 2, 3]), 0,
             overwrite: true, createDirectories: true, CancellationToken.None);
 
-        write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.InvalidArgument);
-        File.Exists(Path.Combine(_root, "photo.png")).ShouldBeFalse();
+        write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Ok>();
+        File.Exists(Path.Combine(_root, "photo.png")).ShouldBeTrue();
     }
 
     [Fact]
-    public async Task TextRoot_BlobChunksOfADisallowedExtension_AreRefused()
+    public async Task TextRoot_BlobChunksOfAnyExtension_Write()
     {
-        var fs = TextRoot();
-
-        var thrown = await Should.ThrowAsync<FileSystemOperationException>(() => fs.WriteChunksAsync(
-            "notes/photo.png", Chunks([1, 2, 3]),
-            overwrite: true, createDirectories: true, CancellationToken.None));
-
-        thrown.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
-        thrown.Error.Retryable.ShouldBeFalse();
-        File.Exists(Path.Combine(_root, "notes", "photo.png")).ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task TextRoot_BlobChunksOfAnAllowedExtension_StillWrite()
-    {
-        await TextRoot().WriteChunksAsync("notes/todo.md", Chunks("hi"u8.ToArray()),
+        await TextRoot().WriteChunksAsync("notes/photo.png", Chunks([1, 2, 3]),
             overwrite: true, createDirectories: true, CancellationToken.None);
 
-        (await File.ReadAllTextAsync(Path.Combine(_root, "notes", "todo.md"))).ShouldBe("hi");
+        File.Exists(Path.Combine(_root, "notes", "photo.png")).ShouldBeTrue();
     }
 
     // A plain disk root has no such rule, so its blob writes take whatever bytes they are given.

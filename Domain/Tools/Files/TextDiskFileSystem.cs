@@ -54,38 +54,9 @@ public class TextDiskFileSystem(
     public override Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct) =>
         Task.FromResult(_edit.Run(path, edits));
 
-    // The allowed extensions are this root's rule about what its files are, and a blob write is a
-    // write like any other — the cross-mount copy streams through the chunk half of it. Ungated, a
-    // copy could plant any bytes under any name here, and overwrite an existing note on the way. The
-    // gate is per path, not per operation: the mount still advertises fs_blob_write, exactly as it
-    // advertises fs_create while refusing a .png.
-    public override Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
-        string path, string contentBase64, long offset, bool overwrite, bool createDirectories, CancellationToken ct) =>
-        DisallowedExtension(path) is { } refusal
-            ? Task.FromResult<FsResult<FsBlobWriteResult>>(new FsResult<FsBlobWriteResult>.Err(refusal))
-            : base.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct);
-
-    public override Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
-        bool overwrite, bool createDirectories, CancellationToken ct) =>
-        DisallowedExtension(path) is { } refusal
-            ? throw new FileSystemOperationException(refusal)
-            : base.WriteChunksAsync(path, chunks, overwrite, createDirectories, ct);
-
-    // The same refusal the text tools give, in the shape a caller of either write can read: the
-    // envelope for the ranged write, the typed exception for the streamed one.
-    private ToolErrorResult? DisallowedExtension(string path)
-    {
-        var ext = Path.GetExtension(path).ToLowerInvariant();
-        return allowedExtensions.Contains(ext)
-            ? null
-            : new ToolErrorResult
-            {
-                ErrorCode = ToolError.Codes.InvalidArgument,
-                Message = $"File extension '{ext}' not allowed. Allowed: {string.Join(", ", allowedExtensions)}",
-                Retryable = false
-            };
-    }
-
+    // The allowed extensions gate only what the agent authors as text. The inherited blob writes
+    // stay ungated on purpose: they are the transfer path — cross-mount copy and move stream
+    // through them, and a disk root must take whatever file arrives, whatever its extension.
     public override Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,
         string? directoryPath, string? filePattern, int maxResults, int contextLines,
         VfsTextSearchOutputMode outputMode, CancellationToken ct) =>
