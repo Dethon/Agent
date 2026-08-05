@@ -39,7 +39,10 @@ internal static class CallToolErrorFilter
                 {
                     return await next(context, cancellationToken);
                 }
-                catch (OperationCanceledException)
+                // Only the caller's own token tripping is a hang-up. An HttpClient timeout throws
+                // TaskCanceledException with the same shape and no caller behind it; that is an
+                // ordinary failure and falls through to the logged error-result path below.
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     throw;
                 }

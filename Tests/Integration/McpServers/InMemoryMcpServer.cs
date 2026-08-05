@@ -63,6 +63,19 @@ public sealed class FailingTools
     [McpServerTool(Name = "cancels")]
     [Description("Test tool that always cancels, like an aborted long poll.")]
     public static string Cancels() => throw new OperationCanceledException();
+
+    // An HttpClient timeout throws TaskCanceledException (an OperationCanceledException subclass)
+    // with no caller cancellation behind it. The tool's own token is never touched.
+    [McpServerTool(Name = "times_out")]
+    [Description("Test tool that fails like an HttpClient timeout: cancelled, but not by the caller.")]
+    public static string TimesOut() => throw new TaskCanceledException();
+
+    // Hangs until the request's own token is cancelled, so a test can drive a genuine
+    // caller-cancelled OperationCanceledException instead of a tool-thrown one.
+    [McpServerTool(Name = "hangs")]
+    [Description("Test tool that hangs until the caller's own token is cancelled.")]
+    public static Task Hangs(CancellationToken cancellationToken) =>
+        Task.Delay(Timeout.Infinite, cancellationToken);
 }
 // What a registration added, without booting anything. Counting filters is the one question both
 // hosting calls and every real server are asked, so it is written once.

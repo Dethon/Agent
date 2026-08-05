@@ -56,22 +56,60 @@ public class ChannelServerExtensionsTests
 
     // The rule the six copies of this filter all had to state for themselves: a long poll ends in
     // cancellation whenever the agent hangs up or the server shuts down, and mapping that to an
-    // error result would hand the agent's pump something to retry on.
+    // error result would hand the agent's pump something to retry on. What decides that is the
+    // request's own token, not the exception's runtime type — an OperationCanceledException the
+    // tool threw on its own, with the caller's token untouched, is an ordinary failure.
     //
     // Asserted through a marked error mapper rather than by expecting a throw: the SDK's own outer
     // handler catches whatever the filter rethrows and answers with a generic message of its own,
     // so "did this exception reach the filter's error path" is the question that can be observed
     // over the wire — and it is the question the rule is about.
     [Fact]
-    public async Task CallToolFilter_ACancelledCall_DoesNotBecomeTheFiltersErrorResult()
+    public async Task CallToolFilter_AnUncancelledOperationCanceledException_BecomesTheFiltersErrorResult()
     {
         await using var server = await StartAsync(Marked);
 
         var cancelled = await server.Client.CallToolAsync("cancels");
-        var failed = await server.Client.CallToolAsync("throws");
 
-        InMemoryMcpServer.Text(cancelled).ShouldNotContain(Marker);
-        InMemoryMcpServer.Text(failed).ShouldContain(Marker);
+        InMemoryMcpServer.Text(cancelled).ShouldContain(Marker);
+    }
+
+    // An HttpClient timeout throws TaskCanceledException with the same shape as a genuine
+    // cancellation, but the request's own token was never cancelled — this must not escape the
+    // filter the way a real caller cancellation does.
+    [Fact]
+    public async Task CallToolFilter_ATaskCanceledExceptionWithNoCallerCancellation_BecomesTheFiltersErrorResult()
+    {
+        await using var server = await StartAsync(Marked);
+
+        var timedOut = await server.Client.CallToolAsync("times_out");
+
+        InMemoryMcpServer.Text(timedOut).ShouldContain(Marker);
+    }
+
+    // Only a genuine caller cancellation — the request's own token tripping — is exempt from the
+    // filter's error mapping. Proven server-side: the mapper must never run once the caller who
+    // issued the request is gone, regardless of what the client observes about a dead connection.
+    [Fact]
+    public async Task CallToolFilter_ACancelledRequestToken_NeverReachesTheErrorMapper()
+    {
+        var mapped = false;
+        var server = await StartAsync(ex =>
+        {
+            mapped = true;
+            return Marked(ex);
+        });
+
+        var hangingCall = server.Client.CallToolAsync("hangs").AsTask();
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+        await server.Client.DisposeAsync();
+
+        await Should.ThrowAsync<Exception>(() => hangingCall);
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+        mapped.ShouldBeFalse();
+
+        await server.App.StopAsync();
+        await server.App.DisposeAsync();
     }
 
     private const string Marker = "mapped-by-the-channel-filter";
