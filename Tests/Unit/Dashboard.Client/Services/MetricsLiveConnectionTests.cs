@@ -625,6 +625,25 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _hub.StartAttempts.ShouldBeLessThan(100);
     }
 
+    // The other disposal races end in a failed start, where the loop condition is what stops the
+    // module. A start that succeeds after disposal took the become-live path instead — status, epoch,
+    // catch-up and a hold on a binder nobody is going to unbind again — on a module that is gone.
+    [Fact]
+    public async Task DisposeAsync_AStartSucceedsAfterwards_TheModuleBecomesNothing()
+    {
+        _hub.StartGate = new TaskCompletionSource();
+        var connecting = _liveConnection.ConnectAsync();
+        await WaitForAsync(() => _hub.StartAttempts >= 1);
+
+        await _liveConnection.DisposeAsync();
+        _hub.StartGate.SetResult();
+        await FinishAsync(connecting);
+
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connecting);
+        _connectionStore.State.Epoch.ShouldBe(0);
+        _catchUp.Runs.ShouldBe(0);
+    }
+
     private static async Task WaitForAsync(Func<bool> condition)
     {
         foreach (var _ in Enumerable.Range(0, 100))

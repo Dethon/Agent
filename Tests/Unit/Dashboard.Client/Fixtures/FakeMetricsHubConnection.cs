@@ -15,6 +15,10 @@ public sealed class FakeMetricsHubConnection : IMetricsHubConnection
 
     public bool Disposed { get; private set; }
 
+    // Holds a start open, so a test can dispose the module while a start that is going to succeed is
+    // still in flight.
+    public TaskCompletionSource? StartGate { get; set; }
+
     public event Func<Exception?, Task>? Closed;
     public event Func<Exception?, Task>? Reconnecting;
     public event Func<string?, Task>? Reconnected;
@@ -38,6 +42,11 @@ public sealed class FakeMetricsHubConnection : IMetricsHubConnection
     {
         StartAttempts++;
         await Task.Yield();
+
+        if (StartGate is { } gate)
+        {
+            await gate.Task;
+        }
 
         if (FailedStartsRemaining > 0)
         {
