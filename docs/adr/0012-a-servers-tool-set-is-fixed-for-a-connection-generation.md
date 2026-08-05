@@ -26,9 +26,13 @@ every one of them.
 
 The tool set is fetched once per **connection generation** — one successful connect or
 reconnect — and both capability questions go through one private `OffersToolAsync`, which
-reads the cached set. A reconnect discards the cache (`ConnectAsync` clears it), so a
-server that restarted with different tools is seen correctly the moment the connection is
-rebuilt.
+reads the cached set. The cache is tagged with the `McpClient` that produced it and read
+only when that client is still the connection's current one (compared by reference).
+Nothing is cleared on reconnect: a reconnect swaps in a new client, the tag no longer
+matches, and the next capability question probes the new server. A server that restarted
+with different tools is seen correctly the moment the connection is rebuilt, and a probe
+started on the old generation that finishes after the reconnect cannot poison the new
+one — its result carries the old client's tag and is ignored.
 
 The generation is the unit rather than the process, the connection object, or a timed
 expiry, because a reconnect is the only event that can put a different server process on
@@ -59,7 +63,9 @@ this repo removed from filesystem backends by deriving tools from overrides.
 - A channel server that registers tools lazily, after its transport starts, would be seen
   as not having them for the life of the connection. No server does this today, and this
   record is where to look when one first tries.
-- A connection must discard its cache on reconnect. That is one line, and forgetting it
-  reintroduces the process-lifetime cache rejected above, so it is worth a test.
+- The owner tag is what keeps the cache generational. Replacing it with a clear-on-connect
+  would reopen the race it closes: a slow probe from the old generation landing after the
+  clear would reinstall the old server's tools. Both directions are pinned by tests in
+  `McpChannelConnectionToolCacheTests`.
 - The saving is per target per turn on agent-initiated turns, which is the path timers,
   alarms and scheduled tasks all take.

@@ -53,10 +53,12 @@ because the reason is per member.
 
 ## Considered options
 
-**Unify on throwing.** One rule, easy to state. Rejected: `DeliveryTargetResolver` would
-wrap every target in a `try`/`catch` purely to keep iterating, and the catch would have to
-distinguish "not connected" from a genuine transport failure, which is the distinction
-the null already makes for free.
+**Unify on throwing.** One rule, easy to state. Rejected: the null makes the common
+"nothing here" answers — not connected, attach-only, no `create_conversation` tool — one
+cheap value the resolver reads without ceremony. The resolver does still wrap each call in
+a catch, because a genuine transport failure (an `HttpRequestException`, say) escapes as
+an exception; the null spares that catch from having to tell "not connected" apart from
+a real failure, which is the distinction it makes for free.
 
 **Unify on a nullable or result type everywhere.** The `HubResult<T>` shape from ADR 0004
 applied to channels. Rejected here for a reason that does not apply there: in WebChat, 24
