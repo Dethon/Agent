@@ -39,21 +39,40 @@ public class MediaLibraryFileSystemTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    // The read-only refusal used to sit on WriteBlobAsync alone, so a cross-mount copy — which
+    // The landing refusal used to sit on WriteBlobAsync alone, so a cross-mount copy — which
     // streams through WriteChunksAsync — put a real file where the virtual status.json is. That file
     // was then invisible (the overlay shadows reads, Merge dedupes globs) and unremovable (delete on
-    // the status path answers "read-only"), which is as stuck as a file gets.
+    // the status path answers "read-only"), which is as stuck as a file gets. A write to a live
+    // download's status file lands inside that download's directory, so the landing reason covers
+    // it: the file dies with the download, which is the more useful thing to tell the agent.
     [Fact]
     public async Task WriteChunks_OntoTheVirtualStatusFile_IsRefusedAndWritesNothing()
     {
         _client.Add(Item(42));
 
-        var write = await Should.ThrowAsync<NotSupportedException>(() => _sut.WriteChunksAsync(
+        var write = await Should.ThrowAsync<FileSystemOperationException>(() => _sut.WriteChunksAsync(
             "downloads/42/status.json", Chunks("stale snapshot"),
             overwrite: true, createDirectories: true, CancellationToken.None));
 
-        write.Message.ShouldContain("read-only");
+        write.Error.Message.ShouldContain("lands inside");
         File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
+    }
+
+    // A leftover status file is an ordinary file, so both halves of a write reach the disk.
+    [Fact]
+    public async Task WritesOntoALeftoverStatusFile_Succeed()
+    {
+        await WriteLeftoverStatus();
+
+        (await _sut.WriteBlobAsync("downloads/99/status.json", Convert.ToBase64String("ranged"u8.ToArray()),
+                offset: 0, overwrite: true, createDirectories: false, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobWriteResult>.Ok>();
+
+        (await _sut.WriteChunksAsync("downloads/99/status.json", Chunks("streamed"),
+            overwrite: true, createDirectories: false, CancellationToken.None)).ShouldBe(8);
+
+        (await File.ReadAllTextAsync(Path.Combine(_libraryRoot, "downloads", "99", "status.json")))
+            .ShouldBe("streamed");
     }
 
     // Both halves of a read of a live download's status file answer the same thing: it is a
@@ -100,16 +119,17 @@ public class MediaLibraryFileSystemTests : IDisposable
     {
         _client.Add(Item(42));
 
-        var write = await Should.ThrowAsync<NotSupportedException>(() => _sut.WriteChunksAsync(
+        var write = await Should.ThrowAsync<FileSystemOperationException>(() => _sut.WriteChunksAsync(
             path, Chunks("stale snapshot"), overwrite: true, createDirectories: true, CancellationToken.None));
 
-        write.Message.ShouldContain("read-only");
+        write.Error.Message.ShouldContain("lands inside");
         File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
     }
 
     [Theory]
     [InlineData("downloads/42/./status.json")]
     [InlineData("downloads/43/../42/status.json")]
+    [InlineData("downloads/42/./book.epub")]
     public async Task BlobWrite_OntoADottedSpellingOfTheVirtualStatusFile_IsRefused(string path)
     {
         _client.Add(Item(42));
@@ -117,9 +137,37 @@ public class MediaLibraryFileSystemTests : IDisposable
         var write = await _sut.WriteBlobAsync(path, Convert.ToBase64String("stale"u8.ToArray()),
             offset: 0, overwrite: true, createDirectories: true, CancellationToken.None);
 
-        write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>()
-            .Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
-        File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
+        var error = write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain("lands inside");
+        Directory.Exists(Path.Combine(_libraryRoot, "downloads", "42")).ShouldBeFalse();
+    }
+
+    // A directory whose name merely looks like an id is an ordinary directory, so a write into it
+    // is an ordinary write.
+    [Theory]
+    [InlineData("042")]
+    [InlineData("+42")]
+    public async Task BlobWrite_IntoALookalikeDownloadDirectory_Succeeds(string dir)
+    {
+        _client.Add(Item(42));
+
+        (await _sut.WriteBlobAsync($"downloads/{dir}/book.epub", Convert.ToBase64String("book"u8.ToArray()),
+                offset: 0, overwrite: true, createDirectories: true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobWriteResult>.Ok>();
+    }
+
+    [Fact]
+    public async Task BlobWrite_IntoAnAbsoluteSpellingOfALiveDownloadDirectory_IsRefused()
+    {
+        _client.Add(Item(42));
+
+        var write = await _sut.WriteBlobAsync(
+            Path.Combine(_libraryRoot, "downloads", "42", "book.epub"),
+            Convert.ToBase64String("book"u8.ToArray()),
+            offset: 0, overwrite: true, createDirectories: true, CancellationToken.None);
+
+        write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>().Error.Message.ShouldContain("lands inside");
     }
 
     // A read intent classifies one path, whichever way that path is spelled: the dotted and

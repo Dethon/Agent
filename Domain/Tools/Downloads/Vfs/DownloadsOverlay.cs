@@ -13,7 +13,8 @@ namespace Domain.Tools.Downloads.Vfs;
 public enum DownloadsIntent
 {
     TextRead,
-    ByteRead
+    ByteRead,
+    Land
 }
 
 // Overlays download semantics on the media filesystem's downloads/ subtree: every active
@@ -79,6 +80,15 @@ public sealed class DownloadsOverlay(
                 $"'{path}' is a live download's status file: a view rendered when it is read, not "
                 + "bytes on disk. Read it as text with fs_read.",
                 "fs_read on this path reports the download's state, progress and eta."),
+            // Every way of putting bytes inside a live download's directory carries this one
+            // reason, including a write to its status file: that write lands inside the directory
+            // too, and "it dies when the download is cancelled" is the more useful thing to say.
+            DownloadsIntent.Land when await TouchesActiveDownloadAsync(path, ct) => Error(
+                ToolError.Codes.UnsupportedOperation,
+                $"'{path}' lands inside an active download's directory; anything placed there is "
+                + "removed when the download is cancelled.",
+                "Wait for the download to finish, or put the file somewhere outside "
+                + $"{MediaFilesystem.DownloadsSubdir}/<id>."),
             _ => null
         };
     }
