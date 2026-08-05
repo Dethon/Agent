@@ -97,6 +97,25 @@ public class MediaLibraryFileSystemTests : IDisposable
         error.Message.ShouldContain("active download");
     }
 
+    // The other half of the same boundary. A payload file inside a live download is not "above" the
+    // download directory, so the ancestor rule never saw it: moving it out left qBittorrent
+    // rewriting the file it still owns and the moved copy orphaned. And a move whose destination
+    // lands inside the directory puts the file where delete-as-cancel destroys it.
+    [Theory]
+    [InlineData("downloads/42/payload.mkv", "Movies/payload.mkv")]
+    [InlineData("Movies/payload.mkv", "downloads/42/payload.mkv")]
+    [InlineData("Movies/payload.mkv", "downloads/42")]
+    public async Task Move_AcrossALiveDownloadsBoundary_IsRefused(string source, string destination)
+    {
+        _client.Add(Item(42));
+
+        var move = await _sut.MoveAsync(source, destination, CancellationToken.None);
+
+        var error = move.ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain("active download");
+    }
+
     [Fact]
     public async Task Move_APathWithNoLiveDownloadUnderIt_StillMoves()
     {

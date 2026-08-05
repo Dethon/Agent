@@ -26,12 +26,13 @@ public sealed class DownloadsOverlay(
 
     public bool IsVirtualPath(string path) => ParseNode(path).Kind == DownloadNodeKind.StatusFile;
 
-    // True when a live download's directory is at this path or under it. Deleting such a path is
-    // the documented cancel, but moving it is not: the download keeps writing and recreates the
-    // directory it lost, so a later delete cancels and cleans the recreated one while the moved
-    // copy is orphaned. Answered for the directory and every ancestor, since moving a parent takes
-    // the download's directory with it.
-    public async Task<bool> HoldsActiveDownloadAsync(string path, CancellationToken ct)
+    // True when this path and a live download's directory overlap: the directory itself, any
+    // ancestor of it (moving a parent takes the directory with it), and anything under it (the
+    // payload files the download is still writing). Deleting such a path is the documented cancel,
+    // but moving it is not — on the way out the download keeps writing and recreates what it lost,
+    // leaving the moved copy orphaned, and on the way in whatever landed inside is destroyed the
+    // moment the download is cancelled.
+    public async Task<bool> TouchesActiveDownloadAsync(string path, CancellationToken ct)
     {
         var candidate = ToMountRelative(path).Trim('/');
         var items = await downloadClient.GetDownloadItems(ct);
@@ -39,7 +40,8 @@ public sealed class DownloadsOverlay(
             .Select(i => $"{MediaFilesystem.DownloadsSubdir}/{i.Id}")
             .Any(dir => candidate.Length == 0
                         || dir.Equals(candidate, StringComparison.Ordinal)
-                        || dir.StartsWith(candidate + "/", StringComparison.Ordinal));
+                        || dir.StartsWith(candidate + "/", StringComparison.Ordinal)
+                        || candidate.StartsWith(dir + "/", StringComparison.Ordinal));
     }
 
     public async Task<FsResult<FsReadResult>?> TryReadAsync(string path, CancellationToken ct)
