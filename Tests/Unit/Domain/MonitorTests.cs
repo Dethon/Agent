@@ -114,6 +114,13 @@ internal sealed class FakeAiAgent : DisposableAgent
             yield return update;
         }
 
+        // The real agent persists the turn to the thread as part of running it, so the fake
+        // does too — a recall hook reading the thread mid-build must not see this yet.
+        if (thread is FakeAgentThread fakeThread)
+        {
+            fakeThread.PersistedMessages.AddRange(messages);
+        }
+
         Events.Enqueue("run-complete");
     }
 
@@ -131,7 +138,10 @@ internal sealed class FakeAiAgent : DisposableAgent
         return ValueTask.CompletedTask;
     }
 
-    private sealed class FakeAgentThread : AgentSession;
+    internal sealed class FakeAgentThread : AgentSession
+    {
+        public List<ChatMessage> PersistedMessages { get; } = [];
+    }
 }
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory

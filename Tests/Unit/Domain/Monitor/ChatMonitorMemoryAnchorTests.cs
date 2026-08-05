@@ -19,10 +19,10 @@ public class ChatMonitorMemoryAnchorTests
     public async Task Monitor_RecallHook_IsHandedAPersistedCountExcludingTheTurnBeingBuilt()
     {
         var agent = MonitorTestMocks.CreateAgent();
-        // Each run the fake agent accepts is a turn that has been persisted by the time the
-        // next one is built, so its count stands in for the persisted message count the
-        // anchor is taken from.
-        var recall = new RecordingRecallHook(() => agent.ReceivedMessages.Count);
+        // The hook counts what the thread it is handed has persisted — the same read the real
+        // recall makes. The fake agent persists each turn onto the thread as part of running
+        // it, so a recall that ran after the run would see its own turn in the count.
+        var recall = new RecordingRecallHook();
         var channel = MonitorTestMocks.CreateChannel(
             messages:
             [
@@ -43,7 +43,7 @@ public class ChatMonitorMemoryAnchorTests
         recall.Captures.ShouldBe([("first", 0), ("second", 1)]);
     }
 
-    private sealed class RecordingRecallHook(Func<int> persistedCount) : IMemoryRecallHook
+    private sealed class RecordingRecallHook : IMemoryRecallHook
     {
         public List<(string Text, int PersistedCount)> Captures { get; } = [];
 
@@ -55,7 +55,8 @@ public class ChatMonitorMemoryAnchorTests
             AgentSession thread,
             CancellationToken ct)
         {
-            Captures.Add((message.Text, persistedCount()));
+            var persisted = ((FakeAiAgent.FakeAgentThread)thread).PersistedMessages;
+            Captures.Add((message.Text, persisted.Count));
             return Task.CompletedTask;
         }
     }
