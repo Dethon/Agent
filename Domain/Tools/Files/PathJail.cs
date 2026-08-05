@@ -40,10 +40,26 @@ public sealed class PathJail
 
     public bool Contains(string fullPath) =>
         IsUnder(fullPath, Root, _rootWithSeparator) &&
-        IsUnder(
-            ResolvePhysical(Path.TrimEndingDirectorySeparator(fullPath)),
-            _physicalRoot.Value.Root,
-            _physicalRoot.Value.WithSeparator);
+        TryResolvePhysical(Path.TrimEndingDirectorySeparator(fullPath), out var physical) &&
+        IsUnder(physical, _physicalRoot.Value.Root, _physicalRoot.Value.WithSeparator);
+
+    // A path whose physical location cannot be established — a symlink cycle has no final target,
+    // and resolving one throws — is not a path this jail can vouch for, so it is outside. Callers
+    // ask this before every operation and already answer "denied"; an exception here would come out
+    // of a tool instead of the envelope the prompt promises.
+    private static bool TryResolvePhysical(string fullPath, out string physical)
+    {
+        try
+        {
+            physical = ResolvePhysical(fullPath);
+            return true;
+        }
+        catch (IOException)
+        {
+            physical = string.Empty;
+            return false;
+        }
+    }
 
     private static bool IsUnder(string fullPath, string root, string rootWithSeparator) =>
         fullPath.Equals(root, _comparison) || fullPath.StartsWith(rootWithSeparator, _comparison);

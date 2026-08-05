@@ -120,6 +120,24 @@ public class PathJailTests : IDisposable
         _jail.Contains(Path.Combine(_root, "dangling.txt")).ShouldBeFalse();
     }
 
+    // A pair of symlinks pointing at each other has no final target, and asking for one throws.
+    // Containment is a question every tool asks before it does anything, so the answer has to be
+    // "no" — the denied envelope the tool sites already handle — never an exception out of the jail.
+    [Fact]
+    public void Contains_ASymlinkCycle_IsOutsideAndDoesNotThrow()
+    {
+        var first = Path.Combine(_root, "loop-a");
+        var second = Path.Combine(_root, "loop-b");
+        if (!TryCreateSymlink(first, second, directory: false) ||
+            !TryCreateSymlink(second, first, directory: false))
+        {
+            return;
+        }
+
+        _jail.Contains(first).ShouldBeFalse();
+        _jail.TryResolve("loop-a", out _).ShouldBeFalse();
+    }
+
     [Fact]
     public void Root_IsCanonicalAndHasNoTrailingSeparator()
     {
