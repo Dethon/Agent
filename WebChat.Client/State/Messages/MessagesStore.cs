@@ -39,18 +39,14 @@ public sealed class MessagesStore : IDisposable
     {
         MessagesLoaded a => state with
         {
-            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
-            {
-                [a.TopicId] = a.Messages
-            },
+            MessagesByTopic = state.MessagesByTopic.With(a.TopicId, a.Messages),
             LoadedTopics = new HashSet<string>(state.LoadedTopics) { a.TopicId },
-            FinalizedMessageIdsByTopic = new Dictionary<string, IReadOnlySet<string>>(state.FinalizedMessageIdsByTopic)
-            {
-                [a.TopicId] = a.Messages
+            FinalizedMessageIdsByTopic = state.FinalizedMessageIdsByTopic.With(
+                a.TopicId,
+                (IReadOnlySet<string>)a.Messages
                     .Select(m => m.MessageId)
                     .Where(id => id is not null)
-                    .ToHashSet()!
-            }
+                    .ToHashSet()!)
         },
 
         AddMessage a => AddMessageWithDedup(state, a.TopicId, a.Message, a.StreamMessageId),
@@ -63,10 +59,8 @@ public sealed class MessagesStore : IDisposable
         RemoveLastMessage a when state.MessagesByTopic.TryGetValue(a.TopicId, out var messages) && messages.Count > 0 =>
             state with
             {
-                MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
-                {
-                    [a.TopicId] = messages.Take(messages.Count - 1).ToList()
-                }
+                MessagesByTopic = state.MessagesByTopic.With(
+                    a.TopicId, messages.Take(messages.Count - 1).ToList())
             },
 
         RemoveLastMessage => state, // No messages to remove
@@ -74,15 +68,18 @@ public sealed class MessagesStore : IDisposable
         RemoveTrailingErrors a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) =>
             state with
             {
-                MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
-                {
-                    [a.TopicId] = msgs.Reverse().SkipWhile(m => m.IsError).Reverse().ToList()
-                }
+                MessagesByTopic = state.MessagesByTopic.With(
+                    a.TopicId, msgs.Reverse().SkipWhile(m => m.IsError).Reverse().ToList())
             },
 
         RemoveTrailingErrors => state,
 
-        ClearMessages a => ClearTopicMessages(state, a.TopicId),
+        ClearMessages a => state with
+        {
+            MessagesByTopic = state.MessagesByTopic.Without(a.TopicId),
+            LoadedTopics = new HashSet<string>(state.LoadedTopics.Where(t => t != a.TopicId)),
+            FinalizedMessageIdsByTopic = state.FinalizedMessageIdsByTopic.Without(a.TopicId)
+        },
 
         ClearAllMessages => MessagesState.Initial,
 
@@ -109,26 +106,7 @@ public sealed class MessagesStore : IDisposable
             return messagesByTopic;
         }
 
-        return new Dictionary<string, IReadOnlyList<ChatMessageModel>>(messagesByTopic)
-        {
-            [topicId] = updated
-        };
-    }
-
-    private static MessagesState ClearTopicMessages(MessagesState state, string topicId)
-    {
-        var messages = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic);
-        messages.Remove(topicId);
-
-        var finalized = new Dictionary<string, IReadOnlySet<string>>(state.FinalizedMessageIdsByTopic);
-        finalized.Remove(topicId);
-
-        return state with
-        {
-            MessagesByTopic = messages,
-            LoadedTopics = new HashSet<string>(state.LoadedTopics.Where(t => t != topicId)),
-            FinalizedMessageIdsByTopic = finalized
-        };
+        return messagesByTopic.With(topicId, (IReadOnlyList<ChatMessageModel>)updated);
     }
 
     private static MessagesState AddMessageWithDedup(
@@ -157,14 +135,9 @@ public sealed class MessagesStore : IDisposable
 
         return state with
         {
-            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
-            {
-                [topicId] = existingMessages.Append(message).ToList()
-            },
-            FinalizedMessageIdsByTopic = new Dictionary<string, IReadOnlySet<string>>(state.FinalizedMessageIdsByTopic)
-            {
-                [topicId] = newFinalizedIds
-            }
+            MessagesByTopic = state.MessagesByTopic.With(
+                topicId, (IReadOnlyList<ChatMessageModel>)existingMessages.Append(message).ToList()),
+            FinalizedMessageIdsByTopic = state.FinalizedMessageIdsByTopic.With(topicId, newFinalizedIds)
         };
     }
 }
