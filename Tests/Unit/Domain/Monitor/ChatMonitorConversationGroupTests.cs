@@ -215,6 +215,41 @@ public class ChatMonitorConversationGroupTests
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
+    [Fact]
+    public async Task Group_ThreadResolverDisposedAtShutdown_LogsAndCompletesTheGroup()
+    {
+        // Resolving the context is the first thing the group does, before any guard. If the DI
+        // container disposed the resolver at shutdown, the throw would leave the stream merge
+        // swallowing it, the grouping never completed and every later message for this
+        // conversation queued into a group nobody reads. It ends the group instead.
+        var logger = new Mock<ILogger<ChatMonitor>>();
+        var channel = new FakeChannelConnection();
+        var threadResolver = new ChatThreadResolver();
+        threadResolver.Dispose();
+        await using var group = new ConversationGroup(
+            new AgentKey("conv-1"),
+            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
+            new DeliveryTargetResolver([channel], logger.Object),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+        var grouping = new FakeGrouping(new AgentKey("conv-1"));
+        grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
+        var completed = false;
+
+        await foreach (var _ in group.RunAsync(grouping, () => completed = true, CancellationToken.None))
+        { }
+
+        completed.ShouldBeTrue();
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<ObjectDisposedException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
     private sealed class FakeGrouping(AgentKey key)
         : IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)>
     {

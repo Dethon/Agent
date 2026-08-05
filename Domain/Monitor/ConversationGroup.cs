@@ -61,7 +61,12 @@ internal sealed class ConversationGroup(
         // completion callback and the turn token, so it exists before any message is read: a
         // command that found no live context would leave this group running against a context
         // resolved after it.
-        var context = threadResolver.Resolve(agentKey);
+        var context = TryResolveContext(onGroupComplete);
+        if (context is null)
+        {
+            yield break;
+        }
+
         context.RegisterCompletionCallback(onGroupComplete);
         using var linkedCts = context.GetLinkedTokenSource(ct);
         _turnCt = linkedCts.Token;
@@ -69,6 +74,28 @@ internal sealed class ConversationGroup(
         await foreach (var update in RunTurnsSequentiallyAsync(messages))
         {
             yield return update;
+        }
+    }
+
+    // The same protection the turn loop gives a half-built group, one stage earlier. Resolving
+    // the context is the first thing the group does, and it throws once the container has
+    // disposed the resolver at shutdown. Thrown out of RunAsync it would be swallowed by the
+    // monitor's stream merge, leaving the grouping never completed and every later message for
+    // this conversation queued into a group nobody reads. Completing the grouping here ends it,
+    // so a message arriving after a resolver that is up again opens a fresh group.
+    private ChatThreadContext? TryResolveContext(Action onGroupComplete)
+    {
+        try
+        {
+            return threadResolver.Resolve(agentKey);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Resolving the thread context failed for conversation {ConversationId} and agent {AgentId}; ending the group",
+                agentKey.ConversationId, agentKey.AgentId);
+            onGroupComplete();
+            return null;
         }
     }
 
