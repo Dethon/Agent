@@ -15,8 +15,11 @@
     {
         _subscription = Connection.StateObservable.Subscribe(state =>
         {
-            _status = state.Status;
-            InvokeAsync(StateHasChanged);
+            InvokeAsync(() =>
+            {
+                _status = state.Status;
+                StateHasChanged();
+            });
         });
     }
 

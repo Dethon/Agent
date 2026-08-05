@@ -153,11 +153,11 @@
         var savedTab = await Storage.GetStringAsync("memory.activeTab");
         if (!string.IsNullOrEmpty(savedTab)) _activeTab = savedTab;
 
-        _metricsSub = Metrics.StateObservable.Subscribe(m =>
+        _metricsSub = Metrics.StateObservable.Subscribe(m => InvokeAsync(() =>
         {
             _metrics = m;
-            InvokeAsync(StateHasChanged);
-        });
+            StateHasChanged();
+        }));
     }
 
     private async Task SetTab(string tab)
