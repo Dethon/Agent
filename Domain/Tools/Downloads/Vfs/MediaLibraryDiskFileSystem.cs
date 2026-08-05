@@ -61,9 +61,18 @@ public sealed class MediaLibraryDiskFileSystem(
     public override Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
         downloads.DeleteAsync(path, ct);
 
+    // Delete is the download's cancel, so it is left to the overlay; move has no such meaning and a
+    // live download whose directory moved keeps writing into one qBittorrent recreates.
     public override async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
         Refuse<FsMoveResult>(sourcePath, destinationPath)
-        ?? await base.MoveAsync(sourcePath, destinationPath, ct);
+        ?? (await downloads.HoldsActiveDownloadAsync(sourcePath, ct)
+            ? FsError.Fail<FsMoveResult>(ToolError.Codes.UnsupportedOperation,
+                $"'{sourcePath}' holds an active download; moving it would leave the download writing "
+                + "into a directory it recreates, and the moved copy orphaned.",
+                retryable: false,
+                hint: $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
+                      + "for it to finish, then move the files.")
+            : await base.MoveAsync(sourcePath, destinationPath, ct));
 
     public override async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>

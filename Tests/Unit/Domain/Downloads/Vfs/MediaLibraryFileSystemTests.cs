@@ -1,4 +1,6 @@
 using System.Text;
+using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Shouldly;
@@ -74,6 +76,36 @@ public class MediaLibraryFileSystemTests : IDisposable
 
         written.ShouldBe(5);
         (await File.ReadAllTextAsync(Path.Combine(_libraryRoot, "Movies", "notes.txt"))).ShouldBe("hello");
+    }
+
+    // Deleting downloads/<id> is the documented cancel, but moving it is not: qBittorrent keeps
+    // writing, recreates the directory it lost, and a later delete then cancels and cleans the
+    // recreated one while the moved copy is orphaned. The refusal covers the download directory and
+    // anything above it, because moving the parent takes the same directory with it.
+    [Theory]
+    [InlineData("downloads/42")]
+    [InlineData("downloads")]
+    [InlineData("/downloads/42")]
+    public async Task Move_APathHoldingALiveDownload_IsRefused(string source)
+    {
+        _client.Add(Item(42));
+
+        var move = await _sut.MoveAsync(source, "Movies/42", CancellationToken.None);
+
+        var error = move.ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain("active download");
+    }
+
+    [Fact]
+    public async Task Move_APathWithNoLiveDownloadUnderIt_StillMoves()
+    {
+        _client.Add(Item(42));
+
+        (await _sut.MoveAsync("Movies/old", "Movies/new", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
+        (await _sut.MoveAsync("downloads/7", "Movies/7", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
     }
 
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> Chunks(string content)
