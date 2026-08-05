@@ -127,6 +127,62 @@ public class GlobFilesToolTests
         await ShouldBeInvalid(() => _tool.TestRun("**/*", basePath, CancellationToken.None));
     }
 
+    // An absolute pattern must be relativized against the root the matcher actually runs from:
+    // relativizing against the mount root while matching under root+basePath searched books/books.
+    [Fact]
+    public async Task Run_AbsolutePatternWithBasePath_RelativizesAgainstTheBasePathRoot()
+    {
+        var expectedRoot = Path.Combine(BasePath, "books");
+        _mockClient.Setup(c => c.Glob(expectedRoot, "*.epub", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Path.Combine(expectedRoot, "moby-dick.epub")]);
+
+        var result = await _tool.TestRun("/library/books/*.epub", "books", CancellationToken.None);
+
+        result["entries"]!.AsArray().Count.ShouldBe(1);
+        _mockClient.Verify(c => c.Glob(expectedRoot, "*.epub", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_AbsolutePatternOutsideTheBasePath_ReturnsInvalidArgument()
+    {
+        await ShouldBeInvalid(() => _tool.TestRun("/library/movies/*.mkv", "books", CancellationToken.None));
+    }
+
+    // ".." inside a name is not a traversal segment; only a whole ".." path segment escapes.
+    [Fact]
+    public async Task Run_WithANameContainingConsecutiveDots_MatchesInsteadOfRefusing()
+    {
+        _mockClient.Setup(c => c.Glob(BasePath, "**/v1..2.md", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["/library/docs/v1..2.md"]);
+
+        var result = await _tool.TestRun("**/v1..2.md", CancellationToken.None);
+
+        result["entries"]!.AsArray().Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Run_WithABasePathNameContainingConsecutiveDots_IsAccepted()
+    {
+        var expectedRoot = Path.Combine(BasePath, "v1..2");
+        _mockClient.Setup(c => c.Glob(expectedRoot, "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Path.Combine(expectedRoot, "a.txt")]);
+
+        var result = await _tool.TestRun("**/*", "v1..2", CancellationToken.None);
+
+        result["entries"]!.AsArray().Count.ShouldBe(1);
+    }
+
+    // The client refuses a pattern whose brace expansion overflows the cap; the tool turns that
+    // refusal into the same invalid-pattern envelope every other bad pattern gets.
+    [Fact]
+    public async Task Run_PatternWhoseExpansionOverflowsTheCap_ReturnsInvalidArgument()
+    {
+        _mockClient.Setup(c => c.Glob(BasePath, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ArgumentException("Glob pattern expands to too many patterns."));
+
+        await ShouldBeInvalid(() => _tool.TestRun(string.Concat(Enumerable.Repeat("{a,b}", 30)), CancellationToken.None));
+    }
+
     private static async Task ShouldBeInvalid(Func<Task<JsonNode>> call)
     {
         var result = await call();

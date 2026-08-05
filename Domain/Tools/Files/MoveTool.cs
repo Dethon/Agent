@@ -51,13 +51,10 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         });
     }
 
+    // No '..' screening here: the jail judges the canonical resolved path, so a traversal segment
+    // is caught by where it lands, and a name like v1..2.mkv is just a name.
     private FsResult<FsMoveResult>? Validate(string path)
     {
-        if (path.Contains("..", StringComparison.Ordinal))
-        {
-            return FsError.Invalid<FsMoveResult>($"{nameof(MoveTool)} path must not contain '..' segments.");
-        }
-
         return _jail.Contains(Path.GetFullPath(Combine(path)))
             ? null
             : FsError.Invalid<FsMoveResult>($"""

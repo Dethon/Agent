@@ -176,6 +176,110 @@ public class FileSystemBackendBaseTests
         _bare.DescribeBlobWrite.ShouldNotBeNullOrWhiteSpace();
     }
 
+    // A backend that follows the documented pattern: it overrides only the chunk methods and lets
+    // the base defaults answer the ranged wire calls.
+    private sealed class ChunkOnlyBackend(byte[] content) : FileSystemBackendBase
+    {
+        public override string FilesystemName => "chunked";
+
+        public override string DescribeMount => "A chunk-only mount driven by the base blob defaults.";
+
+        public byte[]? Written { get; private set; }
+
+        public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+            string path, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            foreach (var chunk in content.Chunk(4))
+            {
+                yield return chunk;
+            }
+        }
+
+        public override async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+            bool overwrite, bool createDirectories, CancellationToken ct)
+        {
+            var all = new List<byte>();
+            await foreach (var chunk in chunks.WithCancellation(ct))
+            {
+                all.AddRange(chunk.ToArray());
+            }
+
+            Written = [.. all];
+            return all.Count;
+        }
+    }
+
+    [Fact]
+    public async Task WriteBlobDefault_AtOffsetZero_DrivesTheChunkStream()
+    {
+        var backend = new ChunkOnlyBackend([]);
+
+        var result = await backend.WriteBlobAsync(
+            "/f", Convert.ToBase64String([1, 2, 3]), offset: 0, overwrite: false, createDirectories: true, default);
+
+        result.TryGetValue(out var value, out _).ShouldBeTrue();
+        value!.BytesWritten.ShouldBe(3);
+        value.TotalBytes.ShouldBe(3);
+        backend.Written.ShouldBe([1, 2, 3]);
+    }
+
+    // The streamed default always writes from the start, so honouring a nonzero offset is
+    // impossible; silently dropping it corrupted every multi-chunk transfer. It must refuse.
+    [Fact]
+    public async Task WriteBlobDefault_NonzeroOffset_RefusesInsteadOfWritingFromTheStart()
+    {
+        var backend = new ChunkOnlyBackend([]);
+
+        var result = await backend.WriteBlobAsync(
+            "/f", Convert.ToBase64String([4, 5]), offset: 3, overwrite: false, createDirectories: true, default);
+
+        var error = ErrorOf(result);
+        error.ShouldNotBeNull();
+        error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+        error.Message.ShouldContain("offset");
+        backend.Written.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ReadBlobDefault_HonoursTheRequestedRangeAcrossChunks()
+    {
+        var backend = new ChunkOnlyBackend([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+        var result = await backend.ReadBlobAsync("/f", offset: 3, length: 4, default);
+
+        result.TryGetValue(out var value, out _).ShouldBeTrue();
+        Convert.FromBase64String(value!.ContentBase64).ShouldBe(new byte[] { 4, 5, 6, 7 });
+        value.Eof.ShouldBeFalse();
+        value.TotalBytes.ShouldBe(10);
+    }
+
+    [Fact]
+    public async Task ReadBlobDefault_RangeReachingTheEnd_ReportsEof()
+    {
+        var backend = new ChunkOnlyBackend([1, 2, 3, 4, 5, 6]);
+
+        var result = await backend.ReadBlobAsync("/f", offset: 4, length: 10, default);
+
+        result.TryGetValue(out var value, out _).ShouldBeTrue();
+        Convert.FromBase64String(value!.ContentBase64).ShouldBe(new byte[] { 5, 6 });
+        value.Eof.ShouldBeTrue();
+        value.TotalBytes.ShouldBe(6);
+    }
+
+    [Fact]
+    public async Task ReadBlobDefault_OffsetPastTheEnd_ReturnsEmptyAndEof()
+    {
+        var backend = new ChunkOnlyBackend([1, 2]);
+
+        var result = await backend.ReadBlobAsync("/f", offset: 9, length: 4, default);
+
+        result.TryGetValue(out var value, out _).ShouldBeTrue();
+        value!.ContentBase64.ShouldBe(string.Empty);
+        value.Eof.ShouldBeTrue();
+        value.TotalBytes.ShouldBe(2);
+    }
+
     private static FsSearchScan Scan(string query) => new()
     {
         Query = query,
