@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -24,8 +25,17 @@ public sealed class ReplySpeaker(
     TimeProvider time,
     ILogger<ReplySpeaker> logger)
 {
+    // Which turn each live reply stream opened against, keyed by conversation. The hub can give a
+    // turn up at ReplyTimeoutMs and dispatch the next one while the agent is still writing the
+    // abandoned answer; that answer's StreamComplete then arrives against a turn it knows nothing
+    // about. One conversation's chunks arrive strictly in order (see ReplyTextAccumulator), so the
+    // turn that was live when the stream's first event landed is the turn its end belongs to.
+    private readonly ConcurrentDictionary<string, StreamToken> _streams = new();
+
     public void SpeakUtteranceReply(SatelliteSession session, SendReplyParams p)
     {
+        var stream = _streams.GetOrAdd(p.ConversationId, _ => session.Turn.OpenStream());
+
         switch (p.ContentType)
         {
             case ReplyContentType.Reasoning:
@@ -56,6 +66,7 @@ public sealed class ReplySpeaker(
                 if (p.IsComplete)
                 {
                     FlushAndSpeak(session, p.ConversationId);
+                    _streams.TryRemove(p.ConversationId, out _);
                 }
                 return;
 
@@ -68,7 +79,8 @@ public sealed class ReplySpeaker(
                 // waiting on audio still playing is the turn's decision: streaming may already have
                 // spoken everything, leaving this flush empty.
                 FlushAndSpeak(session, p.ConversationId);
-                session.Turn.EndStream();
+                _streams.TryRemove(p.ConversationId, out _);
+                stream.End();
                 return;
 
             default:
@@ -77,6 +89,7 @@ public sealed class ReplySpeaker(
                 if (p.IsComplete)
                 {
                     FlushAndSpeak(session, p.ConversationId);
+                    _streams.TryRemove(p.ConversationId, out _);
                     return;
                 }
                 SpeakReadySegments(session, p.ConversationId);

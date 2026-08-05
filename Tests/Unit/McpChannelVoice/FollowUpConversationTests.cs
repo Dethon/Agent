@@ -107,7 +107,7 @@ public class FollowUpConversationTests
             {
                 Session.Turn.BeginSegment().Complete();
             }
-            Session.Turn.EndStream();
+            Session.Turn.OpenStream().End();
         }
     }
 

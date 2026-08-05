@@ -776,6 +776,24 @@ public class ReplySpeakerTests
     }
 
     [Fact]
+    public void SpeakUtteranceReply_StreamCompleteFromAnAbandonedTurn_DoesNotSettleTheNewOne()
+    {
+        // FollowUpConversation gives a turn up at ReplyTimeoutMs and the next transcript resets it,
+        // while the agent is still finishing the abandoned answer. That answer's StreamComplete
+        // arrives afterwards: off the new turn it settles a reply nobody has spoken yet, so the
+        // chime plays and the mic reopens over the answer still coming.
+        _session.Turn.Reset();
+        Say(_speaker, "", ReplyContentType.ToolCall, false);   // the abandoned answer's stream opens
+
+        _session.Turn.Reset();                                 // the next turn is dispatched
+        var turn = _session.Turn.AwaitSpoken();
+
+        Say(_speaker, "", ReplyContentType.StreamComplete, true);
+
+        turn.IsCompleted.ShouldBeFalse();
+    }
+
+    [Fact]
     public void SpeakUtteranceReply_TheEnqueueIsRefusedAfterTheTextWasTaken_HandsItBackToTheBuffer()
     {
         // Asking the queue first only answers for the depth limit, and it answers in advance: a
