@@ -17,6 +17,10 @@ public sealed class MediaLibraryDiskFileSystem(
 {
     public const string Name = "media";
 
+    // Read off the parameter here rather than in a member body: the same value goes to the base
+    // constructor, and capturing the parameter itself would leave two copies of the disk root.
+    private readonly string _rootPath = root.BaseLibraryPath;
+
     // Composed here rather than handed in like the generic disk root's: this type is the media
     // library, so its prose belongs with it, and it already holds the path that text names.
     private static string Mount(LibraryPathConfig root) =>
@@ -51,8 +55,18 @@ public sealed class MediaLibraryDiskFileSystem(
             return disk;
         }
 
-        return new FsResult<FsGlobResult>.Ok(
-            Merge(entries, await downloads.GlobEntriesAsync(basePath, pattern, ct)));
+        // The overlay matches mount-relative candidates, so it must see the pattern the disk matcher
+        // ran, not the caller's absolute spelling of it — no candidate ever carries the root prefix,
+        // so an absolute pattern used to list the real files and omit every virtual status.json.
+        // Separators are normalized because virtual paths are always '/'-separated. A pattern
+        // outside the glob root matched nothing on disk and owns no download either.
+        var scoped = GlobFilesTool.ToMatcherRelative(
+            GlobFilesTool.MatcherRoot(_rootPath, basePath), pattern);
+
+        return scoped is null
+            ? disk
+            : new FsResult<FsGlobResult>.Ok(Merge(
+                entries, await downloads.GlobEntriesAsync(basePath, scoped.Replace('\\', '/'), ct)));
     }
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
@@ -61,9 +75,18 @@ public sealed class MediaLibraryDiskFileSystem(
     public override Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
         downloads.DeleteAsync(path, ct);
 
+    // Delete is the download's cancel, so it is left to the overlay; move has no such meaning and a
+    // live download whose directory moved keeps writing into one qBittorrent recreates.
     public override async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
         Refuse<FsMoveResult>(sourcePath, destinationPath)
-        ?? await base.MoveAsync(sourcePath, destinationPath, ct);
+        ?? (await downloads.HoldsActiveDownloadAsync(sourcePath, ct)
+            ? FsError.Fail<FsMoveResult>(ToolError.Codes.UnsupportedOperation,
+                $"'{sourcePath}' holds an active download; moving it would leave the download writing "
+                + "into a directory it recreates, and the moved copy orphaned.",
+                retryable: false,
+                hint: $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
+                      + "for it to finish, then move the files.")
+            : await base.MoveAsync(sourcePath, destinationPath, ct));
 
     public override async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
@@ -79,12 +102,31 @@ public sealed class MediaLibraryDiskFileSystem(
         Refuse<FsBlobWriteResult>(path)
         ?? await base.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct);
 
+    // The streamed halves of the same two operations. A cross-mount copy never calls the ranged blob
+    // tools — it streams — so a refusal installed on those alone let a real file land where the
+    // virtual status.json is: invisible afterwards (the overlay shadows reads, Merge dedupes globs)
+    // and unremovable (delete on that path answers "read-only"). These throw rather than answer an
+    // envelope because that is the shape the two chunk operations have; VfsCopyTool turns a
+    // NotSupportedException back into the same unsupported-operation envelope.
+    public override IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
+        downloads.IsVirtualPath(path)
+            ? throw new NotSupportedException(VirtualFileRefusal)
+            : base.ReadChunksAsync(path, ct);
+
+    public override Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct) =>
+        downloads.IsVirtualPath(path)
+            ? throw new NotSupportedException(VirtualFileRefusal)
+            : base.WriteChunksAsync(path, chunks, overwrite, createDirectories, ct);
+
     // status.json is a rendered view of live download state, not a file on disk: moving, copying or
     // writing it would silently produce a stale snapshot under a name that still looks live.
+    private const string VirtualFileRefusal =
+        "status.json is a virtual read-only file; read it with fs_read — it cannot be moved, copied, or written.";
+
     private FsResult<T>? Refuse<T>(params string[] paths) where T : class =>
         paths.Any(downloads.IsVirtualPath)
-            ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation,
-                "status.json is a virtual read-only file; read it with fs_read — it cannot be moved, copied, or written.")
+            ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation, VirtualFileRefusal)
             : null;
 
     private static FsGlobResult Merge(FsGlobResult disk, IReadOnlyList<string> virtualEntries)

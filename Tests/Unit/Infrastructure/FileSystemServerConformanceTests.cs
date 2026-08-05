@@ -17,6 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Moq;
 using Shouldly;
+using Tests.Integration.McpServers;
 
 namespace Tests.Unit.Infrastructure;
 
@@ -26,44 +27,99 @@ namespace Tests.Unit.Infrastructure;
 // timers move lie was found: fs_move was advertised by a method that only said "unsupported".
 public class FileSystemServerConformanceTests
 {
-    public static TheoryData<string, Type> Backends() => new()
+    // Mount name, the id of the server that publishes it in the one server table, and the backend
+    // behind it.
+    public static TheoryData<string, string, Type> Backends() => new()
     {
-        { "timers", typeof(TimerFileSystem) },
-        { "schedules", typeof(ScheduleFileSystem) },
-        { "print-queue", typeof(PrinterQueueFileSystem) },
-        { "ha", typeof(HaFileSystem) },
-        { "media", typeof(MediaLibraryDiskFileSystem) },
-        { "vault", typeof(TextDiskFileSystem) },
-        { "sandbox", typeof(SandboxFileSystem) }
+        { "timers", "timers", typeof(TimerFileSystem) },
+        { "schedules", "scheduling", typeof(ScheduleFileSystem) },
+        { "print-queue", "printer", typeof(PrinterQueueFileSystem) },
+        { "ha", "homeassistant", typeof(HaFileSystem) },
+        { "media", "library", typeof(MediaLibraryDiskFileSystem) },
+        { "vault", "vault", typeof(TextDiskFileSystem) },
+        { "sandbox", "sandbox", typeof(SandboxFileSystem) }
     };
 
+    // What each mount is expected to advertise, written out rather than derived. Everything else in
+    // this file is compared against these, so the registrar's own reflection is never both the code
+    // under test and the yardstick — which is what a `registered.ShouldBe(overridden.Count)` was,
+    // and it stayed green for a server that had dropped AddFileSystemTools<T>() altogether.
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _advertised =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["timers"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_delete", "fs_exec"],
+            ["schedules"] =
+                ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move", "fs_delete", "fs_exec"],
+            ["print-queue"] =
+            [
+                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit",
+                "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
+            ],
+            ["ha"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_exec"],
+            // The media library reads only the overlay's status file and writes no text, so it keeps
+            // the plain disk surface plus read.
+            ["media"] =
+            [
+                "fs_read", "fs_info", "fs_glob", "fs_move", "fs_delete", "fs_copy",
+                "fs_blob_read", "fs_blob_write"
+            ],
+            ["vault"] =
+            [
+                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
+                "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
+            ],
+            // Exec is the one thing the sandbox has and the vault does not.
+            ["sandbox"] =
+            [
+                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
+                "fs_delete", "fs_copy", "fs_exec", "fs_blob_read", "fs_blob_write"
+            ]
+        };
+
+    // The shipped server, not a re-registration of it: each row drives the ConfigModule that runs in
+    // production, so a module that never called AddFileSystemTools<T>() or AddFileSystemResource<T>()
+    // fails here. Hand-registering the registrar instead — which this test used to do — can only
+    // ever assert that the registrar agrees with itself.
     [Theory]
     [MemberData(nameof(Backends))]
-    public void AdvertisedTools_EqualOverriddenOperations_EqualPublishedCapabilities(string name, Type backendType)
+    public void EveryFilesystemServer_RegistersTheToolsAndTheMountItAdvertises(
+        string name, string serverId, Type backendType)
     {
-        var overridden = FileSystemServerTools.SupportedToolNames(backendType);
-        overridden.ShouldNotBeEmpty($"{name} advertises no filesystem tools");
+        using var provider = ConfiguredServer(serverId);
 
-        // What the server really registers, driven through the registrar exactly as its
-        // ConfigModule does.
-        var services = new ServiceCollection();
-        typeof(FileSystemServerTools)
-            .GetMethod(nameof(FileSystemServerTools.AddFileSystemTools))!
-            .MakeGenericMethod(backendType)
-            .Invoke(null, [services.AddMcpServer()]);
-        var registered = services.Count(d => d.ServiceType == typeof(McpServerTool));
+        var registered = provider.GetServices<McpServerTool>()
+            .Select(tool => tool.ProtocolTool.Name)
+            .Where(FileSystemOperations.ToolNames.Contains)
+            .ToList();
 
-        registered.ShouldBe(overridden.Count, name);
+        registered.ShouldBe(_advertised[name], ignoreOrder: true, serverId);
 
-        // What the mount publishes to the model: every advertised operation the model can call,
-        // and nothing else. The two blob tools are transfer machinery, not model-facing.
-        var capabilities = McpFileSystemDiscovery.DeriveCapabilities(overridden);
-        capabilities.Count.ShouldBe(overridden.Count(t => !t.StartsWith("fs_blob", StringComparison.Ordinal)), name);
+        var mount = provider.GetServices<McpServerResource>()
+            .SingleOrDefault(resource => resource.ProtocolResource?.Uri == $"filesystem://{name}");
+        mount.ShouldNotBeNull($"{serverId} must publish its {name} mount");
+        mount.ProtocolResource!.Name.ShouldBe(name);
+
+        // The backend's own declaration of the same set: what it overrides is what the server
+        // registers is what the mount publishes.
+        FileSystemServerTools.SupportedToolNames(backendType)
+            .ShouldBe(_advertised[name], ignoreOrder: true, serverId);
+
+        // What the mount publishes to the model: every advertised operation the model can call, and
+        // nothing else. The two blob tools are transfer machinery, not model-facing.
+        McpFileSystemDiscovery.DeriveCapabilities(registered).ShouldBe(
+            FileSystemOperations.All
+                .Where(o => o.Capability is not null && _advertised[name].Contains(o.ToolName))
+                .Select(o => o.Capability!),
+            serverId);
     }
 
-    // Every filesystem backend in the repo, constructed. The tool assertions above only need the
-    // type, but a mount's identity is a value the instance carries, so this table holds the real
-    // thing — a backend whose FilesystemName drifted from the mount it is published at fails here.
+    private static ServiceProvider ConfiguredServer(string serverId)
+    {
+        var services = new ServiceCollection();
+        McpServerRegistrations.Get(serverId).Configure(services);
+        return services.BuildServiceProvider();
+    }
+
     // Every filesystem backend in the repo, constructed. The tool assertions only need the type,
     // but a mount's identity is a value the instance carries, so the identity assertion holds the
     // real thing — a backend whose FilesystemName drifted from the mount it is published at fails.
@@ -100,7 +156,7 @@ public class FileSystemServerConformanceTests
     [Theory]
     [MemberData(nameof(Backends))]
     public void EveryFilesystemServer_PublishesItsMountAtTheAddressDerivedFromItsName(
-        string name, Type backendType)
+        string name, string serverId, Type backendType)
     {
         var backend = MountedBackends[name];
         backend.ShouldBeOfType(backendType);
@@ -114,7 +170,7 @@ public class FileSystemServerConformanceTests
         services.Single(d => d.ServiceType == typeof(McpServerResource))
             .Lifetime.ShouldBe(ServiceLifetime.Singleton, name);
 
-        backend.FilesystemName.ShouldBe(name);
+        backend.FilesystemName.ShouldBe(name, serverId);
         FileSystemServerResource.Address(backend.FilesystemName).ShouldBe($"filesystem://{name}");
 
         var published = Published(FileSystemServerResource.Describe(backend));
@@ -165,47 +221,6 @@ public class FileSystemServerConformanceTests
         McpFileSystemDiscovery.DeriveCapabilities(advertised).ShouldNotContain("move");
     }
 
-    [Fact]
-    public void EachServer_AdvertisesExactlyWhatItsBackendImplements()
-    {
-        FileSystemServerTools.SupportedToolNames(typeof(TimerFileSystem))
-            .ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_delete", "fs_exec"],
-                ignoreOrder: true);
-
-        FileSystemServerTools.SupportedToolNames(typeof(ScheduleFileSystem))
-            .ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move", "fs_delete", "fs_exec"],
-                ignoreOrder: true);
-
-        FileSystemServerTools.SupportedToolNames(typeof(HaFileSystem))
-            .ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_search", "fs_exec"], ignoreOrder: true);
-
-        FileSystemServerTools.SupportedToolNames(typeof(PrinterQueueFileSystem))
-            .ShouldBe([
-                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit",
-                "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
-            ], ignoreOrder: true);
-
-        // The media library reads only the overlay's status file and writes no text, so it keeps
-        // the plain disk surface plus read.
-        FileSystemServerTools.SupportedToolNames(typeof(MediaLibraryDiskFileSystem))
-            .ShouldBe([
-                "fs_read", "fs_info", "fs_glob", "fs_move", "fs_delete", "fs_copy",
-                "fs_blob_read", "fs_blob_write"
-            ], ignoreOrder: true);
-
-        FileSystemServerTools.SupportedToolNames(typeof(TextDiskFileSystem))
-            .ShouldBe([
-                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
-                "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
-            ], ignoreOrder: true);
-
-        // Exec is the one thing the sandbox has and the vault does not.
-        FileSystemServerTools.SupportedToolNames(typeof(SandboxFileSystem))
-            .ShouldBe(
-                [.. FileSystemServerTools.SupportedToolNames(typeof(TextDiskFileSystem)), "fs_exec"],
-                ignoreOrder: true);
-    }
-
     // Capability is per operation, not per path. A backend that implements an operation and still
     // refuses particular paths keeps advertising it — the list tells the model which operations
     // exist on a mount, not which will succeed on a given file. Nobody should refine this into a
@@ -228,6 +243,48 @@ public class FileSystemServerConformanceTests
 
         tools.Select(t => t.ProtocolTool.Name).ShouldBe(["fs_read"]);
         tools.Single().ProtocolTool.Description.ShouldBe(new PickyBackend().DescribeRead);
+    }
+
+    // The two blob operations have two shapes — the chunk stream the transfer machinery drives and
+    // the ranged pair the wire carries — and the base invites a backend with real random access to
+    // override the ranged pair beside, or instead of, the streamed one. Capability was keyed on the
+    // chunk methods alone, so such a backend advertised no fs_blob_read at all while the registrar
+    // dispatched fs_blob_read to exactly the method it had overridden.
+    [Fact]
+    public void ABackendThatOverridesOnlyTheRangedBlobPair_StillAdvertisesTheBlobTools()
+    {
+        FileSystemServerTools.SupportedToolNames(typeof(RangedBlobBackend))
+            .ShouldBe(["fs_blob_read", "fs_blob_write"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void ABackendThatOverridesOnlyTheRangedBlobPair_RegistersTheToolsThatDispatchToIt()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new RangedBlobBackend());
+        services.AddMcpServer().AddFileSystemTools<RangedBlobBackend>();
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetServices<McpServerTool>().Select(t => t.ProtocolTool.Name)
+            .ShouldBe(["fs_blob_read", "fs_blob_write"], ignoreOrder: true);
+    }
+
+    private sealed class RangedBlobBackend : FileSystemBackendBase
+    {
+        public override string FilesystemName => "ranged";
+
+        public override string DescribeMount => "Bytes, addressed by range.";
+
+        public override Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
+            string path, long offset, int length, CancellationToken ct) =>
+            Task.FromResult<FsResult<FsBlobReadResult>>(new FsResult<FsBlobReadResult>.Ok(
+                new FsBlobReadResult { ContentBase64 = "", Eof = true, TotalBytes = 0 }));
+
+        public override Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
+            string path, string contentBase64, long offset, bool overwrite, bool createDirectories,
+            CancellationToken ct) =>
+            Task.FromResult<FsResult<FsBlobWriteResult>>(new FsResult<FsBlobWriteResult>.Ok(
+                new FsBlobWriteResult { Path = path, BytesWritten = 0, TotalBytes = 0 }));
     }
 
     private sealed class PickyBackend : FileSystemBackendBase

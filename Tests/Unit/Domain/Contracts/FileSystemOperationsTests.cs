@@ -24,6 +24,20 @@ public class FileSystemOperationsTests
         }
     }
 
+    // The second shape of the two byte-streaming operations lives on the base rather than the
+    // contract — it is the wire's ranged form, not part of what a backend must answer — and
+    // overriding it is as much an implementation of the operation as overriding the stream.
+    [Fact]
+    public void EveryAlternateOperation_NamesAnOverridableBaseMethod()
+    {
+        foreach (var operation in FileSystemOperations.All.Where(o => o.AlternateMethodName is not null))
+        {
+            var method = typeof(FileSystemBackendBase).GetMethod(operation.AlternateMethodName!);
+            method.ShouldNotBeNull($"{operation.ToolName} names no method on the backend base");
+            method.IsVirtual.ShouldBeTrue($"{operation.AlternateMethodName} must be overridable");
+        }
+    }
+
     [Fact]
     public void PayloadTypeTable_IsTheOneList()
     {

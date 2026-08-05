@@ -26,6 +26,22 @@ public sealed class DownloadsOverlay(
 
     public bool IsVirtualPath(string path) => ParseNode(path).Kind == DownloadNodeKind.StatusFile;
 
+    // True when a live download's directory is at this path or under it. Deleting such a path is
+    // the documented cancel, but moving it is not: the download keeps writing and recreates the
+    // directory it lost, so a later delete cancels and cleans the recreated one while the moved
+    // copy is orphaned. Answered for the directory and every ancestor, since moving a parent takes
+    // the download's directory with it.
+    public async Task<bool> HoldsActiveDownloadAsync(string path, CancellationToken ct)
+    {
+        var candidate = ToMountRelative(path).Trim('/');
+        var items = await downloadClient.GetDownloadItems(ct);
+        return items
+            .Select(i => $"{MediaFilesystem.DownloadsSubdir}/{i.Id}")
+            .Any(dir => candidate.Length == 0
+                        || dir.Equals(candidate, StringComparison.Ordinal)
+                        || dir.StartsWith(candidate + "/", StringComparison.Ordinal));
+    }
+
     public async Task<FsResult<FsReadResult>?> TryReadAsync(string path, CancellationToken ct)
     {
         var node = ParseNode(path);
@@ -170,17 +186,24 @@ public sealed class DownloadsOverlay(
     private DownloadsNode ParseNode(string path)
     {
         var node = DownloadsPath.Parse(path);
-        if (node.Kind != DownloadNodeKind.Other || !Path.IsPathRooted(path))
+        return node.Kind == DownloadNodeKind.Other ? DownloadsPath.Parse(ToMountRelative(path)) : node;
+    }
+
+    // An absolute path under the library root, spelled the way the agent addresses the mount.
+    // Anything else — already relative, or rooted somewhere else entirely — is left alone.
+    private string ToMountRelative(string path)
+    {
+        if (!Path.IsPathRooted(path))
         {
-            return node;
+            return path;
         }
 
         var root = Path.GetFullPath(libraryPath.BaseLibraryPath);
         var full = Path.GetFullPath(path);
         var rootWithSep = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
         return full.StartsWith(rootWithSep, StringComparison.Ordinal)
-            ? DownloadsPath.Parse(Path.GetRelativePath(root, full).Replace('\\', '/'))
-            : node;
+            ? Path.GetRelativePath(root, full).Replace('\\', '/')
+            : path;
     }
 
     private static string RenderStatus(DownloadItem item) => JsonSerializer.Serialize(new

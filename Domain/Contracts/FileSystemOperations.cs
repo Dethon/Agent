@@ -13,6 +13,12 @@ public sealed record FileSystemOperation
     public required string MethodName { get; init; }
     public required Type ResultType { get; init; }
 
+    // The second backend method that implements the same operation, for the two byte-streaming ones
+    // alone: they have a streamed shape and a ranged shape, and a backend with real random access is
+    // invited to override the ranged one beside — or instead of — the streamed one. Overriding
+    // either is implementing the operation, so either declares the capability.
+    public string? AlternateMethodName { get; init; }
+
     // Null for the two byte-streaming operations: they are the agent's transfer machinery, not
     // something the model calls, so they have no domain tool and appear in no capability list.
     public string? ToolKey { get; init; }
@@ -46,21 +52,25 @@ public static class FileSystemOperations
             VfsFileInfoTool.Key, VfsFileInfoTool.Name),
         Op("fs_exec", nameof(IFileSystemBackend.ExecAsync), typeof(FsExecResult),
             VfsExecTool.Key, VfsExecTool.Name),
-        Op("fs_blob_read", nameof(IFileSystemBackend.ReadChunksAsync), typeof(FsBlobReadResult)),
-        Op("fs_blob_write", nameof(IFileSystemBackend.WriteChunksAsync), typeof(FsBlobWriteResult))
+        Op("fs_blob_read", nameof(IFileSystemBackend.ReadChunksAsync), typeof(FsBlobReadResult),
+            alternate: nameof(FileSystemBackendBase.ReadBlobAsync)),
+        Op("fs_blob_write", nameof(IFileSystemBackend.WriteChunksAsync), typeof(FsBlobWriteResult),
+            alternate: nameof(FileSystemBackendBase.WriteBlobAsync))
     ];
 
     public static readonly IReadOnlySet<string> ToolNames =
         All.Select(o => o.ToolName).ToHashSet(StringComparer.Ordinal);
 
     private static FileSystemOperation Op(
-        string toolName, string methodName, Type resultType, string? key = null, string? capability = null) =>
+        string toolName, string methodName, Type resultType, string? key = null, string? capability = null,
+        string? alternate = null) =>
         new()
         {
             ToolName = toolName,
             MethodName = methodName,
             ResultType = resultType,
             ToolKey = key,
-            Capability = capability
+            Capability = capability,
+            AlternateMethodName = alternate
         };
 }

@@ -140,9 +140,14 @@ public sealed class ScheduleFileSystem(
     {
         var scope = path ?? directoryPath;
 
+        if (!CompileFilePattern(filePattern).TryGetValue(out var admits, out var patternError))
+        {
+            return new FsResult<FsSearchResult>.Err(patternError);
+        }
+
         // schedule.json is the only searchable file per schedule, so a filePattern either includes it
         // (search the scoped schedules) or excludes it entirely (nothing to search).
-        var scoped = VfsContentSearch.MatchesFilePattern(filePattern, SchedulePath.ScheduleFileName)
+        var scoped = admits(SchedulePath.ScheduleFileName)
             ? await ScopeSchedulesAsync(scope, ct)
             : [];
 

@@ -15,9 +15,12 @@ public sealed class PrinterQueueFileSystem(
     IPrintSpool spool,
     IPrinterClient printer,
     PrintQueueGate gate,
-    string supportedFormats) : FileSystemBackendBase
+    string supportedFormats,
+    TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
     public override string FilesystemName => "print-queue";
+
+    protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 
     public override string DescribeMount =>
         "A printer exposed as a flat filesystem. Copy or create a document at /print-queue/<filename> "
@@ -314,8 +317,15 @@ public sealed class PrinterQueueFileSystem(
         string? directoryPath, string? filePattern, int maxResults, int contextLines,
         VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
+        if (!CompileFilePattern(filePattern).TryGetValue(out var admits, out var patternError))
+        {
+            return new FsResult<FsSearchResult>.Err(patternError);
+        }
+
         var entries = await spool.ListAsync(ct);
-        var scoped = entries.Where(e => VfsContentSearch.MatchesFilePattern(filePattern, e.FileName));
+        // Lazy on purpose: the file names are the caller's own, so the match runs inside the scan,
+        // where a pattern that backtracks past the timeout becomes the timeout envelope.
+        var scoped = entries.Where(e => admits(e.FileName));
 
         return await SearchNodesAsync(
             scoped,

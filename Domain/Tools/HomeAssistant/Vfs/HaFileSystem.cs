@@ -109,9 +109,14 @@ public sealed partial class HaFileSystem(
             Entities = await clientFactory().ListStatesAsync(ct)
         };
 
+        if (!CompileFilePattern(filePattern).TryGetValue(out var admits, out var patternError))
+        {
+            return new FsResult<FsSearchResult>.Err(patternError);
+        }
+
         // state.json is the only searchable file per entity, so a filePattern either includes it
         // (search the scoped entities) or excludes it entirely (nothing to search).
-        var scoped = VfsContentSearch.MatchesFilePattern(filePattern, HaVfsPath.StateFileName)
+        var scoped = admits(HaVfsPath.StateFileName)
             ? ScopeEntities(catalog, path, directoryPath)
             : [];
 

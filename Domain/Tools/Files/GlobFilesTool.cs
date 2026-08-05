@@ -34,30 +34,20 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             return FsError.Invalid<FsGlobResult>("Pattern and basePath must not contain '..' segments.");
         }
 
-        var matcherRoot = string.IsNullOrEmpty(basePath)
-            ? _jail.Root
-            : Path.GetFullPath(Path.Combine(_jail.Root, basePath.TrimStart('/')));
+        var matcherRoot = MatcherRoot(_jail.Root, basePath);
 
         if (!_jail.Contains(matcherRoot))
         {
             return FsError.Invalid<FsGlobResult>("basePath must resolve under the mount root.");
         }
 
-        // An absolute pattern is relativized against the root the matcher actually runs from —
-        // relativizing against the mount root while matching under root+basePath double-scoped.
-        if (Path.IsPathRooted(pattern))
+        if (ToMatcherRelative(matcherRoot, pattern) is not { } scoped)
         {
-            var dirsOnly = pattern.EndsWith('/');
-            var trimmed = pattern.TrimEnd('/');
-            if (!trimmed.Equals(matcherRoot, StringComparison.Ordinal) &&
-                !trimmed.StartsWith(matcherRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-            {
-                return FsError.Invalid<FsGlobResult>(
-                    "Absolute pattern must be under the glob root (the mount root plus basePath).");
-            }
-
-            pattern = Path.GetRelativePath(matcherRoot, trimmed) + (dirsOnly ? "/" : "");
+            return FsError.Invalid<FsGlobResult>(
+                "Absolute pattern must be under the glob root (the mount root plus basePath).");
         }
+
+        pattern = scoped;
 
         string[] result;
         try
@@ -86,6 +76,33 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             Truncated = capped,
             Total = relative.Length
         });
+    }
+
+    // The root the matcher actually runs from: the mount root, scoped by basePath.
+    public static string MatcherRoot(string mountRoot, string? basePath) =>
+        string.IsNullOrEmpty(basePath)
+            ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(mountRoot))
+            : Path.GetFullPath(Path.Combine(Path.GetFullPath(mountRoot), basePath.TrimStart('/')));
+
+    // An absolute pattern relativized against that root — relativizing against the mount root while
+    // matching under root+basePath double-scoped. A relative pattern is already what the matcher
+    // wants; null means the pattern points outside the root, which is the caller's error. Public
+    // because a mount that matches a second, virtual set of candidates beside the disk one (the
+    // media library's downloads overlay) has to scope its pattern the same way, and two spellings
+    // of this rule would be two answers to one glob.
+    public static string? ToMatcherRelative(string matcherRoot, string pattern)
+    {
+        if (!Path.IsPathRooted(pattern))
+        {
+            return pattern;
+        }
+
+        var dirsOnly = pattern.EndsWith('/');
+        var trimmed = pattern.TrimEnd('/');
+        return trimmed.Equals(matcherRoot, StringComparison.Ordinal)
+               || trimmed.StartsWith(matcherRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            ? Path.GetRelativePath(matcherRoot, trimmed) + (dirsOnly ? "/" : "")
+            : null;
     }
 
     private static bool HasDotDotSegment(string path) =>
