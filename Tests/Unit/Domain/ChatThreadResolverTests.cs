@@ -1,4 +1,6 @@
 using Domain.Agents;
+using Domain.Contracts;
+using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Domain;
@@ -36,6 +38,39 @@ public class ChatThreadResolverTests
         // Assert
         resolver.AgentKeys.ShouldNotContain(key);
         context.Cts.IsCancellationRequested.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ClearAsync_AfterACancelRemovedTheContext_StillDeletesPersistedState()
+    {
+        // /cancel immediately followed by /clear: the cancel already removed and disposed the
+        // context, so a delete conditional on finding one would leave the history the user just
+        // asked to wipe sitting in the store.
+        var stateStore = new Mock<IThreadStateStore>();
+        stateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>())).Returns(Task.CompletedTask);
+        var resolver = new ChatThreadResolver(stateStore.Object);
+        var key = new AgentKey("1:1");
+        resolver.Resolve(key);
+        resolver.Cancel(key);
+
+        await resolver.ClearAsync(key);
+
+        stateStore.Verify(s => s.DeleteAsync(key), Times.Once);
+    }
+
+    [Fact]
+    public async Task ClearAsync_WithNoLiveContext_StillDeletesPersistedState()
+    {
+        // A /clear on a conversation with no live group — routine after a restart — wipes the
+        // persisted thread too; the delete is a single idempotent key delete.
+        var stateStore = new Mock<IThreadStateStore>();
+        stateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>())).Returns(Task.CompletedTask);
+        var resolver = new ChatThreadResolver(stateStore.Object);
+        var key = new AgentKey("1:1");
+
+        await resolver.ClearAsync(key);
+
+        stateStore.Verify(s => s.DeleteAsync(key), Times.Once);
     }
 
     [Fact]

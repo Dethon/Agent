@@ -47,11 +47,17 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
             return;
         }
 
+        // The delete does not depend on finding a live context. A /cancel arriving just before
+        // the /clear already removed and disposed it, and a /clear on a conversation with no live
+        // group is routine after a restart; in both cases the user asked for the history to be
+        // gone. The store delete is one idempotent key delete, so doing it either way costs a
+        // round trip and never leaves the cleared history behind.
         if (_contexts.Remove(key, out var context))
         {
             context.Dispose();
-            await DeletePersistedStateAsync(key);
         }
+
+        await DeletePersistedStateAsync(key);
     }
 
     public void Dispose()
