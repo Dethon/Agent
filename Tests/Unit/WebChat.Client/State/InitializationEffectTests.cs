@@ -172,6 +172,46 @@ public sealed class InitializationEffectTests : IDisposable
         _topicService.JoinedSpaces.ShouldBeEmpty();
     }
 
+    // Opening the app in the not-live window: the catalog fetch answers not live and first load
+    // stops before selecting an agent. The catalog still arrives — the agent re-registers and the
+    // hub broadcasts SetAgents — and that arrival has to finish what first load could not, or the
+    // sidebar stays empty until a manual reload.
+    [Fact]
+    public async Task HandleInitializeAsync_TheCatalogWasNotLive_ALaterSetAgentsCompletesInitialization()
+    {
+        _configService.WithSpace("default");
+        _agentService.NotLive = true;
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "first"));
+        await _effect.HandleInitializeAsync();
+        _topicsStore.State.SelectedAgentId.ShouldBeNull();
+
+        _dispatcher.Dispatch(new SetAgents([_agentOne]));
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
+        await TestChat.Eventually(() =>
+            _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1", []).Count == 1);
+        _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
+    }
+
+    // The deferred completion belongs to a first load that could not fetch the catalog. A first
+    // load that did fetch it has already selected and loaded, so the broadcasts that follow must
+    // not load everything again.
+    [Fact]
+    public async Task HandleInitializeAsync_TheCatalogWasLive_ALaterSetAgentsLoadsNothingAgain()
+    {
+        _configService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        await _effect.HandleInitializeAsync();
+        _calls.Reset();
+
+        _dispatcher.Dispatch(new SetAgents([_agentOne]));
+
+        await Task.Delay(50);
+        _calls.Calls.ShouldNotContain(call => call.StartsWith("topics:"));
+    }
+
     [Fact]
     public async Task HandleInitializeAsync_NoAgents_SelectsNothingAndLoadsNoTopics()
     {
