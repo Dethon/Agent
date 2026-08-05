@@ -217,6 +217,23 @@ public class MetricControlsSessionTests : IDisposable
         _tokensStore.State.Breakdown.ShouldBe(lastKnown);
     }
 
+    // An older build could persist the disallowed pair itself. Restoring the dimension first and
+    // the metric second used to re-apply the stale metric on top of the coercion, rendering a
+    // disabled-yet-selected pill. The restore must end valid, and the coercion must be saved so the
+    // stale pair cannot come back next visit.
+    [Fact]
+    public async Task InitializeAsync_AnOlderBuildSavedADisallowedCombination_RestoresAValidOneAndPersistsIt()
+    {
+        _js.Storage["tools.groupBy"] = nameof(ToolDimension.Status);
+        _js.Storage["tools.metric"] = nameof(ToolMetric.ErrorRate);
+
+        await SessionFor(_families.Tools).InitializeAsync();
+
+        _toolsStore.State.GroupBy.ShouldBe(ToolDimension.Status);
+        _toolsStore.State.Metric.ShouldBe(ToolMetric.CallCount);
+        _js.Storage["tools.metric"].ShouldBe(nameof(ToolMetric.CallCount));
+    }
+
     [Fact]
     public async Task InitializeAsync_APreferenceNoLongerParses_LeavesTheChoiceAlone()
     {
