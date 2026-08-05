@@ -269,6 +269,58 @@ public class ChatMonitorConversationGroupTests
     }
 
     [Fact]
+    public async Task Group_FailingAfterACancelReplacedItsContext_LeavesTheSuccessorsContextAlone()
+    {
+        // A /cancel completes this group's grouping while it is still inside its establish path
+        // — that path runs on the group token, not the turn one, so it keeps going. By the time
+        // it fails, the user's next message has opened a fresh group with a fresh context under
+        // the same key. Ending this group must not take that one down with it.
+        var logger = new Mock<ILogger<ChatMonitor>>();
+        var channel = new FakeChannelConnection();
+        var threadResolver = new ChatThreadResolver();
+        var agentKey = new AgentKey("conv-1");
+        var restoreReached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRestore = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fakeAgent = new FakeAiAgent
+        {
+            RestoreExceptionToThrow = new HttpRequestException("state store down"),
+            RestoreGate = async () =>
+            {
+                restoreReached.TrySetResult();
+                await releaseRestore.Task;
+            }
+        };
+        await using var group = new ConversationGroup(
+            agentKey,
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            new DeliveryTargetResolver([channel], logger.Object),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+        var grouping = new FakeGrouping(agentKey);
+        grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = Task.Run(async () =>
+        {
+            await foreach (var _ in group.RunAsync(grouping, grouping.Complete, cts.Token))
+            { }
+        }, cts.Token);
+
+        await restoreReached.Task.WaitAsync(cts.Token);
+        // The /cancel: it addresses the context this group is running on.
+        threadResolver.Cancel(agentKey, threadResolver.Resolve(agentKey));
+        // The successor group resolves a fresh one under the same key.
+        var successorContext = threadResolver.Resolve(agentKey);
+        releaseRestore.TrySetResult();
+        await run;
+
+        successorContext.Cts.IsCancellationRequested.ShouldBeFalse();
+        threadResolver.AgentKeys.ShouldContain(agentKey);
+    }
+
+    [Fact]
     public async Task Group_TurnBufferedBehindACancel_IsDrainedAndNamedAtTeardown()
     {
         // The /cancel tears the group down while "left behind" is already routed into this

@@ -43,6 +43,10 @@ internal sealed class ConversationGroup(
 
     private GroupState? _state;
 
+    // The one this group resolved. Cancelling is addressed at it, so a group that fails after
+    // a /cancel already replaced it under the same key cannot tear its successor down.
+    private ChatThreadContext? _context;
+
     // Held from the moment it is created, not from the moment the group is established, so a
     // failure between the two still disposes it.
     private DisposableAgent? _agent;
@@ -92,7 +96,8 @@ internal sealed class ConversationGroup(
     {
         try
         {
-            return threadResolver.Resolve(agentKey);
+            _context = threadResolver.Resolve(agentKey);
+            return _context;
         }
         catch (Exception ex)
         {
@@ -184,7 +189,7 @@ internal sealed class ConversationGroup(
                     logger.LogError(ex,
                         "Turn setup failed for conversation {ConversationId} and agent {AgentId}; ending the group",
                         agentKey.ConversationId, agentKey.AgentId);
-                    threadResolver.Cancel(agentKey);
+                    CancelOwnContext();
                     await ObserveAbandonedWarmupAsync();
                     break;
                 }
@@ -265,7 +270,7 @@ internal sealed class ConversationGroup(
                         await ClearThreadAsync();
                         break;
                     case ChatCommand.Cancel:
-                        threadResolver.Cancel(agentKey);
+                        CancelOwnContext();
                         break;
                     default:
                         // TryWrite, not WriteAsync with the pump token: on an unbounded
@@ -296,6 +301,14 @@ internal sealed class ConversationGroup(
     // raised and never observes a fault folded into the pending channel. So the failure is
     // named here, at the only site that still sees it: the live thread is gone, the
     // persisted one survived, and the cleared history returns on the next message.
+    private void CancelOwnContext()
+    {
+        if (_context is not null)
+        {
+            threadResolver.Cancel(agentKey, _context);
+        }
+    }
+
     private async Task ClearThreadAsync()
     {
         try

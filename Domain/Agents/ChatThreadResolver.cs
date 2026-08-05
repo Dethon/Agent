@@ -27,17 +27,30 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
         }
     }
 
-    public void Cancel(AgentKey key)
+    // Addressed at the context the caller resolved, never at "whatever is under this key now".
+    // A conversation group torn down by a /cancel can still be inside its establish path when
+    // it fails, and by then the next message has opened a fresh group with a fresh context
+    // under the same key. Disposing that one would kill the successor's turn and drop the
+    // user's new message, so a stale caller is a no-op.
+    public void Cancel(AgentKey key, ChatThreadContext expected)
     {
         if (_isDisposed != 0)
         {
             return;
         }
 
-        if (_contexts.Remove(key, out var context))
+        lock (_lock)
         {
-            context.Dispose();
+            if (!_contexts.TryGetValue(key, out var context) || !ReferenceEquals(context, expected))
+            {
+                return;
+            }
+
+            _contexts.Remove(key, out _);
         }
+
+        // Outside the lock: disposing runs the group's completion callback.
+        expected.Dispose();
     }
 
     public async Task ClearAsync(AgentKey key)
