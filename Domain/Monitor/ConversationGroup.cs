@@ -51,7 +51,7 @@ internal sealed class ConversationGroup(
         Task Warmup);
 
     public async IAsyncEnumerable<TurnUpdate> RunAsync(
-        IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
+        IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)> messages,
         Action onGroupComplete,
         [EnumeratorCancellation] CancellationToken ct)
     {
@@ -94,7 +94,7 @@ internal sealed class ConversationGroup(
     // what it drops. Reading messages in a separate loop keeps commands immediate and turns
     // sequential.
     private async IAsyncEnumerable<TurnUpdate> RunTurnsSequentiallyAsync(
-        IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages)
+        IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)> messages)
     {
         var pending = Channel.CreateUnbounded<(IChannelConnection Channel, ChannelMessage Message)>();
         // The message pump is stopped on the way out. Without that, a turn that throws would
@@ -112,7 +112,7 @@ internal sealed class ConversationGroup(
                 // against the torn-down group. It is dropped instead, and acknowledged below.
                 if (_turnCt.IsCancellationRequested)
                 {
-                    LogDroppedTurn(x.Message);
+                    LogDroppedTurn(logger, x.Message);
                     break;
                 }
 
@@ -155,15 +155,22 @@ internal sealed class ConversationGroup(
             // Anything still queued when the group ends is dropped by that end — a /clear or
             // /cancel dispatched ahead of it, a setup failure, a shutdown. Dropping is the
             // decided semantics (the command's immediacy is its point); vanishing silently is
-            // not, so each dropped turn is named. The pump is done, so this drains everything.
+            // not, so each dropped turn is named — whether the pump had already queued it or
+            // it still sits unread in the grouping's channel. The pump is done, so between
+            // them these two drains cover everything.
             while (pending.Reader.TryRead(out var dropped))
             {
-                LogDroppedTurn(dropped.Message);
+                LogDroppedTurn(logger, dropped.Message);
+            }
+
+            foreach (var (_, message) in messages.DrainPending())
+            {
+                LogDroppedTurn(logger, message);
             }
         }
     }
 
-    private void LogDroppedTurn(ChannelMessage message)
+    internal static void LogDroppedTurn(ILogger logger, ChannelMessage message)
     {
         logger.LogWarning(
             "Group teardown dropped a queued turn for conversation {ConversationId} and agent {AgentId}",
@@ -188,7 +195,11 @@ internal sealed class ConversationGroup(
                         threadResolver.Cancel(agentKey);
                         break;
                     default:
-                        await writer.WriteAsync(x, pumpCt);
+                        // TryWrite, not WriteAsync with the pump token: on an unbounded
+                        // channel it always lands, so a message read just as teardown
+                        // cancels the pump still reaches the pending queue, where the
+                        // teardown drain names it instead of losing it to a cancelled write.
+                        writer.TryWrite(x);
                         break;
                 }
             }

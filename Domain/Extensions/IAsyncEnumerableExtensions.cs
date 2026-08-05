@@ -11,11 +11,16 @@ public interface IAsyncGrouping<out TKey, out TElement> : IAsyncEnumerable<TElem
     TKey Key { get; }
 
     void Complete();
+
+    // Synchronously hands over whatever is buffered but unread. For a consumer tearing down
+    // mid-stream: what it does not drain here was never delivered and vanishes with the group.
+    IEnumerable<TElement> DrainPending();
 }
 
 public static class IAsyncEnumerableExtensions
 {
-    private sealed class AsyncGrouping<TKey, TElement>(TKey key, Action onComplete) : IAsyncGrouping<TKey, TElement>
+    private sealed class AsyncGrouping<TKey, TElement>(TKey key, Action onComplete, Action<TElement>? onDropped)
+        : IAsyncGrouping<TKey, TElement>
     {
         private readonly Channel<TElement> _channel = Channel.CreateUnbounded<TElement>();
         private int _completed;
@@ -24,8 +29,11 @@ public static class IAsyncEnumerableExtensions
 
         internal async ValueTask WriteAsync(TElement item, CancellationToken ct)
         {
+            // An item that races in just behind the group's completion never reaches the
+            // channel, so no drain can recover it — reporting it here is its only trace.
             if (_completed != 0)
             {
+                onDropped?.Invoke(item);
                 return;
             }
 
@@ -33,7 +41,10 @@ public static class IAsyncEnumerableExtensions
             {
                 await _channel.Writer.WriteAsync(item, ct);
             }
-            catch (ChannelClosedException) { } // Group was completed concurrently, ignore
+            catch (ChannelClosedException)
+            {
+                onDropped?.Invoke(item);
+            }
         }
 
         public void Complete()
@@ -47,6 +58,14 @@ public static class IAsyncEnumerableExtensions
             onComplete();
         }
 
+        public IEnumerable<TElement> DrainPending()
+        {
+            while (_channel.Reader.TryRead(out var item))
+            {
+                yield return item;
+            }
+        }
+
         public IAsyncEnumerator<TElement> GetAsyncEnumerator(CancellationToken ct = default)
         {
             return _channel.Reader.ReadAllAsync(ct).GetAsyncEnumerator(ct);
@@ -57,6 +76,7 @@ public static class IAsyncEnumerableExtensions
     {
         public async IAsyncEnumerable<IAsyncGrouping<TKey, TSource>> GroupByStreaming<TKey>(
             Func<TSource, CancellationToken, ValueTask<TKey>> keySelector,
+            Action<TSource>? onDropped = null,
             [EnumeratorCancellation] CancellationToken ct = default) where TKey : notnull
         {
             var groups = new ConcurrentDictionary<TKey, AsyncGrouping<TKey, TSource>>();
@@ -67,7 +87,7 @@ public static class IAsyncEnumerableExtensions
                     var key = await keySelector(item, ct);
                     if (!groups.TryGetValue(key, out var group))
                     {
-                        group = new AsyncGrouping<TKey, TSource>(key, () => groups.TryRemove(key, out _));
+                        group = new AsyncGrouping<TKey, TSource>(key, () => groups.TryRemove(key, out _), onDropped);
                         groups[key] = group;
                         yield return group;
                     }

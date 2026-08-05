@@ -98,7 +98,7 @@ public class GroupByStreamingTests
                     cts.Cancel();
                 }
                 return ValueTask.FromResult(x % 2);
-            }, cts.Token);
+            }, ct: cts.Token);
 
         // Assert
         await Should.ThrowAsync<OperationCanceledException>(async () =>
@@ -141,6 +141,23 @@ public class GroupByStreamingTests
         // Assert
         keySelectorCalled.ShouldBe(3);
         groups.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task GroupByStreaming_ItemWrittenAfterTheGroupCompleted_ReportsItAsDropped()
+    {
+        // The consumer completes each group at the yield, before the producer writes the
+        // item into it — the same shape as a message racing in just behind a teardown.
+        // Silently ignoring the write would make the item vanish; it must be reported.
+        var dropped = new List<int>();
+
+        await foreach (var group in _sourceArray0.ToAsyncEnumerable()
+            .GroupByStreaming((_, _) => ValueTask.FromResult("key"), dropped.Add))
+        {
+            group.Complete();
+        }
+
+        dropped.ShouldBe([1, 2, 3]);
     }
 
     [Fact]
