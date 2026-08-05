@@ -104,6 +104,16 @@ public class SettingsBinderTests : IDisposable
             .BindSettings<ProbeLimitsSettings>(_secretsId)
             .MaxTimeoutSeconds.ShouldBe(0);
 
+    // An initializer default is the settings type saying "leave this out and take this value", so a
+    // required value type that carries one is not missing when configuration omits it. Voice's six
+    // defaulted sub-records are the shipped shape: adding a required int with a default to any of
+    // them used to fail startup on every deployment that never wrote the section.
+    [Fact]
+    public void ADefaultedRequiredValueType_BindsItsDefault() =>
+        new ConfigurationBuilder()
+            .BindSettings<ProbeDefaultedSectionSettings>(_secretsId)
+            .Tts.SpeedPercent.ShouldBe(100);
+
     // The presence check must follow the section path, not the display path: a member two levels
     // down lives at "Output:CapBytes", and a walk that asked the root for "Output.CapBytes" would
     // flag every nested value type as absent.
@@ -310,4 +320,18 @@ public record ProbeOutputConfig
     public required int CapBytes { get; init; }
 
     public string? Label { get; init; }
+}
+
+// Shaped like voice's six defaulted sub-records: a section whose initializer supplies every member,
+// so a deployment that never writes the section is complete rather than misconfigured.
+public record ProbeDefaultedSectionSettings
+{
+    public ProbeTtsConfig Tts { get; init; } = new() { Voice = "kokoro", SpeedPercent = 100 };
+}
+
+public record ProbeTtsConfig
+{
+    public required string Voice { get; init; }
+
+    public required int SpeedPercent { get; init; }
 }

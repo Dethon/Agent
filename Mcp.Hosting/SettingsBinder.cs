@@ -83,9 +83,17 @@ public static class SettingsBinder
         // A required value type has no null to reveal an absent key — it binds to the type's
         // default and would sail past the null walk. Presence is therefore asked of the
         // configuration itself, so an explicit default written in config stays legal.
-        if (property.PropertyType.IsValueType)
+        //
+        // A value that differs from the type default came from an initializer, which is the settings
+        // type saying "leave this out and take this value" — voice's six defaulted sub-records are
+        // the shipped shape, and holding one to a key it declared optional would fail startup on
+        // every deployment that never wrote the section.
+        if (property.PropertyType.IsValueType
+            && IsRequired(property)
+            && !section.GetSection(property.Name).Exists()
+            && value.Equals(Activator.CreateInstance(property.PropertyType)))
         {
-            return IsRequired(property) && !section.GetSection(property.Name).Exists() ? [memberPath] : [];
+            return [memberPath];
         }
 
         // Recurses into a nested section, which is what a missing configuration block produces.
