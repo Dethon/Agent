@@ -129,6 +129,11 @@ public sealed class FakeChatMessagingService : IChatMessagingService
             throw _exceptionToThrow;
         }
 
+        if (_blockUntilComplete)
+        {
+            await _completionSource.Task;
+        }
+
         while (_enqueuedMessages.TryDequeue(out var msg))
         {
             if (StreamDelayMs > 0)

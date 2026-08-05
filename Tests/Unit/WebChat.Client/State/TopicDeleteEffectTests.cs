@@ -75,6 +75,7 @@ public sealed class TopicDeleteEffectTests : IDisposable
     public async Task HandleRemoveTopicAsync_TopicIsStreaming_CancelsTheStreamFirst()
     {
         GivenTopicWithMessages("topic-1");
+        _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _dispatcher.Dispatch(new StreamChunk("topic-1", "partial", null, null, "m-2"));
 
         await _effect.HandleRemoveTopicAsync("topic-1", "agent-1", chatId: 10, threadId: 20);

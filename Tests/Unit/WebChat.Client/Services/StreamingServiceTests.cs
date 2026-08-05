@@ -474,6 +474,25 @@ public sealed class StreamingServiceTests : IDisposable
         messages.Count.ShouldBe(1);
     }
 
+    // The store keeps a buffer only for a topic it knows is streaming, so a send has to announce
+    // the stream before the first chunk is processed or the reply never reaches the screen.
+    [Fact]
+    public async Task SendMessageAsync_WhileTheReplyArrives_TheChunksReachTheStreamingBuffer()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        var buffered = new List<string?>();
+        using var subscription = _streamingStore.StateObservable.Subscribe(state =>
+            buffered.Add(state.StreamingByTopic.GetValueOrDefault(topic.TopicId)?.Content));
+
+        _messagingService.EnqueueContent("Hello");
+
+        await _service.SendMessageAsync(topic, "test");
+        await TestChat.Eventually(() => !_streamingStore.State.StreamingTopics.Contains(topic.TopicId));
+
+        buffered.ShouldContain("Hello");
+    }
+
     [Fact]
     public async Task SendMessageAsync_SettingsDifferFromDefaults_PassesConfigPatch()
     {

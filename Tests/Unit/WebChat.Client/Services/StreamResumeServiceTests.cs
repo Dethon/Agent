@@ -378,6 +378,9 @@ public sealed class StreamResumeServiceTests : IDisposable
             null,
             null));
 
+        // The resumed stream stays open, the way a stream worth resuming does: the buffer is
+        // replayed into a topic that is streaming, which is what makes the replay show up.
+        _messagingService.SetBlockUntilComplete(true);
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = " more content", MessageId = "msg-1" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
@@ -389,6 +392,7 @@ public sealed class StreamResumeServiceTests : IDisposable
         var streaming = _streamingStore.State.StreamingByTopic.GetValueOrDefault("topic-1");
         streaming.ShouldNotBeNull();
         streaming.Content.ShouldContain("buffered content");
+        _messagingService.UnblockCompletion();
     }
 
     [Fact]
