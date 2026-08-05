@@ -61,6 +61,12 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
         {
             return FsError.NotFound<FsGlobResult>(basePath ?? matcherRoot);
         }
+        catch (ArgumentException ex)
+        {
+            // The client refuses a pattern it cannot expand (the brace-expansion cap); surface it
+            // as the invalid-pattern envelope, like every other bad pattern.
+            return FsError.Invalid<FsGlobResult>(ex.Message);
+        }
 
         // Return entries relative to the mount root (the disk client yields absolute paths). The
         // agent-side VFS tool re-prefixes the mount point, so every filesystem speaks one format.

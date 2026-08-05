@@ -44,4 +44,34 @@ public class GlobBraceExpanderTests
     {
         GlobBraceExpander.Expand(pattern).ShouldBe([pattern]);
     }
+
+    // 2^9 = 512, exactly the cap: the largest cartesian product a pattern may still expand to.
+    [Fact]
+    public void Expand_AtTheExpansionCap_ReturnsEveryPattern()
+    {
+        var pattern = string.Concat(Enumerable.Repeat("{a,b}", 9));
+
+        GlobBraceExpander.Expand(pattern).Count.ShouldBe(GlobBraceExpander.MaxPatterns);
+    }
+
+    // The product is caller-controlled: a few more groups would be 2^30 patterns and an OOM, so
+    // crossing the cap fails as an invalid pattern instead of materializing the product.
+    [Theory]
+    [InlineData(10)]
+    [InlineData(30)]
+    public void Expand_OverTheExpansionCap_ThrowsInsteadOfMaterializingTheProduct(int groups)
+    {
+        var pattern = string.Concat(Enumerable.Repeat("{a,b}", groups));
+
+        Should.Throw<ArgumentException>(() => GlobBraceExpander.Expand(pattern))
+            .Message.ShouldContain(GlobBraceExpander.MaxPatterns.ToString());
+    }
+
+    [Fact]
+    public void Expand_SingleGroupOverTheCap_Throws()
+    {
+        var body = string.Join(',', Enumerable.Range(0, GlobBraceExpander.MaxPatterns + 1).Select(i => $"a{i}"));
+
+        Should.Throw<ArgumentException>(() => GlobBraceExpander.Expand($"{{{body}}}"));
+    }
 }

@@ -127,6 +127,17 @@ public class GlobFilesToolTests
         await ShouldBeInvalid(() => _tool.TestRun("**/*", basePath, CancellationToken.None));
     }
 
+    // The client refuses a pattern whose brace expansion overflows the cap; the tool turns that
+    // refusal into the same invalid-pattern envelope every other bad pattern gets.
+    [Fact]
+    public async Task Run_PatternWhoseExpansionOverflowsTheCap_ReturnsInvalidArgument()
+    {
+        _mockClient.Setup(c => c.Glob(BasePath, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ArgumentException("Glob pattern expands to too many patterns."));
+
+        await ShouldBeInvalid(() => _tool.TestRun(string.Concat(Enumerable.Repeat("{a,b}", 30)), CancellationToken.None));
+    }
+
     private static async Task ShouldBeInvalid(Func<Task<JsonNode>> call)
     {
         var result = await call();
