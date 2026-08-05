@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
 using ModelContextProtocol.Server;
 
@@ -42,9 +43,14 @@ public sealed class SendReplyTool
         }
 
         // No live session: the answer was written for a satellite that was not listening, so it is
-        // delivered as an announcement instead.
+        // delivered as an announcement instead. A conversation with no binding but a satellite the
+        // manager still maps is one create_conversation acknowledged while a live session owned it
+        // (recording a binding there would let its expiry flush the accumulator mid-turn); if that
+        // session died before the reply arrived, the mapping is the fallback announce target —
+        // never a silent drop that returns ok.
         var delivery = services.GetRequiredService<VoiceDeliveryRegistry>();
-        var target = delivery.Resolve(p.ConversationId);
+        var target = delivery.Resolve(p.ConversationId)
+            ?? (satelliteId is null ? null : new AnnounceTarget { SatelliteId = satelliteId });
         if (target is not null)
         {
             await speaker.DeliverScheduledAsync(

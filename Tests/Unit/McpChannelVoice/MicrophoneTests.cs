@@ -81,7 +81,7 @@ public class MicrophoneTests
     }
 
     [Fact]
-    public void Close_ANoSpeechCapture_PaysWhatItMeasuredIntoTheRoomNoiseMemory()
+    public async Task Close_ANoSpeechCapture_PaysWhatItMeasuredIntoTheRoomNoiseMemory()
     {
         // The memory is only observable through the next gate built on the same satellite: it caps
         // that gate's floor. A capture that closed without paying leaves the next one uncapped.
@@ -90,7 +90,7 @@ public class MicrophoneTests
 
         var first = Open(mic, gates);
         Feed(mic, 300, times: 25);   // a whole no-speech window of quiet background
-        first.Completed.GetAwaiter().GetResult().ShouldBe(CaptureOutcome.NoSpeech);
+        (await first.Completed).ShouldBe(CaptureOutcome.NoSpeech);
         mic.Close(first);
 
         var second = Open(mic, gates);

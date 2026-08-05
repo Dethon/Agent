@@ -162,7 +162,8 @@ public sealed class RequestApprovalTool
         var followUp = settings.FollowUp;
         if (followUp.PlaybackTailMs > 0)
         {
-            await Task.Delay(followUp.PlaybackTailMs, ct); // echo guard after the prompt finishes
+            // Echo guard after the prompt finishes, on the injected clock like FollowUpConversation's.
+            await Task.Delay(TimeSpan.FromMilliseconds(followUp.PlaybackTailMs), time, ct);
         }
 
         var capture = mic.Open(

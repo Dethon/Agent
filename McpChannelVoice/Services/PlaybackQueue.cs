@@ -109,6 +109,9 @@ public sealed class PlaybackQueue(
     // the loop could reach any terminal path of its own.
     private QueuedJob? _inFlight;
     private bool _closed;
+    // Set by the link-drop close: the loop discards every job it dequeues from then on instead of
+    // playing it, because there is no satellite left to hear it.
+    private bool _discardOnDequeue;
     private readonly Lock _gate = new();
     private long _enqueueSeq;
     // High-water sequence whose jobs must be preempted as they start. Set only when a high-priority
@@ -243,6 +246,18 @@ public sealed class PlaybackQueue(
         _jobs.Writer.TryComplete();
     }
 
+    // The link-drop close. Complete() alone is not enough there: the run token is still live, so
+    // ReadAllAsync would hand the loop every queued job to synthesize and write into the dead
+    // socket — each settling Failed with an error report the producer never earned. Marking the
+    // discard first makes the loop settle those jobs Discarded as it dequeues them, while the job
+    // being played is left to end as it really did. Shutdown needs none of this: cancelling the run
+    // token stops the loop outright and DiscardUnplayed sweeps what it left behind.
+    public void CompleteAndDiscardQueued()
+    {
+        Volatile.Write(ref _discardOnDequeue, true);
+        Complete();
+    }
+
     public void PreemptCurrent()
     {
         lock (_gate)
@@ -285,6 +300,13 @@ public sealed class PlaybackQueue(
         time ??= TimeProvider.System;
         await foreach (var queued in _jobs.Reader.ReadAllAsync(ct))
         {
+            if (Volatile.Read(ref _discardOnDequeue))
+            {
+                queued.Settle(PlaybackOutcomeKind.Discarded);
+                await queued.ReleaseAudioAsync();
+                continue;
+            }
+
             var jobCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             if (TakeAsCurrent(queued, jobCts))
             {
@@ -543,7 +565,9 @@ public sealed class PlaybackQueue(
         public void Settle(PlaybackOutcomeKind kind, Exception? error = null) =>
             _settled.TrySetResult(new PlaybackOutcome(kind, ChunksWritten, error));
 
-        // Safe on a job that drained: the pump has already finished and cancelling it is a no-op.
+        // Idempotent: the disposal latches on its first call, so the loop's finally and the drain's
+        // sweep can both release the same in-flight job, and a job that drained has nothing left to
+        // cancel.
         public ValueTask ReleaseAudioAsync() => prefetch?.DisposeAsync() ?? ValueTask.CompletedTask;
     }
 

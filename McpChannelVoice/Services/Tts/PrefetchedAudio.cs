@@ -20,6 +20,7 @@ public sealed class PrefetchedAudio : IAsyncDisposable
     private readonly Channel<AudioChunk> _buffer;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _pump;
+    private int _disposed;
 
     public PrefetchedAudio(IAsyncEnumerable<AudioChunk> source, int capacity)
     {
@@ -79,8 +80,16 @@ public sealed class PrefetchedAudio : IAsyncDisposable
         }
     }
 
+    // Latches on the first call: the playback loop's own release and the connection drain's sweep
+    // can both reach the same in-flight job, and the second must not cancel a source the first has
+    // already disposed.
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         await _cts.CancelAsync();
         try
         {

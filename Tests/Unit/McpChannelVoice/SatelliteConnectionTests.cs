@@ -525,6 +525,60 @@ public class SatelliteConnectionTests
             .Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
     }
 
+    // The link-drop sibling of the teardown above: the run token is NOT cancelled, so the loop is
+    // still alive when the drain closes the queue. Every job queued behind the current one must be
+    // discarded unplayed — not synthesized and written into the dead socket to settle Failed with
+    // one spurious TtsError each — while the in-flight job ends as it really did.
+    [Fact]
+    public async Task Unwind_LinkDroppedMidPlayback_DiscardsTheQueuedJobsInsteadOfPlayingThemToFailure()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var h = new Harness();
+        h.WriteHook = async (evt, _) =>
+        {
+            if (evt.Type != "audio-chunk")
+            {
+                return;
+            }
+            writeStarted.TrySetResult();
+            await parked.Task;
+        };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        await UntilAsync(() => h.Arbiter.IsRegistered("kitchen-01"), TimeSpan.FromSeconds(5));
+        var playing = connection.Session.Playback.Enqueue(
+            new PlaybackJob(
+                Label: "reply-1",
+                Kind: PlaybackKind.Reply,
+                Priority: AnnouncePriority.Normal,
+                Audio: OneChunk()));
+        var queuedBehind = connection.Session.Playback.Enqueue(
+            new PlaybackJob(
+                Label: "reply-2",
+                Kind: PlaybackKind.Reply,
+                Priority: AnnouncePriority.Normal,
+                Audio: OneChunk()));
+        await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
+
+        // The link drops while reply-1's write is parked the way a dead socket parks one; the drain
+        // has closed the queue by the time the write comes back.
+        h.DropLink();
+        await UntilAsync(() => !h.Arbiter.IsRegistered("kitchen-01"), TimeSpan.FromSeconds(5));
+        parked.TrySetResult();
+        await run.WaitAsync(TimeSpan.FromSeconds(5));
+
+        (await playing.Completed.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+        (await queuedBehind.Completed.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Kind.ShouldBe(PlaybackOutcomeKind.Discarded);
+        // reply-2 never reached the wire, and no spurious per-job error metric fired.
+        h.WrittenOfType("audio-chunk").Count.ShouldBe(1);
+        h.PublishedOf(VoiceMetric.TtsError).ShouldBeEmpty();
+    }
+
     // The earcon is what tells the user the mic is open, so the mic must not open until it has been
     // heard. It waits on its job's outcome now instead of a completion source settled by hand from
     // three of five callbacks.
