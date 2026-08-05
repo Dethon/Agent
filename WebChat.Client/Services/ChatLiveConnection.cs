@@ -1,4 +1,5 @@
-using Microsoft.AspNetCore.SignalR;
+using System.Net.Sockets;
+using System.Net.WebSockets;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.State.Hub;
@@ -81,13 +82,23 @@ public sealed class ChatLiveConnection(
         }
     }
 
-    // The transport-fault family is open-ended: an invocation in flight when the connection
-    // dies faults with whatever closed it — a cancellation on a clean close, the socket error
-    // otherwise — and a call that races the state check throws InvalidOperationException. The
-    // one exception that is an answer rather than a failed transport is HubException: the
-    // server received the call and faulted it. These verbs carry no caller token, so a
-    // cancellation surfacing here is never the caller's own.
-    private static bool IsTransportFault(Exception exception) => exception is not HubException;
+    // The transport-fault family, named: an invocation in flight when the connection dies
+    // faults with whatever closed it — a cancellation on a clean close, the socket, WebSocket
+    // or IO error otherwise, an HTTP or timeout failure from the outer layers — and a call
+    // that races the state check throws InvalidOperationException (which ObjectDisposedException
+    // derives from). These verbs carry no caller token, so a cancellation surfacing here is
+    // never the caller's own. Anything outside the family — a HubException, which is the server
+    // answering, or a client-side serialization or argument bug — is not "not live": it
+    // propagates to the caller's fault logging instead of raising a connectivity toast over a
+    // programming error.
+    private static bool IsTransportFault(Exception exception) => exception
+        is OperationCanceledException
+        or InvalidOperationException
+        or HttpRequestException
+        or TimeoutException
+        or IOException
+        or SocketException
+        or WebSocketException;
 
     public Task ConnectAsync() => StartLiveConnectionAsync(CancellationToken.None);
 
