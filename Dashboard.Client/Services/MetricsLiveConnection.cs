@@ -21,6 +21,9 @@ public sealed class MetricsLiveConnection(
     private bool _started;
     private bool _disposed;
     private bool _awaitingFirstLoadOutcome;
+    private bool _holdingUntilCaughtUp;
+    private Func<Exception?, Task>? _onReconnecting;
+    private Func<string?, Task>? _onReconnected;
 
     public Task ConnectAsync() => _started ? Task.CompletedTask : _connecting ??= BecomeLiveAsync();
 
@@ -34,14 +37,24 @@ public sealed class MetricsLiveConnection(
         dataLoad.LoadCompleted += OnLoadCompletedAsync;
 
         // Closed is not handled: with a retry policy that never gives up, the transport only closes
-        // for good when this module disposes it.
-        hub.Reconnecting += _ =>
+        // for good when this module disposes it. The other two are kept in fields because disposal
+        // has to take them off again: a reconnect landing afterwards would otherwise drive a whole
+        // become-live sequence on a module that is gone.
+        _onReconnecting = _ =>
         {
             connectionStore.SetReconnecting();
+
+            // The hold starts here, not in the Reconnected handler: the transport resumes
+            // dispatching as soon as it is back and only then runs those handlers, so a push
+            // landing in that gap would be applied unheld and erased by the catch-up snapshot.
+            HoldUntilCaughtUp();
             return Task.CompletedTask;
         };
 
-        hub.Reconnected += _ => BecomeLiveAndCatchUpAsync();
+        _onReconnected = _ => BecomeLiveAndCatchUpAsync();
+
+        hub.Reconnecting += _onReconnecting;
+        hub.Reconnected += _onReconnected;
 
         connectionStore.SetConnecting();
         if (!await StartUntilItSucceedsAsync())
@@ -70,6 +83,7 @@ public sealed class MetricsLiveConnection(
             // The load may still be in flight when this decision is taken, so its outcome settles
             // the skipped premise later: OnLoadCompletedAsync catches up if the load fails.
             _awaitingFirstLoadOutcome = true;
+            await ReleaseReconnectHoldAsync();
             return;
         }
 
@@ -108,8 +122,33 @@ public sealed class MetricsLiveConnection(
         }
         finally
         {
+            await ReleaseReconnectHoldAsync();
             await binder.ReleaseHeldPushesAsync();
         }
+    }
+
+    // The hold an interruption started, ended by the catch-up that answers it. Holds nest, so this
+    // release only lowers the depth; the release beside it is the one that delivers.
+    private void HoldUntilCaughtUp()
+    {
+        if (_holdingUntilCaughtUp)
+        {
+            return;
+        }
+
+        _holdingUntilCaughtUp = true;
+        binder.HoldPushes();
+    }
+
+    private Task ReleaseReconnectHoldAsync()
+    {
+        if (!_holdingUntilCaughtUp)
+        {
+            return Task.CompletedTask;
+        }
+
+        _holdingUntilCaughtUp = false;
+        return binder.ReleaseHeldPushesAsync();
     }
 
     // False only when the module was disposed mid-loop, which is the one way the loop ends without
@@ -144,6 +183,8 @@ public sealed class MetricsLiveConnection(
     {
         _disposed = true;
         dataLoad.LoadCompleted -= OnLoadCompletedAsync;
+        hub.Reconnecting -= _onReconnecting;
+        hub.Reconnected -= _onReconnected;
         binder.Unbind();
         await hub.DisposeAsync();
     }

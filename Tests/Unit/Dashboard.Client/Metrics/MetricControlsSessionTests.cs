@@ -45,7 +45,8 @@ public class MetricControlsSessionTests : IDisposable
         _families = new MetricFamilyTable(
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
-        _dataLoad = new DataLoadEffect(api, _families, _metricsStore, _healthStore);
+        _dataLoad = new DataLoadEffect(
+            _families, new OverviewFigures(api, _metricsStore, _healthStore));
     }
 
     public void Dispose()

@@ -23,9 +23,10 @@ public sealed class MetricsHubBinder(
     // would be appended on top of its own copy. So the live connection holds pushes for the
     // duration of a catch-up and releases them against the reloaded lists, where each held event is
     // skipped exactly when the snapshot already delivered it — record value equality is the
-    // identity. Holds nest, because a reconnect can land while a catch-up is still holding: the
-    // overlapping hold shares the queue instead of discarding it, and only the last release
-    // delivers.
+    // identity. Skipping drops the whole push, its summary counters included, because catch-up
+    // reloads those totals from the server too and they already count the event. Holds nest,
+    // because a reconnect can land while a catch-up is still holding: the overlapping hold shares
+    // the queue instead of discarding it, and only the last release delivers.
     public void HoldPushes()
     {
         _holdDepth++;
@@ -170,9 +171,11 @@ public sealed class MetricsHubBinder(
                 await RefreshAsync(families.Voice);
             })));
 
-        // Health is an upsert the catch-up walk never touches, so it is never held.
-
-        _subscriptions.Add(hub.On<ServiceHealthUpdate>("OnHealthUpdate", evt =>
+        // Health is an upsert, so there is no copy of it in the roster catch-up reloads to
+        // reconcile against: nothing is ever skipped, and holding is what puts the push after the
+        // roster rather than under it. A service that came back while the roster was being read
+        // would otherwise show red until its next heartbeat.
+        _subscriptions.Add(hub.On("OnHealthUpdate", OnPush<ServiceHealthUpdate>(_ => false, evt =>
         {
             var current = healthStore.State.Services.ToList();
             var idx = current.FindIndex(s => s.Service == evt.Service);
@@ -189,8 +192,7 @@ public sealed class MetricsHubBinder(
 
             healthStore.UpdateHealth(current);
             return Task.CompletedTask;
-        }));
-
+        })));
     }
 
     public void Unbind()

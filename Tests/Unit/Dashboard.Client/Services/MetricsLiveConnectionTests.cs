@@ -48,8 +48,9 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore);
         var binder = new MetricsHubBinder(_families, _metricsStore, _healthStore);
-        _dataLoad = new DataLoadEffect(api, _families, _metricsStore, _healthStore);
-        _catchUp = new RecordingMetricsCatchUp(new MetricsCatchUp(_families));
+        var overview = new OverviewFigures(api, _metricsStore, _healthStore);
+        _dataLoad = new DataLoadEffect(_families, overview);
+        _catchUp = new RecordingMetricsCatchUp(new MetricsCatchUp(_families, overview));
         _liveConnection = new MetricsLiveConnection(
             _hub, binder, _connectionStore, _catchUp, _dataLoad, _time,
             NullLogger<MetricsLiveConnection>.Instance);
@@ -343,6 +344,26 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
     }
 
+    // The gap the hold used to start too late for: SignalR resumes dispatching as soon as the
+    // transport is back, and only then runs the Reconnected handlers. A push landing in between was
+    // applied unheld and then erased by the catch-up snapshot that followed it.
+    [Fact]
+    public async Task Reconnecting_APushArrivesBeforeTheReconnectedHandlerRuns_TheSnapshotCannotEraseIt()
+    {
+        await ConnectAsync();
+        _handler.AnswerFor("api/metrics/voice?", new List<VoiceEventPayload>
+        {
+            new((int)VoiceMetric.UtteranceTranscribed, "kitchen-01"),
+        });
+        await _hub.RaiseReconnectingAsync(null);
+
+        await RaiseVoiceAsync("pantry-01");
+        await _hub.RaiseReconnectedAsync();
+
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "pantry-01");
+        _voiceStore.State.Events.ShouldContain(e => e.SatelliteId == "kitchen-01");
+    }
+
     // The second half: a push the snapshot already contains, arriving after the lists were
     // replaced, used to be appended on top of its own copy.
     [Fact]
@@ -371,6 +392,65 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _voiceStore.State.Events.Count(e => e.SatelliteId == "kitchen-01").ShouldBe(1);
     }
 
+    // The counter half of that same push. Catch-up re-reads the summary totals from the server, and
+    // those totals already count every event the snapshot contains, so a held push the snapshot
+    // delivered is dropped whole — counters included. Adding its increment on top of the reloaded
+    // totals would show tokens twice; dropping it without the reload used to lose them for good.
+    [Fact]
+    public async Task Reconnected_TheSnapshotAlreadyContainsAPushedEvent_TheSummaryIsTheReloadedTotal()
+    {
+        var stamped = new DateTimeOffset(2026, 3, 24, 12, 0, 0, TimeSpan.Zero);
+        _handler.AnswerFor("api/metrics/summary", Summary(inputTokens: 100));
+        await _dataLoad.LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 2));
+        await ConnectAsync();
+        _handler.AnswerFor("api/metrics/summary", Summary(inputTokens: 120));
+        _handler.AnswerFor("api/metrics/tokens?", new List<TokenUsagePayload>
+        {
+            new("nabu", "m", 7, 1, 0.01m, stamped),
+        });
+        _handler.AnswerFor("api/metrics/tokens/by/Model", new Dictionary<string, decimal>());
+        _catchUp.GateAfter = new TaskCompletionSource();
+        await _hub.RaiseReconnectingAsync(null);
+
+        var reconnected = _hub.RaiseReconnectedAsync();
+        await WaitForAsync(() => _tokensStore.State.Events.Count > 0);
+        await _hub.RaiseAsync("OnTokenUsage", new TokenUsageEvent
+        {
+            Sender = "nabu",
+            Model = "m",
+            InputTokens = 7,
+            OutputTokens = 1,
+            Cost = 0.01m,
+            Timestamp = stamped,
+        });
+        _catchUp.GateAfter.SetResult();
+        await reconnected;
+
+        _metricsStore.State.InputTokens.ShouldBe(120);
+    }
+
+    // Health is a roster catch-up now re-reads, so a health push is held like any other. Applied
+    // ahead of the snapshot it would be overwritten by a roster taken before the service came back.
+    [Fact]
+    public async Task Reconnected_AHealthPushArrivesDuringCatchUp_TheOlderRosterCannotOverwriteIt()
+    {
+        await ConnectAsync();
+        _handler.AnswerFor("api/metrics/health", new List<ServiceHealthResponse>
+        {
+            new("agent", false, "2026-03-24T11:59:00Z"),
+        });
+        _catchUp.Gate = new TaskCompletionSource();
+        await _hub.RaiseReconnectingAsync(null);
+
+        var reconnected = _hub.RaiseReconnectedAsync();
+        await _hub.RaiseAsync("OnHealthUpdate", new ServiceHealthUpdate(
+            "agent", true, new DateTimeOffset(2026, 3, 24, 12, 0, 0, TimeSpan.Zero)));
+        _catchUp.Gate.SetResult();
+        await reconnected;
+
+        _healthStore.State.Services.ShouldContain(s => s.Service == "agent" && s.IsHealthy);
+    }
+
     [Fact]
     public async Task DisposeAsync_AfterConnecting_APushAfterwardsChangesNothing()
     {
@@ -381,6 +461,22 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
 
         _voiceStore.State.Events.ShouldBeEmpty();
         _hub.Disposed.ShouldBeTrue();
+    }
+
+    // Unbinding the pushes was not the whole of letting go: the lifecycle handlers stayed attached,
+    // so a reconnect landing after disposal drove a whole become-live sequence on a dead module.
+    [Fact]
+    public async Task DisposeAsync_TheTransportReconnectsAfterwards_TheModuleDoesNothing()
+    {
+        await ConnectAsync();
+
+        await _liveConnection.DisposeAsync();
+        await _hub.RaiseReconnectingAsync(null);
+        await _hub.RaiseReconnectedAsync();
+
+        _catchUp.Runs.ShouldBe(0);
+        _connectionStore.State.Epoch.ShouldBe(1);
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Live);
     }
 
     [Fact]
@@ -410,7 +506,13 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         }
     }
 
+    private static MetricsSummary Summary(long inputTokens) =>
+        new(inputTokens, OutputTokens: 30, TotalTokens: inputTokens + 30, Cost: 1.5m, ToolCalls: 4, ToolErrors: 1);
+
     private sealed record VoiceEventPayload(int Metric, string SatelliteId);
+
+    private sealed record TokenUsagePayload(
+        string Sender, string Model, int InputTokens, int OutputTokens, decimal Cost, DateTimeOffset Timestamp);
 
     // Carries the timestamp so the deserialized snapshot event and the pushed event are equal by
     // record value, which is the identity catch-up reconciles by.
