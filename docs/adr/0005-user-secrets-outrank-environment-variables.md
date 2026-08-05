@@ -61,10 +61,12 @@ of which secrets a deployment needs; `DockerCompose/.env` is the checklist an op
 fills in, and an absent line is not a prompt to add one.
 
 **Reject empty strings during binding, so a blank secret fails loudly.** Rejected in
-grilling: `McpChannelServiceBus`'s connection string, Telegram's bot tokens and
-WebSearch's Brave key all ship as `""` in `appsettings.json`, and an empty CapSolver
-key is how that feature is turned off. An empty-is-invalid rule would refuse to start
-three shipped servers. Validation therefore rejects null only.
+grilling: six servers ship a required member as `""` in `appsettings.json` —
+`McpChannelServiceBus`'s connection string, Telegram's bot tokens, WebSearch's Brave
+and CapSolver keys, Home Assistant's token, Idealista's key and secret, and Library's
+Jackett API key and qBittorrent credentials — and an empty CapSolver key is also how
+that feature is turned off. An empty-is-invalid rule would refuse to start all six.
+Validation therefore rejects null only.
 
 ## Consequences
 
