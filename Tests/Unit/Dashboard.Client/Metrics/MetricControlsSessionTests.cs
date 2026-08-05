@@ -177,6 +177,28 @@ public class MetricControlsSessionTests : IDisposable
         _handler.Requests.ShouldContain(u => u != null && u.Contains("agg=P95", StringComparison.Ordinal));
     }
 
+    // The guard swaps the metric when a group-by makes it invalid. The swap has to be persisted
+    // with the group-by, or the next visit restores the disallowed combination and selects a
+    // disabled pill.
+    [Fact]
+    public async Task ChangeAsync_AGroupByGuardSwapsTheMetric_TheSwapSurvivesTheNextVisit()
+    {
+        var session = SessionFor(_families.Tools);
+        await session.InitializeAsync();
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+        await session.ChangeAsync(_families.Tools.Metric!, nameof(ToolMetric.ErrorRate));
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+
+        await session.ChangeAsync(_families.Tools.Dimension, nameof(ToolDimension.Status));
+
+        _js.Storage["tools.metric"].ShouldBe(nameof(ToolMetric.CallCount));
+
+        await SessionFor(_families.Tools).InitializeAsync();
+
+        _toolsStore.State.GroupBy.ShouldBe(ToolDimension.Status);
+        _toolsStore.State.Metric.ShouldBe(ToolMetric.CallCount);
+    }
+
     [Fact]
     public async Task InitializeAsync_APreferenceNoLongerParses_LeavesTheChoiceAlone()
     {

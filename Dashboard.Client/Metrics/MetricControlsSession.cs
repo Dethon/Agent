@@ -45,7 +45,15 @@ public sealed class MetricControlsSession(
     public async Task ChangeAsync(MetricChoice choice, string value)
     {
         choice.Apply(value);
-        await storage.SetAsync(KeyFor(choice.Key), value);
+
+        // Every choice, not just the one that moved: applying a group-by can swap the metric when
+        // the combination is disallowed, and persisting only the moved pill would restore that
+        // disallowed combination on the next visit.
+        foreach (var each in Choices)
+        {
+            await storage.SetAsync(KeyFor(each.Key), each.Current);
+        }
+
         await family.RefreshAsync();
     }
 
