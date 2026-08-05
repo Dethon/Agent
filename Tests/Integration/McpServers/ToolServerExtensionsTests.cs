@@ -72,15 +72,18 @@ public class ToolServerExtensionsTests
     // handler catches whatever the filter rethrows and answers with a generic message of its own,
     // so "did this exception reach the filter's error path" is the question that can be observed
     // over the wire — and it is the question the rule is about.
+    // "cancels" throws OperationCanceledException without the request's own token ever being
+    // touched, so it is an ordinary failure on a tool server exactly as it is on a channel server —
+    // see CallToolErrorFilterTests for the case that is actually exempt.
     [Fact]
-    public async Task ACancelledToolCallOnAToolServer_DoesNotBecomeAnErrorResult()
+    public async Task AnUncancelledOperationCanceledExceptionOnAToolServer_BecomesAnErrorResult()
     {
         await using var server = await StartToolServerAsync(Marked("tool-server"));
 
         var cancelled = await server.Client.CallToolAsync("cancels");
         var failed = await server.Client.CallToolAsync("throws");
 
-        InMemoryMcpServer.Text(cancelled).ShouldNotContain("tool-server");
+        InMemoryMcpServer.Text(cancelled).ShouldContain("tool-server");
         InMemoryMcpServer.Text(failed).ShouldContain("tool-server");
     }
 
