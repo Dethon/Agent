@@ -93,6 +93,42 @@ public sealed class ChannelInbox(
         }
     }
 
+    // The other half of a drain. A poll never acknowledges what it received, so a batch handed to a
+    // request that then dies exists nowhere else — the drain already emptied the queue. A caller
+    // that finds its response dead hands the batch back here and it goes in at the front, because
+    // it is older than anything that arrived while it was away. Order across the whole queue is
+    // preserved, which is what the message/cancel sequence depends on.
+    public void Restore(string subscriberId, IReadOnlyList<ChannelInboxItem> batch)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        if (batch.Count == 0)
+        {
+            return;
+        }
+
+        // No prune here: this call exists to keep items, and the subscriber it restores to is the
+        // one the batch was drained from.
+        var now = _timeProvider.GetUtcNow();
+        while (true)
+        {
+            var subscriber = _subscribers.GetOrAdd(subscriberId, _ => new Subscriber(now));
+            var outcome = subscriber.Restore(batch, _capacity);
+            if (outcome != EnqueueOutcome.Refused)
+            {
+                if (outcome == EnqueueOutcome.AcceptedDroppingOldest)
+                {
+                    WarnDroppedOldest([subscriberId]);
+                }
+
+                return;
+            }
+
+            // Same retirement race as EnqueueFor: a prune retired this instance between the lookup
+            // and the restore, so finish its removal and put the batch into its replacement.
+            _subscribers.TryRemove(new KeyValuePair<string, Subscriber>(subscriberId, subscriber));
+        }
+    }
+
     private void WarnDroppedOldest(IReadOnlyList<string> subscriberIds)
     {
         if (subscriberIds.Count > 0)
@@ -247,6 +283,38 @@ public sealed class ChannelInbox(
             return droppedOldest ? EnqueueOutcome.AcceptedDroppingOldest : EnqueueOutcome.Accepted;
         }
 
+        // A batch coming back from a poll whose response died. It goes ahead of whatever arrived
+        // while it was away, and over capacity the oldest still goes — the same rule Enqueue
+        // applies, so a restore cannot grow the queue past its one bound.
+        public EnqueueOutcome Restore(IReadOnlyList<ChannelInboxItem> batch, int capacity)
+        {
+            TaskCompletionSource<bool>? toSignal;
+            int dropped;
+            lock (_gate)
+            {
+                if (_retired)
+                {
+                    return EnqueueOutcome.Refused;
+                }
+
+                var rebuilt = batch.Concat(_items).ToArray();
+                dropped = Math.Max(0, rebuilt.Length - capacity);
+                _items.Clear();
+                foreach (var item in rebuilt.Skip(dropped))
+                {
+                    _items.Enqueue(item);
+                }
+
+                toSignal = _waiter;
+                _waiter = null;
+            }
+
+            // A poll may already be parked on the empty queue the aborted one left behind; without
+            // this it would sleep out its whole wait with the restored batch sitting in front of it.
+            toSignal?.TrySetResult(true);
+            return dropped > 0 ? EnqueueOutcome.AcceptedDroppingOldest : EnqueueOutcome.Accepted;
+        }
+
         public async Task<IReadOnlyList<ChannelInboxItem>> ReceiveAsync(
             TimeSpan maxWait,
             TimeProvider timeProvider,
@@ -264,7 +332,7 @@ public sealed class ChannelInbox(
             {
                 if (_items.Count > 0)
                 {
-                    return Drain();
+                    return Drain(ct);
                 }
 
                 displaced = _waiter;
@@ -278,7 +346,7 @@ public sealed class ChannelInbox(
 
             if (maxWait <= TimeSpan.Zero)
             {
-                return RetireAndDrain(waiter);
+                return RetireAndDrain(waiter, ct);
             }
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -303,15 +371,16 @@ public sealed class ChannelInbox(
                 return [];
             }
 
-            return RetireAndDrain(waiter);
+            return RetireAndDrain(waiter, ct);
         }
 
-        private IReadOnlyList<ChannelInboxItem> RetireAndDrain(TaskCompletionSource<bool> waiter)
+        private IReadOnlyList<ChannelInboxItem> RetireAndDrain(
+            TaskCompletionSource<bool> waiter, CancellationToken ct)
         {
             lock (_gate)
             {
                 RetireWaiter(waiter);
-                return Drain();
+                return Drain(ct);
             }
         }
 
@@ -327,9 +396,20 @@ public sealed class ChannelInbox(
             }
         }
 
-        private IReadOnlyList<ChannelInboxItem> Drain()
+        // Caller holds _gate. The token is asked one last time with the batch already in hand: a
+        // request that hung up between the wait ending and this line would take the items into a
+        // response nobody reads, and nothing here is acknowledged, so they would be gone. Asking
+        // before the queue is emptied means there is nothing to put back.
+        //
+        // What is left of the window is the handoff itself — the batch is serialised into the
+        // response after this returns, and a request that dies during that write still loses it.
+        // ChannelReceiveTool asks once more after serialising and hands the batch back through
+        // Restore, which is as far as this side can get; closing it completely needs an
+        // acknowledgement from the poller that this protocol does not have.
+        private IReadOnlyList<ChannelInboxItem> Drain(CancellationToken ct)
         {
             var drained = _items.ToArray();
+            ct.ThrowIfCancellationRequested();
             _items.Clear();
             return drained;
         }
