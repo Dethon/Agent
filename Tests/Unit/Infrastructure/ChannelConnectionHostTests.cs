@@ -80,6 +80,26 @@ public class ChannelConnectionHostTests
     }
 
     [Fact]
+    public void Constructor_TwoEndpointsForOneChannelId_FailsNamingTheDuplicate()
+    {
+        // A duplicated entry stops the agent either way; the difference is whether an operator can
+        // tell which one to fix. Building the endpoint map alone threw with no channel id in the
+        // message, and only once the host was already running.
+        var connection = new FakeMcpChannelConnection("ch-1");
+        var endpoints = new[]
+        {
+            new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" },
+            new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9002" }
+        };
+
+        var error = Should.Throw<InvalidOperationException>(
+            () => new ChannelConnectionHost(endpoints, [connection], _catalog, _logger));
+
+        error.Message.ShouldContain("ch-1");
+        connection.RunCount.ShouldBe(0);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Cancelled_StopsWithoutThrowing()
     {
         var fake = new FakeMcpChannelConnection("ch-1");
