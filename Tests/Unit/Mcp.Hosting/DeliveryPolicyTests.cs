@@ -161,6 +161,47 @@ public class DeliveryPolicyTests
         (await DrainAsync(inbox)).Count.ShouldBe(1);
     }
 
+    // Three callers pass a real token and act on the answer: a schedule is deleted or stamped, a
+    // download routing entry is removed, a broker message is completed. An emit that ignored the
+    // token could hand a settled record back on the way down while the item it settled for never
+    // reached anyone, so a cancelled emit delivers nothing and says so by throwing.
+    [Theory]
+    [InlineData(DeliveryPolicy.Broadcast, null)]
+    [InlineData(DeliveryPolicy.GateOnLive, null)]
+    [InlineData(DeliveryPolicy.BufferAlways, Subscriber)]
+    public async Task EmitAsync_WithACancelledToken_DeliversNothingAndThrows(
+        DeliveryPolicy policy, string? subscriberId)
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await RegisterAsync(inbox);
+        var sut = new ChannelNotificationEmitter(inbox, policy, subscriberId);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => sut.EmitAsync(Message(), cts.Token));
+
+        (await DrainAsync(inbox)).ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(DeliveryPolicy.Broadcast, null)]
+    [InlineData(DeliveryPolicy.GateOnLive, null)]
+    [InlineData(DeliveryPolicy.BufferAlways, Subscriber)]
+    public async Task EmitCancelAsync_WithACancelledToken_DeliversNothingAndThrows(
+        DeliveryPolicy policy, string? subscriberId)
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await RegisterAsync(inbox);
+        var sut = new ChannelNotificationEmitter(inbox, policy, subscriberId);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => sut.EmitCancelAsync(new ChannelCancelNotification { ConversationId = "c1" }, cts.Token));
+
+        (await DrainAsync(inbox)).ShouldBeEmpty();
+    }
+
     [Fact]
     public void Constructor_BufferAlways_WithoutASubscriberId_Throws() =>
         Should.Throw<ArgumentException>(() =>

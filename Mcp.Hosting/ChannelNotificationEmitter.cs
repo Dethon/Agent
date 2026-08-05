@@ -27,11 +27,21 @@ public sealed class ChannelNotificationEmitter
 
     public DeliveryPolicy Policy => _policy;
 
-    public Task<bool> EmitAsync(ChannelMessageNotification payload, CancellationToken ct = default) =>
-        Task.FromResult(Deliver(ChannelInboxItem.ForMessage(payload)));
+    // The token is honoured, not decorative: the callers that pass a real one settle a durable
+    // record on the answer — a schedule is deleted or stamped, a routing entry removed, a broker
+    // message completed. Delivering on the way down and reporting live would settle those records
+    // for an item that reached nobody, so a cancelled emit delivers nothing and throws.
+    public Task<bool> EmitAsync(ChannelMessageNotification payload, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(Deliver(ChannelInboxItem.ForMessage(payload)));
+    }
 
-    public Task<bool> EmitCancelAsync(ChannelCancelNotification payload, CancellationToken ct = default) =>
-        Task.FromResult(Deliver(ChannelInboxItem.ForCancel(payload)));
+    public Task<bool> EmitCancelAsync(ChannelCancelNotification payload, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(Deliver(ChannelInboxItem.ForCancel(payload)));
+    }
 
     private bool Deliver(ChannelInboxItem item)
     {
