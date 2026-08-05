@@ -1,6 +1,6 @@
 # One refusal rule for the downloads overlay
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 

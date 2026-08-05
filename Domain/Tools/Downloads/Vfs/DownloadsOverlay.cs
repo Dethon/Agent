@@ -42,7 +42,7 @@ public sealed class DownloadsOverlay(
     // but moving it is not — on the way out the download keeps writing and recreates what it lost,
     // leaving the moved copy orphaned, and on the way in whatever landed inside is destroyed the
     // moment the download is cancelled.
-    private async Task<bool> TouchesActiveDownloadAsync(string path, CancellationToken ct)
+    private async Task<bool> TouchesLiveDownloadAsync(string path, CancellationToken ct)
     {
         // The same canonical spelling the classifier uses, so 'downloads/./42' overlaps the live
         // download it names instead of reading as an unrelated string.
@@ -70,38 +70,46 @@ public sealed class DownloadsOverlay(
         {
             // The only text on this mount is a status file; the media itself is bytes. A leftover
             // status file is still a status file by name, and reads as the ordinary file it is.
-            DownloadsIntent.TextRead when node.Kind != DownloadNodeKind.StatusFile => Error(
-                ToolError.Codes.UnsupportedOperation,
-                $"fs_read on the {MediaLibraryDiskFileSystem.Name} filesystem only reads "
-                + $"{MediaFilesystem.DownloadsSubdir}/<id>/{DownloadsPath.StatusFileName}.",
-                $"Use fs_blob_read for the raw bytes of any other file on {MediaLibraryDiskFileSystem.Name}."),
-            DownloadsIntent.ByteRead when await IsLiveStatusFileAsync(node, ct) => Error(
-                ToolError.Codes.UnsupportedOperation,
-                $"'{path}' is a live download's status file: a view rendered when it is read, not "
-                + "bytes on disk. Read it as text with fs_read.",
-                "fs_read on this path reports the download's state, progress and eta."),
-            // Every way of putting bytes inside a live download's directory carries this one
-            // reason, including a write to its status file: that write lands inside the directory
-            // too, and "it dies when the download is cancelled" is the more useful thing to say.
-            DownloadsIntent.Land when await TouchesActiveDownloadAsync(path, ct) => Error(
-                ToolError.Codes.UnsupportedOperation,
-                $"'{path}' lands inside an active download's directory; anything placed there is "
-                + "removed when the download is cancelled.",
-                "Wait for the download to finish, or put the file somewhere outside "
-                + $"{MediaFilesystem.DownloadsSubdir}/<id>."),
-            // The way out of the boundary: the download keeps writing and recreates what it lost,
-            // so the moved copy is orphaned the moment it lands.
-            DownloadsIntent.MoveOut when await TouchesActiveDownloadAsync(path, ct) => Error(
-                ToolError.Codes.UnsupportedOperation,
-                $"'{path}' belongs to an active download; moving across that boundary would leave "
-                + "the download writing into files the move cannot follow, and anything moved "
-                + "inside is removed when the download is cancelled.",
-                $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
-                + "for it to finish, then move the files."),
+            DownloadsIntent.TextRead when node.Kind != DownloadNodeKind.StatusFile => TextReadRefusal(),
+            DownloadsIntent.ByteRead when await IsLiveStatusFileAsync(node, ct) => ByteReadRefusal(path),
+            DownloadsIntent.Land when await TouchesLiveDownloadAsync(path, ct) => LandRefusal(path),
+            DownloadsIntent.MoveOut when await TouchesLiveDownloadAsync(path, ct) => MoveOutRefusal(path),
             DownloadsIntent.Delete => await DeleteRefusalAsync(node, path, ct),
             _ => null
         };
     }
+
+    private static ToolErrorResult TextReadRefusal() => Error(
+        ToolError.Codes.UnsupportedOperation,
+        $"fs_read on the {MediaLibraryDiskFileSystem.Name} filesystem only reads "
+        + $"{MediaFilesystem.DownloadsSubdir}/<id>/{DownloadsPath.StatusFileName}.",
+        $"Use fs_blob_read for the raw bytes of any other file on {MediaLibraryDiskFileSystem.Name}.");
+
+    private static ToolErrorResult ByteReadRefusal(string path) => Error(
+        ToolError.Codes.UnsupportedOperation,
+        $"'{path}' is a live download's status file: a view rendered when it is read, not bytes on "
+        + "disk. Read it as text with fs_read.",
+        "fs_read on this path reports the download's state, progress and eta.");
+
+    // Every way of putting bytes where a live download is carries this one reason, including a
+    // write to its status file: that write lands inside the directory too, and "it dies when the
+    // download is cancelled" is the more useful thing to say.
+    private static ToolErrorResult LandRefusal(string path) => Error(
+        ToolError.Codes.UnsupportedOperation,
+        $"'{path}' is a live download's directory, holds one, or is inside one; anything placed "
+        + "there is removed when the download is cancelled.",
+        "Wait for the download to finish, or put the file somewhere outside "
+        + $"{MediaFilesystem.DownloadsSubdir}/<id>.");
+
+    // The way out of the boundary: the download keeps writing and recreates what it lost, so the
+    // moved copy is orphaned the moment it lands.
+    private static ToolErrorResult MoveOutRefusal(string path) => Error(
+        ToolError.Codes.UnsupportedOperation,
+        $"'{path}' belongs to a live download; moving across that boundary would leave the download "
+        + "writing into files the move cannot follow, and anything moved inside is removed when the "
+        + "download is cancelled.",
+        $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait for it to "
+        + "finish, then move the files.");
 
     // Delete's two refusals. Everything it does — the cancel, the routing removal, the leftover
     // recovery — is not here: the rule answers "may I" and never acts.
@@ -123,14 +131,20 @@ public sealed class DownloadsOverlay(
                 ToolError.Codes.UnsupportedOperation,
                 $"fs_delete on the {MediaLibraryDiskFileSystem.Name} filesystem only removes "
                 + $"download directories ({MediaFilesystem.DownloadsSubdir}/<id>) and leftover "
-                + $"{DownloadsPath.StatusFileName} files no live download owns.")
+                + $"{DownloadsPath.StatusFileName} files no live download owns.",
+                "Nothing else on this filesystem can be deleted; the library is not scratch space.")
         };
 
-    // Reached only once the rule has allowed a text read, so the path is a status file: either the
-    // rendered view of a live download or a leftover the disk owns.
+    // Reached once the rule has allowed a text read, so the path is a status file: either the
+    // rendered view of a live download or a leftover the disk owns. A caller that skipped the rule
+    // is answered not_found rather than crashing — there is nothing here to render for it.
     public async Task<FsResult<FsReadResult>> ReadAsync(string path, CancellationToken ct)
     {
-        var id = ParseNode(path).Id!.Value;
+        if (ParseNode(path) is not { Kind: DownloadNodeKind.StatusFile, Id: { } id })
+        {
+            return FsError.NotFound<FsReadResult>(path);
+        }
+
         return await downloadClient.GetDownloadItem(id, ct) is { } item
             ? Read(path, RenderStatus(item))
             : await ReadLeftoverAsync(path, id, ct);

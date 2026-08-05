@@ -18,19 +18,19 @@ them.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A streamed read of a leftover status file returns the file's bytes.
-- [ ] A ranged read and a streamed read of the same leftover status file agree.
-- [ ] A ranged read of a live download's status file is refused as an unsupported operation
+- [x] A streamed read of a leftover status file returns the file's bytes.
+- [x] A ranged read and a streamed read of the same leftover status file agree.
+- [x] A ranged read of a live download's status file is refused as an unsupported operation
       whose reason points at the text read.
-- [ ] A streamed read of a live download's status file is refused with that same reason,
+- [x] A streamed read of a live download's status file is refused with that same reason,
       carried as the typed filesystem exception rather than `NotSupportedException`.
-- [ ] A text read of a live download's status file still returns its state, progress and eta.
-- [ ] A text read of any other media path is still refused with a reason naming the status file
+- [x] A text read of a live download's status file still returns its state, progress and eta.
+- [x] A text read of any other media path is still refused with a reason naming the status file
       as what this mount reads.
-- [ ] Dotted, absolute and lookalike-id spellings classify identically for both read intents.
-- [ ] The refusals for both read intents come from the new rule, not from a predicate chosen at
+- [x] Dotted, absolute and lookalike-id spellings classify identically for both read intents.
+- [x] The refusals for both read intents come from the new rule, not from a predicate chosen at
       the call site.
-- [ ] Tests for the above live at the media mount seam and name paths and operations, never the
+- [x] Tests for the above live at the media mount seam and name paths and operations, never the
       rule or an intent.

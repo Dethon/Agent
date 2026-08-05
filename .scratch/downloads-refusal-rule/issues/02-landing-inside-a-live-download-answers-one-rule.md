@@ -15,17 +15,17 @@ a write to an ordinary file and succeeds.
 
 **Blocked by:** 01 — Reads answer one rule.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A copy whose destination is inside a live download's directory is refused with the landing
+- [x] A copy whose destination is inside a live download's directory is refused with the landing
       reason.
-- [ ] A ranged byte write inside a live download's directory is refused with that reason.
-- [ ] A streamed write inside a live download's directory is refused with that reason, carried
+- [x] A ranged byte write inside a live download's directory is refused with that reason.
+- [x] A streamed write inside a live download's directory is refused with that reason, carried
       as the typed filesystem exception, and nothing is written to disk.
-- [ ] A write to a live download's status file is refused with the landing reason.
-- [ ] A write to a leftover status file succeeds.
-- [ ] A copy out of a live download's directory still succeeds — only the destination side is
+- [x] A write to a live download's status file is refused with the landing reason.
+- [x] A write to a leftover status file succeeds.
+- [x] A copy out of a live download's directory still succeeds — only the destination side is
       asked.
-- [ ] Writes to media paths unrelated to downloads still succeed.
-- [ ] Dotted, absolute and lookalike-id spellings of a destination classify identically.
-- [ ] All of the above refuse through the one rule with the landing intent.
+- [x] Writes to media paths unrelated to downloads still succeed.
+- [x] Dotted, absolute and lookalike-id spellings of a destination classify identically.
+- [x] All of the above refuse through the one rule with the landing intent.

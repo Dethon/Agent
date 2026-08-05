@@ -16,17 +16,17 @@ acts.
 
 **Blocked by:** 01 — Reads answer one rule.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Deleting a live download's status file is refused with the read-only reason.
-- [ ] Deleting a media path that is neither a download directory nor a status file is refused
+- [x] Deleting a live download's status file is refused with the read-only reason.
+- [x] Deleting a media path that is neither a download directory nor a status file is refused
       with a reason naming what delete does here.
-- [ ] Deleting a live download's directory still cancels the download, removes its routing entry
+- [x] Deleting a live download's directory still cancels the download, removes its routing entry
       and removes its files, and still reports the cancel.
-- [ ] A failure cleaning up a live download still aborts before the routing entry is touched.
-- [ ] Deleting a leftover download directory still removes it and its routing entry.
-- [ ] Deleting a leftover status file still removes the real file.
-- [ ] Deleting a download directory that exists nowhere still reports not found.
-- [ ] Dotted, absolute and lookalike-id spellings classify identically.
-- [ ] The two refusals come from the rule; the cancel, routing removal and leftover recovery do
+- [x] A failure cleaning up a live download still aborts before the routing entry is touched.
+- [x] Deleting a leftover download directory still removes it and its routing entry.
+- [x] Deleting a leftover status file still removes the real file.
+- [x] Deleting a download directory that exists nowhere still reports not found.
+- [x] Dotted, absolute and lookalike-id spellings classify identically.
+- [x] The two refusals come from the rule; the cancel, routing removal and leftover recovery do
       not move into it.

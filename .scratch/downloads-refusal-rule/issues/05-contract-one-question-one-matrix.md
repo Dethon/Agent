@@ -24,15 +24,15 @@ routing removal.
 **Blocked by:** 02 — Landing inside a live download answers one rule; 03 — Moving out of a live
 download answers one rule; 04 — Delete's refusals answer one rule.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The spelling-only predicate no longer exists.
-- [ ] The two liveness predicates are private to the overlay.
-- [ ] The overlay's public surface is the one rule plus the operations that produce something:
+- [x] The spelling-only predicate no longer exists.
+- [x] The two liveness predicates are private to the overlay.
+- [x] The overlay's public surface is the one rule plus the operations that produce something:
       read, info, glob entries and delete.
-- [ ] The refusal matrix covers every intent against every path class at the media mount seam.
-- [ ] Spelling variants are rows in that matrix, not a separate group.
-- [ ] The seven per-site refusal assertions are gone, with nothing they covered lost.
-- [ ] The overlay's non-refusal tests are untouched and still pass.
-- [ ] The per-server filesystem conformance test passes untouched — no capability drifted.
-- [ ] No test names the rule's method or an intent value.
+- [x] The refusal matrix covers every intent against every path class at the media mount seam.
+- [x] Spelling variants are rows in that matrix, not a separate group.
+- [x] The seven per-site refusal assertions are gone, with nothing they covered lost.
+- [x] The overlay's non-refusal tests are untouched and still pass.
+- [x] The per-server filesystem conformance test passes untouched — no capability drifted.
+- [x] No test names the rule's method or an intent value.

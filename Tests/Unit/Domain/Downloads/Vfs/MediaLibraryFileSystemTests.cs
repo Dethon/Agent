@@ -54,7 +54,7 @@ public class MediaLibraryFileSystemTests : IDisposable
             "downloads/42/status.json", Chunks("stale snapshot"),
             overwrite: true, createDirectories: true, CancellationToken.None));
 
-        write.Error.Message.ShouldContain("lands inside");
+        write.Error.Message.ShouldContain("removed when the download is cancelled");
         File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
     }
 
@@ -152,7 +152,7 @@ public class MediaLibraryFileSystemTests : IDisposable
         var write = await Should.ThrowAsync<FileSystemOperationException>(() => _sut.WriteChunksAsync(
             path, Chunks("stale snapshot"), overwrite: true, createDirectories: true, CancellationToken.None));
 
-        write.Error.Message.ShouldContain("lands inside");
+        write.Error.Message.ShouldContain("removed when the download is cancelled");
         File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeFalse();
     }
 
@@ -169,7 +169,7 @@ public class MediaLibraryFileSystemTests : IDisposable
 
         var error = write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>().Error;
         error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
-        error.Message.ShouldContain("lands inside");
+        error.Message.ShouldContain("removed when the download is cancelled");
         Directory.Exists(Path.Combine(_libraryRoot, "downloads", "42")).ShouldBeFalse();
     }
 
@@ -197,7 +197,7 @@ public class MediaLibraryFileSystemTests : IDisposable
             Convert.ToBase64String("book"u8.ToArray()),
             offset: 0, overwrite: true, createDirectories: true, CancellationToken.None);
 
-        write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>().Error.Message.ShouldContain("lands inside");
+        write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>().Error.Message.ShouldContain("removed when the download is cancelled");
     }
 
     // A read intent classifies one path, whichever way that path is spelled: the dotted and
@@ -284,6 +284,22 @@ public class MediaLibraryFileSystemTests : IDisposable
         (await File.ReadAllTextAsync(Path.Combine(_libraryRoot, "Movies", "notes.txt"))).ShouldBe("hello");
     }
 
+    // A path with nothing to do with downloads is the disk's for both byte operations.
+    [Fact]
+    public async Task BlobReadAndBlobWrite_OfAPlainMediaPath_StillReachTheDisk()
+    {
+        _client.Add(Item(42));
+
+        (await _sut.WriteBlobAsync("Movies/notes.txt", Convert.ToBase64String("hello"u8.ToArray()),
+                offset: 0, overwrite: true, createDirectories: true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobWriteResult>.Ok>();
+
+        var blob = (await _sut.ReadBlobAsync("Movies/notes.txt", 0, 1024, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobReadResult>.Ok>().Value;
+
+        Encoding.UTF8.GetString(Convert.FromBase64String(blob.ContentBase64)).ShouldBe("hello");
+    }
+
     // Deleting downloads/<id> is the documented cancel, but moving it is not: qBittorrent keeps
     // writing, recreates the directory it lost, and a later delete then cancels and cleans the
     // recreated one while the moved copy is orphaned. The refusal covers the download directory and
@@ -303,7 +319,7 @@ public class MediaLibraryFileSystemTests : IDisposable
 
         var error = move.ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error;
         error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
-        error.Message.ShouldContain("active download");
+        error.Message.ShouldContain("live download");
     }
 
     // The other half of the same boundary. A payload file inside a live download is not "above" the
@@ -314,8 +330,9 @@ public class MediaLibraryFileSystemTests : IDisposable
     [Theory]
     [InlineData("downloads/42/payload.mkv", "Movies/payload.mkv", "moving across that boundary")]
     [InlineData("downloads/42/status.json", "Movies/status.json", "moving across that boundary")]
-    [InlineData("Movies/payload.mkv", "downloads/42/payload.mkv", "lands inside")]
-    [InlineData("Movies/payload.mkv", "downloads/42", "lands inside")]
+    [InlineData("Movies/payload.mkv", "downloads/42/payload.mkv", "is removed when the download is cancelled")]
+    [InlineData("Movies/payload.mkv", "downloads/42", "is removed when the download is cancelled")]
+    [InlineData("Movies/payload.mkv", "downloads", "is removed when the download is cancelled")]
     public async Task Move_AcrossALiveDownloadsBoundary_IsRefused(string source, string destination, string reason)
     {
         _client.Add(Item(42));
@@ -418,7 +435,7 @@ public class MediaLibraryFileSystemTests : IDisposable
         var result = await new VfsMoveTool(registry.Object).RunAsync("/media/downloads/42", "/vault/42");
 
         result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
-        result["message"]!.GetValue<string>().ShouldContain("active download");
+        result["message"]!.GetValue<string>().ShouldContain("live download");
         _client.CleanedUp.ShouldBeEmpty();
         _client.Items.ShouldContain(i => i.Id == 42);
         destination.Verify(b => b.WriteChunksAsync(It.IsAny<string>(),
@@ -447,7 +464,7 @@ public class MediaLibraryFileSystemTests : IDisposable
             .RunAsync("/vault/note.md", "/media/downloads/42/note.md");
 
         result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
-        result["message"]!.GetValue<string>().ShouldContain("active download");
+        result["message"]!.GetValue<string>().ShouldContain("live download");
         source.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -565,22 +582,18 @@ public class MediaLibraryFileSystemTests : IDisposable
             .Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
     }
 
-    // The virtual file wins for as long as a download owns the id: it is a rendered view, not a
-    // file, so info reports the rendered size and delete still refuses it.
+    // The rendered view wins for as long as a download owns the id, so info reports its size
+    // rather than the disk's answer for a file that is not there.
     [Fact]
-    public async Task StatusFileOfALiveDownload_StaysVirtual()
+    public async Task Info_ALiveDownloadsStatusFile_ReportsTheRenderedSize()
     {
         _client.Add(Item(42));
 
         var info = (await _sut.InfoAsync("downloads/42/status.json", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+
         info.Exists.ShouldBeTrue();
         info.Size.ShouldNotBeNull();
-
-        (await _sut.DeleteAsync("downloads/42/status.json", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>()
-            .Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
-        _disk.TrashedPaths.ShouldBeEmpty();
     }
 
     // fs_info answers Exists=true for an active download's directory before qBittorrent has
@@ -622,7 +635,7 @@ public class MediaLibraryFileSystemTests : IDisposable
         (await _sut.CopyAsync("book.epub", "downloads/42/book.epub", overwrite: false,
                 createDirectories: true, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsCopyResult>.Err>()
-            .Error.Message.ShouldContain("active download");
+            .Error.Message.ShouldContain("removed when the download is cancelled");
 
         File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "book.epub")).ShouldBeFalse();
     }
@@ -635,7 +648,7 @@ public class MediaLibraryFileSystemTests : IDisposable
         (await _sut.WriteBlobAsync("downloads/42/book.epub", Convert.ToBase64String("book"u8.ToArray()),
                 offset: 0, overwrite: true, createDirectories: true, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>()
-            .Error.Message.ShouldContain("active download");
+            .Error.Message.ShouldContain("live download");
 
         File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "book.epub")).ShouldBeFalse();
     }
@@ -649,7 +662,7 @@ public class MediaLibraryFileSystemTests : IDisposable
             "downloads/42/book.epub", Chunks("book"), overwrite: true, createDirectories: true,
             CancellationToken.None));
 
-        thrown.Error.Message.ShouldContain("active download");
+        thrown.Error.Message.ShouldContain("live download");
         File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "book.epub")).ShouldBeFalse();
     }
 
@@ -686,34 +699,11 @@ public class MediaLibraryFileSystemTests : IDisposable
     }
 
     [Fact]
-    public async Task BlobRead_ALeftoverStatusFileWithNoLiveDownload_ServesTheRealFile()
-    {
-        var leftover = Path.Combine(_libraryRoot, "downloads", "99", "status.json");
-        Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
-        await File.WriteAllTextAsync(leftover, "{\"stale\":true}");
-
-        var blob = (await _sut.ReadBlobAsync("downloads/99/status.json", 0, 1024, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsBlobReadResult>.Ok>().Value;
-
-        Encoding.UTF8.GetString(Convert.FromBase64String(blob.ContentBase64)).ShouldContain("stale");
-    }
-
-    [Fact]
     public async Task Read_AStatusPathWithNoLiveDownloadAndNoFile_IsNotFound()
     {
         (await _sut.ReadAsync("downloads/99/status.json", null, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsReadResult>.Err>()
             .Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
-    }
-
-    [Fact]
-    public async Task BlobRead_OfALiveDownloadsStatusFile_IsStillRefused()
-    {
-        _client.Add(Item(42));
-
-        (await _sut.ReadBlobAsync("downloads/42/status.json", 0, 10, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsBlobReadResult>.Err>()
-            .Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
     }
 
     private static FsResult<FileSystemResolution> Resolved(IFileSystemBackend backend, string relativePath) =>

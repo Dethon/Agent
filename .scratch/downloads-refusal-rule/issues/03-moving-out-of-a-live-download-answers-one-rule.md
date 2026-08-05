@@ -18,16 +18,16 @@ download is already gone.
 
 **Blocked by:** 02 — Landing inside a live download answers one rule.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Moving a live download's directory is refused with the move-out reason.
-- [ ] Moving a directory that contains a live download is refused with that reason.
-- [ ] Moving a payload file out of a live download's directory is refused with that reason.
-- [ ] A move whose destination lands inside a live download's directory is refused with the
+- [x] Moving a live download's directory is refused with the move-out reason.
+- [x] Moving a directory that contains a live download is refused with that reason.
+- [x] Moving a payload file out of a live download's directory is refused with that reason.
+- [x] A move whose destination lands inside a live download's directory is refused with the
       landing reason.
-- [ ] When both ends offend, the refusal names the source.
-- [ ] The cross-mount hook returns the same refusal for a path on either side of the boundary.
-- [ ] Moving a leftover download directory succeeds.
-- [ ] Moving media paths unrelated to downloads still succeeds.
-- [ ] Dotted and absolute spellings of either end classify identically.
-- [ ] The move operation consults the rule exactly once per end.
+- [x] When both ends offend, the refusal names the source.
+- [x] The cross-mount hook returns the same refusal for a path on either side of the boundary.
+- [x] Moving a leftover download directory succeeds.
+- [x] Moving media paths unrelated to downloads still succeeds.
+- [x] Dotted and absolute spellings of either end classify identically.
+- [x] The move operation consults the rule exactly once per end.

@@ -27,9 +27,10 @@ public sealed class MediaLibraryDiskFileSystem(
     private static string Mount(LibraryPathConfig root) =>
         $"Media library ({root.BaseLibraryPath}) — books, audiobooks, and other downloaded media. "
         + "Read/list focused; treat writes as organisational only. Does NOT support fs_exec. Active "
-        + $"downloads live under {MediaFilesystem.DownloadsDir}/<id>/: a virtual read-only "
-        + "status.json reports live state/progress/eta, and deleting the <id> directory cancels the "
-        + "download and cleans up its files.";
+        + $"downloads live under {MediaFilesystem.DownloadsDir}/<id>/: a status.json rendered on "
+        + "read reports live state/progress/eta, and deleting the <id> directory cancels the "
+        + "download and cleans up its files. Once a download ends, what it left behind is ordinary "
+        + "files.";
 
     public override string DescribeRead =>
         $"Read a download's virtual status file ({MediaFilesystem.DownloadsSubdir}/<id>/status.json "
@@ -113,9 +114,9 @@ public sealed class MediaLibraryDiskFileSystem(
     public async Task<ToolErrorResult?> RefuseMoveAsync(string relativePath, CancellationToken ct) =>
         await downloads.RefuseAsync(DownloadsIntent.MoveOut, relativePath, ct);
 
-    // Copy and blob-write only land content, so unlike move only the destination side of the
-    // boundary is asked: the way out is harmless (the source keeps its file), but whatever lands
-    // inside a live download's directory is removed the moment the download is cancelled.
+    // Copy and blob-write only land content, so unlike move only the destination side is asked:
+    // the way out is harmless (the source keeps its file), but whatever lands inside a live
+    // download's directory is removed the moment the download is cancelled.
     public override async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
         await RefuseAsync<FsCopyResult>(DownloadsIntent.Land, destinationPath, ct)
