@@ -17,10 +17,11 @@ public sealed class DataLoadEffect(MetricFamilyTable families, OverviewFigures o
     public async Task LoadAsync(DateOnly from, DateOnly to)
     {
         families.All.ToList().ForEach(family => family.SetDateRange(from, to));
+        overview.SetDateRange(from, to);
 
         var requests = new Func<Task>[]
         {
-            () => overview.LoadSummaryAsync(from, to),
+            overview.LoadSummaryAsync,
             overview.LoadHealthAsync,
         }.Concat(families.All.SelectMany(family => new Func<Task>[]
         {

@@ -12,9 +12,21 @@ public sealed class OverviewFigures(
     MetricsStore metricsStore,
     HealthStore healthStore)
 {
-    public async Task LoadSummaryAsync(DateOnly from, DateOnly to)
+    private (DateOnly From, DateOnly To)? _range;
+
+    public void SetDateRange(DateOnly from, DateOnly to) => _range = (from, to);
+
+    // The summary is per range and catch-up is never told one, so it re-reads over the range the
+    // last page load set, exactly as the family walk reads its range from the families. Before any
+    // load has set one there is no summary on screen to correct, so there is nothing to read.
+    public async Task LoadSummaryAsync()
     {
-        var summary = await api.GetSummaryAsync(from, to);
+        if (_range is not { } range)
+        {
+            return;
+        }
+
+        var summary = await api.GetSummaryAsync(range.From, range.To);
         if (summary is null)
         {
             return;
