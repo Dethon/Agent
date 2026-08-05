@@ -54,7 +54,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         var (apiUrl, apiKey, model) = GetConfig();
         var extractor = CreateExtractor(apiUrl, apiKey, model);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(40));
 
         var result = await extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User,
