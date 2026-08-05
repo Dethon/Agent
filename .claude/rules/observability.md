@@ -46,11 +46,19 @@ fail — it keeps trying.
   shows it; the overview reads the same store.
 - **`MetricsCatchUp` walks the family table** for the range each family already holds, so a
   recovery does not move the user's group-by, metric or time choices. It is awaited as the last step
-  of becoming live, and skipped when `ConnectionState.Epoch` is 1, where ordinary page load fetches
-  the same data. A failure inside it is logged and leaves the connection live. It does not reload
-  the overview's summary totals, which stay short until the next page load.
-- `MetricsHubBinder` is the binder and nothing else: the mapping from a push to a store update and a
-  family refresh, with `Bind` and `Unbind` driven by the module.
+  of becoming live. On the **first** epoch it is normally skipped, because the ordinary page load
+  fetches the same data and catching up too would double every request on first paint. A first load
+  that **failed** gets the catch-up anyway — otherwise a dashboard opened during an outage shows a
+  green dot over empty pages until the user reloads. The load may still be in flight when the
+  decision is taken, so the module waits for that first load to settle and catches up if it failed.
+  Later epochs always catch up. A failure inside the catch-up is logged and leaves the connection
+  live.
+- **The catch-up holds pushes while it runs.** `MetricsHubBinder.HoldPushes` queues incoming pushes,
+  and `ReleaseHeldPushesAsync` replays them once the snapshot has landed. Without the hold, a
+  snapshot fetched before a push arrived would erase that push, and a push the snapshot already
+  contains would land twice. Any change to the catch-up must keep both ends of that pairing.
+- `MetricsHubBinder` is otherwise the binder and nothing else: the mapping from a push to a store
+  update and a family refresh, with `Bind` and `Unbind` driven by the module.
 
 Health tiles come from `ServiceHealthRegistry`, a sorted-set roster (`metrics:health:seen`) scored by *last registration*, not last health — reachability is the separate TTL'd `metrics:health:<service>` key. Services publishing `HeartbeatEvent`s register themselves; third-party containers are registered by `HttpHealthProbeService`, which polls the URLs in `HttpProbes` (`Observability/appsettings.json`) and treats **any** HTTP response, even non-2xx, as up. A probe target re-registers every cycle whether or not it answers, so a down service stays visible as a red tile, while a retired one stops registering and ages off after `Retention` (7 days).
 
