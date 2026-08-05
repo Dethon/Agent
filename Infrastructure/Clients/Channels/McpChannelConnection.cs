@@ -178,7 +178,7 @@ public sealed class McpChannelConnection(
         await StopPumpAsync();
         _toolNames = null;
 
-        _client = await McpClient.CreateAsync(
+        var client = await McpClient.CreateAsync(
             new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }),
             new McpClientOptions
             {
@@ -190,13 +190,16 @@ public sealed class McpChannelConnection(
             },
             cancellationToken: ct);
 
+        _client = client;
         _pumpCts = new CancellationTokenSource();
-        _pumpTask = PumpAsync(_pumpCts.Token);
+        // The pump runs against the client of its own generation, handed to it rather than read
+        // back off the field: a reconnect nulls the field, and this loop must not see that.
+        _pumpTask = PumpAsync(client, _pumpCts.Token);
     }
 
     // Inbound items are pulled, not pushed: a stateless server cannot address a session, so the
     // agent long-polls channel_receive and feeds the two notification handlers itself.
-    private async Task PumpAsync(CancellationToken ct)
+    private async Task PumpAsync(McpClient client, CancellationToken ct)
     {
         var subscriberId = $"{ChannelProtocol.ChannelClientNamePrefix}{ChannelId}";
         var backoff = _minBackoff;
@@ -207,7 +210,7 @@ public sealed class McpChannelConnection(
             TimeSpan pause;
             try
             {
-                if (await PollOnceAsync(subscriberId, ct))
+                if (await PollOnceAsync(client, subscriberId, ct))
                 {
                     // Items delivered, or the wait honoured in full: re-poll at once, so the next
                     // real message is never sitting behind a timer.
@@ -262,10 +265,10 @@ public sealed class McpChannelConnection(
     // False when the batch came back empty without the server having honoured a meaningful share
     // of the wait. That is the shape of a displaced waiter, which the inbox retires instantly —
     // re-polling on it with no pause is how a stray second poller spins a core.
-    private async Task<bool> PollOnceAsync(string subscriberId, CancellationToken ct)
+    private async Task<bool> PollOnceAsync(McpClient client, string subscriberId, CancellationToken ct)
     {
         var startedAt = Stopwatch.GetTimestamp();
-        var call = await _client!.CallToolAsync(
+        var call = await client.CallToolAsync(
             ChannelProtocol.ReceiveTool,
             new Dictionary<string, object?>
             {
@@ -404,13 +407,13 @@ public sealed class McpChannelConnection(
         string? messageId,
         CancellationToken ct)
     {
-        EnsureConnected();
+        var client = RequireClient();
         // send_reply fires once per streamed content chunk (hundreds per response). Building
         // the args dictionary directly avoids ChannelProtocol.ToArguments's reflection
         // SerializeToDocument + per-property Clone on the hot path; the wire JSON is
         // identical (same camelCase keys, ContentType.ToString() matches the
         // JsonStringEnumConverter output).
-        await _client!.CallToolAsync(
+        await client.CallToolAsync(
             ChannelProtocol.SendReplyTool,
             new Dictionary<string, object?>
             {
@@ -428,8 +431,8 @@ public sealed class McpChannelConnection(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken ct)
     {
-        EnsureConnected();
-        var result = await _client!.CallToolAsync(
+        var client = RequireClient();
+        var result = await client.CallToolAsync(
             ChannelProtocol.RequestApprovalTool,
             ChannelProtocol.ToArguments(new RequestApprovalParams
             {
@@ -450,8 +453,8 @@ public sealed class McpChannelConnection(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken ct)
     {
-        EnsureConnected();
-        await _client!.CallToolAsync(
+        var client = RequireClient();
+        await client.CallToolAsync(
             ChannelProtocol.RequestApprovalTool,
             ChannelProtocol.ToArguments(new RequestApprovalParams
             {
@@ -471,19 +474,20 @@ public sealed class McpChannelConnection(
         string? existingConversationId,
         CancellationToken ct)
     {
-        if (_client is null)
+        var client = _client;
+        if (client is null)
         {
             return null;
         }
 
         try
         {
-            if (!await OffersToolAsync(ChannelProtocol.CreateConversationTool, ct))
+            if (!await OffersToolAsync(client, ChannelProtocol.CreateConversationTool, ct))
             {
                 return null;
             }
 
-            var result = await _client.CallToolAsync(
+            var result = await client.CallToolAsync(
                 ChannelProtocol.CreateConversationTool,
                 new Dictionary<string, object?>
                 {
@@ -524,17 +528,18 @@ public sealed class McpChannelConnection(
 
     public async Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
     {
-        if (_client is null)
+        var client = _client;
+        if (client is null)
         {
             return;
         }
 
-        if (!await OffersToolAsync(ChannelProtocol.RegisterAgentsTool, ct))
+        if (!await OffersToolAsync(client, ChannelProtocol.RegisterAgentsTool, ct))
         {
             return;
         }
 
-        var result = await _client.CallToolAsync(
+        var result = await client.CallToolAsync(
             ChannelProtocol.RegisterAgentsTool,
             ChannelProtocol.ToArguments(new RegisterAgentsParams { Agents = agents }),
             cancellationToken: ct);
@@ -555,22 +560,24 @@ public sealed class McpChannelConnection(
     {
         await StopPumpAsync();
         _messageChannel.Writer.TryComplete();
-        if (_client is not null)
+        var client = _client;
+        if (client is not null)
         {
-            await _client.DisposeAsync();
+            await client.DisposeAsync();
         }
     }
 
     public async Task<bool> IsHealthyAsync(CancellationToken ct)
     {
-        if (_client is null)
+        var client = _client;
+        if (client is null)
         {
             return false;
         }
 
         try
         {
-            await _client.ListToolsAsync(cancellationToken: ct);
+            await client.ListToolsAsync(cancellationToken: ct);
             return true;
         }
         catch
@@ -593,16 +600,15 @@ public sealed class McpChannelConnection(
 
     // Two targets resolving at once can both find the set unfetched and each ask; that costs one
     // extra round trip on the first turn of a generation and settles on the same answer, which is
-    // cheaper than serialising every probe behind a lock. The client is captured before the ask
-    // and compared after, because a probe can outlive its generation: a reconnect mid-flight
-    // swaps the client, and storing the old generation's answer then would pin the new connection
-    // to a tool set its server may not have.
-    private async Task<bool> OffersToolAsync(string toolName, CancellationToken ct)
+    // cheaper than serialising every probe behind a lock. The client comes in as the caller's own
+    // snapshot and is compared against the field after the ask, because a probe can outlive its
+    // generation: a reconnect mid-flight swaps the client, and storing the old generation's answer
+    // then would pin the new connection to a tool set its server may not have.
+    private async Task<bool> OffersToolAsync(McpClient client, string toolName, CancellationToken ct)
     {
         var names = _toolNames;
         if (names is null)
         {
-            var client = _client!;
             names = (await client.ListToolsAsync(cancellationToken: ct))
                 .Select(tool => tool.Name)
                 .ToHashSet(StringComparer.Ordinal);
@@ -615,11 +621,9 @@ public sealed class McpChannelConnection(
         return names.Contains(toolName);
     }
 
-    private void EnsureConnected()
-    {
-        if (_client is null)
-        {
-            throw new InvalidOperationException("Not connected. Call ConnectAsync first.");
-        }
-    }
+    // The client every operation works against, read once. Re-reading the field after a guard —
+    // or behind a null-forgiving operator — races ReconnectAsync nulling it and turns the five
+    // documented not-connected behaviours (ADR 0011) into a NullReferenceException.
+    private McpClient RequireClient() =>
+        _client ?? throw new InvalidOperationException("Not connected. Call ConnectAsync first.");
 }
