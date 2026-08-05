@@ -104,6 +104,46 @@ public class SettingsBinderTests : IDisposable
             .BindSettings<ProbeLimitsSettings>(_secretsId)
             .MaxTimeoutSeconds.ShouldBe(0);
 
+    // An initializer default is the settings type saying "leave this out and take this value", so a
+    // required value type that carries one is not missing when configuration omits it. Voice's six
+    // defaulted sub-records are the shipped shape: adding a required int with a default to any of
+    // them used to fail startup on every deployment that never wrote the section.
+    [Fact]
+    public void ADefaultedRequiredValueType_BindsItsDefault() =>
+        new ConfigurationBuilder()
+            .BindSettings<ProbeDefaultedSectionSettings>(_secretsId)
+            .Tts.SpeedPercent.ShouldBe(100);
+
+    // A record struct section is a section like any other, and its required members are the same
+    // hole the required-value-type check closed, one level down: the walk used to stop at the struct
+    // itself and never look inside it.
+    [Fact]
+    public void AnAbsentRequiredValueTypeInAStructSection_FailsNamingThePathToIt() =>
+        Should.Throw<InvalidOperationException>(() =>
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?> { ["Window:Label"] = "x" })
+                    .BindSettings<ProbeStructSectionSettings>(_secretsId))
+            .Message.ShouldContain("Window.Seconds");
+
+    [Fact]
+    public void AFullyConfiguredStructSection_Binds() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Window:Seconds"] = "30" })
+            .BindSettings<ProbeStructSectionSettings>(_secretsId)
+            .Window.Seconds.ShouldBe(30);
+
+    // A property with no setter is computed, not configuration: nothing binds into it, so validating
+    // it says nothing about the deployment. SignalR's WebPush.IsConfigured and Home Assistant's
+    // McpSettings.IsConfigured are the shipped shape, and a section-typed one that hands back a
+    // fresh instance of its own type walks forever — a StackOverflowException at startup, which no
+    // catch block can turn into a message.
+    [Fact]
+    public void AComputedSectionProperty_IsNotWalked() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ChannelId"] = "probe" })
+            .BindSettings<ProbeComputedSettings>(_secretsId)
+            .ChannelId.ShouldBe("probe");
+
     // The presence check must follow the section path, not the display path: a member two levels
     // down lives at "Output:CapBytes", and a walk that asked the root for "Output.CapBytes" would
     // flag every nested value type as absent.
@@ -308,6 +348,43 @@ public record ProbeLimitsSettings
 public record ProbeOutputConfig
 {
     public required int CapBytes { get; init; }
+
+    public string? Label { get; init; }
+}
+
+// Shaped like voice's six defaulted sub-records: a section whose initializer supplies every member,
+// so a deployment that never writes the section is complete rather than misconfigured.
+public record ProbeDefaultedSectionSettings
+{
+    public ProbeTtsConfig Tts { get; init; } = new() { Voice = "kokoro", SpeedPercent = 100 };
+}
+
+public record ProbeTtsConfig
+{
+    public required string Voice { get; init; }
+
+    public required int SpeedPercent { get; init; }
+}
+
+// A settings section that happens to be a struct. Nothing about being a value type makes its
+// required members any less required.
+public record ProbeStructSectionSettings
+{
+    public ProbeWindowConfig Window { get; init; }
+}
+
+// A settings type with a computed section-typed property, the shape that recurses forever: every
+// read of Reloaded is a new instance, so a walk that follows it never runs out of instances.
+public record ProbeComputedSettings
+{
+    public required string ChannelId { get; init; }
+
+    public ProbeComputedSettings Reloaded => this with { ChannelId = ChannelId.Trim() };
+}
+
+public readonly record struct ProbeWindowConfig
+{
+    public required int Seconds { get; init; }
 
     public string? Label { get; init; }
 }

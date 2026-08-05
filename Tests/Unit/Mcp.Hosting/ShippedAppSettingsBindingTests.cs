@@ -82,20 +82,8 @@ public class ShippedAppSettingsBindingTests
         }
     }
 
-    // The working tree, never AppContext.BaseDirectory: every one of these projects copies its own
-    // appsettings.json to the test output, so Tests/bin/.../appsettings.json is whichever one won
-    // the copy race. appsettings.json alone, with no environment overlay, because that is what a
-    // container starts from.
+    // The file in the working tree, which the table locates. appsettings.json alone, with no
+    // environment overlay, because that is what a container starts from.
     private static string ShippedAppSettings(McpServerRow row) =>
-        Path.Combine(RepoRoot(), row.ProjectDirectory, "appsettings.json");
-
-    private static string RepoRoot()
-    {
-        var dir = AppContext.BaseDirectory;
-        while (dir is not null && !File.Exists(Path.Combine(dir, "Ziggurat.sln")))
-        {
-            dir = Path.GetDirectoryName(dir);
-        }
-        return dir ?? throw new InvalidOperationException("Ziggurat.sln not found above test directory");
-    }
+        Path.Combine(McpServerRegistrations.ProjectPath(row), "appsettings.json");
 }

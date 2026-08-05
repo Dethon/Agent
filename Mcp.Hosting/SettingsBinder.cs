@@ -62,11 +62,15 @@ public static class SettingsBinder
     // filled from secrets — ServiceBus, Telegram, WebSearch, HomeAssistant, Idealista and Library —
     // and an empty optional key is how a feature is switched off; an empty-is-invalid rule would
     // refuse to start them.
+    // A property with no setter is computed rather than configured: nothing binds into it, so
+    // validating it says nothing about the deployment, and a section-typed one that returns a fresh
+    // instance of its own type would walk forever — a StackOverflowException at startup, which no
+    // catch block can turn into a message.
     private static IEnumerable<string> MissingRequiredMembers(
         object instance, IConfiguration section, string path) =>
         instance.GetType()
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(property => property.GetIndexParameters().Length == 0)
+            .Where(property => property.GetIndexParameters().Length == 0 && property.SetMethod is not null)
             .SelectMany(property => Inspect(property, instance, section, path));
 
     private static IEnumerable<string> Inspect(
@@ -83,9 +87,17 @@ public static class SettingsBinder
         // A required value type has no null to reveal an absent key — it binds to the type's
         // default and would sail past the null walk. Presence is therefore asked of the
         // configuration itself, so an explicit default written in config stays legal.
-        if (property.PropertyType.IsValueType)
+        //
+        // A value that differs from the type default came from an initializer, which is the settings
+        // type saying "leave this out and take this value" — voice's six defaulted sub-records are
+        // the shipped shape, and holding one to a key it declared optional would fail startup on
+        // every deployment that never wrote the section.
+        if (property.PropertyType.IsValueType
+            && IsRequired(property)
+            && !section.GetSection(property.Name).Exists()
+            && value.Equals(Activator.CreateInstance(property.PropertyType)))
         {
-            return IsRequired(property) && !section.GetSection(property.Name).Exists() ? [memberPath] : [];
+            return [memberPath];
         }
 
         // Recurses into a nested section, which is what a missing configuration block produces.
@@ -123,11 +135,13 @@ public static class SettingsBinder
     private static bool IsRequired(PropertyInfo property) =>
         property.IsDefined(typeof(RequiredMemberAttribute), inherit: false);
 
-    // A section is any bindable class the framework didn't ship — a settings root or a Domain
-    // record nested inside one, from any assembly. Excluding the BCL rather than requiring
-    // assembly equality with TSettings is what lets a nested type live somewhere else.
+    // A section is any bindable type the framework didn't ship — a settings root or a Domain record
+    // nested inside one, from any assembly. Excluding the BCL rather than requiring assembly
+    // equality with TSettings is what lets a nested type live somewhere else, and a record struct
+    // section is walked like a class one: being a value type says nothing about whether the members
+    // inside are required.
     private static bool IsSection(Type type) =>
-        type.IsClass
+        (type.IsClass || (type.IsValueType && !type.IsPrimitive && !type.IsEnum))
         && type != typeof(string)
         && !typeof(IEnumerable).IsAssignableFrom(type)
         && !IsFrameworkType(type);

@@ -1,4 +1,6 @@
+using Domain.Channels;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore;
@@ -83,6 +85,43 @@ public class McpServerContractTests
 
     public static TheoryData<string> DualRoleServers => McpServerRegistrations.Ids(
         McpServerRegistrations.All.Where(row => row.Role == McpServerRole.DualRole));
+
+    // The Role column decides which rows the channel contract tests run over, so until now a row
+    // mislabelled Tool simply dropped out of them and nothing went red. These two tests are the
+    // column's own check: a channel row has an inbox and an emitter, a tool row has neither.
+    [Theory]
+    [MemberData(nameof(ChannelServers))]
+    public void EveryChannelServer_RegistersTheInboxAndTheEmitter(string id)
+    {
+        using var server = new ConfiguredServer(McpServerRegistrations.Get(id));
+
+        server.Services.ShouldContain(
+            descriptor => descriptor.ServiceType == typeof(ChannelInbox),
+            $"{id} is a channel row, so it must register a ChannelInbox");
+        server.Services.ShouldContain(
+            descriptor => descriptor.ServiceType == typeof(ChannelNotificationEmitter),
+            $"{id} is a channel row, so it must register a ChannelNotificationEmitter");
+    }
+
+    [Theory]
+    [MemberData(nameof(ToolOnlyServers))]
+    public void EveryToolOnlyServer_RegistersNoChannel(string id)
+    {
+        using var server = new ConfiguredServer(McpServerRegistrations.Get(id));
+
+        server.Services.ShouldNotContain(
+            descriptor => descriptor.ServiceType == typeof(ChannelInbox),
+            $"{id} is a tool row, so a ChannelInbox means the row is mislabelled");
+        server.Services.ShouldNotContain(
+            descriptor => descriptor.ServiceType == typeof(ChannelNotificationEmitter),
+            $"{id} is a tool row, so an emitter means the row is mislabelled");
+    }
+
+    public static TheoryData<string> ChannelServers =>
+        McpServerRegistrations.Ids(McpServerRegistrations.ChannelServers);
+
+    public static TheoryData<string> ToolOnlyServers => McpServerRegistrations.Ids(
+        McpServerRegistrations.All.Where(row => row.Role == McpServerRole.Tool));
 
     // The SignalR module connects its Redis multiplexer and ServiceBus its client eagerly, at
     // Configure time, and registers them as instance singletons — which DI never disposes, in the
