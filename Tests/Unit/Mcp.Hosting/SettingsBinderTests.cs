@@ -114,6 +114,24 @@ public class SettingsBinderTests : IDisposable
             .BindSettings<ProbeDefaultedSectionSettings>(_secretsId)
             .Tts.SpeedPercent.ShouldBe(100);
 
+    // A record struct section is a section like any other, and its required members are the same
+    // hole the required-value-type check closed, one level down: the walk used to stop at the struct
+    // itself and never look inside it.
+    [Fact]
+    public void AnAbsentRequiredValueTypeInAStructSection_FailsNamingThePathToIt() =>
+        Should.Throw<InvalidOperationException>(() =>
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?> { ["Window:Label"] = "x" })
+                    .BindSettings<ProbeStructSectionSettings>(_secretsId))
+            .Message.ShouldContain("Window.Seconds");
+
+    [Fact]
+    public void AFullyConfiguredStructSection_Binds() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Window:Seconds"] = "30" })
+            .BindSettings<ProbeStructSectionSettings>(_secretsId)
+            .Window.Seconds.ShouldBe(30);
+
     // The presence check must follow the section path, not the display path: a member two levels
     // down lives at "Output:CapBytes", and a walk that asked the root for "Output.CapBytes" would
     // flag every nested value type as absent.
@@ -334,4 +352,18 @@ public record ProbeTtsConfig
     public required string Voice { get; init; }
 
     public required int SpeedPercent { get; init; }
+}
+
+// A settings section that happens to be a struct. Nothing about being a value type makes its
+// required members any less required.
+public record ProbeStructSectionSettings
+{
+    public ProbeWindowConfig Window { get; init; }
+}
+
+public readonly record struct ProbeWindowConfig
+{
+    public required int Seconds { get; init; }
+
+    public string? Label { get; init; }
 }

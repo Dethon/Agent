@@ -131,11 +131,13 @@ public static class SettingsBinder
     private static bool IsRequired(PropertyInfo property) =>
         property.IsDefined(typeof(RequiredMemberAttribute), inherit: false);
 
-    // A section is any bindable class the framework didn't ship — a settings root or a Domain
-    // record nested inside one, from any assembly. Excluding the BCL rather than requiring
-    // assembly equality with TSettings is what lets a nested type live somewhere else.
+    // A section is any bindable type the framework didn't ship — a settings root or a Domain record
+    // nested inside one, from any assembly. Excluding the BCL rather than requiring assembly
+    // equality with TSettings is what lets a nested type live somewhere else, and a record struct
+    // section is walked like a class one: being a value type says nothing about whether the members
+    // inside are required.
     private static bool IsSection(Type type) =>
-        type.IsClass
+        (type.IsClass || (type.IsValueType && !type.IsPrimitive && !type.IsEnum))
         && type != typeof(string)
         && !typeof(IEnumerable).IsAssignableFrom(type)
         && !IsFrameworkType(type);
