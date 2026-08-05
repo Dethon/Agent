@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.State.Hub;
@@ -23,24 +24,70 @@ public sealed class ChatLiveConnection(
 
     // The one place that decides whether a hub call can be made. A connection that is null,
     // still connecting or reconnecting cannot carry one — the last two are present and not
-    // live, which is the window the old per-call null guards missed entirely.
+    // live, which is the window the old per-call null guards missed entirely. The transport
+    // can also die between the state check and the answer, so the outcome of the call is part
+    // of the same decision: a call the transport failed to carry answers not live too.
     private IChatHubConnection? LiveHubConnection =>
         _connection is { State: HubConnectionState.Connected } connection ? connection : null;
 
-    public Task<HubResult<T>> InvokeAsync<T>(string methodName, params object?[] args) =>
-        LiveHubConnection is { } connection
-            ? connection.InvokeAsync<T>(methodName, args)
-            : Task.FromResult(HubResult<T>.NotLive);
+    public async Task<HubResult<T>> InvokeAsync<T>(string methodName, params object?[] args)
+    {
+        if (LiveHubConnection is not { } connection)
+        {
+            return HubResult<T>.NotLive;
+        }
 
-    public Task<HubResult<Nothing>> InvokeAsync(string methodName, params object?[] args) =>
-        LiveHubConnection is { } connection
-            ? connection.InvokeAsync(methodName, args)
-            : Task.FromResult(HubResult<Nothing>.NotLive);
+        try
+        {
+            return await connection.InvokeAsync<T>(methodName, args);
+        }
+        catch (Exception exception) when (IsTransportFault(exception))
+        {
+            return HubResult<T>.NotLive;
+        }
+    }
 
-    public Task<HubResult<IAsyncEnumerable<T>>> StreamAsync<T>(string methodName, params object?[] args) =>
-        LiveHubConnection is { } connection
-            ? connection.StreamAsync<T>(methodName, args)
-            : Task.FromResult(HubResult<IAsyncEnumerable<T>>.NotLive);
+    public async Task<HubResult<Nothing>> InvokeAsync(string methodName, params object?[] args)
+    {
+        if (LiveHubConnection is not { } connection)
+        {
+            return HubResult<Nothing>.NotLive;
+        }
+
+        try
+        {
+            return await connection.InvokeAsync(methodName, args);
+        }
+        catch (Exception exception) when (IsTransportFault(exception))
+        {
+            return HubResult<Nothing>.NotLive;
+        }
+    }
+
+    public async Task<HubResult<IAsyncEnumerable<T>>> StreamAsync<T>(string methodName, params object?[] args)
+    {
+        if (LiveHubConnection is not { } connection)
+        {
+            return HubResult<IAsyncEnumerable<T>>.NotLive;
+        }
+
+        try
+        {
+            return await connection.StreamAsync<T>(methodName, args);
+        }
+        catch (Exception exception) when (IsTransportFault(exception))
+        {
+            return HubResult<IAsyncEnumerable<T>>.NotLive;
+        }
+    }
+
+    // The transport-fault family is open-ended: an invocation in flight when the connection
+    // dies faults with whatever closed it — a cancellation on a clean close, the socket error
+    // otherwise — and a call that races the state check throws InvalidOperationException. The
+    // one exception that is an answer rather than a failed transport is HubException: the
+    // server received the call and faulted it. These verbs carry no caller token, so a
+    // cancellation surfacing here is never the caller's own.
+    private static bool IsTransportFault(Exception exception) => exception is not HubException;
 
     public Task ConnectAsync() => StartLiveConnectionAsync(CancellationToken.None);
 

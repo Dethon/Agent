@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -95,6 +96,63 @@ public sealed class ChatLiveConnectionHubCallTests : IDisposable
 
         result.IsLive.ShouldBeFalse();
         connection.Calls.ShouldBeEmpty();
+    }
+
+    // The transport can die after the state check and before the answer arrives. That window
+    // is a not-live window like any other, so the call answers not live instead of throwing.
+    public static TheoryData<Exception> TransportFaults => new()
+    {
+        new InvalidOperationException(
+            "The 'InvokeCoreAsync' method cannot be called if the connection is not active"),
+        new TaskCanceledException("Invocation canceled: the connection closed mid-call"),
+        new ObjectDisposedException(nameof(HubConnection))
+    };
+
+    [Theory]
+    [MemberData(nameof(TransportFaults))]
+    public async Task InvokeAsync_TransportDiesMidCall_AnswersNotLive(Exception fault)
+    {
+        var connection = await ConnectAsync();
+        connection.Answer("GetCount", _ => throw fault);
+
+        var result = await _liveConnection.InvokeAsync<int>("GetCount");
+
+        result.IsLive.ShouldBeFalse();
+    }
+
+    [Theory]
+    [MemberData(nameof(TransportFaults))]
+    public async Task VoidInvokeAsync_TransportDiesMidCall_AnswersNotLive(Exception fault)
+    {
+        var connection = await ConnectAsync();
+        connection.Answer("SaveTopic", _ => throw fault);
+
+        var result = await _liveConnection.InvokeAsync("SaveTopic", "topic-1", true);
+
+        result.IsLive.ShouldBeFalse();
+    }
+
+    [Theory]
+    [MemberData(nameof(TransportFaults))]
+    public async Task StreamAsync_TransportDiesMidCall_AnswersNotLive(Exception fault)
+    {
+        var connection = await ConnectAsync();
+        connection.Answer("Count", _ => throw fault);
+
+        var result = await _liveConnection.StreamAsync<int>("Count");
+
+        result.IsLive.ShouldBeFalse();
+    }
+
+    // A HubException is the server answering: the call arrived and the handler faulted it.
+    // Mapping that to not live would tell the user to retry a call the server already refused.
+    [Fact]
+    public async Task InvokeAsync_TheServerFaultsTheCall_PropagatesTheHubException()
+    {
+        var connection = await ConnectAsync();
+        connection.Answer("GetCount", _ => throw new HubException("handler failed"));
+
+        await Should.ThrowAsync<HubException>(() => _liveConnection.InvokeAsync<int>("GetCount"));
     }
 
     [Fact]
