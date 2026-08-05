@@ -74,4 +74,21 @@ public class GlobBraceExpanderTests
 
         Should.Throw<ArgumentException>(() => GlobBraceExpander.Expand($"{{{body}}}"));
     }
+
+    // A single level's product is (alternatives × each alternative's expansion × the suffix's), and
+    // each of the last two may sit just under the cap: ten alternatives of 2^9 against a suffix of
+    // 2^9 is 2.6 million patterns from a pattern of a few hundred characters. The cap has to bite
+    // while the combinations are being produced, so crossing it costs a cap-sized list and no more.
+    [Fact]
+    public void Expand_ProductOfNestedLevels_ThrowsWithoutMaterializingTheProduct()
+    {
+        var nested = string.Concat(Enumerable.Repeat("{a,b}", 9));
+        var pattern = "{" + string.Join(',', Enumerable.Repeat(nested, 10)) + "}" + nested;
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Should.Throw<ArgumentException>(() => GlobBraceExpander.Expand(pattern));
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        allocated.ShouldBeLessThan(8 * 1024 * 1024);
+    }
 }
