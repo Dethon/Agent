@@ -44,10 +44,6 @@ public sealed class TopicDeleteEffect
     public async Task HandleRemoveTopicAsync(
         string topicId, string? agentId = null, long? chatId = null, long? threadId = null)
     {
-        // TopicRemoved clears the selection during its reduce, so whether the pending
-        // approval belongs to this conversation has to be read before it is dispatched.
-        var wasSelected = _topicsStore.State.SelectedTopicId == topicId;
-
         if (_streamingStore.State.StreamingByTopic.ContainsKey(topicId))
         {
             var cancelled = await _messagingService.CancelTopicAsync(topicId);
@@ -71,6 +67,11 @@ public sealed class TopicDeleteEffect
                 return;
             }
         }
+
+        // The user may have switched conversations while the round trip above was in flight,
+        // so whether the pending approval belongs to this one is read here, at dispatch time —
+        // and before TopicRemoved, whose reduce clears the selection.
+        var wasSelected = _topicsStore.State.SelectedTopicId == topicId;
 
         _dispatcher.Dispatch(new TopicRemoved(topicId));
 

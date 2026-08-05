@@ -105,6 +105,25 @@ public sealed class TopicDeleteEffectTests : IDisposable
         _approvalStore.State.CurrentRequest.ShouldNotBeNull();
     }
 
+    // The user can switch conversations while the delete's round trip is in flight. Whether
+    // the pending approval belongs to the deleted conversation is decided by the selection at
+    // dispatch time, not the one from before the awaits — or the other topic's prompt is wiped.
+    [Fact]
+    public async Task HandleRemoveTopicAsync_UserSwitchedTopicsDuringTheDelete_LeavesTheOtherTopicsApproval()
+    {
+        _dispatcher.Dispatch(new TopicsLoaded([Topic("topic-1"), Topic("topic-2")]));
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+        _topicService.DeleteGate = new TaskCompletionSource();
+
+        var delete = _effect.HandleRemoveTopicAsync("topic-1", "agent-1", chatId: 10, threadId: 20);
+        _dispatcher.Dispatch(new SelectTopic("topic-2"));
+        _dispatcher.Dispatch(new ShowApproval("topic-2", new ToolApprovalRequestMessage("approval-1", [])));
+        _topicService.DeleteGate.SetResult();
+        await delete;
+
+        _approvalStore.State.CurrentRequest.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task Dispatch_RemoveTopic_RunsTheSameWork()
     {
@@ -128,18 +147,18 @@ public sealed class TopicDeleteEffectTests : IDisposable
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("delete rejected");
     }
 
+    private static StoredTopic Topic(string topicId) => new()
+    {
+        TopicId = topicId,
+        ChatId = 10,
+        ThreadId = 20,
+        AgentId = "agent-1",
+        Name = "Topic"
+    };
+
     private void GivenTopicWithMessages(string topicId)
     {
-        var topic = new StoredTopic
-        {
-            TopicId = topicId,
-            ChatId = 10,
-            ThreadId = 20,
-            AgentId = "agent-1",
-            Name = "Topic"
-        };
-
-        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _dispatcher.Dispatch(new TopicsLoaded([Topic(topicId)]));
         _dispatcher.Dispatch(new MessagesLoaded(topicId, [
             new ChatMessageModel { Role = "assistant", Content = "hello", MessageId = "m-1" }
         ]));

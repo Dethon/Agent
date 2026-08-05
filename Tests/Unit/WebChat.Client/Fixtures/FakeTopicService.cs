@@ -35,6 +35,9 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     public Exception? ThrowOnDeleteTopic { get; set; }
 
+    // Holds the delete open so a test can interleave user actions with the round trip.
+    public TaskCompletionSource? DeleteGate { get; set; }
+
     public IReadOnlyList<TopicMetadata> SavedTopics => _savedTopics;
     public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
     public IReadOnlyList<string> JoinedSpaces => _joinedSpaces;
@@ -89,22 +92,27 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         return Task.FromResult(HubResult<Nothing>.Answered(default));
     }
 
-    public Task<HubResult<Nothing>> DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)
+    public async Task<HubResult<Nothing>> DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)
     {
         recorder?.Record($"delete:{topicId}");
 
+        if (DeleteGate is not null)
+        {
+            await DeleteGate.Task;
+        }
+
         if (ThrowOnDeleteTopic is not null)
         {
-            return Task.FromException<HubResult<Nothing>>(ThrowOnDeleteTopic);
+            throw ThrowOnDeleteTopic;
         }
 
         if (NotLive)
         {
-            return Task.FromResult(HubResult<Nothing>.NotLive);
+            return HubResult<Nothing>.NotLive;
         }
 
         _deletedTopicIds.Add(topicId);
-        return Task.FromResult(HubResult<Nothing>.Answered(default));
+        return HubResult<Nothing>.Answered(default);
     }
 
     public Task<HubResult<IReadOnlyList<ChatHistoryMessage>>> GetHistoryAsync(
