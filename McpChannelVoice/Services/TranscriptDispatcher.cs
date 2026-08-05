@@ -1,7 +1,9 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
+using Mcp.Hosting;
 using McpChannelVoice.Services.LocalCommands;
 
 namespace McpChannelVoice.Services;
@@ -52,9 +54,9 @@ public sealed class TranscriptDispatcher(
                 transcript.AvgLogProb,
                 transcript.NoSpeechProb);
 
-            await PublishUtteranceEventAsync(
+            PublishUtteranceEvent(
                 session, transcript, similarity, stats, "dropped",
-                manager.GetActiveConversationId(session.SatelliteId), ct);
+                manager.GetActiveConversationId(session.SatelliteId));
             return false;
         }
 
@@ -68,9 +70,9 @@ public sealed class TranscriptDispatcher(
                 "Local command {Command} for {Satellite}: sent={Sent}",
                 command.Command, session.SatelliteId, command.Sent);
 
-            await PublishUtteranceEventAsync(
+            PublishUtteranceEvent(
                 session, transcript, similarity, stats, command.Sent ? "command" : "command_failed",
-                manager.GetActiveConversationId(session.SatelliteId), ct);
+                manager.GetActiveConversationId(session.SatelliteId));
 
             // False means "nothing reached the agent", which FollowUpConversation already turns into
             // EndConversation — the satellite gets its closing transcript and re-arms. No new
@@ -89,37 +91,40 @@ public sealed class TranscriptDispatcher(
         // the satellite's default identity. Telemetry below keeps Identity = the satellite identity.
         var sender = identifiedSpeaker ?? session.Config.Identity;
 
-        await emitter.EmitMessageNotificationAsync(
-            conversationId,
-            sender,
-            transcript.Text,
-            agentId,
-            session.Config.DisplayLocation,
-            session.SatelliteId,
-            dismissedAlert,
+        // Location, SatelliteId and DismissedAlert are ordinary named properties on the shared
+        // payload. Two of them are adjacent optional strings, which a positional call could
+        // transpose with no compiler complaint.
+        await emitter.EmitAsync(
+            new ChannelMessageNotification
+            {
+                ConversationId = conversationId,
+                Sender = sender,
+                Content = transcript.Text,
+                AgentId = agentId,
+                Location = session.Config.DisplayLocation,
+                SatelliteId = session.SatelliteId,
+                DismissedAlert = dismissedAlert,
+                Timestamp = DateTimeOffset.UtcNow
+            },
             ct);
 
-        await PublishUtteranceEventAsync(session, transcript, similarity, stats, "dispatched", conversationId, ct);
+        PublishUtteranceEvent(session, transcript, similarity, stats, "dispatched", conversationId);
         return true;
     }
 
     // Every UtteranceTranscribed publish shares this shape; only the outcome label and the
     // conversation id (active vs. newly created vs. none) differ per call site.
-    private Task PublishUtteranceEventAsync(
+    private void PublishUtteranceEvent(
         SatelliteSession session,
         TranscriptionResult transcript,
         double? similarity,
         CaptureStats? stats,
         string outcome,
-        string? conversationId,
-        CancellationToken ct) =>
-        publisher.PublishAsync(
+        string? conversationId) =>
+        publisher.Publish(
             new VoiceEvent
             {
                 Metric = VoiceMetric.UtteranceTranscribed,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 Outcome = outcome,
                 Confidence = transcript.Confidence,
                 Similarity = similarity,
@@ -132,6 +137,5 @@ public sealed class TranscriptDispatcher(
                 TrailingRms = stats?.TrailingRms,
                 EndReason = stats?.EndReason,
                 ConversationId = conversationId
-            },
-            ct);
+            }.About(session));
 }

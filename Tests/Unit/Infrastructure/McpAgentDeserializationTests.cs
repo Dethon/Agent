@@ -3,6 +3,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using Moq;
 using Shouldly;
@@ -18,12 +19,13 @@ public class McpAgentDeserializationTests : IAsyncDisposable
         var chatClient = new Mock<IChatClient>();
         var stateStore = new Mock<IThreadStateStore>();
         _agent = new McpAgent(
-            [],
+            TestAgentSpec.Default,
             chatClient.Object,
-            "test-agent",
-            "",
             stateStore.Object,
-            "test-user");
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            [],
+            []);
     }
 
     public async ValueTask DisposeAsync()

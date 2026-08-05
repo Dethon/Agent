@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
@@ -30,18 +29,12 @@ public sealed class WyomingSatelliteHost(
     IMetricsPublisher metrics,
     TimeProvider time,
     WakeArbiter arbiter,
+    SilenceGateFactory gates,
     ILogger<WyomingSatelliteHost> logger,
     ISpeakerVerifier? speakerVerifier = null) : IHostedService
 {
     private CancellationTokenSource? _cts;
     private readonly List<Task> _connections = [];
-
-    // Keyed by satellite rather than held per connection: a room does not change because the TCP
-    // link blipped, and a reconnect is exactly when a satellite is least able to measure itself.
-    private readonly ConcurrentDictionary<string, RoomNoiseMemory> _roomNoise = new();
-
-    private RoomNoiseMemory RoomNoiseFor(string id) => _roomNoise.GetOrAdd(id, _ => new RoomNoiseMemory(
-        time, settings.RoomLevelSamples, TimeSpan.FromSeconds(settings.RoomLevelRetentionSeconds)));
 
     public Task StartAsync(CancellationToken ct)
     {
@@ -134,243 +127,78 @@ public sealed class WyomingSatelliteHost(
 
     private async Task RunConnectionAsync(string id, SatelliteConfig config, string host, int port, CancellationToken ct)
     {
+        // The client stays in this scope so dialling and disposal stay together; the connection
+        // borrows only the two halves of the wire it needs.
         await using var client = new WyomingClient();
         await client.ConnectAsync(host, port, ct);
+        logger.LogInformation("Connected to satellite {Id} at {Host}:{Port}", id, host, port);
 
-        var session = new SatelliteSession(id, config);
-        // The WyomingClient lives only in this scope, so hand the session a writer for control
-        // events raised from outside it — the transcript fast-path and the insistent alert hold.
-        session.ControlWriter = (evt, ct2) => client.WriteAsync(evt, ct2);
+        var connection = CreateConnection(id, config, client.WriteAsync);
+        await connection.RunAsync(client.ReadAllAsync(ct), ct);
+    }
 
-        // Hoisted so the widened try/finally below can release them even if something in the setup
-        // that follows (arbiter registration, the playback/conversation Task.Run calls, building the
-        // coordinator) throws synchronously — that setup used to sit OUTSIDE the try, so a throw
-        // there left the session registered with a ControlWriter closing over an already-disposed
-        // client until the next reconnect replaced it.
-        Task? playbackTask = null;
-        FollowUpConversation? coordinator = null;
-        Task? conversationTask = null;
-
-        try
+    // A fully wired connection for one satellite, with the real transcription, verification and
+    // telemetry helpers bound. Internal because a test reaches it directly: driving Wyoming events
+    // into a connection the host assembled is what exercises the real publishing code rather than
+    // stand-ins for it.
+    internal SatelliteConnection CreateConnection(
+        string id, SatelliteConfig config, Func<WyomingEvent, CancellationToken, Task> writer)
+    {
+        var session = new SatelliteSession(id, config, new PlaybackQueue(
+            replyMaxDepth: voiceSettings.Tts.Streaming.MaxQueuedSegments,
+            announceMaxDepth: voiceSettings.Announce.QueueMaxDepth,
+            // No prefetch size means no prefetch: a segment's synthesis then starts when the loop
+            // reaches it, which is the kill switch the setting has always been.
+            prefetchBufferChunks: voiceSettings.Tts.Streaming.Prefetch
+                ? voiceSettings.Tts.Streaming.PrefetchBufferChunks
+                : null),
+            // The one gate factory, so every capture on this satellite — wake turn, follow-up and
+            // approval answer — pays back into the same per-satellite room-noise memory.
+            new Microphone(id, gates));
+        var followUp = voiceSettings.FollowUp with
         {
-            sessionRegistry.Register(session);
-            // Both re-arm writes share the connection's single WyomingWriter with the playback loop and
-            // the coordinator's EndConversation, which already write to it concurrently today — the
-            // arbiter is a third caller under the same guarantees, not a new sharing model.
-            arbiter.Register(id, new WakeArbiterHandle(
-                session,
-                ct2 => client.WriteAsync(WyomingEvent.Header("pause-satellite", new JsonObject()), ct2),
-                ct2 => client.WriteAsync(
-                    WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), ct2)));
-            logger.LogInformation("Connected to satellite {Id} at {Host}:{Port}", id, host, port);
+            Enabled = config.FollowUpEnabled ?? voiceSettings.FollowUp.Enabled
+        };
 
-            playbackTask = Task.Run(() => session.RunPlaybackLoopAsync(
-                (chunk, jct) => WritePlaybackFrameAsync(client, chunk, jct),
-                ct, time, logger,
-                onAudioStart: (format, alert, sct) => client.WriteAsync(
-                    WyomingEvent.Header("audio-start", BuildAudioStart(format, alert)), sct),
-                onAudioStop: sct => client.WriteAsync(
-                    WyomingEvent.Header("audio-stop", new JsonObject { ["timestamp"] = 0 }), sct),
-                onError: async (job, ex) =>
-                {
-                    try
-                    {
-                        await metrics.PublishAsync(new VoiceEvent
-                        {
-                            Metric = VoiceMetric.TtsError,
-                            SatelliteId = id,
-                            Room = config.Room,
-                            Identity = config.Identity,
-                            Error = ex.Message,
-                            ConversationId = conversationManager.GetActiveConversationId(id)
-                        }, ct);
-                    }
-                    catch (Exception mex)
-                    {
-                        logger.LogWarning(mex, "Failed to publish TtsError metric for {Id} ({Label})", id, job.Label);
-                    }
-                }), ct);
-
-            var followUp = voiceSettings.FollowUp with
-            {
-                Enabled = config.FollowUpEnabled ?? voiceSettings.FollowUp.Enabled
-            };
-
-            // Bound to a non-nullable local for the Task.Run lambda below: the nullable `coordinator`
-            // field exists only so the finally can null-conditionally Dispose it, and the compiler
-            // can't narrow a captured nullable field's null-state across a lambda boundary.
-            var builtCoordinator = BuildCoordinator(id, config, client, session, followUp);
-            coordinator = builtCoordinator;
-            conversationTask = Task.Run(() => builtCoordinator.RunAsync(ct), ct);
-
-            // Per-turn, and only ever touched from this single read loop: did run-pipeline already
-            // announce this turn? Cleared at audio-stop, which is exactly where the satellite ends the
-            // mic stream (transcript or pause-satellite both route through its end_capture).
-            var wakeAnnounced = false;
-
-            await client.WriteAsync(WyomingEvent.Header("run-satellite", new JsonObject()), ct);
-
-            await foreach (var evt in client.ReadAllAsync(ct))
-            {
-                switch (evt.Type)
-                {
-                    // The only frame that carries wake metadata. nabu-satellite sends exactly this
-                    // one per turn; other Wyoming satellites may follow it with audio-start.
-                    case "run-pipeline":
-                        // Waking the satellite during an active alert dismisses it — no spoken command
-                        // needed (the satellite mics only on local wake).
-                        NoteDismissals(session, alerts.Acknowledge(id));
-                        var wake = ReadWakeAnnouncement(evt.Data);
-                        if (wake.Rms is not null)
-                        {
-                            session.MarkSupportsPause();
-                        }
-                        wakeAnnounced = true;
-                        // Recorded before OnWake, which opens the capture on this thread and reads
-                        // the memory: the satellite measured this while idle, so it describes the
-                        // room the user is about to speak into better than anything the hub has.
-                        RoomNoiseFor(id).Record(wake.RoomRms ?? 0);
-                        // Stashed before OnWake, which opens the capture synchronously on this thread
-                        // and consumes the stash onto WakeTriggered.
-                        session.NoteWakeSignal(wake.Rms, wake.Score);
-                        arbiter.Claim(id, wake.Rms, wake.Score, wake.Source);
-                        coordinator.OnWake();
-                        // OnWake opens the capture on this thread and consumes the stash — unless a
-                        // turn was already open, in which case it no-ops and nothing consumes it.
-                        // Anything still stashed here therefore belongs to a turn that never used
-                        // it, and the next wake would report it as its own loudness. Drop it: a
-                        // missing WakeRms reads as "unknown", a wrong one silently skews the
-                        // RmsOffsetDb calibration it feeds.
-                        session.TryConsumeWakeSignal();
-                        break;
-
-                    // Legacy/foreign satellites announce the mic stream with audio-start, so it still
-                    // has to open a turn. It carries no wake metadata, and deliberately neither
-                    // stashes nor claims once run-pipeline has announced this turn: noting (null,
-                    // null) would erase the loudness WakeTriggered reports for RmsOffsetDb
-                    // calibration, and a null-rms claim only survives the arbiter's first-wins
-                    // in-window dedupe if run-pipeline happens to arrive first — a satellite that
-                    // reordered the two would silently lose every steal.
-                    case "audio-start":
-                        NoteDismissals(session, alerts.Acknowledge(id));
-                        if (!wakeAnnounced)
-                        {
-                            arbiter.Claim(id, null, null, "wake");
-                        }
-                        coordinator.OnWake();
-                        break;
-
-                    case "audio-chunk":
-                        var (rate, width, channels) = FormatOf(evt.Data);
-                        session.RouteAudio(ToChunk(evt.Payload, rate, width, channels));
-                        break;
-
-                    case "audio-stop":
-                        wakeAnnounced = false;
-                        session.EndCapture();
-                        break;
-
-                    case "error":
-                        logger.LogWarning("Satellite {Id} reported error: {Message}",
-                            id, evt.Data["text"]?.GetValue<string>());
-                        break;
-                }
-            }
-        }
-        finally
+        return new SatelliteConnection(sessionRegistry, arbiter, alerts, time, logger)
         {
-            // First, before anything that can await: a dropped connection must stop being an
-            // arbitration candidate at once. Everything below is unbounded — the playback loop can
-            // be parked writing to the very socket that just died — and until this runs the dying
-            // session is still a Rule B holder candidate whose capture history is still populated
-            // (on the cancellation path FollowUpConversation never reaches CloseCapture). A live
-            // satellite waking in that window would be suppressed as a leak in favour of a
-            // satellite that is already gone.
-            arbiter.Unregister(id);
-            coordinator?.Dispose();
-            session.CompletePlayback();
-            // Null-guarded: setup that failed before reaching the Task.Run call never produced a
-            // task to await, and there is nothing to wait out in that case.
-            if (playbackTask is not null)
+            Session = session,
+            Coordinator = BuildCoordinator(session, writer, followUp),
+            Writer = writer,
+            OnPlaybackError = ex =>
             {
-                try
-                { await playbackTask; }
-                catch { /* unwinds on cancellation / disconnect */ }
+                metrics.Publish(new VoiceEvent
+                {
+                    Metric = VoiceMetric.TtsError,
+                    Error = ex.Message,
+                    ConversationId = conversationManager.GetActiveConversationId(id)
+                }.About(session));
+                return Task.CompletedTask;
             }
-            if (conversationTask is not null)
-            {
-                try
-                { await conversationTask; }
-                catch { /* unwinds on cancellation / disconnect */ }
-            }
-            session.ControlWriter = null;
-            sessionRegistry.Unregister(id);
-        }
+        };
     }
 
     private FollowUpConversation BuildCoordinator(
-        string id, SatelliteConfig config, WyomingClient client, SatelliteSession session, FollowUpSettings followUp)
+        SatelliteSession session, Func<WyomingEvent, CancellationToken, Task> writer, FollowUpSettings followUp)
     {
-        var roomNoise = RoomNoiseFor(id);
+        var capture = new CaptureSession(
+            session, gates, time, voiceSettings.Arbitration.HistorySpan,
+            // Reached only by a wake turn, carrying what the satellite reported about the wake that
+            // opened it. A follow-up has no counterpart, so it cannot report a loudness it never
+            // measured.
+            onWakeTurn: announcement => PublishVoiceMetric(
+                VoiceMetric.WakeTriggered, session,
+                wakeRms: announcement?.Rms, wakeScore: announcement?.Score));
+
         return new FollowUpConversation(followUp, time)
         {
-            OpenCapture = isFollowUp =>
-            {
-                session.MarkTurnStart(time.GetTimestamp()); // turn opens here; loop reports turn -> first-audio
-                if (!isFollowUp)
-                {
-                    // on-device wake started this conversation; the read loop stashed what the
-                    // satellite reported about it, and this is the single-use consumer. Only the
-                    // wake turn: a follow-up has no wake of its own, so consuming there would either
-                    // report nothing or, worse, attribute the wake turn's loudness to it.
-                    var wake = session.TryConsumeWakeSignal();
-                    PublishVoiceMetric(VoiceMetric.WakeTriggered, session,
-                        wakeRms: wake?.Rms, wakeScore: wake?.Score);
-                }
-                // Same no-speech window on the wake turn as on follow-ups: a wake with no speech
-                // (false trigger, user changes their mind) must re-arm after WindowMs instead of
-                // holding the mic open until the far-larger max-utterance cap.
-                return session.OpenCapture(new SilenceGate(
-                    new AdaptiveLevelTracker(
-                        config.ResolveRmsThreshold(settings),
-                        config.ResolveEnterMarginDb(settings),
-                        config.ResolveExitMarginDb(settings),
-                        config.ResolvePeakDropDb(settings),
-                        TimeSpan.FromMilliseconds(config.ResolveFloorWindowMs(settings)),
-                        demoteMarginDb: config.ResolveDemoteMarginDb(settings),
-                        // The capture cannot measure the background it opens on top of, so the
-                        // quietest room reading this satellite has produced recently caps it.
-                        roomRms: roomNoise.Rms),
-                    TimeSpan.FromMilliseconds(settings.TrailingSilenceMs),
-                    TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
-                    TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(settings)),
-                    noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)),
-                    // Rule B asks an already-open capture, retrospectively, what it heard during
-                    // another satellite's wake-word span — so every capture has to remember.
-                    new ChunkHistory(time, voiceSettings.Arbitration.HistorySpan));
-            },
-            CloseCapture = capture =>
-            {
-                session.CloseCapture();
-                roomNoise.Record(RoomSampleOf(capture.Stats));
-                // Stamped here rather than inside the session so it uses the host's TimeProvider —
-                // the same instance handed to RunPlaybackLoopAsync, which reads it back. The frozen
-                // endpointing tail rewinds the close to the instant the user actually stopped
-                // talking; read here, at the close, because it is the last point where the tail is
-                // known to be the one the gate ended on.
-                session.MarkSpeechEnd(time.GetTimestamp(), capture.Stats.TrailingSilenceMs, time);
-            },
-            TranscribeAndDispatch = (capture, isFollowUp, token) =>
-                TranscribeAndDispatchAsync(session, capture, isFollowUp, token),
+            Capture = capture,
+            Turn = session.Turn,
+            TranscribeAndDispatch = (utterance, isFollowUp, token) =>
+                TranscribeAndDispatchAsync(session, utterance, isFollowUp, token),
             EnqueueChime = token => EnqueueChimeAsync(session, token),
-            EndConversation = token => client.WriteAsync(
+            EndConversation = token => writer(
                 WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), token),
-            SpeechStopped = token => client.WriteAsync(
-                WyomingEvent.Header("voice-stopped", new JsonObject()), token),
-            ListeningStarted = token => client.WriteAsync(
-                WyomingEvent.Header("listening-started", new JsonObject()), token),
-            ResetTurn = session.ResetTurn,
-            AwaitReply = session.WaitForTurnSpokenAsync,
             OnFollowUpWindow = token =>
             {
                 PublishVoiceMetric(VoiceMetric.FollowUpWindowOpened, session);
@@ -389,7 +217,7 @@ public sealed class WyomingSatelliteHost(
                 return Task.CompletedTask;
             },
             EarlyVerifyMs = speakerVerifier is null ? 0 : voiceSettings.SpeakerVerification.EarlyVerifyMs,
-            EarlyReject = (capture, token) => EarlyRejectAsync(session, capture, token)
+            EarlyReject = (utterance, token) => EarlyRejectAsync(session, utterance, token)
         };
     }
 
@@ -417,7 +245,7 @@ public sealed class WyomingSatelliteHost(
         var verification = await speakerVerifier.VerifyAsync(
             capture.BufferedAudio, stats.SpeechMs, session.Config, ct, enforceMinSpeech: true);
         sw.Stop();
-        await PublishVerifyLatencyAsync(
+        PublishVerifyLatency(
             VoiceMetric.SpeakerVerifyEarlyMs, session, sw.ElapsedMilliseconds, verification.Similarity, "early");
         if (verification.Decision != SpeakerDecision.Rejected)
         {
@@ -427,42 +255,33 @@ public sealed class WyomingSatelliteHost(
         logger.LogInformation(
             "Early-rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
             session.SatelliteId, verification.Similarity);
-        await PublishUnknownSpeakerAsync(session, stats, verification.Similarity, "unknown_speaker_early");
+        PublishUnknownSpeaker(session, stats, verification.Similarity, "unknown_speaker_early");
         return true;
     }
 
     // Verification runs before the STT stopwatch starts, so without this the ONNX embedding is pure
-    // invisible latency. Diagnostic only: routed through SafePublishAsync because EarlyRejectAsync
-    // is awaited from the conversation loop with no catch above it. The two passes report under
+    // invisible latency. The two passes report under
     // DIFFERENT metrics — the final inline pass (SpeakerVerifyMs) is additive within the turn
     // decomposition, while the early pass (SpeakerVerifyEarlyMs) runs concurrently with the user
     // still speaking and overlaps the utterance, so averaging them together is meaningless. Outcome
     // still carries "early"/"final" for readers that want it in one place.
-    private Task PublishVerifyLatencyAsync(
+    private void PublishVerifyLatency(
         VoiceMetric metric, SatelliteSession session, long elapsedMs, double? similarity, string outcome) =>
-        SafePublishAsync(new VoiceEvent
+        metrics.Publish(new VoiceEvent
         {
             Metric = metric,
-            SatelliteId = session.SatelliteId,
-            Room = session.Config.Room,
-            Identity = session.Config.Identity,
             Outcome = outcome,
             DurationMs = elapsedMs,
             Similarity = similarity,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-        });
+        }.About(session));
 
-    // Rejection telemetry is diagnostic, not part of the turn contract: this is awaited from the
-    // conversation loop (EarlyRejectAsync has no catch above it), so a metrics-backbone outage must
-    // be swallowed here or it faults the loop and wedges the satellite until reconnect.
-    private Task PublishUnknownSpeakerAsync(
+    // Rejection telemetry is diagnostic, not part of the turn contract.
+    private void PublishUnknownSpeaker(
         SatelliteSession session, CaptureStats stats, double? similarity, string outcome) =>
-        SafePublishAsync(new VoiceEvent
+        metrics.Publish(new VoiceEvent
         {
             Metric = VoiceMetric.UtteranceRejected,
-            SatelliteId = session.SatelliteId,
-            Room = session.Config.Room,
-            Identity = session.Config.Identity,
             Outcome = outcome,
             Similarity = similarity,
             PeakRms = stats.PeakRms,
@@ -471,7 +290,7 @@ public sealed class WyomingSatelliteHost(
             TrailingRms = stats.TrailingRms,
             EndReason = stats.EndReason,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-        });
+        }.About(session));
 
     // Returns true only when the transcript actually reached the agent. Empty/low-confidence
     // transcripts and STT errors return false so the conversation ends and wake re-arms, rather
@@ -485,16 +304,13 @@ public sealed class WyomingSatelliteHost(
             // exact and immune to scheduling jitter. Published unconditionally — including on the
             // paths that go on to drop the transcript — because tuning TrailingSilenceMs needs the
             // rejected captures too.
-            await SafePublishAsync(new VoiceEvent
+            metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.EndpointTailMs,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 DurationMs = capture.Stats.TrailingSilenceMs,
                 EndReason = capture.Stats.EndReason,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-            });
+            }.About(session));
 
             double? similarity = null;
             string? identifiedSpeaker = null;
@@ -510,7 +326,7 @@ public sealed class WyomingSatelliteHost(
                     capture.BufferedAudio, capture.Stats.SpeechMs, session.Config, ct,
                     enforceMinSpeech: !isFollowUp);
                 verifySw.Stop();
-                await PublishVerifyLatencyAsync(
+                PublishVerifyLatency(
                     VoiceMetric.SpeakerVerifyMs, session, verifySw.ElapsedMilliseconds,
                     verification.Value.Similarity, "final");
                 if (verification.Value.Decision == SpeakerDecision.Rejected)
@@ -518,7 +334,7 @@ public sealed class WyomingSatelliteHost(
                     logger.LogInformation(
                         "Rejecting capture from {Id}: unknown speaker (similarity {Similarity:F3})",
                         session.SatelliteId, verification.Value.Similarity);
-                    await PublishUnknownSpeakerAsync(
+                    PublishUnknownSpeaker(
                         session, capture.Stats, verification.Value.Similarity, "unknown_speaker");
                     return false;
                 }
@@ -546,15 +362,12 @@ public sealed class WyomingSatelliteHost(
             var result = await speechToText.TranscribeAsync(capture.Audio, options, ct);
             sw.Stop();
 
-            await metrics.PublishAsync(new VoiceEvent
+            metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.SttLatencyMs,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 DurationMs = sw.ElapsedMilliseconds,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-            }, ct);
+            }.About(session));
 
             if (isFollowUp)
             {
@@ -571,11 +384,11 @@ public sealed class WyomingSatelliteHost(
                 session, result, voiceSettings.AgentId, capture.Stats, similarity, identifiedSpeaker, ct);
             if (dispatched)
             {
-                session.MarkDispatched(dispatchStartedAt);
+                session.Turn.MarkDispatched(dispatchStartedAt);
                 // Wake (above) is the primary dismissal path; this is a harmless fallback for turns
                 // where a wake event was not observed. The registry makes a second Acknowledge a no-op.
                 // Runs AFTER this dispatch, so its snooze context lands on the NEXT transcript.
-                NoteDismissals(session, alerts.Acknowledge(session.SatelliteId));
+                session.NoteDismissals(alerts.Acknowledge(session.SatelliteId), time.GetUtcNow());
             }
             return dispatched;
         }
@@ -587,55 +400,35 @@ public sealed class WyomingSatelliteHost(
         catch (Exception ex)
         {
             logger.LogError(ex, "Transcription failed for {Id}", session.SatelliteId);
-            await metrics.PublishAsync(new VoiceEvent
+            metrics.Publish(new VoiceEvent
             {
                 Metric = VoiceMetric.SttError,
-                SatelliteId = session.SatelliteId,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
                 Error = ex.Message,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-            }, ct);
+            }.About(session));
             return false;
         }
     }
 
     private async Task EnqueueChimeAsync(SatelliteSession session, CancellationToken ct)
     {
-        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var job = new PlaybackJob(
             Label: $"chime:{session.SatelliteId}",
+            Kind: PlaybackKind.Chime,
             Priority: AnnouncePriority.High,
-            Audio: ListeningChime.Stream(),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => { drained.TrySetResult(); return Task.CompletedTask; },
-            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
-            OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
+            Audio: ListeningChime.Stream());
 
-        await session.EnqueuePlaybackAsync(job, voiceSettings.Announce.QueueMaxDepth);
-        await drained.Task.WaitAsync(ct);
-    }
-
-    private void NoteDismissals(SatelliteSession session, IReadOnlyList<DismissedAlert> dismissed)
-    {
-        if (dismissed.Count == 0)
-        {
-            return;
-        }
-        var description = string.Join(" and ", dismissed.Select(d =>
-            $"{d.Kind.ToString().ToLowerInvariant()} \"{d.Text}\""));
-        session.NoteDismissedAlert(description, time.GetUtcNow());
+        // The token is this caller's own reason to stop waiting — its connection tearing down —
+        // not a guard against hanging: the queue settles every job it is handed, teardown included.
+        await session.Playback.Enqueue(job).Completed.WaitAsync(ct);
     }
 
     private void PublishVoiceMetric(
         VoiceMetric metric, SatelliteSession session, CaptureStats? stats = null,
         double? wakeRms = null, double? wakeScore = null) =>
-        _ = SafePublishAsync(new VoiceEvent
+        metrics.Publish(new VoiceEvent
         {
             Metric = metric,
-            SatelliteId = session.SatelliteId,
-            Room = session.Config.Room,
-            Identity = session.Config.Identity,
             PeakRms = stats?.PeakRms,
             SpeechMs = stats?.SpeechMs,
             FloorRms = stats?.FloorRms,
@@ -644,84 +437,7 @@ public sealed class WyomingSatelliteHost(
             WakeRms = wakeRms,
             WakeScore = wakeScore,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-        });
-
-    private async Task SafePublishAsync(VoiceEvent evt)
-    {
-        try
-        {
-            await metrics.PublishAsync(evt, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to publish voice metric {Metric}", evt.Metric);
-        }
-    }
-
-    private static async Task WritePlaybackFrameAsync(WyomingClient client, AudioChunk chunk, CancellationToken ct)
-    {
-        var data = new JsonObject
-        {
-            ["rate"] = chunk.Format.SampleRateHz,
-            ["width"] = chunk.Format.SampleWidthBytes,
-            ["channels"] = chunk.Format.Channels
-        };
-        await client.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data, chunk.Data), ct);
-    }
-
-    private static AudioChunk ToChunk(ReadOnlyMemory<byte> payload, int rate, int width, int channels) => new()
-    {
-        Data = payload,
-        Format = new AudioFormat { SampleRateHz = rate, SampleWidthBytes = width, Channels = channels },
-        Timestamp = TimeSpan.Zero
-    };
-
-    // `alert` tells the satellite to play this stream on its non-attenuated alert route, bypassing
-    // the per-satellite voice level. Emitted on every stream, not only alerts, so a wire trace
-    // shows the routing explicitly; a pre-1.5 satellite ignores the unknown field.
-    internal static JsonObject BuildAudioStart(AudioFormat format, bool alert) => new()
-    {
-        ["rate"] = format.SampleRateHz,
-        ["width"] = format.SampleWidthBytes,
-        ["channels"] = format.Channels,
-        ["timestamp"] = 0,
-        ["alert"] = alert
-    };
-
-    internal readonly record struct WakeAnnouncement(double? Rms, double? Score, string Source, double? RoomRms = null);
-
-    // What a finished capture learned about the room. A capture that heard no speech spent its
-    // whole window measuring the background, so its own reading is the sample; one that ended on
-    // trailing silence measured it over the run that ended it. Anything else (abandoned to
-    // arbitration, forced, capped at max-utterance) never established what silence sounded like,
-    // and returns 0 — RoomNoiseMemory drops it, exactly as it drops an absent room_rms.
-    private static double RoomSampleOf(CaptureStats stats) => stats.EndReason switch
-    {
-        "no_speech" => stats.MeasuredFloorRms,
-        "trailing_silence" => stats.TrailingSilenceMs > 0 ? stats.TrailingRms : 0,
-        _ => 0
-    };
-
-    // Wake metadata is peer-supplied and optional: pre-arbitration firmware sends run-pipeline with
-    // no data object at all, and Wyoming has no schema to stop a peer sending the wrong types. Every
-    // read here has to survive absent, null and wrong-typed values, because an exception on the read
-    // loop tears down the satellite connection mid-utterance.
-    internal static WakeAnnouncement ReadWakeAnnouncement(JsonObject data) => new(
-        JsonNumber.ReadDouble(data, "wake_rms"),
-        JsonNumber.ReadDouble(data, "wake_score"),
-        data["source"] is JsonValue value
-        && value.TryGetValue<string>(out var source)
-        && !string.IsNullOrWhiteSpace(source)
-            ? source
-            : "wake",
-        JsonNumber.ReadDouble(data, "room_rms"));
-
-    private static (int Rate, int Width, int Channels) FormatOf(JsonObject data) =>
-    (
-        JsonNumber.ReadInt(data, "rate", AudioFormat.WyomingStandard.SampleRateHz),
-        JsonNumber.ReadInt(data, "width", AudioFormat.WyomingStandard.SampleWidthBytes),
-        JsonNumber.ReadInt(data, "channels", AudioFormat.WyomingStandard.Channels)
-    );
+        }.About(session));
 
     private static bool TryParseAddress(string address, out string host, out int port)
     {

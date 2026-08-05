@@ -30,7 +30,11 @@ public class VfsExecTool(IVirtualFileSystemRegistry registry)
         int? timeoutSeconds = null,
         CancellationToken cancellationToken = default)
     {
-        var resolution = registry.Resolve(path);
+        if (!registry.Resolve(path).TryGetValue(out var resolution, out var unresolved))
+        {
+            return unresolved.ToNode();
+        }
+
         return (await resolution.Backend.ExecAsync(resolution.RelativePath, command, timeoutSeconds, cancellationToken)).ToNode();
     }
 }

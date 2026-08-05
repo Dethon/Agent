@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
+    <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -65,15 +65,14 @@ public class OpenRouterChatClientTruncationTests
 
         ContextTruncationEvent? publishedEvent = null;
         _publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) =>
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e =>
             {
                 if (e is ContextTruncationEvent t)
                 {
                     publishedEvent = t;
                 }
-            })
-            .Returns(Task.CompletedTask);
+            });
 
         await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2]))
         { }
@@ -115,15 +114,14 @@ public class OpenRouterChatClientTruncationTests
 
         ContextTruncationEvent? publishedEvent = null;
         _publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) =>
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e =>
             {
                 if (e is ContextTruncationEvent t)
                 {
                     publishedEvent = t;
                 }
-            })
-            .Returns(Task.CompletedTask);
+            });
 
         await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2], options))
         { }
@@ -154,7 +152,7 @@ public class OpenRouterChatClientTruncationTests
         { }
 
         _publisher.Verify(
-            p => p.PublishAsync(It.IsAny<ContextTruncationEvent>(), It.IsAny<CancellationToken>()),
+            p => p.Publish(It.IsAny<ContextTruncationEvent>()),
             Times.Never);
     }
 }

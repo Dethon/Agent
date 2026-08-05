@@ -60,4 +60,51 @@ public class VfsCopyToolCrossFsUnsupportedTests
         result["errorCode"]!.GetValue<string>().ShouldBe("unsupported_operation");
         src.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    // The streaming half of a cross-mount transfer fails for more than an unsupported backend: a
+    // disk root answers a missing source with IOException, and fs_info reported exists=false without
+    // an error, so the transfer gets that far. The directory path already reports such failures per
+    // entry; the single-file path must answer the same envelope instead of throwing out of the tool.
+    [Fact]
+    public async Task TransferFileAsync_CrossFsStreamFails_ReturnsErrorEnvelopeAndDoesNotDeleteSource()
+    {
+        var src = new Mock<IFileSystemBackend>();
+        src.Setup(b => b.ReadChunksAsync("missing.md", It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("hello")));
+
+        var dst = new Mock<IFileSystemBackend>();
+        dst.Setup(b => b.WriteChunksAsync(
+                It.IsAny<string>(), It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Throws(new IOException("Path not found: missing.md"));
+
+        var srcRes = new FileSystemResolution(src.Object, "missing.md");
+        var dstRes = new FileSystemResolution(dst.Object, "x.md");
+
+        var result = await VfsCopyTool.TransferFileAsync(
+            srcRes, dstRes, "/vault/missing.md", "/sandbox/x.md",
+            overwrite: false, createDirectories: true, deleteSource: true, CancellationToken.None);
+
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("internal_error");
+        result["message"]!.GetValue<string>().ShouldContain("Path not found: missing.md");
+        src.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // Cancellation is the abort it is, never an error envelope the agent's pump would retry.
+    [Fact]
+    public async Task TransferFileAsync_CrossFsStreamCancelled_PropagatesTheCancellation()
+    {
+        var src = new Mock<IFileSystemBackend>();
+        var dst = new Mock<IFileSystemBackend>();
+        dst.Setup(b => b.WriteChunksAsync(
+                It.IsAny<string>(), It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Throws(new OperationCanceledException());
+
+        await Should.ThrowAsync<OperationCanceledException>(() => VfsCopyTool.TransferFileAsync(
+            new FileSystemResolution(src.Object, "a.md"), new FileSystemResolution(dst.Object, "a.md"),
+            "/vault/a.md", "/sandbox/a.md",
+            overwrite: false, createDirectories: true, deleteSource: false, CancellationToken.None));
+    }
 }

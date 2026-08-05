@@ -36,7 +36,6 @@ public class StreamingStoreTests : IDisposable
         content.Reasoning.ShouldBeNull();
         content.ToolCalls.ShouldBeNull();
         content.CurrentMessageId.ShouldBeNull();
-        content.IsError.ShouldBeFalse();
     }
 
     [Fact]
@@ -89,18 +88,6 @@ public class StreamingStoreTests : IDisposable
     }
 
     [Fact]
-    public void StreamError_SetsIsErrorTrue()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
-        _dispatcher.Dispatch(new StreamError("topic-1", "Something went wrong"));
-
-        var content = _store.State.StreamingByTopic["topic-1"];
-        content.IsError.ShouldBeTrue();
-        content.Content.ShouldBe("Hello"); // Content preserved
-    }
-
-    [Fact]
     public void StartResuming_AddsTopicToResumingTopics()
     {
         _dispatcher.Dispatch(new StartResuming("topic-1"));
@@ -134,6 +121,40 @@ public class StreamingStoreTests : IDisposable
         _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
         _store.State.StreamingByTopic.ShouldContainKey("topic-2");
         _store.State.StreamingByTopic["topic-2"].Content.ShouldBe("World");
+    }
+
+    // Tool-call and approval-resolved notifications arrive on their own, and one can land after
+    // the stream it belongs to has ended. Buffering it would leave content for a topic nothing
+    // is streaming: an unread badge that never clears and a cancel on a stream that is over.
+    [Fact]
+    public void StreamChunk_AfterTheStreamCompleted_IsIgnored()
+    {
+        _dispatcher.Dispatch(new StreamStarted("topic-1"));
+        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
+        _dispatcher.Dispatch(new StreamCompleted("topic-1"));
+
+        _dispatcher.Dispatch(new StreamChunk("topic-1", null, null, "tool_a", "msg-1"));
+
+        _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
+    }
+
+    [Fact]
+    public void StreamChunk_ForATopicThatNeverStarted_IsIgnored()
+    {
+        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
+
+        _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
+    }
+
+    [Fact]
+    public void StreamChunk_AfterTheStreamWasCancelled_IsIgnored()
+    {
+        _dispatcher.Dispatch(new StreamStarted("topic-1"));
+        _dispatcher.Dispatch(new StreamCancelled("topic-1"));
+
+        _dispatcher.Dispatch(new StreamChunk("topic-1", null, null, "tool_a", "msg-1"));
+
+        _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
     }
 
     [Fact]

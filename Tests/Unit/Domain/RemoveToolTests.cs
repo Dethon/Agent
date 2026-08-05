@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Infrastructure.Clients;
@@ -49,10 +50,12 @@ public class RemoveToolTests
         _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // A '..' segment is judged by where it lands, not by its spelling: both of these resolve
+    // outside the library, and that is what the jail refuses them for.
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Run_WithPathContainingDoubleDot_ThrowsArgumentException(bool isAbsolute)
+    public async Task Run_WithPathTraversingOutOfTheLibrary_ReturnsInvalidArgument(bool isAbsolute)
     {
         // Arrange
         var tool = CreateTool();
@@ -61,16 +64,33 @@ public class RemoveToolTests
             : Path.Combine("..", "etc", "passwd");
 
         // Act & Assert
-        var exception = await Should.ThrowAsync<ArgumentException>(async () =>
-            await tool.TestRun(maliciousPath, CancellationToken.None));
-
-        exception.Message.ShouldContain("must not contain '..'");
+        (await tool.TestRun(maliciousPath, CancellationToken.None))
+            .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>()
+            .ShouldContain("must be within the library");
         _fileSystemClientMock.Verify(m => m.MoveToTrash(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
+    // MoveTool screens by whole segment, because the jail judges the resolved path; RemoveTool kept
+    // rejecting the substring, so a file that could be created, globbed and moved through the mount
+    // could never be removed through it.
     [Fact]
-    public async Task Run_WithPathOutsideLibrary_ThrowsArgumentException()
+    public async Task Run_WithADoubleDotInsideAName_RemovesIt()
+    {
+        var tool = CreateTool();
+        var filePath = Path.Combine(_libraryPath, "movies", "v1..2.mkv");
+        _fileSystemClientMock
+            .Setup(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()))
+            .ReturnsAsync("trash-path");
+
+        var result = await tool.TestRun(filePath, CancellationToken.None);
+
+        result["status"]!.ToString().ShouldBe("success");
+        _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WithPathOutsideLibrary_ReturnsInvalidArgument()
     {
         // Arrange
         var tool = CreateTool();
@@ -79,10 +99,9 @@ public class RemoveToolTests
             : "/other/folder/file.txt";
 
         // Act & Assert
-        var exception = await Should.ThrowAsync<ArgumentException>(async () =>
-            await tool.TestRun(outsidePath, CancellationToken.None));
-
-        exception.Message.ShouldContain("must be within the library");
+        (await tool.TestRun(outsidePath, CancellationToken.None))
+            .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>()
+            .ShouldContain("must be within the library");
         _fileSystemClientMock.Verify(m => m.MoveToTrash(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
@@ -115,9 +134,9 @@ public class RemoveToolTests
         LibraryPathConfig libraryPath)
         : RemoveTool(client, libraryPath)
     {
-        public Task<JsonNode> TestRun(string path, CancellationToken ct)
+        public async Task<JsonNode> TestRun(string path, CancellationToken ct)
         {
-            return Run(path, ct);
+            return (await Run(path, ct)).ToNode();
         }
     }
 }

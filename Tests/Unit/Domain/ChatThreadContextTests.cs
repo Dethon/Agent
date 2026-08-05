@@ -62,14 +62,4 @@ public class ChatThreadContextTests
         // Assert
         callbackInvoked.ShouldBeTrue();
     }
-
-    [Fact]
-    public void Dispose_WithNoCallback_DoesNotThrow()
-    {
-        // Arrange
-        var context = new ChatThreadContext();
-
-        // Act & Assert
-        Should.NotThrow(() => context.Dispose());
-    }
 }

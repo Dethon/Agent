@@ -15,6 +15,16 @@ public static class GlobRegex
     // patterns can't catastrophically backtrack; this timeout is belt-and-suspenders only.
     private static readonly TimeSpan _matchTimeout = TimeSpan.FromSeconds(1);
 
+    // The glob pattern's version of SearchRegex.TimedOut: the same envelope, so a mount that gives
+    // up on a pathological pattern reads the same whether the model was globbing or searching.
+    public static ToolErrorResult TimedOut(string pattern) => new()
+    {
+        ErrorCode = ToolError.Codes.Timeout,
+        Message = $"Glob pattern '{pattern}' timed out while matching.",
+        Retryable = false,
+        Hint = "Simplify the pattern — fewer wildcards, or a narrower basePath."
+    };
+
     public static Func<string, bool> CompileMatcher(string pattern)
     {
         var regexes = GlobBraceExpander.Expand(pattern).Select(Compile).ToList();

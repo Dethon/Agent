@@ -4,6 +4,7 @@ using Domain.Extensions;
 using Domain.Tools.SubAgents;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -52,7 +53,7 @@ public class SubAgentTests(RedisFixture redisFixture)
             Id = "echo-agent",
             Name = "Echo",
             Description = "Echoes back what you say",
-            Model = "google/gemini-2.5-flash",
+            Model = "~deepseek/deepseek-v4-flash-latest",
             McpServerEndpoints = [],
             CustomInstructions = "You are a simple echo agent. Repeat back exactly what the user says, nothing more."
         };
@@ -63,24 +64,28 @@ public class SubAgentTests(RedisFixture redisFixture)
 
         var approvalHandler = new AutoApproveHandler();
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => factory.CreateSubAgent(def, approvalHandler, ["domain__subagents__*"], "test-user"));
+            SubAgentFactory: def => factory.CreateSubAgent(def, approvalHandler, "conv-1", ["domain__subagents__*"], "test-user"));
 
         var toolFeature = new SubAgentToolFeature(registryOptions);
 
         var llmClient = new OpenRouterChatClient(
-            openRouterConfig.ApiUrl, openRouterConfig.ApiKey, "google/gemini-2.5-flash");
+            openRouterConfig.ApiUrl, openRouterConfig.ApiKey, "~deepseek/deepseek-v4-flash-latest");
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(5));
-        using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, ["domain__subagents__*"]);
+        using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, "conv-test", ["domain__subagents__*"]);
 
         await using var agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with
+            {
+                DisplayName = "parent-agent-test",
+                CustomInstructions =
+                    "You have access to a subagent tool. Use the echo-agent subagent to echo back: 'Hello from subagent'"
+            },
             effectiveClient,
-            "parent-agent-test",
-            "",
             stateStore,
-            "test-user",
-            "You have access to a subagent tool. Use the echo-agent subagent to echo back: 'Hello from subagent'",
-            domainTools: toolFeature.GetTools(featureConfig).ToList());
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            toolFeature.GetTools(featureConfig).ToList(),
+            []);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -108,7 +113,7 @@ public class SubAgentTests(RedisFixture redisFixture)
         {
             Id = "test-ephemeral",
             Name = "TestEphemeral",
-            Model = "google/gemini-2.5-flash",
+            Model = "~deepseek/deepseek-v4-flash-latest",
             McpServerEndpoints = [],
             CustomInstructions = "Reply with exactly the word 'done'."
         };
@@ -121,7 +126,7 @@ public class SubAgentTests(RedisFixture redisFixture)
         var server = redisFixture.Connection.GetServer(redisFixture.Connection.GetEndPoints()[0]);
         var keysBefore = server.Keys(pattern: "*").ToList();
 
-        await using var agent = factory.CreateSubAgent(subAgentDef, approvalHandler, [], "test-user");
+        await using var agent = factory.CreateSubAgent(subAgentDef, approvalHandler, "conv-1", [], "test-user");
         var userMessage = new ChatMessage(ChatRole.User, "Say done");
         var response = await agent.RunStreamingAsync(
                 [userMessage], cancellationToken: cts.Token)
@@ -142,11 +147,11 @@ public class SubAgentTests(RedisFixture redisFixture)
 file sealed class AutoApproveHandler : IToolApprovalHandler
 {
     public Task<ToolApprovalResult> RequestApprovalAsync(
-        IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
         => Task.FromResult(ToolApprovalResult.Approved);
 
     public Task NotifyAutoApprovedAsync(
-        IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
         => Task.CompletedTask;
 }
 

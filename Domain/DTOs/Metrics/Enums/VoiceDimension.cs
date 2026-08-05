@@ -8,5 +8,6 @@ public enum VoiceDimension
     Room = 1,
     Identity = 2,
     Outcome = 3,
-    Priority = 4
+    Priority = 4,
+    Speaker = 5
 }

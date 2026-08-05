@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
@@ -17,80 +16,102 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
                                          An empty result means nothing matched—refine the pattern.
                                          """;
 
-    protected const int FileResultCap = 200;
+    public const int FileResultCap = 200;
 
-    protected async Task<JsonNode> Run(string pattern, CancellationToken cancellationToken, string? basePath = null) =>
-        FsResultContract.ToNode(await RunCore(pattern, cancellationToken, basePath));
+    private readonly PathJail _jail = new(libraryPath.BaseLibraryPath);
 
-    protected async Task<FsGlobResult> RunCore(string pattern, CancellationToken cancellationToken, string? basePath = null)
+    public async Task<FsResult<FsGlobResult>> Run(string pattern, CancellationToken cancellationToken, string? basePath = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
-
-        if (pattern.Contains(".."))
+        if (string.IsNullOrWhiteSpace(pattern))
         {
-            throw new ArgumentException("Pattern must not contain '..' segments", nameof(pattern));
+            return FsError.Invalid<FsGlobResult>("Pattern must not be empty.");
         }
 
-        if (Path.IsPathRooted(pattern))
+        // A whole '..' segment, not the substring: v1..2.md is just a name. The check stays here
+        // because a relative pattern is handed raw to the matcher, never resolved through the jail.
+        if (HasDotDotSegment(pattern) || (basePath is not null && HasDotDotSegment(basePath)))
         {
-            if (!pattern.StartsWith(libraryPath.BaseLibraryPath, StringComparison.Ordinal))
-            {
-                throw new ArgumentException("Absolute pattern must be under the library root", nameof(pattern));
-            }
-
-            var dirsOnly = pattern.EndsWith('/');
-            pattern = Path.GetRelativePath(libraryPath.BaseLibraryPath, pattern).TrimEnd('/');
-            if (dirsOnly)
-            {
-                pattern += "/";
-            }
+            return FsError.Invalid<FsGlobResult>("Pattern and basePath must not contain '..' segments.");
         }
 
-        var matcherRoot = ResolveMatcherRoot(basePath);
-        var result = await client.Glob(matcherRoot, pattern, cancellationToken);
+        var matcherRoot = MatcherRoot(_jail.Root, basePath);
+
+        if (!_jail.Contains(matcherRoot))
+        {
+            return FsError.Invalid<FsGlobResult>("basePath must resolve under the mount root.");
+        }
+
+        if (ToMatcherRelative(matcherRoot, pattern) is not { } scoped)
+        {
+            return FsError.Invalid<FsGlobResult>(
+                "Absolute pattern must be under the glob root (the mount root plus basePath).");
+        }
+
+        pattern = scoped;
+
+        string[] result;
+        try
+        {
+            result = await client.Glob(matcherRoot, pattern, cancellationToken);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return FsError.NotFound<FsGlobResult>(basePath ?? matcherRoot);
+        }
+        catch (ArgumentException ex)
+        {
+            // The client refuses a pattern it cannot expand (the brace-expansion cap); surface it
+            // as the invalid-pattern envelope, like every other bad pattern.
+            return FsError.Invalid<FsGlobResult>(ex.Message);
+        }
 
         // Return entries relative to the mount root (the disk client yields absolute paths). The
         // agent-side VFS tool re-prefixes the mount point, so every filesystem speaks one format.
-        var baseRoot = Path.GetFullPath(libraryPath.BaseLibraryPath);
-        var relative = result.Select(p => ToMountRelative(baseRoot, p)).ToArray();
+        var relative = result.Select(p => ToMountRelative(_jail.Root, p)).ToArray();
         var capped = relative.Length > FileResultCap;
 
-        return new FsGlobResult
+        return new FsResult<FsGlobResult>.Ok(new FsGlobResult
         {
             Entries = capped ? relative.Take(FileResultCap).ToArray() : relative,
             Truncated = capped,
             Total = relative.Length
-        };
+        });
     }
+
+    // The root the matcher actually runs from: the mount root, scoped by basePath.
+    public static string MatcherRoot(string mountRoot, string? basePath) =>
+        string.IsNullOrEmpty(basePath)
+            ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(mountRoot))
+            : Path.GetFullPath(Path.Combine(Path.GetFullPath(mountRoot), basePath.TrimStart('/')));
+
+    // An absolute pattern relativized against that root — relativizing against the mount root while
+    // matching under root+basePath double-scoped. A relative pattern is already what the matcher
+    // wants; null means the pattern points outside the root, which is the caller's error. Public
+    // because a mount that matches a second, virtual set of candidates beside the disk one (the
+    // media library's downloads overlay) has to scope its pattern the same way, and two spellings
+    // of this rule would be two answers to one glob.
+    public static string? ToMatcherRelative(string matcherRoot, string pattern)
+    {
+        if (!Path.IsPathRooted(pattern))
+        {
+            return pattern;
+        }
+
+        var dirsOnly = pattern.EndsWith('/');
+        var trimmed = pattern.TrimEnd('/');
+        return trimmed.Equals(matcherRoot, StringComparison.Ordinal)
+               || trimmed.StartsWith(matcherRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            ? Path.GetRelativePath(matcherRoot, trimmed) + (dirsOnly ? "/" : "")
+            : null;
+    }
+
+    private static bool HasDotDotSegment(string path) =>
+        path.Split('/', '\\').Any(segment => segment == "..");
 
     private static string ToMountRelative(string baseRoot, string absolute)
     {
         var isDirectory = absolute.EndsWith('/');
         var relative = Path.GetRelativePath(baseRoot, absolute.TrimEnd('/')).Replace('\\', '/');
         return isDirectory ? relative + "/" : relative;
-    }
-
-    private string ResolveMatcherRoot(string? basePath)
-    {
-        if (string.IsNullOrEmpty(basePath))
-        {
-            return libraryPath.BaseLibraryPath;
-        }
-
-        if (basePath.Contains(".."))
-        {
-            throw new ArgumentException("basePath must not contain '..' segments", nameof(basePath));
-        }
-
-        var combined = Path.Combine(libraryPath.BaseLibraryPath, basePath.TrimStart('/'));
-        var canonRoot = Path.GetFullPath(combined);
-        var canonBase = Path.GetFullPath(libraryPath.BaseLibraryPath);
-
-        if (!canonRoot.StartsWith(canonBase, StringComparison.Ordinal))
-        {
-            throw new ArgumentException("basePath must resolve under the library root", nameof(basePath));
-        }
-
-        return canonRoot;
     }
 }

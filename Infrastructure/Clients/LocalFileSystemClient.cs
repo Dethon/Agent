@@ -8,6 +8,21 @@ public class LocalFileSystemClient : IFileSystemClient
 {
     public const string TrashFolderName = ".trash";
 
+    // The jail vets the argument path, but a symlink discovered inside a tree can point
+    // anywhere — recursive walks and copies must not follow one (or cycle on it), so they
+    // skip symlinks wholesale. AttributesToSkip is set explicitly because the default also
+    // skips hidden and system entries, which these operations have always included.
+    private static readonly EnumerationOptions _skipSymlinks = new()
+    {
+        AttributesToSkip = FileAttributes.ReparsePoint
+    };
+
+    private static readonly EnumerationOptions _skipSymlinksRecursive = new()
+    {
+        RecurseSubdirectories = true,
+        AttributesToSkip = FileAttributes.ReparsePoint
+    };
+
     public Task<Dictionary<string, string[]>> DescribeDirectory(string path,
         CancellationToken cancellationToken = default)
     {
@@ -27,7 +42,7 @@ public class LocalFileSystemClient : IFileSystemClient
             matcher.AddInclude(expanded);
         }
 
-        var dirRelativePaths = Directory.EnumerateDirectories(basePath, "*", SearchOption.AllDirectories)
+        var dirRelativePaths = Directory.EnumerateDirectories(basePath, "*", _skipSymlinksRecursive)
             .Select(d => Path.GetRelativePath(basePath, d));
         var matchedDirs = matcher.Match(basePath, dirRelativePaths)
             .Files
@@ -40,7 +55,13 @@ public class LocalFileSystemClient : IFileSystemClient
             return Task.FromResult(matchedDirs.Distinct().Order(StringComparer.Ordinal).ToArray());
         }
 
-        var matchedFiles = matcher.GetResultsInFullPath(basePath);
+        // Files are enumerated here rather than via matcher.GetResultsInFullPath, which walks
+        // the tree itself and follows symlinks.
+        var fileRelativePaths = Directory.EnumerateFiles(basePath, "*", _skipSymlinksRecursive)
+            .Select(f => Path.GetRelativePath(basePath, f));
+        var matchedFiles = matcher.Match(basePath, fileRelativePaths)
+            .Files
+            .Select(f => Path.GetFullPath(Path.Combine(basePath, f.Path)));
         var result = matchedFiles.Concat(matchedDirs).Distinct().Order(StringComparer.Ordinal).ToArray();
         return Task.FromResult(result);
     }
@@ -148,12 +169,12 @@ public class LocalFileSystemClient : IFileSystemClient
     {
         Directory.CreateDirectory(destinationPath);
 
-        foreach (var file in Directory.EnumerateFiles(sourcePath))
+        foreach (var file in Directory.EnumerateFiles(sourcePath, "*", _skipSymlinks))
         {
             File.Copy(file, Path.Combine(destinationPath, Path.GetFileName(file)));
         }
 
-        foreach (var dir in Directory.EnumerateDirectories(sourcePath))
+        foreach (var dir in Directory.EnumerateDirectories(sourcePath, "*", _skipSymlinks))
         {
             CopyDirectory(dir, Path.Combine(destinationPath, Path.GetFileName(dir)));
         }

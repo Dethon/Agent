@@ -1,134 +1,81 @@
-using Dashboard.Client.Services;
-using Dashboard.Client.State.Connection;
-using Dashboard.Client.State.Errors;
-using Dashboard.Client.State.Health;
-using Dashboard.Client.State.Latency;
-using Dashboard.Client.State.Memory;
-using Dashboard.Client.State.Metrics;
-using Dashboard.Client.State.Schedules;
-using Dashboard.Client.State.Tokens;
-using Dashboard.Client.State.Tools;
-using Dashboard.Client.State.Voice;
+using Dashboard.Client.Metrics;
 
 namespace Dashboard.Client.Effects;
 
-public sealed class DataLoadEffect(
-    MetricsApiService api,
-    MetricsStore metricsStore,
-    HealthStore healthStore,
-    TokensStore tokensStore,
-    ToolsStore toolsStore,
-    ErrorsStore errorsStore,
-    SchedulesStore schedulesStore,
-    ConnectionStore connectionStore,
-    MemoryStore memoryStore,
-    LatencyStore latencyStore,
-    VoiceStore voiceStore)
+public sealed class DataLoadEffect(MetricFamilyTable families, OverviewFigures overview, MetricsHubBinder binder)
 {
-    public async Task LoadAsync(DateOnly from, DateOnly to)
+    // The one trace the swallowed failure leaves behind. The live connection skips catch-up on its
+    // first epoch on the premise that this load delivered the same data; a recorded failure is how
+    // it knows that premise did not hold.
+    public bool LastLoadFailed { get; private set; }
+
+    // Raised after every load has settled, success or failure. The hub can become live while the
+    // initial load is still in flight, so the flag alone is not enough: whoever skipped catch-up on
+    // its promise needs to hear when the load actually delivers or fails.
+    public event Func<Task>? LoadCompleted;
+
+    // The range belongs to the page that asked for it, so only the families that page draws are
+    // stamped with it; the rest keep the range their own page chose. Stamping all seven meant a
+    // live push or a catch-up for a family whose page had picked thirty days re-read it over
+    // whatever the page in front of the user was showing, which is the opposite of what
+    // .claude/rules/observability.md promises about catch-up keeping the user's time choices.
+    // Everything is still loaded, each family over its own range: whatever a load can put on screen
+    // is what an outage can leave stale.
+    public async Task LoadAsync(DateOnly from, DateOnly to, IReadOnlyList<MetricFamily> displayed)
     {
+        ArgumentNullException.ThrowIfNull(displayed);
+
+        displayed.ToList().ForEach(family => family.SetDateRange(from, to));
+        overview.SetDateRange(from, to);
+
+        var requests = new Func<Task>[]
+        {
+            overview.LoadSummaryAsync,
+            overview.LoadHealthAsync,
+        }.Concat(families.All.SelectMany(family => new Func<Task>[]
+        {
+            family.LoadEventsAsync,
+            family.RefreshAsync,
+        }));
+
+        // Held for the same reason catch-up holds: this walk replaces the same event lists a push
+        // writes into, and without the hold a push landing mid-load is erased when the load's
+        // older response lands after it.
+        binder.HoldPushes();
+        bool[] outcomes;
         try
         {
-            tokensStore.SetDateRange(from, to);
-            toolsStore.SetDateRange(from, to);
-            errorsStore.SetDateRange(from, to);
-            schedulesStore.SetDateRange(from, to);
-            memoryStore.SetDateRange(from, to);
-            latencyStore.SetDateRange(from, to);
-            voiceStore.SetDateRange(from, to);
-
-            var summaryTask = api.GetSummaryAsync(from, to);
-            var tokensTask = api.GetTokensAsync(from, to);
-            var toolsTask = api.GetToolsAsync(from, to);
-            var errorsTask = api.GetErrorsAsync(from, to);
-            var schedulesTask = api.GetSchedulesAsync(from, to);
-            var healthTask = api.GetHealthAsync();
-
-            var tokenBreakdownTask = api.GetTokenGroupedAsync(
-                tokensStore.State.GroupBy, tokensStore.State.Metric, from, to);
-            var toolBreakdownTask = api.GetToolGroupedAsync(
-                toolsStore.State.GroupBy, toolsStore.State.Metric, from, to);
-            var errorBreakdownTask = api.GetErrorGroupedAsync(
-                errorsStore.State.GroupBy, from, to);
-            var scheduleBreakdownTask = api.GetScheduleGroupedAsync(
-                schedulesStore.State.GroupBy, from, to);
-            var memoryRecallTask = api.GetMemoryRecallAsync(from, to);
-            var memoryExtractionTask = api.GetMemoryExtractionAsync(from, to);
-            var memoryDreamingTask = api.GetMemoryDreamingAsync(from, to);
-            var memoryBreakdownTask = api.GetMemoryGroupedAsync(
-                memoryStore.State.GroupBy, memoryStore.State.Metric, from, to);
-
-            var latencyTask = api.GetLatencyAsync(from, to);
-            var latencyBreakdownTask = api.GetLatencyGroupedAsync(
-                latencyStore.State.GroupBy, latencyStore.State.Metric, from, to);
-            var latencyTrendTask = api.GetLatencyTrendAsync(latencyStore.State.Metric, from, to);
-
-            var voiceTask = api.GetVoiceEventsAsync(from, to);
-            var voiceBreakdownTask = api.GetVoiceGroupedAsync(
-                voiceStore.State.GroupBy, voiceStore.State.Metric, from, to, voiceStore.State.Agg);
-
-            await Task.WhenAll(summaryTask, tokensTask, toolsTask, errorsTask,
-                schedulesTask, healthTask, tokenBreakdownTask, toolBreakdownTask,
-                errorBreakdownTask, scheduleBreakdownTask,
-                memoryRecallTask, memoryExtractionTask, memoryDreamingTask, memoryBreakdownTask,
-                latencyTask, latencyBreakdownTask, latencyTrendTask,
-                voiceTask, voiceBreakdownTask);
-
-            var summary = await summaryTask;
-            if (summary is not null)
-            {
-                metricsStore.UpdateSummary(new MetricsState
-                {
-                    InputTokens = summary.InputTokens,
-                    OutputTokens = summary.OutputTokens,
-                    Cost = summary.Cost,
-                    ToolCalls = summary.ToolCalls,
-                    ToolErrors = summary.ToolErrors,
-                    TotalRecalls = summary.TotalRecalls,
-                    TotalExtractions = summary.TotalExtractions,
-                    TotalDreamings = summary.TotalDreamings,
-                    MemoriesStored = summary.MemoriesStored,
-                    MemoriesMerged = summary.MemoriesMerged,
-                    MemoriesDecayed = summary.MemoriesDecayed,
-                });
-            }
-
-            tokensStore.SetEvents(await tokensTask ?? []);
-            toolsStore.SetEvents(await toolsTask ?? []);
-            errorsStore.SetEvents(await errorsTask ?? []);
-            schedulesStore.SetEvents(await schedulesTask ?? []);
-
-            tokensStore.SetBreakdown(await tokenBreakdownTask ?? []);
-            toolsStore.SetBreakdown(await toolBreakdownTask ?? []);
-            errorsStore.SetBreakdown(await errorBreakdownTask ?? []);
-            schedulesStore.SetBreakdown(await scheduleBreakdownTask ?? []);
-
-            memoryStore.SetRecallEvents(await memoryRecallTask ?? []);
-            memoryStore.SetExtractionEvents(await memoryExtractionTask ?? []);
-            memoryStore.SetDreamingEvents(await memoryDreamingTask ?? []);
-            memoryStore.SetBreakdown(await memoryBreakdownTask ?? []);
-
-            latencyStore.SetEvents(await latencyTask ?? []);
-            latencyStore.SetBreakdown(await latencyBreakdownTask ?? []);
-            latencyStore.SetTrend(await latencyTrendTask ?? []);
-
-            voiceStore.SetEvents(await voiceTask ?? []);
-            voiceStore.SetBreakdown(await voiceBreakdownTask ?? []);
-
-            var health = await healthTask;
-            if (health is not null)
-            {
-                healthStore.UpdateHealth(health
-                    .Select(h => new ServiceHealth(h.Service, h.IsHealthy, h.LastSeen))
-                    .ToList());
-            }
-
-            connectionStore.SetConnected(true);
+            outcomes = await Task.WhenAll(requests.Select(SettleAsync));
         }
-        catch
+        finally
         {
-            connectionStore.SetConnected(false);
+            await binder.ReleaseHeldPushesAsync();
+        }
+
+        LastLoadFailed = outcomes.Contains(false);
+
+        if (LoadCompleted is { } completed)
+        {
+            await completed();
         }
     }
 
+    // Each request settles on its own, because one endpoint that fails must not take the panels that
+    // did answer off the screen: the KPI row and the health grid used to go blank whenever any of
+    // the nineteen breakdown requests failed. A refresh can also hand back a run started by a live
+    // push and already failing, which is a failure this load never issued and still has to survive.
+    // The page-load path swallows the reason, as it always has — connection status is the live
+    // connection's to publish, and a failed request is not an outage.
+    private static async Task<bool> SettleAsync(Func<Task> request)
+    {
+        try
+        {
+            await request();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

@@ -51,21 +51,15 @@ public class TseSpeechToTextTests
     private sealed class RecordingMetrics : IMetricsPublisher
     {
         public readonly List<VoiceEvent> Events = [];
-        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+
+        public void Publish(MetricEvent metricEvent)
         {
             if (metricEvent is VoiceEvent voice)
             {
                 Events.Add(voice);
             }
-
-            return Task.CompletedTask;
         }
-    }
 
-    private sealed class ThrowingMetrics : IMetricsPublisher
-    {
-        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default) =>
-            throw new InvalidOperationException("metrics sink unavailable");
     }
 
     // Preserves frame boundaries (unlike RecordingInner, which flattens to one byte blob) so
@@ -132,7 +126,8 @@ public class TseSpeechToTextTests
             NoiseFloorRms = floor,
             Language = "es",
             SatelliteId = "office-01",
-            Room = "Office"
+            Room = "Office",
+            Identity = "household"
         };
 
     private static (ISpeechToText Stt, RecordingInner Inner, StubClient Client, RecordingMetrics Metrics) Build(
@@ -217,7 +212,7 @@ public class TseSpeechToTextTests
         client.LastCall!.Value.Speaker.ShouldBe("Dethon");
         WavCodec.Decode(client.LastCall.Value.Wav).Data.ToArray().ShouldBe(_rawPcm);
         metrics.Events.Select(e => e.Metric).ShouldBe([VoiceMetric.TseInvoked, VoiceMetric.TseLatencyMs]);
-        metrics.Events[0].Identity.ShouldBe("Dethon");
+        metrics.Events[0].Speaker.ShouldBe("Dethon");
     }
 
     [Fact]
@@ -271,6 +266,22 @@ public class TseSpeechToTextTests
     }
 
     [Fact]
+    public async Task PublishedEventsNameTheSatelliteIdentity_NotTheTargetSpeaker()
+    {
+        // Identity means the satellite's configured identity on every other voice event (the
+        // dispatcher says so where it routes an enrolled speaker into the sender instead). This was
+        // the one publisher writing the target speaker there, so a dashboard grouped by identity
+        // mixed satellites and people. The speaker has its own field.
+        var reply = WavCodec.Encode([new AudioChunk { Data = new byte[] { 7 }, Format = AudioFormat.WyomingStandard }]);
+        var (stt, _, _, metrics) = Build(TseMode.Auto, reply);
+
+        await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
+
+        metrics.Events.ShouldNotBeEmpty();
+        metrics.Events.ShouldAllBe(e => e.Identity == "household" && e.Speaker == "Dethon");
+    }
+
+    [Fact]
     public async Task EmptyExtractionReplyFallsBackToRaw()
     {
         var reply = WavCodec.Encode([]); // well-formed RIFF, zero-length data chunk
@@ -297,23 +308,6 @@ public class TseSpeechToTextTests
 
         inner.ReceivedPayload.ShouldBeNull();
         metrics.Events.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task MetricsPublishFailureDoesNotStopInner()
-    {
-        var extractedPcm = new byte[] { 40, 41, 42, 43 };
-        var reply = WavCodec.Encode([new AudioChunk { Data = extractedPcm, Format = AudioFormat.WyomingStandard }]);
-        var inner = new RecordingInner();
-        var client = new StubClient(reply);
-        var audit = new TseAuditTrail(null, 1, new FakeTimeProvider(), NullLogger<TseAuditTrail>.Instance);
-        var settings = new TseSettings { Mode = TseMode.Auto, NoiseFloorThreshold = 400 };
-        var stt = TseSpeechToText.Wrap(inner, settings, client, audit, new ThrowingMetrics(), NullLoggerFactory.Instance);
-
-        var result = await stt.TranscribeAsync(Chunks(), Options(), CancellationToken.None);
-
-        result.Text.ShouldBe("ok");
-        inner.ReceivedPayload.ShouldBe(extractedPcm);
     }
 
     // The seam the task-level fakes always paper over: a REAL SegmentedSpeechToText as the

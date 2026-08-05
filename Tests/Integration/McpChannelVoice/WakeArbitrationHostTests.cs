@@ -7,6 +7,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
+using Mcp.Hosting;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Services.WyomingProtocol;
@@ -15,6 +16,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Unit.Mcp.Hosting;
 
 namespace Tests.Integration.McpChannelVoice;
 
@@ -71,9 +73,9 @@ public class WakeArbitrationHostTests
             satB.CountOf("transcript").ShouldBe(0); // suppression is silent: no done cue on the loser
             satA.CountOf("pause-satellite").ShouldBe(0);
 
-            hub.Emitter.Messages.Count.ShouldBe(1);
-            hub.Emitter.Messages[0].SatelliteId.ShouldBe("a");
-            hub.Emitter.Messages[0].Content.ShouldBe("hola");
+            hub.Emitter.Received().Count.ShouldBe(1);
+            hub.Emitter.Received()[0].SatelliteId.ShouldBe("a");
+            hub.Emitter.Received()[0].Content.ShouldBe("hola");
 
             // Pins WHY B went quiet. Without this the assertions above would also pass if B had lost
             // to Rule B (leak) or simply stalled; only Rule A's loudness comparison reports this.
@@ -129,8 +131,8 @@ public class WakeArbitrationHostTests
             satB.CountOf("pause-satellite").ShouldBe(0); // the challenger keeps its turn
             satA.CountOf("transcript").ShouldBe(0);      // the robbed holder is silenced, not done-cued
 
-            hub.Emitter.Messages.Count.ShouldBe(1);
-            hub.Emitter.Messages[0].SatelliteId.ShouldBe("b");
+            hub.Emitter.Received().Count.ShouldBe(1);
+            hub.Emitter.Received()[0].SatelliteId.ShouldBe("b");
 
             // The discriminator: a Rule A loss would report WakeSuppressed/lost_loudness against A.
             // Only the steal path publishes WakeHandoff, and only it names the displaced holder.
@@ -146,7 +148,12 @@ public class WakeArbitrationHostTests
     }
 
     private sealed record Hub(
-        WyomingSatelliteHost Host, RecordingEmitter Emitter, RecordingMetrics Metrics);
+        WyomingSatelliteHost Host, ChannelInboxProbe Emitter, RecordingMetrics Metrics);
+
+    // Gate resolution and the per-satellite room-noise memory live in one place now, so a test
+    // builds the same factory the process would rather than assembling a tracker of its own.
+    private static SilenceGateFactory Gates(VoiceSettings voice, WyomingClientSettings wyoming) =>
+        new(voice, wyoming, TimeProvider.System);
 
     private static Hub BuildHub(FakeSatelliteServer satA, FakeSatelliteServer satB)
     {
@@ -170,7 +177,7 @@ public class WakeArbitrationHostTests
             Arbitration = new ArbitrationSettings { WindowMs = ArbitrationWindowMs }
         };
 
-        var emitter = new RecordingEmitter();
+        var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var metrics = new RecordingMetrics();
         var factory = new Mock<IConversationFactory>();
         var minted = 0;
@@ -188,7 +195,7 @@ public class WakeArbitrationHostTests
             factory.Object, new ReplyTextAccumulator(), TimeProvider.System,
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, metrics, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System,
+            emitter.Emitter, metrics, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), -1.0, 0.6, -1.4, 2000, TimeProvider.System,
             NullLogger<TranscriptDispatcher>.Instance);
         var arbiter = new WakeArbiter(
             voiceSettings.Arbitration, manager, metrics, TimeProvider.System,
@@ -206,6 +213,7 @@ public class WakeArbitrationHostTests
             metrics,
             TimeProvider.System,
             arbiter,
+            Gates(voiceSettings, voiceSettings.WyomingClient),
             NullLogger<WyomingSatelliteHost>.Instance);
 
         return new Hub(host, emitter, metrics);
@@ -263,47 +271,6 @@ public class WakeArbitrationHostTests
         }
     }
 
-    // Locked, unlike the single-satellite CapturingEmitter: two connections can reach the emitter
-    // concurrently here, and an unsynchronized List would corrupt exactly when the feature is
-    // broken — turning the failure this test exists to catch into an unrelated crash.
-    private sealed class RecordingEmitter : ChannelNotificationEmitter
-    {
-        private readonly List<ChannelMessageNotification> _messages = [];
-        private readonly Lock _gate = new();
-
-        public RecordingEmitter() : base(new ChannelInbox()) { }
-
-        public IReadOnlyList<ChannelMessageNotification> Messages
-        {
-            get
-            {
-                lock (_gate)
-                {
-                    return _messages.ToArray();
-                }
-            }
-        }
-
-        public override Task EmitMessageNotificationAsync(
-            string conversationId, string sender, string content, string? agentId, string? location,
-            string? satelliteId, string? dismissedAlert, CancellationToken ct = default)
-        {
-            lock (_gate)
-            {
-                _messages.Add(new ChannelMessageNotification
-                {
-                    ConversationId = conversationId,
-                    Sender = sender,
-                    Content = content,
-                    AgentId = agentId,
-                    Location = location,
-                    SatelliteId = satelliteId,
-                    DismissedAlert = dismissedAlert
-                });
-            }
-            return Task.CompletedTask;
-        }
-    }
 
     private sealed class RecordingMetrics : IMetricsPublisher
     {
@@ -321,7 +288,7 @@ public class WakeArbitrationHostTests
             }
         }
 
-        public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+        public void Publish(MetricEvent metricEvent)
         {
             if (metricEvent is VoiceEvent voice)
             {
@@ -330,7 +297,6 @@ public class WakeArbitrationHostTests
                     _events.Add(voice);
                 }
             }
-            return Task.CompletedTask;
         }
     }
 }

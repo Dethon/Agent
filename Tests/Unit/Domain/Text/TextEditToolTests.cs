@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.DTOs;
+using Domain.Tools;
 using Domain.Tools.Text;
 using Shouldly;
 
@@ -40,14 +41,14 @@ public class TextEditToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_MultipleOccurrences_ReplaceAllFalse_Throws()
+    public void Run_MultipleOccurrences_ReplaceAllFalse_ReturnsInvalidArgument()
     {
         var filePath = CreateTestFile("test.txt", "foo bar foo baz foo");
 
-        var ex = Should.Throw<ArgumentException>(() =>
-            _tool.TestRun(filePath, [new TextEdit("foo", "FOO")]));
-        ex.Message.ShouldContain("3 occurrences");
-        ex.Message.ShouldContain("disambiguate");
+        var message = _tool.TestRun(filePath, [new TextEdit("foo", "FOO")])
+            .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>();
+        message.ShouldContain("3 occurrences");
+        message.ShouldContain("disambiguate");
         File.ReadAllText(filePath).ShouldBe("foo bar foo baz foo");
     }
 
@@ -64,23 +65,23 @@ public class TextEditToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_NotFound_Throws()
+    public void Run_NotFound_ReturnsInvalidArgument()
     {
         var filePath = CreateTestFile("test.txt", "Hello World");
 
-        var ex = Should.Throw<ArgumentException>(() =>
-            _tool.TestRun(filePath, [new TextEdit("Missing", "X")]));
-        ex.Message.ShouldContain("not found");
+        _tool.TestRun(filePath, [new TextEdit("Missing", "X")])
+            .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>()
+            .ShouldContain("not found");
     }
 
     [Fact]
-    public void Run_CaseInsensitiveMatch_ThrowsWithSuggestion()
+    public void Run_CaseInsensitiveMatch_ReturnsInvalidArgumentWithSuggestion()
     {
         var filePath = CreateTestFile("test.txt", "Hello World");
 
-        var ex = Should.Throw<ArgumentException>(() =>
-            _tool.TestRun(filePath, [new TextEdit("hello world", "X")]));
-        ex.Message.ShouldContain("Did you mean");
+        _tool.TestRun(filePath, [new TextEdit("hello world", "X")])
+            .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>()
+            .ShouldContain("Did you mean");
     }
 
     [Fact]
@@ -154,26 +155,25 @@ public class TextEditToolTests : IDisposable
         var filePath = CreateTestFile("test.txt", "alpha beta");
         var originalContent = File.ReadAllText(filePath);
 
-        Should.Throw<ArgumentException>(() =>
-            _tool.TestRun(filePath,
+        _tool.TestRun(filePath,
             [
                 new TextEdit("alpha", "ALPHA"),
                 new TextEdit("does-not-exist", "X"),
                 new TextEdit("beta", "BETA")
-            ]));
+            ]).ShouldBeError(ToolError.Codes.InvalidArgument);
 
         File.ReadAllText(filePath).ShouldBe(originalContent);
         File.Exists(filePath + ".tmp").ShouldBeFalse();
     }
 
     [Fact]
-    public void Run_EmptyEditsArray_Throws()
+    public void Run_EmptyEditsArray_ReturnsInvalidArgument()
     {
         var filePath = CreateTestFile("test.txt", "content");
 
-        var ex = Should.Throw<ArgumentException>(() =>
-            _tool.TestRun(filePath, []));
-        ex.Message.ShouldContain("edits");
+        _tool.TestRun(filePath, [])
+            .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>()
+            .ShouldContain("edits");
     }
 
     [Fact]
@@ -204,7 +204,7 @@ public class TextEditToolTests : IDisposable
     {
         public JsonNode TestRun(string filePath, IReadOnlyList<TextEdit> edits)
         {
-            return Run(filePath, edits);
+            return Run(filePath, edits).ToNode();
         }
     }
 }

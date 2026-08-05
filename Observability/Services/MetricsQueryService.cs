@@ -330,7 +330,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         return sorted[index];
     }
 
-    internal static decimal AggregateLatency(IEnumerable<decimal> values, LatencyMetric metric)
+    internal static decimal AggregateLatency(IEnumerable<decimal> values, Aggregation aggregation)
     {
         var list = values.ToArray();
         if (list.Length == 0)
@@ -338,20 +338,20 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
             return 0m;
         }
 
-        return metric switch
+        return aggregation switch
         {
-            LatencyMetric.Avg => Math.Round(list.Average(), 2),
-            LatencyMetric.P50 => ComputePercentile(list, 50),
-            LatencyMetric.P95 => ComputePercentile(list, 95),
-            LatencyMetric.P99 => ComputePercentile(list, 99),
-            LatencyMetric.Count => list.Length,
-            LatencyMetric.Max => list.Max(),
-            _ => throw new ArgumentOutOfRangeException(nameof(metric))
+            Aggregation.Avg => Math.Round(list.Average(), 2),
+            Aggregation.P50 => ComputePercentile(list, 50),
+            Aggregation.P95 => ComputePercentile(list, 95),
+            Aggregation.P99 => ComputePercentile(list, 99),
+            Aggregation.Count => list.Length,
+            Aggregation.Max => list.Max(),
+            _ => throw new ArgumentOutOfRangeException(nameof(aggregation))
         };
     }
 
     public async Task<Dictionary<string, decimal>> GetLatencyGroupedAsync(
-        LatencyDimension dimension, LatencyMetric metric, DateOnly from, DateOnly to)
+        LatencyDimension dimension, Aggregation aggregation, DateOnly from, DateOnly to)
     {
         var events = await GetEventsAsync<LatencyEvent>("metrics:latency:", from, to);
         return events
@@ -364,11 +364,11 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
             })
             .ToDictionary(
                 g => g.Key,
-                g => AggregateLatency(g.Select(e => (decimal)e.DurationMs), metric));
+                g => AggregateLatency(g.Select(e => (decimal)e.DurationMs), aggregation));
     }
 
     public async Task<IReadOnlyList<LatencyTrendSeries>> GetLatencyTrendAsync(
-        LatencyMetric metric, DateOnly from, DateOnly to)
+        Aggregation aggregation, DateOnly from, DateOnly to)
     {
         var events = await GetEventsAsync<LatencyEvent>("metrics:latency:", from, to);
         var hourly = to.DayNumber - from.DayNumber <= 2;
@@ -383,7 +383,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     .OrderBy(b => b.Key)
                     .Select(b => new LatencyTrendPoint(
                         b.Key,
-                        AggregateLatency(b.Select(e => (decimal)e.DurationMs), metric)))
+                        AggregateLatency(b.Select(e => (decimal)e.DurationMs), aggregation)))
                     .ToList()))
             .ToList();
     }
@@ -401,7 +401,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         VoiceMetric metric,
         DateOnly from,
         DateOnly to,
-        LatencyMetric agg = LatencyMetric.Avg)
+        Aggregation aggregation = Aggregation.Avg)
     {
         var events = await GetEventsAsync<VoiceEvent>("metrics:voice:", from, to);
         var scoped = events.Where(e => e.Metric == metric);
@@ -413,6 +413,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
             VoiceDimension.Identity => e => e.Identity,
             VoiceDimension.Outcome => e => e.Outcome,
             VoiceDimension.Priority => e => e.Priority,
+            VoiceDimension.Speaker => e => e.Speaker,
             _ => e => e.SatelliteId
         };
 
@@ -425,7 +426,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
             .ToDictionary(
                 g => g.Key,
                 g => isDuration
-                    ? AggregateLatency(g.Select(e => (decimal)(e.DurationMs ?? 0)), agg)
+                    ? AggregateLatency(g.Select(e => (decimal)(e.DurationMs ?? 0)), aggregation)
                     : (decimal)g.Count());
     }
 

@@ -19,6 +19,14 @@ public class McpPromptCacheTests
         condition().ShouldBeTrue();
     }
 
+    // The fetch counter rises before the background refresh stores the new entry, so waiting on
+    // the counter and then reading the cache can still observe the stale value. Wait on the value.
+    private static Task WaitForCachedValueAsync(
+        McpPromptCache cache, Func<CancellationToken, Task<string[]>> fetch, string[] expected) =>
+        WaitUntilAsync(() =>
+            cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None)
+                .GetAwaiter().GetResult().SequenceEqual(expected));
+
     [Fact]
     public async Task GetOrFetchAsync_FirstCall_FetchesInline()
     {
@@ -66,10 +74,7 @@ public class McpPromptCacheTests
         var staleServed = await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None);
 
         staleServed.ShouldBe(["v1"], "a stale hit must serve the cached value without blocking");
-        await WaitUntilAsync(() => Volatile.Read(ref fetches) == 2);
-        await WaitUntilAsync(() =>
-            cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None)
-                .GetAwaiter().GetResult().SequenceEqual(["v2"]));
+        await WaitForCachedValueAsync(cache, fetch, ["v2"]);
     }
 
     [Fact]
@@ -115,7 +120,6 @@ public class McpPromptCacheTests
         // Stale hit with an already-cancelled caller: serve stale now, refresh must still run.
         (await cache.GetOrFetchAsync("server-a", fetch, cancelled.Token)).ShouldBe(["v1"]);
 
-        await WaitUntilAsync(() => Volatile.Read(ref fetches) == 2);
-        (await cache.GetOrFetchAsync("server-a", fetch, CancellationToken.None)).ShouldBe(["v2"]);
+        await WaitForCachedValueAsync(cache, fetch, ["v2"]);
     }
 }

@@ -31,14 +31,28 @@ internal static class VfsContentSearch
 
     // Matches a bare file name against a simple glob (* and ?). Used to gate which file(s) a backend
     // exposes as searchable against a caller-supplied filePattern.
-    public static bool MatchesFilePattern(string? filePattern, string fileName)
+    //
+    // The pattern is the caller's, so it is as untrusted as the query and gets the same two
+    // guards: compiled once under a bounded match timeout — `*a*a*a…b` over a long file name
+    // backtracks past any deadline otherwise — and a pattern that cannot compile answers the
+    // invalid-argument envelope instead of throwing out of fs_search.
+    public static FsResult<Func<string, bool>> CompileFilePattern(string? filePattern, TimeSpan matchTimeout)
     {
         if (string.IsNullOrEmpty(filePattern))
         {
-            return true;
+            return new FsResult<Func<string, bool>>.Ok(_ => true);
         }
+
         var pattern = "^" + Regex.Escape(filePattern).Replace("\\*", "[^/]*").Replace("\\?", ".") + "$";
-        return Regex.IsMatch(fileName, pattern, RegexOptions.IgnoreCase);
+        try
+        {
+            var matcher = new Regex(pattern, RegexOptions.IgnoreCase, matchTimeout);
+            return new FsResult<Func<string, bool>>.Ok(matcher.IsMatch);
+        }
+        catch (ArgumentException ex)
+        {
+            return FsError.Invalid<Func<string, bool>>($"Invalid filePattern '{filePattern}': {ex.Message}");
+        }
     }
 
     private static FsSearchMatch BuildMatch(string[] lines, int index, int contextLines)

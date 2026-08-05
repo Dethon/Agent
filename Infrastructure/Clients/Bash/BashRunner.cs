@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text;
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
@@ -9,18 +8,14 @@ namespace Infrastructure.Clients.Bash;
 
 public class BashRunner(BashRunnerOptions options) : ICommandRunner
 {
-    public async Task<JsonNode> RunAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    public async Task<FsResult<FsExecResult>> RunAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var cwd = ResolveCwd(path);
         if (!Directory.Exists(cwd))
         {
-            // Explicit envelope (not throw): ICommandRunner is also consumed outside the MCP
-            // boundary (e.g. VfsExec dispatching directly), so we can't rely on the
-            // ToolResponse exception-wrap to produce one for us.
-            return ToolError.Create(
+            return FsError.Fail<FsExecResult>(
                 ToolError.Codes.NotFound,
-                $"Working directory '{cwd}' does not exist or is not a directory.",
-                retryable: false);
+                $"Working directory '{cwd}' does not exist or is not a directory.");
         }
 
         var effectiveTimeout = TimeSpan.FromSeconds(
@@ -79,7 +74,7 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
         var stdoutResult = await stdoutTask;
         var stderrResult = await stderrTask;
 
-        return FsResultContract.ToNode(new FsExecResult
+        return new FsResult<FsExecResult>.Ok(new FsExecResult
         {
             Stdout = stdoutResult.Text,
             Stderr = stderrResult.Text,

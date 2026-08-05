@@ -6,9 +6,9 @@ using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
-using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
+using Domain.Metrics;
 using Domain.Prompts;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
@@ -35,10 +35,10 @@ public sealed class McpAgent : DisposableAgent
     private readonly ReasoningEffort? _reasoningEffort;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private readonly TimeProvider _timeProvider;
-    private readonly IMetricsPublisher? _metricsPublisher;
-    private readonly string? _model;
-    private readonly IMultiModelChatClient? _effectiveModelSource;
-    private readonly string? _conversationId;
+    private readonly IMetricsPublisher _metricsPublisher;
+    private readonly string _model;
+    private readonly IReadOnlyList<string> _patchableModelIds;
+    private readonly string _conversationId;
     private readonly McpPromptCache? _promptCache;
 
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
@@ -47,53 +47,50 @@ public sealed class McpAgent : DisposableAgent
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
 
-    // The chat client is the sole resolver of per-message model patches; read its result back
-    // rather than re-resolving here, so latency can never disagree with what actually ran.
-    private string? EffectiveModel => _effectiveModelSource?.EffectiveModel ?? _model;
+    // Both halves of a per-message config patch, resolved once for a turn. The values ride
+    // that turn's ChatOptions, so nothing per-request lives on the shared chat client and the
+    // model stamped on metrics is by construction the model the request ran on.
+    private sealed record TurnConfig(string? ModelOverride, ReasoningEffort? Effort);
 
+    // The spec carries every configured value, so nothing about what this agent is can be
+    // expressed by omitting an argument. What is left are the live collaborators, and the
+    // metrics publisher is one of them and required: handing the agent no publisher is what
+    // silently cost every subagent its turn latency.
     public McpAgent(
-        string[] endpoints,
+        AgentSpec spec,
         IChatClient chatClient,
-        string name,
-        string description,
         IThreadStateStore stateStore,
-        string userId,
-        string? customInstructions = null,
-        string? language = null,
-        IReadOnlyList<AIFunction>? domainTools = null,
-        IReadOnlyList<string>? domainPrompts = null,
-        IReadOnlySet<string>? filesystemEnabledTools = null, // null treated as empty (disabled)
+        IMetricsPublisher metricsPublisher,
+        TimeProvider timeProvider,
+        IReadOnlyList<AIFunction> domainTools,
+        IReadOnlyList<string> domainPrompts,
         ILoggerFactory? loggerFactory = null,
-        string? reasoningEffort = null,
-        TimeProvider? timeProvider = null,
-        IMetricsPublisher? metricsPublisher = null,
-        string? model = null,
-        string? conversationId = null,
         McpPromptCache? promptCache = null)
     {
-        _endpoints = endpoints;
-        _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
+        _endpoints = spec.McpServerEndpoints;
+        _filesystemEnabledTools = spec.FilesystemEnabledTools;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger<McpAgent>();
-        _name = name;
-        _description = description;
-        _userId = userId;
-        _customInstructions = customInstructions;
-        _language = language;
-        _domainTools = domainTools ?? [];
-        _domainPrompts = domainPrompts ?? [];
-        _reasoningEffort = ParseEffort(reasoningEffort);
-        _timeProvider = timeProvider ?? TimeProvider.System;
+        _name = spec.DisplayName;
+        _description = spec.Description;
+        _userId = spec.UserId;
+        _customInstructions = spec.CustomInstructions;
+        _language = spec.Language;
+        _domainTools = domainTools;
+        _domainPrompts = domainPrompts;
+        _reasoningEffort = ParseEffort(spec.ReasoningEffort);
+        _timeProvider = timeProvider;
         _metricsPublisher = metricsPublisher;
-        _model = model;
-        _effectiveModelSource = chatClient.GetService(typeof(IMultiModelChatClient)) as IMultiModelChatClient;
-        _conversationId = conversationId;
+        _model = spec.Model;
+        _patchableModelIds = spec.PatchableModelIds;
+        _conversationId = spec.ConversationId;
         _promptCache = promptCache;
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
-            Name = name,
-            Description = description,
-            ChatHistoryProvider = new RedisChatMessageStore(stateStore, metricsPublisher, conversationId)
+            Name = spec.DisplayName,
+            Description = spec.Description,
+            ChatHistoryProvider = new RedisChatMessageStore(
+                stateStore, metricsPublisher, spec.ConversationId)
         });
     }
 
@@ -128,33 +125,8 @@ public sealed class McpAgent : DisposableAgent
         // Pre-create the ThreadSession (MCP connections + tool discovery) so this
         // cost overlaps with first-message handling. The _syncLock in
         // GetOrCreateSessionAsync makes the subsequent RunStreaming reuse it.
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        using var latency = _metricsPublisher.MeasureLatency(LatencyStage.SessionWarmup, _conversationId);
         await GetOrCreateSessionAsync(thread, ct);
-        sw.Stop();
-        await SafePublishLatencyAsync(LatencyStage.SessionWarmup, sw.ElapsedMilliseconds);
-    }
-
-    private async Task SafePublishLatencyAsync(LatencyStage stage, long durationMs)
-    {
-        if (_metricsPublisher is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await _metricsPublisher.PublishAsync(new LatencyEvent
-            {
-                Stage = stage,
-                DurationMs = durationMs,
-                Model = stage is LatencyStage.LlmFirstToken or LatencyStage.LlmTotal ? EffectiveModel : null,
-                ConversationId = _conversationId
-            });
-        }
-        catch
-        {
-            // Latency emission is best-effort and must never affect a turn.
-        }
     }
 
     public override async ValueTask DisposeThreadSessionAsync(AgentSession thread)
@@ -219,55 +191,51 @@ public sealed class McpAgent : DisposableAgent
         AgentSession? thread = null,
         AgentRunOptions? options = null,
         CancellationToken cancellationToken = default)
-        => WithLlmLatencyAsync(
-            RunCoreStreamingInnerAsync(messages, thread, options, cancellationToken),
+    {
+        var messageList = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
+        var turnConfig = ResolveTurnConfig(messageList, options);
+        return WithLlmLatencyAsync(
+            RunCoreStreamingInnerAsync(messageList, thread, options, turnConfig, cancellationToken),
+            turnConfig.ModelOverride ?? _model,
             cancellationToken);
+    }
 
     private async IAsyncEnumerable<AgentResponseUpdate> WithLlmLatencyAsync(
         IAsyncEnumerable<AgentResponseUpdate> source,
+        string? effectiveModel,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        var firstEmitted = false;
-        try
+        using var total = _metricsPublisher.MeasureLatency(
+            LatencyStage.LlmTotal, _conversationId, model: effectiveModel);
+        // The first token is a point inside the total span, not a span of its own, so its scope is
+        // disposed on the first update rather than by a using. A stream that yields nothing never
+        // disposes it and publishes no first-token latency, which is what the old firstEmitted flag
+        // did too — there is no such thing as the first token of an empty stream.
+        var firstToken = _metricsPublisher.MeasureLatency(
+            LatencyStage.LlmFirstToken, _conversationId, model: effectiveModel);
+        await foreach (var update in source.WithCancellation(ct))
         {
-            await foreach (var update in source.WithCancellation(ct))
-            {
-                if (!firstEmitted)
-                {
-                    firstEmitted = true;
-                    await SafePublishLatencyAsync(LatencyStage.LlmFirstToken, sw.ElapsedMilliseconds);
-                }
-                yield return update;
-            }
-        }
-        finally
-        {
-            sw.Stop();
-            await SafePublishLatencyAsync(LatencyStage.LlmTotal, sw.ElapsedMilliseconds);
+            firstToken.Dispose();
+            yield return update;
         }
     }
 
     private async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingInnerAsync(
-        IEnumerable<ChatMessage> messages,
-        AgentSession? thread = null,
-        AgentRunOptions? options = null,
+        IReadOnlyList<ChatMessage> messageList,
+        AgentSession? thread,
+        AgentRunOptions? options,
+        TurnConfig turnConfig,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         thread ??= await CreateSessionAsync(cancellationToken);
         var session = await GetOrCreateSessionAsync(thread, cancellationToken);
 
-        var messageList = messages as IReadOnlyList<ChatMessage> ?? messages.ToList();
         var conversationContext = messageList
             .Select(m => m.GetConversationContext())
             .FirstOrDefault(c => c is not null);
 
-        var configPatch = messageList
-            .LastOrDefault(m => m.Role == ChatRole.User)
-            ?.GetConfigPatch();
-
-        options ??= CreateRunOptions(session, conversationContext, configPatch);
+        options ??= CreateRunOptions(session, conversationContext, turnConfig);
 
         await foreach (var update in _innerAgent.RunStreamingAsync(messageList, thread, options, cancellationToken))
         {
@@ -275,12 +243,84 @@ public sealed class McpAgent : DisposableAgent
         }
     }
 
-    private ChatClientAgentRunOptions CreateRunOptions(
-        ThreadSession session, ConversationContext? conversationContext = null, AgentConfigPatch? configPatch = null)
+    // One resolution site for the whole patch, and one rejection rule for both fields: fall
+    // back to the configured value and warn. A bad override never costs the user a turn, but
+    // it never disappears silently either.
+    private TurnConfig ResolveTurnConfig(IReadOnlyList<ChatMessage> messages, AgentRunOptions? suppliedOptions)
     {
-        var effort = TryParseEffort(configPatch?.ReasoningEffort) ?? _reasoningEffort;
+        // A caller-supplied option set replaces everything CreateRunOptions would have built:
+        // instructions, tools, reasoning effort and the config patch. Non-channel callers
+        // (harnesses, benchmarks) legitimately do this, so it stays possible — but an agent
+        // running stripped of what makes it that agent must not look like a normal turn.
+        if (suppliedOptions is not null)
+        {
+            _logger?.LogWarning(
+                "Agent '{AgentName}' ran with caller-supplied AgentRunOptions; this turn uses none of " +
+                "its instructions, tools, reasoning effort or config patch",
+                _name);
+            return new TurnConfig(
+                (suppliedOptions as ChatClientAgentRunOptions)?.ChatOptions?.ModelId, null);
+        }
+
+        var patch = messages
+            .LastOrDefault(m => m.Role == ChatRole.User)
+            ?.GetConfigPatch();
+
+        return new TurnConfig(ResolveModelOverride(patch?.Model), ResolveEffort(patch?.ReasoningEffort));
+    }
+
+    private string? ResolveModelOverride(string? patchedModel)
+    {
+        if (string.IsNullOrWhiteSpace(patchedModel) ||
+            string.Equals(patchedModel, _model, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        // Return the whitelist's own casing, not the patch's: OpenRouter model IDs are lowercase
+        // slugs, and stamping the patch's casing verbatim can turn a valid override into a
+        // model-not-found error.
+        var resolved = _patchableModelIds
+            .FirstOrDefault(id => string.Equals(id, patchedModel, StringComparison.OrdinalIgnoreCase));
+
+        if (resolved is null)
+        {
+            LogRejectedPatch("model", patchedModel, _model);
+        }
+
+        return resolved;
+    }
+
+    private ReasoningEffort? ResolveEffort(string? patchedEffort)
+    {
+        if (string.IsNullOrWhiteSpace(patchedEffort))
+        {
+            return _reasoningEffort;
+        }
+
+        var parsed = TryParseEffort(patchedEffort);
+        if (parsed is null)
+        {
+            LogRejectedPatch("reasoningEffort", patchedEffort, _reasoningEffort?.ToString());
+        }
+
+        return parsed ?? _reasoningEffort;
+    }
+
+    // A client whose whitelist has drifted from the agent's shows up here: the rejected value
+    // in the log is the evidence.
+    private void LogRejectedPatch(string field, string value, string? fallback)
+    {
+        _logger?.LogWarning(
+            "Rejected config patch {Field}={Value}; using {Fallback}", field, value, fallback ?? "unset");
+    }
+
+    private ChatClientAgentRunOptions CreateRunOptions(
+        ThreadSession session, ConversationContext? conversationContext, TurnConfig turnConfig)
+    {
         return new ChatClientAgentRunOptions(new ChatOptions
         {
+            ModelId = turnConfig.ModelOverride,
             Tools = [.. session.Tools],
             Instructions = BuildInstructions(
                 _name,
@@ -291,9 +331,9 @@ public sealed class McpAgent : DisposableAgent
                 session.FileSystemPrompts,
                 session.ClientManager.Prompts,
                 _timeProvider.GetLocalNow()),
-            Reasoning = effort is null
+            Reasoning = turnConfig.Effort is null
                 ? null
-                : new ReasoningOptions { Effort = effort.Value },
+                : new ReasoningOptions { Effort = turnConfig.Effort.Value },
             AdditionalProperties = BuildConversationContextProperties(conversationContext)
         });
     }

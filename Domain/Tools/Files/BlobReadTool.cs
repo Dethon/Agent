@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
@@ -7,9 +6,7 @@ public class BlobReadTool(string rootPath)
 {
     public const int MaxChunkSizeBytes = 256 * 1024;
 
-    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
+    private readonly PathJail _jail = new(rootPath);
 
     protected const string Description = """
         Reads a chunk of raw bytes from a file as base64. Used by the agent's cross-filesystem
@@ -17,14 +14,21 @@ public class BlobReadTool(string rootPath)
         Returns { contentBase64, eof, totalBytes }.
         """;
 
-    protected JsonNode Run(string path, long offset, int length)
+    public FsResult<FsBlobReadResult> Run(string path, long offset, int length)
     {
-        var resolved = ResolveAndValidate(path);
-        ArgumentOutOfRangeException.ThrowIfNegative(offset);
-        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        if (!_jail.TryResolve(path, out var resolved))
+        {
+            return FsError.Invalid<FsBlobReadResult>(_jail.DeniedMessage);
+        }
+
+        if (offset < 0 || length < 0)
+        {
+            return FsError.Invalid<FsBlobReadResult>("offset and length must not be negative.");
+        }
+
         if (!File.Exists(resolved))
         {
-            throw new FileNotFoundException($"File not found: {path}");
+            return FsError.NotFound<FsBlobReadResult>(path);
         }
 
         var info = new FileInfo(resolved);
@@ -50,32 +54,11 @@ public class BlobReadTool(string rootPath)
             }
         }
 
-        var eof = offset + actuallyRead >= info.Length;
-        return FsResultContract.ToNode(new FsBlobReadResult
+        return new FsResult<FsBlobReadResult>.Ok(new FsBlobReadResult
         {
             ContentBase64 = Convert.ToBase64String(buffer, 0, actuallyRead),
-            Eof = eof,
+            Eof = offset + actuallyRead >= info.Length,
             TotalBytes = info.Length
         });
-    }
-
-    private string ResolveAndValidate(string path)
-    {
-        var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var fullPath = Path.IsPathRooted(path)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(rootPath, normalized));
-
-        var canonicalRoot = Path.GetFullPath(rootPath);
-        var rootWithSep = canonicalRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? canonicalRoot
-            : canonicalRoot + Path.DirectorySeparatorChar;
-
-        if (fullPath.Equals(canonicalRoot, _pathComparison) ||
-            fullPath.StartsWith(rootWithSep, _pathComparison))
-        {
-            return fullPath;
-        }
-        throw new UnauthorizedAccessException($"Access denied: path must be within {canonicalRoot}");
     }
 }

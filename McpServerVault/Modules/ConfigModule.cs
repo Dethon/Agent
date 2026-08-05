@@ -1,63 +1,37 @@
 using Domain.Contracts;
 using Domain.Tools.Config;
+using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using McpServerVault.McpPrompts;
-using McpServerVault.McpResources;
-using McpServerVault.McpTools;
 using McpServerVault.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace McpServerVault.Modules;
 
 public static class ConfigModule
 {
-    public static McpSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<McpSettings>();
-        return settings ?? throw new InvalidOperationException("Settings not found");
-    }
-
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
         services
-            .AddSingleton(settings)
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.VaultPath))
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
-            .AddMcpServer()
-            .WithHttpTransport()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return ToolResponse.Create(ex);
-                }
-            }))
-            .WithTools<FsReadTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsCopyTool>()
-            .WithTools<FsBlobReadTool>()
-            .WithTools<FsBlobWriteTool>()
-            .WithResources<FileSystemResource>()
+            .AddSingleton(sp => new TextDiskFileSystem(
+                "vault",
+                // The reusable disk root takes the mount's prose the same way it takes its name:
+                // "Obsidian vault" is this deployment's, not every text root's.
+                $"Personal Obsidian vault ({settings.VaultPath}) — markdown notes with wikilinks, "
+                + "embeds, frontmatter, and tags; the user edits the same files in Obsidian. "
+                + "Persistent host-mounted directory. Read/write text only (allowed extensions "
+                + "enforced); does NOT support fs_exec. See the Vault Filesystem (Obsidian) prompt "
+                + "for conventions.",
+                sp.GetRequiredService<IFileSystemClient>(),
+                new LibraryPathConfig(settings.VaultPath),
+                settings.AllowedExtensions))
+            .AddToolServer(settings, ToolResponse.Create)
+            .AddFileSystemTools<TextDiskFileSystem>()
+            .AddFileSystemResource<TextDiskFileSystem>()
             .WithPrompts<McpSystemPrompt>();
 
         return services;

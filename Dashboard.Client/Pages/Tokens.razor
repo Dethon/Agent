@@ -3,75 +3,58 @@
 @using Domain.DTOs.Metrics
 @using Domain.DTOs.Metrics.Enums
 @using static Dashboard.Client.Components.PillSelector
-@implements IDisposable
-@inject TokensStore Store
-@inject DataLoadEffect DataLoad
-@inject MetricsApiService Api
-@inject LocalStorageService Storage
+@inject MetricFamilyTable Families
 
 <div class="tokens-page">
-    <header class="page-header">
-        <h2>Token Usage</h2>
-        <div class="controls">
-            <PillSelector Label="Group by" Options="DimensionOptions" Value="@_state.GroupBy.ToString()"
-                          OnChanged="OnDimensionChanged" />
-            <PillSelector Label="Metric" Options="MetricOptions" Value="@_state.Metric.ToString()"
-                          OnChanged="OnMetricChanged" />
-            <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
-                          OnChanged="OnTimeChanged" />
-        </div>
-    </header>
+    <MetricControls TStore="TokensStore" TState="TokensState"
+                    Title="Token Usage"
+                    Family="Families.Tokens"
+                    DimensionOptions="DimensionOptions"
+                    MetricOptions="MetricOptions">
+        <ChildContent Context="state">
+            <section class="kpi-row">
+                <KpiCard Label="Input Tokens" Value="@state.Events.Sum(e => (long)e.InputTokens).ToString("N0")" Color="var(--accent-blue)" />
+                <KpiCard Label="Output Tokens" Value="@state.Events.Sum(e => (long)e.OutputTokens).ToString("N0")" Color="var(--accent-purple)" />
+                <KpiCard Label="Cost" Value="@($"${state.Events.Sum(e => e.Cost):F2}")" Color="var(--accent-green)" />
+                <KpiCard Label="Truncations" Value="@state.Truncations.ToString("N0")" Color="var(--accent-yellow)" />
+            </section>
 
-    <section class="kpi-row">
-        <KpiCard Label="Input Tokens" Value="@_inputTokens.ToString("N0")" Color="var(--accent-blue)" />
-        <KpiCard Label="Output Tokens" Value="@_outputTokens.ToString("N0")" Color="var(--accent-purple)" />
-        <KpiCard Label="Cost" Value="@($"${_cost:F2}")" Color="var(--accent-green)" />
-        <KpiCard Label="Truncations" Value="@_state.Truncations.ToString("N0")" Color="var(--accent-yellow)" />
-    </section>
+            <section class="section">
+                <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.Donut"
+                              MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == state.Metric.ToString())?.Label ?? "")"
+                              Unit="@(state.Metric == TokenMetric.Cost ? "$" : "")"
+                              UseFullLabels="@(state.GroupBy == TokenDimension.Model)" />
+            </section>
 
-    <section class="section">
-        <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.Donut"
-                      MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
-                      Unit="@(_state.Metric == TokenMetric.Cost ? "$" : "")"
-                      UseFullLabels="@(_state.GroupBy == TokenDimension.Model)" />
-    </section>
-
-    <section class="section">
-        <h3>Recent Token Events</h3>
-        <div class="events-table">
-            <div class="table-header">
-                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
-                <span class='sortable @SortClass("Sender")' @onclick='() => SortBy("Sender")'>Sender @SortIndicator("Sender")</span>
-                <span class='sortable @SortClass("Model")' @onclick='() => SortBy("Model")'>Model @SortIndicator("Model")</span>
-                <span class='sortable @SortClass("Input")' @onclick='() => SortBy("Input")'>Input @SortIndicator("Input")</span>
-                <span class='sortable @SortClass("Output")' @onclick='() => SortBy("Output")'>Output @SortIndicator("Output")</span>
-                <span class='sortable @SortClass("Cost")' @onclick='() => SortBy("Cost")'>Cost @SortIndicator("Cost")</span>
-            </div>
-            @foreach (var evt in GetSortedEvents())
-            {
-                <div class="table-row">
-                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
-                    <span>@evt.Sender</span>
-                    <span>@evt.Model</span>
-                    <span>@evt.InputTokens.ToString("N0")</span>
-                    <span>@evt.OutputTokens.ToString("N0")</span>
-                    <span>@($"${evt.Cost:F4}")</span>
+            <section class="section">
+                <h3>Recent Token Events</h3>
+                <div class="events-table">
+                    <div class="table-header">
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                        <span class='sortable @SortClass("Sender")' @onclick='() => SortBy("Sender")'>Sender @SortIndicator("Sender")</span>
+                        <span class='sortable @SortClass("Model")' @onclick='() => SortBy("Model")'>Model @SortIndicator("Model")</span>
+                        <span class='sortable @SortClass("Input")' @onclick='() => SortBy("Input")'>Input @SortIndicator("Input")</span>
+                        <span class='sortable @SortClass("Output")' @onclick='() => SortBy("Output")'>Output @SortIndicator("Output")</span>
+                        <span class='sortable @SortClass("Cost")' @onclick='() => SortBy("Cost")'>Cost @SortIndicator("Cost")</span>
+                    </div>
+                    @foreach (var evt in GetSortedEvents(state))
+                    {
+                        <div class="table-row">
+                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                            <span>@evt.Sender</span>
+                            <span>@evt.Model</span>
+                            <span>@evt.InputTokens.ToString("N0")</span>
+                            <span>@evt.OutputTokens.ToString("N0")</span>
+                            <span>@($"${evt.Cost:F4}")</span>
+                        </div>
+                    }
                 </div>
-            }
-        </div>
-    </section>
+            </section>
+        </ChildContent>
+    </MetricControls>
 </div>
 
 @code {
-    private TokensState _state = new();
-    private int _selectedDays = 1;
-    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
-    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
-    private long _inputTokens;
-    private long _outputTokens;
-    private decimal _cost;
-    private IDisposable? _sub;
-
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [
         new("User", nameof(TokenDimension.User)),
@@ -88,79 +71,6 @@
         new("Tokens trimmed", nameof(TokenMetric.TokensTrimmed)),
     ];
 
-    private static readonly IReadOnlyList<PillOption> TimeOptions =
-    [
-        new("Today", "1"),
-        new("7d", "7"),
-        new("30d", "30"),
-    ];
-
-    protected override async Task OnInitializedAsync()
-    {
-        var savedGroupBy = await Storage.GetAsync<TokenDimension>("tokens.groupBy");
-        var savedMetric = await Storage.GetAsync<TokenMetric>("tokens.metric");
-        var savedDays = await Storage.GetIntAsync("tokens.days");
-
-        if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
-        if (savedMetric.HasValue) Store.SetMetric(savedMetric.Value);
-        if (savedDays.HasValue) _selectedDays = savedDays.Value;
-
-        _sub = Store.StateObservable.Subscribe(s =>
-        {
-            _state = s;
-            _inputTokens = s.Events.Sum(e => (long)e.InputTokens);
-            _outputTokens = s.Events.Sum(e => (long)e.OutputTokens);
-            _cost = s.Events.Sum(e => e.Cost);
-            InvokeAsync(StateHasChanged);
-        });
-
-        _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to.AddDays(-(_selectedDays - 1));
-        Store.SetDateRange(_from, _to);
-        await DataLoad.LoadAsync(_from, _to);
-        await ReloadTruncationsAsync();
-    }
-
-    private async Task OnDimensionChanged(string value)
-    {
-        Store.SetGroupBy(Enum.Parse<TokenDimension>(value));
-        await Storage.SetAsync("tokens.groupBy", value);
-        await ReloadBreakdown();
-    }
-
-    private async Task OnMetricChanged(string value)
-    {
-        Store.SetMetric(Enum.Parse<TokenMetric>(value));
-        await Storage.SetAsync("tokens.metric", value);
-        await ReloadBreakdown();
-    }
-
-    private async Task OnTimeChanged(string value)
-    {
-        _selectedDays = int.Parse(value);
-        _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to.AddDays(-(_selectedDays - 1));
-        Store.SetDateRange(_from, _to);
-        await Storage.SetAsync("tokens.days", value);
-        await DataLoad.LoadAsync(_from, _to);
-        await ReloadTruncationsAsync();
-    }
-
-    private async Task ReloadBreakdown()
-    {
-        var breakdown = await Api.GetTokenGroupedAsync(
-            Store.State.GroupBy, Store.State.Metric, _from, _to);
-        Store.SetBreakdown(breakdown ?? []);
-    }
-
-    private async Task ReloadTruncationsAsync()
-    {
-        var breakdown = await Api.GetTokenGroupedAsync(
-            TokenDimension.Model, TokenMetric.TruncationCount, _from, _to);
-        var total = breakdown is null ? 0 : (long)breakdown.Values.Sum();
-        Store.SetTruncations(total);
-    }
-
     private string _sortColumn = "Time";
     private bool _sortAsc;
 
@@ -170,9 +80,9 @@
         else { _sortColumn = column; _sortAsc = false; }
     }
 
-    private IEnumerable<TokenUsageEvent> GetSortedEvents()
+    private IEnumerable<TokenUsageEvent> GetSortedEvents(TokensState state)
     {
-        var events = _state.Events.TakeLast(50).AsEnumerable();
+        var events = state.Events.TakeLast(50).AsEnumerable();
         Func<TokenUsageEvent, object> keySelector = _sortColumn switch
         {
             "Sender" => e => e.Sender,
@@ -186,16 +96,11 @@
     }
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
-    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "\u25b2" : "\u25bc";
-
-    public void Dispose() => _sub?.Dispose();
+    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "▲" : "▼";
 }
 
 <style>
     .tokens-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
-    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
-    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
     .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
     .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
     .events-table { display: flex; flex-direction: column; gap: 2px; }
@@ -208,8 +113,6 @@
     .table-row:hover { background: rgba(255,255,255,0.03); }
 
     @@media (max-width: 768px) {
-        .page-header { flex-direction: column; }
-        .page-header h2 { font-size: 1.1rem; }
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .table-header, .table-row { grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr) 70px 70px 70px; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 525px; }
         .table-row span { word-break: break-word; }

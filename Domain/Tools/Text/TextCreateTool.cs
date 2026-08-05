@@ -1,10 +1,12 @@
-using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
+using Domain.Tools.Files;
 
 namespace Domain.Tools.Text;
 
 public class TextCreateTool(string vaultPath, string[] allowedExtensions)
 {
+    private readonly PathJail _jail = new(vaultPath);
+
     protected const string Description = """
                                          Creates a new text or markdown file in the vault.
 
@@ -21,84 +23,52 @@ public class TextCreateTool(string vaultPath, string[] allowedExtensions)
                                          - Create config: filePath="config/settings.json", content="{\"key\": \"value\"}"
                                          """;
 
-    protected JsonNode Run(string filePath, string content, bool overwrite = false, bool createDirectories = true)
+    public FsResult<FsCreateResult> Run(string filePath, string content, bool overwrite = false, bool createDirectories = true)
     {
-        var fullPath = ResolvePath(filePath);
-        ValidateExtension(fullPath);
-        if (!overwrite)
+        if (!_jail.TryResolve(filePath, out var fullPath))
         {
-            ValidateNotExists(fullPath, filePath);
+            return FsError.Invalid<FsCreateResult>(_jail.DeniedMessage);
         }
 
-        if (createDirectories)
+        var ext = Path.GetExtension(fullPath).ToLowerInvariant();
+        if (!allowedExtensions.Contains(ext))
         {
-            EnsureDirectoryExists(fullPath);
+            return FsError.Invalid<FsCreateResult>(
+                $"File extension '{ext}' not allowed. Allowed: {string.Join(", ", allowedExtensions)}");
+        }
+
+        if (!overwrite && File.Exists(fullPath))
+        {
+            return FsError.AlreadyExists<FsCreateResult>(
+                $"File already exists: {filePath}. Use the edit tool to modify existing files.");
+        }
+
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            if (!createDirectories)
+            {
+                return FsError.NotFound<FsCreateResult>(directory);
+            }
+
+            Directory.CreateDirectory(directory);
         }
 
         File.WriteAllText(fullPath, content);
 
-        var info = new FileInfo(fullPath);
-        return FsResultContract.ToNode(new FsCreateResult
+        return new FsResult<FsCreateResult>.Ok(new FsCreateResult
         {
             Status = "created",
-            FilePath = ToRelativePath(fullPath),
-            Size = FormatFileSize(info.Length),
+            FilePath = Path.GetRelativePath(vaultPath, fullPath).Replace('\\', '/'),
+            Size = FormatFileSize(new FileInfo(fullPath).Length),
             Lines = content.Split('\n').Length
         });
     }
 
-    private void ValidateExtension(string fullPath)
+    private static string FormatFileSize(long bytes) => bytes switch
     {
-        var ext = Path.GetExtension(fullPath).ToLowerInvariant();
-        if (!allowedExtensions.Contains(ext))
-        {
-            throw new ArgumentException(
-                $"File extension '{ext}' not allowed. Allowed: {string.Join(", ", allowedExtensions)}");
-        }
-    }
-
-    private static void ValidateNotExists(string fullPath, string originalPath)
-    {
-        if (File.Exists(fullPath))
-        {
-            throw new IOException(
-                $"File already exists: {originalPath}. Use the edit tool to modify existing files.");
-        }
-    }
-
-    private static void EnsureDirectoryExists(string fullPath)
-    {
-        var directory = Path.GetDirectoryName(fullPath);
-        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-    }
-
-    private string ToRelativePath(string fullPath)
-    {
-        return Path.GetRelativePath(vaultPath, fullPath).Replace('\\', '/');
-    }
-
-    private string ResolvePath(string filePath)
-    {
-        var normalized = filePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var fullPath = Path.IsPathRooted(filePath)
-            ? Path.GetFullPath(filePath)
-            : Path.GetFullPath(Path.Combine(vaultPath, normalized));
-
-        return fullPath.StartsWith(vaultPath, StringComparison.OrdinalIgnoreCase)
-            ? fullPath
-            : throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
-    }
-
-    private static string FormatFileSize(long bytes)
-    {
-        return bytes switch
-        {
-            < 1024 => $"{bytes}B",
-            < 1024 * 1024 => $"{bytes / 1024.0:F1}KB",
-            _ => $"{bytes / (1024.0 * 1024.0):F1}MB"
-        };
-    }
+        < 1024 => $"{bytes}B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1}KB",
+        _ => $"{bytes / (1024.0 * 1024.0):F1}MB"
+    };
 }

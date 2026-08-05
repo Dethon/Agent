@@ -1,7 +1,9 @@
 @inherits LayoutComponentBase
 @using WebChat.Client.Contracts
 @implements IDisposable
-@inject IChatConnectionService ConnectionService
+@using System.Reactive.Linq
+@inject IChatLiveConnection LiveConnection
+@inject ConnectionStore ConnectionStore
 @inject IJSRuntime Js
 @inject SpaceStore SpaceStore
 
@@ -13,8 +15,8 @@
         <HeaderConversation />
         <div class="header-right">
             <div class="connection-status">
-                <span class="status-dot @(ConnectionService.IsConnected ? "connected" : "")"></span>
-                @(ConnectionService.IsConnected ? "Connected" : "Disconnected")
+                <span class="status-dot @StatusCssClass"></span>
+                @StatusLabel
             </div>
             <UserIdentityPicker />
             <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
@@ -57,12 +59,39 @@
     private bool _disposed;
     private string _accentColor = SpaceConfig.DefaultAccentColor;
     private string _spaceName = "Main";
+    private ConnectionStatus _status;
     private IDisposable? _spaceSubscription;
+    private IDisposable? _connectionSubscription;
     private DotNetObjectReference<MainLayout>? _selfRef;
+
+    // The header is the third place the connection state is shown, beside ConnectionDot and
+    // the chat's ConnectionStatus. Reconnecting is its own state in both of those, so it is
+    // one here too — collapsing it to "not connected" made the three disagree on screen.
+    private string StatusLabel => _status switch
+    {
+        ConnectionStatus.Connected => "Connected",
+        ConnectionStatus.Reconnecting => "Reconnecting...",
+        _ => "Disconnected"
+    };
+
+    private string StatusCssClass => _status switch
+    {
+        ConnectionStatus.Connected => "connected",
+        ConnectionStatus.Reconnecting => "reconnecting",
+        _ => ""
+    };
 
     protected override Task OnInitializedAsync()
     {
-        ConnectionService.OnStateChanged += StateHasChanged;
+        _connectionSubscription = ConnectionStore.StateObservable
+            .Select(state => state.Status)
+            .DistinctUntilChanged()
+            .Subscribe(status => InvokeAsync(() =>
+            {
+                if (_disposed) return;
+                _status = status;
+                StateHasChanged();
+            }));
         _spaceSubscription = SpaceStore.StateObservable.Subscribe(state =>
         {
             var changed = false;
@@ -109,7 +138,7 @@
     [JSInvokable]
     public async Task OnPageVisible()
     {
-        await ConnectionService.ReconnectIfNeededAsync();
+        await LiveConnection.ReconnectIfNeededAsync();
     }
 
     private async Task ToggleTheme()
@@ -121,7 +150,7 @@
     public void Dispose()
     {
         _disposed = true;
-        ConnectionService.OnStateChanged -= StateHasChanged;
+        _connectionSubscription?.Dispose();
         _spaceSubscription?.Dispose();
         _selfRef?.Dispose();
     }

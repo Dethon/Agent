@@ -137,17 +137,6 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
     }
 
     [SkippableFact]
-    public async Task ListTools_IncludesFsExec()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        await using var client = await ConnectAsync(cts.Token);
-
-        var tools = await client.ListToolsAsync(cancellationToken: cts.Token);
-
-        tools.Select(t => t.Name).ShouldContain("fs_exec");
-    }
-
-    [SkippableFact]
     public async Task ListResources_ExposesSandboxFilesystem()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));

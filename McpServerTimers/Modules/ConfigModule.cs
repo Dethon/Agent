@@ -3,30 +3,16 @@ using Domain.Tools.Timers.Vfs;
 using Infrastructure.Clients.Voice;
 using Infrastructure.Timers;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using McpServerTimers.McpPrompts;
-using McpServerTimers.McpResources;
-using McpServerTimers.McpTools;
 using McpServerTimers.Services;
 using McpServerTimers.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace McpServerTimers.Modules;
 
 public static class ConfigModule
 {
-    public static TimerSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        return config.Get<TimerSettings>()
-               ?? throw new InvalidOperationException("Settings not found");
-    }
-
     public static IServiceCollection ConfigureTimers(this IServiceCollection services, TimerSettings settings)
     {
         services.AddHttpClient(VoiceHubHttp.ClientName, client =>
@@ -39,7 +25,6 @@ public static class ConfigModule
         });
 
         services
-            .AddSingleton(settings)
             .AddSingleton(TimeProvider.System)
             .AddSingleton<ITimerStore, InMemoryTimerStore>()
             // The three hub-local capabilities reached over HTTP: fire (announce), stop (dismiss),
@@ -56,32 +41,10 @@ public static class ConfigModule
             .AddHostedService<TimerFireService>();
 
         services
-            .AddMcpServer()
-            .WithHttpTransport()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsReadTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsExecTool>()
-            .WithResources<FileSystemResource>()
-            .WithPrompts<TimersSystemPrompt>()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return ToolResponse.Create(ex);
-                }
-            }));
+            .AddToolServer(settings, ToolResponse.Create)
+            .AddFileSystemTools<TimerFileSystem>()
+            .AddFileSystemResource<TimerFileSystem>()
+            .WithPrompts<TimersSystemPrompt>();
 
         return services;
     }

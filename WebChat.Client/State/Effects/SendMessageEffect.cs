@@ -1,10 +1,12 @@
 using Domain.Conversations;
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -23,6 +25,10 @@ public sealed class SendMessageEffect : IDisposable
     private readonly UserIdentityStore _userIdentityStore;
     private readonly IMessagePipeline _pipeline;
     private readonly SpaceStore _spaceStore;
+    private readonly ILogger<SendMessageEffect> _logger;
+    private readonly IDisposable _sendMessageRegistration;
+    private readonly IDisposable _cancelStreamingRegistration;
+    private readonly IDisposable _retryLastMessageRegistration;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
@@ -35,7 +41,8 @@ public sealed class SendMessageEffect : IDisposable
         IChatMessagingService messagingService,
         UserIdentityStore userIdentityStore,
         IMessagePipeline pipeline,
-        SpaceStore spaceStore)
+        SpaceStore spaceStore,
+        ILogger<SendMessageEffect> logger)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
@@ -48,29 +55,47 @@ public sealed class SendMessageEffect : IDisposable
         _userIdentityStore = userIdentityStore;
         _pipeline = pipeline;
         _spaceStore = spaceStore;
+        _logger = logger;
 
-        dispatcher.RegisterHandler<SendMessage>(HandleSendMessage);
-        dispatcher.RegisterHandler<CancelStreaming>(HandleCancelStreaming);
-        dispatcher.RegisterHandler<RetryLastMessage>(HandleRetryLastMessage);
-    }
-
-    private void HandleSendMessage(SendMessage action)
-    {
-        _ = HandleSendMessageAsync(action);
-    }
-
-    private void HandleCancelStreaming(CancelStreaming action)
-    {
-        _ = HandleCancelStreamingAsync(action.TopicId);
+        _sendMessageRegistration = dispatcher.RegisterHandler<SendMessage>(action =>
+            HandleSendMessageAsync(action).LogFaults(_logger, nameof(SendMessage)));
+        _cancelStreamingRegistration = dispatcher.RegisterHandler<CancelStreaming>(action =>
+            HandleCancelStreamingAsync(action.TopicId).LogFaults(_logger, nameof(CancelStreaming)));
+        _retryLastMessageRegistration = dispatcher.RegisterHandler<RetryLastMessage>(HandleRetryLastMessage);
     }
 
     private async Task HandleCancelStreamingAsync(string topicId)
     {
-        await _messagingService.CancelTopicAsync(topicId);
+        var cancelled = await _messagingService.CancelTopicAsync(topicId);
+
+        // Marking the reply stopped when the stop never reached the server would surprise the
+        // user the moment it carries on.
+        if (!cancelled.IsLive)
+        {
+            _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
+
         _dispatcher.Dispatch(new StreamCancelled(topicId));
     }
 
     private async Task HandleSendMessageAsync(SendMessage action)
+    {
+        try
+        {
+            await SendAsync(action);
+        }
+        catch
+        {
+            // The message is already rendered locally, so a fault here means it never reached
+            // the server. Same feedback as the not-live branches; the rethrow is what LogFaults
+            // observes.
+            _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            throw;
+        }
+    }
+
+    private async Task SendAsync(SendMessage action)
     {
         var state = _topicsStore.State;
         StoredTopic topic;
@@ -90,8 +115,17 @@ public sealed class SendMessageEffect : IDisposable
                 SpaceSlug = _spaceStore.State.CurrentSlug
             };
 
-            var success = await _sessionService.StartSessionAsync(topic);
-            if (!success)
+            var started = await _sessionService.StartSessionAsync(topic);
+
+            // Three outcomes, not two. A server that refuses is live and has answered, and
+            // stays as silent as it is today; a call that could not be made says so once.
+            if (!started.IsLive)
+            {
+                _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+                return;
+            }
+
+            if (!started.Value)
             {
                 return;
             }
@@ -99,14 +133,26 @@ public sealed class SendMessageEffect : IDisposable
             _dispatcher.Dispatch(new AddTopic(topic));
             _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
             _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-            await _topicService.SaveTopicAsync(topic.ToMetadata(), isNew: true);
+
+            // No early return, unlike the other user actions: the conversation is already on
+            // screen, so the send still runs and its own failure toast dedupes into this one.
+            var saved = await _topicService.SaveTopicAsync(topic.ToMetadata(), isNew: true);
+            if (!saved.IsLive)
+            {
+                _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            }
         }
         else
         {
             topic = state.Topics.First(t => t.TopicId == action.TopicId);
             if (_sessionService.CurrentTopic?.TopicId != topic.TopicId)
             {
-                await _sessionService.StartSessionAsync(topic);
+                var started = await _sessionService.StartSessionAsync(topic);
+                if (!started.IsLive)
+                {
+                    _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+                    return;
+                }
             }
         }
 
@@ -128,8 +174,10 @@ public sealed class SendMessageEffect : IDisposable
 
         var correlationId = _pipeline.SubmitUserMessage(topic.TopicId, action.Message, currentUser?.Id);
 
-        // Delegate to streaming service (handles stream reuse internally)
-        _ = _streamingService.SendMessageAsync(topic, action.Message, correlationId);
+        // Delegate to streaming service (handles stream reuse internally). Awaited so a fault
+        // opening the send lands in the catch above; the call returns once the stream is open,
+        // not when the reply completes.
+        await _streamingService.SendMessageAsync(topic, action.Message, correlationId);
     }
 
     private void HandleRetryLastMessage(RetryLastMessage action)
@@ -146,6 +194,8 @@ public sealed class SendMessageEffect : IDisposable
 
     public void Dispose()
     {
-        // No subscription to dispose, handler is registered with dispatcher
+        _sendMessageRegistration.Dispose();
+        _cancelStreamingRegistration.Dispose();
+        _retryLastMessageRegistration.Dispose();
     }
 }

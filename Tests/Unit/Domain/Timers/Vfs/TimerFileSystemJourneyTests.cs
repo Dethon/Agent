@@ -269,8 +269,10 @@ public class TimerFileSystemJourneyTests
         result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
     }
 
+    // A timer is immutable, so the mount does not implement edit at all: no override, nothing
+    // advertised, and the base's unsupported envelope is the answer.
     [Fact]
-    public async Task Edit_IsUnsupported_TimersAreImmutable()
+    public async Task Edit_IsNotAnOperationThisMountHas()
     {
         var (fs, _, _, _) = Build();
         await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
@@ -279,7 +281,9 @@ public class TimerFileSystemJourneyTests
             [new TextEdit("300", "600")], CancellationToken.None);
 
         var err = result.ShouldBeOfType<FsResult<FsEditResult>.Err>();
-        err.Error.Message.ShouldContain("immutable");
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        typeof(TimerFileSystem).GetMethod(nameof(TimerFileSystem.EditAsync))!
+            .DeclaringType.ShouldNotBe(typeof(TimerFileSystem));
     }
 
     [Fact]
@@ -368,5 +372,40 @@ public class TimerFileSystemJourneyTests
 
         result.TotalMatches.ShouldBe(1);
         result.Results[0].File.ShouldBe("/pasta/timer.json");
+    }
+
+    [Fact]
+    public async Task Search_UncompilablePattern_ReturnsInvalidArgumentEnvelope()
+    {
+        var (fs, _, _, _) = Build();
+        await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
+
+        var result = await fs.SearchAsync(
+            "[unclosed", regex: true, null, null, null, 10, 0,
+            VfsTextSearchOutputMode.Content, CancellationToken.None);
+
+        var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+    }
+
+    // A caller-supplied pattern that backtracks catastrophically must end the search as a timeout
+    // envelope, not stall the turn. The match timeout is injected tiny so it trips deterministically.
+    [Fact]
+    public async Task Search_PathologicalRegex_ReturnsTimeoutEnvelope()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 10, 0, 0, TimeSpan.Zero));
+        time.SetLocalTimeZone(_madrid);
+        var fs = new TimerFileSystem(
+            new InMemoryTimerStore(), time, new FakeDismisser(), new FakeSatelliteCatalog(),
+            regexMatchTimeout: TimeSpan.FromMilliseconds(1));
+        var spec = PastaSpec.Replace("pasta is ready", new string('a', 60), StringComparison.Ordinal);
+        await fs.CreateAsync("/pasta/timer.json", spec, false, true, CancellationToken.None);
+
+        var result = await fs.SearchAsync(
+            "(a+)+b", regex: true, null, null, null, 10, 0,
+            VfsTextSearchOutputMode.Content, CancellationToken.None);
+
+        var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.Timeout);
     }
 }

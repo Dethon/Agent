@@ -41,7 +41,16 @@ public sealed class StreamResumeService(
                 return;
             }
 
-            var state = await messagingService.GetStreamStateAsync(topic.TopicId);
+            var streamState = await messagingService.GetStreamStateAsync(topic.TopicId);
+
+            // A null answer already means something real — there is no stream in progress —
+            // so not live has to stay its own case rather than fold into the same return.
+            if (!streamState.IsLive)
+            {
+                return;
+            }
+
+            var state = streamState.Value;
             if (state is null || state is { IsProcessing: false, BufferedMessages.Count: 0 })
             {
                 return;
@@ -50,13 +59,21 @@ public sealed class StreamResumeService(
             if (!messagesStore.State.MessagesByTopic.ContainsKey(topic.TopicId))
             {
                 var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-                pipeline.LoadHistory(topic.TopicId, history);
+                if (!history.IsLive)
+                {
+                    return;
+                }
+
+                pipeline.LoadHistory(topic.TopicId, history.Value!);
             }
 
+            // The server's answer is the whole truth for this conversation, so it both surfaces
+            // a prompt this client never saw and takes away one that was answered or timed out
+            // while it was disconnected. A read that could not be made says nothing either way.
             var pendingApproval = await approvalService.GetPendingApprovalForTopicAsync(topic.TopicId);
-            if (pendingApproval is not null)
+            if (pendingApproval.IsLive)
             {
-                dispatcher.Dispatch(new ShowApproval(topic.TopicId, pendingApproval));
+                dispatcher.Dispatch(new TopicApprovalsReconciled(topic.TopicId, pendingApproval.Value));
             }
 
             // Single rebuild: buffer + history → merged result

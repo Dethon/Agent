@@ -97,7 +97,7 @@ public class TopicsStoreTests : IDisposable
     }
 
     [Fact]
-    public void RemoveTopic_RemovesFromTopicsList()
+    public void TopicRemoved_RemovesFromTopicsList()
     {
         // Arrange
         var topics = new List<StoredTopic>
@@ -108,7 +108,7 @@ public class TopicsStoreTests : IDisposable
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 
         // Act
-        _dispatcher.Dispatch(new RemoveTopic("topic-1"));
+        _dispatcher.Dispatch(new TopicRemoved("topic-1"));
 
         // Assert
         _store.State.Topics.Count.ShouldBe(1);
@@ -116,7 +116,7 @@ public class TopicsStoreTests : IDisposable
     }
 
     [Fact]
-    public void RemoveTopic_ClearsSelectionIfSelectedTopicRemoved()
+    public void TopicRemoved_ClearsSelectionIfSelectedTopicRemoved()
     {
         // Arrange
         var topics = new List<StoredTopic> { CreateTopic("topic-1", "Topic One") };
@@ -124,10 +124,25 @@ public class TopicsStoreTests : IDisposable
         _dispatcher.Dispatch(new SelectTopic("topic-1"));
 
         // Act
-        _dispatcher.Dispatch(new RemoveTopic("topic-1"));
+        _dispatcher.Dispatch(new TopicRemoved("topic-1"));
 
         // Assert
         _store.State.SelectedTopicId.ShouldBeNull();
+    }
+
+    [Fact]
+    public void RemoveTopic_IsACommandAndLeavesTheListAlone()
+    {
+        // The row leaves the sidebar only on TopicRemoved, after the server confirmed
+        // the delete — never optimistically on the RemoveTopic command itself.
+        var topics = new List<StoredTopic> { CreateTopic("topic-1", "Topic One") };
+        _dispatcher.Dispatch(new TopicsLoaded(topics));
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        _dispatcher.Dispatch(new RemoveTopic("topic-1"));
+
+        _store.State.Topics.Count.ShouldBe(1);
+        _store.State.SelectedTopicId.ShouldBe("topic-1");
     }
 
     [Fact]
@@ -209,6 +224,33 @@ public class TopicsStoreTests : IDisposable
         _dispatcher.Dispatch(new SetAgents([new("b", "B", null), new("c", "C", null)]));
 
         _store.State.SelectedAgentId.ShouldBe("b");
+    }
+
+    [Fact]
+    public void SetAgents_WhenSelectedAgentRemoved_ClearsSelectedTopic()
+    {
+        _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("b", "B", null)]));
+        _dispatcher.Dispatch(new SelectAgent("b"));
+        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-b", "Topic B", "b")]));
+        _dispatcher.Dispatch(new SelectTopic("topic-b"));
+
+        _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("c", "C", null)]));
+
+        _store.State.SelectedAgentId.ShouldBe("a");
+        _store.State.SelectedTopicId.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SetAgents_WhenSelectedAgentStillPresent_KeepsSelectedTopic()
+    {
+        _dispatcher.Dispatch(new SetAgents([new("a", "A", null), new("b", "B", null)]));
+        _dispatcher.Dispatch(new SelectAgent("b"));
+        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-b", "Topic B", "b")]));
+        _dispatcher.Dispatch(new SelectTopic("topic-b"));
+
+        _dispatcher.Dispatch(new SetAgents([new("b", "B", null), new("c", "C", null)]));
+
+        _store.State.SelectedTopicId.ShouldBe("topic-b");
     }
 
     [Fact]

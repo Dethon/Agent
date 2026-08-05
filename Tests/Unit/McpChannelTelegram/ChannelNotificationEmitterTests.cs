@@ -1,22 +1,37 @@
 using Domain.Channels;
-using McpChannelTelegram.Services;
-using Microsoft.Extensions.DependencyInjection;
+using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelTelegram;
 
+// This channel's own payload shape, and the one thing that is specific to it: the buffer-always
+// target. Liveness is the shared emitter's business and is pinned once at the policy seam
+// (Tests/Unit/Mcp.Hosting/DeliveryPolicyTests.cs).
 public class ChannelNotificationEmitterTests
 {
+    private const string Subscriber = ChannelProtocol.ChannelClientNamePrefix + "telegram";
+
+    private static ChannelNotificationEmitter Emitter(ChannelInbox inbox) =>
+        new(inbox, DeliveryPolicy.BufferAlways, Subscriber);
+
     [Fact]
-    public async Task EmitMessageNotificationAsync_EnqueuesMessageItemForPollingSubscriber()
+    public async Task EmitAsync_CarriesTheTelegramMessageFields()
     {
         var inbox = new ChannelInbox();
-        var sut = new ChannelNotificationEmitter(inbox);
-        await inbox.ReceiveAsync("channel-telegram", TimeSpan.Zero, CancellationToken.None);
+        var sut = Emitter(inbox);
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
-        await sut.EmitMessageNotificationAsync("conv-1", "user", "hola", "nabu");
+        await sut.EmitAsync(new ChannelMessageNotification
+        {
+            ConversationId = "conv-1",
+            Sender = "user",
+            Content = "hola",
+            AgentId = "nabu",
+            Timestamp = DateTimeOffset.UtcNow
+        });
 
-        var items = await inbox.ReceiveAsync("channel-telegram", TimeSpan.Zero, CancellationToken.None);
+        var items = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
         items.Count.ShouldBe(1);
         items[0].Kind.ShouldBe(ChannelInboxItemKind.Message);
         items[0].Message!.ConversationId.ShouldBe("conv-1");
@@ -29,39 +44,19 @@ public class ChannelNotificationEmitterTests
     // first poll used to fan out to nobody and vanish while the service logged "buffering".
     // Targeting the well-known subscriber id creates the queue on demand, so it buffers for real.
     [Fact]
-    public async Task EmitMessageNotificationAsync_BeforeAnySubscriberRegistered_StillBuffers()
+    public async Task EmitAsync_BeforeAnySubscriberRegistered_StillBuffers()
     {
         var inbox = new ChannelInbox();
-        var sut = new ChannelNotificationEmitter(inbox);
 
-        await sut.EmitMessageNotificationAsync("conv-1", "user", "hola", "nabu");
+        await Emitter(inbox).EmitAsync(new ChannelMessageNotification
+        {
+            ConversationId = "conv-1",
+            Sender = "user",
+            Content = "hola"
+        });
 
-        var items = await inbox.ReceiveAsync("channel-telegram", TimeSpan.Zero, CancellationToken.None);
+        var items = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
         items.Count.ShouldBe(1);
         items[0].Message!.Content.ShouldBe("hola");
-    }
-
-    [Fact]
-    public async Task HasActiveSessions_FollowsInboxSubscribers()
-    {
-        var inbox = new ChannelInbox();
-        var sut = new ChannelNotificationEmitter(inbox);
-
-        sut.HasActiveSessions.ShouldBeFalse();
-
-        await inbox.ReceiveAsync("channel-telegram", TimeSpan.Zero, CancellationToken.None);
-
-        sut.HasActiveSessions.ShouldBeTrue();
-    }
-
-    [Fact]
-    public void Emitter_IsConstructibleFromTheRegisteredInbox()
-    {
-        var provider = new ServiceCollection()
-            .AddSingleton<ChannelInbox>()
-            .AddSingleton<ChannelNotificationEmitter>()
-            .BuildServiceProvider();
-
-        Should.NotThrow(() => provider.GetRequiredService<ChannelNotificationEmitter>());
     }
 }

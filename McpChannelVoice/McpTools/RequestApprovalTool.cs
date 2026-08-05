@@ -54,13 +54,13 @@ public sealed class RequestApprovalTool
             var pending = accumulator.Flush(p.ConversationId);
             if (!string.IsNullOrWhiteSpace(pending))
             {
-                await SpeakAsync(session, pending, tts, settings, AnnouncePriority.Normal);
+                Speak(session, pending, tts, settings, AnnouncePriority.Normal);
             }
             return "notified";
         }
 
         var stt = services.GetRequiredService<ISpeechToText>();
-        var wyoming = services.GetRequiredService<WyomingClientSettings>();
+        var gates = services.GetRequiredService<SilenceGateFactory>();
         var time = services.GetRequiredService<TimeProvider>();
 
         var toolList = string.Join(", ", p.Requests.Select(r => r.ToolName.Split("__").Last()));
@@ -75,7 +75,12 @@ public sealed class RequestApprovalTool
                 return "rejected";
             }
 
-            var answer = await CaptureAnswerAsync(session, stt, wyoming, settings, time, cancellationToken);
+            // The same gate the wake turn the user is answering was endpointed against, room-noise
+            // cap included: a confirmation mic that behaved differently from the mic that heard the
+            // question cut people off mid-answer.
+            var answer = await CaptureAnswerAsync(
+                session.Mic, gates.Create(session.SatelliteId, session.Config),
+                stt, settings, time, cancellationToken);
             if (answer is null)
             {
                 // Arbitration stole the turn mid-answer: the arbiter already re-armed this
@@ -84,24 +89,12 @@ public sealed class RequestApprovalTool
             }
             var parsed = ApprovalGrammarParser.Parse(answer);
 
-            try
+            metrics.Publish(new VoiceEvent
             {
-                await metrics.PublishAsync(new VoiceEvent
-                {
-                    Metric = VoiceMetric.ApprovalResolved,
-                    SatelliteId = session.SatelliteId,
-                    Room = session.Config.Room,
-                    Identity = session.Config.Identity,
-                    Outcome = parsed.ToString(),
-                    ConversationId = p.ConversationId
-                }, default);
-            }
-            catch (Exception ex)
-            {
-                // A metrics-publisher blip must not discard an already-decided approval.
-                services.GetService<ILogger<RequestApprovalTool>>()?
-                    .LogWarning(ex, "Failed to publish ApprovalResolved metric");
-            }
+                Metric = VoiceMetric.ApprovalResolved,
+                Outcome = parsed.ToString(),
+                ConversationId = p.ConversationId
+            }.About(session));
 
             switch (parsed)
             {
@@ -117,73 +110,64 @@ public sealed class RequestApprovalTool
         return "rejected";
     }
 
-    private static async Task SpeakAsync(
+    private static void Speak(
         SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings,
         AnnouncePriority priority = AnnouncePriority.High)
     {
-        var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
-        var options = new SynthesisOptions { Voice = voice };
+        var options = new SynthesisOptions { Voice = session.ResolveVoice(settings) };
         var job = new PlaybackJob(
             Label: $"approval:{session.SatelliteId}",
+            Kind: PlaybackKind.Approval,
             Priority: priority,
-            Audio: tts.SynthesizeAsync(text, options, default),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => Task.CompletedTask);
-        await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
+            Audio: tts.SynthesizeAsync(text, options, default));
+        session.Playback.Enqueue(job);
     }
 
     private static async Task<bool> SpeakAndAwaitAsync(
         SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings,
         CancellationToken ct)
     {
-        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var voice = session.Config.Tts?.OpenAi?.Voice ?? settings.Tts.OpenAi.Voice;
         var job = new PlaybackJob(
             Label: $"approval:{session.SatelliteId}",
+            Kind: PlaybackKind.Approval,
             Priority: AnnouncePriority.High,
-            Audio: tts.SynthesizeAsync(text, new SynthesisOptions { Voice = voice }, default),
-            OnStarted: _ => Task.CompletedTask,
-            OnPreempted: _ => { drained.TrySetResult(); return Task.CompletedTask; },
-            OnDrained: () => { drained.TrySetResult(); return Task.CompletedTask; },
-            OnFailed: _ => { drained.TrySetResult(); return Task.CompletedTask; });
+            Audio: tts.SynthesizeAsync(
+                text, new SynthesisOptions { Voice = session.ResolveVoice(settings) }, default));
 
-        var accepted = await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
-        if (!accepted)
+        var ticket = session.Playback.Enqueue(job);
+        if (ticket.Refused is not null)
         {
-            // Satellite disconnected between session resolution and enqueue (playback channel
-            // completed) — signal the caller to abandon the approval instead of opening a capture
-            // on a dead session that would block until the request is cancelled.
+            // The satellite went away between session resolution and the enqueue — signal the caller
+            // to abandon the approval instead of opening a capture on a dead session that would
+            // block until the request is cancelled.
             return false;
         }
-        await drained.Task.WaitAsync(ct);
+
+        // The token is this caller's own reason to stop waiting — the agent cancelling the approval
+        // request — not a guard against hanging: the queue settles every job it is handed, teardown
+        // included.
+        await ticket.Completed.WaitAsync(ct);
         return true;
     }
 
     // Returns null when arbitration abandoned the capture — distinct from an empty answer,
     // which re-prompts.
+    // Holds a microphone, not a session: an approval prompt is a question the agent asked mid-turn,
+    // so it must not mark a turn start or a speech end on the playback queue — that would corrupt
+    // the latency reported for the turn actually in flight. Which type this takes is what says so.
     private static async Task<string?> CaptureAnswerAsync(
-        SatelliteSession session, ISpeechToText stt, WyomingClientSettings wyoming,
+        Microphone mic, SilenceGate gate, ISpeechToText stt,
         VoiceSettings settings, TimeProvider time, CancellationToken ct)
     {
         var followUp = settings.FollowUp;
         if (followUp.PlaybackTailMs > 0)
         {
-            await Task.Delay(followUp.PlaybackTailMs, ct); // echo guard after the prompt finishes
+            // Echo guard after the prompt finishes, on the injected clock like FollowUpConversation's.
+            await Task.Delay(TimeSpan.FromMilliseconds(followUp.PlaybackTailMs), time, ct);
         }
 
-        var config = session.Config;
-        var capture = session.OpenCapture(new SilenceGate(
-            new AdaptiveLevelTracker(
-                config.ResolveRmsThreshold(wyoming),
-                config.ResolveEnterMarginDb(wyoming),
-                config.ResolveExitMarginDb(wyoming),
-                config.ResolvePeakDropDb(wyoming),
-                TimeSpan.FromMilliseconds(config.ResolveFloorWindowMs(wyoming)),
-                demoteMarginDb: config.ResolveDemoteMarginDb(wyoming)),
-            TimeSpan.FromMilliseconds(wyoming.TrailingSilenceMs),
-            TimeSpan.FromMilliseconds(wyoming.MaxUtteranceMs),
-            TimeSpan.FromMilliseconds(config.ResolveMinSpeechMs(wyoming)),
-            noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)),
+        var capture = mic.Open(
+            gate,
             // The approval mic is an open capture like any wake turn's: Rule B must be able
             // to ask it what it heard during another satellite's wake-word span.
             new ChunkHistory(time, settings.Arbitration.HistorySpan));
@@ -195,9 +179,11 @@ public sealed class RequestApprovalTool
         }
         finally
         {
-            // Always close the capture, even if the wait is cancelled, so a cancelled approval
-            // doesn't leave a dangling mic capture routing audio into a dead turn.
-            session.CloseCapture();
+            // Always close, even if the wait is cancelled, so a cancelled approval doesn't leave a
+            // dangling mic capture routing audio into a dead turn. Closing pays back into the
+            // room-noise memory as one act, so an approval mic keeps the memory alive on a
+            // satellite used mostly for confirmations.
+            mic.Close(capture);
         }
 
         if (outcome == CaptureOutcome.Abandoned)

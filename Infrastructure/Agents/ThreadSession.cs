@@ -67,11 +67,7 @@ internal sealed class ThreadSessionBuilder(
     ILoggerFactory? loggerFactory,
     McpPromptCache? promptCache = null)
 {
-    private static readonly HashSet<string> _fileSystemMcpToolNames =
-    [
-        "fs_read", "fs_create", "fs_edit", "fs_glob", "fs_search", "fs_move", "fs_delete", "fs_exec",
-        "fs_copy", "fs_info", "fs_blob_read", "fs_blob_write"
-    ];
+    private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 
     // Channel-protocol tools are invoked directly by the channel connection layer, never by the LLM.
     // A dual-role server (e.g. mcp-scheduling, which is both a channel and a filesystem tool server)

@@ -1,6 +1,6 @@
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
-using WebChat.Client.Services;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -9,29 +9,31 @@ namespace WebChat.Client.State.Effects;
 public sealed class UserIdentityEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly ConfigService _configService;
+    private readonly IConfigService _configService;
     private readonly ILocalStorageService _localStorage;
+    private readonly ILogger<UserIdentityEffect> _logger;
+    private readonly IDisposable _initializeRegistration;
+    private readonly IDisposable _selectUserRegistration;
     private const string StorageKey = "selectedUserId";
 
     public UserIdentityEffect(
         Dispatcher dispatcher,
-        ConfigService configService,
-        ILocalStorageService localStorage)
+        IConfigService configService,
+        ILocalStorageService localStorage,
+        ILogger<UserIdentityEffect> logger)
     {
         _dispatcher = dispatcher;
         _configService = configService;
         _localStorage = localStorage;
+        _logger = logger;
 
-        dispatcher.RegisterHandler<Initialize>(HandleInitialize);
-        dispatcher.RegisterHandler<SelectUser>(HandleSelectUser);
+        _initializeRegistration = dispatcher.RegisterHandler<Initialize>(
+            _ => LoadUsersAsync().LogFaults(_logger, nameof(Initialize)));
+        _selectUserRegistration = dispatcher.RegisterHandler<SelectUser>(
+            action => PersistSelectedUserAsync(action.UserId).LogFaults(_logger, nameof(SelectUser)));
     }
 
-    private void HandleInitialize(Initialize action)
-    {
-        _ = LoadUsersAsync();
-    }
-
-    private async Task LoadUsersAsync()
+    public async Task LoadUsersAsync()
     {
         _dispatcher.Dispatch(new LoadUsers());
 
@@ -53,13 +55,11 @@ public sealed class UserIdentityEffect : IDisposable
         }
     }
 
-    private void HandleSelectUser(SelectUser action)
-    {
-        _ = _localStorage.SetAsync(StorageKey, action.UserId);
-    }
+    public Task PersistSelectedUserAsync(string userId) => _localStorage.SetAsync(StorageKey, userId).AsTask();
 
     public void Dispose()
     {
-        // No subscriptions to dispose
+        _initializeRegistration.Dispose();
+        _selectUserRegistration.Dispose();
     }
 }

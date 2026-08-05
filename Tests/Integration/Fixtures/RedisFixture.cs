@@ -14,10 +14,14 @@ public class RedisFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // Readiness is the port, not the log line. Redis logs "Ready to accept connections"
+        // within a second of starting, so under load the first log poll can begin after the
+        // line was already written and then wait for it forever — a hang with no timeout,
+        // which is what a full-suite run hit. Every other Redis container here waits on the
+        // port.
         _container = new ContainerBuilder("redis/redis-stack:latest")
             .WithPortBinding(RedisPort, true)
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilMessageIsLogged("Ready to accept connections"))
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(RedisPort))
             .Build();
 
         await _container.StartAsync();

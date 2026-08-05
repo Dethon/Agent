@@ -2,12 +2,14 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Infrastructure.Validation;
+using Mcp.Hosting;
 using McpServerScheduling.Services;
 using McpServerScheduling.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
+using Tests.Unit.Mcp.Hosting;
 using Xunit;
 
 namespace Tests.Unit.McpServerScheduling;
@@ -21,7 +23,7 @@ public class ScheduleDispatcherServiceTests
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero));
         clock.SetLocalTimeZone(zone);
         var store = StoreWithDue(Recurring());
-        var emitter = Emitter(delivers: true);
+        var emitter = Probe(delivers: true);
 
         await BuildDispatcher(store.Object, emitter, new CronValidator(), clock).DispatchDueAsync(CancellationToken.None);
 
@@ -37,7 +39,7 @@ public class ScheduleDispatcherServiceTests
     {
         var oneShot = OneShot();
         var store = StoreWithDue(oneShot);
-        var emitter = Emitter(delivers: false);
+        var emitter = Probe(delivers: false);
 
         await BuildDispatcher(store.Object, emitter).DispatchDueAsync(CancellationToken.None);
 
@@ -52,7 +54,7 @@ public class ScheduleDispatcherServiceTests
     public async Task DispatchDueAsync_WhenEmitSucceeds_DeletesOneShotSchedule()
     {
         var store = StoreWithDue(OneShot());
-        var emitter = Emitter(delivers: true);
+        var emitter = Probe(delivers: true);
 
         await BuildDispatcher(store.Object, emitter).DispatchDueAsync(CancellationToken.None);
 
@@ -67,22 +69,87 @@ public class ScheduleDispatcherServiceTests
         var cron = new Mock<ICronValidator>();
         cron.Setup(c => c.GetNextOccurrence("0 8 * * *", It.IsAny<DateTimeOffset>(), It.IsAny<TimeZoneInfo>())).Returns(next);
 
-        await BuildDispatcher(store.Object, Emitter(delivers: true), cron.Object).DispatchDueAsync(CancellationToken.None);
+        await BuildDispatcher(store.Object, Probe(delivers: true), cron.Object).DispatchDueAsync(CancellationToken.None);
 
         store.Verify(s => s.UpdateLastRunAsync("daily", It.IsAny<DateTime?>(), next, It.IsAny<CancellationToken>()), Times.Once);
         store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    // Gate-on-live is what keeps this safe. With nobody listening the emit buffers nothing and
+    // reports false, so the schedule stays due for the next tick — and there is no duplicate
+    // sitting in the inbox to fire alongside it when the agent comes back.
     [Fact]
-    public async Task DispatchDueAsync_NoActiveSessions_DoesNotQueryStore()
+    public async Task DispatchDueAsync_NoLiveSubscriber_LeavesTheScheduleDueAndBuffersNothing()
     {
+        var store = StoreWithDue(OneShot());
+        var probe = Probe(delivers: false);
+
+        await BuildDispatcher(store.Object, probe).DispatchDueAsync(CancellationToken.None);
+
+        store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        probe.Received().ShouldBeEmpty();
+    }
+
+    // One warning per outage, not one per schedule per tick: an overnight disconnection with a
+    // single due schedule used to produce thousands of identical lines. The retry semantics are
+    // untouched — the schedule stays due either way.
+    [Fact]
+    public async Task DispatchDueAsync_AgentStaysDownAcrossTicks_WarnsOnce()
+    {
+        var store = StoreWithDue(OneShot());
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var dispatcher = BuildDispatcher(store.Object, Probe(delivers: false), logs: logs);
+
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        logs.Messages.ShouldHaveSingleItem().ShouldContain("until delivery resumes");
+    }
+
+    // The other half of the muted warning: an operator who saw the outage line gets exactly one
+    // line saying it ended, and a healthy dispatcher never mentions it at all.
+    [Fact]
+    public async Task DispatchDueAsync_DeliveryResumes_SaysSoOnce()
+    {
+        var store = StoreWithDue(OneShot());
+        var probe = Probe(delivers: false);
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Information);
+        var dispatcher = BuildDispatcher(store.Object, probe, logs: logs);
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        probe.GoLive();
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        logs.Messages.Count(m => m.Contains("resumed")).ShouldBe(1);
+    }
+
+    // "Once per outage" has to hold for the second outage too. Recovery is not always a delivered
+    // fire: the due one-shot is often gone by the time the agent is back, so the dispatcher sees
+    // only quiet ticks. If the latch waited for a successful emit to clear, the next outage would
+    // be silent — the one an operator most needs to see.
+    [Fact]
+    public async Task DispatchDueAsync_ASecondOutageAfterAQuietRecovery_WarnsAgain()
+    {
+        var due = new List<Schedule> { OneShot() };
         var store = new Mock<IScheduleStore>();
-        var emitter = new Mock<IScheduleNotificationEmitter>();
-        emitter.SetupGet(e => e.HasActiveSessions).Returns(false);
+        store.Setup(s => s.GetDueSchedulesAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => due);
+        using var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var dispatcher = BuildDispatcher(store.Object, Probe(delivers: false), logs: logs);
 
-        await BuildDispatcher(store.Object, emitter.Object).DispatchDueAsync(CancellationToken.None);
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
 
-        store.Verify(s => s.GetDueSchedulesAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+        // The agent comes back with nothing due — the fire it missed was handled elsewhere.
+        due.Clear();
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        // And goes away again.
+        due.Add(OneShot());
+        await dispatcher.DispatchDueAsync(CancellationToken.None);
+
+        logs.Messages.Count(m => m.Contains("until delivery resumes")).ShouldBe(2);
     }
 
     [Theory]
@@ -94,6 +161,54 @@ public class ScheduleDispatcherServiceTests
     [Fact]
     public void ResolveInterval_Positive_IsUnchanged() =>
         ScheduleDispatcherService.ResolveInterval(30).ShouldBe(TimeSpan.FromSeconds(30));
+
+    // The return value is what lets the loop back off the schedule-store query without a separate
+    // liveness property: a failed delivery says so directly.
+    [Fact]
+    public async Task DispatchDueAsync_NoLiveSubscriber_ReturnsFalse()
+    {
+        var store = StoreWithDue(OneShot());
+
+        var delivered = await BuildDispatcher(store.Object, Probe(delivers: false)).DispatchDueAsync(CancellationToken.None);
+
+        delivered.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task DispatchDueAsync_DeliveredSuccessfully_ReturnsTrue()
+    {
+        var store = StoreWithDue(OneShot());
+
+        var delivered = await BuildDispatcher(store.Object, Probe(delivers: true)).DispatchDueAsync(CancellationToken.None);
+
+        delivered.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task DispatchDueAsync_NothingDue_ReturnsTrue()
+    {
+        var store = new Mock<IScheduleStore>();
+        store.Setup(s => s.GetDueSchedulesAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var delivered = await BuildDispatcher(store.Object, Probe(delivers: false)).DispatchDueAsync(CancellationToken.None);
+
+        delivered.ShouldBeTrue();
+    }
+
+    // The whole fix: while nobody is listening, the loop waits the backed-off interval instead of
+    // the normal one, so a tick that would just be told "no" again by the emitter never happens.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void NextDelay_UsesTheBackedOffIntervalOnlyWhenNothingWasDelivered(bool delivered)
+    {
+        var interval = TimeSpan.FromSeconds(30);
+
+        var next = ScheduleDispatcherService.NextDelay(interval, delivered);
+
+        next.ShouldBe(delivered ? interval : interval * ScheduleDispatcherService.IdleBackoffMultiplier);
+    }
 
     private static Schedule OneShot() =>
         new() { Id = "once", AgentId = "jack", Prompt = "p", RunAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow };
@@ -109,22 +224,25 @@ public class ScheduleDispatcherServiceTests
         return store;
     }
 
-    private static IScheduleNotificationEmitter Emitter(bool delivers)
-    {
-        var emitter = new Mock<IScheduleNotificationEmitter>();
-        emitter.SetupGet(e => e.HasActiveSessions).Returns(true);
-        emitter.Setup(e => e.EmitAsync(It.IsAny<ChannelMessageNotification>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(delivers);
-        return emitter.Object;
-    }
+    // A real inbox and the real emitter rather than a mock: "delivers" is expressed the way
+    // production expresses it — whether anyone has actually polled — so the test cannot claim a
+    // combination the shared emitter would never produce.
+    private static ChannelInboxProbe Probe(bool delivers) =>
+        new("scheduling", DeliveryPolicy.GateOnLive, live: delivers);
 
     private static ScheduleDispatcherService BuildDispatcher(
-        IScheduleStore store, IScheduleNotificationEmitter emitter, ICronValidator? cron = null, TimeProvider? clock = null) =>
+        IScheduleStore store,
+        ChannelInboxProbe emitter,
+        ICronValidator? cron = null,
+        TimeProvider? clock = null,
+        CapturingLoggerProvider? logs = null) =>
         new(
             store,
             cron ?? new Mock<ICronValidator>().Object,
-            emitter,
+            emitter.Emitter,
             new SchedulingSettings { RedisConnectionString = "x", DefaultDeliverTo = ["signalr"] },
-            new Mock<ILogger<ScheduleDispatcherService>>().Object,
+            logs is null
+                ? new Mock<ILogger<ScheduleDispatcherService>>().Object
+                : new LoggerFactory([logs]).CreateLogger<ScheduleDispatcherService>(),
             clock ?? TimeProvider.System);
 }

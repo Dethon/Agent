@@ -1,8 +1,10 @@
+using Mcp.Hosting;
 using McpChannelSignalR.Hubs;
 using McpChannelSignalR.Modules;
+using McpChannelSignalR.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
-var settings = builder.Configuration.GetSettings();
+var settings = builder.Configuration.BindSettings<ChannelSettings>();
 builder.Services.ConfigureChannel(settings);
 builder.Services.AddCors(options =>
 {

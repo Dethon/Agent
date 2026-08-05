@@ -16,6 +16,7 @@ public class McpAgentLatencyTests : IAsyncDisposable
 {
     private readonly McpAgent _agent;
     private readonly List<LatencyEvent> _events = [];
+    private readonly List<TokenUsageEvent> _tokenEvents = [];
     private readonly Lock _lock = new();
     private readonly Mock<IMetricsPublisher> _publisher = new();
 
@@ -34,30 +35,32 @@ public class McpAgentLatencyTests : IAsyncDisposable
             .Returns(updates.ToAsyncEnumerable());
 
         _publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) =>
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e =>
             {
-                if (e is LatencyEvent le)
+                lock (_lock)
                 {
-                    lock (_lock)
+                    switch (e)
                     {
-                        _events.Add(le);
+                        case LatencyEvent le:
+                            _events.Add(le);
+                            break;
+                        case TokenUsageEvent te:
+                            _tokenEvents.Add(te);
+                            break;
                     }
                 }
-            })
-            .Returns(Task.CompletedTask);
+            });
 
         var stateStore = new Mock<IThreadStateStore>();
         _agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with { Model = "anthropic/claude", ConversationId = "conv1" },
             chatClient.Object,
-            "test-agent",
-            "",
             stateStore.Object,
-            "test-user",
-            metricsPublisher: _publisher.Object,
-            model: "anthropic/claude",
-            conversationId: "conv1");
+            _publisher.Object,
+            TimeProvider.System,
+            [],
+            []);
     }
 
     public async ValueTask DisposeAsync()
@@ -100,27 +103,35 @@ public class McpAgentLatencyTests : IAsyncDisposable
                 It.IsAny<CancellationToken>()))
             .Returns(new List<ChatResponseUpdate>
             {
-                new() { Role = ChatRole.Assistant, Contents = [new TextContent("hi")] }
+                new() { Role = ChatRole.Assistant, Contents = [new TextContent("hi")] },
+                new()
+                {
+                    Role = ChatRole.Assistant,
+                    Contents = [new UsageContent(new UsageDetails { InputTokenCount = 10, OutputTokenCount = 5 })]
+                }
             }.ToAsyncEnumerable());
 
-        // The chat client is the sole resolver of the patch whitelist; the agent discovers it
-        // through the decorator chain (production wraps it in ToolApprovalChatClient), so the
-        // wrapper is part of this test on purpose.
+        // Production wraps the chat client in ToolApprovalChatClient, so the wrapper is part of
+        // this test on purpose: the resolved model must reach the request through the decorator
+        // chain on the turn's own options.
         using var chatClient = new OpenRouterChatClient(
-            inner.Object, "anthropic/claude", patchableModelIds: ["z-ai/glm"]);
+            inner.Object, "anthropic/claude", metricsPublisher: _publisher.Object);
         using var wrappedClient = new ToolApprovalChatClient(
-            chatClient, new Mock<IToolApprovalHandler>().Object);
+            chatClient, new Mock<IToolApprovalHandler>().Object, "conv-test");
 
         await using var agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with
+            {
+                Model = "anthropic/claude",
+                ConversationId = "conv1",
+                PatchableModelIds = ["z-ai/glm"]
+            },
             wrappedClient,
-            "test-agent",
-            "",
             new Mock<IThreadStateStore>().Object,
-            "test-user",
-            metricsPublisher: _publisher.Object,
-            model: "anthropic/claude",
-            conversationId: "conv1");
+            _publisher.Object,
+            TimeProvider.System,
+            [],
+            []);
 
         var message = new ChatMessage(ChatRole.User, "hello");
         message.SetConfigPatch(new AgentConfigPatch { Model = "z-ai/glm" });
@@ -130,6 +141,13 @@ public class McpAgentLatencyTests : IAsyncDisposable
         var events = Snapshot();
         events.First(e => e.Stage == LatencyStage.LlmFirstToken).Model.ShouldBe("z-ai/glm");
         events.First(e => e.Stage == LatencyStage.LlmTotal).Model.ShouldBe("z-ai/glm");
+
+        // Cost and token usage are attributed to the model that produced them, not to the
+        // agent's configured model.
+        lock (_lock)
+        {
+            _tokenEvents.ShouldHaveSingleItem().Model.ShouldBe("z-ai/glm");
+        }
     }
 
     [Fact]
@@ -143,20 +161,5 @@ public class McpAgentLatencyTests : IAsyncDisposable
         warmup.ShouldNotBeNull();
         warmup.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
         warmup.Model.ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task PublisherThrowing_DoesNotFailWarmupOrTurn()
-    {
-        _publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("publisher down"));
-
-        await Should.NotThrowAsync(async () =>
-        {
-            var thread = await _agent.CreateSessionAsync();
-            await _agent.WarmupSessionAsync(thread);
-            await _agent.RunStreamingAsync("hello", thread).ToListAsync();
-        });
     }
 }

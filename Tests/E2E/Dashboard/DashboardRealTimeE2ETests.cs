@@ -22,13 +22,13 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await page.Locator(".connection-status.connected").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        await page.Locator(".connection-status.live").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         var inputTokensCard = page.Locator(".kpi-card").Filter(new LocatorFilterOptions { HasText = "Input Tokens" });
         var initialValue = await inputTokensCard.Locator(".kpi-value").TextContentAsync();
 
         // Brief pause after connection — the SignalR hub subscription is async and
-        // may not be fully active when connection-status shows "connected".
+        // may not be fully active when connection-status shows "live".
         await page.WaitForTimeoutAsync(2_000);
 
         await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.RedisConnectionString);
@@ -74,10 +74,10 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await page.Locator(".connection-status.connected").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        await page.Locator(".connection-status.live").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Brief pause after connection — the SignalR hub subscription is async and
-        // may not be fully active when connection-status shows "connected".
+        // may not be fully active when connection-status shows "live".
         await page.WaitForTimeoutAsync(2_000);
 
         await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.RedisConnectionString);

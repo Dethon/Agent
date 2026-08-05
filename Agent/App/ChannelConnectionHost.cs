@@ -4,121 +4,60 @@ using Infrastructure.Clients.Channels;
 
 namespace Agent.App;
 
+// What the agent knows that a connection does not: which channels have an endpoint to dial, and
+// which endpoint each one is. Everything after that — connect, register, watch, reconnect,
+// re-register — is the connection's own run.
 public class ChannelConnectionHost(
     ChannelEndpoint[] endpoints,
     IReadOnlyList<IMcpChannelConnection> connections,
     IReadOnlyList<AgentCatalogEntry> agentCatalog,
-    ILogger<ChannelConnectionHost> logger,
-    TimeSpan? healthCheckInterval = null) : BackgroundService
+    ILogger<ChannelConnectionHost> logger) : BackgroundService
 {
-    private readonly TimeSpan _healthCheckInterval = healthCheckInterval ?? TimeSpan.FromSeconds(30);
+    private readonly Dictionary<string, string> _endpointMap = BuildEndpointMap(endpoints);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var endpointMap = endpoints.ToDictionary(e => e.ChannelId, e => e.Endpoint);
+        var endpointMap = _endpointMap;
 
-        var tasks = connections
-            .Where(c => endpointMap.ContainsKey(c.ChannelId))
-            .Select(conn => MaintainConnectionAsync(conn, endpointMap[conn.ChannelId], stoppingToken));
-
-        await Task.WhenAll(tasks);
-    }
-
-    private async Task MaintainConnectionAsync(
-        IMcpChannelConnection conn, string endpoint, CancellationToken ct)
-    {
-        await ConnectWithRetryAsync(conn, endpoint, ct);
-        var registered = await RegisterAgentsSafelyAsync(conn, ct);
-
-        while (!ct.IsCancellationRequested)
-        {
-            await Task.Delay(_healthCheckInterval, ct);
-
-            if (!await conn.IsHealthyAsync(ct))
-            {
-                logger.LogWarning("Channel {ChannelId} health check failed, reconnecting", conn.ChannelId);
-                await ReconnectWithRetryAsync(conn, endpoint, ct);
-                registered = await RegisterAgentsSafelyAsync(conn, ct);
-            }
-            else if (!registered)
-            {
-                // The connection is healthy but a previous registration failed; retry until it
-                // sticks so the channel isn't left serving an empty catalog indefinitely.
-                registered = await RegisterAgentsSafelyAsync(conn, ct);
-            }
-        }
-    }
-
-    private async Task<bool> RegisterAgentsSafelyAsync(IMcpChannelConnection conn, CancellationToken ct)
-    {
-        try
-        {
-            await conn.RegisterAgentsAsync(agentCatalog, ct);
-            return true;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        var connectionIds = connections.Select(c => c.ChannelId).ToHashSet();
+        foreach (var orphan in endpoints.Where(e => !connectionIds.Contains(e.ChannelId)))
         {
             logger.LogWarning(
-                "Failed to register agents with channel {ChannelId}: {Error}", conn.ChannelId, ex.Message);
-            return false;
+                "Endpoint {ChannelId} ({Endpoint}) matches no registered channel connection and will never be run",
+                orphan.ChannelId, orphan.Endpoint);
         }
+
+        var runs = connections
+            .Where(c => endpointMap.ContainsKey(c.ChannelId))
+            .Select(conn =>
+            {
+                var endpoint = endpointMap[conn.ChannelId];
+                logger.LogInformation("Running channel {ChannelId} against {Endpoint}", conn.ChannelId, endpoint);
+                return conn.RunAsync(endpoint, agentCatalog, stoppingToken);
+            });
+
+        await Task.WhenAll(runs);
     }
 
-    private async Task ConnectWithRetryAsync(
-        IMcpChannelConnection conn, string endpoint, CancellationToken ct)
+    // One endpoint per channel id, checked while the host is being built rather than once it is
+    // running: a second entry for the same id is a configuration mistake, and it has to fail
+    // naming the id. Letting the map throw on its own reports a duplicate key with the key
+    // nowhere in the message, which leaves an operator nothing to look for.
+    private static Dictionary<string, string> BuildEndpointMap(ChannelEndpoint[] endpoints)
     {
-        const int maxDelaySeconds = 30;
-        var attempt = 0;
+        var duplicates = endpoints
+            .GroupBy(e => e.ChannelId, StringComparer.Ordinal)
+            .Where(entries => entries.Count() > 1)
+            .Select(entries => entries.Key)
+            .ToArray();
 
-        while (!ct.IsCancellationRequested)
+        if (duplicates.Length > 0)
         {
-            try
-            {
-                logger.LogInformation(
-                    "Connecting channel {ChannelId} to {Endpoint} (attempt {Attempt})",
-                    conn.ChannelId, endpoint, attempt + 1);
-                await conn.ConnectAsync(endpoint, ct);
-                logger.LogInformation("Channel {ChannelId} connected", conn.ChannelId);
-                return;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                attempt++;
-                var delay = Math.Min((int)Math.Pow(2, attempt), maxDelaySeconds);
-                logger.LogWarning(
-                    "Failed to connect channel {ChannelId} (attempt {Attempt}), retrying in {Delay}s: {Error}",
-                    conn.ChannelId, attempt, delay, ex.Message);
-                await Task.Delay(TimeSpan.FromSeconds(delay), ct);
-            }
+            throw new InvalidOperationException(
+                $"ChannelEndpoints has more than one entry for channel id {string.Join(", ", duplicates)}; " +
+                "each channel id must appear exactly once.");
         }
-    }
 
-    private async Task ReconnectWithRetryAsync(
-        IMcpChannelConnection conn, string endpoint, CancellationToken ct)
-    {
-        const int maxDelaySeconds = 30;
-        var attempt = 0;
-
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                attempt++;
-                logger.LogInformation(
-                    "Reconnecting channel {ChannelId} to {Endpoint} (attempt {Attempt})",
-                    conn.ChannelId, endpoint, attempt);
-                await conn.ReconnectAsync(endpoint, ct);
-                logger.LogInformation("Channel {ChannelId} reconnected", conn.ChannelId);
-                return;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                var delay = Math.Min((int)Math.Pow(2, attempt), maxDelaySeconds);
-                logger.LogWarning(
-                    "Failed to reconnect channel {ChannelId} (attempt {Attempt}), retrying in {Delay}s: {Error}",
-                    conn.ChannelId, attempt, delay, ex.Message);
-                await Task.Delay(TimeSpan.FromSeconds(delay), ct);
-            }
-        }
+        return endpoints.ToDictionary(e => e.ChannelId, e => e.Endpoint);
     }
 }

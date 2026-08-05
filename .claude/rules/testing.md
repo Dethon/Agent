@@ -17,11 +17,17 @@ paths:
 
 - Unit/integration test classes: `{ClassUnderTest}Tests.cs`
 - E2E test classes: `{Feature}E2ETests.cs`
-- Test methods: `{Method}_{Scenario}_{ExpectedResult}`
+- Test methods use one of two forms. Pick one per suite and stay consistent within it:
+  - `{Method}_{Scenario}_{ExpectedResult}` when the test targets one method.
+  - `{Scenario}_{ExpectedResult}` as a behavior sentence, when the test pins a rule of a
+    module rather than one method (the style of the contract and channel suites).
 
 ```csharp
 [Fact]
 public void Run_TextNotFound_ThrowsWithSuggestion()
+
+[Fact]
+public void AskingForTheFilterTwice_InstallsItOnce()
 ```
 
 ## Patterns

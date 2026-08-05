@@ -60,7 +60,7 @@ public class MemoryExtractionWorkerDriftTests(RedisFixture redisFixture) : IClas
         var request = new MemoryExtractionRequest(
             UserId: $"user-{Guid.NewGuid():N}",
             ThreadStateKey: stateKey,
-            AnchorIndex: 3,
+            Anchor: MemoryAnchor.TakenBeforeCurrentTurnIsPersisted(3),
             ConversationId: "conv-drift",
             AgentId: null)
         {

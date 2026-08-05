@@ -1,9 +1,11 @@
+using Domain.Memory;
+
 namespace Domain.DTOs;
 
 public record MemoryExtractionRequest(
     string UserId,
     string? ThreadStateKey,
-    int AnchorIndex,
+    MemoryAnchor Anchor,
     string? ConversationId,
     string? AgentId)
 {

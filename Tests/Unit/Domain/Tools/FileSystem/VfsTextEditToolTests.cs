@@ -28,7 +28,7 @@ public class VfsTextEditToolTests
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve(It.IsAny<string>()))
-            .Returns<string>(path => new FileSystemResolution(backend.Object, path));
+            .Returns<string>(path => Resolved(backend.Object, path));
         registry.Setup(r => r.GetMounts())
             .Returns([new FileSystemMount("vault", "/vault", "Vault")]);
 
@@ -99,4 +99,9 @@ public class VfsTextEditToolTests
             ? typeNode.GetString() == type
             : typeNode.EnumerateArray().Any(t => t.GetString() == type);
     }
+
+    private static FsResult<FileSystemResolution> Resolved(
+        IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
+        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
+
 }

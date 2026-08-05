@@ -91,8 +91,7 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
             serviceProvider.Object,
             new AgentDefinitionProvider(optionsMonitor.Object, new CustomAgentRegistry()),
             new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
-            registry.Object,
-            chatClientFactory: (_, _, _, _) => new Mock<IChatClient>().Object);
+            registry.Object);
 
         var approvalHandler = new Mock<IToolApprovalHandler>().Object;
         if (subAgent)
@@ -106,6 +105,7 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
                     McpServerEndpoints = []
                 },
                 approvalHandler,
+                "conv-1",
                 [],
                 "fran");
         }

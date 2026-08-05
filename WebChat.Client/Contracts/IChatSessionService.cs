@@ -8,6 +8,11 @@ public interface IChatSessionService
 
     event Action? OnSessionChanged;
 
-    Task<bool> StartSessionAsync(StoredTopic topic);
+    Task<HubResult<bool>> StartSessionAsync(StoredTopic topic);
+
+    // Here because it is the same concern as starting a session — who the server thinks this
+    // client is — and because session recovery needs a dependency it can fake.
+    Task<HubResult<Nothing>> RegisterUserAsync(string userId);
+
     void ClearSession();
 }

@@ -1,9 +1,14 @@
 namespace WebChat.Client.State.Toast;
 
+public record ShowError(string Message) : IAction;
+
+public record DismissToast(Guid Id) : IAction;
+
 public sealed class ToastStore : IDisposable
 {
     private const int MaxToasts = 3;
     private const int MaxMessageLength = 150;
+    private const string FallbackMessage = "Something went wrong. Please try again.";
 
     private readonly Store<ToastState> _store;
 
@@ -11,17 +16,21 @@ public sealed class ToastStore : IDisposable
     {
         _store = new Store<ToastState>(ToastState.Initial);
 
-        dispatcher.RegisterHandler<ShowError>(action =>
-            _store.Dispatch(action, Reduce));
-        dispatcher.RegisterHandler<DismissToast>(action =>
-            _store.Dispatch(action, Reduce));
+        dispatcher.RegisterCatchAll(action => _store.Dispatch(action, Reduce));
     }
 
     public ToastState State => _store.State;
     public IObservable<ToastState> StateObservable => _store.StateObservable;
     public void Dispose() => _store.Dispose();
 
-    private static ToastState Reduce(ToastState state, ShowError action)
+    private static ToastState Reduce(ToastState state, IAction action) => action switch
+    {
+        ShowError a => Show(state, a),
+        DismissToast a => new ToastState(state.Toasts.RemoveAll(t => t.Id == a.Id)),
+        _ => state
+    };
+
+    private static ToastState Show(ToastState state, ShowError action)
     {
         var message = TruncateMessage(action.Message);
 
@@ -30,28 +39,16 @@ public sealed class ToastStore : IDisposable
             return state;
         }
 
-        var toast = new ToastItem(Guid.NewGuid(), message, DateTime.UtcNow);
-        var toasts = state.Toasts.Add(toast);
+        var toasts = state.Toasts.Add(new ToastItem(Guid.NewGuid(), message, DateTime.UtcNow));
 
-        if (toasts.Count > MaxToasts)
-        {
-            toasts = toasts.RemoveAt(0);
-        }
-
-        return new ToastState(Toasts: toasts);
-    }
-
-    private static ToastState Reduce(ToastState state, DismissToast action)
-    {
-        var toasts = state.Toasts.RemoveAll(t => t.Id == action.Id);
-        return new ToastState(Toasts: toasts);
+        return new ToastState(toasts.Count > MaxToasts ? toasts.RemoveAt(0) : toasts);
     }
 
     private static string TruncateMessage(string message)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
-            return "Something went wrong. Please try again.";
+            return FallbackMessage;
         }
 
         return message.Length <= MaxMessageLength

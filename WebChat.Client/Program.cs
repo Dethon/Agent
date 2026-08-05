@@ -5,6 +5,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Services;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State.Approval;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
 using WebChat.Client.State.Pipeline;
@@ -18,17 +19,15 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.H
 builder.Services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
 builder.Services.AddScoped<ConnectionEventDispatcher>();
 
-// Connection services (ChatConnectionService is the concrete type needed by dependent services)
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddScoped<IHubConnectionFactory, SignalRHubConnectionFactory>();
-builder.Services.AddScoped<ChatConnectionService>();
-builder.Services.AddScoped<IChatConnectionService>(sp => sp.GetRequiredService<ChatConnectionService>());
+builder.Services.AddWebChatLiveConnection();
 
 builder.Services.AddScoped<IChatSessionService, ChatSessionService>();
 builder.Services.AddScoped<IChatMessagingService, ChatMessagingService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
 builder.Services.AddScoped<IApprovalService, ApprovalService>();
+builder.Services.AddScoped<ApprovalResponder>();
 
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
 
@@ -40,12 +39,13 @@ builder.Services.AddScoped<StreamResumeService>();
 builder.Services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<StreamResumeService>());
 builder.Services.AddScoped<IMessagePipeline, MessagePipeline>();
 
-builder.Services.AddScoped<ISignalREventSubscriber, SignalREventSubscriber>();
 builder.Services.AddScoped<PushNotificationService>();
+builder.Services.AddScoped<IPushSubscriptionService>(sp => sp.GetRequiredService<PushNotificationService>());
 
 var app = builder.Build();
 
 // Activate effects that need to run at startup
+_ = app.Services.GetRequiredService<SessionRecoveryEffect>();
 _ = app.Services.GetRequiredService<ReconnectionEffect>();
 _ = app.Services.GetRequiredService<SendMessageEffect>();
 _ = app.Services.GetRequiredService<TopicSelectionEffect>();
@@ -56,5 +56,6 @@ _ = app.Services.GetRequiredService<UserIdentityEffect>();
 _ = app.Services.GetRequiredService<SpaceEffect>();
 _ = app.Services.GetRequiredService<AgentActivityEffect>();
 _ = app.Services.GetRequiredService<AgentSettingsEffect>();
+_ = app.Services.GetRequiredService<StreamResumeEffect>();
 
 await app.RunAsync();

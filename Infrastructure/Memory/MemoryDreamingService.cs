@@ -88,13 +88,13 @@ public class MemoryDreamingService(
         var profile = await consolidator.SynthesizeProfileAsync(userId, activeMemories, ct);
         await store.SaveProfileAsync(profile, ct);
 
-        await metricsPublisher.PublishAsync(new MemoryDreamingEvent
+        metricsPublisher.Publish(new MemoryDreamingEvent
         {
             MergedCount = mergedCount,
             DecayedCount = decayedCount,
             ProfileRegenerated = true,
             UserId = userId
-        }, ct);
+        });
 
         logger.LogInformation(
             "Dreaming complete for {UserId}: {Merged} merged, {Decayed} decayed, profile regenerated",

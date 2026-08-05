@@ -14,8 +14,7 @@ public sealed class HubEventDispatcher(
     IDispatcher dispatcher,
     TopicsStore topicsStore,
     StreamingStore streamingStore,
-    IMessagePipeline pipeline,
-    IStreamResumeService streamResumeService) : IHubEventDispatcher
+    IMessagePipeline pipeline) : IHubEventDispatcher
 {
     public void HandleTopicChanged(TopicChangedNotification notification)
     {
@@ -43,17 +42,11 @@ public sealed class HubEventDispatcher(
         switch (notification.ChangeType)
         {
             case StreamChangeType.Started:
-                // Don't dispatch StreamStarted here - TryResumeStreamAsync will do it
-                var topic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == notification.TopicId);
-                if (topic is not null && !streamingStore.State.ResumingTopics.Contains(notification.TopicId))
-                {
-                    _ = streamResumeService.TryResumeStreamAsync(topic);
-                }
-                else
-                {
-                    dispatcher.Dispatch(new StreamStarted(notification.TopicId));
-                }
-
+                // Reporting the push is all this type does. Deciding whether to resume the
+                // stream or just mark it started belongs to StreamResumeEffect — resuming is
+                // a hub call, and a dispatcher that made one would depend on the services
+                // that reach back through the live connection.
+                dispatcher.Dispatch(new RemoteStreamStarted(notification.TopicId));
                 break;
             case StreamChangeType.Completed:
                 dispatcher.Dispatch(new StreamCompleted(notification.TopicId));

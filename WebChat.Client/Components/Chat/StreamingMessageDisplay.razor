@@ -57,8 +57,7 @@
         Reasoning = MessageFieldMerger.Merge(
             CarriedReasoning, _streamingContent?.Reasoning, MessageFieldMerger.ReasoningSeparator),
         ToolCalls = MessageFieldMerger.Merge(
-            CarriedToolCalls, _streamingContent?.ToolCalls, MessageFieldMerger.ToolCallsSeparator),
-        IsError = _streamingContent?.IsError ?? false
+            CarriedToolCalls, _streamingContent?.ToolCalls, MessageFieldMerger.ToolCallsSeparator)
     };
 
 }

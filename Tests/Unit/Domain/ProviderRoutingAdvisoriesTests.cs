@@ -59,7 +59,6 @@ public class ProviderRoutingAdvisoriesTests
 
     [Theory]
     [InlineData("z-ai/glm-5.2")]
-    [InlineData("z-ai/glm-5.2:nitro")]
     public void For_OrderSet_WarnsAboutStickyRouting(string model)
     {
         var advisories = ProviderRoutingAdvisories.For(

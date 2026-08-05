@@ -13,8 +13,6 @@ public sealed class ReconnectionEffect : IDisposable
     private readonly IDisposable _subscription;
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
-    private bool _wasEverConnected;
-    private bool _wasDisconnectedSinceLastConnect;
 
     public ReconnectionEffect(
         ConnectionStore connectionStore,
@@ -23,42 +21,15 @@ public sealed class ReconnectionEffect : IDisposable
         IChatSessionService sessionService,
         IStreamResumeService streamResumeService,
         Dispatcher dispatcher,
-        ITopicService topicService)
+        ITopicService topicService,
+        ILogger<ReconnectionEffect> logger)
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
 
-        _subscription = connectionStore.StateObservable
-            .Subscribe(state =>
-            {
-                if (state.Status is ConnectionStatus.Reconnecting or ConnectionStatus.Disconnected)
-                {
-                    _wasDisconnectedSinceLastConnect = true;
-                    return;
-                }
-
-                var isNowConnected = state.Status == ConnectionStatus.Connected;
-                if (!isNowConnected)
-                {
-                    return;
-                }
-
-                // First connection - just mark as connected, don't reload
-                if (!_wasEverConnected)
-                {
-                    _wasEverConnected = true;
-                    return;
-                }
-
-                // Reconnection after being disconnected - reload history
-                if (!_wasDisconnectedSinceLastConnect)
-                {
-                    return;
-                }
-
-                _wasDisconnectedSinceLastConnect = false;
-                _ = HandleReconnectedAsync(topicsStore, spaceStore, sessionService, streamResumeService);
-            });
+        _subscription = connectionStore.BecameLiveAgain.Subscribe(
+            _ => HandleReconnectedAsync(topicsStore, spaceStore, sessionService, streamResumeService)
+                .LogFaults(logger, "became live again"));
     }
 
     private async Task HandleReconnectedAsync(
@@ -73,8 +44,14 @@ public sealed class ReconnectionEffect : IDisposable
         {
             var spaceSlug = spaceStore.State.CurrentSlug;
             var serverTopics = await _topicService.GetAllTopicsAsync(agentId, spaceSlug);
-            var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
-            _dispatcher.Dispatch(new TopicsLoaded(topics));
+
+            // Catch-up can land in the next interruption. Storing a not-live answer would
+            // empty the sidebar the recovery exists to refill.
+            if (serverTopics.IsLive)
+            {
+                var topics = serverTopics.Value!.Select(StoredTopic.FromMetadata).ToList();
+                _dispatcher.Dispatch(new TopicsLoaded(topics));
+            }
         }
 
         var currentState = topicsStore.State;
@@ -101,7 +78,12 @@ public sealed class ReconnectionEffect : IDisposable
     private async Task ReloadTopicHistoryAsync(StoredTopic topic)
     {
         var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-        var messages = history.Select(h => h.ToChatMessageModel()).ToList();
+        if (!history.IsLive)
+        {
+            return;
+        }
+
+        var messages = history.Value!.Select(h => h.ToChatMessageModel()).ToList();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
     }
 

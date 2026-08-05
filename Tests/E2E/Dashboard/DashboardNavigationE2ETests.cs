@@ -12,6 +12,9 @@ public class DashboardNavigationE2ETests(DashboardE2EFixture fixture)
     [InlineData("/tools", "Tool Calls")]
     [InlineData("/errors", "Errors")]
     [InlineData("/schedules", "Schedule Executions")]
+    [InlineData("/memory", "Memory")]
+    [InlineData("/latency", "Latency")]
+    [InlineData("/voice", "Voice")]
     public async Task NavigateToPage_ShowsCorrectPage(string href, string expectedTitle)
     {
         var page = await fixture.CreatePageAsync();

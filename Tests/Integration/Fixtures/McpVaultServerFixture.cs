@@ -1,9 +1,9 @@
 using System.Net;
 using Domain.Tools.Config;
+using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Utils;
-using McpServerVault.McpResources;
-using McpServerVault.McpTools;
+using Mcp.Hosting;
 using McpServerVault.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -38,32 +38,17 @@ public class McpVaultServerFixture : IAsyncLifetime
         });
 
         builder.Services
-            .AddSingleton(settings)
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.VaultPath))
             .AddTransient<global::Domain.Contracts.IFileSystemClient, LocalFileSystemClient>()
-            .AddMcpServer()
-            .WithHttpTransport()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    return ToolResponse.Create(ex);
-                }
-            }))
-            .WithTools<FsReadTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsCopyTool>()
-            .WithResources<FileSystemResource>();
+            .AddSingleton(sp => new TextDiskFileSystem(
+                "vault",
+                "Personal Obsidian vault.",
+                sp.GetRequiredService<global::Domain.Contracts.IFileSystemClient>(),
+                new LibraryPathConfig(settings.VaultPath),
+                settings.AllowedExtensions))
+            .AddToolServer(settings, ToolResponse.Create)
+            .AddFileSystemTools<TextDiskFileSystem>()
+            .AddFileSystemResource<TextDiskFileSystem>();
 
         var app = builder.Build();
         app.MapMcp("/mcp");

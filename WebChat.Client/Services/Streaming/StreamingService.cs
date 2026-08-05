@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
@@ -18,10 +17,10 @@ public sealed class StreamingService(
     IDispatcher dispatcher,
     ITopicService topicService,
     TopicsStore topicsStore,
-    StreamingStore streamingStore,
+    MessagesStore messagesStore,
     AgentSettingsStore agentSettingsStore) : IStreamingService
 {
-    private readonly ConcurrentDictionary<string, Task> _activeStreams = new();
+    private readonly ActiveStreams _activeStreams = new();
     private readonly SemaphoreSlim _streamLock = new(1, 1);
 
     public async Task SendMessageAsync(StoredTopic topic, string message, string? correlationId = null)
@@ -30,21 +29,27 @@ public sealed class StreamingService(
         try
         {
             var configPatch = GetConfigPatch(topic);
-            var isNewStream = !_activeStreams.TryGetValue(topic.TopicId, out var task)
-                              || task.IsCompleted;
-
-            if (isNewStream)
+            if (!_activeStreams.IsActive(topic.TopicId))
             {
-                StartNewStream(topic, message, correlationId, configPatch);
+                await StartNewStreamAsync(topic, message, correlationId, configPatch);
+                return;
             }
-            else
+
+            var enqueued = await messagingService.EnqueueMessageAsync(
+                topic.TopicId, message, correlationId, configPatch);
+
+            // A not-live enqueue is not the server saying "there is no stream to enqueue
+            // onto". Falling through here would open a second stream over a transport that
+            // cannot carry it and show the user a reply that has already failed.
+            if (!enqueued.IsLive)
             {
-                var success = await messagingService.EnqueueMessageAsync(
-                    topic.TopicId, message, correlationId, configPatch);
-                if (!success)
-                {
-                    StartNewStream(topic, message, correlationId, configPatch);
-                }
+                dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+                return;
+            }
+
+            if (!enqueued.Value)
+            {
+                await StartNewStreamAsync(topic, message, correlationId, configPatch);
             }
         }
         finally
@@ -65,16 +70,21 @@ public sealed class StreamingService(
         await _streamLock.WaitAsync();
         try
         {
-            var hasActiveStream = _activeStreams.TryGetValue(topic.TopicId, out var task) && !task.IsCompleted;
-            if (hasActiveStream)
+            if (_activeStreams.IsActive(topic.TopicId))
             {
                 return false;
             }
 
-            dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-            var streamTask = ResumeStreamResponseAsync(topic, streamingMessage, startMessageId);
-            _activeStreams[topic.TopicId] = streamTask;
-            _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out var _));
+            var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
+
+            // Recovery the user never asked for: announce nothing and say nothing. Announcing
+            // first would leave a stream marked started that can never say it completed.
+            if (!chunks.IsLive)
+            {
+                return false;
+            }
+
+            Announce(topic, () => ProcessStreamAsync(topic, chunks.Value!, streamingMessage, startMessageId));
             return true;
         }
         finally
@@ -88,7 +98,7 @@ public sealed class StreamingService(
         await _streamLock.WaitAsync();
         try
         {
-            return _activeStreams.TryGetValue(topicId, out var task) && !task.IsCompleted;
+            return _activeStreams.IsActive(topicId);
         }
         finally
         {
@@ -96,30 +106,66 @@ public sealed class StreamingService(
         }
     }
 
-    private void StartNewStream(
+    private async Task StartNewStreamAsync(
         StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)
     {
-        dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-        var streamTask = StreamResponseAsync(topic, message, correlationId, configPatch);
-        _activeStreams[topic.TopicId] = streamTask;
-        _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out var _));
+        var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch);
+
+        // Announce only a stream that has actually started. The old order announced first and
+        // discovered afterwards, which is how a user was shown a reply that never spoke.
+        if (chunks is not null)
+        {
+            Announce(topic, () => ProcessStreamAsync(
+                topic, chunks, new ChatMessageModel { Role = "assistant" }, currentMessageId: null));
+        }
     }
 
-    public Task StreamResponseAsync(
+    // Null means the send could not be made and the user has been told. The send is theirs, so
+    // this is the one stream verb that raises a toast.
+    private async Task<IAsyncEnumerable<ChatStreamMessage>?> OpenSendStreamAsync(
+        StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)
+    {
+        var chunks = await messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
+        if (chunks.IsLive)
+        {
+            return chunks.Value!;
+        }
+
+        dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+        return null;
+    }
+
+    // StreamStarted resets the streaming buffer, so it has to be dispatched before the first
+    // chunk is processed rather than alongside the task that processes them.
+    private void Announce(StoredTopic topic, Func<Task> startStream)
+    {
+        dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+        _activeStreams.Track(topic.TopicId, startStream());
+    }
+
+    public async Task StreamResponseAsync(
         StoredTopic topic, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
-        var chunks = messagingService.SendMessageAsync(topic.TopicId, message, correlationId, configPatch);
-        var streamingMessage = new ChatMessageModel { Role = "assistant" };
-        return ProcessStreamAsync(topic, chunks, streamingMessage, currentMessageId: null);
+        var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch);
+        if (chunks is not null)
+        {
+            await ProcessStreamAsync(
+                topic, chunks, new ChatMessageModel { Role = "assistant" }, currentMessageId: null);
+        }
     }
 
-    public Task ResumeStreamResponseAsync(
+    public async Task ResumeStreamResponseAsync(
         StoredTopic topic,
         ChatMessageModel streamingMessage,
         string startMessageId)
     {
-        var chunks = messagingService.ResumeStreamAsync(topic.TopicId);
-        return ProcessStreamAsync(topic, chunks, streamingMessage, startMessageId);
+        var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
+        if (!chunks.IsLive)
+        {
+            return;
+        }
+
+        await ProcessStreamAsync(topic, chunks.Value!, streamingMessage, startMessageId);
     }
 
     private async Task ProcessStreamAsync(
@@ -141,7 +187,6 @@ public sealed class StreamingService(
         // chunks for an already-committed MessageId through UpdateMessage (merging the bubble
         // in place) instead of a fresh AddMessage that AddMessageWithDedup would drop.
         var stash = new Dictionary<string, MessageAccumulator>();
-        var committed = new HashSet<string>();
 
         try
         {
@@ -165,17 +210,10 @@ public sealed class StreamingService(
                 }
 
                 // When a user message arrives in the stream, finalize current assistant content
-                // UNLESS SendMessageEffect already finalized (check FinalizationRequests flag)
                 if (chunk.UserMessage is not null)
                 {
-                    if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
+                    if (streamingMessage.HasContent)
                     {
-                        // SendMessageEffect already added the message, just clear the flag
-                        dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
-                    }
-                    else if (streamingMessage.HasContent)
-                    {
-                        // No finalization request - we need to add the message here
                         flush(streamingMessage, currentMessageId);
                         dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
                     }
@@ -250,7 +288,7 @@ public sealed class StreamingService(
                 // For an already-committed MessageId revisited mid-stream, update its bubble in
                 // place; the live streaming buffer is only used for the current uncommitted
                 // accumulator, preserving the single-live-bubble look in the contiguous case.
-                if (currentMessageId is not null && committed.Contains(currentMessageId))
+                if (currentMessageId is not null && isCommitted(currentMessageId))
                 {
                     dispatcher.Dispatch(new UpdateMessage(topic.TopicId, currentMessageId, streamingMessage));
                 }
@@ -265,15 +303,6 @@ public sealed class StreamingService(
                 }
 
                 await UpdateLastReadMessage(topic, chunk);
-            }
-
-            // Check finalization one more time before adding final message
-            // This handles the case where the stream ends right after a user message
-            // (no content chunks arrive after the finalization request was dispatched)
-            if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
-            {
-                streamingMessage = new ChatMessageModel { Role = "assistant" };
-                dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
             }
 
             if (streamingMessage.HasContent)
@@ -304,19 +333,20 @@ public sealed class StreamingService(
                 return;
             }
 
-            if (mid is not null && committed.Contains(mid))
+            if (mid is not null && isCommitted(mid))
             {
                 dispatcher.Dispatch(new UpdateMessage(topic.TopicId, mid, message));
             }
             else
             {
+                // AddMessage records mid in the messages state, so the next read sees it committed.
                 dispatcher.Dispatch(new AddMessage(topic.TopicId, message, mid));
-                if (mid is not null)
-                {
-                    committed.Add(mid);
-                }
             }
         }
+
+        bool isCommitted(string messageId) =>
+            messagesStore.State.FinalizedMessageIdsByTopic
+                .GetValueOrDefault(topic.TopicId)?.Contains(messageId) == true;
     }
 
     private readonly record struct MessageAccumulator(

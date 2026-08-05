@@ -7,7 +7,7 @@ namespace McpChannelVoice.Services.Tts;
 // Makes a lazy synthesis stream hot: the TTS request goes out as soon as the segment is queued,
 // rather than when the playback loop first pulls it.
 //
-// Why this exists: RunPlaybackLoopAsync is a single sequential enumeration, and a job's audio is not
+// Why this exists: the playback loop is a single sequential enumeration, and a job's audio is not
 // touched until the previous job's body has completed — including its real-time drain wait. With the
 // reply split into sentence segments that put a full TTS round trip (~0.5-0.9 s measured) into every
 // seam. Starting the pump at enqueue moves that round trip under the previous segment's playback,
@@ -20,6 +20,7 @@ public sealed class PrefetchedAudio : IAsyncDisposable
     private readonly Channel<AudioChunk> _buffer;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _pump;
+    private int _disposed;
 
     public PrefetchedAudio(IAsyncEnumerable<AudioChunk> source, int capacity)
     {
@@ -57,7 +58,7 @@ public sealed class PrefetchedAudio : IAsyncDisposable
         catch (Exception ex)
         {
             // Surfaced to the consumer on its next read, so a synthesis error still reaches the
-            // playback loop's OnFailed and settles the turn instead of hanging the handshake.
+            // playback loop, which settles the job as failed instead of hanging whoever awaits it.
             _buffer.Writer.TryComplete(ex);
         }
     }
@@ -79,8 +80,16 @@ public sealed class PrefetchedAudio : IAsyncDisposable
         }
     }
 
+    // Latches on the first call: the playback loop's own release and the connection drain's sweep
+    // can both reach the same in-flight job, and the second must not cancel a source the first has
+    // already disposed.
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         await _cts.CancelAsync();
         try
         {

@@ -8,7 +8,7 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public sealed partial class HaFileSystem
 {
-    public async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    public override async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         FsResult<FsExecResult> done(int exitCode, string stdout, string stderr, bool timedOut = false)

@@ -2,216 +2,150 @@ using Agent.App;
 using Agent.Settings;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure;
 
+// All the host still owns is which connections have an endpoint and what that endpoint is. The
+// sequence a connection is driven in belongs to the connection now, and is asserted against a real
+// server in Tests/Integration/Channels/McpChannelConnectionRunTests.cs.
 public class ChannelConnectionHostTests
 {
     private readonly NullLogger<ChannelConnectionHost> _logger = new();
 
-    [Fact]
-    public async Task ConnectsToChannel_OnStartup()
-    {
-        var fake = new FakeMcpChannelConnection("ch-1");
-        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
-        var sut = new ChannelConnectionHost(endpoints, [fake], [], _logger);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        _ = sut.StartAsync(cts.Token);
-
-        await fake.WaitForConnectAsync(cts.Token);
-        fake.ConnectCount.ShouldBe(1);
-    }
+    private static readonly IReadOnlyList<AgentCatalogEntry> _catalog =
+        [new AgentCatalogEntry("jonas", "Jonas", "general")];
 
     [Fact]
-    public async Task ReconnectsAfterHealthCheckFailure()
+    public async Task ExecuteAsync_EveryConnectionHasAnEndpoint_RunsThemAll()
     {
-        var fake = new FakeMcpChannelConnection("ch-1");
-        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
-        var sut = new ChannelConnectionHost(
-            endpoints, [fake], [], _logger,
-            healthCheckInterval: TimeSpan.FromMilliseconds(50));
+        var first = new FakeMcpChannelConnection("ch-1");
+        var second = new FakeMcpChannelConnection("ch-2");
+        var endpoints = new[]
+        {
+            new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" },
+            new ChannelEndpoint { ChannelId = "ch-2", Endpoint = "http://localhost:9002" }
+        };
+        var sut = new ChannelConnectionHost(endpoints, [first, second], _catalog, _logger);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _ = sut.StartAsync(cts.Token);
 
-        await fake.WaitForConnectAsync(cts.Token);
-        fake.ConnectCount.ShouldBe(1);
+        await first.WaitForRunAsync(cts.Token);
+        await second.WaitForRunAsync(cts.Token);
 
-        fake.SetHealthy(false);
-
-        await fake.WaitForConnectCountAsync(2, cts.Token);
-        fake.ConnectCount.ShouldBeGreaterThanOrEqualTo(2);
+        first.Endpoint.ShouldBe("http://localhost:9001");
+        second.Endpoint.ShouldBe("http://localhost:9002");
+        first.Agents.ShouldBe(_catalog);
     }
 
     [Fact]
-    public async Task RetriesConnectionOnInitialFailure()
+    public async Task ExecuteAsync_AConnectionWithNoEndpoint_IsNeverRun()
     {
-        var fake = new FakeMcpChannelConnection("ch-1");
-        fake.FailNextConnects(2);
-        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
-        var sut = new ChannelConnectionHost(endpoints, [fake], [], _logger);
+        var configured = new FakeMcpChannelConnection("ch-1");
+        var unconfigured = new FakeMcpChannelConnection("ch-2");
+        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" } };
+        var sut = new ChannelConnectionHost(endpoints, [configured, unconfigured], _catalog, _logger);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _ = sut.StartAsync(cts.Token);
 
-        await fake.WaitForConnectAsync(cts.Token);
-        fake.ConnectAttempts.ShouldBeGreaterThanOrEqualTo(3);
-        fake.ConnectCount.ShouldBe(1);
+        await configured.WaitForRunAsync(cts.Token);
+        unconfigured.RunCount.ShouldBe(0);
     }
 
     [Fact]
-    public async Task StopsOnCancellation()
+    public async Task ExecuteAsync_AnEndpointWithNoConnection_WarnsNamingTheOrphan()
+    {
+        // A typo'd ChannelId in configuration means that endpoint is silently never run; the
+        // warning is the only trace an operator gets.
+        var connection = new FakeMcpChannelConnection("ch-1");
+        var endpoints = new[]
+        {
+            new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" },
+            new ChannelEndpoint { ChannelId = "ch-ghost", Endpoint = "http://localhost:9002" }
+        };
+        var warnings = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        using var factory = LoggerFactory.Create(builder => builder.AddProvider(warnings));
+        var sut = new ChannelConnectionHost(
+            endpoints, [connection], _catalog, factory.CreateLogger<ChannelConnectionHost>());
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _ = sut.StartAsync(cts.Token);
+        await connection.WaitForRunAsync(cts.Token);
+
+        warnings.Messages.ShouldContain(m => m.Contains("ch-ghost"));
+    }
+
+    [Fact]
+    public void Constructor_TwoEndpointsForOneChannelId_FailsNamingTheDuplicate()
+    {
+        // A duplicated entry stops the agent either way; the difference is whether an operator can
+        // tell which one to fix. Building the endpoint map alone threw with no channel id in the
+        // message, and only once the host was already running.
+        var connection = new FakeMcpChannelConnection("ch-1");
+        var endpoints = new[]
+        {
+            new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" },
+            new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9002" }
+        };
+
+        var error = Should.Throw<InvalidOperationException>(
+            () => new ChannelConnectionHost(endpoints, [connection], _catalog, _logger));
+
+        error.Message.ShouldContain("ch-1");
+        connection.RunCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Cancelled_StopsWithoutThrowing()
     {
         var fake = new FakeMcpChannelConnection("ch-1");
-        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
-        var sut = new ChannelConnectionHost(
-            endpoints, [fake], [], _logger,
-            healthCheckInterval: TimeSpan.FromMilliseconds(50));
+        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" } };
+        var sut = new ChannelConnectionHost(endpoints, [fake], _catalog, _logger);
 
         using var cts = new CancellationTokenSource();
         var task = sut.StartAsync(cts.Token);
 
-        await fake.WaitForConnectAsync(cts.Token);
+        await fake.WaitForRunAsync(cts.Token);
 
         await cts.CancelAsync();
         await sut.StopAsync(CancellationToken.None);
 
-        // Should not throw
-        await task;
-    }
-
-    [Fact]
-    public async Task RegistersAgents_AfterConnect()
-    {
-        var fake = new FakeMcpChannelConnection("ch-1");
-        var catalog = new[] { new AgentCatalogEntry("jonas", "Jonas", "general") };
-        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
-        var sut = new ChannelConnectionHost(endpoints, [fake], catalog, _logger);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        _ = sut.StartAsync(cts.Token);
-
-        await fake.WaitForRegisterCountAsync(1, cts.Token);
-        fake.RegisteredAgents.ShouldNotBeNull();
-        fake.RegisteredAgents!.Single().Id.ShouldBe("jonas");
-    }
-
-    [Fact]
-    public async Task RetriesRegistration_WhenInitialRegisterFails_WithoutReconnecting()
-    {
-        var fake = new FakeMcpChannelConnection("ch-1");
-        fake.FailNextRegisters(1);
-        var catalog = new[] { new AgentCatalogEntry("jonas", "Jonas", null) };
-        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
-        var sut = new ChannelConnectionHost(
-            endpoints, [fake], catalog, _logger,
-            healthCheckInterval: TimeSpan.FromMilliseconds(50));
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        _ = sut.StartAsync(cts.Token);
-
-        // The first registration throws; the connection stays healthy, so the only way the
-        // catalog ever lands is a retry on a subsequent health tick (not a reconnect).
-        await fake.WaitForRegisterCountAsync(1, cts.Token);
-        fake.ConnectCount.ShouldBe(1);
-        fake.RegisteredAgents!.Single().Id.ShouldBe("jonas");
-    }
-
-    [Fact]
-    public async Task RegistersAgents_AfterReconnect()
-    {
-        var fake = new FakeMcpChannelConnection("ch-1");
-        var catalog = new[] { new AgentCatalogEntry("jonas", "Jonas", null) };
-        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
-        var sut = new ChannelConnectionHost(
-            endpoints, [fake], catalog, _logger,
-            healthCheckInterval: TimeSpan.FromMilliseconds(50));
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        _ = sut.StartAsync(cts.Token);
-
-        await fake.WaitForRegisterCountAsync(1, cts.Token);
-        fake.SetHealthy(false);
-        await fake.WaitForRegisterCountAsync(2, cts.Token);
-        fake.RegisterCount.ShouldBeGreaterThanOrEqualTo(2);
+        await task; // should not throw
     }
 }
 
 internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelConnection
 {
-    private readonly TaskCompletionSource _firstConnect = new();
-    private readonly SemaphoreSlim _connectSignal = new(0);
-    private readonly SemaphoreSlim _registerSignal = new(0);
-    private int _healthy = 1;
-    private int _failNextConnects;
-    private int _failNextRegisters;
-
-    private int _connectCount;
-    private int _connectAttempts;
-    private int _registerCount;
+    private readonly TaskCompletionSource _started =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _runCount;
 
     public string ChannelId { get; } = channelId;
-    public int ConnectCount => Volatile.Read(ref _connectCount);
-    public int ConnectAttempts => Volatile.Read(ref _connectAttempts);
-    public int RegisterCount => Volatile.Read(ref _registerCount);
-    public IReadOnlyList<AgentCatalogEntry>? RegisteredAgents { get; private set; }
+    public int RunCount => Volatile.Read(ref _runCount);
+    public string? Endpoint { get; private set; }
+    public IReadOnlyList<AgentCatalogEntry>? Agents { get; private set; }
 
-    public Task ConnectAsync(string endpoint, CancellationToken ct)
+    public async Task RunAsync(
+        string endpoint, IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
     {
-        Interlocked.Increment(ref _connectAttempts);
-        if (Interlocked.Decrement(ref _failNextConnects) >= 0)
+        Endpoint = endpoint;
+        Agents = agents;
+        Interlocked.Increment(ref _runCount);
+        _started.TrySetResult();
+
+        try
         {
-            throw new HttpRequestException("Simulated connection failure");
+            await Task.Delay(Timeout.Infinite, ct);
         }
-
-        Interlocked.Increment(ref _connectCount);
-        _firstConnect.TrySetResult();
-        _connectSignal.Release();
-        return Task.CompletedTask;
-    }
-
-    public Task<bool> IsHealthyAsync(CancellationToken ct) =>
-        Task.FromResult(Interlocked.CompareExchange(ref _healthy, 0, 0) == 1);
-
-    public Task ReconnectAsync(string endpoint, CancellationToken ct) => ConnectAsync(endpoint, ct);
-
-    public Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
-    {
-        if (Interlocked.Decrement(ref _failNextRegisters) >= 0)
+        catch (OperationCanceledException)
         {
-            throw new HttpRequestException("Simulated register failure");
-        }
-
-        RegisteredAgents = agents;
-        Interlocked.Increment(ref _registerCount);
-        _registerSignal.Release();
-        return Task.CompletedTask;
-    }
-
-    public void SetHealthy(bool healthy) => Interlocked.Exchange(ref _healthy, healthy ? 1 : 0);
-
-    public void FailNextConnects(int count) => Interlocked.Exchange(ref _failNextConnects, count);
-
-    public void FailNextRegisters(int count) => Interlocked.Exchange(ref _failNextRegisters, count);
-
-    public Task WaitForConnectAsync(CancellationToken ct) => _firstConnect.Task.WaitAsync(ct);
-
-    public async Task WaitForConnectCountAsync(int count, CancellationToken ct)
-    {
-        while (ConnectCount < count)
-        {
-            await _connectSignal.WaitAsync(ct);
+            // A run returns when it is cancelled; it does not fault.
         }
     }
 
-    public async Task WaitForRegisterCountAsync(int count, CancellationToken ct)
-    {
-        while (RegisterCount < count)
-        {
-            await _registerSignal.WaitAsync(ct);
-        }
-    }
+    public Task WaitForRunAsync(CancellationToken ct) => _started.Task.WaitAsync(ct);
 }

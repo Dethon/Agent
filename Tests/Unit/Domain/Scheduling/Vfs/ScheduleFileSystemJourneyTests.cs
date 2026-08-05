@@ -440,6 +440,33 @@ public class ScheduleFileSystemJourneyTests
             .ShouldBeOfType<FsResult<FsExecResult>.Err>();
     }
 
+    // A non-disk mount reaches the brace-expansion cap through the shared prologue; the caller
+    // gets the invalid-argument envelope, not a raw ArgumentException.
+    [Fact]
+    public async Task Glob_TooManyBraceAlternatives_ReturnsInvalidArgumentEnvelope()
+    {
+        var fs = Build();
+        var group = "{a,b,c,d,e,f,g,h,i}";
+
+        var result = await fs.GlobAsync("", string.Concat(group, group, group), CancellationToken.None);
+
+        result.TryGetValue(out _, out var error).ShouldBeFalse();
+        error!.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+    }
+
+    // Build() freezes the clock at 2026-01-01; run_now.sh must stamp that instant, not the wall clock.
+    [Fact]
+    public async Task Exec_RunNow_StampsNextRunAtFromTheInjectedClock()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule(id: "n", prompt: "p", nextRunAt: DateTime.UtcNow.AddDays(1)));
+        var fs = Build(store);
+
+        await fs.ExecAsync("/jonas/n", "run_now.sh", null, CancellationToken.None);
+
+        store.Items["n"].NextRunAt.ShouldBe(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+    }
+
     [Fact]
     public async Task Create_BareRunAt_InDstGap_ReturnsInvalidArgumentError()
     {
@@ -465,6 +492,43 @@ public class ScheduleFileSystemJourneyTests
         var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
         err.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
         err.Error.Message.ShouldContain("daylight-saving gap");
+    }
+
+    [Fact]
+    public async Task Search_UncompilablePattern_ReturnsInvalidArgumentEnvelope()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule(), CancellationToken.None);
+        var fs = Build(store);
+
+        var result = await fs.SearchAsync(
+            "[unclosed", regex: true, null, null, null, 10, 0,
+            VfsTextSearchOutputMode.Content, CancellationToken.None);
+
+        var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+    }
+
+    // A caller-supplied pattern that backtracks catastrophically must end the search as a timeout
+    // envelope, not stall the turn. The match timeout is injected tiny so it trips deterministically.
+    [Fact]
+    public async Task Search_PathologicalRegex_ReturnsTimeoutEnvelope()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule(prompt: new string('a', 60)), CancellationToken.None);
+        var catalog = new MutableAgentCatalog();
+        catalog.Replace([new AgentCatalogEntry("jonas", "Jonas", "general")]);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        clock.SetLocalTimeZone(_testZone);
+        var fs = new ScheduleFileSystem(store, catalog, new CronValidator(), clock,
+            regexMatchTimeout: TimeSpan.FromMilliseconds(1));
+
+        var result = await fs.SearchAsync(
+            "(a+)+b", regex: true, null, null, null, 10, 0,
+            VfsTextSearchOutputMode.Content, CancellationToken.None);
+
+        var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.Timeout);
     }
 
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> AsyncEmpty()

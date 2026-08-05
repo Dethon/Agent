@@ -1,4 +1,6 @@
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
@@ -10,9 +12,6 @@ namespace Tests.Unit.McpChannelVoice;
 
 public class AnnouncementServiceTests
 {
-    private static SatelliteSession MakeSession(string id, string room) =>
-        new(id, new SatelliteConfig { Identity = "household", Room = room });
-
     private static async IAsyncEnumerable<AudioChunk> FakeAudio()
     {
         yield return new AudioChunk
@@ -25,10 +24,21 @@ public class AnnouncementServiceTests
 
     private (AnnouncementService Sut, SatelliteSessionRegistry SessionReg) BuildSut(params (string Id, string Room)[] sats)
     {
+        var (sut, sessions, _) = BuildRecordingSut(sats);
+        return (sut, sessions);
+    }
+
+    private (AnnouncementService Sut, SatelliteSessionRegistry Sessions, List<VoiceEvent> Published)
+        BuildRecordingSut(
+            (string Id, string Room)[] sats,
+            Func<IAsyncEnumerable<AudioChunk>>? audio = null,
+            Func<PlaybackQueue>? queue = null)
+    {
         var sessions = new SatelliteSessionRegistry();
         foreach (var (id, room) in sats)
         {
-            sessions.Register(MakeSession(id, room));
+            sessions.Register(new SatelliteSession(
+                id, new SatelliteConfig { Identity = "household", Room = room }, queue?.Invoke()));
         }
 
         var registry = new SatelliteRegistry(sats.ToDictionary(
@@ -37,13 +47,23 @@ public class AnnouncementServiceTests
 
         var tts = new Mock<ITextToSpeech>();
         tts.Setup(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
-            .Returns(FakeAudio());
+            .Returns(() => audio?.Invoke() ?? FakeAudio());
 
-        var settings = new VoiceSettings();
+        var published = new List<VoiceEvent>();
         var publisher = new Mock<IMetricsPublisher>();
-        var sut = new AnnouncementService(registry, sessions, tts.Object, settings, publisher.Object,
-            NullLogger<AnnouncementService>.Instance);
-        return (sut, sessions);
+        publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt =>
+            {
+                if (evt is VoiceEvent voiceEvent)
+                {
+                    lock (published)
+                    { published.Add(voiceEvent); }
+                }
+            });
+
+        var sut = new AnnouncementService(registry, sessions, tts.Object, new VoiceSettings(),
+            publisher.Object, NullLogger<AnnouncementService>.Instance);
+        return (sut, sessions, published);
     }
 
     [Fact]
@@ -113,14 +133,10 @@ public class AnnouncementServiceTests
         var (sut, sessions) = BuildSut(("kitchen-01", "Kitchen"));
         var session = sessions.Get("kitchen-01")!;
         var started = new TaskCompletionSource();
-        var preempted = new TaskCompletionSource();
-        var pump = session.RunPlaybackLoopAsync((c, ct) => Task.Delay(50, ct), CancellationToken.None);
-        await session.EnqueuePlaybackAsync(
-            new PlaybackJob("ongoing", AnnouncePriority.Normal,
-                NeverEnding(),
-                _ => { started.TrySetResult(); return Task.CompletedTask; },
-                _ => { preempted.TrySetResult(); return Task.CompletedTask; }),
-            queueMaxDepth: 4);
+        var pump = session.Playback.RunAsync((c, ct) => Task.Delay(50, ct), CancellationToken.None);
+        var ongoing = session.Playback.Enqueue(
+            new PlaybackJob("ongoing", PlaybackKind.Announce, AnnouncePriority.Normal, NeverEnding(),
+                OnFirstAudio: _ => { started.TrySetResult(); return Task.CompletedTask; }));
 
         // Wait until the playback loop has actually picked up the ongoing job
         // before issuing the high-priority preemption (otherwise PreemptCurrent
@@ -131,7 +147,106 @@ public class AnnouncementServiceTests
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "alert", Priority = AnnouncePriority.High },
             CancellationToken.None);
 
-        (await Task.WhenAny(preempted.Task, Task.Delay(2_000))).ShouldBe(preempted.Task);
+        (await ongoing.Completed.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+    }
+
+    // A speaker that went away and a speaker that is busy used to look the same to the caller: both
+    // came back "dropped". The refusal reason tells them apart.
+    [Fact]
+    public async Task Announce_SatelliteWentAwayBeforeTheEnqueue_ReportsOffline()
+    {
+        var (sut, sessions, published) = BuildRecordingSut([("kitchen-01", "Kitchen")]);
+        sessions.Get("kitchen-01")!.Playback.Complete();   // the link dropped; the queue is closed
+
+        var response = await sut.AnnounceAsync(
+            new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi" },
+            CancellationToken.None);
+
+        response.Satellites[0].Status.ShouldBe("offline");
+        var error = published.Single(e => e.Metric == VoiceMetric.AnnounceError);
+        error.Outcome.ShouldBe("offline");
+        error.Room.ShouldBe("Kitchen");
+        error.Identity.ShouldBe("household");
+    }
+
+    [Fact]
+    public async Task Announce_QueueAlreadyAtItsAllowance_ReportsDropped()
+    {
+        var (sut, sessions, published) = BuildRecordingSut(
+            [("kitchen-01", "Kitchen")], queue: () => new PlaybackQueue(announceMaxDepth: 1));
+        // Nothing is draining, so the one job already queued fills the announce allowance.
+        sessions.Get("kitchen-01")!.Playback.Enqueue(new PlaybackJob(
+            "ongoing", PlaybackKind.Announce, AnnouncePriority.Normal, FakeAudio()));
+
+        var response = await sut.AnnounceAsync(
+            new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi" },
+            CancellationToken.None);
+
+        response.Satellites[0].Status.ShouldBe("dropped");
+        published.Single(e => e.Metric == VoiceMetric.AnnounceError).Outcome.ShouldBe("dropped");
+    }
+
+    [Fact]
+    public async Task Announce_LowPriorityBehindAQueue_ReportsDropped()
+    {
+        var (sut, sessions, published) = BuildRecordingSut([("kitchen-01", "Kitchen")]);
+        sessions.Get("kitchen-01")!.Playback.Enqueue(new PlaybackJob(
+            "ongoing", PlaybackKind.Announce, AnnouncePriority.Normal, FakeAudio()));
+
+        var response = await sut.AnnounceAsync(
+            new AnnounceRequest
+            {
+                Target = new() { SatelliteId = "kitchen-01" },
+                Text = "hi",
+                Priority = AnnouncePriority.Low
+            },
+            CancellationToken.None);
+
+        response.Satellites[0].Status.ShouldBe("dropped");
+        published.Single(e => e.Metric == VoiceMetric.AnnounceError).Outcome.ShouldBe("dropped");
+    }
+
+    [Fact]
+    public async Task Announce_SynthesisFails_PublishesNoPlayedMetric()
+    {
+        // Played was published the moment the queue reached the job, before any audio existed, so an
+        // announcement whose synthesis then failed was counted as played and nothing else was ever
+        // recorded for it.
+        var (sut, sessions, published) = BuildRecordingSut(
+            [("kitchen-01", "Kitchen")], audio: PlaybackFakes.ThrowingAudio);
+        var session = sessions.Get("kitchen-01")!;
+        var pump = session.Playback.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+
+        await sut.AnnounceAsync(
+            new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi" },
+            CancellationToken.None);
+        session.Playback.Complete();
+        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+
+        published.ShouldContain(e => e.Metric == VoiceMetric.AnnounceQueued);
+        published.ShouldNotContain(e => e.Metric == VoiceMetric.AnnouncePlayed);
+    }
+
+    [Fact]
+    public async Task Announce_AudioReachesTheSatellite_PublishesPlayed()
+    {
+        var (sut, sessions, published) = BuildRecordingSut([("kitchen-01", "Kitchen")]);
+        var session = sessions.Get("kitchen-01")!;
+        var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pump = session.Playback.RunAsync(
+            (_, _) => { wrote.TrySetResult(); return Task.CompletedTask; }, CancellationToken.None);
+
+        await sut.AnnounceAsync(
+            new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi" },
+            CancellationToken.None);
+        await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        session.Playback.Complete();
+        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var played = published.Single(e => e.Metric == VoiceMetric.AnnouncePlayed);
+        played.Room.ShouldBe("Kitchen");
+        played.Identity.ShouldBe("household");
     }
 
     private static async IAsyncEnumerable<AudioChunk> NeverEnding()
@@ -151,15 +266,16 @@ public class AnnouncementServiceTests
         var (sut, sessions) = BuildSut(("kitchen-01", "Kitchen"));
         var session = sessions.Get("kitchen-01")!;
         var flags = new List<bool>();
-        var pump = session.RunPlaybackLoopAsync(
-            (_, _) => Task.CompletedTask,
-            CancellationToken.None,
-            onAudioStart: (_, alert, _) =>
-            {
-                lock (flags)
-                { flags.Add(alert); }
-                return Task.CompletedTask;
-            });
+        var pump = session.Playback.RunAsync(
+            new PlaybackSink(
+                (_, _) => Task.CompletedTask,
+                OnAudioStart: (_, alert, _) =>
+                {
+                    lock (flags)
+                    { flags.Add(alert); }
+                    return Task.CompletedTask;
+                }),
+            CancellationToken.None);
 
         await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "download done" },
@@ -174,7 +290,7 @@ public class AnnouncementServiceTests
         flags.ShouldHaveSingleItem();
         flags[0].ShouldBeFalse();
 
-        session.CompletePlayback();
+        session.Playback.Complete();
         await pump;
     }
 }

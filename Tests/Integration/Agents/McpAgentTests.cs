@@ -3,6 +3,7 @@ using Domain.Agents;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
@@ -24,19 +25,20 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
 
-        return new OpenRouterChatClient(apiUrl, apiKey, "google/gemini-2.5-flash");
+        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest");
     }
 
     private McpAgent CreateAgent(OpenRouterChatClient llmClient)
     {
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
         return new McpAgent(
-            [mcpFixture.McpEndpoint],
+            TestAgentSpec.Default with { McpServerEndpoints = [mcpFixture.McpEndpoint] },
             llmClient,
-            "test-agent",
-            "",
             stateStore,
-            "test-user");
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            [],
+            []);
     }
 
     [SkippableFact]

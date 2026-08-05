@@ -137,11 +137,11 @@ public class ChannelInboxTests
 
         inbox.EnqueueFor(Subscriber, Message("c1"));
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+        inbox.HasLiveSubscriber().ShouldBeFalse();
 
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeTrue();
+        inbox.HasLiveSubscriber().ShouldBeTrue();
     }
 
     [Fact]
@@ -319,6 +319,182 @@ public class ChannelInboxTests
         (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token)).ShouldBeEmpty();
     }
 
+    // The drain is destructive and a poll never acknowledges what it received, so a batch handed to
+    // a request that then dies exists nowhere else. Restore is how the caller that knows its
+    // response is dead hands the batch back: at the front, because it is older than anything that
+    // arrived while it was away.
+    [Fact]
+    public async Task Restore_AfterAnAbortedPoll_PutsTheBatchBackAheadOfWhatArrivedMeanwhile()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("c1"));
+        inbox.Enqueue(Message("c2"));
+
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        batch.Count.ShouldBe(2);
+
+        // The response died with the batch in it, and a third message landed in the meantime.
+        inbox.Enqueue(Message("c3"));
+        inbox.Restore(Subscriber, batch);
+
+        var next = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        next.Select(i => i.Message!.ConversationId).ShouldBe(["c1", "c2", "c3"]);
+    }
+
+    // The handback answers exactly one case: the drain succeeded and the request died while its
+    // response was being built. Nothing else in a poll reaches it — every earlier cancellation check
+    // refuses to drain at all — so this is the only test that keeps it from being deleted.
+    [Fact]
+    public async Task ReceiveAsync_CancelledWhileTheResponseIsBuilt_HandsTheBatchBackAndRethrows()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("c1"));
+        inbox.Enqueue(Cancel("c1"));
+
+        using var cts = new CancellationTokenSource();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => inbox.ReceiveAsync(
+            Subscriber,
+            TimeSpan.Zero,
+            batch =>
+            {
+                // The request hangs up with the batch already out of the queue and nowhere else.
+                cts.Cancel();
+                return batch.Count;
+            },
+            cts.Token));
+
+        var next = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        next.Select(item => item.Kind).ShouldBe(
+            [ChannelInboxItemKind.Message, ChannelInboxItemKind.Cancel]);
+    }
+
+    // The projection is the caller's own work over user-supplied content — in production a
+    // JsonSerializer.Serialize — so it can throw on one bad message. The drain already emptied the
+    // queue, so without a handback that one message takes the whole pending batch, cancels included,
+    // with it. The poll still fails; what it must not do is destroy what it was carrying.
+    [Fact]
+    public async Task ReceiveAsync_WhenTheProjectionThrows_KeepsTheBatchForTheNextPoll()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("c1"));
+        inbox.Enqueue(Cancel("c1"));
+
+        await Should.ThrowAsync<InvalidOperationException>(() => inbox.ReceiveAsync<int>(
+            Subscriber,
+            TimeSpan.Zero,
+            _ => throw new InvalidOperationException("bad content"),
+            CancellationToken.None));
+
+        var next = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        next.Select(item => item.Kind).ShouldBe(
+            [ChannelInboxItemKind.Message, ChannelInboxItemKind.Cancel]);
+    }
+
+    // Putting the batch back is not a step of its own: between the drain and the handback the queue
+    // looks empty, so a poll racing in there takes whatever arrived after the batch and dispatches
+    // it, and the older items only reappear behind it — the agent seeing a message before the cancel
+    // that preceded it. Draining, turning the batch into the caller's response and putting it back
+    // are one turn at the queue, and no other poll on this subscriber gets between them.
+    [Fact]
+    public async Task ReceiveAsync_WhenADeadPollHandsItsBatchBack_ARacingPollCannotTakeNewerItemsFirst()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("first"));
+
+        using var cts = new CancellationTokenSource();
+        using var racingStarted = new ManualResetEventSlim();
+        Task<IReadOnlyList<ChannelInboxItem>>? racing = null;
+
+        var aborted = inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, batch =>
+        {
+            // The response is being written when a newer message lands and the reconnect's fresh
+            // poll arrives — both while this batch is still in hand.
+            inbox.Enqueue(Message("second"));
+            racing = Task.Run(() =>
+            {
+                racingStarted.Set();
+                return inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+            });
+            racingStarted.Wait(_deadline);
+            Thread.Sleep(100);
+            cts.Cancel();
+            return batch;
+        }, cts.Token);
+
+        await Should.ThrowAsync<OperationCanceledException>(() => aborted);
+
+        // Everything the subscriber is ever handed, in the order it is handed over.
+        var delivered = (await racing!.WaitAsync(_deadline))
+            .Concat(await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None))
+            .Select(item => item.Message!.ConversationId);
+
+        delivered.ShouldBe(["first", "second"]);
+    }
+
+    [Fact]
+    public async Task Restore_WhileTheNextPollIsAlreadyParked_WakesIt()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("c1"));
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        var pending = inbox.ReceiveAsync(Subscriber, TimeSpan.FromSeconds(30), CancellationToken.None);
+        await Task.Delay(50);
+
+        inbox.Restore(Subscriber, batch);
+
+        (await pending.WaitAsync(_deadline)).Count.ShouldBe(1);
+    }
+
+    // A restored batch is subject to the same single bound as everything else, and crossing it is
+    // still the moment a message is lost, so it still warns.
+    [Fact]
+    public async Task Restore_BeyondCapacity_DropsOldestAndWarns()
+    {
+        var warnings = new List<string>();
+        var inbox = new ChannelInbox(
+            new FakeTimeProvider(), capacity: 2, logger: new CapturingLogger(warnings));
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        inbox.Enqueue(Message("c1"));
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+
+        inbox.Enqueue(Message("c2"));
+        inbox.Enqueue(Message("c3"));
+        warnings.ShouldBeEmpty();
+
+        inbox.Restore(Subscriber, batch);
+
+        warnings.ShouldHaveSingleItem().ShouldContain(Subscriber);
+        var next = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        next.Select(i => i.Message!.ConversationId).ShouldBe(["c2", "c3"]);
+    }
+
+    [Fact]
+    public async Task Restore_ForASubscriberThatWasEvicted_MintsTheQueueAgain()
+    {
+        using var cts = new CancellationTokenSource(_deadline);
+        var time = new FakeTimeProvider();
+        var inbox = new ChannelInbox(time, subscriberIdleTimeout: TimeSpan.FromMinutes(5));
+        await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+        inbox.Enqueue(Message("c1"));
+        var batch = await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token);
+
+        time.Advance(TimeSpan.FromMinutes(6));
+
+        inbox.Restore(Subscriber, batch);
+
+        (await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, cts.Token))
+            .Select(i => i.Message!.ConversationId).ShouldBe(["c1"]);
+    }
+
     [Fact]
     public void Constructor_WithNonPositiveCapacity_Throws()
     {
@@ -332,7 +508,7 @@ public class ChannelInboxTests
         var inbox = new ChannelInbox(new FakeTimeProvider());
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeTrue();
+        inbox.HasLiveSubscriber().ShouldBeTrue();
     }
 
     [Fact]
@@ -340,7 +516,7 @@ public class ChannelInboxTests
     {
         var inbox = new ChannelInbox(new FakeTimeProvider());
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+        inbox.HasLiveSubscriber().ShouldBeFalse();
     }
 
     [Fact]
@@ -350,9 +526,9 @@ public class ChannelInboxTests
         var inbox = new ChannelInbox(time);
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
-        time.Advance(TimeSpan.FromSeconds(61));
+        time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+        inbox.HasLiveSubscriber().ShouldBeFalse();
     }
 
     // A subscriber is stamped when its poll *starts*, so the longest legitimate quiet gap is a
@@ -373,7 +549,7 @@ public class ChannelInboxTests
                 ChannelProtocol.DefaultReceiveWaitMs + ChannelProtocol.MaxReceiveRetryBackoffMs)
             + TimeSpan.FromSeconds(5));
 
-        inbox.HasLiveSubscriber(ChannelProtocol.LiveSubscriberFreshness).ShouldBeTrue();
+        inbox.HasLiveSubscriber().ShouldBeTrue();
     }
 
     // The exact regression this method exists to close: PruneIdle keeps a subscriber that is
@@ -389,9 +565,9 @@ public class ChannelInboxTests
         await inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
 
         inbox.Enqueue(Message("c1"));
-        time.Advance(TimeSpan.FromSeconds(61));
+        time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
-        inbox.HasLiveSubscriber(TimeSpan.FromSeconds(60)).ShouldBeFalse();
+        inbox.HasLiveSubscriber().ShouldBeFalse();
 
         // ...while the subscriber itself is very much still there: the buffered item is delivered
         // on the next poll. "Not live" must not be read as "evicted" — the two answers are

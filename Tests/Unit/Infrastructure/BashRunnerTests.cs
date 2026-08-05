@@ -28,7 +28,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = await runner.RunAsync("", "echo hello", null, CancellationToken.None);
+        var result = (await runner.RunAsync("", "echo hello", null, CancellationToken.None)).ToNode();
 
         result["exitCode"]!.GetValue<int>().ShouldBe(0);
         result["stdout"]!.GetValue<string>().ShouldBe("hello\n");
@@ -42,7 +42,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = await runner.RunAsync("", "false", null, CancellationToken.None);
+        var result = (await runner.RunAsync("", "false", null, CancellationToken.None)).ToNode();
 
         result["exitCode"]!.GetValue<int>().ShouldBe(1);
         result["timedOut"]!.GetValue<bool>().ShouldBeFalse();
@@ -54,7 +54,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = await runner.RunAsync("", "pwd", null, CancellationToken.None);
+        var result = (await runner.RunAsync("", "pwd", null, CancellationToken.None)).ToNode();
 
         result["stdout"]!.GetValue<string>().Trim().ShouldBe("/tmp");
         result["cwd"]!.GetValue<string>().ShouldBe("/tmp");
@@ -66,7 +66,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = await runner.RunAsync(".", "pwd", null, CancellationToken.None);
+        var result = (await runner.RunAsync(".", "pwd", null, CancellationToken.None)).ToNode();
 
         result["stdout"]!.GetValue<string>().Trim().ShouldBe("/tmp");
     }
@@ -77,7 +77,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = await runner.RunAsync("tmp", "pwd", null, CancellationToken.None);
+        var result = (await runner.RunAsync("tmp", "pwd", null, CancellationToken.None)).ToNode();
 
         result["stdout"]!.GetValue<string>().Trim().ShouldBe("/tmp");
     }
@@ -88,7 +88,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = await runner.RunAsync("does/not/exist", "echo hi", null, CancellationToken.None);
+        var result = (await runner.RunAsync("does/not/exist", "echo hi", null, CancellationToken.None)).ToNode();
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
         result["errorCode"]!.GetValue<string>().ShouldBe("not_found");
@@ -101,7 +101,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = await runner.RunAsync("", "sleep 30", timeoutSeconds: 1, CancellationToken.None);
+        var result = (await runner.RunAsync("", "sleep 30", timeoutSeconds: 1, CancellationToken.None)).ToNode();
 
         result["timedOut"]!.GetValue<bool>().ShouldBeTrue();
         // After SIGKILL, exit code is typically 137 (128+SIGKILL=9) or -1 sentinel
@@ -114,7 +114,7 @@ public class BashRunnerTests
         var runner = new BashRunner(_settings);
 
         // 1024 byte cap: emit 4096 bytes
-        var result = await runner.RunAsync("", "yes a | head -c 4096", null, CancellationToken.None);
+        var result = (await runner.RunAsync("", "yes a | head -c 4096", null, CancellationToken.None)).ToNode();
 
         result["truncated"]!.GetValue<bool>().ShouldBeTrue();
         result["stdout"]!.GetValue<string>().Length.ShouldBeLessThanOrEqualTo(_settings.OutputCapBytes);
@@ -127,7 +127,7 @@ public class BashRunnerTests
         var runner = new BashRunner(_settings);
 
         // Max is 3s. Request 999s. Then `sleep 30` should still time out (clamped to 3s).
-        var result = await runner.RunAsync("", "sleep 30", timeoutSeconds: 999, CancellationToken.None);
+        var result = (await runner.RunAsync("", "sleep 30", timeoutSeconds: 999, CancellationToken.None)).ToNode();
 
         result["timedOut"]!.GetValue<bool>().ShouldBeTrue();
     }
@@ -139,7 +139,7 @@ public class BashRunnerTests
         var runner = new BashRunner(_settings);
 
         // Default is 2s. `sleep 30` should time out.
-        var result = await runner.RunAsync("", "sleep 30", null, CancellationToken.None);
+        var result = (await runner.RunAsync("", "sleep 30", null, CancellationToken.None)).ToNode();
 
         result["timedOut"]!.GetValue<bool>().ShouldBeTrue();
     }
@@ -150,7 +150,7 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var result = await runner.RunAsync("", "echo oops 1>&2", null, CancellationToken.None);
+        var result = (await runner.RunAsync("", "echo oops 1>&2", null, CancellationToken.None)).ToNode();
 
         result["stderr"]!.GetValue<string>().ShouldBe("oops\n");
     }

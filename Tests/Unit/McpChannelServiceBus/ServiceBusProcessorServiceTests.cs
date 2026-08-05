@@ -3,6 +3,7 @@ using Azure.Messaging.ServiceBus;
 using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using McpChannelServiceBus.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -23,7 +24,7 @@ public class ServiceBusProcessorServiceTests : IDisposable
     public ServiceBusProcessorServiceTests()
     {
         _inbox = new ChannelInbox(_time);
-        _emitter = new ChannelNotificationEmitter(_inbox);
+        _emitter = new ChannelNotificationEmitter(_inbox, DeliveryPolicy.GateOnLive);
 
         _processor
             .Setup(p => p.StartProcessingAsync(It.IsAny<CancellationToken>()))
@@ -134,14 +135,15 @@ public class ServiceBusProcessorServiceTests : IDisposable
 
     // Regression: a subscriber that registered once and then went quiet (the agent's channel
     // connection dropped) is not evicted by PruneIdle until it has been both empty and idle for a
-    // full hour, so HasActiveSessions stayed true long after nobody was actually polling. That let
-    // this settle (complete) the broker message instead of abandoning it — defeating Service Bus's
+    // full hour, so a liveness check that only asked whether a subscriber existed stayed true long
+    // after nobody was actually polling. That let this settle (complete) the broker message
+    // instead of abandoning it — defeating Service Bus's
     // at-least-once redelivery, since the buffered item can still be lost with the in-process inbox.
     [Fact]
     public async Task ProcessMessage_SubscriberWentStaleWithoutRepolling_AbandonsMessage()
     {
         await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
-        _time.Advance(ChannelProtocol.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
+        _time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
         var receiver = new Mock<ServiceBusReceiver>();
         receiver
@@ -170,8 +172,43 @@ public class ServiceBusProcessorServiceTests : IDisposable
         (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
     }
 
+    // The mirror of the case above: once the emit has handed the prompt to a live subscriber, a
+    // failed settle must not abandon. Abandoning gives the same prompt back to the broker and
+    // redelivery replays it to the agent — the duplicate gate-on-live exists to prevent.
     [Fact]
-    public async Task ProcessMessage_NullCorrelationId_GeneratesFallback()
+    public async Task ProcessMessage_TheSettleFailsAfterADeliveredEmit_DoesNotAbandonTheMessage()
+    {
+        await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
+
+        var receiver = new Mock<ServiceBusReceiver>();
+        receiver
+            .Setup(r => r.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ServiceBusException("lock lost", ServiceBusFailureReason.MessageLockLost));
+        receiver
+            .Setup(r => r.AbandonMessageAsync(
+                It.IsAny<ServiceBusReceivedMessage>(),
+                It.IsAny<IDictionary<string, object>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var message = CreateReceivedMessage(new ServiceBusPromptMessage
+        {
+            CorrelationId = "corr-1",
+            Prompt = "Hello"
+        });
+
+        var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
+        await _sut.ProcessMessageAsync(args);
+
+        receiver.Verify(r => r.AbandonMessageAsync(
+            It.IsAny<ServiceBusReceivedMessage>(),
+            It.IsAny<IDictionary<string, object>>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None)).ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task ProcessMessage_NullCorrelationId_EmitsGeneratedConversationId()
     {
         await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
@@ -187,16 +224,21 @@ public class ServiceBusProcessorServiceTests : IDisposable
         });
 
         var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
+        await _sut.ProcessMessageAsync(args);
 
-        await Should.NotThrowAsync(() => _sut.ProcessMessageAsync(args));
-
+        // Neither the payload nor the broker message carries a correlation id, so the service
+        // must mint a guid for the conversation rather than emit an empty one.
+        var notification = (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None))
+            .ShouldHaveSingleItem().Message.ShouldNotBeNull();
+        Guid.TryParse(notification.ConversationId, out _).ShouldBeTrue();
+        notification.Content.ShouldBe("Hello");
         receiver.Verify(r => r.CompleteMessageAsync(
             It.IsAny<ServiceBusReceivedMessage>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task ProcessMessage_MissingSender_DefaultsToServiceBus()
+    public async Task ProcessMessage_NullSender_EmitsServiceBusDefaultSender()
     {
         await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None);
 
@@ -213,10 +255,12 @@ public class ServiceBusProcessorServiceTests : IDisposable
         });
 
         var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
+        await _sut.ProcessMessageAsync(args);
 
-        // Should complete without error using "service-bus" as fallback sender
-        await Should.NotThrowAsync(() => _sut.ProcessMessageAsync(args));
-
+        var notification = (await _inbox.ReceiveAsync("sess-1", TimeSpan.Zero, CancellationToken.None))
+            .ShouldHaveSingleItem().Message.ShouldNotBeNull();
+        notification.Sender.ShouldBe("service-bus");
+        notification.ConversationId.ShouldBe("corr-1");
         receiver.Verify(r => r.CompleteMessageAsync(
             It.IsAny<ServiceBusReceivedMessage>(),
             It.IsAny<CancellationToken>()), Times.Once);

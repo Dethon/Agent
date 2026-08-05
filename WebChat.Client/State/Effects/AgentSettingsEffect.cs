@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Domain.DTOs.Channel;
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.State.AgentSettings;
+using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
 
@@ -10,24 +12,41 @@ public sealed class AgentSettingsEffect : IDisposable
     private const string KeyPrefix = "agentConfigPatch:";
 
     private readonly IDisposable _subscription;
+    private readonly IDisposable _setAgentsRegistration;
+    private readonly AgentSettingsStore _store;
+    private readonly Dispatcher _dispatcher;
     private readonly ILocalStorageService _localStorage;
+    private readonly ILogger<AgentSettingsEffect> _logger;
     private IReadOnlyDictionary<string, AgentModelSettings> _previous;
 
-    public AgentSettingsEffect(AgentSettingsStore store, ILocalStorageService localStorage)
+    public AgentSettingsEffect(
+        AgentSettingsStore store,
+        Dispatcher dispatcher,
+        ILocalStorageService localStorage,
+        ILogger<AgentSettingsEffect> logger)
     {
+        _store = store;
+        _dispatcher = dispatcher;
         _localStorage = localStorage;
+        _logger = logger;
         _previous = store.State.ByAgent;
         _subscription = store.StateObservable.Subscribe(HandleStateChange);
+        _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(
+            action => ReconcileAsync(action.Agents).LogFaults(_logger, nameof(SetAgents)));
     }
 
-    public static async Task LoadAsync(
-        IReadOnlyList<AgentCatalogEntry> agents, ILocalStorageService localStorage, IDispatcher dispatcher)
+    // Every catalog, not only the first. An agent this client has not seen yet takes its
+    // persisted settings; one it already knows is re-sanitized against the fresh entry, so a
+    // model the agent stopped offering falls back to that agent's default rather than being
+    // sent on every turn for the server to reject.
+    public async Task ReconcileAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {
         foreach (var agent in agents)
         {
-            var stored = await localStorage.GetAsync($"{KeyPrefix}{agent.Id}");
-            var settings = Deserialize(stored) ?? new AgentModelSettings(null, null);
-            dispatcher.Dispatch(new AgentSettingsLoaded(
+            var settings = _store.State.ByAgent.GetValueOrDefault(agent.Id)
+                           ?? Deserialize(await _localStorage.GetAsync($"{KeyPrefix}{agent.Id}"))
+                           ?? new AgentModelSettings(null, null);
+            _dispatcher.Dispatch(new AgentSettingsLoaded(
                 agent.Id, AgentSettingsSelectors.Sanitize(settings, agent)));
         }
     }
@@ -60,5 +79,9 @@ public sealed class AgentSettingsEffect : IDisposable
         }
     }
 
-    public void Dispose() => _subscription.Dispose();
+    public void Dispose()
+    {
+        _subscription.Dispose();
+        _setAgentsRegistration.Dispose();
+    }
 }

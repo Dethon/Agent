@@ -20,11 +20,10 @@ public class WakeArbiterTests
     private sealed class ListPublisher : IMetricsPublisher
     {
         public readonly List<MetricEvent> Events = [];
-        public Task PublishAsync(MetricEvent evt, CancellationToken ct)
+        public void Publish(MetricEvent evt)
         {
             lock (Events)
             { Events.Add(evt); }
-            return Task.CompletedTask;
         }
     }
 
@@ -52,7 +51,11 @@ public class WakeArbiterTests
         }
 
         public WakeArbiterHandle Handle => new(
-            Session,
+            SatelliteIdentity.Of(Session),
+            Session.Config.RmsOffsetDb,
+            () => Session.SupportsPause,
+            () => Session.Mic.Activity,
+            () => Session.Mic.TryAbort(),
             _ =>
             {
                 if (FailPause)
@@ -74,7 +77,7 @@ public class WakeArbiterTests
             var gate = new SilenceGate(
                 new AdaptiveLevelTracker(500, 9, 4, 15, TimeSpan.FromSeconds(3)),
                 TimeSpan.FromMilliseconds(800), TimeSpan.FromSeconds(15), TimeSpan.FromMilliseconds(200));
-            Capture = Session.OpenCapture(gate, new ChunkHistory(time, settings.HistorySpan));
+            Capture = Session.Mic.Open(gate, new ChunkHistory(time, settings.HistorySpan));
         }
     }
 

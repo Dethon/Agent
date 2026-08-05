@@ -98,32 +98,6 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_EnqueuesExtractionRequest()
-    {
-        var message = new ChatMessage(ChatRole.User, "I work at Contoso");
-
-        var session = CreateSessionWithStateKey("state-test");
-        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
-        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
-            .ReturnsAsync((ChatMessage[]?)null);
-
-        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(_testEmbedding);
-        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<MemorySearchResult>());
-
-        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await foreach (var item in _queue.ReadAllAsync(cts.Token))
-        {
-            item.UserId.ShouldBe("user1");
-            item.ConversationId.ShouldBe("conv_1");
-            break;
-        }
-    }
-
-    [Fact]
     public async Task EnrichAsync_WhenEmbeddingFails_ProceedsWithoutMemory()
     {
         var message = new ChatMessage(ChatRole.User, "Hello");
@@ -139,9 +113,7 @@ public class MemoryRecallHookTests
         await _hook.EnrichAsync(message, "user1", null, null, session, CancellationToken.None);
 
         message.GetMemoryContext().ShouldBeNull();
-        _metricsPublisher.Verify(p => p.PublishAsync(
-            It.IsAny<MetricsDTOs.ErrorEvent>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+        _metricsPublisher.Verify(p => p.Publish(It.IsAny<MetricsDTOs.ErrorEvent>()), Times.Once);
     }
 
     [Fact]
@@ -161,15 +133,12 @@ public class MemoryRecallHookTests
 
         LatencyEvent? capturedLatency = null;
         _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<LatencyEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => capturedLatency = e as LatencyEvent)
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<LatencyEvent>()))
+            .Callback<MetricEvent>(e => capturedLatency = e as LatencyEvent);
 
         await _hook.EnrichAsync(message, "user1", "conv1", null, session, CancellationToken.None);
 
-        _metricsPublisher.Verify(p => p.PublishAsync(
-            It.IsAny<MetricsDTOs.MemoryRecallEvent>(), It.IsAny<CancellationToken>()),
-            Times.Once);
+        _metricsPublisher.Verify(p => p.Publish(It.IsAny<MetricsDTOs.MemoryRecallEvent>()), Times.Once);
 
         capturedLatency.ShouldNotBeNull();
         capturedLatency.Stage.ShouldBe(LatencyStage.MemoryRecall);
@@ -205,7 +174,7 @@ public class MemoryRecallHookTests
             e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _metricsPublisher.Verify(
-            p => p.PublishAsync(It.IsAny<MetricsDTOs.MemoryRecallEvent>(), It.IsAny<CancellationToken>()),
+            p => p.Publish(It.IsAny<MetricsDTOs.MemoryRecallEvent>()),
             Times.Never);
     }
 
@@ -282,7 +251,7 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_EnqueuesExtractionWithAnchorIndexEqualToPersistedCount()
+    public async Task EnrichAsync_EnqueuesExtractionWithAnchorEqualToPersistedCount()
     {
         var message = new ChatMessage(ChatRole.User, "current");
         var session = CreateSessionWithStateKey("state-anchor");
@@ -312,7 +281,7 @@ public class MemoryRecallHookTests
         {
             item.UserId.ShouldBe("user1");
             item.ThreadStateKey.ShouldBe("state-anchor");
-            item.AnchorIndex.ShouldBe(4);
+            item.Anchor.PersistedMessageCount.ShouldBe(4);
             item.ConversationId.ShouldBe("conv_1");
             break;
         }
@@ -374,7 +343,7 @@ public class MemoryRecallHookTests
             item.FallbackContent.ShouldBe("hello");
             if (cause == ExtractionFallbackCause.NoStateKey)
             {
-                item.AnchorIndex.ShouldBe(0);
+                item.Anchor.PersistedMessageCount.ShouldBe(0);
             }
             break;
         }
@@ -405,7 +374,7 @@ public class MemoryRecallHookTests
 
         _queue.Complete();
         var request = await _queue.ReadAllAsync(CancellationToken.None).FirstAsync();
-        request.AnchorIndex.ShouldBe(500);
+        request.Anchor.PersistedMessageCount.ShouldBe(500);
         _threadStateStore.Verify(s => s.GetMessagesAsync(It.IsAny<string>()), Times.Never);
     }
 }

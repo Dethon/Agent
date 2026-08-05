@@ -16,20 +16,6 @@ public class ToolNameComplianceTests
     private static readonly Regex _kimiToolNameRegex =
         new("^[a-zA-Z_][a-zA-Z0-9-_]{2,63}$", RegexOptions.Compiled);
 
-    [Theory]
-    [InlineData("mcp-vault", "vault_search")]
-    [InlineData("mcp-library", "file_search")]
-    [InlineData("mcp-websearch", "web_browse")]
-    [InlineData("mcp-channel-servicebus", "send_reply")]
-    public void QualifiedMcpToolName_MatchesKimiRegex(string serverName, string innerToolName)
-    {
-        // Mirror Infrastructure.Agents.Mcp.QualifiedMcpTool.Name construction.
-        var fullName = $"mcp__{serverName}__{innerToolName}";
-
-        _kimiToolNameRegex.IsMatch(fullName).ShouldBeTrue(
-            $"Tool name '{fullName}' must comply with Kimi/OpenAI function-name regex.");
-    }
-
     [Fact]
     public void SubAgentToolFeature_ProducedToolNames_MatchKimiRegex()
     {

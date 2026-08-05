@@ -21,18 +21,29 @@ namespace Tests.Unit.Domain;
 internal sealed class FakeAiAgent : DisposableAgent
 {
     public Exception? ExceptionToThrow { get; init; }
+    public Exception? RestoreExceptionToThrow { get; set; }
+    public int DisposeCalls;
     public AgentResponseUpdate[] UpdatesToYield { get; init; } = [];
 
     public int WarmupCalls;
     public TaskCompletionSource WarmupSignaled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TimeSpan WarmupDelay { get; init; }
+    public TimeSpan TurnDelay { get; init; }
+    public Func<CancellationToken, Task>? TurnGate { get; init; }
     public ConcurrentQueue<string> Events { get; } = new();
     public ConcurrentQueue<string> RestoredSessionKeys { get; } = new();
     public ConcurrentQueue<IReadOnlyList<ChatMessage>> ReceivedMessages { get; } = new();
 
+    public Exception? WarmupExceptionToThrow { get; init; }
+
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
         Interlocked.Increment(ref WarmupCalls);
+        if (WarmupExceptionToThrow is not null)
+        {
+            throw WarmupExceptionToThrow;
+        }
+
         if (WarmupDelay > TimeSpan.Zero)
         {
             await Task.Delay(WarmupDelay, ct);
@@ -55,16 +66,28 @@ internal sealed class FakeAiAgent : DisposableAgent
         return ValueTask.FromResult(JsonSerializer.SerializeToElement(new { }));
     }
 
-    protected override ValueTask<AgentSession> DeserializeSessionCoreAsync(
+    public Func<Task>? RestoreGate { get; init; }
+
+    protected override async ValueTask<AgentSession> DeserializeSessionCoreAsync(
         JsonElement serializedThread,
         JsonSerializerOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        if (RestoreGate is not null)
+        {
+            await RestoreGate();
+        }
+
+        if (RestoreExceptionToThrow is not null)
+        {
+            throw RestoreExceptionToThrow;
+        }
+
         if (serializedThread.ValueKind == JsonValueKind.String && serializedThread.GetString() is { } key)
         {
             RestoredSessionKeys.Enqueue(key);
         }
-        return ValueTask.FromResult<AgentSession>(new FakeAgentThread());
+        return new FakeAgentThread();
     }
 
     protected override Task<AgentResponse> RunCoreAsync(
@@ -90,14 +113,37 @@ internal sealed class FakeAiAgent : DisposableAgent
             throw ExceptionToThrow;
         }
 
+        if (TurnGate is not null)
+        {
+            await TurnGate(cancellationToken);
+        }
+
+        if (TurnDelay > TimeSpan.Zero)
+        {
+            await Task.Delay(TurnDelay, cancellationToken);
+        }
+
         foreach (var update in UpdatesToYield)
         {
             yield return update;
         }
+
+        // The real agent persists the turn to the thread as part of running it, so the fake
+        // does too — a recall hook reading the thread mid-build must not see this yet.
+        if (thread is FakeAgentThread fakeThread)
+        {
+            fakeThread.PersistedMessages.AddRange(messages);
+        }
+
+        Events.Enqueue("run-complete");
     }
+
+    public TaskCompletionSource DisposeSignaled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public override ValueTask DisposeAsync()
     {
+        Interlocked.Increment(ref DisposeCalls);
+        DisposeSignaled.TrySetResult();
         return ValueTask.CompletedTask;
     }
 
@@ -106,17 +152,23 @@ internal sealed class FakeAiAgent : DisposableAgent
         return ValueTask.CompletedTask;
     }
 
-    private sealed class FakeAgentThread : AgentSession;
+    internal sealed class FakeAgentThread : AgentSession
+    {
+        public List<ChatMessage> PersistedMessages { get; } = [];
+    }
 }
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
+    public List<(AgentKey Key, IToolApprovalHandler ApprovalHandler)> Created { get; } = [];
+
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
+        Created.Add((agentKey, approvalHandler));
         return agent;
     }
 
-    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, IToolApprovalHandler approvalHandler, string[] whitelistPatterns, string userId)
+    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, IToolApprovalHandler approvalHandler, string conversationId, string[] whitelistPatterns, string userId)
         => throw new NotImplementedException();
 }
 
@@ -209,7 +261,7 @@ internal static class MonitorTestMocks
         return new FakeAiAgent();
     }
 
-    public static IAgentFactory CreateAgentFactory(FakeAiAgent agent)
+    public static FakeAgentFactory CreateAgentFactory(FakeAiAgent agent)
     {
         return new FakeAgentFactory(agent);
     }
@@ -217,11 +269,6 @@ internal static class MonitorTestMocks
     public static ChatThreadResolver CreateThreadResolver()
     {
         return new ChatThreadResolver();
-    }
-
-    public static Func<IChannelConnection, string, IToolApprovalHandler> CreateApprovalHandlerFactory()
-    {
-        return (_, _) => new Mock<IToolApprovalHandler>().Object;
     }
 }
 
@@ -241,7 +288,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -275,7 +321,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -303,7 +348,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -331,7 +375,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -341,7 +384,7 @@ public class ChatMonitorTests
         await monitor.Monitor(CancellationToken.None);
 
         // Assert - warmup completes before the first streaming turn starts
-        fakeAgent.Events.ToArray().ShouldBe(["warmup", "run"]);
+        fakeAgent.Events.ToArray().ShouldBe(["warmup", "run", "run-complete"]);
     }
 
     [Fact]
@@ -360,7 +403,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel1, channel2],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -415,7 +457,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [voice, webchat],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -463,7 +504,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -492,7 +532,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             metricsPublisher.Object,
             null,
@@ -502,12 +541,11 @@ public class ChatMonitorTests
         await monitor.Monitor(CancellationToken.None);
 
         // Assert
-        metricsPublisher.Verify(p => p.PublishAsync(
+        metricsPublisher.Verify(p => p.Publish(
             It.Is<ErrorEvent>(e =>
                 e.Service == "agent" &&
                 e.ErrorType == nameof(HttpRequestException) &&
-                e.Message.Contains("422 Unprocessable Entity")),
-            It.IsAny<CancellationToken>()), Times.Once);
+                e.Message.Contains("422 Unprocessable Entity"))), Times.Once);
     }
 
     [Fact]
@@ -529,17 +567,10 @@ public class ChatMonitorTests
         signalr.Complete();
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
-        (string ChannelId, string ConversationId)? captured = null;
-        Func<IChannelConnection, string, IToolApprovalHandler> factory = (ch, cid) =>
-        {
-            captured = (ch.ChannelId, cid);
-            return new Mock<IToolApprovalHandler>().Object;
-        };
 
         var monitor = new ChatMonitor(
             [scheduling, signalr],
             agentFactory,
-            factory,
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -547,9 +578,9 @@ public class ChatMonitorTests
 
         await monitor.Monitor(CancellationToken.None);
 
-        captured.ShouldNotBeNull();
-        captured.Value.ChannelId.ShouldBe("signalr");
-        captured.Value.ConversationId.ShouldBe("minted-signalr");
+        var created = agentFactory.Created.ShouldHaveSingleItem();
+        created.ApprovalHandler.ShouldBeSameAs(signalr);
+        created.Key.ConversationId.ShouldBe("minted-signalr");
     }
 
     [Fact]
@@ -581,7 +612,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             agentFactory,
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -593,6 +623,310 @@ public class ChatMonitorTests
         // Assert - CTS should be canceled AND thread state should be deleted
         context.Cts.IsCancellationRequested.ShouldBeTrue();
         mockStateStore.Verify(s => s.DeleteAsync(agentKey), Times.Once);
+    }
+
+    [Fact]
+    public async Task Monitor_ClearWhenPersistedDeleteFails_LogsTheFailureAndStillEndsTheGroup()
+    {
+        // A /clear that cannot reach the state store must not pass silently: the live thread
+        // is gone, the persisted one survives and returns on the next message, and the only
+        // trace of that mismatch is this log line.
+        var stateStore = new Mock<IThreadStateStore>();
+        stateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>()))
+            .ThrowsAsync(new HttpRequestException("state store down"));
+        var threadResolver = new ChatThreadResolver(stateStore.Object);
+        var context = threadResolver.Resolve(new AgentKey("conv-1"));
+        var channel = MonitorTestMocks.CreateChannel(
+            messages: MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", content: "/clear"));
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        context.Cts.IsCancellationRequested.ShouldBeTrue();
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<HttpRequestException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    // The next three tests state the trade in one place: turns within a conversation
+    // serialise, while conversations and delivery fan-out stay concurrent.
+    [Fact]
+    public async Task Monitor_TwoMessagesInOneConversation_RunsTurnsSequentially()
+    {
+        // Each turn takes time, so overlapping turns interleave the run/run-complete
+        // events. Sequential turns produce one closed window per message.
+        var channel = MonitorTestMocks.CreateChannel(
+            messages:
+            [
+                MonitorTestMocks.CreateChannelMessage(content: "first"),
+                MonitorTestMocks.CreateChannelMessage(content: "second")
+            ]);
+        var fakeAgent = new FakeAiAgent { TurnDelay = TimeSpan.FromMilliseconds(100) };
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        fakeAgent.Events.ToArray()
+            .ShouldBe(["warmup", "run", "run-complete", "run", "run-complete"]);
+    }
+
+    [Fact]
+    public async Task Monitor_CancelArrivingDuringATurn_CancelsTheRunningTurn()
+    {
+        // /cancel is how the WebChat stop button reaches the monitor (channel/cancel becomes a
+        // message with this content). Serialising turns must not queue it behind the turn it
+        // exists to stop: the turn here never ends on its own.
+        var channel = new FakeChannelConnection();
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "a long one"));
+        // The cancel is written from inside the turn, so it strictly arrives while that turn
+        // is running rather than racing it at startup.
+        var fakeAgent = new FakeAiAgent
+        {
+            TurnGate = ct =>
+            {
+                channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "/cancel"));
+                channel.Complete();
+                return Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            }
+        };
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        fakeAgent.Events.ToArray().ShouldBe(["warmup", "run"]);
+    }
+
+    [Fact]
+    public async Task Monitor_TurnQueuedBehindARunningTurn_RunsAfterIt()
+    {
+        // The second message arrives strictly while the first turn is running — written from
+        // inside that turn — so it queues, and runs only once the first turn has completed.
+        var channel = new FakeChannelConnection();
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "first"));
+        var wroteSecond = 0;
+        var fakeAgent = new FakeAiAgent
+        {
+            TurnGate = _ =>
+            {
+                if (Interlocked.Exchange(ref wroteSecond, 1) == 0)
+                {
+                    channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "second"));
+                    channel.Complete();
+                }
+
+                return Task.CompletedTask;
+            }
+        };
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        fakeAgent.Events.ToArray()
+            .ShouldBe(["warmup", "run", "run-complete", "run", "run-complete"]);
+        fakeAgent.ReceivedMessages.SelectMany(m => m).Select(m => m.Text)
+            .ShouldBe(["first", "second"]);
+    }
+
+    [Fact]
+    public async Task Monitor_ClearArrivingWithATurnQueued_DropsTheQueuedTurnAndLogsTheDrop()
+    {
+        // Commands dispatch ahead of queued turns, so a /clear behind a queued "do X" wipes
+        // the state and ends the group before "do X" runs. That immediacy is the point — the
+        // user is discarding the thread the queued turn would have written into — but the
+        // dropped turn must not vanish silently: the teardown acknowledges it in the log.
+        var channel = new FakeChannelConnection();
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "a long one"));
+        var fakeAgent = new FakeAiAgent
+        {
+            TurnGate = ct =>
+            {
+                // Written from inside the running turn, so both strictly arrive while it runs:
+                // "do X" queues behind it, then the clear tears the group down.
+                channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "do X"));
+                channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "/clear"));
+                channel.Complete();
+                return Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            }
+        };
+        var stateStore = new Mock<IThreadStateStore>();
+        stateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>())).Returns(Task.CompletedTask);
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            new ChatThreadResolver(stateStore.Object),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            logger.Object);
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        // The running turn was cancelled, the queued one never ran, and the thread was wiped.
+        fakeAgent.Events.ToArray().ShouldBe(["warmup", "run"]);
+        stateStore.Verify(s => s.DeleteAsync(new AgentKey("conv-1")), Times.Once);
+        logger.Verify(l => l.Log(
+            LogLevel.Warning,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Monitor_CancelDuringTurnSetup_SurfacesAWarmupFault()
+    {
+        // A /cancel lands while the turn is still setting up (blocked in memory recall).
+        // Setup exits on the cancellation, but the warmup it started fire-and-forget had
+        // already failed for a real reason — that failure must be logged, not become an
+        // unobserved task exception.
+        var channel = new FakeChannelConnection();
+        var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
+        var recallHook = new Mock<IMemoryRecallHook>();
+        recallHook
+            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
+            .Returns(async (ChatMessage _, string _, string? _, string? _, AgentSession _, CancellationToken ct) =>
+            {
+                channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "/cancel"));
+                channel.Complete();
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            });
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            recallHook.Object,
+            logger.Object);
+
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage());
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<HttpRequestException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Monitor_TurnSetupFailsAfterWarmupStarted_SurfacesTheWarmupFaultToo()
+    {
+        // Turn setup fails for its own reason (memory recall down); that is already logged
+        // and ends the group. The warmup started before it carries a distinct failure of
+        // its own, which must not go to the grave unobserved.
+        var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
+        var recallHook = new Mock<IMemoryRecallHook>();
+        recallHook
+            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("recall down"));
+        var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage());
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            recallHook.Object,
+            logger.Object);
+
+        await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.IsAny<It.IsAnyType>(),
+            It.IsAny<InvalidOperationException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+        logger.Verify(l => l.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("conv-1")),
+            It.IsAny<HttpRequestException>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Monitor_MessagesInDifferentConversations_RunTurnsConcurrently()
+    {
+        // Both turns block until BOTH have started. Concurrent conversations release the
+        // gate; serialising across conversations would leave the first turn waiting.
+        var bothStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = 0;
+        var timedOut = false;
+        var fakeAgent = new FakeAiAgent
+        {
+            TurnGate = async _ =>
+            {
+                if (Interlocked.Increment(ref started) >= 2)
+                {
+                    bothStarted.TrySetResult();
+                }
+
+                try
+                {
+                    await bothStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+                }
+                catch (TimeoutException)
+                {
+                    timedOut = true;
+                }
+            }
+        };
+        var channel1 = MonitorTestMocks.CreateChannel(
+            "ch-1", MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", channelId: "ch-1"));
+        var channel2 = MonitorTestMocks.CreateChannel(
+            "ch-2", MonitorTestMocks.CreateChannelMessage(conversationId: "conv-2", channelId: "ch-2"));
+
+        var monitor = new ChatMonitor(
+            [channel1, channel2],
+            MonitorTestMocks.CreateAgentFactory(fakeAgent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        timedOut.ShouldBeFalse();
     }
 
     [Fact]
@@ -630,7 +964,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [origin, targetA, targetB],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -657,14 +990,12 @@ public class ChatMonitorTests
         };
         var published = new List<MetricEvent>();
         var metrics = new Mock<IMetricsPublisher>();
-        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback((MetricEvent e, CancellationToken _) => { lock (published) { published.Add(e); } })
-            .Returns(Task.CompletedTask);
+        metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
+            .Callback((MetricEvent e) => { lock (published) { published.Add(e); } });
 
         var monitor = new ChatMonitor(
             [channel],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             metrics.Object,
             null,
@@ -687,14 +1018,12 @@ public class ChatMonitorTests
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var published = new List<MetricEvent>();
         var metrics = new Mock<IMetricsPublisher>();
-        metrics.Setup(m => m.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback((MetricEvent e, CancellationToken _) => { lock (published) { published.Add(e); } })
-            .Returns(Task.CompletedTask);
+        metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
+            .Callback((MetricEvent e) => { lock (published) { published.Add(e); } });
 
         var monitor = new ChatMonitor(
             [channel],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             MonitorTestMocks.CreateThreadResolver(),
             metrics.Object,
             null,
@@ -739,7 +1068,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [library, signalr],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -767,7 +1095,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [channel],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
@@ -803,7 +1130,6 @@ public class ChatMonitorTests
         var monitor = new ChatMonitor(
             [scheduling, signalr],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
-            MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,

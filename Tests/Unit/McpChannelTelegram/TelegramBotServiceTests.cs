@@ -1,5 +1,6 @@
 using Domain.Channels;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,8 @@ public class TelegramBotServiceTests : IDisposable
     public TelegramBotServiceTests()
     {
         _inbox = new ChannelInbox(_time);
-        _emitter = new ChannelNotificationEmitter(_inbox);
+        _emitter = new ChannelNotificationEmitter(
+            _inbox, DeliveryPolicy.BufferAlways, ChannelProtocol.ChannelClientNamePrefix + "telegram");
         var settings = new ChannelSettings
         {
             Bots = [new AgentBotConfig { AgentId = "jack", BotToken = "unused" }],
@@ -179,8 +181,8 @@ public class TelegramBotServiceTests : IDisposable
         buffered.ShouldHaveSingleItem().Message!.Content.ShouldBe("/hello");
     }
 
-    // Corrects a regression this suite itself introduced: an earlier round made Telegram gate
-    // EmitMessageNotificationAsync on HasActiveSessions, so a stale (but not yet evicted)
+    // Corrects a regression this suite itself introduced: an earlier round made Telegram gate its
+    // emit on a liveness check, so a stale (but not yet evicted)
     // subscriber caused an unconditional drop with only a log line — silent loss to a user actively
     // waiting for a reply. Before that, the same scenario buffered the message and delivered it
     // late on the agent's next reconnect poll (the stable "channel-telegram" subscriber id survives
@@ -193,7 +195,7 @@ public class TelegramBotServiceTests : IDisposable
     {
         var subscriberId = ChannelProtocol.ChannelClientNamePrefix + "telegram";
         await _inbox.ReceiveAsync(subscriberId, TimeSpan.Zero, CancellationToken.None);
-        _time.Advance(ChannelProtocol.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
+        _time.Advance(ChannelInbox.LiveSubscriberFreshness + TimeSpan.FromSeconds(1));
 
         SetupPollingSequence([
             new Update

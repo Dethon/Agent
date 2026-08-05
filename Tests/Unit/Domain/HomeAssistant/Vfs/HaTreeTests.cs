@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
+using Domain.Tools.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Shouldly;
 using static Tests.Unit.Domain.HomeAssistant.Vfs.FakeHaClient;
@@ -73,13 +75,13 @@ public class HaTreeTests
     [Fact]
     public void Glob_TrailingSlash_ReturnsDirectoriesOnly_MarkedWithSlash()
     {
-        HaTree.Glob(Cat(), "entities/light", "*/").ShouldBe(["entities/light/kitchen/"]);
+        HaTree.Glob(Cat(), Scope("entities/light", "*/")).ShouldBe(["entities/light/kitchen/"]);
     }
 
     [Fact]
     public void Glob_NoTrailingSlash_ReturnsBothDirectoriesAndFiles()
     {
-        var hits = HaTree.Glob(Cat(), "entities/light", "**");
+        var hits = HaTree.Glob(Cat(), Scope("entities/light", "**"));
 
         hits.ShouldContain("entities/light/kitchen/");
         hits.ShouldContain("entities/light/kitchen/state.json");
@@ -89,7 +91,7 @@ public class HaTreeTests
     [Fact]
     public void Glob_BraceExpansion_MatchesAnyAlternative()
     {
-        var hits = HaTree.Glob(Cat(), "entities/light", "kitchen/{state.json,turn_on.sh}");
+        var hits = HaTree.Glob(Cat(), Scope("entities/light", "kitchen/{state.json,turn_on.sh}"));
 
         hits.ShouldContain("entities/light/kitchen/state.json");
         hits.ShouldContain("entities/light/kitchen/turn_on.sh");
@@ -103,15 +105,18 @@ public class HaTreeTests
         // `entities` directory — guard against regressions here.
         var cat = Cat();
 
-        var baseLevel = HaTree.Glob(cat, "", "**/entities");
+        var baseLevel = HaTree.Glob(cat, Scope("", "**/entities"));
         baseLevel.ShouldContain("entities/");
 
-        var recursive = HaTree.Glob(cat, "", "**/state.json");
+        var recursive = HaTree.Glob(cat, Scope("", "**/state.json"));
         recursive.ShouldContain("entities/light/kitchen/state.json");
         recursive.ShouldContain("entities/sensor/salon_temp/state.json");
 
-        var shFiles = HaTree.Glob(cat, "entities", "**/*.sh");
+        var shFiles = HaTree.Glob(cat, Scope("entities", "**/*.sh"));
         shFiles.ShouldNotBeEmpty();
         shFiles.ShouldAllBe(h => h.EndsWith(".sh"));
     }
+
+    private static GlobScope Scope(string basePath, string pattern) =>
+        GlobScope.Create(basePath, pattern).ShouldBeOfType<FsResult<GlobScope>.Ok>().Value;
 }

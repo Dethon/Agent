@@ -42,7 +42,7 @@ public class DeliveryTargetResolverAnnounceTests
         var (signalr, calls) = Channel("signalr");
         var targets = new[] { new DeliveryTarget(signalr.Object, "7:42") };
 
-        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
+        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), CancellationToken.None);
 
         var call = calls.ShouldHaveSingleItem();
         call.ExistingConversationId.ShouldBe("7:42");
@@ -50,41 +50,30 @@ public class DeliveryTargetResolverAnnounceTests
     }
 
     [Fact]
-    public async Task AnnounceTurnStart_MintedTarget_SkippedWhenSkipMintedIsTrue()
+    public async Task AnnounceTurnStart_TargetMintedByThisTurn_IsSkipped()
     {
+        // The mint already called create_conversation, so announcing it again would set the
+        // same stream up twice.
         var (signalr, calls) = Channel("signalr");
         var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
 
-        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
+        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), CancellationToken.None);
 
         calls.ShouldBeEmpty();
     }
 
     [Fact]
-    public async Task AnnounceTurnStart_MintedTarget_AnnouncedWhenSkipMintedIsFalse()
+    public async Task AnnounceTurnStart_TargetMintedByAnEarlierTurn_IsAnnounced()
     {
-        // A later message reusing the group-level targets sees conversations that were
-        // minted by the FIRST message's resolution — for this turn they pre-exist.
+        // A later turn reusing the group anchors carries them with the marker cleared,
+        // because nothing was minted for it: the conversation pre-exists this turn and
+        // its stream has to be set up again.
         var (signalr, calls) = Channel("signalr");
-        var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1", Minted: true) };
+        var targets = new[] { new DeliveryTarget(signalr.Object, "minted-1") };
 
-        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
+        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), CancellationToken.None);
 
         calls.ShouldHaveSingleItem().ExistingConversationId.ShouldBe("minted-1");
-    }
-
-    [Fact]
-    public async Task AnnounceTurnStart_IsChannelAgnostic_VoiceAnnouncedLikeAnyTarget()
-    {
-        // The agent has no per-channel policy: voice receives the same announce as every
-        // other channel and applies its own semantics in its create_conversation tool
-        // (no-op when the satellite session is live, announcement binding otherwise).
-        var (voice, calls) = Channel("voice");
-        var targets = new[] { new DeliveryTarget(voice.Object, "7:42") };
-
-        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: false, CancellationToken.None);
-
-        calls.ShouldHaveSingleItem().ExistingConversationId.ShouldBe("7:42");
     }
 
     [Fact]
@@ -95,7 +84,7 @@ public class DeliveryTargetResolverAnnounceTests
         var (voice, calls) = Channel("voice");
         var targets = new[] { new DeliveryTarget(voice.Object, "7:42", Address: "fran-office-01") };
 
-        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None);
+        await _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), CancellationToken.None);
 
         calls.ShouldHaveSingleItem().Address.ShouldBe("fran-office-01");
     }
@@ -115,7 +104,7 @@ public class DeliveryTargetResolverAnnounceTests
         };
 
         await Should.NotThrowAsync(
-            _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), skipMinted: true, CancellationToken.None));
+            _resolver.AnnounceTurnStartAsync(targets, DownloadMessage(), CancellationToken.None));
 
         telegramCalls.ShouldHaveSingleItem();
     }

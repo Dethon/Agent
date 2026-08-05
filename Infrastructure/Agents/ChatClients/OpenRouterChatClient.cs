@@ -4,17 +4,19 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using OpenAI;
 
 namespace Infrastructure.Agents.ChatClients;
 
-public sealed class OpenRouterChatClient : IMultiModelChatClient
+public sealed class OpenRouterChatClient : IChatClient
 {
     private readonly IChatClient _client;
     private readonly HttpClient? _httpClient;
@@ -22,12 +24,10 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
     private readonly ConcurrentQueue<string> _reasoningQueue = new();
     private readonly ConcurrentQueue<decimal> _costQueue = new();
     private readonly ConcurrentQueue<long> _cachedTokenQueue = new();
-    private readonly IMetricsPublisher? _metricsPublisher;
+    private readonly IMetricsPublisher _metricsPublisher;
     private readonly int? _maxContextTokens;
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
-    private readonly IReadOnlyList<string> _patchableModelIds;
-    private readonly ModelOverrideBox _modelOverrideBox;
 
     public OpenRouterChatClient(
         string endpoint,
@@ -38,18 +38,14 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
         string? sessionId = null,
         TimeProvider? timeProvider = null,
         ProviderRouting? providerRouting = null,
-        HttpMessageHandler? transportHandler = null,
-        IReadOnlyList<string>? patchableModelIds = null)
+        HttpMessageHandler? transportHandler = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
-        _metricsPublisher = metricsPublisher;
+        _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _patchableModelIds = patchableModelIds ?? [];
-        _modelOverrideBox = new ModelOverrideBox();
         _httpClient = CreateHttpClient(
-            _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, _modelOverrideBox,
-            transportHandler);
+            _reasoningQueue, _costQueue, _cachedTokenQueue, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
     }
@@ -59,15 +55,12 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
         string model,
         int? maxContextTokens = null,
         IMetricsPublisher? metricsPublisher = null,
-        TimeProvider? timeProvider = null,
-        IReadOnlyList<string>? patchableModelIds = null)
+        TimeProvider? timeProvider = null)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
-        _metricsPublisher = metricsPublisher;
+        _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _patchableModelIds = patchableModelIds ?? [];
-        _modelOverrideBox = new ModelOverrideBox();
         _client = innerClient;
     }
 
@@ -88,68 +81,16 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var transformedMessages = messages.Select(x =>
-        {
-            var newMessage = x.Clone();
-            var msgSender = newMessage.GetSenderId();
-            var timestamp = newMessage.GetTimestamp();
-            var location = newMessage.GetLocation();
-            var satelliteId = newMessage.GetSatelliteId();
-            var dismissedAlert = newMessage.GetDismissedAlert();
-            if (newMessage.Role == ChatRole.User && (msgSender is not null || timestamp is not null || dismissedAlert is not null))
-            {
-                var hasLocation = !string.IsNullOrWhiteSpace(location);
-                var hasSatellite = !string.IsNullOrWhiteSpace(satelliteId);
-                var senderSegment = msgSender is null
-                    ? null
-                    : (hasLocation, hasSatellite) switch
-                    {
-                        (true, true) => $"Message from {msgSender} (in {location} via {satelliteId})",
-                        (true, false) => $"Message from {msgSender} (in {location})",
-                        (false, true) => $"Message from {msgSender} (via {satelliteId})",
-                        (false, false) => $"Message from {msgSender}"
-                    };
+        // Decorated on the way out and never on the way in: what the client sends carries the
+        // sender, the local time and the recall block, and what gets persisted stays as typed.
+        var transformedMessages = messages
+            .Select(x => TurnDecoration.Apply(x, _timeProvider.LocalTimeZone))
+            .ToList();
 
-                var localTimestamp = timestamp is { } ts
-                    ? TimeZoneInfo.ConvertTime(ts, _timeProvider.LocalTimeZone)
-                    : (DateTimeOffset?)null;
-
-                var prefix = (senderSegment, timestamp) switch
-                {
-                    (not null, not null) => $"[Current time: {localTimestamp:yyyy-MM-dd HH:mm:ss zzz}] {senderSegment}:\n",
-                    (not null, null) => $"{senderSegment}:\n",
-                    (null, not null) => $"[Current time: {localTimestamp:yyyy-MM-dd HH:mm:ss zzz}]:\n",
-                    _ => ""
-                };
-
-                if (!string.IsNullOrWhiteSpace(dismissedAlert))
-                {
-                    prefix = $"[The user just dismissed the {dismissedAlert}]\n{prefix}";
-                }
-
-                newMessage.Contents = newMessage.Contents
-                    .Prepend(new TextContent(prefix))
-                    .ToList();
-            }
-
-            var memoryContext = newMessage.GetMemoryContext();
-            if (memoryContext is not null && newMessage.Role == ChatRole.User)
-            {
-                var memoryBlock = FormatMemoryContext(memoryContext);
-                newMessage.Contents = newMessage.Contents
-                    .Prepend(new TextContent(memoryBlock))
-                    .ToList();
-            }
-
-            return newMessage;
-        }).ToList();
-
-        var modelOverride = ResolveModelOverride(
-            transformedMessages.LastOrDefault(m => m.Role == ChatRole.User)?.GetConfigPatch(),
-            _model,
-            _patchableModelIds);
-        _modelOverrideBox.Value = modelOverride;
-        var effectiveModel = modelOverride ?? _model;
+        // The model a per-message config patch resolved to rides this request's own options
+        // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on
+        // and a concurrent turn has nothing shared to overwrite.
+        var effectiveModel = options?.ModelId ?? _model;
 
         var sender = transformedMessages
             .LastOrDefault(m => m.Role == ChatRole.User)
@@ -161,9 +102,9 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
             out var droppedCount, out var tokensBefore, out var tokensAfter,
             out var overflowDetected, fixedOverheadTokens: fixedOverhead);
 
-        if (overflowDetected && _metricsPublisher is not null)
+        if (overflowDetected)
         {
-            await _metricsPublisher.PublishAsync(new ContextTruncationEvent
+            _metricsPublisher.Publish(new ContextTruncationEvent
             {
                 Sender = sender ?? "unknown",
                 Model = effectiveModel,
@@ -171,7 +112,7 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
                 EstimatedTokensBefore = tokensBefore,
                 EstimatedTokensAfter = tokensAfter,
                 MaxContextTokens = _maxContextTokens ?? 0
-            }, ct);
+            });
         }
 
         UsageContent? usage = null;
@@ -190,10 +131,10 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
             yield return update;
         }
 
-        if (_metricsPublisher is not null && usage?.Details is not null)
+        if (usage?.Details is not null)
         {
             var cost = DrainCostQueue() ?? 0m;
-            await _metricsPublisher.PublishAsync(new TokenUsageEvent
+            _metricsPublisher.Publish(new TokenUsageEvent
             {
                 Sender = sender ?? "unknown",
                 Model = effectiveModel,
@@ -201,7 +142,7 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
                 OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),
                 CachedInputTokens = DrainCachedTokenQueue() ?? ReadCachedInputTokens(usage.Details),
                 Cost = cost
-            }, ct);
+            });
         }
     }
 
@@ -226,8 +167,6 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
 
         return null;
     }
-
-    public string EffectiveModel => _modelOverrideBox.Value ?? _model;
 
     public object? GetService(Type serviceType, object? key = null)
     {
@@ -306,23 +245,6 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
         return last;
     }
 
-    private static string FormatMemoryContext(MemoryContext context)
-    {
-        var memoryLines = context.Memories
-            .Select(r => $"- {r.Memory.Content} ({r.Memory.Category.ToString().ToLowerInvariant()}, importance: {r.Memory.Importance:F1})");
-
-        var profileLine = context.Profile is not null
-            ? [$"[User profile: {context.Profile.Summary}]"]
-            : Enumerable.Empty<string>();
-
-        var lines = new[] { "[Memory context]" }
-            .Concat(memoryLines)
-            .Concat(profileLine)
-            .Append("[End memory context]");
-
-        return string.Join(Environment.NewLine, lines) + Environment.NewLine;
-    }
-
     // One handler (= one connection pool) for the whole process: a per-conversation
     // handler would pay a fresh TCP+TLS handshake to OpenRouter on every new
     // conversation's first LLM call.
@@ -334,32 +256,13 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
 
     internal static SocketsHttpHandler SharedHandler => _sharedHandler;
 
-    internal sealed class ModelOverrideBox
-    {
-        public volatile string? Value;
-    }
-
-    internal static string? ResolveModelOverride(
-        AgentConfigPatch? patch, string configuredModel, IReadOnlyList<string> patchableModelIds)
-    {
-        if (patch?.Model is not { } model || string.Equals(model, configuredModel, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        // Return the whitelist's own casing, not the patch's: OpenRouter model IDs are lowercase
-        // slugs, and stamping the patch's casing verbatim can turn a valid override into a
-        // model-not-found error.
-        return patchableModelIds.FirstOrDefault(id => string.Equals(id, model, StringComparison.OrdinalIgnoreCase));
-    }
-
     private static HttpClient CreateHttpClient(
         ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
         ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting,
-        ModelOverrideBox overrideBox, HttpMessageHandler? transportHandler = null)
+        HttpMessageHandler? transportHandler = null)
     {
         var handler = new ReasoningHandler(
-            reasoningQueue, costQueue, cachedQueue, sessionId, providerRouting, overrideBox)
+            reasoningQueue, costQueue, cachedQueue, sessionId, providerRouting)
         {
             InnerHandler = transportHandler ?? _sharedHandler
         };
@@ -368,8 +271,7 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
 
     private sealed class ReasoningHandler(
         ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue,
-        ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting,
-        ModelOverrideBox overrideBox)
+        ConcurrentQueue<long> cachedQueue, string? sessionId, ProviderRouting? providerRouting)
         : DelegatingHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -377,7 +279,7 @@ public sealed class OpenRouterChatClient : IMultiModelChatClient
             CancellationToken cancellationToken)
         {
             await OpenRouterHttpHelpers.PrepareRequestBodyAsync(
-                request, sessionId, providerRouting, overrideBox.Value, cancellationToken);
+                request, sessionId, providerRouting, cancellationToken);
             var response = await base.SendAsync(request, cancellationToken);
 
             if (response.Content.Headers.ContentType?.MediaType?.Equals("text/event-stream",

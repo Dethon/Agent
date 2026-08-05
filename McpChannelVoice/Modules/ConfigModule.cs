@@ -1,30 +1,23 @@
 using Domain.Agents;
-using Domain.Channels;
 using Domain.Contracts;
 using Infrastructure.Metrics;
+using Mcp.Hosting;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.LocalCommands;
 using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Settings;
-using ModelContextProtocol.Protocol;
+using Microsoft.Extensions.Configuration;
 using StackExchange.Redis;
 
 namespace McpChannelVoice.Modules;
 
 public static class ConfigModule
 {
-    public static VoiceSettings GetVoiceSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<VoiceSettings>()
-                       ?? throw new InvalidOperationException("Voice settings not found");
-        return settings.WithResolvedLocalityDefaults();
-    }
+    // Voice is the one server whose settings need a second pass after binding: a satellite with no
+    // room or locality of its own inherits the hub's. Program.cs stays six lines of ceremony.
+    public static VoiceSettings GetVoiceSettings(this IConfigurationBuilder configBuilder) =>
+        configBuilder.BindSettings<VoiceSettings>().WithResolvedLocalityDefaults();
 
     public static IServiceCollection ConfigureVoiceChannel(
         this IServiceCollection services,
@@ -33,12 +26,9 @@ public static class ConfigModule
         var redisConnection = settings.RedisConnectionString;
 
         services
-            .AddSingleton(settings)
-            .AddSingleton<ChannelInbox>()
-            .AddSingleton<ChannelNotificationEmitter>()
             .AddSingleton(new SatelliteRegistry(settings.Satellites))
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection))
-            .AddSingleton<IMetricsPublisher, RedisMetricsPublisher>()
+            .AddMetricsPublishing("mcp-channel-voice")
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
@@ -46,9 +36,7 @@ public static class ConfigModule
             .AddSingleton<Domain.Contracts.IThreadStateStore>(sp =>
                 new Infrastructure.StateManagers.RedisThreadStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(), TimeSpan.FromDays(30)))
-            .AddSingleton<Domain.Contracts.IConversationFactory, Infrastructure.Conversations.ConversationFactory>()
-            .AddHostedService(sp =>
-                new HeartbeatService(sp.GetRequiredService<IMetricsPublisher>(), "mcp-channel-voice"));
+            .AddSingleton<Domain.Contracts.IConversationFactory, Infrastructure.Conversations.ConversationFactory>();
 
         services
             .AddSingleton<SatelliteSessionRegistry>()
@@ -142,9 +130,13 @@ public static class ConfigModule
 
         services.AddHostedService<WyomingSatelliteHost>();
         services.AddSingleton(settings.WyomingClient);
+        // One per process: it owns the per-satellite room-noise memory, which is deliberately keyed
+        // by satellite so it outlives any single connection.
+        services.AddSingleton<SilenceGateFactory>();
         services.AddSingleton(settings.Arbitration);
 
         services.AddSingleton<ReplyTextAccumulator>();
+        services.AddSingleton<ReplySpeaker>();
 
         services.AddSingleton<ITextToSpeech>(sp =>
             McpChannelVoice.Services.Tts.SilenceTrimmingTextToSpeech.Wrap(
@@ -162,37 +154,14 @@ public static class ConfigModule
         services.AddSingleton<InsistentAnnouncementController>();
 
         services
-            .AddMcpServer()
-            .WithHttpTransport()
+            .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
             .WithTools<CreateConversationTool>()
-            .WithTools<McpChannelReceiveTool>()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    // channel_receive's long poll ends in cancellation whenever the agent hangs up
-                    // or the server shuts down. Mapping that to IsError would hand the pump an
-                    // error result to retry on; let it propagate as the abort it is.
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return new CallToolResult
-                    {
-                        IsError = true,
-                        Content = [new TextContentBlock { Text = ex.Message }]
-                    };
-                }
-            }));
+            // Broadcast: a subscriber that is idle but not yet pruned still receives, so a brief
+            // agent gap does not lose an utterance the user would otherwise have to repeat.
+            .AddChannelServer(DeliveryPolicy.Broadcast);
 
         return services;
     }

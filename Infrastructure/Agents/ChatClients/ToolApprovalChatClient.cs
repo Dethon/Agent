@@ -1,9 +1,10 @@
-using System.Diagnostics;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
+using Domain.Metrics;
+using Infrastructure.Metrics;
 using Infrastructure.Utils;
 using Microsoft.Extensions.AI;
 
@@ -14,22 +15,23 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly IToolApprovalHandler _approvalHandler;
     private readonly ToolPatternMatcher _patternMatcher;
     private readonly HashSet<string> _dynamicallyApproved;
-    private readonly IMetricsPublisher? _metricsPublisher;
-    private readonly string? _conversationId;
+    private readonly IMetricsPublisher _metricsPublisher;
+    private readonly string _conversationId;
 
     public ToolApprovalChatClient(
         IChatClient innerClient,
         IToolApprovalHandler approvalHandler,
+        string conversationId,
         IEnumerable<string>? whitelistPatterns = null,
-        IMetricsPublisher? metricsPublisher = null,
-        string? conversationId = null)
+        IMetricsPublisher? metricsPublisher = null)
         : base(innerClient)
     {
         ArgumentNullException.ThrowIfNull(approvalHandler);
+        ArgumentNullException.ThrowIfNull(conversationId);
         _approvalHandler = approvalHandler;
         _patternMatcher = new ToolPatternMatcher(whitelistPatterns);
         _dynamicallyApproved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        _metricsPublisher = metricsPublisher;
+        _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _conversationId = conversationId;
 
         IncludeDetailedErrors = true;
@@ -53,13 +55,15 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             // The notification is display-only; overlapping it with the invocation keeps a
             // channel round trip off the tool's critical path. A notify failure still
             // surfaces, but no longer prevents the tool from executing.
-            var notifyTask = _approvalHandler.NotifyAutoApprovedAsync([request], cancellationToken);
+            var notifyTask = _approvalHandler.NotifyAutoApprovedAsync(
+                _conversationId, [request], cancellationToken);
             var invokeTask = InvokeWithMetricsAsync(context, toolName, cancellationToken).AsTask();
             await Task.WhenAll(notifyTask, invokeTask);
             return await invokeTask;
         }
 
-        var result = await _approvalHandler.RequestApprovalAsync([request], cancellationToken);
+        var result = await _approvalHandler.RequestApprovalAsync(
+            _conversationId, [request], cancellationToken);
 
         switch (result)
         {
@@ -83,65 +87,34 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         string toolName,
         CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
+        // A tool call is measured whether it returned or threw, which is why this used to be the
+        // same latency block twice. The scope publishes on both paths from one statement, and the
+        // tool-call event reads its duration off the scope rather than a second stopwatch.
+        using var latency = _metricsPublisher.MeasureLatency(LatencyStage.ToolExec, _conversationId);
         try
         {
             var result = await base.InvokeFunctionAsync(context, cancellationToken);
-            sw.Stop();
-            if (_metricsPublisher is not null)
+            var (isError, errorMessage) = DetectError(result);
+            _metricsPublisher.Publish(new ToolCallEvent
             {
-                var (isError, errorMessage) = DetectError(result);
-                await _metricsPublisher.PublishAsync(new ToolCallEvent
-                {
-                    ToolName = toolName,
-                    DurationMs = sw.ElapsedMilliseconds,
-                    Success = !isError,
-                    Error = errorMessage,
-                    ConversationId = _conversationId
-                }, cancellationToken);
-                try
-                {
-                    await _metricsPublisher.PublishAsync(new LatencyEvent
-                    {
-                        Stage = LatencyStage.ToolExec,
-                        DurationMs = sw.ElapsedMilliseconds,
-                        ConversationId = _conversationId
-                    }, cancellationToken);
-                }
-                catch
-                {
-                    // Best-effort latency emission; never fail a tool call.
-                }
-            }
+                ToolName = toolName,
+                DurationMs = latency.ElapsedMilliseconds,
+                Success = !isError,
+                Error = errorMessage,
+                ConversationId = _conversationId
+            });
             return result;
         }
         catch (Exception ex)
         {
-            sw.Stop();
-            if (_metricsPublisher is not null)
+            _metricsPublisher.Publish(new ToolCallEvent
             {
-                await _metricsPublisher.PublishAsync(new ToolCallEvent
-                {
-                    ToolName = toolName,
-                    DurationMs = sw.ElapsedMilliseconds,
-                    Success = false,
-                    Error = ex.Message,
-                    ConversationId = _conversationId
-                }, cancellationToken);
-                try
-                {
-                    await _metricsPublisher.PublishAsync(new LatencyEvent
-                    {
-                        Stage = LatencyStage.ToolExec,
-                        DurationMs = sw.ElapsedMilliseconds,
-                        ConversationId = _conversationId
-                    }, cancellationToken);
-                }
-                catch
-                {
-                    // Best-effort latency emission; never fail a tool call.
-                }
-            }
+                ToolName = toolName,
+                DurationMs = latency.ElapsedMilliseconds,
+                Success = false,
+                Error = ex.Message,
+                ConversationId = _conversationId
+            });
             throw;
         }
     }

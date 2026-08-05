@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.FileSystem;
 
@@ -37,10 +38,15 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
     {
         if (filePath is not null)
         {
-            var fileResolution = registry.Resolve(filePath);
-            return (await fileResolution.Backend.SearchAsync(
+            if (!registry.Resolve(filePath).TryGetValue(out var fileResolution, out var unresolvedFile))
+            {
+                return unresolvedFile.ToNode();
+            }
+
+            var fileResult = await fileResolution.Backend.SearchAsync(
                 query, regex, fileResolution.RelativePath, null, filePattern,
-                maxResults, contextLines, outputMode, cancellationToken)).ToNode();
+                maxResults, contextLines, outputMode, cancellationToken);
+            return Normalize(fileResult, filePath, fileResolution.MountPoint).ToNode();
         }
 
         if (directoryPath is null)
@@ -51,9 +57,31 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
                 retryable: false);
         }
 
-        var dirResolution = registry.Resolve(directoryPath);
-        return (await dirResolution.Backend.SearchAsync(
+        if (!registry.Resolve(directoryPath).TryGetValue(out var dirResolution, out var unresolvedDir))
+        {
+            return unresolvedDir.ToNode();
+        }
+
+        var result = await dirResolution.Backend.SearchAsync(
             query, regex, null, dirResolution.RelativePath, filePattern,
-            maxResults, contextLines, outputMode, cancellationToken)).ToNode();
+            maxResults, contextLines, outputMode, cancellationToken);
+        return Normalize(result, directoryPath, dirResolution.MountPoint).ToNode();
     }
+
+    // A backend reports the scope and every hit in its own coordinates, mount-relative and with
+    // varying leading-slash conventions. Prefixing the mount point — and echoing the caller's own
+    // path for the scope — makes a hit directly reusable as input to read/edit, the way glob, read
+    // and info already answer. Without it the obvious next call, feeding a hit to text_read, came
+    // back "No filesystem mounted".
+    private static FsResult<FsSearchResult> Normalize(
+        FsResult<FsSearchResult> result, string virtualPath, string mountPoint) =>
+        result is FsResult<FsSearchResult>.Ok ok
+            ? new FsResult<FsSearchResult>.Ok(ok.Value with
+            {
+                Path = virtualPath,
+                Results = ok.Value.Results
+                    .Select(r => r with { File = $"{mountPoint.TrimEnd('/')}/{r.File.TrimStart('/')}" })
+                    .ToList()
+            })
+            : result;
 }

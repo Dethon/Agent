@@ -12,15 +12,27 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Clients.Channels;
 
-public sealed class McpChannelConnection(string channelId, bool attachOnly = false, ILogger<McpChannelConnection>? logger = null)
+public sealed class McpChannelConnection(
+    string channelId,
+    bool attachOnly = false,
+    ILogger<McpChannelConnection>? logger = null,
+    // How often the run below asks whether the link is still there. The supervision cadence belongs
+    // to the thing being supervised, which is why it moved here with the run.
+    TimeSpan? healthCheckInterval = null)
     : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
+    private static readonly TimeSpan _defaultHealthCheckInterval = TimeSpan.FromSeconds(30);
+
+    // A retry that has backed off this far is waiting on something that will not be fixed by
+    // waiting longer, and the next attempt should not be minutes away.
+    private static readonly TimeSpan _maxReconnectDelay = TimeSpan.FromSeconds(30);
+
     private const string CancelCommandContent = "/cancel";
 
     private static readonly TimeSpan _minBackoff = TimeSpan.FromSeconds(1);
 
-    // Shared with the liveness contract, not a local tuning knob: LiveSubscriberFreshness is sized
-    // to a fully held poll plus exactly one of these worst-case pauses, so raising the ceiling
+    // Shared with the liveness contract, not a local tuning knob: ChannelInbox's freshness window
+    // is sized to a fully held poll plus exactly one of these worst-case pauses, so raising the ceiling
     // here without raising the freshness window makes channel servers misread a retrying pump as
     // a disconnected agent.
     private static readonly TimeSpan _maxBackoff =
@@ -44,6 +56,23 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
     private McpClient? _client;
+    // What the far end offers, for this connection generation and no other. Every server in this
+    // repo registers its tools before its transport starts, so the answer cannot change while one
+    // connection is up; a reconnect may be talking to a different process, so it starts over.
+    // See docs/adr/0012-a-servers-tool-set-is-fixed-for-a-connection-generation.md.
+    //
+    // The answer carries the client it came from rather than being cleared when a generation ends:
+    // a probe still in flight writes a tagged answer whenever it lands, and a later generation
+    // simply does not recognise it. Clearing a bare field cannot say that — whichever order the
+    // clear and the stale write happen in, one ordering leaves the old server's tools sitting in
+    // the new connection's cache.
+    //
+    // Holding the old client past its disposal is what makes that tag readable, and it is the whole
+    // cost: the field holds one answer, so a reconnect leaves at most one disposed client reachable
+    // and the next fetch replaces it. Nulling the field here would not even remove that — a probe
+    // still in flight writes its tagged answer afterwards either way — so it would buy nothing and
+    // reintroduce the ordering the tag exists to avoid.
+    private ToolSet? _tools;
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
 
@@ -53,13 +82,118 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
 
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
 
+    // Connect, register the catalog, watch health, reconnect, re-register — for as long as the
+    // token lives. The order is here rather than in a caller because the order is about this.
+    public async Task RunAsync(
+        string endpoint, IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+    {
+        var interval = healthCheckInterval ?? _defaultHealthCheckInterval;
+        try
+        {
+            await WithRetryAsync(endpoint, reconnect: false, ct);
+            var registered = await TryRegisterAgentsAsync(agents, ct);
+
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(interval, ct);
+
+                if (!await IsHealthyAsync(ct))
+                {
+                    logger?.LogWarning("Channel {ChannelId} health check failed, reconnecting", ChannelId);
+                    await WithRetryAsync(endpoint, reconnect: true, ct);
+                    registered = await TryRegisterAgentsAsync(agents, ct);
+                }
+                else if (!registered)
+                {
+                    // The link is healthy but a previous registration failed; retry until it sticks
+                    // so the channel is not left serving an empty catalog indefinitely.
+                    registered = await TryRegisterAgentsAsync(agents, ct);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Shutting down. A call in flight when the token trips reports the abort it is, and
+            // this is where the run ends: it returns rather than faulting its caller.
+        }
+    }
+
+    // One loop for both, because a reconnect is a connect that had a predecessor: a fix to the
+    // back-off could otherwise land in one and miss the other.
+    private async Task WithRetryAsync(string endpoint, bool reconnect, CancellationToken ct)
+    {
+        var verb = reconnect ? "Reconnecting" : "Connecting";
+        var attempt = 0;
+
+        while (!ct.IsCancellationRequested)
+        {
+            attempt++;
+            try
+            {
+                logger?.LogInformation(
+                    "{Verb} channel {ChannelId} to {Endpoint} (attempt {Attempt})",
+                    verb, ChannelId, endpoint, attempt);
+                if (reconnect)
+                {
+                    await ReconnectAsync(endpoint, ct);
+                }
+                else
+                {
+                    await ConnectAsync(endpoint, ct);
+                }
+                logger?.LogInformation("Channel {ChannelId} connected", ChannelId);
+                return;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Includes an OperationCanceledException whose token is not ours: HttpClient
+                // reports its own timeouts as TaskCanceledException, and letting that shape
+                // escape here faults the run and stops the whole host.
+                var delay = TimeSpan.FromSeconds(
+                    Math.Min(Math.Pow(2, attempt), _maxReconnectDelay.TotalSeconds));
+                logger?.LogWarning(
+                    "Failed {Verb} channel {ChannelId} (attempt {Attempt}), retrying in {Delay}s: {Error}",
+                    verb.ToLowerInvariant(), ChannelId, attempt, delay.TotalSeconds, ex.Message);
+                await Task.Delay(delay, ct);
+            }
+        }
+
+        // Returning from here would say "connected" to a caller that goes on to register and poll.
+        // The only way out of the loop other than a successful dial is the token, so say that.
+        ct.ThrowIfCancellationRequested();
+    }
+
+    private async Task<bool> TryRegisterAgentsAsync(
+        IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+    {
+        try
+        {
+            await RegisterAgentsAsync(agents, ct);
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(
+                "Failed to register agents with channel {ChannelId}: {Error}", ChannelId, ex.Message);
+            return false;
+        }
+    }
+
     public async Task ConnectAsync(string endpoint, CancellationToken ct)
     {
         // Never leave a second pump alive on this connection: two of them share one subscriberId
         // and displace each other's waiter, which the inbox retires with an instant empty batch.
         await StopPumpAsync();
 
-        _client = await McpClient.CreateAsync(
+        var client = await McpClient.CreateAsync(
             new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }),
             new McpClientOptions
             {
@@ -71,13 +205,16 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
             },
             cancellationToken: ct);
 
+        _client = client;
         _pumpCts = new CancellationTokenSource();
-        _pumpTask = PumpAsync(_pumpCts.Token);
+        // The pump runs against the client of its own generation, handed to it rather than read
+        // back off the field: a reconnect nulls the field, and this loop must not see that.
+        _pumpTask = PumpAsync(client, _pumpCts.Token);
     }
 
     // Inbound items are pulled, not pushed: a stateless server cannot address a session, so the
     // agent long-polls channel_receive and feeds the two notification handlers itself.
-    private async Task PumpAsync(CancellationToken ct)
+    private async Task PumpAsync(McpClient client, CancellationToken ct)
     {
         var subscriberId = $"{ChannelProtocol.ChannelClientNamePrefix}{ChannelId}";
         var backoff = _minBackoff;
@@ -88,7 +225,7 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
             TimeSpan pause;
             try
             {
-                if (await PollOnceAsync(subscriberId, ct))
+                if (await PollOnceAsync(client, subscriberId, ct))
                 {
                     // Items delivered, or the wait honoured in full: re-poll at once, so the next
                     // real message is never sitting behind a timer.
@@ -143,10 +280,10 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
     // False when the batch came back empty without the server having honoured a meaningful share
     // of the wait. That is the shape of a displaced waiter, which the inbox retires instantly —
     // re-polling on it with no pause is how a stray second poller spins a core.
-    private async Task<bool> PollOnceAsync(string subscriberId, CancellationToken ct)
+    private async Task<bool> PollOnceAsync(McpClient client, string subscriberId, CancellationToken ct)
     {
         var startedAt = Stopwatch.GetTimestamp();
-        var call = await _client!.CallToolAsync(
+        var call = await client.CallToolAsync(
             ChannelProtocol.ReceiveTool,
             new Dictionary<string, object?>
             {
@@ -285,13 +422,13 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
         string? messageId,
         CancellationToken ct)
     {
-        EnsureConnected();
+        var client = RequireClient();
         // send_reply fires once per streamed content chunk (hundreds per response). Building
         // the args dictionary directly avoids ChannelProtocol.ToArguments's reflection
         // SerializeToDocument + per-property Clone on the hot path; the wire JSON is
         // identical (same camelCase keys, ContentType.ToString() matches the
         // JsonStringEnumConverter output).
-        await _client!.CallToolAsync(
+        await client.CallToolAsync(
             ChannelProtocol.SendReplyTool,
             new Dictionary<string, object?>
             {
@@ -309,8 +446,8 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken ct)
     {
-        EnsureConnected();
-        var result = await _client!.CallToolAsync(
+        var client = RequireClient();
+        var result = await client.CallToolAsync(
             ChannelProtocol.RequestApprovalTool,
             ChannelProtocol.ToArguments(new RequestApprovalParams
             {
@@ -331,8 +468,8 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken ct)
     {
-        EnsureConnected();
-        await _client!.CallToolAsync(
+        var client = RequireClient();
+        await client.CallToolAsync(
             ChannelProtocol.RequestApprovalTool,
             ChannelProtocol.ToArguments(new RequestApprovalParams
             {
@@ -352,20 +489,20 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
         string? existingConversationId,
         CancellationToken ct)
     {
-        if (_client is null)
+        var client = _client;
+        if (client is null)
         {
             return null;
         }
 
         try
         {
-            var tools = await _client.ListToolsAsync(cancellationToken: ct);
-            if (tools.All(t => t.Name != ChannelProtocol.CreateConversationTool))
+            if (!await OffersToolAsync(client, ChannelProtocol.CreateConversationTool, ct))
             {
                 return null;
             }
 
-            var result = await _client.CallToolAsync(
+            var result = await client.CallToolAsync(
                 ChannelProtocol.CreateConversationTool,
                 new Dictionary<string, object?>
                 {
@@ -391,48 +528,81 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
         {
             return null;
         }
+        catch (ObjectDisposedException)
+        {
+            return null;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // A reconnect disposes the client under a create still in flight, which cancels the
+            // transport's own token — not the caller's. That is "not connected", and not connected
+            // returns null here (ADR 0011); an abort the caller asked for still propagates.
+            return null;
+        }
     }
 
     public async Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
     {
-        if (_client is null)
+        var client = _client;
+        if (client is null)
         {
             return;
         }
 
-        var tools = await _client.ListToolsAsync(cancellationToken: ct);
-        if (tools.All(t => t.Name != ChannelProtocol.RegisterAgentsTool))
+        if (!await OffersToolAsync(client, ChannelProtocol.RegisterAgentsTool, ct))
         {
             return;
         }
 
-        await _client.CallToolAsync(
+        var result = await client.CallToolAsync(
             ChannelProtocol.RegisterAgentsTool,
             ChannelProtocol.ToArguments(new RegisterAgentsParams { Agents = agents }),
             cancellationToken: ct);
+
+        // A refused registration reaches the caller as a value, not a throw: the channel-side
+        // call-tool error filter turns every non-cancellation exception into an IsError result.
+        // Failing here is what keeps the run retrying — swallowing it latches "registered" on a
+        // catalog the channel never took.
+        if (result.IsError == true)
+        {
+            var text = result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
+            throw new InvalidOperationException(
+                $"{ChannelProtocol.RegisterAgentsTool} was refused by {ChannelId}: {text}");
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         await StopPumpAsync();
         _messageChannel.Writer.TryComplete();
-        if (_client is not null)
+        var client = _client;
+        if (client is not null)
         {
-            await _client.DisposeAsync();
+            await client.DisposeAsync();
         }
     }
 
     public async Task<bool> IsHealthyAsync(CancellationToken ct)
     {
-        if (_client is null)
+        var client = _client;
+        if (client is null)
         {
             return false;
         }
 
         try
         {
-            await _client.ListToolsAsync(cancellationToken: ct);
+            await client.ListToolsAsync(cancellationToken: ct);
             return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // The caller's own shutdown, not ill health. Answering false here makes the run call
+            // this a failed check and reconnect on a token that is already cancelled, which returns
+            // without connecting anything — and everything after it then works against a dead
+            // client believing the link is up. Everything else, including a transport cancellation
+            // the caller never asked for, is what "not connected" means (ADR 0011).
+            throw;
         }
         catch
         {
@@ -452,11 +622,33 @@ public sealed class McpChannelConnection(string channelId, bool attachOnly = fal
         await ConnectAsync(endpoint, ct);
     }
 
-    private void EnsureConnected()
+    // Two targets resolving at once can both find the set unfetched and each ask; that costs one
+    // extra round trip on the first turn of a generation and settles on the same answer, which is
+    // cheaper than serialising every probe behind a lock. The client comes in as the caller's own
+    // snapshot and is what a cached answer is matched against, because a probe can outlive its
+    // generation: a reconnect mid-flight swaps the client, and a probe that asked the old server
+    // must not pin the new connection to a tool set its server may not have.
+    private async Task<bool> OffersToolAsync(McpClient client, string toolName, CancellationToken ct)
     {
-        if (_client is null)
+        var tools = _tools;
+        if (tools is null || !ReferenceEquals(tools.Owner, client))
         {
-            throw new InvalidOperationException("Not connected. Call ConnectAsync first.");
+            tools = new ToolSet(
+                client,
+                (await client.ListToolsAsync(cancellationToken: ct))
+                    .Select(tool => tool.Name)
+                    .ToHashSet(StringComparer.Ordinal));
+            _tools = tools;
         }
+
+        return tools.Names.Contains(toolName);
     }
+
+    private sealed record ToolSet(McpClient Owner, IReadOnlySet<string> Names);
+
+    // The client every operation works against, read once. Re-reading the field after a guard —
+    // or behind a null-forgiving operator — races ReconnectAsync nulling it and turns the five
+    // documented not-connected behaviours (ADR 0011) into a NullReferenceException.
+    private McpClient RequireClient() =>
+        _client ?? throw new InvalidOperationException("Not connected. Call ConnectAsync first.");
 }

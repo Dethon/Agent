@@ -1,13 +1,10 @@
-using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
 
 public class BlobWriteTool(string rootPath)
 {
-    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
+    private readonly PathJail _jail = new(rootPath);
 
     protected const string Description = """
         Writes a chunk of raw bytes (base64-encoded) to a file at the given offset.
@@ -16,11 +13,27 @@ public class BlobWriteTool(string rootPath)
         Returns { path, bytesWritten, totalBytes }.
         """;
 
-    protected JsonNode Run(string path, string contentBase64, long offset, bool overwrite, bool createDirectories)
+    public FsResult<FsBlobWriteResult> Run(string path, string contentBase64, long offset, bool overwrite, bool createDirectories)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offset);
-        var resolved = ResolveAndValidate(path);
-        var bytes = Convert.FromBase64String(contentBase64);
+        if (offset < 0)
+        {
+            return FsError.Invalid<FsBlobWriteResult>("offset must not be negative.");
+        }
+
+        if (!_jail.TryResolve(path, out var resolved))
+        {
+            return FsError.Invalid<FsBlobWriteResult>(_jail.DeniedMessage);
+        }
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(contentBase64);
+        }
+        catch (FormatException ex)
+        {
+            return FsError.Invalid<FsBlobWriteResult>($"contentBase64 is not valid base64: {ex.Message}");
+        }
 
         if (createDirectories)
         {
@@ -35,43 +48,32 @@ public class BlobWriteTool(string rootPath)
         {
             if (File.Exists(resolved) && !overwrite)
             {
-                throw new IOException($"File already exists: {path}");
+                return FsError.AlreadyExists<FsBlobWriteResult>($"File already exists: {path}");
             }
             File.WriteAllBytes(resolved, bytes);
         }
         else
         {
+            // A nonzero offset is only legal as the continuation of a write this caller started at
+            // offset 0, and a continuation lands exactly at the current end. Without overwrite, a
+            // cold call whose offset is anywhere else must not open the file it did not create.
+            var currentLength = File.Exists(resolved) ? new FileInfo(resolved).Length : (long?)null;
+            if (!overwrite && currentLength != offset)
+            {
+                return FsError.Invalid<FsBlobWriteResult>(
+                    $"offset {offset} does not continue {path} (current length: {currentLength?.ToString() ?? "no file"}); "
+                    + "without overwrite, a nonzero-offset chunk must append exactly at the end of the file.");
+            }
             using var stream = new FileStream(resolved, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None);
             stream.Seek(offset, SeekOrigin.Begin);
             stream.Write(bytes, 0, bytes.Length);
         }
 
-        var info = new FileInfo(resolved);
-        return FsResultContract.ToNode(new FsBlobWriteResult
+        return new FsResult<FsBlobWriteResult>.Ok(new FsBlobWriteResult
         {
             Path = path,
             BytesWritten = bytes.Length,
-            TotalBytes = info.Length
+            TotalBytes = new FileInfo(resolved).Length
         });
-    }
-
-    private string ResolveAndValidate(string path)
-    {
-        var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var fullPath = Path.IsPathRooted(path)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(rootPath, normalized));
-
-        var canonicalRoot = Path.GetFullPath(rootPath);
-        var rootWithSep = canonicalRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? canonicalRoot
-            : canonicalRoot + Path.DirectorySeparatorChar;
-
-        if (fullPath.Equals(canonicalRoot, _pathComparison) ||
-            fullPath.StartsWith(rootWithSep, _pathComparison))
-        {
-            return fullPath;
-        }
-        throw new UnauthorizedAccessException($"Access denied: path must be within {canonicalRoot}");
     }
 }

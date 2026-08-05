@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Tools;
 using Domain.Tools.Text;
 using Shouldly;
 
@@ -48,34 +49,33 @@ public class TextCreateToolTests : IDisposable
     [Fact]
     public void Run_WithCreateDirectoriesFalse_FailsIfParentMissing()
     {
-        Should.Throw<DirectoryNotFoundException>(() =>
-            _tool.TestRun("nonexistent/note.md", "Content", createDirectories: false));
+        _tool.TestRun("nonexistent/note.md", "Content", createDirectories: false)
+            .ShouldBeError(ToolError.Codes.NotFound);
     }
 
     [Fact]
-    public void Run_FileAlreadyExists_ThrowsException()
+    public void Run_FileAlreadyExists_ReturnsAnErrorEnvelope()
     {
         File.WriteAllText(Path.Combine(_testDir, "existing.md"), "Old content");
 
-        var ex = Should.Throw<IOException>(() =>
-            _tool.TestRun("existing.md", "New content"));
-        ex.Message.ShouldContain("already exists");
-        ex.Message.ShouldContain("edit tool");
+        var message = _tool.TestRun("existing.md", "New content")
+            .ShouldBeError(ToolError.Codes.AlreadyExists)["message"]!.GetValue<string>();
+        message.ShouldContain("already exists");
+        message.ShouldContain("edit tool");
     }
 
     [Fact]
-    public void Run_DisallowedExtension_ThrowsException()
+    public void Run_DisallowedExtension_ReturnsAnErrorEnvelope()
     {
-        var ex = Should.Throw<ArgumentException>(() =>
-            _tool.TestRun("script.ps1", "Get-Process"));
-        ex.Message.ShouldContain("not allowed");
+        _tool.TestRun("script.ps1", "Get-Process")
+            .ShouldBeError(ToolError.Codes.InvalidArgument)["message"]!.GetValue<string>()
+            .ShouldContain("not allowed");
     }
 
     [Fact]
-    public void Run_PathOutsideVault_ThrowsException()
+    public void Run_PathOutsideVault_ReturnsAnErrorEnvelope()
     {
-        Should.Throw<UnauthorizedAccessException>(() =>
-            _tool.TestRun("../outside.md", "Content"));
+        _tool.TestRun("../outside.md", "Content").ShouldBeError(ToolError.Codes.InvalidArgument);
     }
 
     [Fact]
@@ -120,7 +120,7 @@ public class TextCreateToolTests : IDisposable
             bool overwrite = false,
             bool createDirectories = true)
         {
-            return Run(filePath, content, overwrite, createDirectories);
+            return Run(filePath, content, overwrite, createDirectories).ToNode();
         }
     }
 }

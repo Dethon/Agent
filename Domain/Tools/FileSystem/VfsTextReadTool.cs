@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.FileSystem;
 
@@ -25,7 +26,21 @@ public class VfsTextReadTool(IVirtualFileSystemRegistry registry)
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        var resolution = registry.Resolve(filePath);
-        return (await resolution.Backend.ReadAsync(resolution.RelativePath, offset, limit, cancellationToken)).ToNode();
+        if (!registry.Resolve(filePath).TryGetValue(out var resolution, out var unresolved))
+        {
+            return unresolved.ToNode();
+        }
+
+        var result = await resolution.Backend.ReadAsync(resolution.RelativePath, offset, limit, cancellationToken);
+        return Normalize(result, filePath).ToNode();
     }
+
+    // The backend reports the file path in its own coordinates — a disk root even reports the
+    // container-absolute one, which the registry would refuse if reused. Echoing the virtual path
+    // the caller passed keeps the result reusable as input to every other filesystem tool,
+    // mirroring the glob normalization.
+    private static FsResult<FsReadResult> Normalize(FsResult<FsReadResult> result, string virtualPath) =>
+        result is FsResult<FsReadResult>.Ok ok
+            ? new FsResult<FsReadResult>.Ok(ok.Value with { FilePath = virtualPath })
+            : result;
 }

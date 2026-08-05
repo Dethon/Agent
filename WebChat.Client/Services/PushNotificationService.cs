@@ -1,5 +1,4 @@
 using Domain.DTOs.WebChat;
-using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.JSInterop;
 using WebChat.Client.Contracts;
 
@@ -7,7 +6,8 @@ namespace WebChat.Client.Services;
 
 public record PushSubscriptionResult(string Endpoint, string P256dh, string Auth, string? OldEndpoint = null);
 
-public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatConnectionService connectionService)
+public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatLiveConnection liveConnection)
+    : IPushSubscriptionService
 {
     public async Task<bool> RequestAndSubscribeAsync(string vapidPublicKey)
     {
@@ -23,46 +23,37 @@ public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatConnectio
             return false;
         }
 
-        if (connectionService.HubConnection is null)
-        {
-            return false;
-        }
-
         var subscription = new PushSubscriptionDto(result.Endpoint, result.P256dh, result.Auth);
 
-        if (result.OldEndpoint is not null)
-        {
-            // Endpoint rotated — transfer space memberships from old to new
-            await connectionService.HubConnection.InvokeAsync("ReplacePushSubscription", subscription, result.OldEndpoint);
-        }
-        else
-        {
-            await connectionService.HubConnection.InvokeAsync("SubscribePush", subscription);
-        }
+        // Endpoint rotated — transfer space memberships from old to new
+        var sent = result.OldEndpoint is not null
+            ? await liveConnection.InvokeAsync("ReplacePushSubscription", subscription, result.OldEndpoint)
+            : await liveConnection.InvokeAsync("SubscribePush", subscription);
 
-        return true;
+        // Silent either way: nothing here was asked for, and becoming live retries it.
+        return sent.IsLive;
     }
 
     public async Task ResubscribeAsync()
     {
         var result = await jsRuntime.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription");
-        if (result is null || connectionService.HubConnection is null)
+        if (result is null)
         {
             return;
         }
 
         var subscription = new PushSubscriptionDto(result.Endpoint, result.P256dh, result.Auth);
-        await connectionService.HubConnection.InvokeAsync("SubscribePush", subscription);
+        await liveConnection.InvokeAsync("SubscribePush", subscription);
     }
 
     public async Task UnsubscribeAsync()
     {
         var endpoint = await jsRuntime.InvokeAsync<string?>("pushNotifications.unsubscribe");
-        if (endpoint is not null && connectionService.HubConnection is not null)
+        if (endpoint is not null)
         {
             try
             {
-                await connectionService.HubConnection.InvokeAsync("UnsubscribePush", endpoint);
+                await liveConnection.InvokeAsync("UnsubscribePush", endpoint);
             }
             catch
             {

@@ -1,7 +1,9 @@
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
@@ -15,6 +17,8 @@ public sealed class TopicSelectionEffect : IDisposable
     private readonly ITopicService _topicService;
     private readonly IStreamResumeService _streamResumeService;
     private readonly IMessagePipeline _pipeline;
+    private readonly ILogger<TopicSelectionEffect> _logger;
+    private readonly IDisposable _selectTopicRegistration;
 
     public TopicSelectionEffect(
         Dispatcher dispatcher,
@@ -23,7 +27,8 @@ public sealed class TopicSelectionEffect : IDisposable
         IChatSessionService sessionService,
         ITopicService topicService,
         IStreamResumeService streamResumeService,
-        IMessagePipeline pipeline)
+        IMessagePipeline pipeline,
+        ILogger<TopicSelectionEffect> logger)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
@@ -32,21 +37,18 @@ public sealed class TopicSelectionEffect : IDisposable
         _topicService = topicService;
         _streamResumeService = streamResumeService;
         _pipeline = pipeline;
+        _logger = logger;
 
-        dispatcher.RegisterHandler<SelectTopic>(HandleSelectTopic);
-    }
-
-    private void HandleSelectTopic(SelectTopic action)
-    {
-        if (action.TopicId is null)
+        _selectTopicRegistration = dispatcher.RegisterHandler<SelectTopic>(action =>
         {
-            return;
-        }
-
-        _ = HandleSelectTopicAsync(action.TopicId);
+            if (action.TopicId is not null)
+            {
+                HandleSelectTopicAsync(action.TopicId).LogFaults(_logger, nameof(SelectTopic));
+            }
+        });
     }
 
-    private async Task HandleSelectTopicAsync(string topicId)
+    public async Task HandleSelectTopicAsync(string topicId)
     {
         var topic = _topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId);
         if (topic is null)
@@ -57,20 +59,32 @@ public sealed class TopicSelectionEffect : IDisposable
         var hasMessages = _messagesStore.State.MessagesByTopic.ContainsKey(topicId);
         if (!hasMessages)
         {
-            await _sessionService.StartSessionAsync(topic);
+            var session = await _sessionService.StartSessionAsync(topic);
+
+            // The user tapped this conversation, so a session that could not be started says so
+            // once (ADR-0004). Carrying on would open a thread with no history and no session
+            // behind it — a blank conversation that answers nothing typed into it.
+            if (!session.IsLive)
+            {
+                _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+                return;
+            }
+
             var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
 
             // Re-check after async work - SendMessageEffect might have added messages
             var currentMessages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []);
-            if (currentMessages.Count == 0)
+            if (history.IsLive && currentMessages.Count == 0)
             {
-                _pipeline.LoadHistory(topicId, history);
+                _pipeline.LoadHistory(topicId, history.Value!);
             }
         }
 
         await MarkTopicAsReadAsync(topic);
 
-        _ = _streamResumeService.TryResumeStreamAsync(topic);
+        // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean
+        // awaiting the conversation.
+        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, "stream resume");
     }
 
     private async Task MarkTopicAsReadAsync(StoredTopic topic)
@@ -100,6 +114,6 @@ public sealed class TopicSelectionEffect : IDisposable
 
     public void Dispose()
     {
-        // No subscription to dispose
+        _selectTopicRegistration.Dispose();
     }
 }

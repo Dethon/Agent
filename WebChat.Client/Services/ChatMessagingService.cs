@@ -1,78 +1,26 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
-using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
-public sealed class ChatMessagingService(ChatConnectionService connectionService) : IChatMessagingService
+public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : IChatMessagingService
 {
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
-        string? correlationId = null, AgentConfigPatch? configPatch = null)
-    {
-        var hubConnection = connectionService.HubConnection;
-        if (hubConnection is null)
-        {
-            yield break;
-        }
-
-        var stream = hubConnection.StreamAsync<ChatStreamMessage>(
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendMessageAsync(string topicId, string message,
+        string? correlationId = null, AgentConfigPatch? configPatch = null) =>
+        liveConnection.StreamAsync<ChatStreamMessage>(
             "SendMessage", topicId, message, correlationId, configPatch);
 
-        await foreach (var item in stream)
-        {
-            yield return item;
-        }
-    }
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId) =>
+        liveConnection.StreamAsync<ChatStreamMessage>("ResumeStream", topicId);
 
-    public async IAsyncEnumerable<ChatStreamMessage> ResumeStreamAsync(string topicId)
-    {
-        var hubConnection = connectionService.HubConnection;
-        if (hubConnection is null)
-        {
-            yield break;
-        }
+    public Task<HubResult<StreamState>> GetStreamStateAsync(string topicId) =>
+        liveConnection.InvokeAsync<StreamState>("GetStreamState", topicId);
 
-        var stream = hubConnection.StreamAsync<ChatStreamMessage>("ResumeStream", topicId);
+    public Task<HubResult<Nothing>> CancelTopicAsync(string topicId) =>
+        liveConnection.InvokeAsync("CancelTopic", topicId);
 
-        await foreach (var item in stream)
-        {
-            yield return item;
-        }
-    }
-
-    public async Task<StreamState?> GetStreamStateAsync(string topicId)
-    {
-        var hubConnection = connectionService.HubConnection;
-        if (hubConnection is null)
-        {
-            return null;
-        }
-
-        return await hubConnection.InvokeAsync<StreamState?>("GetStreamState", topicId);
-    }
-
-    public async Task CancelTopicAsync(string topicId)
-    {
-        var hubConnection = connectionService.HubConnection;
-        if (hubConnection is null)
-        {
-            return;
-        }
-
-        await hubConnection.InvokeAsync("CancelTopic", topicId);
-    }
-
-    public async Task<bool> EnqueueMessageAsync(
-        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
-    {
-        var hubConnection = connectionService.HubConnection;
-        if (hubConnection is null)
-        {
-            return false;
-        }
-
-        return await hubConnection.InvokeAsync<bool>(
-            "EnqueueMessage", topicId, message, correlationId, configPatch);
-    }
+    public Task<HubResult<bool>> EnqueueMessageAsync(
+        string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null) =>
+        liveConnection.InvokeAsync<bool>("EnqueueMessage", topicId, message, correlationId, configPatch);
 }

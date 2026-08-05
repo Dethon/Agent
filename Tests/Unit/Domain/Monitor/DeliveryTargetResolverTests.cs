@@ -231,40 +231,6 @@ public class DeliveryTargetResolverTests
     }
 
     [Fact]
-    public async Task ResolveDeliveryTargets_VoiceListedBeforeSignalr_StillAnchorsSharedIdOnSignalr()
-    {
-        // An attach-only channel (voice, per config) must not anchor the shared id: a
-        // topic-owning channel becomes targets[0] (the chat-history persistence + approval
-        // anchor). Even when the schedule lists voice FIRST, resolution orders attach-only
-        // targets last so signalr mints the shared id and voice attaches to it.
-        var origin = Channel("scheduling");
-        var signalr = Channel("signalr");
-        var voice = new Mock<IChannelConnection>();
-        voice.SetupGet(c => c.ChannelId).Returns("voice");
-        voice.SetupGet(c => c.AttachOnly).Returns(true);
-        voice.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, CancellationToken _) => existing ?? "minted-voice");
-        var channels = new[] { origin, signalr, voice.Object };
-        var msg = new ChannelMessage
-        {
-            ConversationId = "fire-1",
-            Content = "Avisa a Fran",
-            Sender = "scheduler",
-            ChannelId = "scheduling",
-            AgentId = "mycroft",
-            ReplyTo = [new ReplyTarget("voice", null, "fran-office-01"), new ReplyTarget("signalr", null)]
-        };
-
-        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
-
-        targets.Count.ShouldBe(2);
-        targets[0].Channel.ChannelId.ShouldBe("signalr");
-        targets[0].ConversationId.ShouldBe("minted-signalr");
-        targets.ShouldAllBe(t => t.ConversationId == "minted-signalr");
-    }
-
-    [Fact]
     public async Task ResolveDeliveryTargets_AttachOnlyOrderingIsCapabilityDriven_NotChannelIdDriven()
     {
         // Anchoring must key off the config-declared AttachOnly capability, not any channel

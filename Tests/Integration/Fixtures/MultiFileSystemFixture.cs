@@ -3,9 +3,10 @@ using System.Net;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.Tools.Config;
+using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Utils;
-using McpServerVault.McpTools;
+using Mcp.Hosting;
 using McpServerVault.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -65,33 +66,16 @@ public class MultiFileSystemFixture : IAsyncLifetime
         });
 
         var mcpBuilder = builder.Services
-            .AddSingleton(settings)
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.VaultPath))
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
-            .AddMcpServer()
-            .WithHttpTransport()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    return ToolResponse.Create(ex);
-                }
-            }))
-            .WithTools<FsReadTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsCopyTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsBlobReadTool>()
-            .WithTools<FsBlobWriteTool>();
+            .AddSingleton(sp => new TextDiskFileSystem(
+                "vault",
+                "Personal Obsidian vault.",
+                sp.GetRequiredService<IFileSystemClient>(),
+                new LibraryPathConfig(settings.VaultPath),
+                settings.AllowedExtensions))
+            .AddToolServer(settings, ToolResponse.Create)
+            .AddFileSystemTools<TextDiskFileSystem>();
 
         addResources(mcpBuilder);
 

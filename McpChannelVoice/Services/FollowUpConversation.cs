@@ -1,11 +1,13 @@
 using System.Threading.Channels;
+using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
 
 // Per-connection turn-taking over one held-open Wyoming wake stream. Runs on its own task;
-// the read loop calls OnWake/OnAudioStop and routes audio into the session capture this opens.
-// I/O is injected as delegates so the loop is unit-testable without TCP, STT, or playback.
+// the read loop calls OnWake/OnAudioStop and routes audio into the capture this opens.
+// The microphone and the turn arrive as modules; the rest of the I/O is injected as delegates, so
+// the loop is unit-testable without TCP, STT, or playback.
 public sealed class FollowUpConversation(
     FollowUpSettings followUp,
     TimeProvider time) : IDisposable
@@ -15,12 +17,13 @@ public sealed class FollowUpConversation(
     private volatile UtteranceCapture? _first;
     private volatile bool _active;
 
-    // Opens a capture on the session (returns it) — isFollowUp selects the no-speech window.
-    public required Func<bool, UtteranceCapture> OpenCapture { get; init; }
+    // The microphone: opening it, closing it, and the two satellite indicator events. Opening one
+    // announces the turn's start; closing one freezes its gate statistics and records what it
+    // learned about the room.
+    public required CaptureSession Capture { get; init; }
 
-    // Receives the capture being closed so the host can read its gate stats at exactly this point —
-    // the endpointing tail is what anchors speech end, and it must not be re-read later.
-    public required Action<UtteranceCapture> CloseCapture { get; init; }
+    // The per-turn "did the agent speak?" handshake.
+    public required VoiceTurn Turn { get; init; }
 
     // Transcribe the captured audio and dispatch it to the agent. Receives the whole capture so
     // the dispatcher can read gate stats (peak RMS, speech ms) alongside the audio. Returns false
@@ -35,28 +38,14 @@ public sealed class FollowUpConversation(
     // Write the closing transcript to the satellite (stops streaming, re-arms wake).
     public required Func<CancellationToken, Task> EndConversation { get; init; }
 
-    // Tell the satellite the user has stopped speaking and processing has begun — this drives
-    // its Thinking indicator. Emitted only once the capture has survived the outcome checks, so
-    // an arbitration-abandoned or speechless capture never lights it.
-    public required Func<CancellationToken, Task> SpeechStopped { get; init; }
-
-    // Tell the satellite the mic is live again for a wake-free follow-up turn — this returns its
-    // indicator from Thinking to Listening. It cannot infer the moment: its own capture never
-    // closed, so from its side a reply draining looks the same whether the agent is mid-answer or
-    // done. Sent just before the capture opens, so the light and the live mic agree.
-    public required Func<CancellationToken, Task> ListeningStarted { get; init; }
-
-    // Reset / await the per-turn "did the agent speak?" handshake.
-    public required Action ResetTurn { get; init; }
-    public required Func<Task<bool>> AwaitReply { get; init; }
-
     // Side effect (metric) just before a follow-up window opens.
-    public required Func<CancellationToken, Task> OnFollowUpWindow { get; init; }
+    public Func<CancellationToken, Task> OnFollowUpWindow { get; init; } = _ => Task.CompletedTask;
 
     // Side effect (metric) when a capture ends without accepted speech — the window expired
     // or the gate demoted a background-only capture. Receives the rejected capture's gate
     // stats so the host can publish them (rejection tuning needs field data).
-    public required Func<CaptureStats, CancellationToken, Task> OnSilenceTimeout { get; init; }
+    public Func<CaptureStats, CancellationToken, Task> OnSilenceTimeout { get; init; } =
+        (_, _) => Task.CompletedTask;
 
     // Side effect (metric/log) when a dispatched turn's reply never resolves within ReplyTimeoutMs.
     public Func<CancellationToken, Task> OnReplyTimeout { get; init; } = _ => Task.CompletedTask;
@@ -69,14 +58,17 @@ public sealed class FollowUpConversation(
     public Func<UtteranceCapture, CancellationToken, Task<bool>> EarlyReject { get; init; } =
         (_, _) => Task.FromResult(false);
 
-    public void OnWake()
+    // The announcement arrives as an argument and is spent here. A wake that finds a turn already
+    // open returns without opening one, which discards the announcement with it — there is nothing
+    // left over for the next turn to report as its own loudness.
+    public void OnWake(WakeAnnouncement? announcement)
     {
         if (_active || _disposed.IsCancellationRequested)
         {
             return;
         }
         _active = true;
-        _first = OpenCapture(false);
+        _first = Capture.OpenWakeTurn(announcement);
         _wakes.Writer.TryWrite(true);
     }
 
@@ -108,7 +100,7 @@ public sealed class FollowUpConversation(
             while (!ct.IsCancellationRequested)
             {
                 var outcome = await AwaitCaptureAsync(capture, ct);
-                CloseCapture(capture);
+                var stats = Capture.Close(capture);
 
                 if (outcome is null)
                 {
@@ -128,26 +120,16 @@ public sealed class FollowUpConversation(
 
                 if (outcome == CaptureOutcome.NoSpeech)
                 {
-                    await OnSilenceTimeout(capture.Stats, ct);
+                    await OnSilenceTimeout(stats, ct);
                     await EndConversation(ct);
                     return;
                 }
 
                 var isFollowUp = turns > 0;
-                ResetTurn();
-                try
-                {
-                    await SpeechStopped(ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception)
-                {
-                    // SpeechStopped only drives the satellite's Thinking indicator — a failure
-                    // there must never drop the utterance that would otherwise still transcribe.
-                }
+                Turn.Reset();
+                // Emitted only once the capture has survived the outcome checks, so an
+                // arbitration-abandoned or speechless capture never lights the Thinking indicator.
+                await Capture.SpeechStoppedAsync(ct);
                 var dispatched = await TranscribeAndDispatch(capture, isFollowUp, ct);
 
                 // Nothing reached the agent (or follow-up is off): no reply will resolve the turn,
@@ -161,7 +143,7 @@ public sealed class FollowUpConversation(
                 bool spoke;
                 try
                 {
-                    spoke = await AwaitReply().WaitAsync(TimeSpan.FromMilliseconds(followUp.ReplyTimeoutMs), time, ct);
+                    spoke = await Turn.AwaitSpoken().WaitAsync(TimeSpan.FromMilliseconds(followUp.ReplyTimeoutMs), time, ct);
                 }
                 catch (TimeoutException)
                 {
@@ -186,20 +168,9 @@ public sealed class FollowUpConversation(
 
                 turns++;
                 await OnFollowUpWindow(ct);
-                try
-                {
-                    await ListeningStarted(ct);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception)
-                {
-                    // Same contract as SpeechStopped: this only drives the satellite's indicator,
-                    // so a failed write must never cost the user the window it was announcing.
-                }
-                capture = OpenCapture(true);
+                // Announced before the capture opens, so the light and the live mic agree.
+                await Capture.ListeningStartedAsync(ct);
+                capture = Capture.OpenFollowUpTurn();
             }
         }
         finally

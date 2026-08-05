@@ -79,7 +79,7 @@ public class PrefetchedAudioTests
     public async Task Chunks_SurfaceTheSourceFailure()
     {
         // A Wyoming/Kokoro error event throws mid-synthesis; the playback loop relies on that
-        // surfacing so OnFailed settles the turn instead of hanging the handshake.
+        // surfacing so the job settles as failed instead of hanging whoever awaits it.
         static async IAsyncEnumerable<AudioChunk> throwing()
         {
             await Task.Yield();

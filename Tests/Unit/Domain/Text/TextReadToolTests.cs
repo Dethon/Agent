@@ -96,7 +96,7 @@ public class TextReadToolTests : IDisposable
     {
         public JsonNode TestRun(string filePath, int? offset = null, int? limit = null)
         {
-            return Run(filePath, offset, limit);
+            return Run(filePath, offset, limit).ToNode();
         }
     }
 }

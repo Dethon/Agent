@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.Extensions;
 using Domain.Memory;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
@@ -43,13 +44,9 @@ public class MemoryExtractionWorker(
 
     public async Task ProcessRequestAsync(MemoryExtractionRequest request, CancellationToken ct)
     {
-        if (request.AgentId is not null)
+        if (!agentDefinitionProvider.HasFeatureEnabled(request.AgentId, "memory"))
         {
-            var agentDef = agentDefinitionProvider.GetById(request.AgentId);
-            if (agentDef is not null && !agentDef.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
-            {
-                return;
-            }
+            return;
         }
 
         var sw = Stopwatch.StartNew();
@@ -68,7 +65,7 @@ public class MemoryExtractionWorker(
             storedCount = storeResults.Count(stored => stored);
 
             sw.Stop();
-            await metricsPublisher.PublishAsync(new MemoryExtractionEvent
+            metricsPublisher.Publish(new MemoryExtractionEvent
             {
                 DurationMs = sw.ElapsedMilliseconds,
                 CandidateCount = candidateCount,
@@ -76,17 +73,17 @@ public class MemoryExtractionWorker(
                 UserId = request.UserId,
                 AgentId = request.AgentId is not null ? agentDefinitionProvider.GetById(request.AgentId)?.Name ?? request.AgentId : null,
                 ConversationId = request.ConversationId
-            }, ct);
+            });
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Memory extraction failed for user {UserId}", request.UserId);
-            await metricsPublisher.PublishAsync(new ErrorEvent
+            metricsPublisher.Publish(new ErrorEvent
             {
                 Service = "memory",
                 ErrorType = ex.GetType().Name,
                 Message = $"Extraction failed: {ex.Message}"
-            }, ct);
+            });
         }
     }
 
@@ -98,35 +95,21 @@ public class MemoryExtractionWorker(
         {
             logger.LogDebug(
                 "Extraction dropped: no window could be built (user {UserId}, key {Key}, anchor {Anchor})",
-                request.UserId, request.ThreadStateKey, request.AnchorIndex);
+                request.UserId, request.ThreadStateKey, request.Anchor.PersistedMessageCount);
             return [];
         }
 
         return await ExtractWithRetryAsync(window, request.UserId, ct);
     }
 
-    private async Task<List<ChatMessage>> BuildExtractionWindowAsync(MemoryExtractionRequest request)
+    private async Task<IReadOnlyList<ChatMessage>> BuildExtractionWindowAsync(MemoryExtractionRequest request)
     {
-        ChatMessage[]? thread = null;
-        if (request.ThreadStateKey is not null)
-        {
-            thread = await threadStateStore.GetMessagesAsync(request.ThreadStateKey);
-        }
+        var thread = request.ThreadStateKey is not null
+            ? await threadStateStore.GetMessagesAsync(request.ThreadStateKey)
+            : null;
 
-        var hasFallback = !string.IsNullOrEmpty(request.FallbackContent);
-        var contextSlots = hasFallback ? options.WindowMixedTurns - 1 : options.WindowMixedTurns;
-
-        var window = (thread?
-            .Take(Math.Max(0, request.AnchorIndex))
-            .TakeLast(contextSlots)
-            .ToList()) ?? [];
-
-        if (hasFallback)
-        {
-            window.Add(new ChatMessage(ChatRole.User, request.FallbackContent!));
-        }
-
-        return window;
+        return ExtractionWindow.Build(
+            thread, request.Anchor, request.FallbackContent, options.WindowMixedTurns);
     }
 
     private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithRetryAsync(

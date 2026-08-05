@@ -1,7 +1,8 @@
-using Microsoft.AspNetCore.SignalR.Client;
+using Domain.DTOs.Channel;
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
-using WebChat.Client.Services;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
@@ -13,43 +14,53 @@ namespace WebChat.Client.State.Effects;
 public sealed class InitializationEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly IChatConnectionService _connectionService;
+    private readonly ConnectionStore _connectionStore;
+    private readonly IChatLiveConnection _liveConnection;
+    private readonly IChatSessionService _sessionService;
     private readonly IAgentService _agentService;
     private readonly ITopicService _topicService;
-    private readonly ConfigService _configService;
+    private readonly IConfigService _configService;
     private readonly ILocalStorageService _localStorage;
-    private readonly ISignalREventSubscriber _eventSubscriber;
     private readonly IStreamResumeService _streamResumeService;
-    private readonly PushNotificationService _pushNotificationService;
+    private readonly IPushSubscriptionService _pushNotificationService;
     private readonly UserIdentityStore _userIdentityStore;
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly IMessagePipeline _pipeline;
     private readonly SpaceStore _spaceStore;
+    private readonly ILogger<InitializationEffect> _logger;
+    private readonly IDisposable _initializeRegistration;
+    private readonly IDisposable _selectUserRegistration;
+    private readonly IDisposable _setAgentsRegistration;
+    private readonly IDisposable _becameLiveAgainSubscription;
+    private int _awaitingAgentCatalog;
 
     public InitializationEffect(
         Dispatcher dispatcher,
-        IChatConnectionService connectionService,
+        ConnectionStore connectionStore,
+        IChatLiveConnection liveConnection,
+        IChatSessionService sessionService,
         IAgentService agentService,
         ITopicService topicService,
-        ConfigService configService,
+        IConfigService configService,
         ILocalStorageService localStorage,
-        ISignalREventSubscriber eventSubscriber,
         IStreamResumeService streamResumeService,
-        PushNotificationService pushNotificationService,
+        IPushSubscriptionService pushNotificationService,
         UserIdentityStore userIdentityStore,
         TopicsStore topicsStore,
         MessagesStore messagesStore,
         IMessagePipeline pipeline,
-        SpaceStore spaceStore)
+        SpaceStore spaceStore,
+        ILogger<InitializationEffect> logger)
     {
         _dispatcher = dispatcher;
-        _connectionService = connectionService;
+        _connectionStore = connectionStore;
+        _liveConnection = liveConnection;
+        _sessionService = sessionService;
         _agentService = agentService;
         _topicService = topicService;
         _configService = configService;
         _localStorage = localStorage;
-        _eventSubscriber = eventSubscriber;
         _streamResumeService = streamResumeService;
         _pushNotificationService = pushNotificationService;
         _userIdentityStore = userIdentityStore;
@@ -57,25 +68,38 @@ public sealed class InitializationEffect : IDisposable
         _messagesStore = messagesStore;
         _pipeline = pipeline;
         _spaceStore = spaceStore;
+        _logger = logger;
 
-        dispatcher.RegisterHandler<Initialize>(HandleInitialize);
-        dispatcher.RegisterHandler<SelectUser>(HandleSelectUser);
+        _initializeRegistration = dispatcher.RegisterHandler<Initialize>(
+            _ => HandleInitializeAsync().LogFaults(_logger, nameof(Initialize)));
+        _selectUserRegistration = dispatcher.RegisterHandler<SelectUser>(
+            action => RegisterUserAsync(action.UserId).LogFaults(_logger, nameof(SelectUser)));
+        _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(
+            action => HandleAgentCatalogArrivedAsync(action.Agents).LogFaults(_logger, nameof(SetAgents)));
+
+        // Nothing else retries a not-live catalog fetch on its own: a SetAgents broadcast (the
+        // agent re-registering) is one way it completes, and the next connection epoch is the
+        // other — the client's own retry, not dependent on the agent process doing anything.
+        _becameLiveAgainSubscription = connectionStore.BecameLiveAgain.Subscribe(
+            _ => RetryAgentCatalogIfAwaitingAsync().LogFaults(_logger, nameof(ConnectionStore.BecameLiveAgain)));
     }
 
-    private void HandleSelectUser(SelectUser action)
+    public async Task HandleInitializeAsync()
     {
-        _ = RegisterUserAsync(action.UserId);
-    }
-
-    private void HandleInitialize(Initialize action)
-    {
-        _ = HandleInitializeAsync();
-    }
-
-    private async Task HandleInitializeAsync()
-    {
-        await _connectionService.ConnectAsync();
-        _eventSubscriber.Subscribe();
+        // Armed before the call: this connect's own inline steps below already do what session
+        // recovery exists to do, so its epoch must not trigger recovery too. A connect that
+        // never reaches Connected disarms it, so whichever epoch a later rebuild produces is
+        // not mistaken for this one and recovery runs for it instead.
+        _connectionStore.ArmInlineInitialConnect();
+        try
+        {
+            await _liveConnection.ConnectAsync();
+        }
+        catch
+        {
+            _connectionStore.DisarmInlineInitialConnect();
+            throw;
+        }
 
         await RegisterUserAsync();
 
@@ -99,27 +123,65 @@ public sealed class InitializationEffect : IDisposable
         // (agent list, topics). Push subscription still runs after space join so the
         // server can associate it with the space context. A slow pushManager.subscribe()
         // previously stalled the agent list ~30s by being awaited here.
-        _ = SubscribePushAsync();
+        SubscribePushAsync().LogFaults(_logger, "push subscription");
 
-        // Re-register user on reconnection (after initial subscribe to avoid race)
-        _connectionService.OnReconnected += () =>
+        var catalog = await _agentService.GetAgentsAsync();
+        if (!catalog.IsLive)
         {
-            var registerTask = RegisterUserAsync();
-            var joinTask = _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
+            // Nothing else retries this fetch on its own: a SetAgents broadcast (the agent
+            // re-registering) or the next connection epoch (BecameLiveAgain, below) completes
+            // the initialization this load could not.
+            Volatile.Write(ref _awaitingAgentCatalog, 1);
+            return;
+        }
 
-            // Re-send existing push subscription without force-refreshing the push channel.
-            // Using RequestAndSubscribeAsync here would unsubscribe+resubscribe, generating a
-            // new endpoint in Chrome and losing accumulated space memberships.
-            var pushTask = _pushNotificationService.ResubscribeAsync()
-                .ContinueWith(_ => { }, TaskContinuationOptions.OnlyOnFaulted);
+        _dispatcher.Dispatch(new SetAgents(catalog.Value!));
+        await SelectAgentAndLoadTopicsAsync(catalog.Value!);
+    }
 
-            return Task.WhenAll(registerTask, joinTask, pushTask);
-        };
+    // A catalog arriving after a first load that could not fetch it. The reducer has already stored
+    // the agents; what first load never got to do — pick the agent and load its topics — happens
+    // here, exactly once.
+    private async Task HandleAgentCatalogArrivedAsync(IReadOnlyList<AgentCatalogEntry> agents)
+    {
+        if (agents.Count == 0 || !ClaimAgentCatalog())
+        {
+            return;
+        }
 
-        var agents = await _agentService.GetAgentsAsync();
-        _dispatcher.Dispatch(new SetAgents(agents));
-        await AgentSettingsEffect.LoadAsync(agents, _localStorage, _dispatcher);
+        await SelectAgentAndLoadTopicsAsync(agents);
+    }
 
+    // The client's own retry for a not-live first load: becoming live again is not dependent
+    // on the agent process re-registering, so this fires whether or not that ever happens. A
+    // retry that also answers not live leaves the flag set for the epoch after this one.
+    private async Task RetryAgentCatalogIfAwaitingAsync()
+    {
+        if (Volatile.Read(ref _awaitingAgentCatalog) == 0)
+        {
+            return;
+        }
+
+        var catalog = await _agentService.GetAgentsAsync();
+
+        // The same reconnect also carries the agent's re-registration broadcast, so the catalog
+        // may have arrived that way while this fetch was in flight. Claiming after the await is
+        // what keeps the two from both completing initialization — the second run would fetch
+        // every topic again and re-select the agent, dropping the conversation on screen.
+        if (!catalog.IsLive || !ClaimAgentCatalog())
+        {
+            return;
+        }
+
+        _dispatcher.Dispatch(new SetAgents(catalog.Value!));
+        await SelectAgentAndLoadTopicsAsync(catalog.Value!);
+    }
+
+    // The deferred completion is owed exactly once, to whichever path gets here first.
+    private bool ClaimAgentCatalog() => Interlocked.Exchange(ref _awaitingAgentCatalog, 0) == 1;
+
+    private async Task SelectAgentAndLoadTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
+    {
         if (agents.Count == 0)
         {
             return;
@@ -135,23 +197,24 @@ public sealed class InitializationEffect : IDisposable
             await _localStorage.SetAsync("selectedAgentId", agentToSelect.Id);
         }
 
-        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id, spaceSlug);
-        var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
+        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id, _spaceStore.State.CurrentSlug);
+        if (!serverTopics.IsLive)
+        {
+            return;
+        }
+
+        var topics = serverTopics.Value!.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 
-        foreach (var topic in topics)
-        {
-            _ = LoadTopicHistoryAsync(topic);
-        }
+        // Gathered rather than detached: awaiting first-load init has to mean history is in
+        // the store, or a caller that awaits it still races the messages it asked for.
+        await Task.WhenAll(topics.Select(LoadTopicHistoryAsync));
     }
 
-    private async Task RegisterUserAsync(string? userId = null)
+    public Task RegisterUserAsync(string? userId = null)
     {
         userId ??= _userIdentityStore.State.SelectedUserId;
-        if (!string.IsNullOrEmpty(userId) && _connectionService.HubConnection is not null)
-        {
-            await _connectionService.HubConnection.InvokeAsync("RegisterUser", userId);
-        }
+        return string.IsNullOrEmpty(userId) ? Task.CompletedTask : _sessionService.RegisterUserAsync(userId);
     }
 
     private async Task SubscribePushAsync()
@@ -173,7 +236,12 @@ public sealed class InitializationEffect : IDisposable
     private async Task LoadTopicHistoryAsync(StoredTopic topic)
     {
         var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-        _pipeline.LoadHistory(topic.TopicId, history);
+        if (!history.IsLive)
+        {
+            return;
+        }
+
+        _pipeline.LoadHistory(topic.TopicId, history.Value!);
 
         // If this topic is currently selected, mark it as read so no stale badges appear
         if (_topicsStore.State.SelectedTopicId == topic.TopicId)
@@ -181,7 +249,9 @@ public sealed class InitializationEffect : IDisposable
             await MarkTopicAsReadAsync(topic);
         }
 
-        _ = _streamResumeService.TryResumeStreamAsync(topic);
+        // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean
+        // awaiting the conversation.
+        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, "stream resume");
     }
 
     private async Task MarkTopicAsReadAsync(StoredTopic topic)
@@ -210,6 +280,9 @@ public sealed class InitializationEffect : IDisposable
 
     public void Dispose()
     {
-        // No subscription to dispose
+        _initializeRegistration.Dispose();
+        _selectUserRegistration.Dispose();
+        _setAgentsRegistration.Dispose();
+        _becameLiveAgainSubscription.Dispose();
     }
 }

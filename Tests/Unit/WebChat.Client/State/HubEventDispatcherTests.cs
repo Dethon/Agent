@@ -18,7 +18,6 @@ public sealed class HubEventDispatcherTests : IDisposable
     private readonly Dispatcher _realDispatcher;
     private readonly TopicsStore _topicsStore;
     private readonly StreamingStore _streamingStore;
-    private readonly Mock<IStreamResumeService> _mockStreamResumeService;
     private readonly HubEventDispatcher _sut;
 
     public HubEventDispatcherTests()
@@ -28,13 +27,11 @@ public sealed class HubEventDispatcherTests : IDisposable
         _topicsStore = new TopicsStore(_realDispatcher);
         _streamingStore = new StreamingStore(_realDispatcher);
         var mockPipeline = new Mock<IMessagePipeline>();
-        _mockStreamResumeService = new Mock<IStreamResumeService>();
         _sut = new HubEventDispatcher(
             _mockDispatcher.Object,
             _topicsStore,
             _streamingStore,
-            mockPipeline.Object,
-            _mockStreamResumeService.Object);
+            mockPipeline.Object);
     }
 
     public void Dispose()
@@ -85,21 +82,22 @@ public sealed class HubEventDispatcherTests : IDisposable
     }
 
     [Fact]
-    public void HandleStreamChanged_Started_TopicNotFound_DispatchesStreamStarted()
+    // Whether the start is resumed or merely marked is StreamResumeEffect's decision; the
+    // dispatcher only reports what the server pushed.
+    public void HandleStreamChanged_Started_DispatchesRemoteStreamStarted()
     {
         var notification = new StreamChangedNotification(StreamChangeType.Started, "topic-1");
 
         _sut.HandleStreamChanged(notification);
 
         _mockDispatcher.Verify(
-            d => d.Dispatch(It.Is<StreamStarted>(a => a.TopicId == "topic-1")),
+            d => d.Dispatch(It.Is<RemoteStreamStarted>(a => a.TopicId == "topic-1")),
             Times.Once);
     }
 
     [Fact]
-    public void HandleStreamChanged_Started_TopicFound_CallsStreamResume()
+    public void HandleStreamChanged_Started_KnownTopic_StillOnlyDispatches()
     {
-        // Add topic to store so TryResumeStreamAsync is called
         var topic = new StoredTopic
         {
             TopicId = "topic-1",
@@ -114,13 +112,10 @@ public sealed class HubEventDispatcherTests : IDisposable
 
         _sut.HandleStreamChanged(notification);
 
-        _mockStreamResumeService.Verify(
-            s => s.TryResumeStreamAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-1")),
-            Times.Once);
-        // StreamStarted should NOT be dispatched when topic is found
         _mockDispatcher.Verify(
-            d => d.Dispatch(It.IsAny<StreamStarted>()),
-            Times.Never);
+            d => d.Dispatch(It.Is<RemoteStreamStarted>(a => a.TopicId == "topic-1")),
+            Times.Once);
+        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<StreamStarted>()), Times.Never);
     }
 
     [Fact]

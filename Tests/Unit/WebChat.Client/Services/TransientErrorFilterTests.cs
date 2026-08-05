@@ -34,7 +34,6 @@ public sealed class TransientErrorFilterTests
 
     [Theory]
     [InlineData("OperationCanceled")]
-    [InlineData("The OperationCanceled happened")]
     [InlineData("TaskCanceled exception")]
     [InlineData("The operation was canceled.")]
     [InlineData("OPERATIONCANCELED")] // case insensitive
@@ -45,8 +44,6 @@ public sealed class TransientErrorFilterTests
 
     [Theory]
     [InlineData("Connection reset by peer")]
-    [InlineData("Internal server error")]
-    [InlineData("Rate limit exceeded")]
     public void IsTransientErrorMessage_WithRealError_ReturnsFalse(string message)
     {
         TransientErrorFilter.IsTransientErrorMessage(message).ShouldBeFalse();

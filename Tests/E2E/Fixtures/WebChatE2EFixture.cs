@@ -97,6 +97,9 @@ public class WebChatE2EFixture : E2EFixtureBase
         await _mcpChannelSignalR.StartAsync(ct);
 
         // Inject a minimal appsettings.json so the agent only connects to E2E services.
+        // Raise with E2E_AGENT_LOG_LEVEL=Debug when a failing run needs the agent's own account
+        // of a turn rather than the browser's.
+        var agentLogLevel = Environment.GetEnvironmentVariable("E2E_AGENT_LOG_LEVEL") ?? "Information";
         // Without this, the default appsettings.json baked into the image also registers
         // channels for telegram/servicebus and extra MCP endpoints that don't exist here.
         var e2EAppSettings = System.Text.Encoding.UTF8.GetBytes($$"""
@@ -107,7 +110,7 @@ public class WebChatE2EFixture : E2EFixtureBase
                 {
                   "id": "test-agent",
                   "name": "Test Agent",
-                  "model": "google/gemini-2.5-flash",
+                  "model": "~deepseek/deepseek-v4-flash-latest",
                   "mcpServerEndpoints": [ "http://mcp-vault:8080/mcp" ],
                   "whitelistPatterns": ["__none__"]
                 }
@@ -115,7 +118,7 @@ public class WebChatE2EFixture : E2EFixtureBase
               "channelEndpoints": [
                 { "channelId": "Web", "endpoint": "http://mcp-channel-signalr:8080/mcp" }
               ],
-              "Logging": { "LogLevel": { "Default": "Information" } }
+              "Logging": { "LogLevel": { "Default": "{{agentLogLevel}}" } }
             }
             """);
 

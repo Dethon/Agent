@@ -43,8 +43,7 @@ public class MemoryDreamingServiceTests
             .ReturnsAsync((PersonalityProfile p, CancellationToken _) => p);
 
         _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()));
 
         _service = new MemoryDreamingService(
             _store.Object,
@@ -282,9 +281,8 @@ public class MemoryDreamingServiceTests
 
         MetricEvent? published = null;
         _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt => published = evt);
 
         await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 

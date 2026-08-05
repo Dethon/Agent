@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Moq;
@@ -80,19 +81,19 @@ public class MoveToolTests
         var validPath = Path.Combine(_libraryPath, "movies", "test.mkv");
 
         // Act & Assert - source outside
-        await Should.ThrowAsync<ArgumentException>(
-            () => tool.TestRun(outsidePath, validPath, CancellationToken.None));
+        (await tool.TestRun(outsidePath, validPath, CancellationToken.None))
+            .ShouldBeError(ToolError.Codes.InvalidArgument);
 
         // Act & Assert - destination outside
-        await Should.ThrowAsync<ArgumentException>(
-            () => tool.TestRun(validPath, outsidePath, CancellationToken.None));
+        (await tool.TestRun(validPath, outsidePath, CancellationToken.None))
+            .ShouldBeError(ToolError.Codes.InvalidArgument);
     }
 
     [Theory]
     [InlineData(true, true)]
     [InlineData(true, false)]
     [InlineData(false, true)]
-    public async Task Run_WithDoubleDotInPath_ThrowsArgumentException(bool absolute, bool inSource)
+    public async Task Run_WithDoubleDotInPath_ReturnsInvalidArgument(bool absolute, bool inSource)
     {
         // Arrange
         var tool = CreateTool();
@@ -104,8 +105,22 @@ public class MoveToolTests
         var destination = inSource ? validPath : maliciousPath;
 
         // Act & Assert
-        await Should.ThrowAsync<ArgumentException>(
-            () => tool.TestRun(source, destination, CancellationToken.None));
+        (await tool.TestRun(source, destination, CancellationToken.None))
+            .ShouldBeError(ToolError.Codes.InvalidArgument);
+    }
+
+    // ".." as a substring of a name is not a traversal — the jail judges the resolved path.
+    [Fact]
+    public async Task Run_WithANameContainingConsecutiveDots_Succeeds()
+    {
+        var tool = CreateTool();
+        var source = Path.Combine(_libraryPath, "movies", "v1..2.mkv");
+        var destination = Path.Combine(_libraryPath, "movies", "v1..3.mkv");
+
+        var result = await tool.TestRun(source, destination, CancellationToken.None);
+
+        result["status"]!.ToString().ShouldBe("success");
+        _clientMock.Verify(m => m.Move(source, destination, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private class TestableMoveToolWrapper(
@@ -113,7 +128,7 @@ public class MoveToolTests
         LibraryPathConfig libraryPath)
         : MoveTool(client, libraryPath)
     {
-        public Task<JsonNode> TestRun(string sourcePath, string destinationPath, CancellationToken ct)
-            => Run(sourcePath, destinationPath, ct);
+        public async Task<JsonNode> TestRun(string sourcePath, string destinationPath, CancellationToken ct)
+            => (await Run(sourcePath, destinationPath, ct)).ToNode();
     }
 }

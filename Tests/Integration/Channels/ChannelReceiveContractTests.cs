@@ -5,13 +5,8 @@ using System.Text.Json;
 using Domain.Channels;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
-using McpChannelServiceBus.Modules;
-using McpChannelSignalR.McpTools;
-using McpChannelSignalR.Modules;
+using Mcp.Hosting;
 using McpChannelTelegram.Modules;
-using McpChannelVoice.Modules;
-using McpServerLibrary.Modules;
-using McpServerScheduling.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -23,98 +18,50 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Tests.Integration.Fixtures;
-using LibrarySettings = McpServerLibrary.Settings;
-using SchedulingSettings = McpServerScheduling.Settings;
-using ServiceBusSettings = McpChannelServiceBus.Settings;
+using Tests.Integration.McpServers;
 // Aliased because Tests.Integration has a sibling namespace named after the channel project
 // (Tests.Integration.McpChannelSignalR / .McpChannelVoice), which shadows the project namespace
 // from inside Tests.
-using SignalRSettings = McpChannelSignalR.Settings;
 using TelegramSettings = McpChannelTelegram.Settings;
-using VoiceSettings = McpChannelVoice.Settings;
 
 namespace Tests.Integration.Channels;
 
 public class ChannelReceiveContractTests
 {
-    // ConfigureChannel eagerly calls ConnectionMultiplexer.Connect. abortConnect=false makes that
-    // hand back a disconnected multiplexer instead of throwing, so the registration theory runs
-    // without a Redis container; port 1 is refused instantly and the short timeouts keep the
-    // background reconnect loop from lingering.
-    private const string UnreachableRedis =
-        "127.0.0.1:1,abortConnect=false,connectTimeout=100,connectRetry=1";
-
-    // ConfigureChannel eagerly constructs a ServiceBusClient from this, which parses the
-    // connection string without ever dialing out. Well-formed but unreachable — SharedAccessKey
-    // just needs to be valid base64.
-    private const string FakeServiceBusConnectionString =
-        "Endpoint=sb://fake.servicebus.windows.net/;SharedAccessKeyName=x;SharedAccessKey=Zm9vYmFyMTIzNDU2Nzg5MA==";
-
     // What McpChannelConnection("signalr") derives for itself, spelled out so a test that pins the
     // id cannot drift with the implementation it is pinning.
     private const string SignalRSubscriberId = ChannelProtocol.ChannelClientNamePrefix + "signalr";
 
-    // One row per channel server, driving that server's REAL registration entry point — the
-    // ConfigModule that ships. Hand-registering ChannelReceiveTool and ChannelInbox here instead
-    // would stay green against a module that forgot either (a silently dead channel), and would
-    // pin the SDK's transport defaults rather than the options each module actually passes to
-    // WithHttpTransport. Later channel migrations append exactly one row; the test bodies are
-    // written once and never copied.
-    public static TheoryData<string, Action<IServiceCollection>> Servers => new()
-    {
-        {
-            "signalr",
-            services => services.ConfigureChannel(
-                new SignalRSettings.ChannelSettings { RedisConnectionString = UnreachableRedis })
-        },
-        {
-            "telegram",
-            services => services.ConfigureChannel(
-                new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] })
-        },
-        {
-            "servicebus",
-            services => services.ConfigureChannel(
-                new ServiceBusSettings.ChannelSettings
-                {
-                    ServiceBusConnectionString = FakeServiceBusConnectionString,
-                    PromptQueueName = "prompts",
-                    ResponseQueueName = "responses"
-                })
-        },
-        {
-            "voice",
-            // ConfigureVoiceChannel's IConnectionMultiplexer registration is a lazy factory (unlike
-            // SignalR's eager Connect), and nothing in this registration-only test resolves it, so
-            // no live/fake Redis endpoint is needed — defaults are enough, exactly as ConfigModuleTests
-            // already relies on for the rest of the voice DI graph.
-            services => services.ConfigureVoiceChannel(new VoiceSettings.VoiceSettings())
-        },
-        {
-            "scheduling",
-            // Same lazy IConnectionMultiplexer factory as voice — never resolved here, so the
-            // connection string just needs to satisfy the required property.
-            services => services.ConfigureScheduling(
-                new SchedulingSettings.SchedulingSettings { RedisConnectionString = "unused" })
-        },
-        {
-            "library",
-            // ConfigureMcp's IConnectionMultiplexer registration is the same lazy factory pattern,
-            // and AddJacketClient/AddQBittorrentClient only register typed HttpClients (no eager
-            // dial), so plain placeholder settings are enough to build the container.
-            services => services.ConfigureMcp(new LibrarySettings.McpSettings
+    // The channel-capable rows of the one server table. Every row drives that server's REAL
+    // registration entry point — the ConfigModule that ships. Hand-registering ChannelReceiveTool
+    // and ChannelInbox here instead would stay green against a module that forgot either (a
+    // silently dead channel), and would pin the SDK's transport defaults rather than the options
+    // each module actually passes to WithHttpTransport.
+    //
+    // The delivery policy travels with the row, so McpServerRegistrations is the single place where
+    // "this is a channel server, and this is the policy it chose" is verified against the real
+    // registration. That is the check that would have caught all three rounds of the
+    // stale-subscriber defect: every one of them was a server buffering differently from what its
+    // caller assumed, and none of them was visible anywhere but inside the emitter.
+    private static IReadOnlyList<McpServerRow> Registrations => McpServerRegistrations.ChannelServers;
+
+    public static TheoryData<string, Action<IServiceCollection>> Servers =>
+        Registrations.Aggregate(
+            new TheoryData<string, Action<IServiceCollection>>(),
+            (data, row) =>
             {
-                Jackett = new LibrarySettings.JackettConfiguration { ApiKey = "x", ApiUrl = "http://jackett" },
-                QBittorrent = new LibrarySettings.QBittorrentConfiguration
-                {
-                    ApiUrl = "http://qbittorrent", UserName = "x", Password = "x"
-                },
-                DownloadLocation = "/downloads",
-                BaseLibraryPath = "/media",
-                RedisConnectionString = "unused"
-            })
-        }
-    };
+                data.Add(row.Id, row.Configure);
+                return data;
+            });
+
+    public static TheoryData<string, Action<IServiceCollection>, DeliveryPolicy> ServerPolicies =>
+        Registrations.Aggregate(
+            new TheoryData<string, Action<IServiceCollection>, DeliveryPolicy>(),
+            (data, row) =>
+            {
+                data.Add(row.Id, row.Configure, row.Policy!.Value);
+                return data;
+            });
 
     [Theory]
     [MemberData(nameof(Servers))]
@@ -194,6 +141,59 @@ public class ChannelReceiveContractTests
             .ShouldContain(
                 ChannelProtocol.ReceiveTool,
                 $"{channelId} must expose {ChannelProtocol.ReceiveTool} from its own ConfigModule");
+    }
+
+    [Theory]
+    [MemberData(nameof(ServerPolicies))]
+    public void ChannelServerRegistration_DeclaresItsDeliveryPolicy(
+        string channelId, Action<IServiceCollection> configureChannel, DeliveryPolicy expected)
+    {
+        var services = new ServiceCollection();
+        configureChannel(services);
+
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<ChannelNotificationEmitter>().Policy
+            .ShouldBe(expected, $"{channelId} must register with the {expected} delivery policy");
+    }
+
+    // The buffer-always target has to be the id McpChannelConnection derives for itself. If it is
+    // not, items pile into a queue nobody ever drains and nothing reports an error — the failure is
+    // completely silent. Pinned end to end through Telegram's real registration rather than by
+    // comparing two constants, so the match cannot drift on either side.
+    [Fact]
+    public async Task Telegram_BuffersForTheIdTheAgentConnectionDerives()
+    {
+        var port = TestPort.GetAvailable();
+        var app = await StartChannelServerAsync(
+            port,
+            services => services.ConfigureChannel(
+                new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [] }));
+        await using var connection = new McpChannelConnection("telegram");
+        try
+        {
+            // Emitted before anything has ever polled: the cold-start window this policy exists for.
+            await app.Services.GetRequiredService<ChannelNotificationEmitter>().EmitAsync(
+                new ChannelMessageNotification
+                {
+                    ConversationId = "42:42",
+                    Sender = "user",
+                    Content = "buffered before the agent arrived"
+                });
+
+            await connection.ConnectAsync($"http://localhost:{port}/mcp", CancellationToken.None);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var received = await connection.Messages.FirstAsync(cts.Token);
+
+            received.Content.ShouldBe("buffered before the agent arrived");
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
     }
 
     [Fact]

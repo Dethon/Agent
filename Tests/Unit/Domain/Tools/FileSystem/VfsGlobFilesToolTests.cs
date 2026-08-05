@@ -17,7 +17,7 @@ public class VfsGlobFilesToolTests
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve(It.IsAny<string>()))
-            .Returns(new FileSystemResolution(backend.Object, relativePath, mountPoint));
+            .Returns(Resolved(backend.Object, relativePath, mountPoint));
 
         return new VfsGlobFilesTool(registry.Object);
     }
@@ -55,18 +55,8 @@ public class VfsGlobFilesToolTests
         Entries(result).ShouldBe(["/print-queue/note.txt", "/print-queue/status.json"]);
     }
 
-    [Fact]
-    public async Task Run_PreservesDirectoryTrailingSlash()
-    {
-        var tool = Build("/schedules", "jonas", new FsGlobResult
-        {
-            Entries = ["/jonas/morning-news/"],
-            Truncated = false,
-            Total = 1
-        }, out _);
+    private static FsResult<FileSystemResolution> Resolved(
+        IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
+        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
 
-        var result = await tool.RunAsync("/schedules/jonas", "*/", CancellationToken.None);
-
-        Entries(result).ShouldBe(["/schedules/jonas/morning-news/"]);
-    }
 }

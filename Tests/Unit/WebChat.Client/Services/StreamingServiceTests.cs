@@ -39,7 +39,12 @@ public sealed class StreamingServiceTests : IDisposable
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         _agentSettingsStore = new AgentSettingsStore(_dispatcher);
         _service = new StreamingService(
-            _messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore, _agentSettingsStore);
+            _messagingService,
+            _dispatcher,
+            _topicService,
+            _topicsStore,
+            _messagesStore,
+            _agentSettingsStore);
     }
 
     public void Dispose()
@@ -391,9 +396,68 @@ public sealed class StreamingServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task StreamResponseAsync_MessageIdCommittedByAnEarlierStream_UpdatesTheExistingMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "first", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+        await _service.StreamResponseAsync(topic, "test");
+
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "first and more", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = MessagesFor(topic.TopicId);
+        messages.Count.ShouldBe(1);
+        messages[0].Content.ShouldBe("first and more");
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_MessageIdPresentFromHistory_UpdatesTheExistingMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, [
+            new ChatMessageModel { Role = "assistant", Content = "partial", MessageId = "msg-1" }
+        ]));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "partial and the rest", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = MessagesFor(topic.TopicId);
+        messages.Count.ShouldBe(1);
+        messages[0].Content.ShouldBe("partial and the rest");
+    }
+
     #endregion
 
     #region SendMessageAsync Tests
+
+    // Announce marks a topic streaming before the stream body runs; a fault inside that body
+    // must still leave the topic markable as not-streaming, or a bug earlier in the chunk
+    // stream would strand the topic looking permanently busy.
+    [Fact]
+    public async Task SendMessageAsync_ExceptionMidStream_LeavesNoActiveStream()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _messagingService.SetExceptionToThrow(new InvalidOperationException("mid-stream fault"));
+
+        await _service.SendMessageAsync(topic, "test");
+
+        (await _service.IsStreamActiveAsync(topic.TopicId)).ShouldBeFalse();
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
+    }
 
     [Fact]
     public async Task SendMessageAsync_WithNoActiveStream_CreatesNewStream()
@@ -408,6 +472,25 @@ public sealed class StreamingServiceTests : IDisposable
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
         var messages = MessagesFor(topic.TopicId);
         messages.Count.ShouldBe(1);
+    }
+
+    // The store keeps a buffer only for a topic it knows is streaming, so a send has to announce
+    // the stream before the first chunk is processed or the reply never reaches the screen.
+    [Fact]
+    public async Task SendMessageAsync_WhileTheReplyArrives_TheChunksReachTheStreamingBuffer()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        var buffered = new List<string?>();
+        using var subscription = _streamingStore.StateObservable.Subscribe(state =>
+            buffered.Add(state.StreamingByTopic.GetValueOrDefault(topic.TopicId)?.Content));
+
+        _messagingService.EnqueueContent("Hello");
+
+        await _service.SendMessageAsync(topic, "test");
+        await TestChat.Eventually(() => !_streamingStore.State.StreamingTopics.Contains(topic.TopicId));
+
+        buffered.ShouldContain("Hello");
     }
 
     [Fact]
@@ -618,7 +701,7 @@ public sealed class StreamingServiceTests : IDisposable
 
     #endregion
 
-    #region TryStartResumeStreamAsync / IsStreamActiveAsync / Finalization Tests
+    #region TryStartResumeStreamAsync / IsStreamActiveAsync Tests
 
     [Fact]
     public async Task TryStartResumeStreamAsync_WithNoActiveStream_ReturnsTrue()
@@ -686,32 +769,7 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_WithFinalizationRequest_ResetsAccumulator()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
-        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Existing" };
-
-        _dispatcher.Dispatch(new RequestContentFinalization(topic.TopicId));
-
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage
-            { UserMessage = new UserMessageInfo("Alice", null), Content = "user msg", MessageId = "msg-1" },
-            new ChatStreamMessage { Content = "New response", MessageId = "msg-2" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" }
-        );
-
-        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-0");
-
-        var messages = MessagesFor(topic.TopicId);
-        messages.ShouldNotContain(m => m.Content == "Existing");
-        messages.ShouldContain(m => m.Content == "New response");
-    }
-
-    [Fact]
-    public async Task ResumeStreamResponseAsync_WithoutFinalizationRequest_PreservesContent()
+    public async Task ResumeStreamResponseAsync_PreservesTheContentAlreadyStreamed()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));

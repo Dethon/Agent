@@ -3,62 +3,23 @@ using Infrastructure.Clients;
 using Infrastructure.Clients.Browser;
 using Infrastructure.Extensions;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace McpServerWebSearch.Modules;
 
 public static class ConfigModule
 {
-    public static McpSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<McpSettings>();
-        if (settings == null)
-        {
-            throw new InvalidOperationException("Settings not found");
-        }
-
-        // Bind nested sections explicitly for environment variable support
-        settings = settings with
-        {
-            CapSolver = config.GetSection("CapSolver").Get<CapSolverConfiguration>(),
-            Camoufox = config.GetSection("Camoufox").Get<CamoufoxConfiguration>()
-        };
-
-        return settings;
-    }
-
     extension(IServiceCollection services)
     {
         public IServiceCollection ConfigureMcp(McpSettings settings)
         {
             services
-                .AddSingleton(settings)
                 .AddWebSearchClients(settings)
-                .AddMcpServer()
-                .WithHttpTransport()
-                .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-                {
-                    try
-                    {
-                        return await next(context, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                        logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                        return ToolResponse.Create(ex);
-                    }
-                }))
+                .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()
                 .WithTools<McpWebBrowseTool>()
                 .WithTools<McpWebSnapshotTool>()

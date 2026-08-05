@@ -37,7 +37,7 @@ public class OpenRouterMemoryExtractor(
         }
 
         var profile = await store.GetProfileAsync(userId, ct);
-        var renderedWindow = ConversationWindowRenderer.Render(contextWindow);
+        var renderedWindow = ExtractionWindow.Render(contextWindow);
 
         var userPrompt = profile is not null
             ? $"Existing user profile:\n{profile.Summary}\n\nConversation window:\n{renderedWindow}"

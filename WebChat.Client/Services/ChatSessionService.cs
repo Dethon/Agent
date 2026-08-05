@@ -1,36 +1,30 @@
-using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.Services;
 
-public sealed class ChatSessionService(ChatConnectionService connectionService) : IChatSessionService
+public sealed class ChatSessionService(IChatLiveConnection liveConnection) : IChatSessionService
 {
     public StoredTopic? CurrentTopic { get; private set; }
 
     public event Action? OnSessionChanged;
 
-    public async Task<bool> StartSessionAsync(StoredTopic topic)
+    public async Task<HubResult<bool>> StartSessionAsync(StoredTopic topic)
     {
-        var hubConnection = connectionService.HubConnection;
-        if (hubConnection is null)
-        {
-            return false;
-        }
-
-        var success = await hubConnection.InvokeAsync<bool>(
+        var result = await liveConnection.InvokeAsync<bool>(
             "StartSession", topic.AgentId, topic.TopicId, topic.ChatId, topic.ThreadId, topic.Name);
 
-        if (!success)
+        if (result is { IsLive: true, Value: true })
         {
-            return false;
+            CurrentTopic = topic;
+            OnSessionChanged?.Invoke();
         }
 
-        CurrentTopic = topic;
-        OnSessionChanged?.Invoke();
-
-        return true;
+        return result;
     }
+
+    public Task<HubResult<Nothing>> RegisterUserAsync(string userId) =>
+        liveConnection.InvokeAsync("RegisterUser", userId);
 
     public void ClearSession()
     {

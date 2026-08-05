@@ -12,9 +12,7 @@ public sealed class HeartbeatService(IMetricsPublisher publisher, string service
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            await publisher.PublishAsync(
-                new HeartbeatEvent { Service = serviceName },
-                stoppingToken);
+            publisher.Publish(new HeartbeatEvent { Service = serviceName });
 
             await Task.Delay(_interval, stoppingToken);
         }

@@ -1,0 +1,66 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
+
+namespace Mcp.Hosting;
+
+// The one error rule every MCP server in the repo answers to: a cancelled call propagates as the
+// abort it is; anything else is logged and comes back as the caller's error result.
+//
+// Cancellation is carved out because a cancelled call is a call somebody hung up on —
+// channel_receive's long poll whenever the agent disconnects or the server shuts down, an fs_exec or
+// a web fetch whenever the agent abandons the turn. Mapping that to IsError hands the caller's pump
+// something to retry, and the work was deliberately stopped.
+//
+// Installed at most once. A dual-role server asks for it as a tool server and again as a channel
+// server; two filters nested around each other would let the outer one convert the very
+// cancellation the inner deliberately rethrows. The first ask wins, so the error shape is the one
+// the first caller passed.
+internal static class CallToolErrorFilter
+{
+    internal static IMcpServerBuilder AddCallToolErrorFilter(
+        this IMcpServerBuilder builder,
+        Func<Exception, CallToolResult>? errorResult)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        if (builder.Services.Any(descriptor => descriptor.ServiceType == typeof(Installed)))
+        {
+            return builder;
+        }
+
+        builder.Services.AddSingleton<Installed>();
+
+        return builder.WithRequestFilters(filters => filters.AddCallToolFilter(
+            next => async (context, cancellationToken) =>
+            {
+                try
+                {
+                    return await next(context, cancellationToken);
+                }
+                // Only the caller's own token tripping is a hang-up. An HttpClient timeout throws
+                // TaskCanceledException with the same shape and no caller behind it; that is an
+                // ordinary failure and falls through to the logged error-result path below.
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    context.Services?.GetService<ILoggerFactory>()
+                        ?.CreateLogger(typeof(CallToolErrorFilter))
+                        .LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
+                    return errorResult?.Invoke(ex) ?? new CallToolResult
+                    {
+                        IsError = true,
+                        Content = [new TextContentBlock { Text = ex.Message }]
+                    };
+                }
+            }));
+    }
+
+    // Marks the filter as installed. Never resolved — its presence in the collection is the whole
+    // signal, which is what makes a second ask a no-op rather than a second filter.
+    private sealed class Installed;
+}

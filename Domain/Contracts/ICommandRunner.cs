@@ -1,8 +1,8 @@
-using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Contracts;
 
 public interface ICommandRunner
 {
-    Task<JsonNode> RunAsync(string path, string command, int? timeoutSeconds, CancellationToken cancellationToken);
+    Task<FsResult<FsExecResult>> RunAsync(string path, string command, int? timeoutSeconds, CancellationToken cancellationToken);
 }

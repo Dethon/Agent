@@ -5,6 +5,6 @@ namespace Infrastructure.Metrics;
 
 public sealed class AgentMetricsPublisher(IMetricsPublisher inner, string agentId) : IMetricsPublisher
 {
-    public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default) =>
-        inner.PublishAsync(metricEvent with { AgentId = agentId }, ct);
+    public void Publish(MetricEvent metricEvent) =>
+        inner.Publish(metricEvent with { AgentId = agentId });
 }

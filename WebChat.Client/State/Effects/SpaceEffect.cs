@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Components;
 using WebChat.Client.Contracts;
-using WebChat.Client.Services;
+using WebChat.Client.Extensions;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
@@ -11,60 +13,74 @@ public sealed class SpaceEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
-    private readonly IChatConnectionService _connectionService;
-    private readonly ConfigService _configService;
+    private readonly ConnectionStore _connectionStore;
+    private readonly IConfigService _configService;
     private readonly NavigationManager _navigationManager;
-    private readonly PushNotificationService _pushNotificationService;
+    private readonly IPushSubscriptionService _pushNotificationService;
+    private readonly ILogger<SpaceEffect> _logger;
     private readonly IDisposable _handlerRegistration;
     private string _previousSlug = "default";
 
     public SpaceEffect(
         Dispatcher dispatcher,
         ITopicService topicService,
-        IChatConnectionService connectionService,
-        ConfigService configService,
+        ConnectionStore connectionStore,
+        IConfigService configService,
         NavigationManager navigationManager,
-        PushNotificationService pushNotificationService)
+        IPushSubscriptionService pushNotificationService,
+        ILogger<SpaceEffect> logger)
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
-        _connectionService = connectionService;
+        _connectionStore = connectionStore;
         _configService = configService;
         _navigationManager = navigationManager;
         _pushNotificationService = pushNotificationService;
+        _logger = logger;
 
-        _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(HandleSelectSpace);
+        _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(
+            action => HandleSelectSpaceAsync(action.Slug).LogFaults(_logger, nameof(SelectSpace)));
     }
 
-    private void HandleSelectSpace(SelectSpace action)
+    public async Task HandleSelectSpaceAsync(string slug)
     {
         var previousSlug = _previousSlug;
-        _previousSlug = action.Slug;
-        _ = HandleSelectSpaceAsync(action.Slug, previousSlug);
-    }
+        _previousSlug = slug;
 
-    private async Task HandleSelectSpaceAsync(string slug, string previousSlug)
-    {
         if (slug == previousSlug)
         {
             return;
         }
 
         var space = await _configService.GetSpaceAsync(slug);
+
+        // Before the hub is up this is the first navigation rather than a switch the user made
+        // mid-session: InitializationEffect joins the slug the SelectSpace reducer has already
+        // stored and validates it, so there is nothing to do and nothing to say here.
+        if (_connectionStore.State.Status != ConnectionStatus.Connected)
+        {
+            return;
+        }
+
         if (space is null)
         {
-            // If hub isn't connected yet, skip — InitializationEffect handles initial join
-            if (!_connectionService.IsConnected)
-            {
-                return;
-            }
-
             _dispatcher.Dispatch(new InvalidSpace());
             _navigationManager.NavigateTo("/", replace: true);
             return;
         }
 
-        await _topicService.JoinSpaceAsync(slug);
+        var joined = await _topicService.JoinSpaceAsync(slug);
+
+        // The join is what puts this browser in the server's space group. Clearing the sidebar
+        // and validating the space without it would show an empty space the server never moved
+        // us to, so this says so once (ADR-0004) and commits nothing — including the slug it
+        // remembers, so the next attempt at the same space is a switch again and not a no-op.
+        if (!joined.IsLive)
+        {
+            _previousSlug = previousSlug;
+            _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
 
         try
         { await _pushNotificationService.ResubscribeAsync(); }

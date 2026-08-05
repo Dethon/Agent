@@ -6,6 +6,18 @@ namespace Domain.Tools.FileSystem;
 // braces are left literal so existing patterns keep matching unchanged.
 public static class GlobBraceExpander
 {
+    // The product is caller-controlled and multiplies per group — thirty {a,b} groups would be
+    // 2^30 patterns. Every recursion level checks against this cap, so the pathological pattern
+    // fails as soon as one level crosses it instead of materializing the product. Real globs list
+    // a handful of alternatives; 512 is far beyond any of them.
+    public const int MaxPatterns = 512;
+
+    // One more than the cap is all a level ever holds: enough to know the cap was crossed, and the
+    // reason the combinations are taken lazily rather than counted after the fact. A level's product
+    // is alternatives × each alternative's expansion × the suffix's, and the last two can each sit
+    // just under the cap, so materializing first is millions of strings for a few hundred of input.
+    private const int _stopAfter = MaxPatterns + 1;
+
     public static IReadOnlyList<string> Expand(string pattern)
     {
         if (!TryFindGroup(pattern, out var open, out var close))
@@ -17,12 +29,18 @@ public static class GlobBraceExpander
         var body = pattern[(open + 1)..close];
         var suffixExpansions = Expand(pattern[(close + 1)..]);
 
-        return (
+        var expanded = (
             from alternative in SplitTopLevel(body)
             from expandedAlternative in Expand(alternative)
             from suffix in suffixExpansions
             select prefix + expandedAlternative + suffix
-        ).ToList();
+        ).Take(_stopAfter).ToList();
+
+        return expanded.Count > MaxPatterns
+            ? throw new ArgumentException(
+                $"Glob pattern expands to more than {MaxPatterns} patterns; use fewer brace alternatives.",
+                nameof(pattern))
+            : expanded;
     }
 
     // Locates the first '{' that is balanced and holds a top-level comma. Braces that are

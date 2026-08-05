@@ -33,7 +33,11 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
         string pattern,
         CancellationToken cancellationToken = default)
     {
-        var resolution = registry.Resolve(basePath);
+        if (!registry.Resolve(basePath).TryGetValue(out var resolution, out var unresolved))
+        {
+            return unresolved.ToNode();
+        }
+
         var result = await resolution.Backend.GlobAsync(resolution.RelativePath, pattern, cancellationToken);
         return Normalize(result, resolution.MountPoint).ToNode();
     }

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Domain.DTOs.Channel;
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.State.AgentActivity;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
@@ -26,7 +27,8 @@ public sealed class AgentActivityEffect : IDisposable
         StreamingStore streamingStore,
         AgentActivityStore activityStore,
         ITopicService topicService,
-        SpaceStore spaceStore)
+        SpaceStore spaceStore,
+        ILogger<AgentActivityEffect> logger)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
@@ -34,26 +36,45 @@ public sealed class AgentActivityEffect : IDisposable
         _topicService = topicService;
         _spaceStore = spaceStore;
 
-        _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(HandleSetAgents);
+        _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(
+            action => MapAllAgentTopicsAsync(action.Agents).LogFaults(logger, nameof(SetAgents)));
         _selectAgentRegistration = dispatcher.RegisterHandler<SelectAgent>(
-            action => _dispatcher.Dispatch(new ClearAgentUnseenActivity(action.AgentId)));
+            action => ClearUnseenActivity(action.AgentId));
+
+        // Stays observable-driven: the activity mapping this feeds is derived from streaming
+        // state, and there is no action that means "a stream finished for another agent".
         _streamingSubscription = streamingStore.StateObservable.Subscribe(HandleStreamingChange);
     }
 
-    private void HandleSetAgents(SetAgents action) => _ = MapAllAgentTopicsAsync(action.Agents);
+    public void ClearUnseenActivity(string agentId) =>
+        _dispatcher.Dispatch(new ClearAgentUnseenActivity(agentId));
 
-    private async Task MapAllAgentTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
+    public async Task MapAllAgentTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {
         var slug = _spaceStore.State.CurrentSlug;
-        var map = new Dictionary<string, string>();
-        foreach (var agent in agents)
+        var fetches = await Task.WhenAll(agents.Select(async agent =>
+            (Agent: agent, Topics: await _topicService.GetAllTopicsAsync(agent.Id, slug))));
+
+        // Seeded with what we already know: an agent whose read failed keeps its last-known
+        // mapping instead of losing it because a sibling agent's read succeeded. Only the
+        // agents that answered get their entries replaced with the fresh read.
+        var map = new Dictionary<string, string>(_activityStore.State.TopicToAgent);
+        foreach (var (agent, topics) in fetches.Where(fetch => fetch.Topics.IsLive))
         {
-            var topics = await _topicService.GetAllTopicsAsync(agent.Id, slug);
-            foreach (var topic in topics)
+            foreach (var staleTopicId in map
+                .Where(pair => pair.Value == agent.Id)
+                .Select(pair => pair.Key)
+                .ToList())
+            {
+                map.Remove(staleTopicId);
+            }
+
+            foreach (var topic in topics.Value!)
             {
                 map[topic.TopicId] = agent.Id;
             }
         }
+
         _dispatcher.Dispatch(new AllAgentsTopicsMapped(map));
     }
 

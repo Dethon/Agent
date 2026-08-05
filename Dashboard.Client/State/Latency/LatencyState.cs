@@ -7,7 +7,7 @@ public record LatencyState
 {
     public IReadOnlyList<LatencyEvent> Events { get; init; } = [];
     public LatencyDimension GroupBy { get; init; } = LatencyDimension.Stage;
-    public LatencyMetric Metric { get; init; } = LatencyMetric.P95;
+    public Aggregation Metric { get; init; } = Aggregation.P95;
     public Dictionary<string, decimal> Breakdown { get; init; } = [];
     public IReadOnlyList<LatencyTrendSeries> Trend { get; init; } = [];
     public DateOnly From { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);

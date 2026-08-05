@@ -40,65 +40,71 @@ public class AnnouncementService(
             if (session is null)
             {
                 // No live session, but the registry still knows the satellite's room/identity, so the
-                // offline error carries the same context fields as the online announce metrics.
-                var offlineConfig = registry.GetById(id);
+                // offline error carries the same context fields as the online announce metrics —
+                // through the same stamp, which is what keeps all three of them present.
                 outcomes.Add(new AnnouncementOutcome { Id = id, Status = "offline" });
-                await SafePublishAsync(new VoiceEvent
+                metrics.Publish(new VoiceEvent
                 {
                     Metric = VoiceMetric.AnnounceError,
-                    SatelliteId = id,
-                    Room = offlineConfig?.Room,
-                    Identity = offlineConfig?.Identity,
                     Priority = request.Priority.ToString(),
                     Outcome = "offline"
-                }, ct);
+                }.About(SatelliteIdentity.Of(id, registry.GetById(id))));
                 continue;
             }
 
-            var voice = request.Voice
-                        ?? session.Config.Tts?.OpenAi?.Voice
-                        ?? settings.Tts.OpenAi.Voice;
-            var options = new SynthesisOptions { Voice = voice };
+            // An explicitly requested voice still wins: the caller asked for this announcement to be
+            // read in it, which outranks the satellite's standing preference.
+            var options = new SynthesisOptions { Voice = request.Voice ?? session.ResolveVoice(settings) };
 
             var job = new PlaybackJob(
                 Label: $"announce:{announcementId}",
+                Kind: PlaybackKind.Announce,
                 Priority: request.Priority,
                 Audio: tts.SynthesizeAsync(request.Text, options, ct),
-                OnStarted: async _ =>
+                // Published at first audio rather than when the queue reaches the job: "played" then
+                // means audio actually reached the satellite, so an announcement whose synthesis
+                // fails is no longer counted as played with nothing else ever recorded for it.
+                OnFirstAudio: _ =>
                 {
-                    await metrics.PublishAsync(new VoiceEvent
-                    {
-                        Metric = VoiceMetric.AnnouncePlayed,
-                        SatelliteId = id,
-                        Room = session.Config.Room,
-                        Identity = session.Config.Identity,
-                        Priority = request.Priority.ToString()
-                    }, ct);
-                },
-                OnPreempted: async _ =>
-                {
-                    await metrics.PublishAsync(new VoiceEvent
-                    {
-                        Metric = VoiceMetric.AnnouncePreemptedReply,
-                        SatelliteId = id,
-                        Room = session.Config.Room,
-                        Identity = session.Config.Identity,
-                        Priority = request.Priority.ToString()
-                    }, ct);
+                    metrics.Publish(AnnounceEvent(VoiceMetric.AnnouncePlayed, session, request));
+                    return Task.CompletedTask;
                 });
 
-            var accepted = await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
-            outcomes.Add(new AnnouncementOutcome { Id = id, Status = accepted ? "queued" : "dropped" });
-
-            await SafePublishAsync(new VoiceEvent
+            var ticket = session.Playback.Enqueue(job);
+            // A satellite that went away between the session lookup and the enqueue is offline, not
+            // busy — which is the truthful status the response already had a code path for. The
+            // other two reasons are a queue that had no room, which is a drop.
+            var status = ticket.Refused switch
             {
-                Metric = accepted ? VoiceMetric.AnnounceQueued : VoiceMetric.AnnounceError,
-                SatelliteId = id,
-                Room = session.Config.Room,
-                Identity = session.Config.Identity,
-                Priority = request.Priority.ToString(),
-                Outcome = accepted ? "queued" : "dropped"
-            }, ct);
+                null => "queued",
+                RefusalReason.QueueClosed => "offline",
+                _ => "dropped"
+            };
+            outcomes.Add(new AnnouncementOutcome { Id = id, Status = status });
+
+            metrics.Publish(AnnounceEvent(
+                ticket.Refused is null ? VoiceMetric.AnnounceQueued : VoiceMetric.AnnounceError,
+                session, request) with
+            { Outcome = status });
+
+            // Runs unobserved on the queue's signal, so it guards itself.
+            _ = ticket.Completed.ContinueWith(
+                settled =>
+                {
+                    try
+                    {
+                        if (settled.Result.Kind == PlaybackOutcomeKind.Preempted)
+                        {
+                            metrics.Publish(AnnounceEvent(
+                                VoiceMetric.AnnouncePreemptedReply, session, request));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Announce outcome reaction failed for {Id}", id);
+                    }
+                },
+                TaskScheduler.Default);
         }
 
         logger.LogInformation("Announce {Id} -> {N} targets ({Status})",
@@ -108,17 +114,13 @@ public class AnnouncementService(
         return new AnnounceResponse { AnnouncementId = announcementId, Satellites = outcomes };
     }
 
-    // A transient metrics-publisher failure must not abort the announce fan-out (and 500 the caller),
-    // so per-target metric publishes are best-effort, mirroring WyomingSatelliteHost.SafePublishAsync.
-    private async Task SafePublishAsync(VoiceEvent evt, CancellationToken ct)
-    {
-        try
+    // Every announce metric carries the same room and identity context, offline targets included.
+    // The id the loop is on and the session's own are the same value — the registry keys sessions by
+    // SatelliteId — so stamping from the session leaves the payload as it was.
+    private static VoiceEvent AnnounceEvent(
+        VoiceMetric metric, SatelliteSession session, AnnounceRequest request) => new VoiceEvent
         {
-            await metrics.PublishAsync(evt, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to publish announce metric {Metric}", evt.Metric);
-        }
-    }
+            Metric = metric,
+            Priority = request.Priority.ToString()
+        }.About(session);
 }

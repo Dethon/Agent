@@ -3,12 +3,16 @@ using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Unit;
 
 namespace Tests.Integration.Agents;
 
@@ -24,7 +28,7 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["openRouter:reasoningModel"] ?? "google/gemini-2.5-flash";
+        var model = _configuration["openRouter:reasoningModel"] ?? "~deepseek/deepseek-v4-flash-latest";
         return (apiUrl, apiKey, model);
     }
 
@@ -40,13 +44,18 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
 
         await using var agent = new McpAgent(
-            endpoints: [],
-            chatClient: openRouter,
-            name: "reasoning-agent",
-            description: "",
-            stateStore: stateStore,
-            userId: "reasoning-test-user",
-            reasoningEffort: "low");
+            TestAgentSpec.Default with
+            {
+                DisplayName = "reasoning-agent",
+                UserId = "reasoning-test-user",
+                ReasoningEffort = "low"
+            },
+            openRouter,
+            stateStore,
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            [],
+            []);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -78,13 +87,18 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
 
         await using var agent = new McpAgent(
-            endpoints: [],
-            chatClient: openRouter,
-            name: "no-effort-agent",
-            description: "",
-            stateStore: stateStore,
-            userId: "no-effort-test-user",
-            reasoningEffort: "none");
+            TestAgentSpec.Default with
+            {
+                DisplayName = "no-effort-agent",
+                UserId = "no-effort-test-user",
+                ReasoningEffort = "none"
+            },
+            openRouter,
+            stateStore,
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            [],
+            []);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -115,12 +129,17 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
 
         await using var agent = new McpAgent(
-            endpoints: [],
-            chatClient: openRouter,
-            name: "no-reasoning-agent",
-            description: "",
-            stateStore: stateStore,
-            userId: "no-reasoning-test-user");
+            TestAgentSpec.Default with
+            {
+                DisplayName = "no-reasoning-agent",
+                UserId = "no-reasoning-test-user"
+            },
+            openRouter,
+            stateStore,
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            [],
+            []);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -136,14 +155,19 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
     }
 }
 
-// Runs without Docker: a fake IChatClient captures the ChatOptions McpAgent builds, so the
-// per-turn ConfigPatch override on _reasoningEffort can be asserted without a live OpenRouter
-// call or a Redis-backed IThreadStateStore.
+// Runs without Docker: a fake IChatClient captures the ChatOptions McpAgent builds, so both
+// halves of the ConfigPatch — reasoning effort and model — can be asserted on what the agent
+// actually produces, without a live OpenRouter call or a Redis-backed IThreadStateStore.
 public class McpAgentReasoningTestsConfigPatch
 {
-    private static (McpAgent Agent, List<ChatOptions?> Captured) CreateAgent(string? reasoningEffort)
+    private const string ConfiguredModel = "openai/gpt-5.6-luna";
+    private static readonly string[] _whitelist = ["openai/gpt-5.6-luna", "z-ai/glm-5.2"];
+
+    private static (McpAgent Agent, List<ChatOptions?> Captured, List<string> Warnings) CreateAgent(
+        string? reasoningEffort = null)
     {
         var captured = new List<ChatOptions?>();
+        var logProvider = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
         var chatClient = new Mock<IChatClient>();
         chatClient
             .Setup(c => c.GetStreamingResponseAsync(
@@ -158,47 +182,123 @@ public class McpAgentReasoningTestsConfigPatch
             }.ToAsyncEnumerable());
 
         var agent = new McpAgent(
-            [],
+            TestAgentSpec.Default with
+            {
+                UserId = "fran",
+                Model = ConfiguredModel,
+                ReasoningEffort = reasoningEffort,
+                PatchableModelIds = _whitelist
+            },
             chatClient.Object,
-            "test-agent",
-            "",
             new Mock<IThreadStateStore>().Object,
-            "fran",
-            reasoningEffort: reasoningEffort);
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            [],
+            [],
+            LoggerFactory.Create(b => b.AddProvider(logProvider)));
 
-        return (agent, captured);
+        return (agent, captured, logProvider.Messages);
+    }
+
+    private static async Task<(ChatOptions Options, List<string> Warnings)> RunWithPatchAsync(
+        AgentConfigPatch? patch, string? reasoningEffort = null)
+    {
+        var (agent, captured, warnings) = CreateAgent(reasoningEffort);
+        await using var _ = agent;
+
+        var userMessage = new ChatMessage(ChatRole.User, "hi");
+        if (patch is not null)
+        {
+            userMessage.SetConfigPatch(patch);
+        }
+
+        await agent.RunStreamingAsync([userMessage]).ToListAsync();
+
+        return (captured.ShouldHaveSingleItem().ShouldNotBeNull(), warnings);
     }
 
     [Fact]
     public async Task RunStreaming_UserMessageWithEffortPatch_OverridesConfiguredEffort()
     {
-        var (agent, captured) = CreateAgent("low");
-        await using var _ = agent;
+        var (options, warnings) = await RunWithPatchAsync(
+            new AgentConfigPatch { ReasoningEffort = "high" }, reasoningEffort: "low");
 
-        var userMessage = new ChatMessage(ChatRole.User, "hi");
-        userMessage.SetConfigPatch(new AgentConfigPatch { ReasoningEffort = "high" });
-
-        await agent.RunStreamingAsync([userMessage]).ToListAsync();
-
-        var capturedOptions = captured.ShouldHaveSingleItem().ShouldNotBeNull();
-        capturedOptions.Reasoning.ShouldNotBeNull();
-        capturedOptions.Reasoning.Effort.ShouldBe(ReasoningEffort.High);
+        options.Reasoning.ShouldNotBeNull();
+        options.Reasoning.Effort.ShouldBe(ReasoningEffort.High);
+        warnings.ShouldBeEmpty();
     }
 
     [Fact]
-    public async Task RunStreaming_UserMessageWithInvalidEffortPatch_FallsBackToConfigured()
+    public async Task RunStreaming_UserMessageWithInvalidEffortPatch_FallsBackToConfiguredAndWarns()
     {
-        var (agent, captured) = CreateAgent("low");
+        var (options, warnings) = await RunWithPatchAsync(
+            new AgentConfigPatch { ReasoningEffort = "turbo" }, reasoningEffort: "low");
+
+        options.Reasoning.ShouldNotBeNull();
+        options.Reasoning.Effort.ShouldBe(ReasoningEffort.Low);
+        warnings.ShouldContain(m => m.Contains("reasoningEffort") && m.Contains("turbo") && m.Contains("Low"));
+    }
+
+    [Fact]
+    public async Task RunStreaming_WhitelistedModelPatch_PutsItOnTheTurnOptions()
+    {
+        var (options, warnings) = await RunWithPatchAsync(new AgentConfigPatch { Model = "z-ai/glm-5.2" });
+
+        options.ModelId.ShouldBe("z-ai/glm-5.2");
+        warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RunStreaming_NonWhitelistedModelPatch_KeepsConfiguredModelAndWarns()
+    {
+        var (options, warnings) = await RunWithPatchAsync(new AgentConfigPatch { Model = "evil/model" });
+
+        options.ModelId.ShouldBeNull();
+        warnings.ShouldContain(m => m.Contains("model") && m.Contains("evil/model") && m.Contains(ConfiguredModel));
+    }
+
+    [Fact]
+    public async Task RunStreaming_ModelPatchMatchingConfiguredModel_IsNotAnOverride()
+    {
+        var (options, warnings) = await RunWithPatchAsync(new AgentConfigPatch { Model = ConfiguredModel });
+
+        options.ModelId.ShouldBeNull();
+        warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RunStreaming_WithoutPatch_LeavesTheModelUnset()
+    {
+        var (options, warnings) = await RunWithPatchAsync(null);
+
+        options.ModelId.ShouldBeNull();
+        warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RunStreaming_ModelPatchInDifferentCasing_UsesTheWhitelistCanonicalCasing()
+    {
+        // Provider model ids are lowercase slugs; echoing the caller's casing can turn a valid
+        // override into a model-not-found error.
+        var (options, warnings) = await RunWithPatchAsync(new AgentConfigPatch { Model = "Z-AI/GLM-5.2" });
+
+        options.ModelId.ShouldBe("z-ai/glm-5.2");
+        warnings.ShouldBeEmpty();
+    }
+
+    // A caller supplying its own options skips the agent's instructions, tools, reasoning effort
+    // and config patch. The capability stays; the silence does not.
+    [Fact]
+    public async Task RunStreaming_WithCallerSuppliedOptions_RunsThemAndWarns()
+    {
+        var (agent, captured, warnings) = CreateAgent();
         await using var _ = agent;
 
-        var userMessage = new ChatMessage(ChatRole.User, "hi");
-        userMessage.SetConfigPatch(new AgentConfigPatch { ReasoningEffort = "turbo" });
+        var supplied = new ChatClientAgentRunOptions(new ChatOptions { ModelId = "caller/model" });
+        await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hi")], options: supplied).ToListAsync();
 
-        await agent.RunStreamingAsync([userMessage]).ToListAsync();
-
-        var capturedOptions = captured.ShouldHaveSingleItem().ShouldNotBeNull();
-        capturedOptions.Reasoning.ShouldNotBeNull();
-        capturedOptions.Reasoning.Effort.ShouldBe(ReasoningEffort.Low);
+        captured.ShouldHaveSingleItem().ShouldNotBeNull().ModelId.ShouldBe("caller/model");
+        warnings.ShouldContain(m => m.Contains("AgentRunOptions"));
     }
 
     [Fact]

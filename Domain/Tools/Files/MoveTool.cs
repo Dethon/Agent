@@ -1,15 +1,13 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Domain.Tools.Config;
 
 namespace Domain.Tools.Files;
 
 public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
-    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
+    private readonly PathJail _jail = new(libraryPath.BaseLibraryPath);
 
     protected const string Description = """
                                          Moves and/or renames a file or directory.
@@ -19,13 +17,32 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
                                          The destination path must not exist. Parent directories are created automatically.
                                          """;
 
-    protected async Task<JsonNode> Run(string sourcePath, string destinationPath, CancellationToken ct)
+    public async Task<FsResult<FsMoveResult>> Run(string sourcePath, string destinationPath, CancellationToken ct)
     {
-        sourcePath = ResolveAndValidatePath(sourcePath);
-        destinationPath = ResolveAndValidatePath(destinationPath);
+        if (Validate(sourcePath) is { } sourceError)
+        {
+            return sourceError;
+        }
 
-        await client.Move(sourcePath, destinationPath, ct);
-        return FsResultContract.ToNode(new FsMoveResult
+        if (Validate(destinationPath) is { } destinationError)
+        {
+            return destinationError;
+        }
+
+        sourcePath = Combine(sourcePath);
+        destinationPath = Combine(destinationPath);
+
+        try
+        {
+            await client.Move(sourcePath, destinationPath, ct);
+        }
+        catch (IOException ex)
+        {
+            // The client signals a missing source this way; the model needs the code, not the type.
+            return FsError.Fail<FsMoveResult>(ToolError.Codes.NotFound, ex.Message);
+        }
+
+        return new FsResult<FsMoveResult>.Ok(new FsMoveResult
         {
             Status = "success",
             Message = "File moved successfully",
@@ -34,30 +51,20 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         });
     }
 
-    private string ResolveAndValidatePath(string path)
+    // No '..' screening here: the jail judges the canonical resolved path, so a traversal segment
+    // is caught by where it lands, and a name like v1..2.mkv is just a name.
+    private FsResult<FsMoveResult>? Validate(string path)
     {
-        if (path.Contains("..", StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                $"{nameof(MoveTool)} path must not contain '..' segments.");
-        }
-
-        if (!Path.IsPathRooted(path))
-        {
-            path = Path.Combine(libraryPath.BaseLibraryPath, path);
-        }
-
-        var canonicalPath = Path.GetFullPath(path);
-        var canonicalLibraryPath = Path.GetFullPath(libraryPath.BaseLibraryPath);
-
-        if (!canonicalPath.StartsWith(canonicalLibraryPath, _pathComparison))
-        {
-            throw new ArgumentException($"""
-                                         {nameof(MoveTool)} path must be within the library.
-                                         Resolved path '{canonicalPath}' is not under library path '{canonicalLibraryPath}'.
-                                         """);
-        }
-
-        return path;
+        return _jail.Contains(Path.GetFullPath(Combine(path)))
+            ? null
+            : FsError.Invalid<FsMoveResult>($"""
+                                             {nameof(MoveTool)} path must be within the library.
+                                             Resolved path '{Path.GetFullPath(Combine(path))}' is not under library path '{_jail.Root}'.
+                                             """);
     }
+
+    // Kept mount-relative rather than canonical: the client and the reported result both use the
+    // caller's spelling, and only containment is decided on the canonical form.
+    private string Combine(string path) =>
+        Path.IsPathRooted(path) ? path : Path.Combine(libraryPath.BaseLibraryPath, path);
 }

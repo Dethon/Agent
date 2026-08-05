@@ -1,35 +1,21 @@
 using Domain.Contracts;
 using Domain.Tools.Config;
+using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Bash;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using McpServerSandbox.McpPrompts;
-using McpServerSandbox.McpResources;
-using McpServerSandbox.McpTools;
 using McpServerSandbox.Settings;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace McpServerSandbox.Modules;
 
 public static class ConfigModule
 {
-    public static McpSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<McpSettings>();
-        return settings ?? throw new InvalidOperationException("Settings not found");
-    }
-
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
         services
-            .AddSingleton(settings)
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.ContainerRoot))
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
             .AddSingleton(new BashRunnerOptions
@@ -41,34 +27,20 @@ public static class ConfigModule
                 OutputCapBytes = settings.OutputCapBytes
             })
             .AddSingleton<ICommandRunner, BashRunner>()
-            .AddMcpServer()
-            .WithHttpTransport()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return ToolResponse.Create(ex);
-                }
-            }))
-            .WithTools<FsReadTool>()
-            .WithTools<FsCreateTool>()
-            .WithTools<FsEditTool>()
-            .WithTools<FsGlobTool>()
-            .WithTools<FsSearchTool>()
-            .WithTools<FsMoveTool>()
-            .WithTools<FsDeleteTool>()
-            .WithTools<FsExecTool>()
-            .WithTools<FsInfoTool>()
-            .WithTools<FsCopyTool>()
-            .WithTools<FsBlobReadTool>()
-            .WithTools<FsBlobWriteTool>()
-            .WithResources<FileSystemResource>()
+            .AddSingleton(sp => new SandboxFileSystem(
+                "sandbox",
+                // The reusable disk root takes the mount's prose the same way it takes its name.
+                "Linux sandbox container — supports command execution via fs_exec (bash, python3, "
+                + "pip, git, curl, jq). Persistent /home/sandbox_user (named volume), ephemeral "
+                + "system dirs, full outbound network, no inbound ports. See the Sandbox Filesystem "
+                + "prompt for limits.",
+                sp.GetRequiredService<IFileSystemClient>(),
+                new LibraryPathConfig(settings.ContainerRoot),
+                settings.AllowedExtensions,
+                sp.GetRequiredService<ICommandRunner>()))
+            .AddToolServer(settings, ToolResponse.Create)
+            .AddFileSystemTools<SandboxFileSystem>()
+            .AddFileSystemResource<SandboxFileSystem>()
             .WithPrompts<McpSystemPrompt>();
 
         return services;

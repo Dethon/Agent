@@ -210,10 +210,10 @@ public class MetricsQueryServiceGroupingTests
     }
 
     [Theory]
-    [InlineData(LatencyDimension.Stage, LatencyMetric.P95, "LlmTotal", 5000.0, "MemoryRecall", 40.0)]
-    [InlineData(LatencyDimension.Model, LatencyMetric.Avg, "m1", 1800.0, "unknown", 45.0)]
+    [InlineData(LatencyDimension.Stage, Aggregation.P95, "LlmTotal", 5000.0, "MemoryRecall", 40.0)]
+    [InlineData(LatencyDimension.Model, Aggregation.Avg, "m1", 1800.0, "unknown", 45.0)]
     public async Task GetLatencyGroupedAsync_GroupsByDimensionAndMetric(
-        LatencyDimension dimension, LatencyMetric metric,
+        LatencyDimension dimension, Aggregation metric,
         string keyA, double expectedA, string keyB, double expectedB)
     {
         var date = new DateOnly(2026, 3, 15);
@@ -308,7 +308,7 @@ public class MetricsQueryServiceGroupingTests
         ]);
 
         var result = await _sut.GetVoiceGroupedAsync(
-            VoiceDimension.Room, VoiceMetric.EndpointTailMs, date, date, LatencyMetric.Max);
+            VoiceDimension.Room, VoiceMetric.EndpointTailMs, date, date, Aggregation.Max);
 
         result["office"].ShouldBe(9000m);
     }
@@ -362,7 +362,7 @@ public class MetricsQueryServiceGroupingTests
         {
             "tokens" => await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, date, date),
             "memory" => await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, date, date),
-            "latency" => await _sut.GetLatencyGroupedAsync(LatencyDimension.Stage, LatencyMetric.P95, date, date),
+            "latency" => await _sut.GetLatencyGroupedAsync(LatencyDimension.Stage, Aggregation.P95, date, date),
             "voice" => await _sut.GetVoiceGroupedAsync(VoiceDimension.SatelliteId, VoiceMetric.UtteranceTranscribed, date, date),
             _ => throw new ArgumentOutOfRangeException(nameof(query))
         };
@@ -384,7 +384,7 @@ public class MetricsQueryServiceGroupingTests
                 Timestamp = new DateTimeOffset(2026, 3, 15, 11, 1, 0, TimeSpan.Zero) },
         ]);
 
-        var result = await _sut.GetLatencyTrendAsync(LatencyMetric.Avg, date, date);
+        var result = await _sut.GetLatencyTrendAsync(Aggregation.Avg, date, date);
 
         var series = result.Single(s => s.Stage == "LlmTotal");
         series.Points.Count.ShouldBe(2);
@@ -412,7 +412,7 @@ public class MetricsQueryServiceGroupingTests
                 Timestamp = new DateTimeOffset(2026, 3, 18, 3, 1, 0, TimeSpan.Zero) },
         ]);
 
-        var result = await _sut.GetLatencyTrendAsync(LatencyMetric.Avg, from, to);
+        var result = await _sut.GetLatencyTrendAsync(Aggregation.Avg, from, to);
 
         var series = result.Single(s => s.Stage == "LlmTotal");
         series.Points.Count.ShouldBe(2);

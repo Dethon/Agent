@@ -104,7 +104,7 @@ public class FileDownloadTool(
         {
             ["status"] = "success",
             ["message"] = $"Download with id {id} started successfully. No conversation context was provided, " +
-                          $"so no completion alert will fire; check {MediaFilesystem.MountPoint}/{MediaFilesystem.DownloadsSubdir} for status."
+                          $"so no completion alert will fire; check {MediaFilesystem.DownloadsDir} for status."
         };
     }
 }

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools;
 
 namespace Domain.Tools.FileSystem;
@@ -25,8 +26,15 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
         [Description("Create destination parent directories if missing (default: true)")] bool createDirectories = true,
         CancellationToken cancellationToken = default)
     {
-        var src = registry.Resolve(sourcePath);
-        var dst = registry.Resolve(destinationPath);
+        if (!registry.Resolve(sourcePath).TryGetValue(out var src, out var unresolvedSource))
+        {
+            return unresolvedSource.ToNode();
+        }
+
+        if (!registry.Resolve(destinationPath).TryGetValue(out var dst, out var unresolvedDestination))
+        {
+            return unresolvedDestination.ToNode();
+        }
 
         var infoResult = await src.Backend.InfoAsync(src.RelativePath, cancellationToken);
         if (!infoResult.TryGetValue(out var info, out var infoError))
@@ -104,10 +112,34 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 hint: "One of these filesystems does not support raw byte streaming, so it cannot be a " +
                       "source or destination for a cross-filesystem copy or move.");
         }
-
-        if (deleteSource)
+        catch (FileSystemOperationException ex)
         {
-            await src.Backend.DeleteAsync(src.RelativePath, ct);
+            // The backend knew exactly why it refused and had no envelope to say so in. Its code and
+            // its retryability are the answer: a denied path or a disallowed file type is permanent,
+            // and the catch-all below would invite the agent to retry it forever.
+            return ToolError.Create(
+                ex.Error.ErrorCode,
+                $"Cannot transfer '{srcVirtual}' to '{dstVirtual}': {ex.Error.Message}",
+                retryable: ex.Error.Retryable,
+                hint: ex.Error.Hint);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The stream fails for more than an unsupported backend: a missing source (fs_info
+            // reports exists=false without an error, so the transfer gets this far), a full disk, a
+            // refused destination. The directory path reports those per entry; here there is one
+            // entry, and it becomes the same envelope. The source is left untouched either way.
+            return ToolError.Create(
+                ToolError.Codes.InternalError,
+                $"Cannot transfer '{srcVirtual}' to '{dstVirtual}': {ex.Message}",
+                retryable: true,
+                hint: "Check that the source exists and that the destination is writable.");
+        }
+
+        if (deleteSource &&
+            !(await src.Backend.DeleteAsync(src.RelativePath, ct)).TryGetValue(out _, out var deleteError))
+        {
+            return SourceNotRemoved(srcVirtual, dstVirtual, deleteError);
         }
 
         return new JsonObject
@@ -243,9 +275,22 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             }
         }
 
-        if (deleteSource && failed == 0 && transferred > 0)
+        // A move that streamed nothing is not a move: no destination was created, and the skipped
+        // delete leaves the source in place — reporting "ok" would present that as done.
+        if (deleteSource && transferred == 0 && failed == 0)
         {
-            await src.Backend.DeleteAsync(src.RelativePath, ct);
+            return ToolError.Create(
+                ToolError.Codes.UnsupportedOperation,
+                $"'{srcVirtual}' has no files to stream, and a cross-filesystem move cannot recreate " +
+                "an empty directory on the destination; nothing was moved.",
+                retryable: false,
+                hint: "Create the directory on the destination filesystem instead, then remove the source.");
+        }
+
+        if (deleteSource && failed == 0 && transferred > 0 &&
+            !(await src.Backend.DeleteAsync(src.RelativePath, ct)).TryGetValue(out _, out var deleteError))
+        {
+            return SourceNotRemoved(srcVirtual, dstVirtual, deleteError);
         }
 
         var status = (transferred, failed) switch
@@ -268,6 +313,16 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             ["entries"] = perEntry
         };
     }
+
+    // A streamed move is copy + delete; a refused delete must not present the duplicate-leaving
+    // copy as a completed move. The envelope keeps the source's code so the caller can tell a
+    // read-only refusal from a transient failure.
+    private static JsonNode SourceNotRemoved(string srcVirtual, string dstVirtual, ToolErrorResult error) =>
+        ToolError.Create(
+            error.ErrorCode,
+            $"Copied '{srcVirtual}' to '{dstVirtual}', but the source could not be removed: {error.Message}",
+            retryable: error.Retryable,
+            hint: $"The destination holds a complete copy. Remove '{srcVirtual}' yourself, or keep both copies.");
 
     private static string? ExtractTail(string srcRel, string sourceDir)
     {

@@ -1,11 +1,13 @@
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Printing;
+using Domain.Prompts;
+using Domain.Tools;
 using Domain.Tools.FileSystem;
+using Domain.Tools.Printing;
 
 namespace Domain.Tools.Printing.Vfs;
 
@@ -13,9 +15,112 @@ public sealed class PrinterQueueFileSystem(
     IPrintSpool spool,
     IPrinterClient printer,
     PrintQueueGate gate,
-    string supportedFormats) : IFileSystemBackend
+    string supportedFormats,
+    TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
-    public string FilesystemName => "print-queue";
+    public override string FilesystemName => "print-queue";
+
+    protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
+
+    public override string DescribeMount =>
+        "A printer exposed as a flat filesystem. Copy or create a document at /print-queue/<filename> "
+        + "to print it on the configured printer; the document is submitted automatically. Accepted "
+        + $"formats: {PrintingPrompt.DescribeFormats(supportedFormats)} - any other format is rejected "
+        + "on copy-in, so first convert whatever you want to print into an accepted format (typically "
+        + "text or JPEG, e.g. render a PDF or PNG to a JPEG) and copy that in. Remove a file with "
+        + "fs_delete to cancel it if it has not finished printing yet. Read /print-queue/status.json "
+        + "for the state of every queued job (queued/pending/processing). Finished jobs disappear "
+        + "from the listing automatically. Supported: read, create, edit (text only), copy, glob, "
+        + "search, delete, and binary copy-in. Not supported: move and exec.";
+
+    // The words the model reads about each operation, next to the behaviour they describe.
+    public override string DescribeRead => "Read a queued document's text, or read status.json for the queue state.";
+
+    public override string DescribeInfo => "Get metadata for a queued document or the queue root.";
+
+    public override string DescribeGlob => "List queued documents (plus status.json) matching a glob pattern.";
+
+    public override string DescribeSearch => "Search the text content of queued documents.";
+
+    public override string DescribeCreate => "Queue a new text document for printing at /print-queue/<filename>.";
+
+    public override string DescribeEdit =>
+        "Edit a queued text document; cancels the old job and re-queues the new version.";
+
+    public override string DescribeDelete => "Remove a queued document. Cancels it if it has not finished printing.";
+
+    public override string DescribeCopy =>
+        "Duplicate a queued document under a new name (queues another print job).";
+
+    public override string DescribeBlobRead =>
+        "Read a chunk of a queued document's raw bytes as base64. Returns { contentBase64, eof, totalBytes }.";
+
+    public override string DescribeBlobWrite =>
+        "Write a chunk of raw bytes (base64) to a queued document. offset=0 starts it; the document "
+        + "prints once writes go quiet.";
+
+    // Only /print-queue/<filename> holds raw bytes, and the spool reads and writes ranges directly,
+    // so both blob operations answer from it rather than draining the chunk stream.
+    public override async Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
+        string path, long offset, int length, CancellationToken ct)
+    {
+        var node = PrinterQueuePath.Parse(path);
+        if (node.Kind != PrinterNodeKind.DocumentFile)
+        {
+            return FsError.NotFound<FsBlobReadResult>(path);
+        }
+
+        var (bytes, eof, total) = await spool.ReadBytesAsync(node.FileName!, offset, length, ct);
+        return new FsResult<FsBlobReadResult>.Ok(new FsBlobReadResult
+        {
+            ContentBase64 = Convert.ToBase64String(bytes),
+            Eof = eof,
+            TotalBytes = total
+        });
+    }
+
+    public override async Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
+        string path, string contentBase64, long offset, bool overwrite, bool createDirectories, CancellationToken ct)
+    {
+        var node = PrinterQueuePath.Parse(path);
+        if (node.Kind != PrinterNodeKind.DocumentFile)
+        {
+            return Invalid<FsBlobWriteResult>($"Cannot write to '{path}'. Write documents to /print-queue/<filename>.");
+        }
+
+        var fileName = node.FileName!;
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(contentBase64);
+        }
+        catch (FormatException ex)
+        {
+            return Invalid<FsBlobWriteResult>($"contentBase64 is not valid base64: {ex.Message}");
+        }
+
+        // The first chunk carries the file header; reject formats the printer cannot render before
+        // anything is spooled, so unsupported files fail the copy instead of printing as gibberish.
+        if (offset == 0)
+        {
+            var format = PrintableContent.DetectFormat(bytes);
+            if (!PrintableContent.IsSupported(format, supportedFormats))
+            {
+                return Fail<FsBlobWriteResult>(ToolError.Codes.UnsupportedOperation,
+                    $"'{fileName}' looks like '{format}', which this printer cannot render. Supported formats: {supportedFormats}.",
+                    hint: "Convert it to a supported format first (e.g. export an image as JPEG).");
+            }
+        }
+
+        await spool.WriteBytesAsync(fileName, "application/octet-stream", bytes, offset, overwrite, ct);
+        var entry = await spool.GetAsync(fileName, ct);
+        return new FsResult<FsBlobWriteResult>.Ok(new FsBlobWriteResult
+        {
+            Path = path,
+            BytesWritten = bytes.Length,
+            TotalBytes = entry?.SizeBytes ?? bytes.Length
+        });
+    }
 
     private static readonly JsonSerializerOptions _json = new()
     {
@@ -23,7 +128,7 @@ public sealed class PrinterQueueFileSystem(
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
+    public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
         var node = PrinterQueuePath.Parse(path);
 
@@ -58,7 +163,7 @@ public sealed class PrinterQueueFileSystem(
         return Ok(path, Encoding.UTF8.GetString(bytes));
     }
 
-    public async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
+    public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
         var node = PrinterQueuePath.Parse(path);
 
@@ -93,7 +198,7 @@ public sealed class PrinterQueueFileSystem(
         });
     }
 
-    public async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
+    public override async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
         using var _ = await gate.AcquireAsync(ct);
         var node = PrinterQueuePath.Parse(path);
@@ -130,7 +235,7 @@ public sealed class PrinterQueueFileSystem(
         });
     }
 
-    public async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
+    public override async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
     {
         using var _ = await gate.AcquireAsync(ct);
         var node = PrinterQueuePath.Parse(path);
@@ -152,7 +257,8 @@ public sealed class PrinterQueueFileSystem(
 
         if (!IsText(bytes))
         {
-            return Unsupported<FsEditResult>($"'{node.FileName}' is a binary document and cannot be edited as text.");
+            return Fail<FsEditResult>(ToolError.Codes.UnsupportedOperation,
+                $"'{node.FileName}' is a binary document and cannot be edited as text.");
         }
 
         var text = Encoding.UTF8.GetString(bytes);
@@ -185,94 +291,63 @@ public sealed class PrinterQueueFileSystem(
         });
     }
 
-    public async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
+    // The print queue is flat: every entry is a document (or status.json) at the root. basePath and
+    // the dirs-only convention still apply, and both correctly yield nothing here — there are no
+    // directories to list and nothing below the root to scope to.
+    public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
+        if (!GlobPrologue(basePath, pattern).TryGetValue(out var scope, out var invalidPattern))
+        {
+            return new FsResult<FsGlobResult>.Err(invalidPattern);
+        }
+
+        var (dirsOnly, matches) = scope;
+        if (dirsOnly)
+        {
+            return Glob([]);
+        }
+
         var entries = await spool.ListAsync(ct);
         var names = entries.Select(e => e.FileName).Append(PrinterQueuePath.StatusFileName);
 
-        var matches = GlobRegex.CompileMatcher(pattern);
-        var matched = names.Where(matches).OrderBy(n => n, StringComparer.Ordinal)
-            .Select(n => "/" + n).ToList();
-
-        return new FsResult<FsGlobResult>.Ok(new FsGlobResult
-        {
-            Entries = matched,
-            Truncated = false,
-            Total = matched.Count
-        });
+        return Glob(pattern, () =>
+            names.Where(matches).OrderBy(n => n, StringComparer.Ordinal).Select(n => "/" + n).ToList());
     }
 
-    public async Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path, string? directoryPath,
-        string? filePattern, int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
+    public override async Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,
+        string? directoryPath, string? filePattern, int maxResults, int contextLines,
+        VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
-        Regex matcher;
-        try
+        if (!CompileFilePattern(filePattern).TryGetValue(out var admits, out var patternError))
         {
-            matcher = new Regex(regex ? query : Regex.Escape(query), RegexOptions.IgnoreCase, TimeSpan.FromSeconds(2));
-        }
-        catch (ArgumentException ex)
-        {
-            return Invalid<FsSearchResult>($"Invalid regex: {ex.Message}");
+            return new FsResult<FsSearchResult>.Err(patternError);
         }
 
         var entries = await spool.ListAsync(ct);
-        var results = new List<FsSearchFileResult>();
-        var totalMatches = 0;
-        var filesWithMatches = 0;
-        var filesSearched = 0;
-        var truncated = false;
+        // Lazy on purpose: the file names are the caller's own, so the match runs inside the scan,
+        // where a pattern that backtracks past the timeout becomes the timeout envelope.
+        var scoped = entries.Where(e => admits(e.FileName));
 
-        foreach (var entry in entries)
-        {
-            if (!VfsContentSearch.MatchesFilePattern(filePattern, entry.FileName))
+        return await SearchNodesAsync(
+            scoped,
+            async (entry, token) =>
             {
-                continue;
-            }
-
-            var bytes = await spool.ReadAllBytesAsync(entry.FileName, ct);
-            if (bytes is null || !IsText(bytes))
+                var bytes = await spool.ReadAllBytesAsync(entry.FileName, token);
+                return ("/" + entry.FileName, bytes is null || !IsText(bytes) ? null : Encoding.UTF8.GetString(bytes));
+            },
+            new FsSearchScan
             {
-                continue;
-            }
-
-            if (totalMatches >= maxResults)
-            {
-                truncated = true;
-                break;
-            }
-
-            filesSearched++;
-            var lines = Encoding.UTF8.GetString(bytes).Split('\n');
-            var (matches, more) = VfsContentSearch.FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
-            truncated |= more;
-            if (matches.Count == 0)
-            {
-                continue;
-            }
-
-            filesWithMatches++;
-            totalMatches += matches.Count;
-            results.Add(VfsContentSearch.BuildFileResult("/" + entry.FileName, matches, outputMode));
-        }
-
-        return new FsResult<FsSearchResult>.Ok(new FsSearchResult
-        {
-            Query = query,
-            Regex = regex,
-            Path = path ?? directoryPath ?? "/",
-            FilesSearched = filesSearched,
-            FilesWithMatches = filesWithMatches,
-            TotalMatches = totalMatches,
-            Truncated = truncated,
-            Results = results
-        });
+                Query = query,
+                Regex = regex,
+                Path = path ?? directoryPath ?? "/",
+                MaxResults = maxResults,
+                ContextLines = contextLines,
+                OutputMode = outputMode
+            },
+            ct);
     }
 
-    public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsMoveResult>(
-            "The print queue does not support move. Copy a document into /print-queue to print it."));
-
-    public async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
+    public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {
         using var _ = await gate.AcquireAsync(ct);
         var node = PrinterQueuePath.Parse(path);
@@ -305,10 +380,7 @@ public sealed class PrinterQueueFileSystem(
         });
     }
 
-    public Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct) =>
-        Task.FromResult(Unsupported<FsExecResult>("The print queue does not support exec."));
-
-    public async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
+    public override async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct)
     {
         using var _ = await gate.AcquireAsync(ct);
@@ -350,7 +422,7 @@ public sealed class PrinterQueueFileSystem(
         });
     }
 
-    public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+    public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
         string path, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
         var node = PrinterQueuePath.Parse(path);
@@ -371,7 +443,7 @@ public sealed class PrinterQueueFileSystem(
         }
     }
 
-    public async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+    public override async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
         bool overwrite, bool createDirectories, CancellationToken ct)
     {
         using var _ = await gate.AcquireAsync(ct);
@@ -438,18 +510,6 @@ public sealed class PrinterQueueFileSystem(
         return JsonSerializer.Serialize(rows, _json);
     }
 
-    private static bool SafeMatch(Regex matcher, string text)
-    {
-        try
-        {
-            return matcher.IsMatch(text);
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            return false;
-        }
-    }
-
     private static bool IsText(byte[] bytes)
     {
         if (Array.IndexOf(bytes, (byte)0) >= 0)
@@ -506,18 +566,4 @@ public sealed class PrinterQueueFileSystem(
             Truncated = false
         });
 
-    private static FsResult<T> ReadOnly<T>(string path) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.UnsupportedOperation, $"{path} is read-only"));
-
-    private static FsResult<T> Invalid<T>(string message) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.InvalidArgument, message));
-
-    private static FsResult<T> NotFound<T>(string path) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.NotFound, $"Path not found: {path}"));
-
-    private static FsResult<T> Unsupported<T>(string message) where T : class =>
-        new FsResult<T>.Err(Error(ToolError.Codes.UnsupportedOperation, message));
-
-    private static ToolErrorResult Error(string code, string message) =>
-        new() { ErrorCode = code, Message = message, Retryable = false };
 }

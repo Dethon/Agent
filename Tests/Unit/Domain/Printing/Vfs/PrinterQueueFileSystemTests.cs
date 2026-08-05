@@ -20,12 +20,13 @@ public class PrinterQueueFileSystemTests : IDisposable
     private PrintQueueCoordinator _coordinator = null!;
     private readonly PrintQueueGate _gate = new();
 
-    private PrinterQueueFileSystem Build()
+    private PrinterQueueFileSystem Build(TimeSpan? regexMatchTimeout = null)
     {
         _spool = new PrintSpool(_root, _clock);
         _coordinator = new PrintQueueCoordinator(_spool, _printer, _gate, _clock,
             TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
-        return new PrinterQueueFileSystem(_spool, _printer, _gate, "text,jpeg,pwg-raster,urf,pcl");
+        return new PrinterQueueFileSystem(
+            _spool, _printer, _gate, "text,jpeg,pwg-raster,urf,pcl", regexMatchTimeout);
     }
 
     [Fact]
@@ -90,6 +91,34 @@ public class PrinterQueueFileSystemTests : IDisposable
 
         glob.Entries.ShouldContain("/report.txt");
         glob.Entries.ShouldContain("/notes.md");
+    }
+
+    // basePath scopes the pattern on every other mount, and the glob tool advertises that to the
+    // model. The print queue is flat, so a basePath below the root matches nothing at all.
+    [Fact]
+    public async Task Glob_BasePathBelowTheRoot_ScopesThePatternAndMatchesNothing()
+    {
+        var fs = Build();
+        await fs.CreateAsync("report.txt", "hello", false, true, CancellationToken.None);
+
+        var glob = (await fs.GlobAsync("/subdir", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldBeEmpty();
+    }
+
+    // A trailing slash asks for directories only. The print queue has none, so the answer is empty
+    // rather than the file list the pattern would otherwise produce.
+    [Fact]
+    public async Task Glob_TrailingSlash_ReturnsDirectoriesOnly()
+    {
+        var fs = Build();
+        await fs.CreateAsync("report.txt", "hello", false, true, CancellationToken.None);
+
+        var glob = (await fs.GlobAsync("/", "*/", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldBeEmpty();
     }
 
     [Fact]
@@ -203,6 +232,23 @@ public class PrinterQueueFileSystemTests : IDisposable
             .ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
         search.FilesWithMatches.ShouldBe(1);
         search.Results[0].File.ShouldBe("/a.txt");
+    }
+
+    // filePattern is the second caller-supplied pattern in a search, and it was compiled with no
+    // match timeout at all — on this mount the names it runs against are the caller's own file
+    // names, so `*a*a*a…b` over a long one backtracks past any deadline and stalls the turn. It
+    // answers the same timeout envelope the query already does.
+    [Fact]
+    public async Task Search_PathologicalFilePattern_ReturnsTimeoutEnvelope()
+    {
+        var fs = Build(TimeSpan.FromMilliseconds(1));
+        await fs.CreateAsync(new string('a', 30) + ".txt", "content", false, true, CancellationToken.None);
+
+        var search = await fs.SearchAsync(
+            "content", false, null, null, string.Concat(Enumerable.Repeat("*a", 12)) + "b",
+            50, 0, VfsTextSearchOutputMode.Content, CancellationToken.None);
+
+        search.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error.ErrorCode.ShouldBe("timeout");
     }
 
     [Fact]

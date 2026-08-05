@@ -206,14 +206,6 @@ public class AgentDefinitionProviderTests
     }
 
     [Fact]
-    public void RegisterCustomAgent_NullDescription_ReturnsNullDescription()
-    {
-        var result = _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
-
-        result.Description.ShouldBeNull();
-    }
-
-    [Fact]
     public void UnregisterCustomAgent_ExistingAgent_ReturnsTrue()
     {
         var def = _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });

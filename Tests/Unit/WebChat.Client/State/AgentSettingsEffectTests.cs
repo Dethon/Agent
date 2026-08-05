@@ -1,14 +1,16 @@
 using System.Text.Json;
 using Domain.DTOs.Channel;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
-using WebChat.Client.Contracts;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Effects;
+using WebChat.Client.State.Topics;
 
 namespace Tests.Unit.WebChat.Client.State;
 
-public sealed class AgentSettingsEffectTests
+public sealed class AgentSettingsEffectTests : IDisposable
 {
     private static readonly AgentCatalogEntry _jack = new(
         "jack", "Jack", null,
@@ -16,68 +18,99 @@ public sealed class AgentSettingsEffectTests
         [new PatchableModel("openai/gpt-5.6-luna", "GPT Luna"), new PatchableModel("z-ai/glm-5.2", "GLM 5.2")],
         AgentConfigPatch.SupportedEfforts);
 
-    private static IDispatcher CreateCapturingDispatcher(List<IAction> dispatched) =>
-        new CapturingDispatcher(dispatched);
+    // The same agent after the server narrowed what it will accept.
+    private static readonly AgentCatalogEntry _jackNarrowed = new(
+        "jack", "Jack", null,
+        "openai/gpt-5.6-luna", "low",
+        [new PatchableModel("openai/gpt-5.6-luna", "GPT Luna")],
+        AgentConfigPatch.SupportedEfforts);
 
-    [Fact]
-    public async Task LoadAsync_StoredSettings_SanitizesAndDispatchesLoaded()
+    private static readonly AgentCatalogEntry _nabu = new(
+        "nabu", "Nabu", null,
+        "openai/gpt-5.6-luna", "low",
+        [new PatchableModel("openai/gpt-5.6-luna", "GPT Luna"), new PatchableModel("z-ai/glm-5.2", "GLM 5.2")],
+        AgentConfigPatch.SupportedEfforts);
+
+    private readonly FakeLocalStorageService _storage = new();
+    private readonly Dispatcher _dispatcher = new();
+    private readonly AgentSettingsStore _store;
+    private readonly AgentSettingsEffect _effect;
+
+    public AgentSettingsEffectTests()
     {
-        var storage = new FakeLocalStorage();
-        await storage.SetAsync("agentConfigPatch:jack",
-            """{"Model":"z-ai/glm-5.2","ReasoningEffort":"turbo"}""");
-        var dispatched = new List<IAction>();
-        var dispatcher = CreateCapturingDispatcher(dispatched);
+        _store = new AgentSettingsStore(_dispatcher);
+        _effect = new AgentSettingsEffect(
+            _store, _dispatcher, _storage, NullLogger<AgentSettingsEffect>.Instance);
+    }
 
-        await AgentSettingsEffect.LoadAsync([_jack], storage, dispatcher);
-
-        dispatched.OfType<AgentSettingsLoaded>().ShouldHaveSingleItem()
-            .ShouldBe(new AgentSettingsLoaded("jack", new AgentModelSettings("z-ai/glm-5.2", "low")));
+    public void Dispose()
+    {
+        _effect.Dispose();
+        _store.Dispose();
     }
 
     [Fact]
-    public async Task LoadAsync_NothingStored_DispatchesDefaults()
+    public void SetAgents_StoredSettings_SanitizesAndLoadsThem()
     {
-        var storage = new FakeLocalStorage();
-        var dispatched = new List<IAction>();
-        var dispatcher = CreateCapturingDispatcher(dispatched);
+        _storage.Seed("agentConfigPatch:jack", """{"Model":"z-ai/glm-5.2","ReasoningEffort":"turbo"}""");
 
-        await AgentSettingsEffect.LoadAsync([_jack], storage, dispatcher);
+        _dispatcher.Dispatch(new SetAgents([_jack]));
 
-        dispatched.OfType<AgentSettingsLoaded>().ShouldHaveSingleItem()
-            .ShouldBe(new AgentSettingsLoaded("jack", new AgentModelSettings("openai/gpt-5.6-luna", "low")));
+        _store.State.ByAgent["jack"].ShouldBe(new AgentModelSettings("z-ai/glm-5.2", "low"));
+    }
+
+    [Fact]
+    public void SetAgents_NothingStored_LoadsTheAgentDefaults()
+    {
+        _dispatcher.Dispatch(new SetAgents([_jack]));
+
+        _store.State.ByAgent["jack"].ShouldBe(new AgentModelSettings("openai/gpt-5.6-luna", "low"));
+    }
+
+    // The live catalog is the only place a narrowing shows up. Leaving the old selection in
+    // place means every turn sends a model the server rejects, while the menu shows it as the
+    // current one.
+    [Fact]
+    public void SetAgents_LiveCatalogNarrowsTheModels_ResanitizesAKnownAgent()
+    {
+        _dispatcher.Dispatch(new SetAgents([_jack]));
+        _dispatcher.Dispatch(new SetAgentModel("jack", "z-ai/glm-5.2"));
+
+        _dispatcher.Dispatch(new SetAgents([_jackNarrowed]));
+
+        _store.State.ByAgent["jack"].Model.ShouldBe("openai/gpt-5.6-luna");
+    }
+
+    [Fact]
+    public void SetAgents_LiveCatalogAddsAnAgent_LoadsItsPersistedSettings()
+    {
+        _storage.Seed("agentConfigPatch:nabu", """{"Model":"z-ai/glm-5.2","ReasoningEffort":"high"}""");
+        _dispatcher.Dispatch(new SetAgents([_jack]));
+
+        _dispatcher.Dispatch(new SetAgents([_jack, _nabu]));
+
+        _store.State.ByAgent["nabu"].ShouldBe(new AgentModelSettings("z-ai/glm-5.2", "high"));
+    }
+
+    // A catalog that still offers what the user picked must not undo the pick.
+    [Fact]
+    public void SetAgents_LiveCatalogStillOffersTheModel_KeepsTheSelection()
+    {
+        _dispatcher.Dispatch(new SetAgents([_jack]));
+        _dispatcher.Dispatch(new SetAgentModel("jack", "z-ai/glm-5.2"));
+
+        _dispatcher.Dispatch(new SetAgents([_jack]));
+
+        _store.State.ByAgent["jack"].Model.ShouldBe("z-ai/glm-5.2");
     }
 
     [Fact]
     public async Task StateChange_ChangedEntry_PersistsToStorage()
     {
-        var storage = new FakeLocalStorage();
-        var dispatcher = new Dispatcher();
-        var store = new AgentSettingsStore(dispatcher);
-        using var effect = new AgentSettingsEffect(store, storage);
-
-        dispatcher.Dispatch(new SetAgentModel("jack", "z-ai/glm-5.2"));
+        _dispatcher.Dispatch(new SetAgentModel("jack", "z-ai/glm-5.2"));
         await Task.Delay(50); // fire-and-forget write
 
-        (await storage.GetAsync("agentConfigPatch:jack"))
+        _storage.Values["agentConfigPatch:jack"]
             .ShouldBe(JsonSerializer.Serialize(new AgentModelSettings("z-ai/glm-5.2", null)));
-    }
-
-    private sealed class CapturingDispatcher(List<IAction> dispatched) : IDispatcher
-    {
-        public void Dispatch<TAction>(TAction action) where TAction : IAction => dispatched.Add(action);
-    }
-
-    private sealed class FakeLocalStorage : ILocalStorageService
-    {
-        private readonly Dictionary<string, string> _values = new();
-
-        public ValueTask<string?> GetAsync(string key) =>
-            ValueTask.FromResult(_values.GetValueOrDefault(key));
-
-        public ValueTask SetAsync(string key, string value)
-        {
-            _values[key] = value;
-            return ValueTask.CompletedTask;
-        }
     }
 }

@@ -8,7 +8,6 @@ public sealed record StreamingContent
     public string? Reasoning { get; init; }
     public string? ToolCalls { get; init; }
     public string? CurrentMessageId { get; init; }
-    public bool IsError { get; init; }
 
     public bool HasContent =>
         !string.IsNullOrEmpty(Content) ||
@@ -23,7 +22,6 @@ public sealed record StreamingState
 
     public ImmutableHashSet<string> StreamingTopics { get; init; } = [];
     public ImmutableHashSet<string> ResumingTopics { get; init; } = [];
-    public ImmutableHashSet<string> FinalizationRequests { get; init; } = [];
 
     public static StreamingState Initial => new();
 }

@@ -121,7 +121,7 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
             var blobError = ToolErrorResult.FromEnvelope(node);
             if (blobError is not null)
             {
-                throw new IOException($"fs_blob_read failed: {blobError.Message}");
+                throw Refused("fs_blob_read", blobError);
             }
 
             var bytes = Convert.FromBase64String(node["contentBase64"]!.GetValue<string>());
@@ -163,7 +163,7 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
             var blobError = ToolErrorResult.FromEnvelope(node);
             if (blobError is not null)
             {
-                throw new IOException($"fs_blob_write failed: {blobError.Message}");
+                throw Refused("fs_blob_write", blobError);
             }
 
             offset += chunk.Length;
@@ -184,12 +184,18 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
             var blobError = ToolErrorResult.FromEnvelope(node);
             if (blobError is not null)
             {
-                throw new IOException($"fs_blob_write failed: {blobError.Message}");
+                throw Refused("fs_blob_write", blobError);
             }
         }
 
         return offset;
     }
+
+    // The server refused, and the chunk operations are streams with no envelope to say so in. The
+    // refusal travels as the typed exception so the far end's code and retryability reach
+    // VfsCopyTool intact — flattening it left a permanent denial looking retryable.
+    private static FileSystemOperationException Refused(string toolName, ToolErrorResult error) =>
+        new(error with { Message = $"{toolName} failed: {error.Message}" });
 
     private Dictionary<string, object?> WithFilesystem(Dictionary<string, object?> args)
     {
@@ -234,11 +240,19 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
                 hint: "Pick a different mount or a different operation.");
         }
 
+        return InterpretResult(result, toolName);
+    }
+
+    // The shipped servers' call-tool filter always answers JSON, but an SDK-generated rejection or
+    // a third-party server can answer plain text or nothing at all — this layer's promise is the
+    // envelope at every exit, so a text that does not parse is handled, never thrown.
+    internal JsonNode InterpretResult(CallToolResult result, string toolName)
+    {
         var text = string.Join("\n", result.Content
             .OfType<TextContentBlock>()
             .Select(c => c.Text));
 
-        var parsed = JsonNode.Parse(text);
+        var parsed = TryParse(text);
 
         if (result.IsError == true)
         {
@@ -250,23 +264,39 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
                     retryable: false);
         }
 
-        var node = parsed
-            ?? throw new InvalidOperationException($"Failed to parse response from {toolName}");
-
-        if (!FsResultContract.TryValidate(toolName, node, out var validationError))
+        if (parsed is null)
         {
-            logger?.LogWarning(
-                "Filesystem '{Filesystem}' returned a malformed '{Tool}' payload: {Error}",
-                filesystemName, toolName, validationError);
-
-            return ToolError.Create(
-                ToolError.Codes.InternalError,
-                $"The '{filesystemName}' filesystem returned a malformed '{toolName}' payload " +
-                "that does not match the expected schema.",
-                retryable: false,
-                hint: "This is a backend bug; the payload was rejected to protect the conversation.");
+            return MalformedPayload(toolName, "the response is not JSON");
         }
 
-        return node;
+        return FsResultContract.TryValidate(toolName, parsed, out var validationError)
+            ? parsed
+            : MalformedPayload(toolName, validationError);
+    }
+
+    private JsonNode MalformedPayload(string toolName, string? detail)
+    {
+        logger?.LogWarning(
+            "Filesystem '{Filesystem}' returned a malformed '{Tool}' payload: {Error}",
+            filesystemName, toolName, detail);
+
+        return ToolError.Create(
+            ToolError.Codes.InternalError,
+            $"The '{filesystemName}' filesystem returned a malformed '{toolName}' payload " +
+            "that does not match the expected schema.",
+            retryable: false,
+            hint: "This is a backend bug; the payload was rejected to protect the conversation.");
+    }
+
+    private static JsonNode? TryParse(string text)
+    {
+        try
+        {
+            return JsonNode.Parse(text);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

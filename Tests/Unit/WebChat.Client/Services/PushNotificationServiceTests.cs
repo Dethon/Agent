@@ -9,14 +9,14 @@ namespace Tests.Unit.WebChat.Client.Services;
 public sealed class PushNotificationServiceTests
 {
     private readonly Mock<IJSRuntime> _mockJsRuntime;
-    private readonly Mock<IChatConnectionService> _mockConnectionService;
+    private readonly Mock<IChatLiveConnection> _mockLiveConnection;
     private readonly PushNotificationService _sut;
 
     public PushNotificationServiceTests()
     {
         _mockJsRuntime = new Mock<IJSRuntime>();
-        _mockConnectionService = new Mock<IChatConnectionService>();
-        _sut = new PushNotificationService(_mockJsRuntime.Object, _mockConnectionService.Object);
+        _mockLiveConnection = new Mock<IChatLiveConnection>();
+        _sut = new PushNotificationService(_mockJsRuntime.Object, _mockLiveConnection.Object);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task RequestAndSubscribeAsync_WhenHubConnectionNull_ReturnsFalse()
+    public async Task RequestAndSubscribeAsync_WhenTheCallCouldNotBeMade_ReturnsFalse()
     {
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
@@ -92,26 +92,9 @@ public sealed class PushNotificationServiceTests
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", It.IsAny<object[]>()))
             .Returns(new ValueTask<PushSubscriptionResult>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
-        _mockConnectionService
-            .Setup(c => c.HubConnection)
-            .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);
-
         var result = await _sut.RequestAndSubscribeAsync("BPublicKey123");
 
         result.ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task UnsubscribeAsync_WhenHubConnectionNull_DoesNotThrow()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<string?>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
-            .Returns(new ValueTask<string?>("https://endpoint"));
-        _mockConnectionService
-            .Setup(c => c.HubConnection)
-            .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);
-
-        await Should.NotThrowAsync(() => _sut.UnsubscribeAsync());
     }
 
     [Fact]
@@ -140,7 +123,7 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task ResubscribeAsync_WhenSubscriptionExists_AccessesHubConnection()
+    public async Task ResubscribeAsync_WhenSubscriptionExists_ResendsItOverTheHub()
     {
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription", It.IsAny<object[]>()))
@@ -150,11 +133,12 @@ public sealed class PushNotificationServiceTests
 
         _mockJsRuntime.Verify(js => js.InvokeAsync<PushSubscriptionResult?>(
             "pushNotifications.getSubscription", It.IsAny<object[]>()), Times.Once);
-        _mockConnectionService.Verify(c => c.HubConnection, Times.AtLeastOnce);
+        _mockLiveConnection.Verify(
+            c => c.InvokeAsync("SubscribePush", It.IsAny<object?[]>()), Times.Once);
     }
 
     [Fact]
-    public async Task ResubscribeAsync_WhenNoSubscription_DoesNotAccessHub()
+    public async Task ResubscribeAsync_WhenNoSubscription_MakesNoHubCall()
     {
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription", It.IsAny<object[]>()))
@@ -162,19 +146,7 @@ public sealed class PushNotificationServiceTests
 
         await _sut.ResubscribeAsync();
 
-        _mockConnectionService.Verify(c => c.HubConnection, Times.Never);
-    }
-
-    [Fact]
-    public async Task ResubscribeAsync_WhenHubConnectionNull_DoesNotThrow()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription", It.IsAny<object[]>()))
-            .Returns(new ValueTask<PushSubscriptionResult?>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
-        _mockConnectionService
-            .Setup(c => c.HubConnection)
-            .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);
-
-        await Should.NotThrowAsync(() => _sut.ResubscribeAsync());
+        _mockLiveConnection.Verify(
+            c => c.InvokeAsync(It.IsAny<string>(), It.IsAny<object?[]>()), Times.Never);
     }
 }

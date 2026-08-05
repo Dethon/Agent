@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs;
 using Domain.Tools.Text;
 using Shouldly;
 
@@ -193,17 +194,113 @@ public class TextSearchToolTests : IDisposable
         CreateTestFile("doc1.md", "Hello World\nHello again");
         CreateTestFile("doc2.md", "Hello there");
 
-        var filesOnlyResult = _tool.TestRun("Hello", outputMode: SearchOutputMode.FilesOnly);
+        var filesOnlyResult = _tool.TestRun("Hello", outputMode: VfsTextSearchOutputMode.FilesOnly);
 
         filesOnlyResult["filesWithMatches"]!.GetValue<int>().ShouldBe(2);
         var firstResult = filesOnlyResult["results"]!.AsArray()[0]!;
         firstResult["matchCount"]!.GetValue<int>().ShouldBeGreaterThan(0);
         firstResult.AsObject().ContainsKey("matches").ShouldBeFalse();
 
-        var contentResult = _tool.TestRun("Hello", outputMode: SearchOutputMode.Content);
+        var contentResult = _tool.TestRun("Hello", outputMode: VfsTextSearchOutputMode.Content);
 
         var contentFirstResult = contentResult["results"]!.AsArray()[0]!;
         contentFirstResult["matches"]!.AsArray().Count.ShouldBeGreaterThan(0);
+    }
+
+    // The jail vets the search root, but a symlink discovered inside the tree can point
+    // anywhere — the recursive scan must not follow it, or foreign file content gets served
+    // as search results (and a cycle would recurse forever).
+    [Fact]
+    public void Run_SymlinkedDirectoryInsideVault_IsNotSearched()
+    {
+        var outside = _testDir + "-outside";
+        Directory.CreateDirectory(outside);
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "leak.md"), "kubernetes secret");
+            Directory.CreateSymbolicLink(Path.Combine(_testDir, "linked"), outside);
+            CreateTestFile("real.md", "kubernetes real");
+
+            var result = _tool.TestRun("kubernetes");
+
+            result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
+            result["totalMatches"]!.GetValue<int>().ShouldBe(1);
+        }
+        finally
+        {
+            Directory.Delete(outside, true);
+        }
+    }
+
+    // filePattern is the caller's, and .NET resolves a leading "../" inside a search pattern, so
+    // handing it to EnumerateFiles reads files above the vault root.
+    [Fact]
+    public void Run_FilePatternEscapingTheVault_MatchesNothingOutsideIt()
+    {
+        var outside = _testDir + "-outside";
+        Directory.CreateDirectory(outside);
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "secret.md"), "kubernetes secret");
+            CreateTestFile("real.md", "kubernetes real");
+
+            var result = _tool.TestRun("kubernetes", filePattern: "../*.md");
+
+            result["results"]!.AsArray()
+                .Select(r => r!["file"]!.ToString())
+                .ShouldNotContain(f => f.Contains("secret"));
+            result["totalMatches"]!.GetValue<int>().ShouldBe(0);
+        }
+        finally
+        {
+            Directory.Delete(outside, true);
+        }
+    }
+
+    [Fact]
+    public void Run_FilePatternNamingAMissingDirectory_AnswersAnEmptyResult()
+    {
+        CreateTestFile("real.md", "kubernetes real");
+
+        var result = _tool.TestRun("kubernetes", filePattern: "docs/*.md");
+
+        result["totalMatches"]!.GetValue<int>().ShouldBe(0);
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_AbsoluteFilePattern_AnswersAnEmptyResult()
+    {
+        CreateTestFile("real.md", "kubernetes real");
+
+        var result = _tool.TestRun("kubernetes", filePattern: "/etc/*.md");
+
+        result["totalMatches"]!.GetValue<int>().ShouldBe(0);
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_FilePatternWithADirectory_MatchesTheVaultRelativePath()
+    {
+        CreateTestFile("docs/guide.md", "kubernetes doc");
+        CreateTestFile("root.md", "kubernetes root");
+
+        var result = _tool.TestRun("kubernetes", filePattern: "docs/*.md");
+
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
+        result["results"]!.AsArray()[0]!["file"]!.ToString().ShouldBe("docs/guide.md");
+    }
+
+    [Fact]
+    public void Run_BareFilePattern_StillMatchesNestedFiles()
+    {
+        CreateTestFile("docs/guide.md", "kubernetes doc");
+        CreateTestFile("docs/notes.txt", "kubernetes notes");
+
+        var result = _tool.TestRun("kubernetes", filePattern: "*.md");
+
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
+        result["results"]!.AsArray()[0]!["file"]!.ToString().ShouldBe("docs/guide.md");
     }
 
     private void CreateTestFile(string relativePath, string content)
@@ -229,9 +326,9 @@ public class TextSearchToolTests : IDisposable
             string directoryPath = "/",
             int maxResults = 50,
             int contextLines = 1,
-            SearchOutputMode outputMode = SearchOutputMode.Content)
+            VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content)
         {
-            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines, outputMode);
+            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines, outputMode).ToNode();
         }
     }
 }

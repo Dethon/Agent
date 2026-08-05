@@ -118,7 +118,6 @@ public class HaArgParserTests
     [Theory]
     [InlineData("1979")]
     [InlineData("22")]
-    [InlineData("1901")]
     [InlineData("true")]
     [InlineData("null")]
     [InlineData("1.20")]

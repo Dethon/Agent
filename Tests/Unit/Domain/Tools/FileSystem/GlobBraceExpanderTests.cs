@@ -44,4 +44,51 @@ public class GlobBraceExpanderTests
     {
         GlobBraceExpander.Expand(pattern).ShouldBe([pattern]);
     }
+
+    // 2^9 = 512, exactly the cap: the largest cartesian product a pattern may still expand to.
+    [Fact]
+    public void Expand_AtTheExpansionCap_ReturnsEveryPattern()
+    {
+        var pattern = string.Concat(Enumerable.Repeat("{a,b}", 9));
+
+        GlobBraceExpander.Expand(pattern).Count.ShouldBe(GlobBraceExpander.MaxPatterns);
+    }
+
+    // The product is caller-controlled: a few more groups would be 2^30 patterns and an OOM, so
+    // crossing the cap fails as an invalid pattern instead of materializing the product.
+    [Theory]
+    [InlineData(10)]
+    [InlineData(30)]
+    public void Expand_OverTheExpansionCap_ThrowsInsteadOfMaterializingTheProduct(int groups)
+    {
+        var pattern = string.Concat(Enumerable.Repeat("{a,b}", groups));
+
+        Should.Throw<ArgumentException>(() => GlobBraceExpander.Expand(pattern))
+            .Message.ShouldContain(GlobBraceExpander.MaxPatterns.ToString());
+    }
+
+    [Fact]
+    public void Expand_SingleGroupOverTheCap_Throws()
+    {
+        var body = string.Join(',', Enumerable.Range(0, GlobBraceExpander.MaxPatterns + 1).Select(i => $"a{i}"));
+
+        Should.Throw<ArgumentException>(() => GlobBraceExpander.Expand($"{{{body}}}"));
+    }
+
+    // A single level's product is (alternatives × each alternative's expansion × the suffix's), and
+    // each of the last two may sit just under the cap: ten alternatives of 2^9 against a suffix of
+    // 2^9 is 2.6 million patterns from a pattern of a few hundred characters. The cap has to bite
+    // while the combinations are being produced, so crossing it costs a cap-sized list and no more.
+    [Fact]
+    public void Expand_ProductOfNestedLevels_ThrowsWithoutMaterializingTheProduct()
+    {
+        var nested = string.Concat(Enumerable.Repeat("{a,b}", 9));
+        var pattern = "{" + string.Join(',', Enumerable.Repeat(nested, 10)) + "}" + nested;
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Should.Throw<ArgumentException>(() => GlobBraceExpander.Expand(pattern));
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        allocated.ShouldBeLessThan(8 * 1024 * 1024);
+    }
 }

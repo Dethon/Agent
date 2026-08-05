@@ -3,8 +3,7 @@
 @using WebChat.Client.Contracts
 @inherits StoreSubscriberComponent
 @inject ApprovalStore ApprovalStore
-@inject IDispatcher Dispatcher
-@inject IApprovalService ApprovalService
+@inject ApprovalResponder ApprovalResponder
 
 @if (_approvalRequest is not null)
 {
@@ -77,8 +76,7 @@
 
         try
         {
-            await ApprovalService.RespondToApprovalAsync(_approvalRequest.ApprovalId, result);
-            Dispatcher.Dispatch(new ClearApproval());
+            await ApprovalResponder.RespondAsync(_approvalRequest.ApprovalId, result);
         }
         finally
         {

@@ -22,6 +22,9 @@ public class MemoryExtractionWorkerTests
     private readonly MemoryExtractionOptions _options = new();
     private readonly MemoryExtractionWorker _worker;
 
+    private static MemoryAnchor Anchor(int persistedMessageCount) =>
+        MemoryAnchor.TakenBeforeCurrentTurnIsPersisted(persistedMessageCount);
+
     public MemoryExtractionWorkerTests()
     {
         _worker = new MemoryExtractionWorker(
@@ -73,7 +76,7 @@ public class MemoryExtractionWorkerTests
             .Setup(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MemoryEntry m, CancellationToken _) => m);
 
-        var request = new MemoryExtractionRequest("user1", "thread-key-1", 0, "conv_1", null)
+        var request = new MemoryExtractionRequest("user1", "thread-key-1", Anchor(0), "conv_1", null)
         {
             FallbackContent = "Hello, I work at Contoso"
         };
@@ -138,7 +141,7 @@ public class MemoryExtractionWorkerTests
                 null, null, 3, It.IsAny<CancellationToken>()))
             .ReturnsAsync([new MemorySearchResult(existingMemory, 0.92)]);
 
-        var request = new MemoryExtractionRequest("user1", "thread-key-2", 0, null, null);
+        var request = new MemoryExtractionRequest("user1", "thread-key-2", Anchor(0), null, null);
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -160,11 +163,10 @@ public class MemoryExtractionWorkerTests
 
         MetricEvent? published = null;
         _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt => published = evt);
 
-        var request = new MemoryExtractionRequest("user2", "thread-key-3", 0, null, null);
+        var request = new MemoryExtractionRequest("user2", "thread-key-3", Anchor(0), null, null);
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -187,7 +189,7 @@ public class MemoryExtractionWorkerTests
                 McpServerEndpoints = [], EnabledFeatures = []
             });
 
-        var request = new MemoryExtractionRequest("user1", "any-key", 0, "conv_1", "agent-no-memory");
+        var request = new MemoryExtractionRequest("user1", "any-key", Anchor(0), "conv_1", "agent-no-memory");
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -198,7 +200,7 @@ public class MemoryExtractionWorkerTests
                 It.IsAny<CancellationToken>()),
             Times.Never);
         _metricsPublisher.Verify(
-            p => p.PublishAsync(It.IsAny<MemoryExtractionEvent>(), It.IsAny<CancellationToken>()),
+            p => p.Publish(It.IsAny<MemoryExtractionEvent>()),
             Times.Never);
     }
 
@@ -217,11 +219,10 @@ public class MemoryExtractionWorkerTests
 
         MetricEvent? published = null;
         _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt => published = evt);
 
-        var request = new MemoryExtractionRequest("user3", "thread-key-5", 0, null, null)
+        var request = new MemoryExtractionRequest("user3", "thread-key-5", Anchor(0), null, null)
         {
             FallbackContent = "Some message"
         };
@@ -237,66 +238,19 @@ public class MemoryExtractionWorkerTests
     }
 
     [Fact]
-    public async Task ProcessRequestAsync_WithWindow_BuildsContextFromThreadPlusFallback()
+    public async Task ProcessRequestAsync_WithAnEmptyWindow_DropsRequestAndPublishesZeroMetric()
     {
-        var stateKey = "state-key-window";
-        var allMessages = new ChatMessage[]
-        {
-            new(ChatRole.User, "turn1 user"),
-            new(ChatRole.Assistant, "turn1 assistant"),
-            new(ChatRole.User, "turn2 user"),
-            new(ChatRole.Assistant, "turn2 assistant"),
-            new(ChatRole.User, "turn3 user"),
-            new(ChatRole.Assistant, "turn3 assistant"),
-            new(ChatRole.User, "turn4 user"),
-            new(ChatRole.Assistant, "turn4 assistant"),
-            new(ChatRole.User, "turn5 user (drift)")
-        };
-
-        _threadStateStore.Setup(s => s.GetMessagesAsync(stateKey))
-            .ReturnsAsync(allMessages);
-
-        IReadOnlyList<ChatMessage>? capturedWindow = null;
-        _extractor
-            .Setup(e => e.ExtractAsync(
-                It.IsAny<IReadOnlyList<ChatMessage>>(),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()))
-            .Callback<IReadOnlyList<ChatMessage>, string, CancellationToken>((w, _, _) => capturedWindow = w)
-            .ReturnsAsync([]);
-
-        // AnchorIndex=6 means 6 persisted messages known at recall time; FallbackContent is the current user message
-        var request = new MemoryExtractionRequest("user1", stateKey, 6, "conv_1", null)
-        {
-            FallbackContent = "turn4 user"
-        };
-
-        await _worker.ProcessRequestAsync(request, CancellationToken.None);
-
-        capturedWindow.ShouldNotBeNull();
-        // 5 context msgs from thread[..6].TakeLast(5) + 1 FallbackContent = 6 total
-        capturedWindow.Count.ShouldBe(6);
-        capturedWindow[0].Text.ShouldBe("turn1 assistant");
-        capturedWindow[^1].Text.ShouldBe("turn4 user");
-        capturedWindow[^1].Role.ShouldBe(ChatRole.User);
-        // Drift messages beyond anchor are excluded
-        capturedWindow.ShouldNotContain(m => m.Text == "turn4 assistant");
-        capturedWindow.ShouldNotContain(m => m.Text == "turn5 user (drift)");
-    }
-
-    [Fact]
-    public async Task ProcessRequestAsync_WithMissingThread_DropsRequestAndPublishesZeroMetric()
-    {
+        // What the window comes out as for a thread that is gone belongs to
+        // ExtractionWindowTests; this is what the worker does when it comes out empty.
         _threadStateStore.Setup(s => s.GetMessagesAsync("gone"))
             .ReturnsAsync((ChatMessage[]?)null);
 
         MetricEvent? published = null;
         _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
-            .Returns(Task.CompletedTask);
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt => published = evt);
 
-        var request = new MemoryExtractionRequest("user1", "gone", 0, "conv_1", null);
+        var request = new MemoryExtractionRequest("user1", "gone", Anchor(0), "conv_1", null);
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -311,38 +265,6 @@ public class MemoryExtractionWorkerTests
         var evt = (MemoryExtractionEvent)published;
         evt.CandidateCount.ShouldBe(0);
         evt.StoredCount.ShouldBe(0);
-    }
-
-    [Fact]
-    public async Task ProcessRequestAsync_WithAnchorBeyondThreadLength_UsesAvailableMessages()
-    {
-        var allMessages = new ChatMessage[]
-        {
-            new(ChatRole.User, "only message")
-        };
-        _threadStateStore.Setup(s => s.GetMessagesAsync("short"))
-            .ReturnsAsync(allMessages);
-
-        IReadOnlyList<ChatMessage>? capturedWindow = null;
-        _extractor
-            .Setup(e => e.ExtractAsync(
-                It.IsAny<IReadOnlyList<ChatMessage>>(),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()))
-            .Callback<IReadOnlyList<ChatMessage>, string, CancellationToken>((w, _, _) => capturedWindow = w)
-            .ReturnsAsync([]);
-
-        var request = new MemoryExtractionRequest("user1", "short", 99, "conv_1", null)
-        {
-            FallbackContent = "current message"
-        };
-
-        await _worker.ProcessRequestAsync(request, CancellationToken.None);
-
-        capturedWindow.ShouldNotBeNull();
-        capturedWindow.Count.ShouldBe(2);
-        capturedWindow[0].Text.ShouldBe("only message");
-        capturedWindow[^1].Text.ShouldBe("current message");
     }
 
     [Fact]
@@ -365,7 +287,7 @@ public class MemoryExtractionWorkerTests
                 return [];
             });
 
-        var request = new MemoryExtractionRequest("user1", null, 0, "conv_1", null)
+        var request = new MemoryExtractionRequest("user1", null, Anchor(0), "conv_1", null)
         {
             FallbackContent = "I work at Contoso"
         };
@@ -376,29 +298,4 @@ public class MemoryExtractionWorkerTests
         callCount.ShouldBe(3);
     }
 
-    [Fact]
-    public async Task ProcessRequestAsync_WithNullThreadStateKey_ExtractsFromFallbackContent()
-    {
-        IReadOnlyList<ChatMessage>? capturedWindow = null;
-        _extractor
-            .Setup(e => e.ExtractAsync(
-                It.IsAny<IReadOnlyList<ChatMessage>>(),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()))
-            .Callback<IReadOnlyList<ChatMessage>, string, CancellationToken>((w, _, _) => capturedWindow = w)
-            .ReturnsAsync([]);
-
-        var request = new MemoryExtractionRequest("user1", null, 0, "conv_1", null)
-        {
-            FallbackContent = "I work at Contoso"
-        };
-
-        await _worker.ProcessRequestAsync(request, CancellationToken.None);
-
-        _threadStateStore.Verify(s => s.GetMessagesAsync(It.IsAny<string>()), Times.Never);
-        capturedWindow.ShouldNotBeNull();
-        capturedWindow.Count.ShouldBe(1);
-        capturedWindow[0].Text.ShouldBe("I work at Contoso");
-        capturedWindow[0].Role.ShouldBe(ChatRole.User);
-    }
 }

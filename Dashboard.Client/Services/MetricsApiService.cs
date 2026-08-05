@@ -40,29 +40,16 @@ public sealed class MetricsApiService(HttpClient http)
     public Task<List<ServiceHealthResponse>?> GetHealthAsync() =>
         http.GetFromJsonAsync<List<ServiceHealthResponse>>("api/metrics/health");
 
-    public Task<Dictionary<string, decimal>?> GetTokenGroupedAsync(
-        TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to,
-        CancellationToken ct = default) =>
-        http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/tokens/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
-
-    public Task<Dictionary<string, decimal>?> GetToolGroupedAsync(
-        ToolDimension dimension, ToolMetric metric, DateOnly from, DateOnly to,
-        CancellationToken ct = default) =>
-        http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/tools/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
-
-    public Task<Dictionary<string, int>?> GetErrorGroupedAsync(
-        ErrorDimension dimension, DateOnly from, DateOnly to,
-        CancellationToken ct = default) =>
-        http.GetFromJsonAsync<Dictionary<string, int>>(
-            $"api/metrics/errors/by/{dimension}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
-
-    public Task<Dictionary<string, int>?> GetScheduleGroupedAsync(
-        ScheduleDimension dimension, DateOnly from, DateOnly to,
-        CancellationToken ct = default) =>
-        http.GetFromJsonAsync<Dictionary<string, int>>(
-            $"api/metrics/schedules/by/{dimension}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+    public Task<Dictionary<string, TValue>?> GetGroupedAsync<TValue>(
+        string path,
+        DateOnly from,
+        DateOnly to,
+        IReadOnlyList<(string Key, string Value)>? query = null)
+    {
+        var values = string.Concat((query ?? []).Select(q => $"{q.Key}={q.Value}&"));
+        return http.GetFromJsonAsync<Dictionary<string, TValue>>(
+            $"api/metrics/{path}?{values}from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+    }
 
     public Task<List<MemoryRecallEvent>?> GetMemoryRecallAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<MemoryRecallEvent>>($"api/metrics/memory/recall?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
@@ -73,36 +60,14 @@ public sealed class MetricsApiService(HttpClient http)
     public Task<List<MemoryDreamingEvent>?> GetMemoryDreamingAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<MemoryDreamingEvent>>($"api/metrics/memory/dreaming?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
-    public Task<Dictionary<string, decimal>?> GetMemoryGroupedAsync(
-        MemoryDimension dimension, MemoryMetric metric, DateOnly from, DateOnly to,
-        CancellationToken ct = default) =>
-        http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/memory/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
-
     public Task<List<LatencyEvent>?> GetLatencyAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<LatencyEvent>>($"api/metrics/latency?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
-    public Task<Dictionary<string, decimal>?> GetLatencyGroupedAsync(
-        LatencyDimension dimension, LatencyMetric metric, DateOnly from, DateOnly to,
-        CancellationToken ct = default) =>
-        http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/latency/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
-
     public Task<List<LatencyTrendSeries>?> GetLatencyTrendAsync(
-        LatencyMetric metric, DateOnly from, DateOnly to,
-        CancellationToken ct = default) =>
+        Aggregation aggregation, DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<LatencyTrendSeries>>(
-            $"api/metrics/latency/trend?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+            $"api/metrics/latency/trend?metric={aggregation}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
     public Task<List<VoiceEvent>?> GetVoiceEventsAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<VoiceEvent>>($"api/metrics/voice?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
-
-    // agg has no default on purpose: the aggregation is user-selected state (VoiceState.Agg), and a
-    // default here is how a call site silently reverts the user's P95 pick to Avg. The query service
-    // and the HTTP endpoint keep their defaults for wire compatibility.
-    public Task<Dictionary<string, decimal>?> GetVoiceGroupedAsync(
-        VoiceDimension dimension, VoiceMetric metric, DateOnly from, DateOnly to,
-        LatencyMetric agg, CancellationToken ct = default) =>
-        http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/voice/by/{dimension}?metric={metric}&agg={agg}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 }

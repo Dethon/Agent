@@ -24,28 +24,9 @@ public static class ChannelProtocol
 
     // The agent pump's retry backoff ceiling after a failed channel_receive call
     // (McpChannelConnection reads it from here). Part of the liveness contract:
-    // LiveSubscriberFreshness must cover a poll that was held open in full and then hit one
-    // worst-case backoff before the pump touched the subscriber again.
+    // ChannelInbox's freshness window is sized from this plus DefaultReceiveWaitMs, so a poll held
+    // open in full and then delayed by one worst-case backoff still counts as live.
     public const int MaxReceiveRetryBackoffMs = 30_000;
-
-    // How long a ChannelInbox subscriber is still considered "someone is actually listening" after
-    // its last poll. Every emitter's HasActiveSessions must use this via ChannelInbox.HasLiveSubscriber
-    // rather than merely asking whether a subscriber is registered — PruneIdle keeps a subscriber that
-    // is buffering items alive for up to an hour after it goes quiet (so a channel outage doesn't
-    // discard what was buffered during it), which answers "is there bookkeeping for this id", not "is
-    // anyone actually polling right now". A caller that reads HasActiveSessions as "delivered"/"available" (schedule
-    // and routing-entry deletion, ServiceBus message settlement, Telegram's unavailable-path gate)
-    // would otherwise treat a disconnected agent's stale buffer as live delivery. Sized to the
-    // worst legitimate quiet gap, not a round multiple: a subscriber is stamped when its poll
-    // *starts*, so a healthy pump can go a fully held poll (DefaultReceiveWaitMs) plus one failed
-    // call's worst-case backoff (MaxReceiveRetryBackoffMs) between touches — exactly the freshness
-    // window before the margin, and a boundary case that used to misread a flaky-but-connected
-    // agent as dead (ServiceBus then abandons deliveries toward the DLQ cap). The margin absorbs
-    // network and scheduling slop past that boundary while staying short enough that a genuinely
-    // disconnected agent stops counting in ~1 minute. One shared constant so all six migrated
-    // channel servers compute "is anyone listening" identically.
-    public static readonly TimeSpan LiveSubscriberFreshness =
-        TimeSpan.FromMilliseconds(DefaultReceiveWaitMs + MaxReceiveRetryBackoffMs + 15_000);
 
     // _meta key under which the agent's MCP tool wrapper attaches the current turn's
     // ConversationContext to every tools/call; dual-role servers read it for routing.

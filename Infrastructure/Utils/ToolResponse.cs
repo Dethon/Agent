@@ -81,20 +81,16 @@ public static class ToolResponse
         };
     }
 
-    // Exception → envelope code mapping. FileNotFoundException/DirectoryNotFoundException
-    // derive from IOException, so list them first; the switch matches the most specific arm.
-    // HomeAssistantException's 4xx-with-status arm sits after the NotFound/Unauthorized
-    // subclasses so those keep their more specific codes.
+    // Exception → envelope code mapping for the tools that still throw: property search, web
+    // search, Home Assistant service calls. The filesystem no longer passes through here — its
+    // tools return FsResult with the envelope already chosen — so the arms that existed only for
+    // filesystem exception types are gone.
     private static string MapErrorCode(Exception ex) => ex switch
     {
         ArgumentException => ToolError.Codes.InvalidArgument,
         HomeAssistantNotFoundException => ToolError.Codes.NotFound,
-        FileNotFoundException => ToolError.Codes.NotFound,
-        DirectoryNotFoundException => ToolError.Codes.NotFound,
-        IOException => ToolError.Codes.AlreadyExists,
         HomeAssistantUnauthorizedException => ToolError.Codes.InvalidArgument,
         HomeAssistantException { StatusCode: >= 400 and < 500 } => ToolError.Codes.InvalidArgument,
-        UnauthorizedAccessException => ToolError.Codes.InvalidArgument,
         TimeoutException => ToolError.Codes.Timeout,
         OperationCanceledException => ToolError.Codes.Timeout,
         _ => ToolError.Codes.InternalError
@@ -104,12 +100,8 @@ public static class ToolResponse
     {
         ArgumentException => false,
         HomeAssistantNotFoundException => false,
-        FileNotFoundException => false,
-        DirectoryNotFoundException => false,
-        IOException => false,
         HomeAssistantUnauthorizedException => false,
         HomeAssistantException { StatusCode: >= 400 and < 500 } => false,
-        UnauthorizedAccessException => false,
         TimeoutException => true,
         OperationCanceledException => true,
         _ => true

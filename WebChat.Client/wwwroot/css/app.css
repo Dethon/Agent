@@ -94,6 +94,7 @@
 
     /* Status Colors */
     --success: #5aa06e;
+    --warning: #d9a441;
     --error: #c0492f;
     --error-bg: #fbe7df;
     --error-border: #f0c4b4;
@@ -156,6 +157,7 @@
 
     /* Status Colors */
     --success: #6cc08a;
+    --warning: #e6bb63;
     --error: #f0795a;
     --error-bg: #2e1813;
     --error-border: #5a2c1f;
@@ -322,6 +324,11 @@ h1, h2, h3 {
 .status-dot.connected {
     background-color: var(--success);
     box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+}
+
+.status-dot.reconnecting {
+    background-color: var(--warning);
+    box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.2);
 }
 
 /* Theme Toggle */
