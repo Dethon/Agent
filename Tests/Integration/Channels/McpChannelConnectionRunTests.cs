@@ -1,6 +1,11 @@
 using System.ComponentModel;
+using System.Net;
+using System.Text.Json;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Shouldly;
@@ -70,6 +75,66 @@ public class McpChannelConnectionRunTests
         await run;
     }
 
+    [Fact]
+    public async Task RunAsync_AnHttpCancellationTheRunNeverAskedFor_RetriesInsteadOfFaulting()
+    {
+        // HttpClient reports its own timeouts as TaskCanceledException — an
+        // OperationCanceledException whose token the run never tripped. This server produces the
+        // same shape mid-connect: it expires the session under the client, so the MCP transport
+        // cancels its internal token while the connect call is still in flight. The run must count
+        // that as one more failed attempt and retry, because a faulted run faults
+        // ChannelConnectionHost's WhenAll and stops the whole agent.
+        await ResetAsync();
+        Interlocked.Exchange(ref _firstInitializeSeen, 0);
+
+        var port = TestPort.GetAvailable();
+        await using var server = await StartSessionExpiringServerAsync(port);
+        await using var connection = new McpChannelConnection(
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var run = connection.RunAsync($"http://localhost:{port}/mcp", _catalog, cts.Token);
+
+        var registered = _registered.WaitAsync(cts.Token);
+        var first = await Task.WhenAny(run, registered);
+        if (first == run)
+        {
+            await run; // Surfaces the exception that would have stopped the host.
+        }
+        await registered;
+        Volatile.Read(ref _registerCalls).ShouldBe(1);
+
+        await cts.CancelAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task RunAsync_RegistrationFailsButTheLinkIsHealthy_RetriesWithoutReconnecting()
+    {
+        // A register_agents that errors while list_tools still answers is a server-side hiccup,
+        // not a dead link: the catalog must land on a later health tick through the same
+        // connection, or the channel serves an empty catalog indefinitely.
+        await ResetAsync();
+        Interlocked.Exchange(ref _registerRejected, 0);
+        Interlocked.Exchange(ref _clientConnects, 0);
+
+        var port = TestPort.GetAvailable();
+        await using var server = await StartFlakyRegisterServerAsync(port);
+        await using var connection = new McpChannelConnection(
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var run = connection.RunAsync($"http://localhost:{port}/mcp", _catalog, cts.Token);
+
+        await _registered.WaitAsync(cts.Token);
+        Volatile.Read(ref _registerRejected).ShouldBe(1);
+        Volatile.Read(ref _registerCalls).ShouldBe(1);
+        Volatile.Read(ref _clientConnects).ShouldBe(1);
+
+        await cts.CancelAsync();
+        await run;
+    }
+
     private static async Task ResetAsync()
     {
         Interlocked.Exchange(ref _registerCalls, 0);
@@ -106,5 +171,127 @@ public class McpChannelConnectionRunTests
             _registered.Release();
             return "ok";
         }
+    }
+
+    // State for the session-expiry scenario. The MCP server here answers `server/discover` with a
+    // JSON-RPC error so the client falls back to the session-minting initialize handshake, mints a
+    // session id for the first initialize itself, then sabotages that first generation: the
+    // standalone GET stream gets the 404 the client reads as "session expired" — cancelling the
+    // transport's internal token — while the initialized notification is held in flight, so the
+    // connect call dies with exactly an HttpClient-timeout-shaped TaskCanceledException.
+    // State for the flaky-register scenario. Every client creation opens with exactly one
+    // server/discover probe, so counting those counts connections: it is how the test tells a
+    // same-connection retry from a reconnect. The rejection is an HTTP 500, because that is what
+    // reaches the client as a thrown registration failure; a tool-level error would come back as
+    // an IsError result instead.
+    private static int _registerRejected;
+    private static int _clientConnects;
+
+    private static async Task<WebApplication> StartFlakyRegisterServerAsync(int port)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<RegisterTools>();
+
+        var app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            if (HttpMethods.IsPost(context.Request.Method))
+            {
+                context.Request.EnableBuffering();
+                string body;
+                using (var reader = new StreamReader(context.Request.Body, leaveOpen: true))
+                {
+                    body = await reader.ReadToEndAsync();
+                }
+                context.Request.Body.Position = 0;
+
+                if (body.Contains("\"server/discover\""))
+                {
+                    Interlocked.Increment(ref _clientConnects);
+                }
+                else if (body.Contains($"\"{ChannelProtocol.RegisterAgentsTool}\"") &&
+                    Interlocked.Exchange(ref _registerRejected, 1) == 0)
+                {
+                    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                    return;
+                }
+            }
+            await next();
+        });
+        app.MapMcp("/mcp");
+        await app.StartAsync();
+        return app;
+    }
+
+    private const string ExpiringSession = "expiring-session";
+    private static int _firstInitializeSeen;
+
+    private static async Task<WebApplication> StartSessionExpiringServerAsync(int port)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<RegisterTools>();
+
+        var app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            var inExpiringSession = context.Request.Headers["Mcp-Session-Id"] == ExpiringSession;
+            if (HttpMethods.IsGet(context.Request.Method) && inExpiringSession)
+            {
+                // The 404 the client reads as "session expired": it cancels the transport's
+                // internal token, under whatever call is in flight.
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            if (!HttpMethods.IsPost(context.Request.Method))
+            {
+                await next();
+                return;
+            }
+
+            context.Request.EnableBuffering();
+            string body;
+            using (var reader = new StreamReader(context.Request.Body, leaveOpen: true))
+            {
+                body = await reader.ReadToEndAsync();
+            }
+            context.Request.Body.Position = 0;
+
+            if (body.Contains("\"server/discover\""))
+            {
+                var id = JsonDocument.Parse(body).RootElement.GetProperty("id").GetInt64();
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(
+                    "{\"jsonrpc\":\"2.0\",\"id\":" + id +
+                    ",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}");
+                return;
+            }
+
+            if (body.Contains("\"method\":\"initialize\"") &&
+                Interlocked.Exchange(ref _firstInitializeSeen, 1) == 0)
+            {
+                context.Response.Headers["Mcp-Session-Id"] = ExpiringSession;
+            }
+            else if (body.Contains("\"notifications/initialized\"") && inExpiringSession)
+            {
+                // If this raced ahead of the expiry it is held open, never answered: the only way
+                // the client-side call ends is the internal cancellation the 404 above triggers.
+                await Task.Delay(Timeout.InfiniteTimeSpan, context.RequestAborted);
+                return;
+            }
+
+            await next();
+        });
+        app.MapMcp("/mcp");
+        await app.StartAsync();
+        return app;
     }
 }

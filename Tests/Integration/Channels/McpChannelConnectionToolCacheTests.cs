@@ -53,6 +53,55 @@ public class McpChannelConnectionToolCacheTests
     }
 
     [Fact]
+    public async Task CreateConversation_AProbeFinishingAfterReconnect_DoesNotResurrectTheOldToolSet()
+    {
+        // The tool set is per connection generation. A probe still in flight when the connection
+        // moves to a new generation must not store the old generation's answer, or a server
+        // redeployed with a new tool would stay invisible for the life of the new connection —
+        // exactly what the reconnect is meant to fix.
+        using var oldProbeArrived = new SemaphoreSlim(0);
+        using var oldProbeHeld = new SemaphoreSlim(0);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        await using var oldServer = await InMemoryMcpServer.StartAsync(services => services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<NoConversationTools>()
+            .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (context, ct) =>
+            {
+                oldProbeArrived.Release();
+                await oldProbeHeld.WaitAsync(ct);
+                return await next(context, ct);
+            })));
+        await using var newServer = await StartServerAsync();
+        await using var connection = new McpChannelConnection("test");
+        await connection.ConnectAsync(oldServer.Endpoint, CancellationToken.None);
+
+        var staleCreate = CreateAsync(connection);
+        await oldProbeArrived.WaitAsync(cts.Token);
+
+        await connection.ConnectAsync(newServer.Endpoint, CancellationToken.None);
+        oldProbeHeld.Release();
+        (await staleCreate).ShouldBeNull();
+
+        (await CreateAsync(connection)).ShouldBe("conv-1");
+    }
+
+    [Fact]
+    public async Task CreateConversation_RacingTheClientDisposal_YieldsNull()
+    {
+        // A reconnect disposes the client while a create can still be in flight. What the disposed
+        // client throws must not escape: DeliveryTargetResolver reads null as "this channel minted
+        // nothing" and moves to the next target, per ADR 0011.
+        await using var server = await StartServerAsync();
+        var connection = new McpChannelConnection("test");
+        await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
+        await connection.DisposeAsync();
+
+        (await CreateAsync(connection)).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task CreateConversation_ServerWithoutTheTool_StillYieldsNull()
     {
         await using var server = await InMemoryMcpServer.StartAsync(services => services

@@ -132,8 +132,15 @@ public sealed class McpChannelConnection(
                 logger?.LogInformation("Channel {ChannelId} connected", ChannelId);
                 return;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Includes an OperationCanceledException whose token is not ours: HttpClient
+                // reports its own timeouts as TaskCanceledException, and letting that shape
+                // escape here faults the run and stops the whole host.
                 var delay = TimeSpan.FromSeconds(
                     Math.Min(Math.Pow(2, attempt), _maxReconnectDelay.TotalSeconds));
                 logger?.LogWarning(
@@ -152,7 +159,11 @@ public sealed class McpChannelConnection(
             await RegisterAgentsAsync(agents, ct);
             return true;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             logger?.LogWarning(
                 "Failed to register agents with channel {ChannelId}: {Error}", ChannelId, ex.Message);
@@ -498,6 +509,17 @@ public sealed class McpChannelConnection(
         {
             return null;
         }
+        catch (ObjectDisposedException)
+        {
+            return null;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // A reconnect disposes the client under a create still in flight, which cancels the
+            // transport's own token — not the caller's. That is "not connected", and not connected
+            // returns null here (ADR 0011); an abort the caller asked for still propagates.
+            return null;
+        }
     }
 
     public async Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
@@ -560,14 +582,26 @@ public sealed class McpChannelConnection(
 
     // Two targets resolving at once can both find the set unfetched and each ask; that costs one
     // extra round trip on the first turn of a generation and settles on the same answer, which is
-    // cheaper than serialising every probe behind a lock.
+    // cheaper than serialising every probe behind a lock. The client is captured before the ask
+    // and compared after, because a probe can outlive its generation: a reconnect mid-flight
+    // swaps the client, and storing the old generation's answer then would pin the new connection
+    // to a tool set its server may not have.
     private async Task<bool> OffersToolAsync(string toolName, CancellationToken ct)
     {
-        _toolNames ??= (await _client!.ListToolsAsync(cancellationToken: ct))
-            .Select(tool => tool.Name)
-            .ToHashSet(StringComparer.Ordinal);
+        var names = _toolNames;
+        if (names is null)
+        {
+            var client = _client!;
+            names = (await client.ListToolsAsync(cancellationToken: ct))
+                .Select(tool => tool.Name)
+                .ToHashSet(StringComparer.Ordinal);
+            if (ReferenceEquals(_client, client))
+            {
+                _toolNames = names;
+            }
+        }
 
-        return _toolNames.Contains(toolName);
+        return names.Contains(toolName);
     }
 
     private void EnsureConnected()
