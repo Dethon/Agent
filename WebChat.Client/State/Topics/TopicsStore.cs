@@ -91,14 +91,23 @@ public sealed class TopicsStore : IDisposable
             Error = null
         },
 
+        // A live catalog refresh may drop the selected agent; fall back to the first available
+        // (or null when empty) so the UI never points at a ghost agent. The selected topic
+        // belonged to the dropped agent, so it goes with it, exactly as SelectAgent does —
+        // the new agent's topics load right after, and a topic id that survives that load is
+        // one every later send fails to find.
+        SetAgents a when state.SelectedAgentId is not null && a.Agents.All(ag => ag.Id != state.SelectedAgentId) =>
+            state with
+            {
+                Agents = a.Agents,
+                SelectedAgentId = a.Agents.FirstOrDefault()?.Id,
+                SelectedTopicId = null,
+                Error = null
+            },
+
         SetAgents a => state with
         {
             Agents = a.Agents,
-            // A live catalog refresh may drop the selected agent; fall back to the first
-            // available (or null when empty) so the UI never points at a ghost agent.
-            SelectedAgentId = state.SelectedAgentId is not null && a.Agents.All(ag => ag.Id != state.SelectedAgentId)
-                ? a.Agents.FirstOrDefault()?.Id
-                : state.SelectedAgentId,
             Error = null
         },
 
