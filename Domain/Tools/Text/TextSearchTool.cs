@@ -87,11 +87,17 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             return new FsResult<FsSearchResult>.Err(resolveError);
         }
 
+        if (!VfsContentSearch.CompileFilePattern(filePattern, _matchTimeout)
+                .TryGetValue(out var matchesPattern, out var patternError))
+        {
+            return new FsResult<FsSearchResult>.Err(patternError);
+        }
+
         var results = new List<FsSearchFileResult>();
         var filesSearched = 0;
         var totalMatches = 0;
 
-        foreach (var file in EnumerateAllowedFiles(fullPath, filePattern))
+        foreach (var file in EnumerateAllowedFiles(fullPath, filePattern, matchesPattern))
         {
             filesSearched++;
             var remaining = scan.MaxResults - totalMatches;
@@ -143,10 +149,25 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         AttributesToSkip = FileAttributes.ReparsePoint
     };
 
-    private IEnumerable<string> EnumerateAllowedFiles(string fullPath, string? filePattern) =>
+    // The pattern never reaches EnumerateFiles: .NET resolves a leading "../" inside a search
+    // pattern, so "../*.md" would read above the vault, and a pattern naming a missing directory
+    // or an absolute path throws straight past the envelope. Enumerate everything under the
+    // vetted root instead and filter names here, with the same compiled matcher every other
+    // filesystem uses.
+    private IEnumerable<string> EnumerateAllowedFiles(
+        string fullPath, string? filePattern, Func<string, bool> matchesPattern) =>
         Directory
-            .EnumerateFiles(fullPath, filePattern ?? "*", _skipSymlinks)
-            .Where(IsAllowedExtension);
+            .EnumerateFiles(fullPath, "*", _skipSymlinks)
+            .Where(IsAllowedExtension)
+            .Where(file => matchesPattern(PatternCandidate(fullPath, file, filePattern)));
+
+    // A bare pattern ("*.md") filters file names at any depth, as it did when EnumerateFiles
+    // matched it per directory; a pattern with a separator ("docs/*.md") filters the path
+    // relative to the searched directory.
+    private static string PatternCandidate(string root, string file, string? filePattern) =>
+        filePattern?.Contains('/') == true
+            ? Path.GetRelativePath(root, file).Replace('\\', '/')
+            : Path.GetFileName(file);
 
     private bool IsAllowedExtension(string filePath) =>
         AllowedExtensions.Contains(Path.GetExtension(filePath).ToLowerInvariant());

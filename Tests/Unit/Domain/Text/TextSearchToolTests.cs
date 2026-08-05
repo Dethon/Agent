@@ -232,6 +232,77 @@ public class TextSearchToolTests : IDisposable
         }
     }
 
+    // filePattern is the caller's, and .NET resolves a leading "../" inside a search pattern, so
+    // handing it to EnumerateFiles reads files above the vault root.
+    [Fact]
+    public void Run_FilePatternEscapingTheVault_MatchesNothingOutsideIt()
+    {
+        var outside = _testDir + "-outside";
+        Directory.CreateDirectory(outside);
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "secret.md"), "kubernetes secret");
+            CreateTestFile("real.md", "kubernetes real");
+
+            var result = _tool.TestRun("kubernetes", filePattern: "../*.md");
+
+            result["results"]!.AsArray()
+                .Select(r => r!["file"]!.ToString())
+                .ShouldNotContain(f => f.Contains("secret"));
+            result["totalMatches"]!.GetValue<int>().ShouldBe(0);
+        }
+        finally
+        {
+            Directory.Delete(outside, true);
+        }
+    }
+
+    [Fact]
+    public void Run_FilePatternNamingAMissingDirectory_AnswersAnEmptyResult()
+    {
+        CreateTestFile("real.md", "kubernetes real");
+
+        var result = _tool.TestRun("kubernetes", filePattern: "docs/*.md");
+
+        result["totalMatches"]!.GetValue<int>().ShouldBe(0);
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_AbsoluteFilePattern_AnswersAnEmptyResult()
+    {
+        CreateTestFile("real.md", "kubernetes real");
+
+        var result = _tool.TestRun("kubernetes", filePattern: "/etc/*.md");
+
+        result["totalMatches"]!.GetValue<int>().ShouldBe(0);
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_FilePatternWithADirectory_MatchesTheVaultRelativePath()
+    {
+        CreateTestFile("docs/guide.md", "kubernetes doc");
+        CreateTestFile("root.md", "kubernetes root");
+
+        var result = _tool.TestRun("kubernetes", filePattern: "docs/*.md");
+
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
+        result["results"]!.AsArray()[0]!["file"]!.ToString().ShouldBe("docs/guide.md");
+    }
+
+    [Fact]
+    public void Run_BareFilePattern_StillMatchesNestedFiles()
+    {
+        CreateTestFile("docs/guide.md", "kubernetes doc");
+        CreateTestFile("docs/notes.txt", "kubernetes notes");
+
+        var result = _tool.TestRun("kubernetes", filePattern: "*.md");
+
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
+        result["results"]!.AsArray()[0]!["file"]!.ToString().ShouldBe("docs/guide.md");
+    }
+
     private void CreateTestFile(string relativePath, string content)
     {
         var fullPath = Path.Combine(_testDir, relativePath);

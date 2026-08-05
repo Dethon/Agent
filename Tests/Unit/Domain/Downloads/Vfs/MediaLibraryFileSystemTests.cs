@@ -1,8 +1,11 @@
 using System.Text;
+using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
+using Domain.Tools.FileSystem;
+using Moq;
 using Shouldly;
 using static Tests.Unit.Domain.Downloads.Vfs.DownloadFakes;
 
@@ -192,6 +195,137 @@ public class MediaLibraryFileSystemTests : IDisposable
 
         glob.Entries.ShouldContain("downloads/42/status.json");
     }
+
+    // The same boundary, crossed by the one path that never calls this backend's MoveAsync: a
+    // cross-mount move streams the payload files out and then deletes the source, and that delete is
+    // the overlay's cancel. So the move the same-mount path refuses outright used to complete —
+    // download cancelled, files gone — with a copy left behind on the other mount.
+    [Fact]
+    public async Task CrossMountMove_OfALiveDownload_IsRefusedAndCancelsNothing()
+    {
+        _client.Add(Item(42));
+        var destination = new Mock<IFileSystemBackend>();
+        destination.SetupGet(b => b.FilesystemName).Returns("vault");
+
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.Resolve("/media/downloads/42"))
+            .Returns(Resolved(_sut, "downloads/42"));
+        registry.Setup(r => r.Resolve("/vault/42"))
+            .Returns(Resolved(destination.Object, "42"));
+
+        var result = await new VfsMoveTool(registry.Object).RunAsync("/media/downloads/42", "/vault/42");
+
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
+        result["message"]!.GetValue<string>().ShouldContain("active download");
+        _client.CleanedUp.ShouldBeEmpty();
+        _client.Items.ShouldContain(i => i.Id == 42);
+        destination.Verify(b => b.WriteChunksAsync(It.IsAny<string>(),
+            It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+            It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // The reverse direction: a move landing inside a live download's directory is destroyed the
+    // moment the download is cancelled, whichever mount it came from.
+    [Fact]
+    public async Task CrossMountMove_IntoALiveDownload_IsRefused()
+    {
+        _client.Add(Item(42));
+        var source = new Mock<IFileSystemBackend>();
+        source.SetupGet(b => b.FilesystemName).Returns("vault");
+        source.Setup(b => b.InfoAsync("note.md", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(
+                new FsInfoResult { Exists = true, Path = "note.md", IsDirectory = false }));
+
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.Resolve("/vault/note.md")).Returns(Resolved(source.Object, "note.md"));
+        registry.Setup(r => r.Resolve("/media/downloads/42/note.md"))
+            .Returns(Resolved(_sut, "downloads/42/note.md"));
+
+        var result = await new VfsMoveTool(registry.Object)
+            .RunAsync("/vault/note.md", "/media/downloads/42/note.md");
+
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
+        result["message"]!.GetValue<string>().ShouldContain("active download");
+        source.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CrossMountMove_OfAPlainMediaFile_StillTransfers()
+    {
+        _client.Add(Item(42));
+        await File.WriteAllTextAsync(Path.Combine(_libraryRoot, "notes.txt"), "hello");
+        var destination = new Mock<IFileSystemBackend>();
+        destination.SetupGet(b => b.FilesystemName).Returns("vault");
+        destination.Setup(b => b.WriteChunksAsync("notes.txt",
+                It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(5L);
+
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.Resolve("/media/notes.txt")).Returns(Resolved(_sut, "notes.txt"));
+        registry.Setup(r => r.Resolve("/vault/notes.txt")).Returns(Resolved(destination.Object, "notes.txt"));
+
+        await new VfsMoveTool(registry.Object).RunAsync("/media/notes.txt", "/vault/notes.txt");
+
+        // The transfer runs: only paths a live download owns are refused. (The move still ends on
+        // this mount's delete rule — fs_delete here removes download directories only — which is
+        // the pre-existing behaviour and not what this test is about.)
+        destination.Verify(b => b.WriteChunksAsync("notes.txt",
+            It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+            It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A real file left at downloads/<id>/status.json after its download is gone used to be a ghost:
+    // the overlay answered every info for that path with its virtual file (exists=false once no
+    // download owns the id) and refused every delete as read-only, so nothing could see or remove
+    // it. With no live item the disk underneath is the truth.
+    [Fact]
+    public async Task Info_ALeftoverStatusFileWithNoLiveDownload_ComesFromDisk()
+    {
+        var leftover = Path.Combine(_libraryRoot, "downloads", "99", "status.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
+        await File.WriteAllTextAsync(leftover, "{\"stale\":true}");
+
+        var info = (await _sut.InfoAsync("downloads/99/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+
+        info.Exists.ShouldBeTrue();
+        info.IsDirectory.ShouldBe(false);
+    }
+
+    [Fact]
+    public async Task Delete_ALeftoverStatusFileWithNoLiveDownload_RemovesTheRealFile()
+    {
+        var leftover = Path.Combine(_libraryRoot, "downloads", "99", "status.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
+        await File.WriteAllTextAsync(leftover, "{\"stale\":true}");
+
+        (await _sut.DeleteAsync("downloads/99/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
+
+        _disk.TrashedPaths.ShouldContain(p => p.EndsWith("status.json", StringComparison.Ordinal));
+    }
+
+    // The virtual file wins for as long as a download owns the id: it is a rendered view, not a
+    // file, so info reports the rendered size and delete still refuses it.
+    [Fact]
+    public async Task StatusFileOfALiveDownload_StaysVirtual()
+    {
+        _client.Add(Item(42));
+
+        var info = (await _sut.InfoAsync("downloads/42/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+        info.Exists.ShouldBeTrue();
+        info.Size.ShouldNotBeNull();
+
+        (await _sut.DeleteAsync("downloads/42/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>()
+            .Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        _disk.TrashedPaths.ShouldBeEmpty();
+    }
+
+    private static FsResult<FileSystemResolution> Resolved(IFileSystemBackend backend, string relativePath) =>
+        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, ""));
 
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> Chunks(string content)
     {

@@ -13,7 +13,7 @@ namespace Domain.Tools.Downloads.Vfs;
 public sealed class MediaLibraryDiskFileSystem(
     IFileSystemClient client,
     LibraryPathConfig root,
-    DownloadsOverlay downloads) : DiskFileSystem(Name, Mount(root), client, root)
+    DownloadsOverlay downloads) : DiskFileSystem(Name, Mount(root), client, root), ICrossMountMoveGuard
 {
     public const string Name = "media";
 
@@ -37,8 +37,9 @@ public sealed class MediaLibraryDiskFileSystem(
 
     public override string DescribeDelete =>
         $"Delete a download directory ({MediaFilesystem.DownloadsSubdir}/<id>): cancels the torrent "
-        + "task and cleans up its files. Also removes leftover download directories whose torrent is "
-        + "already gone. Other media paths cannot be deleted.";
+        + "task and cleans up its files. Also removes leftovers whose torrent is already gone: the "
+        + "download directory, or a real status.json file no live download owns. Other media paths "
+        + "cannot be deleted.";
 
     // The only text on this mount is the overlay's rendered status file; the media itself is bytes.
     public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
@@ -77,8 +78,8 @@ public sealed class MediaLibraryDiskFileSystem(
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
         await downloads.TryInfoAsync(path, ct) ?? await base.InfoAsync(path, ct);
 
-    public override Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
-        downloads.DeleteAsync(path, ct);
+    public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
+        await downloads.TryDeleteAsync(path, ct) ?? await base.DeleteAsync(path, ct);
 
     // Delete is the download's cancel, so it is left to the overlay; move has no such meaning and a
     // live download whose directory moved keeps writing into one qBittorrent recreates. Both ends of
@@ -99,16 +100,28 @@ public sealed class MediaLibraryDiskFileSystem(
             : await downloads.TouchesActiveDownloadAsync(destinationPath, ct) ? destinationPath
             : null;
 
-        return offender is null
-            ? null
-            : FsError.Fail<T>(ToolError.Codes.UnsupportedOperation,
-                $"'{offender}' belongs to an active download; moving across that boundary would "
-                + "leave the download writing into files the move cannot follow, and anything moved "
-                + "inside is removed when the download is cancelled.",
-                retryable: false,
-                hint: $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
-                      + "for it to finish, then move the files.");
+        return offender is null ? null : new FsResult<T>.Err(ActiveDownloadRefusal(offender));
     }
+
+    // The cross-mount half of the same refusal. A move between two mounts never reaches MoveAsync —
+    // it streams the payload out and then deletes the source, and on this mount that delete is the
+    // download's cancel — so VfsMoveTool asks each end about its own path first, and the answer here
+    // is the envelope the same-mount refusal already returns.
+    public async Task<ToolErrorResult?> RefuseMoveAsync(string relativePath, CancellationToken ct) =>
+        await downloads.TouchesActiveDownloadAsync(relativePath, ct)
+            ? ActiveDownloadRefusal(relativePath)
+            : null;
+
+    private static ToolErrorResult ActiveDownloadRefusal(string offender) => new()
+    {
+        ErrorCode = ToolError.Codes.UnsupportedOperation,
+        Message = $"'{offender}' belongs to an active download; moving across that boundary would "
+                  + "leave the download writing into files the move cannot follow, and anything moved "
+                  + "inside is removed when the download is cancelled.",
+        Retryable = false,
+        Hint = $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
+               + "for it to finish, then move the files."
+    };
 
     public override async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>

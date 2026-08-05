@@ -80,10 +80,9 @@ public class DownloadsOverlayTests : IDisposable
         statusFile.Exists.ShouldBeTrue();
         statusFile.IsDirectory.ShouldBe(false);
 
-        var deadStatus = (await _sut.TryInfoAsync("downloads/99/status.json", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
-        deadStatus.Exists.ShouldBeFalse();
-
+        // No download owns 99, so the overlay owns nothing at either path: whatever is on disk
+        // there is a real file or directory, and the disk backend answers for it.
+        (await _sut.TryInfoAsync("downloads/99/status.json", CancellationToken.None)).ShouldBeNull();
         (await _sut.TryInfoAsync("downloads/99", CancellationToken.None)).ShouldBeNull();
         (await _sut.TryInfoAsync("Movies", CancellationToken.None)).ShouldBeNull();
     }
@@ -143,7 +142,7 @@ public class DownloadsOverlayTests : IDisposable
             Context = new ConversationContext("agent", "conv", "user", new ReplyTarget("library", "conv"))
         }, CancellationToken.None);
 
-        var delete = (await _sut.DeleteAsync("downloads/42", CancellationToken.None))
+        var delete = (await _sut.TryDeleteAsync("downloads/42", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>().Value;
         delete.Status.ShouldBe("removed");
 
@@ -163,7 +162,7 @@ public class DownloadsOverlayTests : IDisposable
             Context = new ConversationContext("agent", "conv", "user", new ReplyTarget("library", "conv"))
         }, CancellationToken.None);
 
-        var delete = (await _sut.DeleteAsync("downloads/99", CancellationToken.None))
+        var delete = (await _sut.TryDeleteAsync("downloads/99", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>().Value;
         delete.Status.ShouldBe("removed");
 
@@ -177,13 +176,13 @@ public class DownloadsOverlayTests : IDisposable
     {
         _client.Add(Item(42));
 
-        (await _sut.DeleteAsync("downloads/42/status.json", CancellationToken.None))
+        (await _sut.TryDeleteAsync("downloads/42/status.json", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
 
-        (await _sut.DeleteAsync("Movies/film.mkv", CancellationToken.None))
+        (await _sut.TryDeleteAsync("Movies/film.mkv", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
 
-        (await _sut.DeleteAsync("downloads/123", CancellationToken.None))
+        (await _sut.TryDeleteAsync("downloads/123", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("not_found");
     }
 
@@ -198,7 +197,7 @@ public class DownloadsOverlayTests : IDisposable
     {
         _client.Add(Item(42));
 
-        (await _sut.DeleteAsync(path, CancellationToken.None))
+        (await _sut.TryDeleteAsync(path, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
 
         _client.CleanedUp.ShouldBeEmpty();
@@ -212,7 +211,7 @@ public class DownloadsOverlayTests : IDisposable
     {
         _client.Add(Item(42));
 
-        (await _sut.DeleteAsync(path, CancellationToken.None))
+        (await _sut.TryDeleteAsync(path, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
 
         _client.CleanedUp.ShouldContain(42);

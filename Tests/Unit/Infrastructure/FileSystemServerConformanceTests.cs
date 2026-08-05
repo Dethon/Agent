@@ -48,7 +48,9 @@ public class FileSystemServerConformanceTests
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _advertised =
         new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
         {
-            ["timers"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_delete", "fs_exec"],
+            // No fs_edit: a timer is immutable, so every branch of an edit could only fail, and an
+            // override that can never succeed is the drift declaring-by-overriding removes.
+            ["timers"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_delete", "fs_exec"],
             ["schedules"] =
                 ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move", "fs_delete", "fs_exec"],
             ["print-queue"] =

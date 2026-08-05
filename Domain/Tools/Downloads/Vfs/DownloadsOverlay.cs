@@ -80,17 +80,17 @@ public sealed class DownloadsOverlay(
         var node = ParseNode(path);
         switch (node.Kind)
         {
-            case DownloadNodeKind.StatusFile:
+            // Only a live download has a virtual status file. With no item owning the id the
+            // overlay owns nothing here, so the disk underneath answers — otherwise a real file
+            // left at this path is reported as not existing and can never be found.
+            case DownloadNodeKind.StatusFile when await downloadClient.GetDownloadItem(node.Id!.Value, ct) is { } item:
+                return new FsResult<FsInfoResult>.Ok(new FsInfoResult
                 {
-                    var item = await downloadClient.GetDownloadItem(node.Id!.Value, ct);
-                    return new FsResult<FsInfoResult>.Ok(new FsInfoResult
-                    {
-                        Exists = item is not null,
-                        Path = path,
-                        IsDirectory = item is not null ? false : null,
-                        Size = item is not null ? RenderStatus(item).Length : null
-                    });
-                }
+                    Exists = true,
+                    Path = path,
+                    IsDirectory = false,
+                    Size = RenderStatus(item).Length
+                });
             case DownloadNodeKind.DownloadDir when await downloadClient.GetDownloadItem(node.Id!.Value, ct) is not null:
                 return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = path, IsDirectory = true });
             default:
@@ -135,12 +135,17 @@ public sealed class DownloadsOverlay(
         }
     }
 
-    public async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
+    // Null when the overlay owns nothing at this path: only the leftover status file of a download
+    // that no longer exists, which is a real file the disk must be allowed to remove. Every other
+    // path on this mount is answered here, including the refusals.
+    public async Task<FsResult<FsRemoveResult>?> TryDeleteAsync(string path, CancellationToken ct)
     {
         var node = ParseNode(path);
         if (node.Kind == DownloadNodeKind.StatusFile)
         {
-            return new FsResult<FsRemoveResult>.Err(Error(ToolError.Codes.UnsupportedOperation, $"{path} is read-only"));
+            return await downloadClient.GetDownloadItem(node.Id!.Value, ct) is null
+                ? null
+                : new FsResult<FsRemoveResult>.Err(Error(ToolError.Codes.UnsupportedOperation, $"{path} is read-only"));
         }
 
         if (node.Kind != DownloadNodeKind.DownloadDir)
