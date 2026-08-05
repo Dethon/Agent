@@ -9,7 +9,7 @@ using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
 
-public sealed class TopicDeleteEffect
+public sealed class TopicDeleteEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly TopicsStore _topicsStore;
@@ -18,6 +18,7 @@ public sealed class TopicDeleteEffect
     private readonly ITopicService _topicService;
     private readonly IMessagePipeline _pipeline;
     private readonly ILogger<TopicDeleteEffect> _logger;
+    private readonly IDisposable _removeTopicRegistration;
 
     public TopicDeleteEffect(
         Dispatcher dispatcher,
@@ -36,7 +37,7 @@ public sealed class TopicDeleteEffect
         _pipeline = pipeline;
         _logger = logger;
 
-        dispatcher.RegisterHandler<RemoveTopic>(action =>
+        _removeTopicRegistration = dispatcher.RegisterHandler<RemoveTopic>(action =>
             HandleRemoveTopicAsync(action.TopicId, action.AgentId, action.ChatId, action.ThreadId)
                 .LogFaults(_logger, nameof(RemoveTopic)));
     }
@@ -92,5 +93,10 @@ public sealed class TopicDeleteEffect
         {
             _dispatcher.Dispatch(new ClearApproval());
         }
+    }
+
+    public void Dispose()
+    {
+        _removeTopicRegistration.Dispose();
     }
 }

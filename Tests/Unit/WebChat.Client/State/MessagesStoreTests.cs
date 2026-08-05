@@ -82,49 +82,6 @@ public class MessagesStoreTests : IDisposable
     }
 
     [Fact]
-    public void RemoveLastMessage_RemovesLastMessage()
-    {
-        // Arrange
-        var messages = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "First" },
-            new() { Role = "assistant", Content = "Second" }
-        };
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
-
-        // Act
-        _dispatcher.Dispatch(new RemoveLastMessage("topic-1"));
-
-        // Assert
-        var remaining = _store.State.MessagesByTopic["topic-1"];
-        remaining.Count.ShouldBe(1);
-        remaining[0].Content.ShouldBe("First");
-    }
-
-    [Fact]
-    public void RemoveLastMessage_NoopForEmptyTopic()
-    {
-        // Arrange
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
-
-        // Act
-        _dispatcher.Dispatch(new RemoveLastMessage("topic-1"));
-
-        // Assert - state should be unchanged (same reference for empty case)
-        _store.State.MessagesByTopic["topic-1"].Count.ShouldBe(0);
-    }
-
-    [Fact]
-    public void RemoveLastMessage_NoopForNonExistentTopic()
-    {
-        // Act
-        _dispatcher.Dispatch(new RemoveLastMessage("non-existent"));
-
-        // Assert - no crash, state unchanged
-        _store.State.MessagesByTopic.ContainsKey("non-existent").ShouldBeFalse();
-    }
-
-    [Fact]
     public void ClearMessages_ClearsAllStateForTopic()
     {
         // Arrange

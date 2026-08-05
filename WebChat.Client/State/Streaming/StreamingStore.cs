@@ -21,8 +21,6 @@ public record StreamCancelled(string TopicId) : IAction;
 
 public record ResetStreamingContent(string TopicId) : IAction;
 
-public record StreamError(string TopicId, string Error) : IAction;
-
 public record StartResuming(string TopicId) : IAction;
 
 public record StopResuming(string TopicId) : IAction;
@@ -70,11 +68,6 @@ public sealed class StreamingStore : IDisposable
             StreamingByTopic = state.StreamingByTopic.SetItem(a.TopicId, new StreamingContent())
         },
 
-        StreamError a => state with
-        {
-            StreamingByTopic = SetError(state.StreamingByTopic, a.TopicId)
-        },
-
         StartResuming a => state with
         {
             ResumingTopics = state.ResumingTopics.Add(a.TopicId)
@@ -105,14 +98,6 @@ public sealed class StreamingStore : IDisposable
         };
 
         return streamingByTopic.SetItem(chunk.TopicId, updated);
-    }
-
-    private static ImmutableDictionary<string, StreamingContent> SetError(
-        ImmutableDictionary<string, StreamingContent> streamingByTopic,
-        string topicId)
-    {
-        var existing = streamingByTopic.GetValueOrDefault(topicId) ?? new StreamingContent();
-        return streamingByTopic.SetItem(topicId, existing with { IsError = true });
     }
 
     private static StreamingState RemoveStreaming(StreamingState state, string topicId)

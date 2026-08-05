@@ -12,6 +12,8 @@ public sealed class UserIdentityEffect : IDisposable
     private readonly IConfigService _configService;
     private readonly ILocalStorageService _localStorage;
     private readonly ILogger<UserIdentityEffect> _logger;
+    private readonly IDisposable _initializeRegistration;
+    private readonly IDisposable _selectUserRegistration;
     private const string StorageKey = "selectedUserId";
 
     public UserIdentityEffect(
@@ -25,9 +27,9 @@ public sealed class UserIdentityEffect : IDisposable
         _localStorage = localStorage;
         _logger = logger;
 
-        dispatcher.RegisterHandler<Initialize>(
+        _initializeRegistration = dispatcher.RegisterHandler<Initialize>(
             _ => LoadUsersAsync().LogFaults(_logger, nameof(Initialize)));
-        dispatcher.RegisterHandler<SelectUser>(
+        _selectUserRegistration = dispatcher.RegisterHandler<SelectUser>(
             action => PersistSelectedUserAsync(action.UserId).LogFaults(_logger, nameof(SelectUser)));
     }
 
@@ -57,6 +59,7 @@ public sealed class UserIdentityEffect : IDisposable
 
     public void Dispose()
     {
-        // No subscriptions to dispose
+        _initializeRegistration.Dispose();
+        _selectUserRegistration.Dispose();
     }
 }

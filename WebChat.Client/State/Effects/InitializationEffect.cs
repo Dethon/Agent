@@ -27,6 +27,9 @@ public sealed class InitializationEffect : IDisposable
     private readonly IMessagePipeline _pipeline;
     private readonly SpaceStore _spaceStore;
     private readonly ILogger<InitializationEffect> _logger;
+    private readonly IDisposable _initializeRegistration;
+    private readonly IDisposable _selectUserRegistration;
+    private readonly IDisposable _setAgentsRegistration;
     private bool _awaitingAgentCatalog;
 
     public InitializationEffect(
@@ -62,11 +65,11 @@ public sealed class InitializationEffect : IDisposable
         _spaceStore = spaceStore;
         _logger = logger;
 
-        dispatcher.RegisterHandler<Initialize>(
+        _initializeRegistration = dispatcher.RegisterHandler<Initialize>(
             _ => HandleInitializeAsync().LogFaults(_logger, nameof(Initialize)));
-        dispatcher.RegisterHandler<SelectUser>(
+        _selectUserRegistration = dispatcher.RegisterHandler<SelectUser>(
             action => RegisterUserAsync(action.UserId).LogFaults(_logger, nameof(SelectUser)));
-        dispatcher.RegisterHandler<SetAgents>(
+        _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(
             action => HandleAgentCatalogArrivedAsync(action.Agents).LogFaults(_logger, nameof(SetAgents)));
     }
 
@@ -128,8 +131,6 @@ public sealed class InitializationEffect : IDisposable
 
     private async Task SelectAgentAndLoadTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {
-        await AgentSettingsEffect.LoadAsync(agents, _localStorage, _dispatcher);
-
         if (agents.Count == 0)
         {
             return;
@@ -228,6 +229,8 @@ public sealed class InitializationEffect : IDisposable
 
     public void Dispose()
     {
-        // No subscription to dispose
+        _initializeRegistration.Dispose();
+        _selectUserRegistration.Dispose();
+        _setAgentsRegistration.Dispose();
     }
 }
