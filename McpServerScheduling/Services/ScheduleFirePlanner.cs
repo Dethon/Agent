@@ -7,7 +7,8 @@ public sealed record FirePlan(ChannelMessageNotification Payload, DateTime? Next
 
 public static class ScheduleFirePlanner
 {
-    public static FirePlan Plan(Schedule schedule, IReadOnlyList<string> defaultDeliverTo, DateTime? nextRun)
+    public static FirePlan Plan(
+        Schedule schedule, IReadOnlyList<string> defaultDeliverTo, DateTime? nextRun, DateTimeOffset now)
     {
         var channels = schedule.DeliverTo is { Count: > 0 } ? schedule.DeliverTo : defaultDeliverTo;
         // Multiple entries for the same channel (e.g. several `voice:<id>` satellites) are one
@@ -20,15 +21,18 @@ public static class ScheduleFirePlanner
             .ToList();
         var origin = new MessageOrigin(MessageOriginKind.Schedule, schedule.Id);
 
+        // One reading of the clock for both fields: the suffix and the Timestamp must agree, and
+        // the injected TimeProvider — not the wall clock — is what a scheduled agent's one-clock
+        // world and a test's fake time both expect to drive them.
         var payload = new ChannelMessageNotification
         {
-            ConversationId = $"sched-{schedule.Id}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
+            ConversationId = $"sched-{schedule.Id}-{now.ToUnixTimeSeconds()}",
             Sender = "scheduler",
             Content = schedule.Prompt,
             AgentId = schedule.AgentId,
             ReplyTo = replyTo,
             Origin = origin,
-            Timestamp = DateTimeOffset.UtcNow
+            Timestamp = now
         };
 
         var deleteAfterFire = schedule.CronExpression is null;
