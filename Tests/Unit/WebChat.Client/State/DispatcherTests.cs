@@ -22,6 +22,22 @@ public class DispatcherTests
         received.ShouldHaveSingleItem().ShouldBeOfType<Increment>();
     }
 
+    // The static type at the call site must not decide this: a dispatch reached through an
+    // IAction-typed variable still carries an Increment at runtime, and the typed handler
+    // exists to react to exactly that.
+    [Fact]
+    public void Dispatch_ActionTypedAsIAction_StillReachesTheTypedHandler()
+    {
+        var dispatcher = new Dispatcher();
+        var received = new List<string>();
+        using var registration = dispatcher.RegisterHandler<Increment>(_ => received.Add("typed"));
+
+        IAction action = new Increment();
+        dispatcher.Dispatch(action);
+
+        received.ShouldBe(["typed"]);
+    }
+
     [Fact]
     public void Dispatch_ActionWithNoTypedHandler_ReachesCatchAll()
     {
