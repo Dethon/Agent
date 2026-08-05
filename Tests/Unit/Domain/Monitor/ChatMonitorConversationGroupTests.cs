@@ -139,6 +139,37 @@ public class ChatMonitorConversationGroupTests
     }
 
     [Fact]
+    public async Task Monitor_SecondTurnEqualToTheAnchorMessage_IsStillANewTurn()
+    {
+        // "The turn the anchors came from" is answered by identity, not by value. ChannelMessage
+        // is a record, so two fires with the same content and the same ReplyTo list are equal —
+        // and if the group compared them by equality the second turn would count as the anchor,
+        // keep its Minted marker and skip the announce, leaving its reply with no live stream.
+        var signalr = new FakeChannelConnection { ChannelId = "signalr", ConversationIdToReturn = "minted-signalr" };
+        signalr.Complete();
+        var replyTo = new[] { new ReplyTarget("signalr", null) };
+        var first = ScheduleFire("Check stalled torrents") with { ReplyTo = replyTo };
+        var second = ScheduleFire("Check stalled torrents") with { ReplyTo = replyTo };
+        first.ShouldBe(second);
+        first.ShouldNotBeSameAs(second);
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", first, second);
+
+        var monitor = new ChatMonitor(
+            [scheduling, signalr],
+            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        signalr.CreatedConversations.Count.ShouldBe(2);
+        signalr.CreatedConversations[0].ExistingConversationId.ShouldBeNull();
+        signalr.CreatedConversations[1].ExistingConversationId.ShouldBe("minted-signalr");
+    }
+
+    [Fact]
     public async Task Monitor_FirstTurnFailsToEstablish_LogsEndsTheGroupAndTheNextMessageStartsAFreshOne()
     {
         // Establishing the group happens inside the turn loop now, so a state store that is
