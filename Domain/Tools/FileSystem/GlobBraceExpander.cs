@@ -12,6 +12,12 @@ public static class GlobBraceExpander
     // a handful of alternatives; 512 is far beyond any of them.
     public const int MaxPatterns = 512;
 
+    // One more than the cap is all a level ever holds: enough to know the cap was crossed, and the
+    // reason the combinations are taken lazily rather than counted after the fact. A level's product
+    // is alternatives × each alternative's expansion × the suffix's, and the last two can each sit
+    // just under the cap, so materializing first is millions of strings for a few hundred of input.
+    private const int _stopAfter = MaxPatterns + 1;
+
     public static IReadOnlyList<string> Expand(string pattern)
     {
         if (!TryFindGroup(pattern, out var open, out var close))
@@ -28,7 +34,7 @@ public static class GlobBraceExpander
             from expandedAlternative in Expand(alternative)
             from suffix in suffixExpansions
             select prefix + expandedAlternative + suffix
-        ).ToList();
+        ).Take(_stopAfter).ToList();
 
         return expanded.Count > MaxPatterns
             ? throw new ArgumentException(

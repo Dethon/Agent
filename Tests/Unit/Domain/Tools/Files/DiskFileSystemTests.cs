@@ -131,6 +131,56 @@ public class DiskFileSystemTests : IDisposable
         readBack.ShouldBe(bytes);
     }
 
+    // The allowed extensions are the rule about what this root's files are, and a blob write is a
+    // write like any other. It used to bypass them entirely: a cross-mount copy streams through the
+    // chunk path, so any binary could land under any name in a .md-only vault — and overwrite a
+    // note on the way. The refusal is the envelope both shapes of the operation answer with.
+    [Fact]
+    public async Task TextRoot_BlobWriteOfADisallowedExtension_IsRefused()
+    {
+        var fs = TextRoot();
+
+        var write = await fs.WriteBlobAsync("photo.png", Convert.ToBase64String([1, 2, 3]), 0,
+            overwrite: true, createDirectories: true, CancellationToken.None);
+
+        write.ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>().Error.ErrorCode
+            .ShouldBe(ToolError.Codes.InvalidArgument);
+        File.Exists(Path.Combine(_root, "photo.png")).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task TextRoot_BlobChunksOfADisallowedExtension_AreRefused()
+    {
+        var fs = TextRoot();
+
+        var thrown = await Should.ThrowAsync<FileSystemOperationException>(() => fs.WriteChunksAsync(
+            "notes/photo.png", Chunks([1, 2, 3]),
+            overwrite: true, createDirectories: true, CancellationToken.None));
+
+        thrown.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+        thrown.Error.Retryable.ShouldBeFalse();
+        File.Exists(Path.Combine(_root, "notes", "photo.png")).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task TextRoot_BlobChunksOfAnAllowedExtension_StillWrite()
+    {
+        await TextRoot().WriteChunksAsync("notes/todo.md", Chunks("hi"u8.ToArray()),
+            overwrite: true, createDirectories: true, CancellationToken.None);
+
+        (await File.ReadAllTextAsync(Path.Combine(_root, "notes", "todo.md"))).ShouldBe("hi");
+    }
+
+    // A plain disk root has no such rule, so its blob writes take whatever bytes they are given.
+    [Fact]
+    public async Task PlainRoot_BlobChunksOfAnyExtension_StillWrite()
+    {
+        await PlainRoot().WriteChunksAsync("photo.png", Chunks([1, 2, 3]),
+            overwrite: true, createDirectories: true, CancellationToken.None);
+
+        File.Exists(Path.Combine(_root, "photo.png")).ShouldBeTrue();
+    }
+
     // Reading bytes as text needs a rule about which files are text, and that rule is what the text
     // shape adds. A plain disk root has none, so it does not read — and does not advertise fs_read.
     [Fact]

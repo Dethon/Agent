@@ -76,17 +76,34 @@ public sealed class MediaLibraryDiskFileSystem(
         downloads.DeleteAsync(path, ct);
 
     // Delete is the download's cancel, so it is left to the overlay; move has no such meaning and a
-    // live download whose directory moved keeps writing into one qBittorrent recreates.
+    // live download whose directory moved keeps writing into one qBittorrent recreates. Both ends of
+    // the move are asked, because the boundary is crossed just as badly on the way in.
     public override async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
         Refuse<FsMoveResult>(sourcePath, destinationPath)
-        ?? (await downloads.HoldsActiveDownloadAsync(sourcePath, ct)
-            ? FsError.Fail<FsMoveResult>(ToolError.Codes.UnsupportedOperation,
-                $"'{sourcePath}' holds an active download; moving it would leave the download writing "
-                + "into a directory it recreates, and the moved copy orphaned.",
+        ?? await RefuseActiveDownloadAsync<FsMoveResult>(sourcePath, destinationPath, ct)
+        ?? await base.MoveAsync(sourcePath, destinationPath, ct);
+
+    // A live download owns its directory and everything in it. Moving any of that out leaves the
+    // download rewriting files the moved copy no longer tracks; moving anything in puts it where
+    // delete-as-cancel destroys it. Either side of the move naming such a path is the refusal.
+    private async Task<FsResult<T>?> RefuseActiveDownloadAsync<T>(
+        string sourcePath, string destinationPath, CancellationToken ct) where T : class
+    {
+        var offender =
+            await downloads.TouchesActiveDownloadAsync(sourcePath, ct) ? sourcePath
+            : await downloads.TouchesActiveDownloadAsync(destinationPath, ct) ? destinationPath
+            : null;
+
+        return offender is null
+            ? null
+            : FsError.Fail<T>(ToolError.Codes.UnsupportedOperation,
+                $"'{offender}' belongs to an active download; moving across that boundary would "
+                + "leave the download writing into files the move cannot follow, and anything moved "
+                + "inside is removed when the download is cancelled.",
                 retryable: false,
                 hint: $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
-                      + "for it to finish, then move the files.")
-            : await base.MoveAsync(sourcePath, destinationPath, ct));
+                      + "for it to finish, then move the files.");
+    }
 
     public override async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools;
 
 namespace Domain.Tools.FileSystem;
@@ -110,6 +111,17 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 retryable: false,
                 hint: "One of these filesystems does not support raw byte streaming, so it cannot be a " +
                       "source or destination for a cross-filesystem copy or move.");
+        }
+        catch (FileSystemOperationException ex)
+        {
+            // The backend knew exactly why it refused and had no envelope to say so in. Its code and
+            // its retryability are the answer: a denied path or a disallowed file type is permanent,
+            // and the catch-all below would invite the agent to retry it forever.
+            return ToolError.Create(
+                ex.Error.ErrorCode,
+                $"Cannot transfer '{srcVirtual}' to '{dstVirtual}': {ex.Error.Message}",
+                retryable: ex.Error.Retryable,
+                hint: ex.Error.Hint);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

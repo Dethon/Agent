@@ -58,13 +58,7 @@ public sealed partial class HaFileSystem(
         }
 
         var catalog = await catalogProvider.GetAsync(ct);
-        var entries = HaTree.Glob(catalog, scope);
-        return new FsResult<FsGlobResult>.Ok(new FsGlobResult
-        {
-            Entries = entries,
-            Truncated = false,
-            Total = entries.Count
-        });
+        return Glob(pattern, () => HaTree.Glob(catalog, scope));
     }
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)

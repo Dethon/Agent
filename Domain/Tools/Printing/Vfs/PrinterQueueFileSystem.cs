@@ -310,7 +310,8 @@ public sealed class PrinterQueueFileSystem(
         var entries = await spool.ListAsync(ct);
         var names = entries.Select(e => e.FileName).Append(PrinterQueuePath.StatusFileName);
 
-        return Glob(names.Where(matches).OrderBy(n => n, StringComparer.Ordinal).Select(n => "/" + n).ToList());
+        return Glob(pattern, () =>
+            names.Where(matches).OrderBy(n => n, StringComparer.Ordinal).Select(n => "/" + n).ToList());
     }
 
     public override async Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,

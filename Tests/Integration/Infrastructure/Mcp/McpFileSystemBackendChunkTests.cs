@@ -34,11 +34,13 @@ public class McpFileSystemBackendChunkTests(MultiFileSystemFixture fx)
         await using var client = await CreateClient(fx.NotesEndpoint);
         var backend = new McpFileSystemBackend(client, "notes");
 
-        var written = await backend.WriteChunksAsync("written.bin", SingleChunk(bytes),
+        // The notes mount takes text extensions, so the transfer is named as one; what is under test
+        // is that every byte survives the chunked write.
+        var written = await backend.WriteChunksAsync("written.txt", SingleChunk(bytes),
             overwrite: false, createDirectories: true, CancellationToken.None);
 
         written.ShouldBe(bytes.Length);
-        File.ReadAllBytes(Path.Combine(fx.NotesPath, "written.bin")).ShouldBe(bytes);
+        File.ReadAllBytes(Path.Combine(fx.NotesPath, "written.txt")).ShouldBe(bytes);
     }
 
     [Fact]
@@ -47,11 +49,11 @@ public class McpFileSystemBackendChunkTests(MultiFileSystemFixture fx)
         await using var client = await CreateClient(fx.NotesEndpoint);
         var backend = new McpFileSystemBackend(client, "notes");
 
-        var written = await backend.WriteChunksAsync("empty.bin", Empty(),
+        var written = await backend.WriteChunksAsync("empty.txt", Empty(),
             overwrite: false, createDirectories: true, CancellationToken.None);
 
         written.ShouldBe(0L);
-        var path = Path.Combine(fx.NotesPath, "empty.bin");
+        var path = Path.Combine(fx.NotesPath, "empty.txt");
         File.Exists(path).ShouldBeTrue();
         File.ReadAllBytes(path).Length.ShouldBe(0);
     }
@@ -68,12 +70,12 @@ public class McpFileSystemBackendChunkTests(MultiFileSystemFixture fx)
         var src = new McpFileSystemBackend(readClient, "library");
         var dst = new McpFileSystemBackend(writeClient, "notes");
 
-        var written = await dst.WriteChunksAsync("huge.bin",
+        var written = await dst.WriteChunksAsync("huge.txt",
             src.ReadChunksAsync("huge.bin", CancellationToken.None),
             overwrite: false, createDirectories: true, CancellationToken.None);
 
         written.ShouldBe(bytes.Length);
-        File.ReadAllBytes(Path.Combine(fx.NotesPath, "huge.bin")).ShouldBe(bytes);
+        File.ReadAllBytes(Path.Combine(fx.NotesPath, "huge.txt")).ShouldBe(bytes);
     }
 
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> SingleChunk(byte[] bytes)

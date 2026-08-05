@@ -22,6 +22,9 @@ public class FileSystemBackendBaseTests
         public FsResult<Regex> Compile(string query, bool regex) =>
             CompileSearchRegex(query, regex);
 
+        public FsResult<FsGlobResult> Listing(string pattern, IEnumerable<string> entries) =>
+            Glob(pattern, () => entries.ToList());
+
         public Task<FsResult<FsSearchResult>> Scan(
             IEnumerable<string> nodes, FsSearchScan scan, Func<string, string?> content) =>
             SearchNodesAsync(nodes, (n, _) => ValueTask.FromResult(($"/{n}", content(n))), scan, CancellationToken.None);
@@ -115,6 +118,36 @@ public class FileSystemBackendBaseTests
         result.TryGetValue(out _, out var error).ShouldBeFalse();
         error!.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
         error.Message.ShouldContain("brace");
+    }
+
+    [Fact]
+    public void Glob_ListsTheEntriesItIsGiven()
+    {
+        var result = _bare.Listing("*", ["/a", "/b"]);
+
+        result.TryGetValue(out var value, out _).ShouldBeTrue();
+        value!.Entries.ShouldBe(["/a", "/b"]);
+        value.Total.ShouldBe(2);
+    }
+
+    // The glob pattern is matched under a bounded timeout, exactly like the search pattern, and the
+    // entries are produced lazily inside each backend's LINQ chain — so the timeout lands while the
+    // listing is being materialized. The search path has always answered the timeout envelope; the
+    // glob path used to let the raw RegexMatchTimeoutException out of the tool.
+    [Fact]
+    public void Glob_MatchingTimesOut_ReturnsTheTimeoutEnvelope()
+    {
+        var result = _bare.Listing("**/*", TimingOut());
+
+        result.TryGetValue(out _, out var error).ShouldBeFalse();
+        error!.ErrorCode.ShouldBe(ToolError.Codes.Timeout);
+        error.Message.ShouldContain("**/*");
+    }
+
+    private static IEnumerable<string> TimingOut()
+    {
+        yield return "/a";
+        throw new RegexMatchTimeoutException("candidate", "pattern", TimeSpan.FromSeconds(1));
     }
 
     [Fact]

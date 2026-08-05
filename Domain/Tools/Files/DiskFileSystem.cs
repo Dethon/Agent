@@ -105,7 +105,7 @@ public class DiskFileSystem(
             ct.ThrowIfCancellationRequested();
             if (!_blobRead.Run(path, offset, BlobReadTool.MaxChunkSizeBytes).TryGetValue(out var chunk, out var error))
             {
-                throw new IOException(error.Message);
+                throw new FileSystemOperationException(error);
             }
 
             var bytes = Convert.FromBase64String(chunk.ContentBase64);
@@ -144,7 +144,7 @@ public class DiskFileSystem(
             var written = _blobWrite.Run(path, Convert.ToBase64String(bytes), at, overwrite, createDirectories);
             if (!written.TryGetValue(out _, out var error))
             {
-                throw new IOException(error.Message);
+                throw new FileSystemOperationException(error);
             }
         }
     }
