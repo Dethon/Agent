@@ -117,6 +117,9 @@ public sealed class PlaybackQueue(
     // playing it, because there is no satellite left to hear it.
     private bool _discardOnDequeue;
     private readonly Lock _gate = new();
+    // Cancelled by the link-drop close, and only by it, so a drain never sits out an in-flight
+    // job's real-time tail against a dead socket. Playback on a live link never observes it.
+    private readonly CancellationTokenSource _dropCts = new();
     private long _enqueueSeq;
     // High-water sequence whose jobs must be preempted as they start. Set only by an ALARM, so a
     // preemption can't be lost to the dequeue->assign gap. High-priority jobs are exempt from this
@@ -271,12 +274,16 @@ public sealed class PlaybackQueue(
     // the loop would otherwise be handed every queued job to synthesize and write into the dead
     // socket — each settling Failed with an error report the producer never earned. Marking the
     // discard first makes the loop settle those jobs Discarded as it dequeues them, while the job
-    // being played is left to end as it really did. Shutdown needs none of this: cancelling the run
-    // token stops the loop outright and DiscardUnplayed sweeps what it left behind.
+    // being played is left to end as it really did — except its real-time tail, which is cut: the
+    // drain awaits the loop, and a fully-written job's tail is a delay nobody is listening to that
+    // would stall reconnect by the remaining audio duration. Its audio was already written, so it
+    // still settles Drained. Shutdown needs none of this: cancelling the run token stops the loop
+    // outright and DiscardUnplayed sweeps what it left behind.
     public void CompleteAndDiscardQueued()
     {
         Volatile.Write(ref _discardOnDequeue, true);
         Complete();
+        _dropCts.Cancel();
     }
 
     public void PreemptCurrent()
@@ -554,10 +561,10 @@ public sealed class PlaybackQueue(
     // Drained means "the satellite finished PLAYING", not "we finished writing".
     // The Pi buffers the audio and plays PCM at real time, so wait out the remaining
     // nominal duration. Self-corrects for back-pressuring satellites (remaining <= 0).
-    private static async Task WaitOutRealtimeTailAsync(
+    private async Task WaitOutRealtimeTailAsync(
         TimeSpan totalAudio, long firstChunkTimestamp, TimeProvider time, CancellationToken ct)
     {
-        if (totalAudio <= TimeSpan.Zero || ct.IsCancellationRequested)
+        if (totalAudio <= TimeSpan.Zero || ct.IsCancellationRequested || _dropCts.IsCancellationRequested)
         {
             return;
         }
@@ -568,13 +575,16 @@ public sealed class PlaybackQueue(
             return;
         }
 
+        // The run token ends the wait on shutdown; the drop token ends it when the link died and
+        // the drain is waiting on this very loop.
+        using var tail = CancellationTokenSource.CreateLinkedTokenSource(ct, _dropCts.Token);
         try
         {
-            await Task.Delay(remaining, time, ct);
+            await Task.Delay(remaining, time, tail.Token);
         }
         catch (OperationCanceledException)
         {
-            // Connection tearing down.
+            // Connection tearing down, or the link dropped mid-tail.
         }
     }
 
