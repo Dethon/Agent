@@ -225,6 +225,25 @@ public class SettingsBinderTests : IDisposable
                     .BindSettings<ProbeSubAgentSettings>(_secretsId))
             .Message.ShouldContain("SubAgent.Name");
 
+    // The framework-type exclusion is a namespace check, and a prefix match with no trailing dot
+    // reads "SystemX" as the BCL. A settings record whose namespace merely starts with those letters
+    // is ordinary application configuration, so skipping it would switch off the startup gate
+    // silently — the walk would simply not look inside the section.
+    [Fact]
+    public void AMissingRequiredMemberOfASectionInASystemNearMissNamespace_FailsNamingThePathToIt() =>
+        Should.Throw<InvalidOperationException>(() => BindNearMiss<SystemX.ProbeNearMissSettings>())
+            .Message.ShouldContain("Search.ApiKey");
+
+    [Fact]
+    public void AMissingRequiredMemberOfASectionInAMicrosoftNearMissNamespace_FailsNamingThePathToIt() =>
+        Should.Throw<InvalidOperationException>(() => BindNearMiss<MicrosoftX.ProbeNearMissSettings>())
+            .Message.ShouldContain("Search.ApiKey");
+
+    private void BindNearMiss<TSettings>() where TSettings : class =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Search:ApiUrl"] = "https://example" })
+            .BindSettings<TSettings>(_secretsId);
+
     // Voice's satellites bind as a dictionary and are materialised into SatelliteRegistry at
     // registration time, so the walk has to follow dictionary keys the same way it follows indexes.
     [Fact]
