@@ -6,32 +6,34 @@ Date: 2026-08-03
 ## Context
 
 `ChatMonitor` groups incoming messages by `(ConversationId, AgentId)` and processes
-each group as a unit. `ProcessChatThread:81-99` reads the group's first message and,
-before anything is parsed, resolves the delivery targets, builds the agent, restores
-the thread from the state store and starts the MCP session warmup. Only then does
-`DispatchCommandsAndQueueTurnsAsync:164` look at what the message actually says.
+each group as a unit. `ProcessChatThread` reads the group's first message and, before
+anything is parsed, resolves the group anchors (`ResolveGroupAnchorsAsync`), builds the
+agent, restores the thread from the state store, registers `group.Complete` on the
+thread context and starts the MCP session warmup. Only then does `RunTurnAsync` call
+`ChatCommandParser.Parse` and look at what the message actually says.
 
 A `/clear` or `/cancel` is never answered by the agent. It is dispatched to
-`ChatThreadResolver`, which disposes the thread context, which fires the
-`group.Complete` callback registered at `:88` and ends the group. So a group whose
-first message is a command — routine after an agent restart, when the user clears a
-conversation that has no live group — pays for a full `McpAgent`, a state-store read
-and `ThreadSession.CreateAsync` (every MCP endpoint connected, tools listed, prompts
+`ChatThreadResolver`, which disposes the thread context, which fires that
+`group.Complete` callback and ends the group. So a group whose first message is a
+command — routine after an agent restart, when the user clears a conversation that has
+no live group — pays for a full `McpAgent`, a state-store read and
+`ThreadSession.CreateAsync` (every MCP endpoint connected, tools listed, prompts
 fetched), then throws all of it away.
 
 The same ordering produced a second problem. Because the anchors come from the first
-*message*, the queuing loop has to tell later stages which message that was, and it
-does so with an `int Index` on `PendingTurn` that counts every message including
-commands. Two unrelated call sites read it: `ResolveTurnTargetsAsync` treats `index == 0`
-as "reuse the group anchors", and `AnnounceTurnStartAsync(skipMinted: index == 0)`
-treats it as "this turn's minted targets announced themselves". The comment at
-`:150-152` is the entire specification of that rule.
+*message*, the loop has to tell later stages which message that was, and it does so
+with the `index` argument `ProcessChatThread` passes into `RunTurnAsync` — a position
+in the group's message stream that counts commands too. Two unrelated call sites read
+it: `ResolveTurnTargetsAsync` treats `index == 0` as "reuse the group anchors", and
+`AnnounceTurnStartAsync(skipMinted: index == 0)` treats it as "this turn's minted
+targets announced themselves". A comment above `ResolveTurnTargetsAsync` is the entire
+specification of that rule.
 
 The counter is only correct because of an invariant nothing states: a command tears
 the group down, so an index above zero always implies a preceding real turn. That
-chain runs through three files — `ProcessChatThread:88`, `ChatThreadResolver.ClearAsync`,
-`ChatThreadContext.Dispose` — and neither `ChatCommandParser` nor `ChatThreadResolver`
-mentions it.
+chain runs through three places — the `group.Complete` registration in
+`ProcessChatThread`, `ChatThreadResolver.ClearAsync` and `ChatThreadContext.Dispose` —
+and neither `ChatCommandParser` nor `ChatThreadResolver` mentions it.
 
 ## Decision
 

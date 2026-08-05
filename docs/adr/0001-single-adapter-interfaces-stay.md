@@ -12,8 +12,10 @@ test double.
 An architecture review proposed deleting the ones with no Domain consumer
 (`IMemoryExtractor`, `IMemoryConsolidator`, `IPushSubscriptionStore`,
 `IHubNotificationSender`, `IDomainToolRegistry`, `IAgentDefinitionProvider`,
-`ICaptchaSolver`, `IConversationFactory`, `IMcpChannelConnection`), on the
-grounds that a seam nothing crosses is pure indirection, and that
+`ICaptchaSolver`, `IConversationFactory`), plus `IMcpChannelConnection`, which
+is not one of the 42 — it lives in `Infrastructure/Clients/Channels/` beside its
+one implementation. The grounds were that a seam nothing crosses is pure
+indirection, and that
 `.claude/rules/domain-layer.md` already says interfaces are for services Domain
 needs to consume.
 
@@ -46,5 +48,8 @@ not evidence the seam is unnecessary.
 ## Not covered by this decision
 
 `IFileSystemBackend` is the one genuinely polymorphic interface in the
-codebase, with five adapters. Deepening it is a separate matter and is not
-constrained by this record.
+codebase, with nine production adapters: `McpFileSystemBackend`, `HaFileSystem`,
+`TimerFileSystem`, `PrinterQueueFileSystem`, `ScheduleFileSystem`,
+`DiskFileSystem` and its three subclasses `TextDiskFileSystem`,
+`SandboxFileSystem` and `MediaLibraryDiskFileSystem`. Deepening it is a separate
+matter and is not constrained by this record.

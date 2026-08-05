@@ -6,8 +6,10 @@ namespace Mcp.Hosting;
 // copied from another server.
 public enum DeliveryPolicy
 {
-    // Always enqueue. A subscriber that is idle but not yet pruned still receives the item, so a
-    // brief agent gap does not lose it. For transports with no way to redeliver.
+    // Fan out to every registered subscriber, whatever its freshness, so a subscriber that is idle
+    // but not yet pruned still receives the item and a brief agent gap does not lose it. With no
+    // subscriber registered at all there is nobody to fan out to and the item is discarded. For
+    // transports with no way to redeliver.
     Broadcast,
 
     // Enqueue targeted at a known subscriber id, creating that subscriber's queue on demand, so an

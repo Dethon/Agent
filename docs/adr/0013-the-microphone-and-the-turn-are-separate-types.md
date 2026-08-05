@@ -59,9 +59,9 @@ merely wide rather than the caller that is duplicating a rule. Rejected on those
 
 ## Consequences
 
-- `HasActiveCapture` moves onto the microphone and keeps having no production caller. It
-  is an observation point with sixteen test call sites, and it now sits on the thing being
-  observed rather than on the session.
+- The capture-observation point moves onto the microphone, as `Microphone.IsOpen`, and keeps
+  having no production caller. It is an observation point with test call sites only, and it
+  now sits on the thing being observed rather than on the session.
 - `SatelliteConnection` must expose its microphone, not only its session, or the
   connection tests have nothing to spin-wait on.
 - A future turn-taking path picks its type and inherits the right rules. A new kind of
