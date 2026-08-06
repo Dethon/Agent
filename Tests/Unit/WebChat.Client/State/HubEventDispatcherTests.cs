@@ -142,17 +142,19 @@ public sealed class HubEventDispatcherTests : IDisposable
             Times.Once);
     }
 
+    // The push names the message its tool call belongs to, which is not always the message the
+    // reply is writing. The reply keeps writing the one it was on; only its own chunks move it.
     [Fact]
     public void HandleApprovalResolved_CarryingToolCalls_AddsThemToTheReplyInFlight()
     {
-        GivenAReplyInFlight("topic-1");
+        GivenAReplyInFlight("topic-1", "msg-being-written");
 
         _sut.HandleApprovalResolved(
             new ApprovalResolvedNotification("topic-1", "approval-123", "tool output", "msg-1"));
 
         var buffered = _streamingStore.State.StreamingByTopic["topic-1"];
         buffered.ToolCalls.ShouldBe("tool output");
-        buffered.CurrentMessageId.ShouldBe("msg-1");
+        buffered.CurrentMessageId.ShouldBe("msg-being-written");
     }
 
     [Fact]
@@ -197,7 +199,7 @@ public sealed class HubEventDispatcherTests : IDisposable
         _streamingStore.State.StreamingByTopic.ShouldNotContainKey("topic-1");
     }
 
-    private void GivenAReplyInFlight(string topicId) =>
+    private void GivenAReplyInFlight(string topicId, string? currentMessageId = null) =>
         _topicStreams.TryOpen(
-            topicId, new ChatMessageModel { Role = "assistant" }, null, _ => _running.Task);
+            topicId, new ChatMessageModel { Role = "assistant" }, currentMessageId, _ => _running.Task);
 }

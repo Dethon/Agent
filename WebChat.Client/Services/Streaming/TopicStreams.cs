@@ -141,12 +141,16 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
     // the stop button, a topic being deleted. Each does nothing on a topic with no reply in
     // flight, which is where "a chunk for an idle topic" is answered, once.
 
+    // The message a push names is the one its tool call belongs to, never a statement that the
+    // reply has moved on to another message. Only the loop reading the topic's chunks says that,
+    // so a push leaves the message being written where it is — moving it would make the next
+    // chunk read as a new turn and split the reply into a tool-call bubble and a text bubble.
     public void Append(string topicId, ChatStreamMessage chunk)
     {
         Grown grown;
         lock (_lock)
         {
-            grown = Grow(Streaming(topicId), chunk);
+            grown = Grow(Streaming(topicId), chunk, movesTheMessage: false);
         }
 
         Publish(topicId, grown);
@@ -311,7 +315,7 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         stream.Lease.MarkEnded();
     }
 
-    private static Grown Grow(TopicStream? stream, ChatStreamMessage chunk)
+    private static Grown Grow(TopicStream? stream, ChatStreamMessage chunk, bool movesTheMessage = true)
     {
         if (stream is null)
         {
@@ -322,7 +326,7 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         var after = BufferRebuildUtility.AccumulateChunk(before, WithoutASecondDelivery(before, chunk));
 
         stream.Message = after;
-        if (chunk.MessageId is not null)
+        if (movesTheMessage && chunk.MessageId is not null)
         {
             stream.CurrentMessageId = chunk.MessageId;
         }

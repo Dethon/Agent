@@ -15,6 +15,10 @@ public sealed class GatedChatStream
     // first pull, because nothing before it touches the wire.
     public Exception? FaultOnOpen { get; set; }
 
+    // The chunk a reply opens with. A test whose reply says nothing until something else has
+    // reached the client clears it, so the first chunk is the one the test writes.
+    public ChatStreamMessage? Opening { get; set; } = new() { Content = "thinking", MessageId = "m-1" };
+
     public void Write(ChatStreamMessage chunk) => _chunks.Writer.TryWrite(chunk);
 
     public void Release() => _chunks.Writer.TryComplete();
@@ -27,7 +31,10 @@ public sealed class GatedChatStream
             throw FaultOnOpen;
         }
 
-        yield return new ChatStreamMessage { Content = "thinking", MessageId = "m-1" };
+        if (Opening is not null)
+        {
+            yield return Opening;
+        }
 
         await foreach (var chunk in _chunks.Reader.ReadAllAsync())
         {

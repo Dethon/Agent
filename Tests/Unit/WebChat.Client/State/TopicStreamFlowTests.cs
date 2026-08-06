@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Shouldly;
@@ -259,6 +260,44 @@ public sealed class TopicStreamFlowTests
 
         await replyEnding;
         AssistantMessages(client).Single().ToolCalls.ShouldBe("search()");
+    }
+
+    // An approved tool call reaches this client twice with two different labels: the push carries
+    // the id of the message the call belongs to, the copy the server writes into the stream
+    // carries none. A push is not a turn, so it must not move the message the reply is being
+    // written under — if it does, the unlabelled copy that follows reads as a new turn and the
+    // reply is split into a tool-call bubble with no text and a second bubble holding the answer.
+    [Fact]
+    public async Task AnApprovedToolCall_PushedBeforeTheReplyHasWrittenAnything_KeepsTheReplyInOneMessage()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        var reply = new GatedChatStream
+        {
+            Opening = new ChatStreamMessage
+            {
+                ApprovalRequest = new ToolApprovalRequestMessage(
+                    "approval-1", [new ToolApprovalRequest("m-1", "glob", new Dictionary<string, object?>())])
+            }
+        };
+        transport.Answer("SendMessage", _ => reply.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
+        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+
+        var replyEnding = client.Service<TopicStreams>().Snapshot("topic-1").Completion!;
+        transport.Raise("OnApprovalResolved", new ApprovalResolvedNotification(
+            "topic-1", "approval-1", "glob()", "m-1"));
+        await TestChat.Eventually(() =>
+            client.Streaming.State.StreamingByTopic.GetValueOrDefault("topic-1")?.ToolCalls == "glob()");
+        reply.Write(new ChatStreamMessage { ToolCalls = "glob()" });
+        reply.Write(new ChatStreamMessage { Content = "Done", MessageId = "m-2" });
+        reply.Release();
+
+        await replyEnding;
+        var message = AssistantMessages(client).ShouldHaveSingleItem();
+        message.Content.ShouldBe("Done");
+        message.ToolCalls.ShouldBe("glob()");
     }
 
     private static void RaiseToolCalls(FakeHubConnection transport, string wireName, string toolCalls)

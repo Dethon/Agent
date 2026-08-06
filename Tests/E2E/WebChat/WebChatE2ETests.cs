@@ -373,9 +373,12 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
             await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
 
-            var assistantMessage = page.Locator(".chat-message.assistant .message-content").First;
+            // Any assistant bubble with text is the answer. Not the first one: a bubble holding
+            // only a tool call renders an empty .message-content, and whether the answer shares
+            // that bubble depends on the message ids the agent's chunks carry.
+            var assistantMessage = page.Locator(".chat-message.assistant .message-content:not(:empty)").First;
             await Assertions.Expect(assistantMessage)
-                .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 10_000 });
+                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
         }
         finally
         {
