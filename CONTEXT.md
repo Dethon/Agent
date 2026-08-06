@@ -317,6 +317,13 @@ The one name a filesystem mount is known by. Its resource address, its mount poi
 and the name it publishes to the agent all come from it, so they cannot disagree.
 _Avoid_: mount name, filesystem name, mount point
 
+**Move-out check**:
+The question a mount answers before a path leaves it. A move between two mounts is a
+copy followed by a delete of the source, so the mount losing the path is never asked
+to move anything and its own refusals never run. The check asks it first, before any
+byte is streamed, and a mount with nothing to say allows it.
+_Avoid_: move guard, cross-mount guard, pre-move check
+
 ## Media library
 
 **Live download**:

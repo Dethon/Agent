@@ -111,4 +111,6 @@ mount is the wrong trade.
   operation consults the rule with the right intent.
 - The cross-mount move guard is untouched by this decision. `RefuseMoveAsync` delegates to
   the same rule, but the fact that `ICrossMountMoveGuard`'s type test never succeeds
-  against the production topology is a separate problem with its own trade-off.
+  against the production topology is a separate problem with its own trade-off. ADR-0015
+  settles it: the question crosses the seam as `fs_move_out_check`, the interface is
+  deleted, and the `MoveOut` intent defined here is what the media mount answers with.
