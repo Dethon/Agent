@@ -29,8 +29,8 @@ public class VfsTransferDirectoryTests
                 false, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1L);
 
-        var srcRes = new FileSystemResolution(src.Object, "src");
-        var dstRes = new FileSystemResolution(dst.Object, "dst");
+        var srcRes = new FileSystemResolution(src.Object, "src", "/vault");
+        var dstRes = new FileSystemResolution(dst.Object, "dst", "/sandbox");
 
         var result = await TransferToolDriver.CopyAsync(
             srcRes, dstRes, "/vault/src", "/sandbox/dst",
@@ -78,8 +78,8 @@ public class VfsTransferDirectoryTests
                 false, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1L);
 
-        var srcRes = new FileSystemResolution(src.Object, "src");
-        var dstRes = new FileSystemResolution(dst.Object, "dst");
+        var srcRes = new FileSystemResolution(src.Object, "src", "/vault");
+        var dstRes = new FileSystemResolution(dst.Object, "dst", "/sandbox");
 
         var result = await TransferToolDriver.CopyAsync(
             srcRes, dstRes, "/vault/src", "/sandbox/dst",
@@ -108,8 +108,8 @@ public class VfsTransferDirectoryTests
                 false, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1L);
 
-        var srcRes = new FileSystemResolution(src.Object, "src");
-        var dstRes = new FileSystemResolution(dst.Object, "dst");
+        var srcRes = new FileSystemResolution(src.Object, "src", "/vault");
+        var dstRes = new FileSystemResolution(dst.Object, "dst", "/sandbox");
 
         var result = await TransferToolDriver.CopyAsync(
             srcRes, dstRes, "/vault/src", "/sandbox/dst",
@@ -160,8 +160,8 @@ public class VfsTransferDirectoryTests
                 false, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1L);
 
-        var srcRes = new FileSystemResolution(src.Object, "src");
-        var dstRes = new FileSystemResolution(dst.Object, "dst");
+        var srcRes = new FileSystemResolution(src.Object, "src", "/vault");
+        var dstRes = new FileSystemResolution(dst.Object, "dst", "/sandbox");
 
         await TransferToolDriver.MoveAsync(
             srcRes, dstRes, "/vault/src", "/sandbox/dst",
@@ -192,8 +192,8 @@ public class VfsTransferDirectoryTests
                 false, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1L);
 
-        var srcRes = new FileSystemResolution(src.Object, "src");
-        var dstRes = new FileSystemResolution(dst.Object, "dst");
+        var srcRes = new FileSystemResolution(src.Object, "src", "/vault");
+        var dstRes = new FileSystemResolution(dst.Object, "dst", "/sandbox");
 
         var result = await TransferToolDriver.MoveAsync(
             srcRes, dstRes, "/vault/src", "/sandbox/dst",
@@ -216,8 +216,8 @@ public class VfsTransferDirectoryTests
             }));
 
         var dst = new Mock<IFileSystemBackend>();
-        var srcRes = new FileSystemResolution(src.Object, "src");
-        var dstRes = new FileSystemResolution(dst.Object, "dst");
+        var srcRes = new FileSystemResolution(src.Object, "src", "/vault");
+        var dstRes = new FileSystemResolution(dst.Object, "dst", "/sandbox");
 
         var result = await TransferToolDriver.MoveAsync(
             srcRes, dstRes, "/vault/src", "/sandbox/dst",
@@ -251,8 +251,8 @@ public class VfsTransferDirectoryTests
                 false, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(1L);
 
-        var srcRes = new FileSystemResolution(src.Object, "src");
-        var dstRes = new FileSystemResolution(dst.Object, "dst");
+        var srcRes = new FileSystemResolution(src.Object, "src", "/vault");
+        var dstRes = new FileSystemResolution(dst.Object, "dst", "/sandbox");
 
         var result = await TransferToolDriver.CopyAsync(
             srcRes, dstRes, "/vault/src", "/sandbox/dst",

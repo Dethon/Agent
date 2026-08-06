@@ -18,8 +18,10 @@ public sealed record TransferRequest
     public required FileSystemResolution Source { get; init; }
     public required FileSystemResolution Destination { get; init; }
 
-    // The caller's own strings, echoed into every path the answer reports and into every message
-    // this module builds. See docs/adr/0016-a-tool-answers-in-the-coordinates-it-was-asked-in.md.
+    // The caller's own strings, echoed into the answer's top-level paths and into every message
+    // this module builds. A directory's per-entry paths are the other half of the rule — the
+    // caller never named them, so they are translated instead of echoed. See
+    // docs/adr/0016-a-tool-answers-in-the-coordinates-it-was-asked-in.md.
     public required string SourcePath { get; init; }
     public required string DestinationPath { get; init; }
 
@@ -192,12 +194,16 @@ internal static class Transfer
         });
     }
 
+    // The glob named these paths, not the caller, so both ends go through the one shared
+    // translation rather than echoing the caller's strings — the tail is joined onto each end's
+    // resolved relative path and the mount point is prefixed by ToVirtualPath, never taken from
+    // the backend's own spelling of the entry.
     private static async Task<FsTransferEntry> EntryAsync(
         TransferRequest request, string srcRel, string tail, CancellationToken ct)
     {
         var (src, dst) = (request.Source, request.Destination);
-        var entrySource = $"{request.SourcePath.TrimEnd('/')}/{tail}";
-        var entryDestination = $"{request.DestinationPath.TrimEnd('/')}/{tail}";
+        var entrySource = src.ToVirtualPath($"{src.RelativePath.TrimEnd('/')}/{tail}");
+        var entryDestination = dst.ToVirtualPath($"{dst.RelativePath.TrimEnd('/')}/{tail}");
 
         try
         {
