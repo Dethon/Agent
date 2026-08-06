@@ -142,6 +142,20 @@ conversation someone can open, so a scheduled task fires under the conversation 
 delivered into and not under the schedule.
 _Avoid_: conversation id, target conversation, delivery key
 
+## Chat streaming
+
+**Topic stream** (chat client only):
+A topic's one reply in flight, from the send or resume that opened it to its single
+ending. A topic has at most one, and it ends exactly once however it ends: the reply
+finishing, the stop button, or the topic being deleted.
+_Avoid_: active stream, streaming state, stream session
+
+**Stream lease** (chat client only):
+What the opener of a topic stream holds. It is the only way to add to that stream or
+end it, and a stale one can do neither — once the topic has moved on to another
+reply, the lease that opened the old one no longer speaks for it.
+_Avoid_: stream handle, stream token, stream id
+
 ## Channel connection
 
 **Connection generation**:
