@@ -11,8 +11,10 @@ namespace McpChannelVoice.Services;
 public sealed class VoiceTurn
 {
     private const long DispatchNotMarked = long.MinValue;
+    private const long NoStreamOpen = long.MinValue;
 
     private readonly Lock _gate = new();
+    private long _streamEpoch = NoStreamOpen;
     private TaskCompletionSource<bool> _spoken = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long _dispatchedAt = DispatchNotMarked;
     private int _preambleClaimed;
@@ -79,12 +81,54 @@ public sealed class VoiceTurn
         }
     }
 
+    // Remembers which turn an UNKEYED reply stream is being fed into. An agent that predates the
+    // turn key sends replies with nothing to compare, so the reply path can only fall back to the
+    // turn in flight — and this is the one thing that can still tell an abandoned answer's ending
+    // from this turn's own. The stream's FIRST event names the turn its end belongs to (one
+    // conversation's chunks arrive in order), so a stream already open is left alone, and Reset
+    // deliberately does not clear it: the abandoned answer's end arrives after the next turn began.
+    public void OpenUnkeyedStream()
+    {
+        lock (_gate)
+        {
+            if (_streamEpoch == NoStreamOpen)
+            {
+                _streamEpoch = Interlocked.Read(ref _epoch);
+            }
+        }
+    }
+
+    // Ends an unkeyed stream. It settles the turn only if the turn it opened against is still the
+    // turn in flight: the hub gives a turn up at ReplyTimeoutMs and dispatches the next one while
+    // the agent is still writing the abandoned answer, and settling on that answer's late
+    // completion ends FollowUpConversation — whose chime preempts the sentence being spoken and
+    // reopens the microphone over the rest of the reply.
+    public void EndUnkeyedStream()
+    {
+        long opened;
+        lock (_gate)
+        {
+            opened = _streamEpoch;
+            _streamEpoch = NoStreamOpen;
+        }
+
+        // No stream behind it means nothing was ever sent for this turn, which is the end of this
+        // turn's own (empty) answer and settles it.
+        if (opened != NoStreamOpen && opened != Interlocked.Read(ref _epoch))
+        {
+            return;
+        }
+
+        EndStream();
+    }
+
     // The agent has stopped sending. A turn that produced no audio at all settles here; one that did
     // settles as its last segment drains. The two halves of that decision are both in here because
     // nothing outside can see both.
     //
-    // No guard against a previous turn's end arriving late: the caller compares the reply's turn key
-    // against the turn in flight and never calls this for an answer that is not this turn's.
+    // No guard of its own against a previous turn's end arriving late: a keyed reply has been
+    // compared against the turn in flight before it gets here, and a keyless one comes through
+    // EndUnkeyedStream, which carries that guard.
     public void EndStream()
     {
         bool producedNothing;

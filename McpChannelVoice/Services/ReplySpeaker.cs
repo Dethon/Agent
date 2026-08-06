@@ -55,6 +55,15 @@ public sealed class ReplySpeaker(
                 return;
         }
 
+        // A reply with no key was matched against nothing: Classify fell back to the turn in
+        // flight, which is all it can do for an agent that predates the key. Opening the stream on
+        // the turn is what lets the terminal event below refuse to settle a turn the hub has
+        // already moved on from. A keyed reply needs none of it — it was compared.
+        if (p.TurnKey is null)
+        {
+            session.Turn.OpenUnkeyedStream();
+        }
+
         switch (p.ContentType)
         {
             case ReplyContentType.Reasoning:
@@ -89,7 +98,7 @@ public sealed class ReplySpeaker(
                     // never learns the agent stopped sending and the mic stays shut for the whole
                     // ~120 s reply timeout.
                     SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
-                    session.Turn.EndStream();
+                    EndStream(session, p);
                 }
                 return;
 
@@ -102,7 +111,7 @@ public sealed class ReplySpeaker(
                 // waiting on audio still playing is the turn's decision: streaming may already have
                 // spoken everything, leaving this flush empty.
                 SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
-                session.Turn.EndStream();
+                EndStream(session, p);
                 return;
 
             default:
@@ -111,7 +120,7 @@ public sealed class ReplySpeaker(
                 if (p.IsComplete)
                 {
                     SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
-                    session.Turn.EndStream();
+                    EndStream(session, p);
                     return;
                 }
                 SpeakReadySegments(session, p.ConversationId);
@@ -164,6 +173,20 @@ public sealed class ReplySpeaker(
         return session.Turn.AwaitingFirstDispatch
             ? ReplyRelevance.ThisTurn
             : ReplyRelevance.Abandoned;
+    }
+
+    // A keyed reply was compared against the turn in flight before it got here, so its end settles
+    // that turn directly. A keyless one ends through the stream it opened, which is what refuses
+    // the late completion of a turn the hub has already given up on.
+    private static void EndStream(SatelliteSession session, SendReplyParams p)
+    {
+        if (p.TurnKey is null)
+        {
+            session.Turn.EndUnkeyedStream();
+            return;
+        }
+
+        session.Turn.EndStream();
     }
 
     // Heard, and nothing else: no stream is opened, no segment is registered and the turn is not

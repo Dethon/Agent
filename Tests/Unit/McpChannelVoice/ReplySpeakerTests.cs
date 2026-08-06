@@ -1158,6 +1158,40 @@ public class ReplySpeakerTests
             It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task SpeakUtteranceReply_AKeylessAbandonedAnswerCompletes_DoesNotSettleTheTurnInFlight()
+    {
+        // A rolling deploy where the agent container predates the turn key: every chunk arrives
+        // keyless, so Classify has nothing to compare and falls back to the turn in flight. The hub
+        // gave turn one up at ReplyTimeoutMs and the user asked something else, and the abandoned
+        // answer's completion lands on turn two. Settling it there ends FollowUpConversation, whose
+        // chime preempts the sentence being spoken and reopens the microphone over the rest of the
+        // answer — so the end of a stream may only settle the turn that stream opened against.
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
+        SayFor(null, "La respuesta a la primera pregunta.", ReplyContentType.Text, false);
+
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-2");
+        _accumulator.Flush(_conversationId); // what dispatching the next transcript does
+        var turn = _session.Turn.AwaitSpoken();
+
+        SayFor(null, "", ReplyContentType.StreamComplete, true); // turn one's answer finally reports
+
+        turn.IsCompleted.ShouldBeFalse();
+
+        // The guard refuses the stale end; it does not wedge the microphone behind it. Turn two's
+        // own answer, keyless like everything else this agent sends, still settles it.
+        SayFor(null, "Veintiún grados.", ReplyContentType.Text, false);
+        SayFor(null, "", ReplyContentType.StreamComplete, true);
+
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
+
+        (await turn.WaitAsync(TimeSpan.FromSeconds(2))).ShouldBeTrue();
+        await run.StopAsync(pump);
+    }
+
     private static async Task WaitForCountAsync(List<string> sink, int count, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
