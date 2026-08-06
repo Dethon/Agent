@@ -239,6 +239,28 @@ public sealed class TopicStreamFlowTests
         client.Service<TopicStreams>().Snapshot("topic-1").HasStream.ShouldBeFalse();
     }
 
+    // The server both writes the tool call into the topic's stream and pushes it, so the same
+    // text reaches this client twice. It must show once.
+    [Fact]
+    public async Task APush_CarryingToolCallsTheStreamAlsoDelivers_ShowsThemOnce()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        var reply = new GatedChatStream();
+        transport.Answer("SendMessage", _ => reply.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
+        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+
+        var replyEnding = client.Service<TopicStreams>().Snapshot("topic-1").Completion!;
+        transport.Raise("OnToolCalls", new ToolCallsNotification("topic-1", "search()", "m-1"));
+        reply.Write(new ChatStreamMessage { ToolCalls = "search()", MessageId = "m-1" });
+        reply.Release();
+
+        await replyEnding;
+        AssistantMessages(client).Single().ToolCalls.ShouldBe("search()");
+    }
+
     private static void RaiseToolCalls(FakeHubConnection transport, string wireName, string toolCalls)
     {
         if (wireName == "OnToolCalls")

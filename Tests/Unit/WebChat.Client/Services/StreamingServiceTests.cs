@@ -700,7 +700,7 @@ public sealed class StreamingServiceTests : IDisposable
 
     #endregion
 
-    #region TryStartResumeStreamAsync / IsStreamActiveAsync entry point tests
+    #region Resume and stream-state entry point tests
 
     [Fact]
     public async Task TryStartResumeStreamAsync_WithNoActiveStream_ReturnsTrue()

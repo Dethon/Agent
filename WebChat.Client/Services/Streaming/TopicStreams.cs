@@ -319,7 +319,7 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         }
 
         var before = stream.Message;
-        var after = BufferRebuildUtility.AccumulateChunk(before, chunk);
+        var after = BufferRebuildUtility.AccumulateChunk(before, WithoutASecondDelivery(before, chunk));
 
         stream.Message = after;
         if (chunk.MessageId is not null)
@@ -334,6 +334,16 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
 
         return new Grown(new StreamAppend(after, isNew), stream.CurrentMessageId);
     }
+
+    // A finished tool call reaches this client twice: the server writes it into the topic's
+    // stream and pushes it over the hub as well. Both routes now feed the one accumulator, so a
+    // block that already ends what we have is the second delivery of it rather than a second
+    // call. Two identical calls with nothing between them read as one; that is the trade for
+    // never showing a tool call twice.
+    private static ChatStreamMessage WithoutASecondDelivery(ChatMessageModel accumulated, ChatStreamMessage chunk) =>
+        !string.IsNullOrEmpty(chunk.ToolCalls) && accumulated.ToolCalls?.EndsWith(chunk.ToolCalls) == true
+            ? chunk with { ToolCalls = null }
+            : chunk;
 
     private void Publish(string topicId, Grown grown)
     {
@@ -354,11 +364,7 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
             return;
         }
 
-        var finalized = messageId is not null &&
-                        messagesStore.State.FinalizedMessageIdsByTopic
-                            .GetValueOrDefault(topicId)?.Contains(messageId) == true;
-
-        if (finalized)
+        if (messagesStore.State.IsFinalized(topicId, messageId))
         {
             dispatcher.Dispatch(new UpdateMessage(topicId, messageId!, message));
             return;

@@ -181,7 +181,7 @@ public sealed class StreamingService(
                 }
 
                 var messageId = chunk.MessageId ?? lease.CurrentMessageId;
-                var committed = messageId is not null && IsCommitted(topic.TopicId, messageId);
+                var committed = messagesStore.State.IsFinalized(topic.TopicId, messageId);
 
                 // For an already-committed MessageId revisited mid-stream, update its bubble in
                 // place; the live streaming buffer is only used for the current uncommitted
@@ -222,10 +222,6 @@ public sealed class StreamingService(
 
     private static ChatMessageModel? Stashed(Dictionary<string, ChatMessageModel> stash, string? messageId) =>
         messageId is not null ? stash.GetValueOrDefault(messageId) : null;
-
-    private bool IsCommitted(string topicId, string messageId) =>
-        messagesStore.State.FinalizedMessageIdsByTopic
-            .GetValueOrDefault(topicId)?.Contains(messageId) == true;
 
     private static ChatMessageModel CreateErrorMessage(string content) => new()
     {
