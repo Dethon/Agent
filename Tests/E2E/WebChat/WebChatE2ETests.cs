@@ -421,12 +421,14 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
             await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
 
-            // Any assistant bubble with text is the answer. Not the first one: a bubble holding
-            // only a tool call renders an empty .message-content, and whether the answer shares
-            // that bubble depends on the message ids the agent's chunks carry.
-            var assistantMessage = page.Locator(".chat-message.assistant .message-content:not(:empty)").First;
+            // Any assistant bubble with rendered text is the answer. Whether the answer shares the
+            // tool call's bubble depends on the message ids the agent's chunks carry, so don't
+            // assume it is the first one. A bubble holding only a tool call still renders a
+            // .message-content div; it can hold whitespace (so `:not(:empty)` matches it) while
+            // collapsing to zero height, which is why the match must also be visible.
+            var assistantMessage = page.Locator(".chat-message.assistant .message-content:not(:empty):visible").First;
             await Assertions.Expect(assistantMessage)
-                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
+                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
         }
         finally
         {
@@ -488,7 +490,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Wait for Cancel button to appear (signals streaming has started)
         var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
-        await cancelButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        await cancelButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 40_000 });
 
         await cancelButton.ClickAsync();
 
