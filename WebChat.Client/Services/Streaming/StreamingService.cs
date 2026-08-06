@@ -31,9 +31,14 @@ public sealed class StreamingService(
         try
         {
             var configPatch = GetConfigPatch(topic);
-            if (!topicStreams.Snapshot(topic.TopicId).HasStream)
+
+            // Read once, and carried into the send: the round trip below is long enough for a
+            // resume to claim the topic, and what may be ended afterwards is the stream this
+            // decision was made about, never whatever holds the topic by then.
+            var seen = topicStreams.Snapshot(topic.TopicId);
+            if (!seen.HasStream)
             {
-                await StartNewStreamAsync(topic, message, correlationId, configPatch);
+                await StartNewStreamAsync(topic, message, correlationId, configPatch, seen);
                 return;
             }
 
@@ -51,7 +56,7 @@ public sealed class StreamingService(
 
             if (!enqueued.Value)
             {
-                await StartNewStreamAsync(topic, message, correlationId, configPatch);
+                await StartNewStreamAsync(topic, message, correlationId, configPatch, seen);
             }
         }
         finally
@@ -89,25 +94,34 @@ public sealed class StreamingService(
     }
 
     private async Task StartNewStreamAsync(
-        StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)
+        StoredTopic topic,
+        string message,
+        string? correlationId,
+        AgentConfigPatch? configPatch,
+        TopicStreamSnapshot seen)
     {
         var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch);
 
         // Open only a stream that has actually started. The old order announced first and
         // discovered afterwards, which is how a user was shown a reply that never spoke.
-        if (chunks is not null)
+        if (chunks is null)
         {
-            // Reached either on an idle topic, where this does nothing, or after the server
-            // said there was nothing to enqueue onto — which means the reply we thought was
-            // running is over. Ending it keeps what it wrote and frees the topic for this one.
-            topicStreams.End(topic.TopicId);
-
-            topicStreams.TryOpen(
-                topic.TopicId,
-                new ChatMessageModel { Role = "assistant" },
-                currentMessageId: null,
-                lease => ProcessStreamAsync(topic, chunks, lease));
+            return;
         }
+
+        // Reached either on an idle topic, where there was nothing to end, or after the server
+        // said there was nothing to enqueue onto — which means the reply we saw is over. Ending
+        // that one keeps what it wrote and frees the topic for this one.
+        topicStreams.EndIfUnchanged(topic.TopicId, seen);
+
+        // Nothing back means a resume claimed the topic while this send was waiting, so the
+        // reply is already being read. Both readers are on the topic's one stream server side,
+        // so the one holding the topic delivers what this send asked for too.
+        topicStreams.TryOpen(
+            topic.TopicId,
+            new ChatMessageModel { Role = "assistant" },
+            currentMessageId: null,
+            lease => ProcessStreamAsync(topic, chunks, lease));
     }
 
     // Null means the send could not be made and the user has been told. The send is theirs, so

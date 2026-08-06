@@ -25,6 +25,11 @@ public sealed record TopicStreamSnapshot(
 {
     public static TopicStreamSnapshot None { get; } = new(TopicStreamPhase.None, null, null, null, null);
 
+    // Which stream this was a snapshot of. A caller can do nothing with it but hand it back, so
+    // "end the stream I saw" stays a question TopicStreams answers rather than a comparison a
+    // caller writes.
+    internal StreamLease? Of { get; init; }
+
     public bool HasStream => Phase is not TopicStreamPhase.None;
 
     public bool IsResuming => Phase is TopicStreamPhase.Resuming;
@@ -132,6 +137,7 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
                     stream.Lease.Completion,
                     stream.Message,
                     stream.CurrentMessageId)
+                { Of = stream.Lease }
                 : TopicStreamSnapshot.None;
         }
     }
@@ -203,6 +209,27 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
 
         Commit(topicId, finished, messageId);
         dispatcher.Dispatch(new ResetStreamingContent(topicId));
+    }
+
+    // Ends the stream a caller saw earlier, and only that one. A caller that has been away —
+    // the send, over its round trip — may come back to a topic claimed since by a resume, which
+    // takes no lock precisely so it can claim one; that reply is not this caller's to end.
+    // Nothing was seen means nothing to end.
+    public void EndIfUnchanged(string topicId, TopicStreamSnapshot seen)
+    {
+        TopicStream? stream;
+        lock (_lock)
+        {
+            stream = _byTopic.GetValueOrDefault(topicId);
+            if (stream is null || seen.Of is null || !ReferenceEquals(stream.Lease, seen.Of))
+            {
+                return;
+            }
+
+            _byTopic.Remove(topicId);
+        }
+
+        Close(stream);
     }
 
     public void End(string topicId)

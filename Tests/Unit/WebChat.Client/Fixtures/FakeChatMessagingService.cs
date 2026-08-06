@@ -12,6 +12,7 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     private bool _enqueueResult = true;
     private bool _blockUntilComplete;
     private readonly TaskCompletionSource _completionSource = new();
+    private TaskCompletionSource? _sendAnswer;
     private Exception? _exceptionToThrow;
 
     public AgentConfigPatch? LastConfigPatch { get; private set; }
@@ -83,13 +84,24 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     // Set to answer not live for every call, the way a transport between connections does.
     public bool NotLive { get; set; }
 
-    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendMessageAsync(string topicId, string message,
+    // The round trip the send waits on before it holds a stream at all, held open so a test can
+    // do something else in that window. Blocking the chunks instead would be a later moment.
+    public void HoldTheSendAnswer() => _sendAnswer = new TaskCompletionSource();
+
+    public void LetTheSendAnswer() => _sendAnswer?.TrySetResult();
+
+    public async Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendMessageAsync(string topicId, string message,
         string? correlationId = null, AgentConfigPatch? configPatch = null)
     {
         LastConfigPatch = configPatch;
-        return Task.FromResult(NotLive
+        if (_sendAnswer is not null)
+        {
+            await _sendAnswer.Task;
+        }
+
+        return NotLive
             ? HubResult<IAsyncEnumerable<ChatStreamMessage>>.NotLive
-            : HubResult<IAsyncEnumerable<ChatStreamMessage>>.Answered(SendChunks()));
+            : HubResult<IAsyncEnumerable<ChatStreamMessage>>.Answered(SendChunks());
     }
 
     public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId) =>

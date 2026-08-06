@@ -736,6 +736,34 @@ public sealed class StreamingServiceTests : IDisposable
         await firstTask;
     }
 
+    // A resume takes no lock on purpose, so it can claim an idle topic while a send is still
+    // waiting for its answer. The reply it is rebuilding is the one in flight, so the send that
+    // set out to open a stream over an idle topic must not end it.
+    [Fact]
+    public async Task SendMessageAsync_AResumeClaimedTheTopicDuringTheRoundTrip_LeavesTheResumedReplyAlone()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _messagingService.HoldTheSendAnswer();
+        _messagingService.EnqueueContent("the send's reply");
+        var send = _service.SendMessageAsync(topic, "hello");
+
+        var resumed = _topicStreams.TryBeginResume(topic.TopicId)!;
+        var running = new TaskCompletionSource();
+        _topicStreams.TryStream(
+            resumed,
+            new ChatMessageModel { Role = "assistant", Content = "half written" },
+            "msg-1",
+            _ => running.Task).ShouldBeTrue();
+        _messagingService.LetTheSendAnswer();
+        await send;
+
+        resumed.Append(new ChatStreamMessage { Content = " and the rest", MessageId = "msg-1" })
+            .Message.Content.ShouldBe("half written and the rest");
+        resumed.Completion.IsCompleted.ShouldBeFalse();
+        running.SetResult();
+    }
+
     [Fact]
     public void SendMessageAsync_BeforeAnySend_TheTopicHasNoStream()
     {
