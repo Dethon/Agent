@@ -27,6 +27,7 @@ public sealed class StreamingServiceTests : IDisposable
     private readonly UserIdentityStore _userIdentityStore;
     private readonly AgentSettingsStore _agentSettingsStore;
     private readonly FakeTopicService _topicService = new();
+    private readonly TopicStreams _topicStreams;
     private readonly StreamingService _service;
 
     public StreamingServiceTests()
@@ -38,13 +39,15 @@ public sealed class StreamingServiceTests : IDisposable
         _approvalStore = new ApprovalStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         _agentSettingsStore = new AgentSettingsStore(_dispatcher);
+        _topicStreams = new TopicStreams(_dispatcher, _messagesStore);
         _service = new StreamingService(
             _messagingService,
             _dispatcher,
             _topicService,
             _topicsStore,
             _messagesStore,
-            _agentSettingsStore);
+            _agentSettingsStore,
+            _topicStreams);
     }
 
     public void Dispose()

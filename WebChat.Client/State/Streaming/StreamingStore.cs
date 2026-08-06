@@ -17,8 +17,6 @@ public record StreamChunk(
 
 public record StreamCompleted(string TopicId) : IAction;
 
-public record StreamCancelled(string TopicId) : IAction;
-
 public record ResetStreamingContent(string TopicId) : IAction;
 
 public record StartResuming(string TopicId) : IAction;
@@ -63,8 +61,6 @@ public sealed class StreamingStore : IDisposable
         },
 
         StreamCompleted a => RemoveStreaming(state, a.TopicId),
-
-        StreamCancelled a => RemoveStreaming(state, a.TopicId),
 
         ResetStreamingContent a => state with
         {

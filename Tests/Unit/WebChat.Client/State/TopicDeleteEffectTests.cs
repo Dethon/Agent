@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Effects;
@@ -26,6 +27,8 @@ public sealed class TopicDeleteEffectTests : IDisposable
     private readonly FakeChatMessagingService _messagingService = new();
     private readonly FakeTopicService _topicService;
     private readonly RecordingLogger<TopicDeleteEffect> _logger = new();
+    private readonly TopicStreams _topicStreams;
+    private readonly TaskCompletionSource _running = new();
     private readonly TopicDeleteEffect _effect;
 
     public TopicDeleteEffectTests()
@@ -40,9 +43,10 @@ public sealed class TopicDeleteEffectTests : IDisposable
         var pipeline = new MessagePipeline(
             _dispatcher, _messagesStore, _streamingStore, NullLogger<MessagePipeline>.Instance);
 
+        _topicStreams = new TopicStreams(_dispatcher, _messagesStore);
         _effect = new TopicDeleteEffect(
             _dispatcher,
-            _streamingStore,
+            _topicStreams,
             _messagingService,
             _topicService,
             pipeline,
@@ -75,8 +79,7 @@ public sealed class TopicDeleteEffectTests : IDisposable
     public async Task HandleRemoveTopicAsync_TopicIsStreaming_CancelsTheStreamFirst()
     {
         GivenTopicWithMessages("topic-1");
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "partial", null, null, "m-2"));
+        GivenAReplyInFlight("topic-1").Append(new ChatStreamMessage { Content = "partial", MessageId = "m-2" });
 
         await _effect.HandleRemoveTopicAsync("topic-1", "agent-1", chatId: 10, threadId: 20);
 
@@ -91,7 +94,7 @@ public sealed class TopicDeleteEffectTests : IDisposable
     public async Task HandleRemoveTopicAsync_ServerDeletedAStreamingTopicWhileNotLive_RemovesTheRowWithoutAToast()
     {
         GivenTopicWithMessages("topic-1");
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
+        GivenAReplyInFlight("topic-1");
         _messagingService.NotLive = true;
 
         await _effect.HandleRemoveTopicAsync("topic-1");
@@ -108,7 +111,7 @@ public sealed class TopicDeleteEffectTests : IDisposable
     public async Task HandleRemoveTopicAsync_UserDeletesAStreamingTopicWhileNotLive_KeepsTheRowAndShowsTheToast()
     {
         GivenTopicWithMessages("topic-1");
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
+        GivenAReplyInFlight("topic-1");
         _messagingService.NotLive = true;
 
         await _effect.HandleRemoveTopicAsync("topic-1", "agent-1", chatId: 10, threadId: 20);
@@ -204,6 +207,10 @@ public sealed class TopicDeleteEffectTests : IDisposable
         Name = "Topic"
     };
 
+    private StreamLease GivenAReplyInFlight(string topicId) =>
+        _topicStreams.TryOpen(
+            topicId, new ChatMessageModel { Role = "assistant" }, null, _ => _running.Task)!;
+
     private void GivenTopicWithMessages(string topicId)
     {
         _dispatcher.Dispatch(new TopicsLoaded([Topic(topicId)]));
@@ -215,6 +222,7 @@ public sealed class TopicDeleteEffectTests : IDisposable
 
     public void Dispose()
     {
+        _running.TrySetResult();
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();

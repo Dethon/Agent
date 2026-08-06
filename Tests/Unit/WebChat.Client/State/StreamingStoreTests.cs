@@ -77,17 +77,6 @@ public class StreamingStoreTests : IDisposable
     }
 
     [Fact]
-    public void StreamCancelled_ClearsStreamingState()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
-        _dispatcher.Dispatch(new StreamCancelled("topic-1"));
-
-        _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
-        _store.State.StreamingTopics.ShouldNotContain("topic-1");
-    }
-
-    [Fact]
     public void StartResuming_AddsTopicToResumingTopics()
     {
         _dispatcher.Dispatch(new StartResuming("topic-1"));
@@ -142,17 +131,6 @@ public class StreamingStoreTests : IDisposable
     public void StreamChunk_ForATopicThatNeverStarted_IsIgnored()
     {
         _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
-
-        _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
-    }
-
-    [Fact]
-    public void StreamChunk_AfterTheStreamWasCancelled_IsIgnored()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamCancelled("topic-1"));
-
-        _dispatcher.Dispatch(new StreamChunk("topic-1", null, null, "tool_a", "msg-1"));
 
         _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
     }

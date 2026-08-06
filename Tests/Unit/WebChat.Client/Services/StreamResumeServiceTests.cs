@@ -28,6 +28,7 @@ public sealed class StreamResumeServiceTests : IDisposable
     private readonly ToastStore _toastStore;
     private readonly UserIdentityStore _userIdentityStore;
     private readonly AgentSettingsStore _agentSettingsStore;
+    private readonly TopicStreams _topicStreams;
     private readonly StreamResumeService _resumeService;
 
     public StreamResumeServiceTests()
@@ -38,13 +39,15 @@ public sealed class StreamResumeServiceTests : IDisposable
         _toastStore = new ToastStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         _agentSettingsStore = new AgentSettingsStore(_dispatcher);
+        _topicStreams = new TopicStreams(_dispatcher, _messagesStore);
         var streamingService = new StreamingService(
             _messagingService,
             _dispatcher,
             _topicService,
             _topicsStore,
             _messagesStore,
-            _agentSettingsStore);
+            _agentSettingsStore,
+            _topicStreams);
         var pipeline = new MessagePipeline(_dispatcher, _messagesStore, _streamingStore,
             NullLogger<MessagePipeline>.Instance);
         _resumeService = new StreamResumeService(

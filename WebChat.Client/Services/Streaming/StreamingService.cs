@@ -6,7 +6,6 @@ using WebChat.Client.State;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
-using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
@@ -18,9 +17,12 @@ public sealed class StreamingService(
     ITopicService topicService,
     TopicsStore topicsStore,
     MessagesStore messagesStore,
-    AgentSettingsStore agentSettingsStore) : IStreamingService
+    AgentSettingsStore agentSettingsStore,
+    TopicStreams topicStreams) : IStreamingService
 {
-    private readonly ActiveStreams _activeStreams = new();
+    // Serialises deciding whether to open a stream and opening it. TopicStreams answers who
+    // holds a topic, but that answer is only atomic on its own; the send has a round trip
+    // between asking and acting.
     private readonly SemaphoreSlim _streamLock = new(1, 1);
 
     public async Task SendMessageAsync(StoredTopic topic, string message, string? correlationId = null)
@@ -29,7 +31,7 @@ public sealed class StreamingService(
         try
         {
             var configPatch = GetConfigPatch(topic);
-            if (!_activeStreams.IsActive(topic.TopicId))
+            if (!topicStreams.Snapshot(topic.TopicId).HasStream)
             {
                 await StartNewStreamAsync(topic, message, correlationId, configPatch);
                 return;
@@ -70,7 +72,7 @@ public sealed class StreamingService(
         await _streamLock.WaitAsync();
         try
         {
-            if (_activeStreams.IsActive(topic.TopicId))
+            if (topicStreams.Snapshot(topic.TopicId).HasStream)
             {
                 return false;
             }
@@ -84,8 +86,11 @@ public sealed class StreamingService(
                 return false;
             }
 
-            Announce(topic, () => ProcessStreamAsync(topic, chunks.Value!, streamingMessage, startMessageId));
-            return true;
+            return topicStreams.TryOpen(
+                topic.TopicId,
+                streamingMessage,
+                startMessageId,
+                lease => ProcessStreamAsync(topic, chunks.Value!, lease)) is not null;
         }
         finally
         {
@@ -93,30 +98,28 @@ public sealed class StreamingService(
         }
     }
 
-    public async Task<bool> IsStreamActiveAsync(string topicId)
-    {
-        await _streamLock.WaitAsync();
-        try
-        {
-            return _activeStreams.IsActive(topicId);
-        }
-        finally
-        {
-            _streamLock.Release();
-        }
-    }
+    public Task<bool> IsStreamActiveAsync(string topicId) =>
+        Task.FromResult(topicStreams.Snapshot(topicId).HasStream);
 
     private async Task StartNewStreamAsync(
         StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)
     {
         var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch);
 
-        // Announce only a stream that has actually started. The old order announced first and
+        // Open only a stream that has actually started. The old order announced first and
         // discovered afterwards, which is how a user was shown a reply that never spoke.
         if (chunks is not null)
         {
-            Announce(topic, () => ProcessStreamAsync(
-                topic, chunks, new ChatMessageModel { Role = "assistant" }, currentMessageId: null));
+            // Reached either on an idle topic, where this does nothing, or after the server
+            // said there was nothing to enqueue onto — which means the reply we thought was
+            // running is over. Ending it keeps what it wrote and frees the topic for this one.
+            topicStreams.End(topic.TopicId);
+
+            topicStreams.TryOpen(
+                topic.TopicId,
+                new ChatMessageModel { Role = "assistant" },
+                currentMessageId: null,
+                lease => ProcessStreamAsync(topic, chunks, lease));
         }
     }
 
@@ -135,33 +138,20 @@ public sealed class StreamingService(
         return null;
     }
 
-    // StreamStarted resets the streaming buffer, so it has to be dispatched before the first
-    // chunk is processed rather than alongside the task that processes them.
-    private void Announce(StoredTopic topic, Func<Task> startStream)
-    {
-        dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-        _activeStreams.Track(topic.TopicId, startStream());
-    }
-
     private async Task ProcessStreamAsync(
         StoredTopic topic,
         IAsyncEnumerable<ChatStreamMessage> chunks,
-        ChatMessageModel streamingMessage,
-        string? currentMessageId)
+        StreamLease lease)
     {
-        // Track processed lengths to avoid duplicate display when resuming from buffer.
-        // For fresh streams these start at 0, so all content is considered new.
-        var processedContentLength = streamingMessage.Content.Length;
-        var processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
-        var processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
-
         // The agent's stream can interleave chunks from different assistant messages: a later
         // message's tool-call display races ahead of an earlier message's content (which lags
-        // via send_reply), so MessageIds bounce instead of arriving contiguously. We keep one
-        // accumulator per MessageId so a revisit can continue appending, and we route late
-        // chunks for an already-committed MessageId through UpdateMessage (merging the bubble
-        // in place) instead of a fresh AddMessage that AddMessageWithDedup would drop.
-        var stash = new Dictionary<string, MessageAccumulator>();
+        // via send_reply), so MessageIds bounce instead of arriving contiguously. We keep the
+        // message we were writing under its MessageId so a revisit can continue appending, and
+        // we route late chunks for an already-committed MessageId through UpdateMessage
+        // (merging the bubble in place) instead of a fresh AddMessage that AddMessageWithDedup
+        // would drop. This is display state for a message, not state about the topic's stream,
+        // so it stays here.
+        var stash = new Dictionary<string, ChatMessageModel>();
 
         try
         {
@@ -184,105 +174,46 @@ public sealed class StreamingService(
                     continue;
                 }
 
-                // When a user message arrives in the stream, finalize current assistant content
+                var currentMessageId = lease.CurrentMessageId;
+
+                // A user message closes off the assistant content written so far; what follows
+                // it is a new response, and HandleUserMessage adds the user's own bubble.
                 if (chunk.UserMessage is not null)
                 {
-                    if (streamingMessage.HasContent)
-                    {
-                        flush(streamingMessage, currentMessageId);
-                        dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
-                    }
-
-                    // Reset accumulator for the new response (user message added by HandleUserMessage)
-                    streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    processedContentLength = 0;
-                    processedReasoningLength = 0;
-                    processedToolCallsLength = 0;
-
+                    lease.StartMessage(currentMessageId);
                     continue;
                 }
 
-                var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
-
-                if (isNewMessageTurn)
+                if (chunk.MessageId != currentMessageId && currentMessageId is not null)
                 {
-                    if (streamingMessage.HasContent)
+                    var finished = lease.StartMessage(chunk.MessageId, Stashed(stash, chunk.MessageId));
+                    if (finished is not null)
                     {
-                        // Commit the message we're switching away from (AddMessage first time,
-                        // UpdateMessage on a revisit) and stash its accumulator so a future
-                        // revisit can continue appending into it.
-                        flush(streamingMessage, currentMessageId);
-                        if (currentMessageId is not null)
-                        {
-                            stash[currentMessageId] = new MessageAccumulator(
-                                streamingMessage,
-                                processedContentLength,
-                                processedReasoningLength,
-                                processedToolCallsLength);
-                        }
-
-                        dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
-                    }
-
-                    // Restore the incoming MessageId's prior accumulator if we've seen it
-                    // before (interleaving), otherwise start fresh.
-                    if (chunk.MessageId is not null && stash.TryGetValue(chunk.MessageId, out var saved))
-                    {
-                        streamingMessage = saved.Message;
-                        processedContentLength = saved.ContentLength;
-                        processedReasoningLength = saved.ReasoningLength;
-                        processedToolCallsLength = saved.ToolCallsLength;
-                    }
-                    else
-                    {
-                        streamingMessage = new ChatMessageModel { Role = "assistant" };
-                        processedContentLength = 0;
-                        processedReasoningLength = 0;
-                        processedToolCallsLength = 0;
+                        stash[currentMessageId] = finished;
                     }
                 }
 
-                currentMessageId = chunk.MessageId;
-
-                streamingMessage = BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk);
-
-                // Skip dispatching if no content changed beyond what we already processed
-                var hasNewContent = streamingMessage.Content.Length > processedContentLength;
-                var hasNewReasoning = (streamingMessage.Reasoning?.Length ?? 0) > processedReasoningLength;
-                var hasNewToolCalls = (streamingMessage.ToolCalls?.Length ?? 0) > processedToolCallsLength;
-
-                processedContentLength = streamingMessage.Content.Length;
-                processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
-                processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
-
-                if (!hasNewContent && !hasNewReasoning && !hasNewToolCalls)
-                {
-                    continue;
-                }
+                var messageId = chunk.MessageId ?? lease.CurrentMessageId;
+                var committed = messageId is not null && IsCommitted(topic.TopicId, messageId);
 
                 // For an already-committed MessageId revisited mid-stream, update its bubble in
                 // place; the live streaming buffer is only used for the current uncommitted
                 // accumulator, preserving the single-live-bubble look in the contiguous case.
-                if (currentMessageId is not null && isCommitted(currentMessageId))
+                var append = committed
+                    ? lease.AppendToCommittedMessage(chunk)
+                    : lease.Append(chunk);
+
+                if (!append.IsNew)
                 {
-                    dispatcher.Dispatch(new UpdateMessage(topic.TopicId, currentMessageId, streamingMessage));
+                    continue;
                 }
-                else
+
+                if (committed)
                 {
-                    dispatcher.Dispatch(new StreamChunk(
-                        topic.TopicId,
-                        streamingMessage.Content,
-                        streamingMessage.Reasoning,
-                        streamingMessage.ToolCalls,
-                        currentMessageId));
+                    dispatcher.Dispatch(new UpdateMessage(topic.TopicId, messageId!, append.Message));
                 }
 
                 await UpdateLastReadMessage(topic, chunk);
-            }
-
-            if (streamingMessage.HasContent)
-            {
-                flush(streamingMessage, currentMessageId);
             }
         }
         catch (Exception ex) when (!TransientErrorFilter.IsTransientException(ex))
@@ -296,39 +227,18 @@ public sealed class StreamingService(
         }
         finally
         {
-            dispatcher.Dispatch(new StreamCompleted(topic.TopicId));
+            // The single ending. A lease that no longer holds the topic — because the stop
+            // button or a delete already ended this stream — changes nothing here.
+            lease.Complete();
         }
-
-        return;
-
-        void flush(ChatMessageModel message, string? mid)
-        {
-            if (!message.HasContent)
-            {
-                return;
-            }
-
-            if (mid is not null && isCommitted(mid))
-            {
-                dispatcher.Dispatch(new UpdateMessage(topic.TopicId, mid, message));
-            }
-            else
-            {
-                // AddMessage records mid in the messages state, so the next read sees it committed.
-                dispatcher.Dispatch(new AddMessage(topic.TopicId, message, mid));
-            }
-        }
-
-        bool isCommitted(string messageId) =>
-            messagesStore.State.FinalizedMessageIdsByTopic
-                .GetValueOrDefault(topic.TopicId)?.Contains(messageId) == true;
     }
 
-    private readonly record struct MessageAccumulator(
-        ChatMessageModel Message,
-        int ContentLength,
-        int ReasoningLength,
-        int ToolCallsLength);
+    private static ChatMessageModel? Stashed(Dictionary<string, ChatMessageModel> stash, string? messageId) =>
+        messageId is not null ? stash.GetValueOrDefault(messageId) : null;
+
+    private bool IsCommitted(string topicId, string messageId) =>
+        messagesStore.State.FinalizedMessageIdsByTopic
+            .GetValueOrDefault(topicId)?.Contains(messageId) == true;
 
     private static ChatMessageModel CreateErrorMessage(string content) => new()
     {

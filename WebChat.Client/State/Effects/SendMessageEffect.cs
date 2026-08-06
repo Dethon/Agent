@@ -2,6 +2,7 @@ using Domain.Conversations;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
@@ -20,6 +21,7 @@ public sealed class SendMessageEffect : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly IChatSessionService _sessionService;
     private readonly IStreamingService _streamingService;
+    private readonly TopicStreams _topicStreams;
     private readonly ITopicService _topicService;
     private readonly IChatMessagingService _messagingService;
     private readonly UserIdentityStore _userIdentityStore;
@@ -37,6 +39,7 @@ public sealed class SendMessageEffect : IDisposable
         MessagesStore messagesStore,
         IChatSessionService sessionService,
         IStreamingService streamingService,
+        TopicStreams topicStreams,
         ITopicService topicService,
         IChatMessagingService messagingService,
         UserIdentityStore userIdentityStore,
@@ -50,6 +53,7 @@ public sealed class SendMessageEffect : IDisposable
         _messagesStore = messagesStore;
         _sessionService = sessionService;
         _streamingService = streamingService;
+        _topicStreams = topicStreams;
         _topicService = topicService;
         _messagingService = messagingService;
         _userIdentityStore = userIdentityStore;
@@ -76,7 +80,10 @@ public sealed class SendMessageEffect : IDisposable
             return;
         }
 
-        _dispatcher.Dispatch(new StreamCancelled(topicId));
+        // The server closes the stream when it is asked to cancel a topic, so the chunk loop
+        // ends by itself. Ending the lease here keeps the text that already arrived and takes
+        // the topic out of streaming at once; the drained loop's own ending changes nothing.
+        _topicStreams.End(topicId);
     }
 
     private async Task HandleSendMessageAsync(SendMessage action)
