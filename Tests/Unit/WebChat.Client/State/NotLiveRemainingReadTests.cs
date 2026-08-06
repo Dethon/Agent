@@ -5,6 +5,7 @@ using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
@@ -57,7 +58,7 @@ public sealed class NotLiveRemainingReadTests
         await client.Service<IStreamResumeService>().TryResumeStreamAsync(topic);
 
         client.Streaming.State.StreamingTopics.ShouldBeEmpty();
-        client.Streaming.State.ResumingTopics.ShouldBeEmpty();
+        client.Service<TopicStreams>().Snapshot("topic-1").HasStream.ShouldBeFalse();
         client.Toasts.State.Toasts.ShouldBeEmpty();
     }
 

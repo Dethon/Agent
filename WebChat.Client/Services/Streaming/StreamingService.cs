@@ -64,42 +64,29 @@ public sealed class StreamingService(
         AgentSettingsSelectors.GetConfigPatch(
             agentSettingsStore.State, topicsStore.State.Agents, topic.AgentId);
 
+    // The lease already holds the topic, so there is nothing left to decide here and no lock to
+    // take: the resume that was granted it is the only one that can get this far.
     public async Task<bool> TryStartResumeStreamAsync(
+        StreamLease lease,
         StoredTopic topic,
         ChatMessageModel streamingMessage,
         string startMessageId)
     {
-        await _streamLock.WaitAsync();
-        try
+        var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
+
+        // Recovery the user never asked for: announce nothing and say nothing. Announcing
+        // first would leave a stream marked started that can never say it completed.
+        if (!chunks.IsLive)
         {
-            if (topicStreams.Snapshot(topic.TopicId).HasStream)
-            {
-                return false;
-            }
-
-            var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
-
-            // Recovery the user never asked for: announce nothing and say nothing. Announcing
-            // first would leave a stream marked started that can never say it completed.
-            if (!chunks.IsLive)
-            {
-                return false;
-            }
-
-            return topicStreams.TryOpen(
-                topic.TopicId,
-                streamingMessage,
-                startMessageId,
-                lease => ProcessStreamAsync(topic, chunks.Value!, lease)) is not null;
+            return false;
         }
-        finally
-        {
-            _streamLock.Release();
-        }
+
+        return topicStreams.TryStream(
+            lease,
+            streamingMessage,
+            startMessageId,
+            running => ProcessStreamAsync(topic, chunks.Value!, running));
     }
-
-    public Task<bool> IsStreamActiveAsync(string topicId) =>
-        Task.FromResult(topicStreams.Snapshot(topicId).HasStream);
 
     private async Task StartNewStreamAsync(
         StoredTopic topic, string message, string? correlationId, AgentConfigPatch? configPatch)

@@ -19,10 +19,6 @@ public record StreamCompleted(string TopicId) : IAction;
 
 public record ResetStreamingContent(string TopicId) : IAction;
 
-public record StartResuming(string TopicId) : IAction;
-
-public record StopResuming(string TopicId) : IAction;
-
 public record SendMessage(string? TopicId, string Message) : IAction;
 
 public record CancelStreaming(string TopicId) : IAction;
@@ -62,16 +58,6 @@ public sealed class StreamingStore : IDisposable
         ResetStreamingContent a => state with
         {
             StreamingByTopic = state.StreamingByTopic.SetItem(a.TopicId, new StreamingContent())
-        },
-
-        StartResuming a => state with
-        {
-            ResumingTopics = state.ResumingTopics.Add(a.TopicId)
-        },
-
-        StopResuming a => state with
-        {
-            ResumingTopics = state.ResumingTopics.Remove(a.TopicId)
         },
 
         _ => state

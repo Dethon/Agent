@@ -21,7 +21,6 @@ public sealed record StreamingState
         = ImmutableDictionary<string, StreamingContent>.Empty;
 
     public ImmutableHashSet<string> StreamingTopics { get; init; } = [];
-    public ImmutableHashSet<string> ResumingTopics { get; init; } = [];
 
     public static StreamingState Initial => new();
 }

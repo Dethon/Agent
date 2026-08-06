@@ -202,6 +202,41 @@ public sealed class TopicStreamFlowTests
         reply.Release();
     }
 
+    // A flaky network can push the same start twice. The topic is claimed before the resume
+    // asks the server anything, so the second push finds it taken and the reply is not doubled.
+    [Fact]
+    public async Task TwoPushedStreamStarts_BackToBack_ResumeTheReplyOnce()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        var resumed = new GatedChatStream();
+        transport.Answer("GetStreamState", new StreamState(
+            true, [new ChatStreamMessage { Content = "half written", MessageId = "m-1" }], "m-1", null, null));
+        transport.Answer("ResumeStream", _ => resumed.Chunks());
+
+        transport.Raise("OnStreamChanged", new StreamChangedNotification(StreamChangeType.Started, "topic-1"));
+        transport.Raise("OnStreamChanged", new StreamChangedNotification(StreamChangeType.Started, "topic-1"));
+
+        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        transport.Calls.Count(call => call.MethodName == "ResumeStream").ShouldBe(1);
+        resumed.Release();
+    }
+
+    [Fact]
+    public async Task APushedStreamStart_WhenTheServerHasNothingInProgress_LeavesTheTopicIdle()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+
+        transport.Raise("OnStreamChanged", new StreamChangedNotification(StreamChangeType.Started, "topic-1"));
+
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "GetStreamState"));
+        client.Streaming.State.StreamingTopics.ShouldNotContain("topic-1");
+        client.Service<TopicStreams>().Snapshot("topic-1").HasStream.ShouldBeFalse();
+    }
+
     private static void RaiseToolCalls(FakeHubConnection transport, string wireName, string toolCalls)
     {
         if (wireName == "OnToolCalls")

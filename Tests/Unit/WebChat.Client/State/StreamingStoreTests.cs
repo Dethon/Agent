@@ -77,23 +77,6 @@ public class StreamingStoreTests : IDisposable
     }
 
     [Fact]
-    public void StartResuming_AddsTopicToResumingTopics()
-    {
-        _dispatcher.Dispatch(new StartResuming("topic-1"));
-
-        _store.State.ResumingTopics.ShouldContain("topic-1");
-    }
-
-    [Fact]
-    public void StopResuming_RemovesTopicFromResumingTopics()
-    {
-        _dispatcher.Dispatch(new StartResuming("topic-1"));
-        _dispatcher.Dispatch(new StopResuming("topic-1"));
-
-        _store.State.ResumingTopics.ShouldNotContain("topic-1");
-    }
-
-    [Fact]
     public void MultipleTopics_StreamIndependently()
     {
         _dispatcher.Dispatch(new StreamStarted("topic-1"));

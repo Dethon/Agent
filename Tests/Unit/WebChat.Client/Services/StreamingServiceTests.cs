@@ -91,13 +91,25 @@ public sealed class StreamingServiceTests : IDisposable
     private async Task<bool> ResumeAndDrainAsync(
         StoredTopic topic, ChatMessageModel streamingMessage, string startMessageId)
     {
-        var started = await _service.TryStartResumeStreamAsync(topic, streamingMessage, startMessageId);
+        var lease = _topicStreams.TryBeginResume(topic.TopicId);
+        if (lease is null)
+        {
+            return false;
+        }
+
+        var started = await _service.TryStartResumeStreamAsync(
+            lease, topic, streamingMessage, startMessageId);
+        if (!started)
+        {
+            lease.Complete();
+        }
+
         await DrainAsync(topic);
         return started;
     }
 
     private Task DrainAsync(StoredTopic topic) =>
-        TestChat.Eventually(async () => !await _service.IsStreamActiveAsync(topic.TopicId));
+        TestChat.Eventually(() => !_topicStreams.Snapshot(topic.TopicId).HasStream);
 
     public enum ExceptionKind
     {
@@ -453,7 +465,7 @@ public sealed class StreamingServiceTests : IDisposable
 
         await _service.SendMessageAsync(topic, "test");
 
-        (await _service.IsStreamActiveAsync(topic.TopicId)).ShouldBeFalse();
+        _topicStreams.Snapshot(topic.TopicId).HasStream.ShouldBeFalse();
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
     }
 
@@ -699,14 +711,14 @@ public sealed class StreamingServiceTests : IDisposable
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
         );
 
-        var result = await _service.TryStartResumeStreamAsync(topic, existingMessage, "msg-1");
+        var result = await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
         result.ShouldBeTrue();
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
     }
 
     [Fact]
-    public async Task TryStartResumeStreamAsync_WithActiveStream_ReturnsFalse()
+    public async Task TryStartResumeStreamAsync_ATopicAlreadyStreaming_IsRefusedALease()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
@@ -715,27 +727,22 @@ public sealed class StreamingServiceTests : IDisposable
         _messagingService.EnqueueContent("First response");
         var firstTask = _service.SendMessageAsync(topic, "first");
 
-        var existingMessage = new ChatMessageModel { Role = "assistant" };
-        var result = await _service.TryStartResumeStreamAsync(topic, existingMessage, "msg-1");
-
-        result.ShouldBeFalse();
+        _topicStreams.TryBeginResume(topic.TopicId).ShouldBeNull();
 
         _messagingService.UnblockCompletion();
         await firstTask;
     }
 
     [Fact]
-    public async Task IsStreamActiveAsync_WithNoActiveStream_ReturnsFalse()
+    public void SendMessageAsync_BeforeAnySend_TheTopicHasNoStream()
     {
         var topic = CreateTopic();
 
-        var result = await _service.IsStreamActiveAsync(topic.TopicId);
-
-        result.ShouldBeFalse();
+        _topicStreams.Snapshot(topic.TopicId).HasStream.ShouldBeFalse();
     }
 
     [Fact]
-    public async Task IsStreamActiveAsync_WithActiveStream_ReturnsTrue()
+    public async Task SendMessageAsync_WhileTheReplyRuns_TheTopicHasAStream()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
@@ -744,9 +751,7 @@ public sealed class StreamingServiceTests : IDisposable
         _messagingService.EnqueueContent("Response");
         var streamTask = _service.SendMessageAsync(topic, "test");
 
-        var result = await _service.IsStreamActiveAsync(topic.TopicId);
-
-        result.ShouldBeTrue();
+        _topicStreams.Snapshot(topic.TopicId).IsStreaming.ShouldBeTrue();
 
         _messagingService.UnblockCompletion();
         await streamTask;

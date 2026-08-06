@@ -58,6 +58,9 @@ public sealed class MessagePipeline(
         dispatcher.Dispatch(new MessagesLoaded(topicId, chatMessages));
     }
 
+    public IReadOnlyList<ChatMessageModel>? MessagesFor(string topicId) =>
+        messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId);
+
     public void ResumeFromBuffer(BufferResumeResult result, string topicId, string? currentMessageId)
     {
         logger.LogDebug(
@@ -71,8 +74,7 @@ public sealed class MessagePipeline(
             return;
         }
 
-        var existingMessages = messagesStore.State.MessagesByTopic
-            .GetValueOrDefault(topicId) ?? [];
+        var existingMessages = MessagesFor(topicId) ?? [];
         var historyMsg = !string.IsNullOrEmpty(currentMessageId)
             ? existingMessages.FirstOrDefault(m => m.MessageId == currentMessageId)
             : null;

@@ -29,6 +29,7 @@ public sealed class StreamResumeServiceTests : IDisposable
     private readonly UserIdentityStore _userIdentityStore;
     private readonly AgentSettingsStore _agentSettingsStore;
     private readonly TopicStreams _topicStreams;
+    private readonly TaskCompletionSource _running = new();
     private readonly StreamResumeService _resumeService;
 
     public StreamResumeServiceTests()
@@ -57,12 +58,12 @@ public sealed class StreamResumeServiceTests : IDisposable
             streamingService,
             _dispatcher,
             pipeline,
-            _messagesStore,
-            _streamingStore);
+            _topicStreams);
     }
 
     public void Dispose()
     {
+        _running.TrySetResult();
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();
@@ -122,10 +123,11 @@ public sealed class StreamResumeServiceTests : IDisposable
         switch (precondition)
         {
             case StreamResumePrecondition.AlreadyResuming:
-                _dispatcher.Dispatch(new StartResuming("topic-1"));
+                _topicStreams.TryBeginResume("topic-1");
                 break;
             case StreamResumePrecondition.AlreadyStreaming:
-                _dispatcher.Dispatch(new StreamStarted("topic-1"));
+                _topicStreams.TryOpen(
+                    "topic-1", new ChatMessageModel { Role = "assistant" }, null, _ => _running.Task);
                 // Stream state that would normally trigger resume; existing stream owns it.
                 _messagingService.SetStreamState("topic-1", new StreamState(
                     true,
@@ -474,7 +476,7 @@ public sealed class StreamResumeServiceTests : IDisposable
 
         await _resumeService.TryResumeStreamAsync(topic);
 
-        _streamingStore.State.ResumingTopics.Contains("topic-1").ShouldBeFalse();
+        _topicStreams.Snapshot("topic-1").HasStream.ShouldBeFalse();
         _streamingStore.State.StreamingTopics.Contains("topic-1").ShouldBeFalse();
     }
 
@@ -483,7 +485,7 @@ public sealed class StreamResumeServiceTests : IDisposable
     #region Exception Handling Tests
 
     [Fact]
-    public async Task TryResumeStreamAsync_OnException_StopsResuming()
+    public async Task TryResumeStreamAsync_OnException_LeavesTheTopicIdle()
     {
         var topic = CreateTopic(topicId: "topic-1");
         _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
@@ -498,7 +500,7 @@ public sealed class StreamResumeServiceTests : IDisposable
 
         await _resumeService.TryResumeStreamAsync(topic);
 
-        _streamingStore.State.ResumingTopics.Contains("topic-1").ShouldBeFalse();
+        _topicStreams.Snapshot("topic-1").HasStream.ShouldBeFalse();
     }
 
     #endregion
