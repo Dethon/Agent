@@ -64,10 +64,14 @@ directions, so an ancestor of a live download's directory and anything inside on
 refuse. Only the source is asked; the destination end already answers for itself when the
 first chunk arrives.
 
-`MediaLibraryDiskFileSystem` overrides the check as
-`downloads.RefuseAsync(MoveOut, path, ct)` — the same rule ADR-0014 established, now
-reachable from the side of the seam the agent is on. `ICrossMountMoveGuard`,
-`RefuseMoveAsync` and `VfsMoveTool.CrossMountRefusalAsync` are deleted.
+`MediaLibraryDiskFileSystem` overrides the check by asking the rule ADR-0014 established —
+now reachable from the side of the seam the agent is on — for **both intents the streamed
+move is made of**: `MoveOut`, and then `Delete`. A streamed move ends by deleting the
+source, so a path this mount would refuse to delete can never finish one. Asking only
+`MoveOut` would answer "allowed" for every ordinary media path and then fail at the tail
+delete, after the bytes, which is the shape this ADR exists to remove.
+`ICrossMountMoveGuard`, `RefuseMoveAsync` and `VfsMoveTool.CrossMountRefusalAsync` are
+deleted.
 
 ## Considered options
 
@@ -97,6 +101,10 @@ printer and Home Assistant, none of which will ever implement a rule.
 - A cross-mount move of a live download's directory is refused before the glob, so the
   download is not cancelled and no partial copy is created. A move of a payload file out of
   one is refused before the copy exists rather than after.
+- Nothing else moves off the media mount either, because `fs_delete` there removes only a
+  download directory and a leftover `status.json`. That was already true — the move simply
+  failed at the end instead of the start, leaving a duplicate on both mounts. Copying off
+  the mount is unaffected: a copy has no delete to fail at.
 - Capability-by-overriding stays the one mechanism for what a backend can do. A backend
   answering a question it was never taught is now a compile-time default rather than a
   runtime type test.
