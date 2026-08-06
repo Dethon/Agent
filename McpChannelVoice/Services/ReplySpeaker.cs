@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -25,13 +24,6 @@ public sealed class ReplySpeaker(
     TimeProvider time,
     ILogger<ReplySpeaker> logger)
 {
-    // Which turn each live reply stream opened against, keyed by conversation. The hub can give a
-    // turn up at ReplyTimeoutMs and dispatch the next one while the agent is still writing the
-    // abandoned answer; that answer's StreamComplete then arrives against a turn it knows nothing
-    // about. One conversation's chunks arrive strictly in order (see ReplyTextAccumulator), so the
-    // turn that was live when the stream's first event landed is the turn its end belongs to.
-    private readonly ConcurrentDictionary<string, StreamToken> _streams = new();
-
     // Which turn a reply arriving on a live session answers. The whole of this decision is here, so
     // a new reply path cannot invent a fourth way of guessing.
     private enum ReplyRelevance
@@ -62,20 +54,6 @@ public sealed class ReplySpeaker(
                     "is the turn in flight", session.SatelliteId, p.TurnKey, session.Turn.TurnKey);
                 return;
         }
-
-        // A stream normally clears its entry on the terminal event that ends it. One that never gets
-        // a terminal event — the agent's connection to this server drops mid-answer — leaves its
-        // token behind instead, and the satellite outlives that: it redials, the hub builds a new
-        // session with a new turn, and the conversation is the same one (the mapping outlives the
-        // connection). Adopting the leftover token there would end a turn discarded with the old
-        // session, so the live turn never settles and the satellite is unresponsive until
-        // FollowUpConversation gives up at ReplyTimeoutMs. A token that cannot reach this session's
-        // turn is therefore replaced; one that can is kept, because within a session the epoch guard
-        // is what tells an abandoned answer's late completion from this turn's own.
-        var stream = _streams.AddOrUpdate(
-            p.ConversationId,
-            _ => session.Turn.OpenStream(),
-            (_, held) => held.BelongsTo(session.Turn) ? held : session.Turn.OpenStream());
 
         switch (p.ContentType)
         {
@@ -111,8 +89,7 @@ public sealed class ReplySpeaker(
                     // never learns the agent stopped sending and the mic stays shut for the whole
                     // ~120 s reply timeout.
                     SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
-                    _streams.TryRemove(p.ConversationId, out _);
-                    stream.End();
+                    session.Turn.EndStream();
                 }
                 return;
 
@@ -125,8 +102,7 @@ public sealed class ReplySpeaker(
                 // waiting on audio still playing is the turn's decision: streaming may already have
                 // spoken everything, leaving this flush empty.
                 SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
-                _streams.TryRemove(p.ConversationId, out _);
-                stream.End();
+                session.Turn.EndStream();
                 return;
 
             default:
@@ -135,8 +111,7 @@ public sealed class ReplySpeaker(
                 if (p.IsComplete)
                 {
                     SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
-                    _streams.TryRemove(p.ConversationId, out _);
-                    stream.End();
+                    session.Turn.EndStream();
                     return;
                 }
                 SpeakReadySegments(session, p.ConversationId);
@@ -412,18 +387,10 @@ public sealed class ReplySpeaker(
                     }.About(session));
                 }
 
-                // The two below are anchored on the TURN (MarkTurnStart / MarkSpeechEnd), which is
-                // never invalidated, while the voice conversation mapping outlives the turn by
-                // ConversationLifetime. A schedule fire or an agent-initiated message delivered into a
-                // live session comes down this same path, so without a gate it reports the AGE of the
-                // last real turn as its own latency — one "recuérdame en dos minutos" publishes
-                // ~120000 ms and wrecks Avg/P95/Max on the headline metric. The consumed dispatch
-                // stamp is the proof that what is being answered is a transcript this hub dispatched.
-                if (dispatchedAtStamp is null)
-                {
-                    return Task.CompletedTask;
-                }
-
+                // The two below are anchored on the TURN (MarkTurnStart / MarkSpeechEnd). Nothing
+                // gates them any more: a schedule fire or an agent-initiated message delivered into
+                // a live session no longer reaches this path at all — its key does not match the
+                // turn's, so it is spoken beside the turn and registers no segment.
                 if (timing.SinceTurnStart is { } turn)
                 {
                     metrics.Publish(new VoiceEvent

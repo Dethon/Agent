@@ -70,31 +70,17 @@ public sealed class VoiceTurn
         }
     }
 
-    // The turn a reply stream opened against. Ending a stream is epoch-guarded for the same reason
-    // releasing a segment is: the hub gives a turn up at ReplyTimeoutMs and dispatches the next one
-    // while the agent is still writing the abandoned answer, whose completion then arrives late.
-    public StreamToken OpenStream()
-    {
-        lock (_gate)
-        {
-            return new StreamToken(this, Interlocked.Read(ref _epoch));
-        }
-    }
-
     // The agent has stopped sending. A turn that produced no audio at all settles here; one that did
     // settles as its last segment drains. The two halves of that decision are both in here because
     // nothing outside can see both.
-    internal void EndStream(long epoch)
+    //
+    // No guard against a previous turn's end arriving late: the caller compares the reply's turn key
+    // against the turn in flight and never calls this for an answer that is not this turn's.
+    public void EndStream()
     {
         bool producedNothing;
         lock (_gate)
         {
-            // Same gate discipline as CompleteSegment: a reset landing between the check and the
-            // writes would put the abandoned answer's end on the new turn after all.
-            if (epoch != Interlocked.Read(ref _epoch))
-            {
-                return;
-            }
             producedNothing = _segmentsStarted == 0;
             if (!producedNothing)
             {
@@ -225,19 +211,4 @@ public readonly struct SegmentToken(VoiceTurn? turn, long epoch, bool isFirst)
     public void Complete() => turn?.CompleteSegment(epoch);
 
     public void Fail() => turn?.FailSegment(epoch);
-}
-
-// One reply stream's claim on the turn that was live when it opened. Held by whoever is feeding the
-// stream — the agent's chunks for one conversation arrive in order, so the stream that opened under
-// a turn is the one whose end belongs to it — and ending it against any later turn is a no-op.
-public readonly struct StreamToken(VoiceTurn? turn, long epoch)
-{
-    // Whether this token can still reach the given turn at all. The epoch guard inside the turn
-    // answers "is this the turn I opened against?" only for turns it was issued by; a token held
-    // past a satellite redial names a turn that was discarded with the old session, and no epoch
-    // makes it settle the new one. Asked before a stream is adopted, so a leftover token is
-    // replaced rather than ended against nothing.
-    public bool BelongsTo(VoiceTurn other) => ReferenceEquals(turn, other);
-
-    public void End() => turn?.EndStream(epoch);
 }

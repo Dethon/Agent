@@ -358,20 +358,22 @@ public class ReplySpeakerTests
     }
 
     [Fact]
-    public async Task SpeakUtteranceReply_ReplyWithNoDispatchStamp_PublishesNoTurnAnchoredSpans()
+    public async Task SpeakUtteranceReply_AScheduleFiringIntoALiveSession_PublishesNoTurnAnchoredSpans()
     {
         // "Recuérdame en dos minutos" fires into a voice-minted conversation whose mapping is still
         // alive (ConversationLifetime is 5 minutes) and whose satellite session is live, so McpRun
         // routes it down the utterance path — create_conversation no-ops in that state. The turn
-        // anchors from the earlier real turn are never invalidated, so without a gate this publishes
-        // SpeechEndToFirstAudioMs ≈ 120000: one sample that wrecks Avg/P95/Max on the headline metric.
+        // anchors from the earlier real turn are never invalidated, so reporting against them would
+        // publish SpeechEndToFirstAudioMs ≈ 120000: one sample that wrecks Avg/P95/Max on the
+        // headline metric. It answers a different turn, so it never reaches those spans at all.
         _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
         Anchors.MarkTurnStart(_clock.GetTimestamp());
         Anchors.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
         _clock.Advance(TimeSpan.FromMinutes(2));
 
-        Say(_speaker, "son las diez", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.StreamComplete, true);
+        SayFor("sched-turn", "son las diez", ReplyContentType.Text, false, agentInitiated: true);
+        SayFor("sched-turn", "", ReplyContentType.StreamComplete, true, agentInitiated: true);
 
         var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
         _session.Playback.Complete();
@@ -379,9 +381,6 @@ public class ReplySpeakerTests
 
         _published.ShouldNotContain(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs);
         _published.ShouldNotContain(e => e.Metric == VoiceMetric.WakeToFirstAudioMs);
-        // TtsLatencyMs and ReplyQueueWaitMs are anchored on this job alone, so they stay honest.
-        _published.ShouldContain(e => e.Metric == VoiceMetric.TtsLatencyMs);
-        _published.ShouldContain(e => e.Metric == VoiceMetric.ReplyQueueWaitMs);
     }
 
     [Fact]
@@ -824,24 +823,6 @@ public class ReplySpeakerTests
         var leftover = _accumulator.Flush(_conversationId);
         leftover.ShouldContain("Segunda frase completa.");
         leftover.ShouldContain("Tercera frase completa.");
-    }
-
-    [Fact]
-    public void SpeakUtteranceReply_StreamCompleteFromAnAbandonedTurn_DoesNotSettleTheNewOne()
-    {
-        // FollowUpConversation gives a turn up at ReplyTimeoutMs and the next transcript resets it,
-        // while the agent is still finishing the abandoned answer. That answer's StreamComplete
-        // arrives afterwards: off the new turn it settles a reply nobody has spoken yet, so the
-        // chime plays and the mic reopens over the answer still coming.
-        _session.Turn.Reset();
-        Say(_speaker, "", ReplyContentType.ToolCall, false);   // the abandoned answer's stream opens
-
-        _session.Turn.Reset();                                 // the next turn is dispatched
-        var turn = _session.Turn.AwaitSpoken();
-
-        Say(_speaker, "", ReplyContentType.StreamComplete, true);
-
-        turn.IsCompleted.ShouldBeFalse();
     }
 
     [Fact]

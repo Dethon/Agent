@@ -249,7 +249,7 @@ public class SatelliteConnectionTests
     private static void SpeakOneReplySegment(SatelliteSession session)
     {
         session.Turn.BeginSegment().Complete();
-        session.Turn.OpenStream().End();
+        session.Turn.EndStream();
     }
 
     // Constant-amplitude S16LE. 3200 bytes = 100 ms at 16 kHz mono.

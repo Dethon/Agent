@@ -26,7 +26,7 @@ public class VoiceTurnTests
         turn.BeginSegment().Complete();
         spoken.IsCompleted.ShouldBeFalse(); // the agent may still send more text
 
-        turn.OpenStream().End();
+        turn.EndStream();
         spoken.IsCompleted.ShouldBeTrue();
         (await spoken).ShouldBeTrue();
     }
@@ -38,7 +38,7 @@ public class VoiceTurnTests
         var spoken = turn.AwaitSpoken();
 
         var segment = turn.BeginSegment();
-        turn.OpenStream().End();
+        turn.EndStream();
         spoken.IsCompleted.ShouldBeFalse(); // audio is still playing
 
         segment.Complete();
@@ -58,7 +58,7 @@ public class VoiceTurnTests
         var three = turn.BeginSegment();
 
         one.Complete();
-        turn.OpenStream().End();
+        turn.EndStream();
         two.Complete();
         spoken.IsCompleted.ShouldBeFalse();
 
@@ -83,7 +83,7 @@ public class VoiceTurnTests
         failing.Fail();
         spoken.IsCompleted.ShouldBeFalse();
 
-        turn.OpenStream().End();
+        turn.EndStream();
         spoken.IsCompleted.ShouldBeFalse(); // one segment is still playing
 
         stillPlaying.Complete();
@@ -107,7 +107,7 @@ public class VoiceTurnTests
         stale.Fail();
 
         var current = turn.BeginSegment();
-        turn.OpenStream().End();
+        turn.EndStream();
         current.Complete();
 
         spoken.IsCompleted.ShouldBeTrue();
@@ -128,7 +128,7 @@ public class VoiceTurnTests
         var current = turn.BeginSegment();
 
         stale.Complete();
-        turn.OpenStream().End();
+        turn.EndStream();
         spoken.IsCompleted.ShouldBeFalse(); // the new turn's own segment is still outstanding
 
         current.Complete();
@@ -144,7 +144,7 @@ public class VoiceTurnTests
         var turn = Started();
         var spoken = turn.AwaitSpoken();
 
-        turn.OpenStream().End();
+        turn.EndStream();
 
         spoken.IsCompleted.ShouldBeTrue();
         (await spoken).ShouldBeFalse();
@@ -159,27 +159,9 @@ public class VoiceTurnTests
         var turn = Started();
         turn.MarkDispatched(1234);
 
-        turn.OpenStream().End();
+        turn.EndStream();
 
         turn.TryConsumeDispatchedAt().ShouldBeNull();
-    }
-
-    [Fact]
-    public void EndStream_FromAPreviousTurn_IsIgnored()
-    {
-        // The hub gives a turn up at ReplyTimeoutMs and dispatches the next one while the agent is
-        // still writing the abandoned answer. That answer's completion still arrives, and unguarded
-        // it ends the NEW turn's stream: a turn that has produced nothing yet settles silent, so
-        // FollowUpConversation re-arms the mic before its own reply has been spoken.
-        var turn = Started();
-        var stale = turn.OpenStream();
-
-        turn.Reset();
-        var spoken = turn.AwaitSpoken();
-
-        stale.End();
-
-        spoken.IsCompleted.ShouldBeFalse();
     }
 
     [Fact]
@@ -189,7 +171,7 @@ public class VoiceTurnTests
         var spoken = turn.AwaitSpoken();
 
         turn.BeginSegment().Fail();
-        turn.OpenStream().End();
+        turn.EndStream();
 
         spoken.IsCompleted.ShouldBeTrue();
         (await spoken).ShouldBeFalse();
@@ -205,7 +187,7 @@ public class VoiceTurnTests
 
         turn.BeginSegment().Complete();
         turn.BeginSegment().Fail();
-        turn.OpenStream().End();
+        turn.EndStream();
 
         spoken.IsCompleted.ShouldBeTrue();
         (await spoken).ShouldBeTrue();
@@ -245,7 +227,7 @@ public class VoiceTurnTests
     {
         var turn = Started();
         var first = turn.BeginSegment();
-        turn.OpenStream().End();
+        turn.EndStream();
         first.Complete();
 
         turn.Reset();
