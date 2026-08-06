@@ -424,10 +424,20 @@ public sealed class ReplySpeaker(
                     }.About(session));
                 }
 
-                // The two below are anchored on the TURN (MarkTurnStart / MarkSpeechEnd). Nothing
-                // gates them any more: a schedule fire or an agent-initiated message delivered into
-                // a live session no longer reaches this path at all — its key does not match the
-                // turn's, so it is spoken beside the turn and registers no segment.
+                // The two below are anchored on the TURN (MarkTurnStart / MarkSpeechEnd), which is
+                // never invalidated, while the voice conversation mapping outlives the turn by
+                // ConversationLifetime. A keyed agent-initiated delivery no longer reaches this path
+                // at all — its key does not match the turn's, so it is spoken beside the turn. One
+                // from an agent that predates the key still does: it carries nothing to divert it,
+                // and without this gate a "recuérdame en dos minutos" firing into a live session
+                // publishes the AGE of the last real turn, ~120000 ms, and wrecks Avg/P95/Max on the
+                // headline metric. The consumed dispatch stamp is the proof that what is being
+                // answered is a transcript this hub dispatched.
+                if (dispatchedAtStamp is null)
+                {
+                    return Task.CompletedTask;
+                }
+
                 if (timing.SinceTurnStart is { } turn)
                 {
                     metrics.Publish(new VoiceEvent

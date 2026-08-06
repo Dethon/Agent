@@ -1159,6 +1159,36 @@ public class ReplySpeakerTests
     }
 
     [Fact]
+    public async Task SpeakUtteranceReply_AKeylessScheduleFiringIntoALiveSession_PublishesNoTurnAnchoredSpans()
+    {
+        // The same "recuérdame en dos minutos" fire, from an agent container that predates the turn
+        // key — the skew send_reply's optional parameters exist for. It carries no key to divert it,
+        // so Classify falls back to the turn in flight and it comes down the reply path after all.
+        // The turn anchors from the earlier real turn are never invalidated, so reporting against
+        // them publishes the AGE of that turn (~120000 ms) as this reply's latency: one sample that
+        // wrecks Avg/P95/Max on the headline metric. The dispatch stamp the real turn already
+        // consumed is the proof that a reply answers a transcript this hub dispatched.
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
+        Anchors.MarkTurnStart(_clock.GetTimestamp());
+        Anchors.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
+        _clock.Advance(TimeSpan.FromMinutes(2));
+
+        SayFor(null, "son las diez", ReplyContentType.Text, false);
+        SayFor(null, "", ReplyContentType.StreamComplete, true);
+
+        var heard = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(
+            async (_, _) => { heard.TrySetResult(); await Task.Yield(); }, run.Token, _clock);
+        await heard.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
+
+        _published.ShouldNotContain(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs);
+        _published.ShouldNotContain(e => e.Metric == VoiceMetric.WakeToFirstAudioMs);
+    }
+
+    [Fact]
     public async Task SpeakUtteranceReply_AKeylessAbandonedAnswerCompletes_DoesNotSettleTheTurnInFlight()
     {
         // A rolling deploy where the agent container predates the turn key: every chunk arrives
