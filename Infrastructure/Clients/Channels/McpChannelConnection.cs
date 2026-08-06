@@ -414,13 +414,7 @@ public sealed class McpChannelConnection(
         _messageChannel.Writer.TryWrite(message);
     }
 
-    public async Task SendReplyAsync(
-        string conversationId,
-        string content,
-        ReplyContentType contentType,
-        bool isComplete,
-        string? messageId,
-        CancellationToken ct)
+    public async Task SendReplyAsync(SendReplyParams reply, CancellationToken ct)
     {
         var client = RequireClient();
         // send_reply fires once per streamed content chunk (hundreds per response). Building
@@ -432,11 +426,11 @@ public sealed class McpChannelConnection(
             ChannelProtocol.SendReplyTool,
             new Dictionary<string, object?>
             {
-                ["conversationId"] = conversationId,
-                ["content"] = content,
-                ["contentType"] = contentType.ToString(),
-                ["isComplete"] = isComplete,
-                ["messageId"] = messageId
+                ["conversationId"] = reply.ConversationId,
+                ["content"] = reply.Content,
+                ["contentType"] = reply.ContentType.ToString(),
+                ["isComplete"] = reply.IsComplete,
+                ["messageId"] = reply.MessageId
             },
             cancellationToken: ct);
     }

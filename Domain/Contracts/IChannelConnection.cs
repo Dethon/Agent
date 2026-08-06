@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using JetBrains.Annotations;
 
 namespace Domain.Contracts;
@@ -15,13 +16,10 @@ public interface IChannelConnection : IToolApprovalHandler
 
     IAsyncEnumerable<ChannelMessage> Messages { get; }
 
-    Task SendReplyAsync(
-        string conversationId,
-        string content,
-        ReplyContentType contentType,
-        bool isComplete,
-        string? messageId,
-        CancellationToken ct);
+    // The record rather than its fields spread out: it is already the wire shape every channel
+    // server deserializes on the far side, so a new field is one edit here instead of a new
+    // position in five argument lists.
+    Task SendReplyAsync(SendReplyParams reply, CancellationToken ct);
 
     Task<string?> CreateConversationAsync(
         string agentId,

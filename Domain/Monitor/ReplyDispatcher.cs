@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -33,16 +34,23 @@ public class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logger)
         return deliveredContent;
     }
 
+    // The one place a reply's wire record is built. Everything a chunk says is decided above; the
+    // conversation is the one part that belongs to the target rather than to the chunk.
     private async Task<bool> DeliverToTargetAsync(
-        DeliveryTarget target,
-        (string Content, ReplyContentType ContentType, bool IsComplete) mapped,
-        string? messageId,
-        CancellationToken ct)
+        DeliveryTarget target, MappedChunk mapped, string? messageId, CancellationToken ct)
     {
         try
         {
             await target.Channel.SendReplyAsync(
-                target.ConversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, messageId, ct);
+                new SendReplyParams
+                {
+                    ConversationId = target.ConversationId,
+                    Content = mapped.Content,
+                    ContentType = mapped.ContentType,
+                    IsComplete = mapped.IsComplete,
+                    MessageId = messageId
+                },
+                ct);
             return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -62,8 +70,9 @@ public class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logger)
         }
     }
 
-    private static IEnumerable<(string Content, ReplyContentType ContentType, bool IsComplete)> MapResponseUpdate(
-        AgentResponseUpdate update)
+    private sealed record MappedChunk(string Content, ReplyContentType ContentType, bool IsComplete);
+
+    private static IEnumerable<MappedChunk> MapResponseUpdate(AgentResponseUpdate update)
     {
         foreach (var aiContent in update.Contents)
         {
@@ -84,7 +93,7 @@ public class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logger)
 
             if (mapped is { } value)
             {
-                yield return value;
+                yield return new MappedChunk(value.Item1, value.Item2, value.Item3);
             }
         }
     }
