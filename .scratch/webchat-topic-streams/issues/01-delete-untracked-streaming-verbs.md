@@ -12,17 +12,17 @@ the real paths.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The streaming service interface exposes no verb that streams without tracking the topic
+- [x] The streaming service interface exposes no verb that streams without tracking the topic
       stream; the two unused verbs are gone from both the interface and the implementation.
-- [ ] Every test that drove those two verbs now drives sending a message or starting a resumed
+- [x] Every test that drove those two verbs now drives sending a message or starting a resumed
       stream, and still asserts the same behaviour: chunk accumulation, interleaved message ids,
       turn finalisation, error classification for both thrown exceptions and error chunks,
       transient-versus-real error handling, and resume de-duplicating content it already has.
-- [ ] No test asserts on a verb that no longer exists, and no test was deleted to make the suite
+- [x] No test asserts on a verb that no longer exists, and no test was deleted to make the suite
       pass — a re-pointed test that cannot express its case at the new entry point is reported
       rather than dropped.
-- [ ] `dotnet test` on `Tests/Unit` is green.
-- [ ] `dotnet format` has run over the staged files (the pre-commit hook does this; make the
+- [x] `dotnet test` on `Tests/Unit` is green.
+- [x] `dotnet format` has run over the staged files (the pre-commit hook does this; make the
       working tree match the commit).

@@ -13,12 +13,12 @@ finishing, the stop button, or a topic being deleted.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The stream-changed notification's change type has one case, and the dispatcher has one
+- [x] The stream-changed notification's change type has one case, and the dispatcher has one
       branch for it.
-- [ ] The two tests covering the removed branches are gone; the test for the surviving branch
+- [x] The two tests covering the removed branches are gone; the test for the surviving branch
       still asserts that a pushed start becomes a remote-stream-started action and nothing more.
-- [ ] Nothing anywhere in the solution references the removed cases — server, client, tests.
-- [ ] `dotnet test` on `Tests/Unit` is green.
-- [ ] `dotnet format` has run over the staged files.
+- [x] Nothing anywhere in the solution references the removed cases — server, client, tests.
+- [x] `dotnet test` on `Tests/Unit` is green.
+- [x] `dotnet format` has run over the staged files.

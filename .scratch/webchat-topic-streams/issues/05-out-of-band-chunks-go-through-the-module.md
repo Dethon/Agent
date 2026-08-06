@@ -19,18 +19,18 @@ approval after the reply has ended cannot revive it.
 **Blocked by:** 02 (the dispatcher's dead branches are gone first), 04 (the module must own the
 streams it is being asked about).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A tool-call push for a topic with no reply in flight leaves no streaming content and does
+- [x] A tool-call push for a topic with no reply in flight leaves no streaming content and does
       not mark the topic as streaming.
-- [ ] A tool-call push for a topic that is streaming appends to that reply, as it does today.
-- [ ] An approval-resolved push carrying tool calls behaves the same way in both cases.
-- [ ] Another person's message arriving while the agent is answering commits the agent's text so
+- [x] A tool-call push for a topic that is streaming appends to that reply, as it does today.
+- [x] An approval-resolved push carrying tool calls behaves the same way in both cases.
+- [x] Another person's message arriving while the agent is answering commits the agent's text so
       far as its own message and clears the live buffer, through the module.
-- [ ] The message pipeline no longer dispatches any streaming state action; the reset of the
+- [x] The message pipeline no longer dispatches any streaming state action; the reset of the
       accumulating text has one dispatcher, the module.
-- [ ] The reducer no longer has a guard dropping a chunk for a topic that is not streaming, and
+- [x] The reducer no longer has a guard dropping a chunk for a topic that is not streaming, and
       the test covering that guard is replaced by one at the whole-client seam asserting the same
       user-visible outcome.
-- [ ] `dotnet test` on `Tests/Unit` is green.
-- [ ] `dotnet format` has run over the staged files.
+- [x] `dotnet test` on `Tests/Unit` is green.
+- [x] `dotnet format` has run over the staged files.

@@ -1,6 +1,6 @@
 # A topic's stream has one owner
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 

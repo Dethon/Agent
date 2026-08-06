@@ -19,26 +19,26 @@ Nothing calls the module yet. The existing per-topic task map stays in use until
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Opening a topic stream on a topic with none returns a lease; opening one on a topic that
+- [x] Opening a topic stream on a topic with none returns a lease; opening one on a topic that
       already has a stream refuses, and the first lease is unaffected.
-- [ ] A lease that still holds its topic can append a chunk, start a new message, and end the
+- [x] A lease that still holds its topic can append a chunk, start a new message, and end the
       stream.
-- [ ] A lease that no longer holds its topic can do none of those: appending, starting a message
+- [x] A lease that no longer holds its topic can do none of those: appending, starting a message
       and ending are all no-ops, and in particular a stale lease ending does not disturb the
       stream that currently holds the topic.
-- [ ] The topic-keyed verbs — append, finalise the current message, end — each do nothing on a
+- [x] The topic-keyed verbs — append, finalise the current message, end — each do nothing on a
       topic with no stream, and do the corresponding thing on a topic that has one.
-- [ ] A topic can be moved into resuming and upgraded in place to streaming; a resume attempt on
+- [x] A topic can be moved into resuming and upgraded in place to streaming; a resume attempt on
       a topic already resuming or already streaming refuses.
-- [ ] The record carries the stream's task, the accumulating assistant message and the current
+- [x] The record carries the stream's task, the accumulating assistant message and the current
       message id, and a snapshot answers what a topic's stream currently is.
-- [ ] A lease exposes an awaitable completion that finishes when the stream ends, whichever way
+- [x] A lease exposes an awaitable completion that finishes when the stream ends, whichever way
       it ended.
-- [ ] Appending returns the accumulated assistant message, so a caller has no reason to keep its
+- [x] Appending returns the accumulated assistant message, so a caller has no reason to keep its
       own copy.
-- [ ] Tests replace the existing per-topic-task-map tests at the same level; those are retired,
+- [x] Tests replace the existing per-topic-task-map tests at the same level; those are retired,
       not duplicated.
-- [ ] `dotnet test` on `Tests/Unit` is green.
-- [ ] `dotnet format` has run over the staged files.
+- [x] `dotnet test` on `Tests/Unit` is green.
+- [x] `dotnet format` has run over the staged files.

@@ -14,18 +14,18 @@ The glossary gains the two terms the six files involved have been using loosely.
 
 **Blocked by:** 06 (the shape being described is settled there).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `docs/adr/0017-*.md` exists, in the same voice and shape as the existing ADRs, recording
+- [x] `docs/adr/0017-*.md` exists, in the same voice and shape as the existing ADRs, recording
       that a topic's stream has one owner and the store is its projection.
-- [ ] The ADR names the trade-off honestly: uniformity with the rest of the client's state
+- [x] The ADR names the trade-off honestly: uniformity with the rest of the client's state
       handling, given up in exchange for an invariant that cannot be broken by a new caller.
-- [ ] The ADR names what it makes impossible rather than listing what was refactored: a live
+- [x] The ADR names what it makes impossible rather than listing what was refactored: a live
       buffer for a topic with no reply in flight, an ending from one stream clearing another's
       state, two replies in flight on one topic, and a stream nothing is tracking.
-- [ ] `CONTEXT.md` gains a **Chat streaming** section defining **topic stream** and **stream
+- [x] `CONTEXT.md` gains a **Chat streaming** section defining **topic stream** and **stream
       lease**, each with its avoid-list, in the file's existing style and with no implementation
       detail.
-- [ ] The section sits with the other conversation and client vocabulary rather than at the end,
+- [x] The section sits with the other conversation and client vocabulary rather than at the end,
       and nothing already in the glossary now contradicts it.
-- [ ] `dotnet format` has run over the staged files.
+- [x] `dotnet format` has run over the staged files.
