@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Shouldly;
+using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.McpChannelVoice;
 
@@ -10,32 +11,19 @@ namespace Tests.Integration.McpChannelVoice;
 // Castilian initial prompt, beam size). The script is bind-mounted from the repo, so this
 // tests the working tree, not whatever entrypoint the image was built with. Runs with
 // --network none: VAD-model presence is controlled by seeding the file, and the download
-// path degrades to no-VAD (fail-open) instead of hitting the network. Requires docker and
-// the lemonade:latest image; skips otherwise.
-public class LemonadeEntrypointConfigTests : IDisposable
+// path degrades to no-VAD (fail-open) instead of hitting the network. LemonadeImageFixture
+// provisions lemonade:latest (building it when missing), so the only skips left are a
+// non-Linux host and an unusable docker.
+public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>, IDisposable
 {
-    private const string Image = "lemonade:latest";
     private const string VadModelFile = "ggml-silero-v5.1.2.bin";
 
-    // Probing docker must never throw: on a host with no docker binary Process.Start raises
-    // Win32Exception, and (as a Lazy) that exception would be cached and re-thrown from inside
-    // every Skip.IfNot, turning skips into errors. Treat any launch failure as "not available".
-    private static readonly Lazy<bool> _imageAvailable = new(() =>
-    {
-        try
-        {
-            return Run("docker", ["image", "inspect", Image]).Exit == 0;
-        }
-        catch
-        {
-            return false;
-        }
-    });
-
+    private readonly string? _imageSkipReason;
     private readonly string _configDir;
 
-    public LemonadeEntrypointConfigTests()
+    public LemonadeEntrypointConfigTests(LemonadeImageFixture image)
     {
+        _imageSkipReason = image.SkipReason;
         _configDir = Path.Combine(Path.GetTempPath(), $"lemonade-entrypoint-{Guid.NewGuid()}");
         Directory.CreateDirectory(_configDir);
         // The image runs as UID 10001; the mount must be writable for config.json. Guarded because
@@ -71,7 +59,7 @@ public class LemonadeEntrypointConfigTests : IDisposable
         // The entrypoint is a Linux shell run through a Linux container over a unix-mode bind
         // mount; only assert it on a Linux host rather than hard-failing elsewhere.
         Skip.IfNot(OperatingSystem.IsLinux(), "lemonade entrypoint test requires a Linux docker host");
-        Skip.IfNot(_imageAvailable.Value, $"docker image {Image} not available");
+        Skip.If(_imageSkipReason is not null, _imageSkipReason);
 
         var script = Path.Combine(RepoRoot(), "DockerCompose", "lemonade", "entrypoint.sh");
         List<string> args =
@@ -87,7 +75,7 @@ public class LemonadeEntrypointConfigTests : IDisposable
         {
             args.AddRange(["-e", $"{key}={value}"]);
         }
-        args.AddRange([Image, "/entrypoint.sh"]);
+        args.AddRange([LemonadeImageFixture.Image, "/entrypoint.sh"]);
 
         var result = Run("docker", args);
         result.Exit.ShouldBe(0, $"entrypoint failed: {result.StdErr}");

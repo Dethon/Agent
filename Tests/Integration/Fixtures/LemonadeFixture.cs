@@ -1,5 +1,3 @@
-using Docker.DotNet;
-using Docker.DotNet.Models;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
@@ -12,12 +10,12 @@ namespace Tests.Integration.Fixtures;
 // /dev/dri passthrough is needed. The Whisper-Medium + Kokoro models are multi-GB runtime downloads
 // the compose stack provisions into DockerCompose/volumes/lemonade-*; we bind-mount those (the same
 // paths the compose service uses) rather than re-download them inside a test, so their presence is a
-// hard precondition. When Docker, the image, or the provisioned cache is unavailable the fixture
-// records a SkipReason the tests gate on (never hard-fails) -- the External-category convention
-// shared with the TSE/Camoufox container fixtures.
+// hard precondition. The image itself is not: LemonadeImageFixture builds it when it is missing.
+// When Docker or the provisioned cache is unavailable the fixture records a SkipReason the tests
+// gate on (never hard-fails) -- the External-category convention shared with the TSE/Camoufox
+// container fixtures.
 public class LemonadeFixture : IAsyncLifetime
 {
-    private const string Image = "lemonade:latest";
     private const int LemonadePort = 13305;
 
     private IContainer? _container;
@@ -38,15 +36,20 @@ public class LemonadeFixture : IAsyncLifetime
             return;
         }
 
+        var imageSkipReason = await LemonadeImageFixture.EnsureAsync();
+        if (imageSkipReason is not null)
+        {
+            SkipReason = imageSkipReason;
+            return;
+        }
+
         try
         {
-            var containerBuilder = await ResolveImageAsync();
-
             // Bind-mounted read-write at the same paths the compose service uses: the entrypoint
             // regenerates config.json into the recipe cache on every boot (as it does under compose),
             // and HF hub may touch lock files while loading a cached model. The models themselves are
             // never re-downloaded -- LocateProvisionedVolumes already proved they are present.
-            _container = containerBuilder
+            _container = new ContainerBuilder(LemonadeImageFixture.Image)
                 .WithPortBinding(LemonadePort, true)
                 .WithEnvironment("STT_BACKEND", "cpu")
                 .WithBindMount(Path.Combine(volumesDir, "lemonade-hf-cache"),
@@ -71,44 +74,6 @@ public class LemonadeFixture : IAsyncLifetime
         {
             SkipReason = $"lemonade container could not be started: {ex.Message}";
         }
-    }
-
-    // Reuse lemonade:latest when the compose stack has already built it; otherwise build it from the
-    // Dockerfile so the fixture is self-provisioning. Rebuilding an existing image would only re-stamp
-    // a fresh testcontainers session-id label and orphan the layers.
-    private static async Task<ContainerBuilder> ResolveImageAsync()
-    {
-        if (await ImageExistsAsync())
-        {
-            return new ContainerBuilder(Image);
-        }
-
-        var dockerfileDir = Path.Combine(
-            E2E.Fixtures.TestHelpers.FindSolutionRoot(), "DockerCompose", "lemonade");
-        var image = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(dockerfileDir)
-            .WithDockerfile("Dockerfile")
-            .WithName(Image)
-            .WithDeleteIfExists(false)
-            .WithCleanUp(false)
-            .Build();
-
-        using var buildCts = new CancellationTokenSource(TimeSpan.FromMinutes(20));
-        await image.CreateAsync(buildCts.Token);
-        return new ContainerBuilder(image);
-    }
-
-    private static async Task<bool> ImageExistsAsync()
-    {
-        using var client = new DockerClientBuilder().Build();
-        var images = await client.Images.ListImagesAsync(new ImagesListParameters
-        {
-            Filters = new Dictionary<string, IDictionary<string, bool>>
-            {
-                ["reference"] = new Dictionary<string, bool> { [Image] = true }
-            }
-        });
-        return images.Count > 0;
     }
 
     // The provisioned cache is a hard precondition: the whisper + Kokoro HF snapshots (models are
