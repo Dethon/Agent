@@ -44,6 +44,16 @@ internal static class Transfer
             return new FsResult<FsTransferResult>.Err(infoError);
         }
 
+        if (ReferenceEquals(request.Source.Backend, request.Destination.Backend))
+        {
+            return await NativeAsync(request, ct);
+        }
+
+        if (request.IsMove && await MoveOutRefusalAsync(request.Source, ct) is { } refusal)
+        {
+            return new FsResult<FsTransferResult>.Err(refusal);
+        }
+
         return info.IsDirectory == true
             ? await DirectoryAsync(request, ct)
             : await FileAsync(request, ct);
@@ -52,16 +62,6 @@ internal static class Transfer
     private static async Task<FsResult<FsTransferResult>> FileAsync(TransferRequest request, CancellationToken ct)
     {
         var (src, dst) = (request.Source, request.Destination);
-
-        if (ReferenceEquals(src.Backend, dst.Backend))
-        {
-            return await NativeAsync(request, ct);
-        }
-
-        if (request.IsMove && await MoveOutRefusalAsync(src, ct) is { } refusal)
-        {
-            return new FsResult<FsTransferResult>.Err(refusal);
-        }
 
         long bytes;
         try
@@ -107,10 +107,9 @@ internal static class Transfer
                 hint: "Check that the source exists and that the destination is writable.");
         }
 
-        if (request.IsMove &&
-            !(await src.Backend.DeleteAsync(src.RelativePath, ct)).TryGetValue(out _, out var deleteError))
+        if (request.IsMove && await RemoveSourceAsync(request, ct) is { } notRemoved)
         {
-            return SourceNotRemoved(request, deleteError);
+            return notRemoved;
         }
 
         return Transferred(request, bytes);
@@ -118,17 +117,7 @@ internal static class Transfer
 
     private static async Task<FsResult<FsTransferResult>> DirectoryAsync(TransferRequest request, CancellationToken ct)
     {
-        var (src, dst) = (request.Source, request.Destination);
-
-        if (ReferenceEquals(src.Backend, dst.Backend))
-        {
-            return await NativeAsync(request, ct);
-        }
-
-        if (request.IsMove && await MoveOutRefusalAsync(src, ct) is { } refusal)
-        {
-            return new FsResult<FsTransferResult>.Err(refusal);
-        }
+        var src = request.Source;
 
         var globResult = await src.Backend.GlobAsync(src.RelativePath, "**/*", ct);
         if (!globResult.TryGetValue(out var glob, out var globError))
@@ -149,73 +138,20 @@ internal static class Transfer
         }
 
         var entries = new List<FsTransferEntry>();
-        var transferred = 0;
-        var failed = 0;
-        long totalBytes = 0;
 
-        foreach (var srcRel in glob.Entries)
+        // Pure glob returns directory marker entries (trailing '/') alongside files. Directories
+        // carry no content and are recreated implicitly when their files are written
+        // (createDirectories), so they are not transfer candidates.
+        foreach (var srcRel in glob.Entries.Where(e => !e.EndsWith('/')))
         {
             ct.ThrowIfCancellationRequested();
-            // Pure glob returns directory marker entries (trailing '/') alongside files.
-            // Directories carry no content and are recreated implicitly when their files are
-            // written (createDirectories), so they are not transfer candidates.
-            if (srcRel.EndsWith('/'))
-            {
-                continue;
-            }
-
-            var tail = ExtractTail(srcRel, src.RelativePath);
-            if (tail is null)
-            {
-                // The one entry with no virtual path: something outside the requested source
-                // directory is outside the coordinate frame, so there is nothing to translate. It
-                // reports no source at all, and the backend's raw string goes in the message, where
-                // it reads as diagnostics rather than as a path to retry.
-                entries.Add(new FsTransferEntry
-                {
-                    Status = FsTransferResult.Failed,
-                    Error = $"Glob entry '{srcRel}' is not under source directory '{request.SourcePath}'; refusing to flatten."
-                });
-                failed++;
-                continue;
-            }
-
-            var entrySource = $"{request.SourcePath.TrimEnd('/')}/{tail}";
-            var entryDestination = $"{request.DestinationPath.TrimEnd('/')}/{tail}";
-
-            try
-            {
-                var bytes = await dst.Backend.WriteChunksAsync(
-                    $"{dst.RelativePath.TrimEnd('/')}/{tail}",
-                    src.Backend.ReadChunksAsync(srcRel, ct),
-                    request.Overwrite, request.CreateDirectories, ct);
-
-                entries.Add(new FsTransferEntry
-                {
-                    Status = FsTransferResult.Ok,
-                    Source = entrySource,
-                    Destination = entryDestination,
-                    Bytes = bytes
-                });
-                transferred++;
-                totalBytes += bytes;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                entries.Add(new FsTransferEntry
-                {
-                    Status = FsTransferResult.Failed,
-                    Source = entrySource,
-                    Destination = entryDestination,
-                    Error = ex.Message
-                });
-                failed++;
-            }
+            entries.Add(ExtractTail(srcRel, src.RelativePath) is { } tail
+                ? await EntryAsync(request, srcRel, tail, ct)
+                : NotUnderSource(request, srcRel));
         }
+
+        var transferred = entries.Count(e => e.Status == FsTransferResult.Ok);
+        var failed = entries.Count(e => e.Status == FsTransferResult.Failed);
 
         // A move that streamed nothing is not a move: no destination was created, and the skipped
         // delete leaves the source in place — reporting "ok" would present that as done.
@@ -230,9 +166,9 @@ internal static class Transfer
         }
 
         if (request.IsMove && failed == 0 && transferred > 0 &&
-            !(await src.Backend.DeleteAsync(src.RelativePath, ct)).TryGetValue(out _, out var deleteError))
+            await RemoveSourceAsync(request, ct) is { } notRemoved)
         {
-            return SourceNotRemoved(request, deleteError);
+            return notRemoved;
         }
 
         return new FsResult<FsTransferResult>.Ok(new FsTransferResult
@@ -250,11 +186,60 @@ internal static class Transfer
                 Transferred = transferred,
                 Failed = failed,
                 Skipped = 0,
-                TotalBytes = totalBytes
+                TotalBytes = entries.Sum(e => e.Bytes ?? 0)
             },
             Entries = entries
         });
     }
+
+    private static async Task<FsTransferEntry> EntryAsync(
+        TransferRequest request, string srcRel, string tail, CancellationToken ct)
+    {
+        var (src, dst) = (request.Source, request.Destination);
+        var entrySource = $"{request.SourcePath.TrimEnd('/')}/{tail}";
+        var entryDestination = $"{request.DestinationPath.TrimEnd('/')}/{tail}";
+
+        try
+        {
+            var bytes = await dst.Backend.WriteChunksAsync(
+                $"{dst.RelativePath.TrimEnd('/')}/{tail}",
+                src.Backend.ReadChunksAsync(srcRel, ct),
+                request.Overwrite, request.CreateDirectories, ct);
+
+            return new FsTransferEntry
+            {
+                Status = FsTransferResult.Ok,
+                Source = entrySource,
+                Destination = entryDestination,
+                Bytes = bytes
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new FsTransferEntry
+            {
+                Status = FsTransferResult.Failed,
+                Source = entrySource,
+                Destination = entryDestination,
+                Error = ex.Message
+            };
+        }
+    }
+
+    // The one entry with no virtual path: something outside the requested source directory is
+    // outside the coordinate frame, so there is nothing to translate. It reports no source at all,
+    // and the backend's raw string goes in the message, where it reads as diagnostics rather than
+    // as a path to retry.
+    private static FsTransferEntry NotUnderSource(TransferRequest request, string srcRel) =>
+        new()
+        {
+            Status = FsTransferResult.Failed,
+            Error = $"Glob entry '{srcRel}' is not under source directory '{request.SourcePath}'; refusing to flatten."
+        };
 
     // Both ends on one mount, so the backend's own primitive does the work — and for a move that is
     // where its refusals already live, which is why the move-out question is not asked here.
@@ -281,14 +266,23 @@ internal static class Transfer
 
     // A cross-mount move is a streamed copy followed by a delete of the source, so the source
     // backend's own MoveAsync — where a refusal like "this path belongs to a live download" lives —
-    // is never called. Both branches ask here instead, under the intent that is exactly what makes
-    // the question necessary, before the first byte and before the directory listing. One question
-    // about the source root, not one per entry: a mount's rule covers a subtree, and a round trip
-    // per file would buy only the download that goes live mid-transfer.
+    // is never called. RunAsync asks here instead, once, before dispatching to either branch: under
+    // the intent that is exactly what makes the question necessary, before the first byte and
+    // before the directory listing. One question about the source root, not one per entry: a
+    // mount's rule covers a subtree, and a round trip per file would buy only the download that
+    // goes live mid-transfer.
     private static async Task<ToolErrorResult?> MoveOutRefusalAsync(FileSystemResolution src, CancellationToken ct) =>
         (await src.Backend.MoveOutCheckAsync(src.RelativePath, ct)).TryGetValue(out _, out var refusal)
             ? null
             : refusal;
+
+    // A streamed move ends by deleting the source root; a refusal there becomes the answer.
+    private static async Task<FsResult<FsTransferResult>?> RemoveSourceAsync(
+        TransferRequest request, CancellationToken ct) =>
+        (await request.Source.Backend.DeleteAsync(request.Source.RelativePath, ct))
+        .TryGetValue(out _, out var deleteError)
+            ? null
+            : SourceNotRemoved(request, deleteError);
 
     private static FsResult<FsTransferResult> Transferred(TransferRequest request, long? bytes) =>
         new FsResult<FsTransferResult>.Ok(new FsTransferResult
