@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
@@ -59,7 +60,8 @@ public sealed class InitializationEffectTests : IDisposable
         _pushService = new FakePushSubscriptionService();
 
         var pipeline = new MessagePipeline(
-            _dispatcher, _messagesStore, _streamingStore, NullLogger<MessagePipeline>.Instance);
+            _dispatcher, _messagesStore, new TopicStreams(_dispatcher, _messagesStore),
+            NullLogger<MessagePipeline>.Instance);
 
         _effect = new InitializationEffect(
             _dispatcher,

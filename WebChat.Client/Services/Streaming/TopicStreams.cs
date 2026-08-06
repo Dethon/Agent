@@ -144,6 +144,26 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         Publish(topicId, grown);
     }
 
+    // Shows the accumulator a resume rebuilt in the live buffer. Nothing to publish on a topic
+    // with no reply in flight, and nothing new to publish on one that has written nothing.
+    public void PublishCurrent(string topicId)
+    {
+        ChatMessageModel message;
+        string? messageId;
+        lock (_lock)
+        {
+            if (Streaming(topicId) is not { Message.HasContent: true } stream)
+            {
+                return;
+            }
+
+            message = stream.Message;
+            messageId = stream.CurrentMessageId;
+        }
+
+        Publish(topicId, new Grown(new StreamAppend(message, true), messageId));
+    }
+
     public void FinalizeCurrent(string topicId)
     {
         ChatMessageModel finished;

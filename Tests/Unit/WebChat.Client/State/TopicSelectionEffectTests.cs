@@ -4,6 +4,7 @@ using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
@@ -38,7 +39,8 @@ public sealed class TopicSelectionEffectTests : IDisposable
         _sessionService = new FakeChatSessionService(_calls);
 
         var pipeline = new MessagePipeline(
-            _dispatcher, _messagesStore, _streamingStore, NullLogger<MessagePipeline>.Instance);
+            _dispatcher, _messagesStore, new TopicStreams(_dispatcher, _messagesStore),
+            NullLogger<MessagePipeline>.Instance);
 
         _effect = new TopicSelectionEffect(
             _dispatcher,

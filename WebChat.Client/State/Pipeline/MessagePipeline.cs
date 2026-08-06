@@ -2,14 +2,13 @@ using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Messages;
-using WebChat.Client.State.Streaming;
 
 namespace WebChat.Client.State.Pipeline;
 
 public sealed class MessagePipeline(
     IDispatcher dispatcher,
     MessagesStore messagesStore,
-    StreamingStore streamingStore,
+    TopicStreams topicStreams,
     ILogger<MessagePipeline> logger)
     : IMessagePipeline
 {
@@ -38,57 +37,6 @@ public sealed class MessagePipeline(
         }));
 
         return correlationId;
-    }
-
-    public void AccumulateChunk(string topicId, string? messageId,
-        string? content, string? reasoning, string? toolCalls)
-    {
-        if (IsFinalized(topicId, messageId))
-        {
-            logger.LogDebug(
-                "Pipeline.AccumulateChunk: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
-                topicId, messageId);
-            return;
-        }
-
-        logger.LogDebug(
-            "Pipeline.AccumulateChunk: topic={TopicId}, messageId={MessageId}, contentLen={ContentLen}",
-            topicId, messageId, content?.Length ?? 0);
-
-        dispatcher.Dispatch(new StreamChunk(topicId, content, reasoning, toolCalls, messageId));
-    }
-
-    public void FinalizeMessage(string topicId, string? messageId)
-    {
-        if (IsFinalized(topicId, messageId))
-        {
-            logger.LogDebug(
-                "Pipeline.FinalizeMessage: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
-                topicId, messageId);
-            return;
-        }
-
-        logger.LogDebug(
-            "Pipeline.FinalizeMessage: topic={TopicId}, messageId={MessageId}",
-            topicId, messageId);
-
-        var streamingContent = streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
-        if (streamingContent?.HasContent == true)
-        {
-            dispatcher.Dispatch(new AddMessage(
-                topicId,
-                new ChatMessageModel
-                {
-                    Role = "assistant",
-                    Content = streamingContent.Content,
-                    Reasoning = streamingContent.Reasoning,
-                    ToolCalls = streamingContent.ToolCalls,
-                    MessageId = messageId
-                },
-                messageId));
-
-            dispatcher.Dispatch(new ResetStreamingContent(topicId));
-        }
     }
 
     public void LoadHistory(string topicId, IEnumerable<ChatHistoryMessage> messages)
@@ -148,18 +96,9 @@ public sealed class MessagePipeline(
             }
         }
 
-        dispatcher.Dispatch(new StreamChunk(
-            topicId,
-            result.StreamingMessage.Content,
-            result.StreamingMessage.Reasoning,
-            result.StreamingMessage.ToolCalls,
-            currentMessageId));
-    }
-
-    public void Reset(string topicId)
-    {
-        logger.LogDebug("Pipeline.Reset: topic={TopicId}", topicId);
-        dispatcher.Dispatch(new ResetStreamingContent(topicId));
+        // The resumed stream was opened with this same message as its accumulator, so showing
+        // it is the module's to do — this only says that no committed bubble owns it.
+        topicStreams.PublishCurrent(topicId);
     }
 
     public bool WasSentByThisClient(string? correlationId)
@@ -177,18 +116,12 @@ public sealed class MessagePipeline(
 
     public PipelineSnapshot GetSnapshot(string topicId)
     {
-        var streamingId = streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId)?.CurrentMessageId;
-        var finalizedCount = FinalizedIds(topicId)?.Count ?? 0;
+        var finalizedCount = messagesStore.State.FinalizedMessageIdsByTopic
+            .GetValueOrDefault(topicId)?.Count ?? 0;
 
         lock (_lock)
         {
-            return new PipelineSnapshot(streamingId, finalizedCount, _pendingUserMessages.Count);
+            return new PipelineSnapshot(finalizedCount, _pendingUserMessages.Count);
         }
     }
-
-    private bool IsFinalized(string topicId, string? messageId) =>
-        !string.IsNullOrEmpty(messageId) && FinalizedIds(topicId)?.Contains(messageId) == true;
-
-    private IReadOnlySet<string>? FinalizedIds(string topicId) =>
-        messagesStore.State.FinalizedMessageIdsByTopic.GetValueOrDefault(topicId);
 }

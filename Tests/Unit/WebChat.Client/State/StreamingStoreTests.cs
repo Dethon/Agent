@@ -112,28 +112,9 @@ public class StreamingStoreTests : IDisposable
         _store.State.StreamingByTopic["topic-2"].Content.ShouldBe("World");
     }
 
-    // Tool-call and approval-resolved notifications arrive on their own, and one can land after
-    // the stream it belongs to has ended. Buffering it would leave content for a topic nothing
-    // is streaming: an unread badge that never clears and a cancel on a stream that is over.
-    [Fact]
-    public void StreamChunk_AfterTheStreamCompleted_IsIgnored()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
-        _dispatcher.Dispatch(new StreamCompleted("topic-1"));
-
-        _dispatcher.Dispatch(new StreamChunk("topic-1", null, null, "tool_a", "msg-1"));
-
-        _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
-    }
-
-    [Fact]
-    public void StreamChunk_ForATopicThatNeverStarted_IsIgnored()
-    {
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
-
-        _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
-    }
+    // A chunk for a topic with no reply in flight used to be dropped here, because six writers
+    // could emit one. TopicStreams is the only writer now and answers that itself, so the
+    // guard is gone; TopicStreamFlowTests holds what a user would notice if it came back.
 
     [Fact]
     public void StreamChunk_HandlesNullMessageIdGracefully()

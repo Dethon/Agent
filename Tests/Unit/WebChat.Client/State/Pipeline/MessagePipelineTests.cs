@@ -15,17 +15,20 @@ public sealed class MessagePipelineTests
     private readonly Dispatcher _dispatcher;
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
+    private readonly TopicStreams _topicStreams;
     private readonly MessagePipeline _pipeline;
+    private readonly TaskCompletionSource _running = new();
 
     public MessagePipelineTests()
     {
         _dispatcher = new Dispatcher();
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
+        _topicStreams = new TopicStreams(_dispatcher, _messagesStore);
         _pipeline = new MessagePipeline(
             _dispatcher,
             _messagesStore,
-            _streamingStore,
+            _topicStreams,
             NullLogger<MessagePipeline>.Instance);
     }
 
@@ -49,37 +52,6 @@ public sealed class MessagePipelineTests
 
         var snapshot = _pipeline.GetSnapshot("topic-1");
         snapshot.PendingUserMessages.ShouldBe(1);
-    }
-
-    [Fact]
-    public void AccumulateChunk_SkipsDuplicateAfterFinalize()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _pipeline.AccumulateChunk("topic-1", "msg-1", "Hello", null, null);
-        _pipeline.FinalizeMessage("topic-1", "msg-1");
-
-        _pipeline.AccumulateChunk("topic-1", "msg-1", " duplicate", null, null);
-
-        var snapshot = _pipeline.GetSnapshot("topic-1");
-        snapshot.FinalizedCount.ShouldBe(1);
-    }
-
-    [Fact]
-    public void FinalizeMessage_SkipsSecondFinalize()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _pipeline.AccumulateChunk("topic-1", "msg-1", "Content", null, null);
-
-        _pipeline.FinalizeMessage("topic-1", "msg-1");
-        var countAfterFirst = _messagesStore.State.MessagesByTopic
-            .GetValueOrDefault("topic-1")?.Count ?? 0;
-
-        _pipeline.FinalizeMessage("topic-1", "msg-1");
-        var countAfterSecond = _messagesStore.State.MessagesByTopic
-            .GetValueOrDefault("topic-1")?.Count ?? 0;
-
-        countAfterFirst.ShouldBe(1);
-        countAfterSecond.ShouldBe(1);
     }
 
     [Fact]
@@ -131,7 +103,6 @@ public sealed class MessagePipelineTests
     [Fact]
     public void ClearMessages_ResetsFinalizedState()
     {
-        // Arrange - load history to populate finalized IDs
         var history = new List<ChatHistoryMessage>
         {
             new("msg-1", "assistant", "Hello", null, null)
@@ -139,30 +110,9 @@ public sealed class MessagePipelineTests
         _pipeline.LoadHistory("topic-1", history);
         _pipeline.GetSnapshot("topic-1").FinalizedCount.ShouldBe(1);
 
-        // Act
         _dispatcher.Dispatch(new ClearMessages("topic-1"));
 
-        // Assert - finalized state should be reset
         _pipeline.GetSnapshot("topic-1").FinalizedCount.ShouldBe(0);
-    }
-
-    [Fact]
-    public void ClearMessages_AllowsReprocessingOfSameMessageIds()
-    {
-        // Arrange - finalize a message
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _pipeline.AccumulateChunk("topic-1", "msg-1", "Content", null, null);
-        _pipeline.FinalizeMessage("topic-1", "msg-1");
-
-        _dispatcher.Dispatch(new ClearMessages("topic-1"));
-
-        // Act - same message ID should now be processable again
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _pipeline.AccumulateChunk("topic-1", "msg-1", "New content", null, null);
-        _pipeline.FinalizeMessage("topic-1", "msg-1");
-
-        // Assert - message was processed (finalized count is 1, not rejected)
-        _pipeline.GetSnapshot("topic-1").FinalizedCount.ShouldBe(1);
     }
 
     [Fact]
@@ -184,27 +134,24 @@ public sealed class MessagePipelineTests
     }
 
     [Fact]
-    public void ResumeFromBuffer_DispatchesStreamChunkWhenStreamingContent()
+    public void ResumeFromBuffer_ShowsTheRebuiltContentWhenNoCommittedBubbleOwnsIt()
     {
-        // A resume announces the stream before replaying the buffer into it, so the buffer this
-        // dispatches into is one the topic is actually streaming.
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        var result = new BufferResumeResult(
-            [],
-            new ChatMessageModel { Role = "assistant", Content = "Streaming..." });
-
-        _pipeline.ResumeFromBuffer(result, "topic-1", "msg-1");
-
-        // The buffered streaming content must be dispatched as a StreamChunk carrying the right
+        // A resume opens the topic stream with the rebuilt message as its accumulator, then
+        // replays the buffer into it. What lands in the live buffer must carry the right
         // message id — guarding the interleaved-messageId bubble-loss class of regression.
-        var streaming = _streamingStore.State.StreamingByTopic.GetValueOrDefault("topic-1");
-        streaming.ShouldNotBeNull();
-        streaming.Content.ShouldBe("Streaming...");
-        streaming.CurrentMessageId.ShouldBe("msg-1");
+        var streaming = new ChatMessageModel { Role = "assistant", Content = "Streaming..." };
+        GivenAResumedReply("topic-1", streaming, "msg-1");
+
+        _pipeline.ResumeFromBuffer(new BufferResumeResult([], streaming), "topic-1", "msg-1");
+
+        var buffered = _streamingStore.State.StreamingByTopic.GetValueOrDefault("topic-1");
+        buffered.ShouldNotBeNull();
+        buffered.Content.ShouldBe("Streaming...");
+        buffered.CurrentMessageId.ShouldBe("msg-1");
     }
 
     [Fact]
-    public void ResumeFromBuffer_WithNoStreamingContent_DoesNotDispatchChunk()
+    public void ResumeFromBuffer_WithNoStreamingContent_ShowsNothing()
     {
         var result = new BufferResumeResult(
             [new ChatMessageModel { Role = "user", Content = "Q1" }],
@@ -214,5 +161,9 @@ public sealed class MessagePipelineTests
 
         var messages = _messagesStore.State.MessagesByTopic["topic-1"];
         messages.Count.ShouldBe(1);
+        _streamingStore.State.StreamingByTopic.ShouldNotContainKey("topic-1");
     }
+
+    private void GivenAResumedReply(string topicId, ChatMessageModel message, string messageId) =>
+        _topicStreams.TryOpen(topicId, message, messageId, _ => _running.Task);
 }

@@ -41,7 +41,8 @@ public sealed class TopicDeleteEffectTests : IDisposable
         _topicService = new FakeTopicService(_calls);
 
         var pipeline = new MessagePipeline(
-            _dispatcher, _messagesStore, _streamingStore, NullLogger<MessagePipeline>.Instance);
+            _dispatcher, _messagesStore, new TopicStreams(_dispatcher, _messagesStore),
+            NullLogger<MessagePipeline>.Instance);
 
         _topicStreams = new TopicStreams(_dispatcher, _messagesStore);
         _effect = new TopicDeleteEffect(

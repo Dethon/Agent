@@ -140,6 +140,80 @@ public sealed class TopicStreamFlowTests
         reply.Release();
     }
 
+    // A tool call and a resolved approval each arrive as their own push, and either can land
+    // after the reply it belonged to has ended. An idle conversation must not sprout a
+    // streaming bubble out of one.
+    [Theory]
+    [InlineData("OnToolCalls")]
+    [InlineData("OnApprovalResolved")]
+    public async Task APush_CarryingToolCallsForAnIdleTopic_LeavesNothingBehind(string wireName)
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+
+        RaiseToolCalls(transport, wireName, "search()");
+
+        await Task.Delay(20);
+        client.Streaming.State.StreamingByTopic.ShouldNotContainKey("topic-1");
+        client.Streaming.State.StreamingTopics.ShouldNotContain("topic-1");
+    }
+
+    [Theory]
+    [InlineData("OnToolCalls")]
+    [InlineData("OnApprovalResolved")]
+    public async Task APush_CarryingToolCallsForATopicMidReply_AddsThemToIt(string wireName)
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        var reply = new GatedChatStream();
+        transport.Answer("SendMessage", _ => reply.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
+        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+
+        RaiseToolCalls(transport, wireName, "search()");
+
+        await TestChat.Eventually(() =>
+            client.Streaming.State.StreamingByTopic.GetValueOrDefault("topic-1")?.ToolCalls == "search()");
+        reply.Release();
+    }
+
+    // Another person writing into the conversation closes off what the agent had written so
+    // far, so the two do not merge into one bubble.
+    [Fact]
+    public async Task AnotherPersonsMessage_ArrivingMidReply_ClosesOffWhatTheAgentHadWritten()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
+        var reply = new GatedChatStream();
+        transport.Answer("SendMessage", _ => reply.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
+        await TestChat.Eventually(() =>
+            client.Streaming.State.StreamingByTopic.GetValueOrDefault("topic-1")?.Content == "thinking");
+
+        transport.Raise("OnUserMessage", new UserMessageNotification(
+            "topic-1", "and one more thing", "someone-else", DateTimeOffset.UnixEpoch));
+
+        await TestChat.Eventually(() => AssistantMessages(client).Any(m => m.Content == "thinking"));
+        client.Streaming.State.StreamingByTopic["topic-1"].HasContent.ShouldBeFalse();
+        reply.Release();
+    }
+
+    private static void RaiseToolCalls(FakeHubConnection transport, string wireName, string toolCalls)
+    {
+        if (wireName == "OnToolCalls")
+        {
+            transport.Raise("OnToolCalls", new ToolCallsNotification("topic-1", toolCalls, "m-1"));
+            return;
+        }
+
+        transport.Raise("OnApprovalResolved", new ApprovalResolvedNotification(
+            "topic-1", "approval-1", toolCalls, "m-1"));
+    }
+
     private static IReadOnlyList<ChatMessageModel> AssistantMessages(ScriptedChatClient client) =>
         client.Messages.State.MessagesByTopic
             .GetValueOrDefault("topic-1", [])

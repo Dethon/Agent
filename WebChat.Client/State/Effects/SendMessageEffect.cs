@@ -17,7 +17,6 @@ public sealed class SendMessageEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly TopicsStore _topicsStore;
-    private readonly StreamingStore _streamingStore;
     private readonly MessagesStore _messagesStore;
     private readonly IChatSessionService _sessionService;
     private readonly IStreamingService _streamingService;
@@ -35,7 +34,6 @@ public sealed class SendMessageEffect : IDisposable
     public SendMessageEffect(
         Dispatcher dispatcher,
         TopicsStore topicsStore,
-        StreamingStore streamingStore,
         MessagesStore messagesStore,
         IChatSessionService sessionService,
         IStreamingService streamingService,
@@ -49,7 +47,6 @@ public sealed class SendMessageEffect : IDisposable
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
-        _streamingStore = streamingStore;
         _messagesStore = messagesStore;
         _sessionService = sessionService;
         _streamingService = streamingService;
@@ -163,16 +160,9 @@ public sealed class SendMessageEffect : IDisposable
             }
         }
 
-        // If streaming is active, finalize the current bubble before adding user message
-        var streamingState = _streamingStore.State;
-        if (streamingState.StreamingTopics.Contains(topic.TopicId))
-        {
-            var currentContent = streamingState.StreamingByTopic.GetValueOrDefault(topic.TopicId);
-            if (currentContent?.HasContent == true)
-            {
-                _pipeline.FinalizeMessage(topic.TopicId, currentContent.CurrentMessageId);
-            }
-        }
+        // Close off the bubble the agent is writing before the user's own message goes in.
+        // Nothing to close on a topic with no reply in flight.
+        _topicStreams.FinalizeCurrent(topic.TopicId);
 
         // Submit user message through pipeline (handles correlation tracking and AddMessage dispatch)
         var identityState = _userIdentityStore.State;

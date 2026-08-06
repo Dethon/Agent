@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Services;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Hub;
 using WebChat.Client.State.Messages;
@@ -37,10 +38,11 @@ public sealed class HubEventBinderTests : IDisposable
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
 
+        var topicStreams = new TopicStreams(_dispatcher, _messagesStore);
         var pipeline = new MessagePipeline(
-            _dispatcher, _messagesStore, _streamingStore, NullLogger<MessagePipeline>.Instance);
+            _dispatcher, _messagesStore, topicStreams, NullLogger<MessagePipeline>.Instance);
         var hubEventDispatcher = new HubEventDispatcher(
-            _dispatcher, _topicsStore, _streamingStore, pipeline);
+            _dispatcher, _topicsStore, topicStreams, pipeline);
 
         _binder = new HubEventBinder(hubEventDispatcher);
     }
