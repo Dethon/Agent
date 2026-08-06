@@ -1,3 +1,4 @@
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
@@ -95,7 +96,7 @@ public sealed class TranscriptDispatcher(
         // Voice mints the key rather than letting the agent's conversation group do it, because
         // voice is the side that has to know the value in advance: the answer comes back here and
         // has to be recognised as this turn's.
-        var turnKey = Guid.NewGuid().ToString("n");
+        var turnKey = TurnKey.Mint();
 
         // Whatever the previous turn left buffered for this conversation is dropped as the next one
         // is dispatched. Doing it here rather than on a mismatched chunk clears the buffer even when

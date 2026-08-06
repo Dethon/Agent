@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Agents;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
@@ -436,7 +437,7 @@ internal sealed class ConversationGroup(
         // (voice does). Everything else arrives without one, and gets one here, so from this point
         // on every turn has a key whichever channel the message came from.
         var turn = new Turn(
-            x.Message, targets, firstReply, x.Message.TurnKey ?? Guid.NewGuid().ToString("n"));
+            x.Message, targets, firstReply, x.Message.TurnKey ?? TurnKey.Mint());
         // Agent-initiated turns (downloads, schedules) land in conversations with no live
         // stream on the receiving channel; announce the turn so the channel can set one up
         // before reply chunks arrive.
