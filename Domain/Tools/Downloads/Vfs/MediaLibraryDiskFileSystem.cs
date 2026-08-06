@@ -127,12 +127,17 @@ public sealed class MediaLibraryDiskFileSystem(
         + "filesystem ends by deleting the source. What may leave is what fs_delete removes: a "
         + $"download directory and a leftover {DownloadsPath.StatusFileName} no live download owns.";
 
-    // Copy and blob-write only land content, so unlike move only the destination side is asked:
-    // the way out is harmless (the source keeps its file), but whatever lands inside a live
-    // download's directory is removed the moment the download is cancelled.
+    // A copy reads one end and lands the other, so each end is asked with the intent belonging to
+    // it. The read end is the byte read the streamed copy already asks, which is what refuses a
+    // live download's status file: it is rendered when read, so the disk has no bytes to copy and
+    // the copy would otherwise answer not_found for a path everything else reports as existing.
+    // The landing end is the boundary — whatever lands inside a live download's directory is
+    // removed the moment the download is cancelled. Unlike a move, the way out is otherwise
+    // harmless: the source keeps its file.
     public override async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
-        await RefuseAsync<FsCopyResult>(DownloadsIntent.Land, destinationPath, ct)
+        await RefuseAsync<FsCopyResult>(DownloadsIntent.ByteRead, sourcePath, ct)
+        ?? await RefuseAsync<FsCopyResult>(DownloadsIntent.Land, destinationPath, ct)
         ?? await base.CopyAsync(sourcePath, destinationPath, overwrite, createDirectories, ct);
 
     // The rendered view only exists while a download owns the id. A leftover real status.json with

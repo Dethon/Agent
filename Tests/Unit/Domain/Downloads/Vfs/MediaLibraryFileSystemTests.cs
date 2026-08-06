@@ -797,6 +797,67 @@ public class MediaLibraryFileSystemTests : IDisposable
         File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "book.epub")).ShouldBeFalse();
     }
 
+    // A copy reads its source's bytes, so it asks the byte-read intent about the source end — the
+    // same question fs_blob_read and the streamed read already ask. Without it, a copy of the one
+    // path on this mount that has no bytes on disk fell through to the disk and answered not_found
+    // for a file fs_info, fs_glob and fs_read all report as existing.
+    [Fact]
+    public async Task Copy_ALiveDownloadsStatusFileAsSource_IsRefusedAndPointsAtFsRead()
+    {
+        _client.Add(Item(42));
+
+        var error = (await _sut.CopyAsync("downloads/42/status.json", "Movies/snapshot.json",
+                overwrite: false, createDirectories: true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain("fs_read");
+        File.Exists(Path.Combine(_libraryRoot, "Movies", "snapshot.json")).ShouldBeFalse();
+    }
+
+    // The whole pin, restored: a live download's status file is rendered from state that is still
+    // changing, so copying, moving or writing it would freeze a stale snapshot under a name that
+    // still looks live. Every operation that would do that refuses, whichever end names the file,
+    // and none of them answers not_found for a path everything else says exists.
+    [Fact]
+    public async Task ALiveDownloadsStatusFile_CannotBeMovedCopiedOrWritten()
+    {
+        _client.Add(Item(42));
+        await File.WriteAllTextAsync(Path.Combine(_libraryRoot, "film.mkv"), "film");
+
+        (await _sut.CopyAsync("downloads/42/status.json", "Movies/x.json", false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error.ErrorCode
+            .ShouldBe(ToolError.Codes.UnsupportedOperation);
+        (await _sut.CopyAsync("film.mkv", "downloads/42/status.json", false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error.ErrorCode
+            .ShouldBe(ToolError.Codes.UnsupportedOperation);
+        (await _sut.MoveAsync("downloads/42/status.json", "Movies/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error.ErrorCode
+            .ShouldBe(ToolError.Codes.UnsupportedOperation);
+        (await _sut.MoveAsync("film.mkv", "downloads/42/status.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error.ErrorCode
+            .ShouldBe(ToolError.Codes.UnsupportedOperation);
+        (await _sut.WriteBlobAsync("downloads/42/status.json", Convert.ToBase64String("stale"u8.ToArray()),
+                offset: 0, overwrite: true, createDirectories: true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsBlobWriteResult>.Err>().Error.ErrorCode
+            .ShouldBe(ToolError.Codes.UnsupportedOperation);
+    }
+
+    // A leftover status file is an ordinary file, so it copies like one.
+    [Fact]
+    public async Task Copy_ALeftoverStatusFileAsSource_StillCopies()
+    {
+        _client.Add(Item(42));
+        await WriteLeftoverStatus();
+
+        (await _sut.CopyAsync("downloads/99/status.json", "Movies/snapshot.json",
+                overwrite: false, createDirectories: true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCopyResult>.Ok>();
+
+        (await File.ReadAllTextAsync(Path.Combine(_libraryRoot, "Movies", "snapshot.json")))
+            .ShouldContain("stale");
+    }
+
     [Fact]
     public async Task Copy_OutOfALiveDownloadDirectory_StillCopies()
     {
