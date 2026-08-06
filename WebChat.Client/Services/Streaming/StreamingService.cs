@@ -143,31 +143,6 @@ public sealed class StreamingService(
         _activeStreams.Track(topic.TopicId, startStream());
     }
 
-    public async Task StreamResponseAsync(
-        StoredTopic topic, string message, string? correlationId = null, AgentConfigPatch? configPatch = null)
-    {
-        var chunks = await OpenSendStreamAsync(topic, message, correlationId, configPatch);
-        if (chunks is not null)
-        {
-            await ProcessStreamAsync(
-                topic, chunks, new ChatMessageModel { Role = "assistant" }, currentMessageId: null);
-        }
-    }
-
-    public async Task ResumeStreamResponseAsync(
-        StoredTopic topic,
-        ChatMessageModel streamingMessage,
-        string startMessageId)
-    {
-        var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
-        if (!chunks.IsLive)
-        {
-            return;
-        }
-
-        await ProcessStreamAsync(topic, chunks.Value!, streamingMessage, startMessageId);
-    }
-
     private async Task ProcessStreamAsync(
         StoredTopic topic,
         IAsyncEnumerable<ChatStreamMessage> chunks,

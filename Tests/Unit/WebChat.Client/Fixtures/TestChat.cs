@@ -24,4 +24,15 @@ public static class TestChat
 
         condition().ShouldBeTrue("the expected state was not reached within the timeout");
     }
+
+    public static async Task Eventually(Func<Task<bool>> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (!await condition() && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+
+        (await condition()).ShouldBeTrue("the expected state was not reached within the timeout");
+    }
 }

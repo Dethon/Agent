@@ -76,6 +76,26 @@ public sealed class StreamingServiceTests : IDisposable
     private IReadOnlyList<ChatMessageModel> MessagesFor(string topicId)
         => _messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId) ?? [];
 
+    // The tracked entry points return once the stream is open, not once it has finished, so a
+    // test that wants to read what the reply left behind has to wait for the topic to stop
+    // having one.
+    private async Task SendAndDrainAsync(StoredTopic topic, string message = "test")
+    {
+        await _service.SendMessageAsync(topic, message);
+        await DrainAsync(topic);
+    }
+
+    private async Task<bool> ResumeAndDrainAsync(
+        StoredTopic topic, ChatMessageModel streamingMessage, string startMessageId)
+    {
+        var started = await _service.TryStartResumeStreamAsync(topic, streamingMessage, startMessageId);
+        await DrainAsync(topic);
+        return started;
+    }
+
+    private Task DrainAsync(StoredTopic topic) =>
+        TestChat.Eventually(async () => !await _service.IsStreamActiveAsync(topic.TopicId));
+
     public enum ExceptionKind
     {
         OperationCanceled,
@@ -93,18 +113,16 @@ public sealed class StreamingServiceTests : IDisposable
         NonTransient
     }
 
-    #region StreamResponseAsync Tests
+    #region SendMessageAsync stream body tests
 
     [Fact]
-    public async Task StreamResponseAsync_WithContent_AccumulatesInStreamingMessage()
+    public async Task SendMessageAsync_WithContent_AccumulatesInStreamingMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         _messagingService.EnqueueContent("Hello", " world");
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         var messages = MessagesFor(topic.TopicId);
         messages.Count.ShouldBe(1);
@@ -112,7 +130,7 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StreamResponseAsync_OnComplete_StopsStreamingAndPersistsTopic()
+    public async Task SendMessageAsync_OnComplete_StopsStreamingAndPersistsTopic()
     {
         // Merges three originals: OnComplete_StopsStreaming, OnComplete_UpdatesTopicTimestamp,
         // OnComplete_CallsTopicService. All share a single-content arrange; we assert all
@@ -121,11 +139,9 @@ public sealed class StreamingServiceTests : IDisposable
         topic.LastMessageAt = null;
         _dispatcher.Dispatch(new AddTopic(topic));
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         _messagingService.EnqueueContent("Done");
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
         _topicService.SavedTopics.Count.ShouldBe(1);
@@ -133,26 +149,22 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StreamResponseAsync_WithError_StopsStreaming()
+    public async Task SendMessageAsync_WithError_StopsStreaming()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         _messagingService.EnqueueError("Something went wrong");
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
     }
 
     [Fact]
-    public async Task StreamResponseAsync_WithApprovalRequest_DispatchesShowApproval()
+    public async Task SendMessageAsync_WithApprovalRequest_DispatchesShowApproval()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var approval = new ToolApprovalRequestMessage("approval-1", []);
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { ApprovalRequest = approval, MessageId = "msg-1" },
@@ -160,19 +172,17 @@ public sealed class StreamingServiceTests : IDisposable
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
         );
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         var messages = MessagesFor(topic.TopicId);
         messages.ShouldContain(m => m.Content == "After approval");
     }
 
     [Fact]
-    public async Task StreamResponseAsync_WithReasoning_AccumulatesCorrectly()
+    public async Task SendMessageAsync_WithReasoning_AccumulatesCorrectly()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var messageId = Guid.NewGuid().ToString();
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Reasoning = "Thinking", MessageId = messageId },
@@ -180,7 +190,7 @@ public sealed class StreamingServiceTests : IDisposable
             new ChatStreamMessage { IsComplete = true, MessageId = messageId }
         );
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         var messages = MessagesFor(topic.TopicId);
         messages.Count.ShouldBe(1);
@@ -189,12 +199,10 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StreamResponseAsync_AccumulatesToolCalls()
+    public async Task SendMessageAsync_AccumulatesToolCalls()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var messageId = Guid.NewGuid().ToString();
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { ToolCalls = "tool_1", MessageId = messageId },
@@ -203,22 +211,20 @@ public sealed class StreamingServiceTests : IDisposable
             new ChatStreamMessage { IsComplete = true, MessageId = messageId }
         );
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         var messages = MessagesFor(topic.TopicId);
         messages[0].ToolCalls.ShouldBe("tool_1\ntool_2");
     }
 
     [Fact]
-    public async Task StreamResponseAsync_InterleavedMessageIds_PreservesAllContentPerMessage()
+    public async Task SendMessageAsync_InterleavedMessageIds_PreservesAllContentPerMessage()
     {
         // Distinct test — exercises the backend race where a later message's chunk arrives
         // between an earlier message's chunks (see project_webchat_interleaved_messageid_bubble_loss).
         // Kept separate from MultiTurn to preserve the race-specific arrangement verbatim.
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = "First part ", MessageId = "msg-1" },
             new ChatStreamMessage { ToolCalls = "tool_a", MessageId = "msg-2" },
@@ -226,7 +232,7 @@ public sealed class StreamingServiceTests : IDisposable
             new ChatStreamMessage { Content = "msg2 text", MessageId = "msg-2" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" });
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         var messages = MessagesFor(topic.TopicId);
         var msg1 = messages.FirstOrDefault(m => m.MessageId == "msg-1");
@@ -257,14 +263,12 @@ public sealed class StreamingServiceTests : IDisposable
 
     [Theory]
     [MemberData(nameof(TurnShapes))]
-    public async Task StreamResponseAsync_FinalizesEachTurn(TurnShape shape)
+    public async Task SendMessageAsync_FinalizesEachTurn(TurnShape shape)
     {
         // Merges 4 originals: MultiTurn_SeparatesTurns, ReasoningOnlyTurn_FinalizesToStore,
         // ToolCallsOnlyTurn_FinalizesToStore, WithEmptyMessage_DoesNotAddToHistory.
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         switch (shape)
         {
             case TurnShape.MultiTurnContent:
@@ -291,7 +295,7 @@ public sealed class StreamingServiceTests : IDisposable
                 break;
         }
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         var messages = MessagesFor(topic.TopicId);
         switch (shape)
@@ -325,18 +329,16 @@ public sealed class StreamingServiceTests : IDisposable
     [InlineData(ExceptionKind.EmptyMessage, true, null)]
     [InlineData(ExceptionKind.InvalidOperation, true, "Something went wrong")]
     [InlineData(ExceptionKind.ContainsOperationCanceledText, true, null)]
-    public async Task StreamResponseAsync_WithException_ClassifiesError(
+    public async Task SendMessageAsync_WithException_ClassifiesError(
         ExceptionKind kind, bool expectErrorMessage, string? expectedContent)
     {
         // Merges 5 originals: WithOperationCanceledException, WithTaskCanceledException,
         // WithEmptyMessageException, WithAnyException, WithOperationCanceledMessageException.
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         _messagingService.SetExceptionToThrow(ExceptionFor(kind));
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         var messages = MessagesFor(topic.TopicId);
         if (expectErrorMessage)
@@ -361,7 +363,7 @@ public sealed class StreamingServiceTests : IDisposable
     [InlineData(ErrorChunkKind.TaskCanceledText, false, false, null)]
     [InlineData(ErrorChunkKind.OperationWasCanceledText, false, false, null)]
     [InlineData(ErrorChunkKind.NonTransient, true, true, "Connection reset by peer")]
-    public async Task StreamResponseAsync_WithErrorChunk_ClassifiesErrorAndToast(
+    public async Task SendMessageAsync_WithErrorChunk_ClassifiesErrorAndToast(
         ErrorChunkKind kind, bool expectErrorMessage, bool expectToast, string? expectedContent)
     {
         // Merges 6 originals: WithOperationCanceledErrorChunk, WithTaskCanceledErrorChunk,
@@ -369,11 +371,9 @@ public sealed class StreamingServiceTests : IDisposable
         // WithNonTransientErrorChunk_ShowsToast, WithTransientErrorChunk_DoesNotShowToast.
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         _messagingService.EnqueueError(ErrorTextFor(kind));
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         var messages = MessagesFor(topic.TopicId);
         if (expectErrorMessage)
@@ -397,22 +397,19 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StreamResponseAsync_MessageIdCommittedByAnEarlierStream_UpdatesTheExistingMessage()
+    public async Task SendMessageAsync_MessageIdCommittedByAnEarlierStream_UpdatesTheExistingMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = "first", MessageId = "msg-1" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = "first and more", MessageId = "msg-1" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         var messages = MessagesFor(topic.TopicId);
         messages.Count.ShouldBe(1);
@@ -420,19 +417,17 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StreamResponseAsync_MessageIdPresentFromHistory_UpdatesTheExistingMessage()
+    public async Task SendMessageAsync_MessageIdPresentFromHistory_UpdatesTheExistingMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, [
             new ChatMessageModel { Role = "assistant", Content = "partial", MessageId = "msg-1" }
         ]));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = "partial and the rest", MessageId = "msg-1" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
 
-        await _service.StreamResponseAsync(topic, "test");
+        await SendAndDrainAsync(topic);
 
         var messages = MessagesFor(topic.TopicId);
         messages.Count.ShouldBe(1);
@@ -441,7 +436,7 @@ public sealed class StreamingServiceTests : IDisposable
 
     #endregion
 
-    #region SendMessageAsync Tests
+    #region SendMessageAsync entry point tests
 
     // Announce marks a topic streaming before the stream body runs; a fault inside that body
     // must still leave the topic markable as not-streaming, or a bug earlier in the chunk
@@ -526,17 +521,15 @@ public sealed class StreamingServiceTests : IDisposable
 
     #endregion
 
-    #region ResumeStreamResponseAsync Tests
+    #region TryStartResumeStreamAsync stream body tests
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_DeduplicatesKnownContent()
+    public async Task TryStartResumeStreamAsync_DeduplicatesKnownContent()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, [
             new ChatMessageModel { Role = "assistant", Content = "Known content" }
         ]));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Known content" };
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = "Known content", MessageId = "msg-1" },
@@ -544,32 +537,30 @@ public sealed class StreamingServiceTests : IDisposable
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
         );
 
-        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
         var messages = MessagesFor(topic.TopicId);
         messages.Last().Content.ShouldContain("new stuff");
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_OnComplete_StopsStreaming()
+    public async Task TryStartResumeStreamAsync_OnComplete_StopsStreaming()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var existingMessage = new ChatMessageModel { Role = "assistant" };
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = "Done", MessageId = "msg-1" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
         );
 
-        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_OnlyUpdatesTimestampIfNewContent()
+    public async Task TryStartResumeStreamAsync_OnlyUpdatesTimestampIfNewContent()
     {
         var topic = CreateTopic();
         topic.LastMessageAt = new DateTime(2024, 1, 1);
@@ -577,34 +568,30 @@ public sealed class StreamingServiceTests : IDisposable
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, [
             new ChatMessageModel { Role = "assistant", Content = "Known" }
         ]));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Known" };
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
         );
 
-        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
         _topicService.SavedTopics.ShouldBeEmpty();
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_WithNewContent_UpdatesTimestamp()
+    public async Task TryStartResumeStreamAsync_WithNewContent_UpdatesTimestamp()
     {
         var topic = CreateTopic();
         topic.LastMessageAt = new DateTime(2024, 1, 1);
         _dispatcher.Dispatch(new AddTopic(topic));
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var existingMessage = new ChatMessageModel { Role = "assistant" };
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = "New content", MessageId = "msg-1" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
         );
 
-        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
         _topicService.SavedTopics.Count.ShouldBe(1);
         _topicService.SavedTopics[0].LastMessageAt.ShouldNotBeNull();
@@ -613,12 +600,10 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_WithApprovalRequest_DispatchesShowApproval()
+    public async Task TryStartResumeStreamAsync_WithApprovalRequest_DispatchesShowApproval()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var approval = new ToolApprovalRequestMessage("approval-1", []);
         var existingMessage = new ChatMessageModel { Role = "assistant" };
         _messagingService.EnqueueMessages(
@@ -627,7 +612,7 @@ public sealed class StreamingServiceTests : IDisposable
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
         );
 
-        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
         var messages = MessagesFor(topic.TopicId);
         messages.ShouldContain(m => m.Content == "Done");
@@ -639,18 +624,16 @@ public sealed class StreamingServiceTests : IDisposable
     [InlineData(ExceptionKind.EmptyMessage, true, null)]
     [InlineData(ExceptionKind.InvalidOperation, true, "Something went wrong")]
     [InlineData(ExceptionKind.ContainsOperationCanceledText, true, null)]
-    public async Task ResumeStreamResponseAsync_WithException_ClassifiesError(
+    public async Task TryStartResumeStreamAsync_WithException_ClassifiesError(
         ExceptionKind kind, bool expectErrorMessage, string? expectedContent)
     {
-        // Merges 5 originals matching the StreamResponseAsync exception cluster, but for resume.
+        // Merges 5 originals matching the send exception cluster, but for resume.
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
         _messagingService.SetExceptionToThrow(ExceptionFor(kind));
 
-        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
         var messages = MessagesFor(topic.TopicId);
         if (expectErrorMessage)
@@ -675,18 +658,16 @@ public sealed class StreamingServiceTests : IDisposable
     [InlineData(ErrorChunkKind.TaskCanceledText, false, null)]
     [InlineData(ErrorChunkKind.OperationWasCanceledText, false, null)]
     [InlineData(ErrorChunkKind.NonTransient, true, "Connection reset by peer")]
-    public async Task ResumeStreamResponseAsync_WithErrorChunk_ClassifiesError(
+    public async Task TryStartResumeStreamAsync_WithErrorChunk_ClassifiesError(
         ErrorChunkKind kind, bool expectErrorMessage, string? expectedContent)
     {
-        // Merges 4 originals matching the StreamResponseAsync error chunk cluster, but for resume.
+        // Merges 4 originals matching the send error chunk cluster, but for resume.
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
         _messagingService.EnqueueError(ErrorTextFor(kind));
 
-        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
         var messages = MessagesFor(topic.TopicId);
         if (expectErrorMessage)
@@ -701,7 +682,7 @@ public sealed class StreamingServiceTests : IDisposable
 
     #endregion
 
-    #region TryStartResumeStreamAsync / IsStreamActiveAsync Tests
+    #region TryStartResumeStreamAsync / IsStreamActiveAsync entry point tests
 
     [Fact]
     public async Task TryStartResumeStreamAsync_WithNoActiveStream_ReturnsTrue()
@@ -769,12 +750,10 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_PreservesTheContentAlreadyStreamed()
+    public async Task TryStartResumeStreamAsync_PreservesTheContentAlreadyStreamed()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
         var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Existing" };
 
         _messagingService.EnqueueMessages(
@@ -782,7 +761,7 @@ public sealed class StreamingServiceTests : IDisposable
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
         );
 
-        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+        await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
         var messages = MessagesFor(topic.TopicId);
         messages.Count.ShouldBe(1);
