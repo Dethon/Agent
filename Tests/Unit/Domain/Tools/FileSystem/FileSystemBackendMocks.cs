@@ -17,6 +17,25 @@ internal static class FileSystemBackendMocks
         return backend;
     }
 
+    // A transfer probes the source once to decide whether it is copying a file or a directory, so a
+    // mocked source has to answer that too. Real backends answer from disk; a mock says so here.
+    public static Mock<IFileSystemBackend> HoldingDirectory(this Mock<IFileSystemBackend> backend, string path) =>
+        backend.Holding(path, isDirectory: true);
+
+    public static Mock<IFileSystemBackend> HoldingFile(this Mock<IFileSystemBackend> backend, string path) =>
+        backend.Holding(path, isDirectory: false);
+
+    private static Mock<IFileSystemBackend> Holding(
+        this Mock<IFileSystemBackend> backend, string path, bool isDirectory)
+    {
+        backend.Setup(b => b.InfoAsync(path, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult
+            {
+                Exists = true, Path = path, IsDirectory = isDirectory
+            }));
+        return backend;
+    }
+
     public static Mock<IFileSystemBackend> RefusingMoveOut(
         this Mock<IFileSystemBackend> backend, string message, string? hint = null)
     {

@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.FileSystem;
 
@@ -34,20 +33,19 @@ public class VfsMoveTool(IVirtualFileSystemRegistry registry)
             return unresolvedDestination.ToNode();
         }
 
-        var infoResult = await src.Backend.InfoAsync(src.RelativePath, cancellationToken);
-        if (!infoResult.TryGetValue(out var info, out var infoError))
-        {
-            return infoError.ToNode();
-        }
-        var isDirectory = info.IsDirectory == true;
+        var result = await Transfer.RunAsync(
+            new TransferRequest
+            {
+                Source = src,
+                Destination = dst,
+                SourcePath = sourcePath,
+                DestinationPath = destinationPath,
+                Intent = TransferIntent.Move,
+                Overwrite = overwrite,
+                CreateDirectories = createDirectories
+            },
+            cancellationToken);
 
-        if (isDirectory)
-        {
-            return await VfsCopyTool.TransferDirectoryAsync(src, dst, sourcePath, destinationPath,
-                overwrite, createDirectories, deleteSource: true, cancellationToken);
-        }
-
-        return await VfsCopyTool.TransferFileAsync(src, dst, sourcePath, destinationPath,
-            overwrite, createDirectories, deleteSource: true, cancellationToken);
+        return result.ToNode();
     }
 }

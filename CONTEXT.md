@@ -339,6 +339,13 @@ with or without a leading slash elsewhere. Backends disagree with each other, an
 fine on the wire. It must never appear in a response the model sees.
 _Avoid_: real path, physical path, native path
 
+**Transfer**:
+A copy or a move across any two virtual paths — same mount or not, file or directory. It is
+one operation with one answer, and it is not a backend's native copy or move: those work
+inside one mount, while a transfer may span two, recurse a directory and report what
+happened to each entry.
+_Avoid_: copy, move, cross-mount copy, file operation
+
 ## Media library
 
 **Live download**:
