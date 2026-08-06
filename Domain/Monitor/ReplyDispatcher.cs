@@ -8,16 +8,18 @@ using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
-public class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logger)
+// Internal because the turn is: this is the one place a reply's wire record is built, and it is
+// built out of the turn that produced the update.
+internal class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logger)
 {
     public async Task<bool> DeliverUpdateAsync(
-        AgentResponseUpdate update, IReadOnlyList<DeliveryTarget> targets, CancellationToken ct)
+        AgentResponseUpdate update, Turn turn, CancellationToken ct)
     {
         var deliveredContent = false;
         foreach (var mapped in MapResponseUpdate(update))
         {
-            var results = await Task.WhenAll(targets.Select(target =>
-                DeliverToTargetAsync(target, mapped, update.MessageId, ct)));
+            var results = await Task.WhenAll(turn.Targets.Select(target =>
+                DeliverToTargetAsync(target, mapped, update.MessageId, turn, ct)));
             deliveredContent |= mapped.ContentType != ReplyContentType.StreamComplete && results.Any(r => r);
         }
 
@@ -35,9 +37,10 @@ public class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logger)
     }
 
     // The one place a reply's wire record is built. Everything a chunk says is decided above; the
-    // conversation is the one part that belongs to the target rather than to the chunk.
+    // conversation is the one part that belongs to the target rather than to the chunk, and the
+    // turn key is what lets the far end tell this turn's answer from a previous one's.
     private async Task<bool> DeliverToTargetAsync(
-        DeliveryTarget target, MappedChunk mapped, string? messageId, CancellationToken ct)
+        DeliveryTarget target, MappedChunk mapped, string? messageId, Turn turn, CancellationToken ct)
     {
         try
         {
@@ -48,7 +51,9 @@ public class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logger)
                     Content = mapped.Content,
                     ContentType = mapped.ContentType,
                     IsComplete = mapped.IsComplete,
-                    MessageId = messageId
+                    MessageId = messageId,
+                    TurnKey = turn.TurnKey,
+                    AgentInitiated = turn.AgentInitiated
                 },
                 ct);
             return true;

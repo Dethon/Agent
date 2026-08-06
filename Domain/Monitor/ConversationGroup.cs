@@ -432,7 +432,11 @@ internal sealed class ConversationGroup(
         var firstReply = metricsPublisher.MeasureLatency(
             LatencyStage.FirstReply,
             targets.Count > 0 ? targets[0].ConversationId : agentKey.ConversationId);
-        var turn = new Turn(x.Message, targets, firstReply);
+        // A channel that has to recognise its own answer mints the key itself, before it dispatches
+        // (voice does). Everything else arrives without one, and gets one here, so from this point
+        // on every turn has a key whichever channel the message came from.
+        var turn = new Turn(
+            x.Message, targets, firstReply, x.Message.TurnKey ?? Guid.NewGuid().ToString("n"));
         // Agent-initiated turns (downloads, schedules) land in conversations with no live
         // stream on the receiving channel; announce the turn so the channel can set one up
         // before reply chunks arrive.

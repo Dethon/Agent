@@ -17,15 +17,21 @@ public sealed class SendReplyTool
         [Description("Kind of chunk being sent")] ReplyContentType contentType,
         [Description("Whether this is the final chunk")] bool isComplete,
         [Description("Message ID for grouping related chunks into bubbles")] string? messageId,
-        IServiceProvider services)
+        IServiceProvider services,
+        [Description("Key of the turn this reply answers")] string? turnKey = null,
+        [Description("Whether the turn this reply answers was agent-initiated")] bool? agentInitiated = null)
     {
+        // WebChat accepts both and reads neither: its live stream is already keyed per topic, and
+        // rewiring that on the turn key is its own argument.
         var p = new SendReplyParams
         {
             ConversationId = conversationId,
             Content = content,
             ContentType = contentType,
             IsComplete = isComplete,
-            MessageId = messageId
+            MessageId = messageId,
+            TurnKey = turnKey,
+            AgentInitiated = agentInitiated
         };
 
         var streamService = services.GetRequiredService<IStreamService>();

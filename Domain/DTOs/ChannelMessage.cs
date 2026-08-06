@@ -17,4 +17,10 @@ public record ChannelMessage
     public string? SatelliteId { get; init; }
     public string? DismissedAlert { get; init; }
     public AgentConfigPatch? ConfigPatch { get; init; }
+
+    // The turn this message opens, when the channel had one to mint. A channel that must know the
+    // value before the reply comes back — voice, which dispatches a transcript and then has to
+    // recognise the answer to it — mints it here; everyone else leaves it null and the conversation
+    // group mints one as it builds the turn.
+    public string? TurnKey { get; init; }
 }

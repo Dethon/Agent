@@ -378,7 +378,8 @@ public sealed class McpChannelConnection(
             Location = notification.Location,
             SatelliteId = notification.SatelliteId,
             DismissedAlert = notification.DismissedAlert,
-            ConfigPatch = notification.ConfigPatch
+            ConfigPatch = notification.ConfigPatch,
+            TurnKey = notification.TurnKey
         };
 
         _messageChannel.Writer.TryWrite(message);
@@ -430,7 +431,9 @@ public sealed class McpChannelConnection(
                 ["content"] = reply.Content,
                 ["contentType"] = reply.ContentType.ToString(),
                 ["isComplete"] = reply.IsComplete,
-                ["messageId"] = reply.MessageId
+                ["messageId"] = reply.MessageId,
+                ["turnKey"] = reply.TurnKey,
+                ["agentInitiated"] = reply.AgentInitiated
             },
             cancellationToken: ct);
     }
