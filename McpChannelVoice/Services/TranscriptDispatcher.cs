@@ -13,6 +13,7 @@ public sealed class TranscriptDispatcher(
     IMetricsPublisher publisher,
     VoiceConversationManager manager,
     LocalCommandDispatcher localCommands,
+    ReplyTextAccumulator accumulator,
     double avgLogProbThreshold,
     double noSpeechProbThreshold,
     double shortSpeechAvgLogProbThreshold,
@@ -91,6 +92,18 @@ public sealed class TranscriptDispatcher(
         // the satellite's default identity. Telemetry below keeps Identity = the satellite identity.
         var sender = identifiedSpeaker ?? session.Config.Identity;
 
+        // Voice mints the key rather than letting the agent's conversation group do it, because
+        // voice is the side that has to know the value in advance: the answer comes back here and
+        // has to be recognised as this turn's.
+        var turnKey = Guid.NewGuid().ToString("n");
+
+        // Whatever the previous turn left buffered for this conversation is dropped as the next one
+        // is dispatched. Doing it here rather than on a mismatched chunk clears the buffer even when
+        // the abandoned run never sends anything else, which is the case that used to glue a stale
+        // sentence to the front of a fresh answer.
+        accumulator.Flush(conversationId);
+        session.Turn.StampTurnKey(turnKey);
+
         // Location, SatelliteId and DismissedAlert are ordinary named properties on the shared
         // payload. Two of them are adjacent optional strings, which a positional call could
         // transpose with no compiler complaint.
@@ -104,6 +117,7 @@ public sealed class TranscriptDispatcher(
                 Location = session.Config.DisplayLocation,
                 SatelliteId = session.SatelliteId,
                 DismissedAlert = dismissedAlert,
+                TurnKey = turnKey,
                 Timestamp = DateTimeOffset.UtcNow
             },
             ct);

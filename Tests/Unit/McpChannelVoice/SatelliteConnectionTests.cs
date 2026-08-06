@@ -129,6 +129,7 @@ public class SatelliteConnectionTests
                 Emitter.Emitter, publisher.Object, manager,
                 new LocalCommandDispatcher(
                     new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+                new ReplyTextAccumulator(),
                 -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
 
             // Arbitration no-ops below two registered handles, so a default instance keeps this

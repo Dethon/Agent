@@ -48,6 +48,7 @@ public static class ConfigModule
                 sp.GetRequiredService<IMetricsPublisher>(),
                 sp.GetRequiredService<VoiceConversationManager>(),
                 sp.GetRequiredService<LocalCommandDispatcher>(),
+                sp.GetRequiredService<ReplyTextAccumulator>(),
                 avgLogProbThreshold: settings.Stt.OpenAi.AvgLogProbThreshold,
                 noSpeechProbThreshold: settings.Stt.OpenAi.NoSpeechProbThreshold,
                 shortSpeechAvgLogProbThreshold: settings.Stt.OpenAi.ShortSpeechAvgLogProbThreshold,

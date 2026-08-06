@@ -21,6 +21,14 @@ public sealed class VoiceTurn
     private int _streamComplete;
     private int _audioPlayed;
     private long _epoch;
+    private string? _turnKey;
+
+    // What this turn was dispatched under. Every reply answering it carries the same value back, so
+    // the reply path compares rather than infers — a conversation outlives a turn, a satellite
+    // connection and the agent run writing into it, and inferring from it was wrong in all three
+    // ways. Null until the transcript is dispatched, and null again after a reset: a turn nobody
+    // has dispatched has nothing for a reply to match.
+    public string? TurnKey => Volatile.Read(ref _turnKey);
 
     // Which minimum length the next segment must clear: the answer's opening clears a deliberately
     // low bar (it is the wait everyone feels), later sentences need more text because the audio
@@ -42,6 +50,7 @@ public sealed class VoiceTurn
             Interlocked.Exchange(ref _streamComplete, 0);
             Interlocked.Exchange(ref _audioPlayed, 0);
             Interlocked.Exchange(ref _dispatchedAt, DispatchNotMarked);
+            Interlocked.Exchange(ref _turnKey, null);
             Interlocked.Increment(ref _epoch);
             _spoken = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
@@ -126,6 +135,10 @@ public sealed class VoiceTurn
     // from an earlier real turn must not be readable by that later, unrelated reply — it would report
     // an invented, stale round trip.
     public void MarkDispatched(long timestamp) => Interlocked.Exchange(ref _dispatchedAt, timestamp);
+
+    // Stamped as the transcript is dispatched and before the message leaves this process, so a
+    // reply can never arrive against a turn that does not yet know its own key.
+    public void StampTurnKey(string turnKey) => Interlocked.Exchange(ref _turnKey, turnKey);
 
     public long? TryConsumeDispatchedAt()
     {
