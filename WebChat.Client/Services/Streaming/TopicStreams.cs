@@ -14,13 +14,16 @@ public enum TopicStreamPhase
 }
 
 // What a topic's stream currently is, for a caller that needs to ask rather than write.
+// Stream is the loop pulling chunks off the wire; Completion finishes when the topic stream
+// ends, which is the earlier of the two when the stop button or a delete ended it.
 public sealed record TopicStreamSnapshot(
     TopicStreamPhase Phase,
     Task? Stream,
+    Task? Completion,
     ChatMessageModel? Message,
     string? CurrentMessageId)
 {
-    public static TopicStreamSnapshot None { get; } = new(TopicStreamPhase.None, null, null, null);
+    public static TopicStreamSnapshot None { get; } = new(TopicStreamPhase.None, null, null, null, null);
 
     public bool HasStream => Phase is not TopicStreamPhase.None;
 
@@ -123,7 +126,12 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         lock (_lock)
         {
             return _byTopic.TryGetValue(topicId, out var stream)
-                ? new TopicStreamSnapshot(stream.Phase, stream.Stream, stream.Message, stream.CurrentMessageId)
+                ? new TopicStreamSnapshot(
+                    stream.Phase,
+                    stream.Stream,
+                    stream.Lease.Completion,
+                    stream.Message,
+                    stream.CurrentMessageId)
                 : TopicStreamSnapshot.None;
         }
     }

@@ -88,14 +88,14 @@ public sealed class TopicStreamFlowTests
         transport.Answer("SendMessage", _ => opened++ == 0 ? older.Chunks() : newer.Chunks());
         client.Dispatcher.Dispatch(new SendMessage("topic-1", "first"));
         await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
-        var olderLoop = client.Service<TopicStreams>().Snapshot("topic-1").Stream!;
+        var olderReply = client.Service<TopicStreams>().Snapshot("topic-1");
 
         client.Dispatcher.Dispatch(new CancelStreaming("topic-1"));
-        await TestChat.Eventually(() => !client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        await olderReply.Completion!;
         client.Dispatcher.Dispatch(new SendMessage("topic-1", "second"));
         await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
         older.Release();
-        await olderLoop;
+        await olderReply.Stream!;
 
         client.Service<TopicStreams>().Snapshot("topic-1").IsStreaming.ShouldBeTrue();
         client.Streaming.State.StreamingTopics.ShouldContain("topic-1");
@@ -114,9 +114,10 @@ public sealed class TopicStreamFlowTests
         await TestChat.Eventually(() =>
             client.Streaming.State.StreamingByTopic.GetValueOrDefault("topic-1")?.Content == "thinking");
 
+        var replyEnding = client.Service<TopicStreams>().Snapshot("topic-1").Completion!;
         client.Dispatcher.Dispatch(new CancelStreaming("topic-1"));
 
-        await TestChat.Eventually(() => !client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        await replyEnding;
         AssistantMessages(client).ShouldContain(message => message.Content == "thinking");
         reply.Release();
     }
@@ -132,9 +133,10 @@ public sealed class TopicStreamFlowTests
         client.Dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
         await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
 
+        var replyEnding = client.Service<TopicStreams>().Snapshot("topic-1").Completion!;
         client.Dispatcher.Dispatch(new RemoveTopic("topic-1", "agent-1", 10, 20));
 
-        await TestChat.Eventually(() => !client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        await replyEnding;
         transport.Calls.ShouldContain(call => call.MethodName == "CancelTopic");
         client.Service<TopicStreams>().Snapshot("topic-1").HasStream.ShouldBeFalse();
         reply.Release();

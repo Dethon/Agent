@@ -108,8 +108,11 @@ public sealed class StreamingServiceTests : IDisposable
         return started;
     }
 
+    // The stream's own ending, not a five-second look for its after-effects: a lease that is
+    // still open hands back a task that finishes when it ends, and a topic with no stream left
+    // has already ended.
     private Task DrainAsync(StoredTopic topic) =>
-        TestChat.Eventually(() => !_topicStreams.Snapshot(topic.TopicId).HasStream);
+        _topicStreams.Snapshot(topic.TopicId).Completion ?? Task.CompletedTask;
 
     public enum ExceptionKind
     {
@@ -498,7 +501,7 @@ public sealed class StreamingServiceTests : IDisposable
         _messagingService.EnqueueContent("Hello");
 
         await _service.SendMessageAsync(topic, "test");
-        await TestChat.Eventually(() => !_streamingStore.State.StreamingTopics.Contains(topic.TopicId));
+        await DrainAsync(topic);
 
         buffered.ShouldContain("Hello");
     }
