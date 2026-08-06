@@ -195,7 +195,7 @@ public sealed class ReplySpeaker(
     // its text cannot interleave with the answer being written into the same conversation.
     private void SpeakBesideTheTurn(SatelliteSession session, SendReplyParams p)
     {
-        var buffer = $"{p.ConversationId}#{p.TurnKey}";
+        var buffer = ReplyTextAccumulator.TurnBuffer(p.ConversationId, p.TurnKey);
         switch (p.ContentType)
         {
             case ReplyContentType.Reasoning:

@@ -31,6 +31,11 @@ public class ReplySpeakerTests
     private readonly List<VoiceEvent> _published = [];
     private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
 
+    // The conversation mapping's own clock: its idle timer is what tears a voice conversation down,
+    // and one test advances it to reach that teardown.
+    private readonly FakeTimeProvider _conversationClock = new(DateTimeOffset.UtcNow);
+    private static readonly TimeSpan _conversationLifetime = TimeSpan.FromMinutes(5);
+
     public ReplySpeakerTests()
     {
         _session = new SatelliteSession("kitchen-01",
@@ -48,8 +53,8 @@ public class ReplySpeakerTests
             });
 
         var manager = new VoiceConversationManager(
-            factory.Object, _accumulator, new FakeTimeProvider(DateTimeOffset.UtcNow),
-            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+            factory.Object, _accumulator, _conversationClock,
+            _conversationLifetime, NullLogger<VoiceConversationManager>.Instance);
 
         _conversationId = manager.GetOrCreateAsync(_session, "agent-1", "hello", default).GetAwaiter().GetResult();
 
@@ -1156,6 +1161,31 @@ public class ReplySpeakerTests
         _tts.Verify(t => t.SynthesizeAsync(
             It.Is<string>(s => s.Contains("interrumpida")),
             It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void SpeakUtteranceReply_AnAnnouncementStreamThatNeverEnded_LosesItsBufferWithTheConversation()
+    {
+        // An announcement heard beside a live turn buffers under its own turn, and only that
+        // announcement's own terminal event flushes it. The agent's link to this server dropping
+        // mid-announcement means no terminal event ever arrives, and every announcement carries a
+        // fresh turn key — so on a server that runs for weeks the leftover buffers have no bound.
+        // Tearing the conversation down has to take its announcements with it; the plain
+        // conversation key it used to flush reaches none of them.
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
+
+        SayFor("sched-turn", "Han pasado diez minutos", ReplyContentType.Text, false,
+            agentInitiated: true);
+
+        var buffer = ReplyTextAccumulator.TurnBuffer(_conversationId, "sched-turn");
+        var buffered = _accumulator.Flush(buffer);
+        buffered.ShouldBe("Han pasado diez minutos"); // it really is held under the announcement's turn
+        _accumulator.PutBack(buffer, buffered);       // and put straight back, still stranded
+
+        _conversationClock.Advance(_conversationLifetime + TimeSpan.FromMinutes(1));
+
+        _accumulator.Flush(buffer).ShouldBeEmpty();
     }
 
     [Fact]

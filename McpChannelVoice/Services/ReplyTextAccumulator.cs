@@ -8,6 +8,13 @@ public sealed class ReplyTextAccumulator
 {
     private readonly ConcurrentDictionary<string, StringBuilder> _buffers = new();
 
+    // Where an announcement heard beside a live turn buffers: under its own turn rather than the
+    // conversation, so its text cannot interleave with the answer being written into the same
+    // conversation at the same time. The composition lives here because Discard has to know it —
+    // spelled at the call site, a buffer could be created under a key nothing sweeps.
+    public static string TurnBuffer(string conversationId, string? turnKey) =>
+        $"{conversationId}#{turnKey}";
+
     // Keyed by conversation only: a satellite's reply streams as Text chunks that are
     // never marked complete, terminated by a StreamComplete event carrying no messageId.
     // Buffering per-messageId would strand the text under a key the completion can't reach.
@@ -60,6 +67,23 @@ public sealed class ReplyTextAccumulator
         lock (buffer)
         {
             buffer.Insert(0, text);
+        }
+    }
+
+    // Everything a conversation still holds, including every announcement buffered under one of its
+    // turns. Only an announcement's own terminal event flushes its buffer, so one whose stream never
+    // terminates — the agent's link drops mid-announcement — strands it, and every announcement
+    // carries a fresh turn key. Called as the conversation is torn down, which reaches every one of
+    // them: a reply is only ever spoken into a conversation the manager still maps.
+    public void Discard(string conversationId)
+    {
+        Flush(conversationId);
+
+        // A keyless TurnBuffer is exactly the prefix every one of them starts with.
+        var prefix = TurnBuffer(conversationId, null);
+        foreach (var key in _buffers.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)))
+        {
+            _buffers.TryRemove(key, out _);
         }
     }
 
