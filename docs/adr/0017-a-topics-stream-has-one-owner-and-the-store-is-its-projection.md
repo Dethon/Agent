@@ -42,10 +42,9 @@ one. The lease is what the opener holds and the only way to add to that stream o
 own identity is the stream's identity: the module compares the lease presented against the one
 currently holding the topic, so a lease that has been replaced can do nothing at all.
 
-Callers that legitimately touch a topic stream without having opened it — a tool call
-finishing, an approval resolved, another person's message, the stop button, a topic being
-deleted — get topic-keyed verbs instead, and each does nothing on a topic with no reply in
-flight.
+Callers that legitimately touch a topic stream without having opened it — another person's
+message, the stop button, a topic being deleted — get topic-keyed verbs instead, and each does
+nothing on a topic with no reply in flight.
 
 `TopicStreams` dispatches the same stream actions the streaming service used to dispatch, as it
 transitions. Every component subscription, the render coordinator's sampling, the unread-count

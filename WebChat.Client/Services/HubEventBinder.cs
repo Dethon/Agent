@@ -21,8 +21,6 @@ public sealed class HubEventBinder(IHubEventDispatcher hubEventDispatcher) : IHu
                 "OnStreamStarted", hubEventDispatcher.HandleStreamStarted),
             connection.On<ApprovalResolvedNotification>(
                 "OnApprovalResolved", hubEventDispatcher.HandleApprovalResolved),
-            connection.On<ToolCallsNotification>(
-                "OnToolCalls", hubEventDispatcher.HandleToolCalls),
             connection.On<UserMessageNotification>(
                 "OnUserMessage", hubEventDispatcher.HandleUserMessage),
             connection.On<IReadOnlyList<AgentCatalogEntry>>(

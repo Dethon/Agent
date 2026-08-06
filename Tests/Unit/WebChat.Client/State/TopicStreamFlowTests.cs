@@ -143,43 +143,21 @@ public sealed class TopicStreamFlowTests
         reply.Release();
     }
 
-    // A tool call and a resolved approval each arrive as their own push, and either can land
-    // after the reply it belonged to has ended. An idle conversation must not sprout a
-    // streaming bubble out of one.
-    [Theory]
-    [InlineData("OnToolCalls")]
-    [InlineData("OnApprovalResolved")]
-    public async Task APush_CarryingToolCallsForAnIdleTopic_LeavesNothingBehind(string wireName)
+    // A resolved approval takes the prompt off screen and says nothing about the reply. What it
+    // let through arrives on the topic's stream, so this push must leave an idle conversation
+    // idle rather than sprout a streaming bubble out of it.
+    [Fact]
+    public async Task AResolvedApproval_ForAnIdleTopic_LeavesNothingBehind()
     {
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
         SeedTopic(client);
 
-        RaiseToolCalls(transport, wireName, "search()");
+        transport.Raise("OnApprovalResolved", new ApprovalResolvedNotification("topic-1", "approval-1"));
 
         await Task.Delay(20);
         client.Streaming.State.StreamingByTopic.ShouldNotContainKey("topic-1");
         client.Streaming.State.StreamingTopics.ShouldNotContain("topic-1");
-    }
-
-    [Theory]
-    [InlineData("OnToolCalls")]
-    [InlineData("OnApprovalResolved")]
-    public async Task APush_CarryingToolCallsForATopicMidReply_AddsThemToIt(string wireName)
-    {
-        await using var client = new ScriptedChatClient();
-        var transport = await client.ConnectAsync();
-        SeedTopic(client);
-        var reply = new GatedChatStream();
-        transport.Answer("SendMessage", _ => reply.Chunks());
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
-        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
-
-        RaiseToolCalls(transport, wireName, "search()");
-
-        await TestChat.Eventually(() =>
-            client.Streaming.State.StreamingByTopic.GetValueOrDefault("topic-1")?.ToolCalls == "search()");
-        reply.Release();
     }
 
     // Another person writing into the conversation closes off what the agent had written so
@@ -266,35 +244,11 @@ public sealed class TopicStreamFlowTests
         client.Service<TopicStreams>().Snapshot("topic-1").HasStream.ShouldBeFalse();
     }
 
-    // The server both writes the tool call into the topic's stream and pushes it, so the same
-    // text reaches this client twice. It must show once.
+    // An approved tool call comes down the topic's stream labelled with the message it belongs to,
+    // and the approval's own push says only that the prompt is gone. The reply that follows keeps
+    // writing the same message, so the call and the answer stay in one bubble.
     [Fact]
-    public async Task APush_CarryingToolCallsTheStreamAlsoDelivers_ShowsThemOnce()
-    {
-        await using var client = new ScriptedChatClient();
-        var transport = await client.ConnectAsync();
-        SeedTopic(client);
-        var reply = new GatedChatStream();
-        transport.Answer("SendMessage", _ => reply.Chunks());
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
-        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
-
-        var replyEnding = client.Service<TopicStreams>().Snapshot("topic-1").Completion!;
-        transport.Raise("OnToolCalls", new ToolCallsNotification("topic-1", "search()", "m-1"));
-        reply.Write(new ChatStreamMessage { ToolCalls = "search()", MessageId = "m-1" });
-        reply.Release();
-
-        await replyEnding;
-        AssistantMessages(client).Single().ToolCalls.ShouldBe("search()");
-    }
-
-    // An approved tool call reaches this client twice with two different labels: the push carries
-    // the id of the message the call belongs to, the copy the server writes into the stream
-    // carries none. A push is not a turn, so it must not move the message the reply is being
-    // written under — if it does, the unlabelled copy that follows reads as a new turn and the
-    // reply is split into a tool-call bubble with no text and a second bubble holding the answer.
-    [Fact]
-    public async Task AnApprovedToolCall_PushedBeforeTheReplyHasWrittenAnything_KeepsTheReplyInOneMessage()
+    public async Task AnApprovedToolCall_ArrivingOnTheStream_KeepsTheReplyInOneMessage()
     {
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
@@ -312,30 +266,15 @@ public sealed class TopicStreamFlowTests
         await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
 
         var replyEnding = client.Service<TopicStreams>().Snapshot("topic-1").Completion!;
-        transport.Raise("OnApprovalResolved", new ApprovalResolvedNotification(
-            "topic-1", "approval-1", "glob()", "m-1"));
-        await TestChat.Eventually(() =>
-            client.Streaming.State.StreamingByTopic.GetValueOrDefault("topic-1")?.ToolCalls == "glob()");
-        reply.Write(new ChatStreamMessage { ToolCalls = "glob()" });
-        reply.Write(new ChatStreamMessage { Content = "Done", MessageId = "m-2" });
+        transport.Raise("OnApprovalResolved", new ApprovalResolvedNotification("topic-1", "approval-1"));
+        reply.Write(new ChatStreamMessage { ToolCalls = "glob()", MessageId = "m-1" });
+        reply.Write(new ChatStreamMessage { Content = "Done", MessageId = "m-1" });
         reply.Release();
 
         await replyEnding;
         var message = AssistantMessages(client).ShouldHaveSingleItem();
         message.Content.ShouldBe("Done");
         message.ToolCalls.ShouldBe("glob()");
-    }
-
-    private static void RaiseToolCalls(FakeHubConnection transport, string wireName, string toolCalls)
-    {
-        if (wireName == "OnToolCalls")
-        {
-            transport.Raise("OnToolCalls", new ToolCallsNotification("topic-1", toolCalls, "m-1"));
-            return;
-        }
-
-        transport.Raise("OnApprovalResolved", new ApprovalResolvedNotification(
-            "topic-1", "approval-1", toolCalls, "m-1"));
     }
 
     private static IReadOnlyList<ChatMessageModel> AssistantMessages(ScriptedChatClient client) =>

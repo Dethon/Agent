@@ -8,7 +8,6 @@ public interface IHubEventDispatcher
     void HandleTopicChanged(TopicChangedNotification notification);
     void HandleStreamStarted(StreamStartedNotification notification);
     void HandleApprovalResolved(ApprovalResolvedNotification notification);
-    void HandleToolCalls(ToolCallsNotification notification);
     void HandleUserMessage(UserMessageNotification notification);
     void HandleAgentsUpdated(IReadOnlyList<AgentCatalogEntry> agents);
 }

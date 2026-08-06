@@ -142,27 +142,14 @@ public sealed class HubEventDispatcherTests : IDisposable
             Times.Once);
     }
 
-    // The push names the message its tool call belongs to, which is not always the message the
-    // reply is writing. The reply keeps writing the one it was on; only its own chunks move it.
+    // Taking the prompt off screen is all the push does. What the approval let through comes down
+    // the topic's stream with the rest of the reply, so this must add nothing of its own.
     [Fact]
-    public void HandleApprovalResolved_CarryingToolCalls_AddsThemToTheReplyInFlight()
+    public void HandleApprovalResolved_AddsNothingToTheReplyInFlight()
     {
         GivenAReplyInFlight("topic-1", "msg-being-written");
 
-        _sut.HandleApprovalResolved(
-            new ApprovalResolvedNotification("topic-1", "approval-123", "tool output", "msg-1"));
-
-        var buffered = _streamingStore.State.StreamingByTopic["topic-1"];
-        buffered.ToolCalls.ShouldBe("tool output");
-        buffered.CurrentMessageId.ShouldBe("msg-being-written");
-    }
-
-    [Fact]
-    public void HandleApprovalResolved_CarryingNoToolCalls_AddsNothingToTheReply()
-    {
-        GivenAReplyInFlight("topic-1");
-
-        _sut.HandleApprovalResolved(new ApprovalResolvedNotification("topic-1", "approval-456"));
+        _sut.HandleApprovalResolved(new ApprovalResolvedNotification("topic-1", "approval-123"));
 
         _streamingStore.State.StreamingByTopic["topic-1"].HasContent.ShouldBeFalse();
     }
@@ -177,26 +164,6 @@ public sealed class HubEventDispatcherTests : IDisposable
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<SetAgents>(a => a.Agents.Count == 1 && a.Agents[0].Id == "agent-1")),
             Times.Once);
-    }
-
-    [Fact]
-    public void HandleToolCalls_ATopicMidReply_AddsThemToIt()
-    {
-        GivenAReplyInFlight("topic-1");
-
-        _sut.HandleToolCalls(new ToolCallsNotification("topic-1", "tool output", "msg-1"));
-
-        _streamingStore.State.StreamingByTopic["topic-1"].ToolCalls.ShouldBe("tool output");
-    }
-
-    // A tool call can finish after the reply it belonged to has ended. The module answers that
-    // once, so an idle conversation never sprouts an empty streaming bubble.
-    [Fact]
-    public void HandleToolCalls_ATopicWithNoReplyInFlight_LeavesNothingBehind()
-    {
-        _sut.HandleToolCalls(new ToolCallsNotification("topic-1", "tool output", "msg-1"));
-
-        _streamingStore.State.StreamingByTopic.ShouldNotContainKey("topic-1");
     }
 
     private void GivenAReplyInFlight(string topicId, string? currentMessageId = null) =>

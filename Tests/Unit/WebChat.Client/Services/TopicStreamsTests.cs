@@ -170,6 +170,24 @@ public sealed class TopicStreamsTests : IDisposable
         await lease.Completion;
     }
 
+    // A tool call arrives on the topic's stream like everything else in the reply, and the message
+    // it names is the message it belongs to — the same statement the rest of the stream makes.
+    [Fact]
+    public void Append_AToolCallForAMessageOfItsOwn_ShowsItInThatMessage()
+    {
+        var lease = Open();
+        lease.Append(Chunk("writing", "msg-1"));
+
+        lease.StartMessage("msg-2");
+        lease.Append(new ChatStreamMessage { ToolCalls = "search()", MessageId = "msg-2" });
+        lease.Complete();
+
+        Messages().Count.ShouldBe(2);
+        Messages()[0].Content.ShouldBe("writing");
+        Messages()[0].ToolCalls.ShouldBeNullOrEmpty();
+        Messages()[1].ToolCalls.ShouldBe("search()");
+    }
+
     #endregion
 
     #region A lease that no longer holds its topic
@@ -232,58 +250,6 @@ public sealed class TopicStreamsTests : IDisposable
     #endregion
 
     #region Verbs keyed by topic, for callers holding no lease
-
-    [Fact]
-    public void Append_ATopicWithNoStream_LeavesNothingBehind()
-    {
-        _streams.Append("topic-1", new ChatStreamMessage { ToolCalls = "search()", MessageId = "msg-1" });
-
-        Buffer().ShouldBeNull();
-        _streamingStore.State.StreamingTopics.ShouldNotContain("topic-1");
-    }
-
-    [Fact]
-    public void Append_ATopicThatIsStreaming_AddsToTheReply()
-    {
-        var lease = Open();
-        lease.Append(Chunk("thinking "));
-
-        _streams.Append("topic-1", new ChatStreamMessage { ToolCalls = "search()", MessageId = "msg-1" });
-
-        Buffer()!.ToolCalls.ShouldBe("search()");
-        lease.Append(Chunk("done")).Message.ToolCalls.ShouldBe("search()");
-    }
-
-    // A push names the message its tool call belongs to, and that message may not be the one
-    // being written: the call is glued to the tail of the live one so it shows at once. When the
-    // reply reaches the message the push named, the call moves there — and the copy the stream
-    // then delivers is the same call, not a second one.
-    [Fact]
-    public void Append_APushForAMessageTheReplyReachesLater_ShowsTheToolCallOnceAndInThatMessage()
-    {
-        var lease = Open();
-        lease.Append(Chunk("writing", "msg-1"));
-
-        _streams.Append("topic-1", new ChatStreamMessage { ToolCalls = "search()", MessageId = "msg-2" });
-        lease.StartMessage("msg-2");
-        lease.Append(new ChatStreamMessage { ToolCalls = "search()", MessageId = "msg-2" });
-        lease.Complete();
-
-        Messages().Count.ShouldBe(2);
-        Messages()[0].Content.ShouldBe("writing");
-        Messages()[0].ToolCalls.ShouldBeNullOrEmpty();
-        Messages()[1].ToolCalls.ShouldBe("search()");
-    }
-
-    [Fact]
-    public void Append_ATopicThatIsOnlyResuming_LeavesNothingBehind()
-    {
-        _streams.TryBeginResume("topic-1");
-
-        _streams.Append("topic-1", new ChatStreamMessage { ToolCalls = "search()", MessageId = "msg-1" });
-
-        Buffer().ShouldBeNull();
-    }
 
     [Fact]
     public void FinalizeCurrent_ATopicWithNoStream_LeavesNothingBehind()

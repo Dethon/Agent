@@ -1,6 +1,5 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
-using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Approval;
@@ -44,23 +43,10 @@ public sealed class HubEventDispatcher(
     public void HandleStreamStarted(StreamStartedNotification notification) =>
         dispatcher.Dispatch(new RemoteStreamStarted(notification.TopicId));
 
-    public void HandleApprovalResolved(ApprovalResolvedNotification notification)
-    {
-        dispatcher.Dispatch(new ApprovalResolved(notification.ApprovalId, notification.ToolCalls));
-
-        if (!string.IsNullOrEmpty(notification.ToolCalls))
-        {
-            AddToolCalls(notification.TopicId, notification.ToolCalls, notification.MessageId);
-        }
-    }
-
-    public void HandleToolCalls(ToolCallsNotification notification) =>
-        AddToolCalls(notification.TopicId, notification.ToolCalls, notification.MessageId);
-
-    // Both pushes arrive on their own and either can land after the reply it belonged to has
-    // ended. TopicStreams answers that once: a topic with no reply in flight takes nothing.
-    private void AddToolCalls(string topicId, string toolCalls, string? messageId) =>
-        topicStreams.Append(topicId, new ChatStreamMessage { ToolCalls = toolCalls, MessageId = messageId });
+    // Taking the prompt off screen is all this is. What the approval let through arrives on the
+    // topic's stream like the rest of the reply.
+    public void HandleApprovalResolved(ApprovalResolvedNotification notification) =>
+        dispatcher.Dispatch(new ApprovalResolved(notification.ApprovalId));
 
     public void HandleAgentsUpdated(IReadOnlyList<AgentCatalogEntry> agents)
     {

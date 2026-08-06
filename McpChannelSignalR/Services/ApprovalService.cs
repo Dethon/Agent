@@ -47,12 +47,7 @@ public sealed class ApprovalService(
                 return result.ToString().ToLowerInvariant();
             }
 
-            var toolCallsMessage = new ChatStreamMessage
-            {
-                ToolCalls = FormatToolCalls(requests)
-            };
-
-            await streamService.WriteMessageAsync(topicId, toolCallsMessage);
+            await WriteToolCallsAsync(topicId, requests);
 
             return result.ToString().ToLowerInvariant();
         }
@@ -63,35 +58,28 @@ public sealed class ApprovalService(
         }
     }
 
-    public async Task NotifyAutoApprovedAsync(RequestApprovalParams p)
-    {
-        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId;
-        var requests = p.Requests;
+    public Task NotifyAutoApprovedAsync(RequestApprovalParams p) =>
+        WriteToolCallsAsync(
+            sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId,
+            p.Requests);
 
+    // The one route a tool call reaches the browser by. It is buffered with the rest of the reply,
+    // so a reload replays it and it arrives in order; a hub push beside it would be the same text a
+    // second time, reaching no browser this does not. Grouped by message id because that is what
+    // says which bubble the call belongs to — unlabelled, it lands on whatever is being written.
+    private async Task WriteToolCallsAsync(string topicId, IReadOnlyList<ToolApprovalRequest> requests)
+    {
         var messages = requests
-            .GroupBy(x => x.MessageId)
+            .GroupBy(request => request.MessageId)
             .Select(g => new ChatStreamMessage
             {
                 MessageId = g.Key,
                 ToolCalls = FormatToolCalls(g.ToArray())
             });
 
-        sessionService.TryGetSession(topicId, out var session);
-
         foreach (var message in messages)
         {
             await streamService.WriteMessageAsync(topicId, message);
-
-            try
-            {
-                var notification = new ToolCallsNotification(
-                    p.ConversationId, message.ToolCalls!, message.MessageId, SpaceSlug: session?.SpaceSlug);
-                await SendToSpaceOrAllAsync(session?.SpaceSlug, "OnToolCalls", notification);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to notify tool calls for topic {TopicId}", p.ConversationId);
-            }
         }
     }
 
@@ -105,18 +93,14 @@ public sealed class ApprovalService(
 
         var approvalResult = Enum.Parse<ToolApprovalResult>(result, ignoreCase: true);
 
-        var toolCalls = approvalResult is ToolApprovalResult.Approved or ToolApprovalResult.ApprovedAndRemember
-            ? FormatToolCalls(context.Requests)
-            : null;
-
-        var messageId = context.Requests.FirstOrDefault()?.MessageId;
-
         sessionService.TryGetSession(context.TopicId, out var session);
 
         try
         {
+            // Taking the prompt off every browser showing it is the whole of this push. What the
+            // approval let through is written into the topic's stream, once, by RequestApprovalAsync.
             var notification = new ApprovalResolvedNotification(
-                context.TopicId, approvalId, toolCalls, messageId, SpaceSlug: session?.SpaceSlug);
+                context.TopicId, approvalId, SpaceSlug: session?.SpaceSlug);
             await SendToSpaceOrAllAsync(session?.SpaceSlug, "OnApprovalResolved", notification);
         }
         catch (Exception ex)

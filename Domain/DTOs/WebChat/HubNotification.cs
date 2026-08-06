@@ -20,17 +20,11 @@ public record StreamStartedNotification(
     string TopicId,
     string? SpaceSlug = null);
 
+// Taking the prompt off every browser showing it is the whole of this push. What an approval let
+// through is written into the topic's stream, which is the one route a tool call travels by.
 public record ApprovalResolvedNotification(
     string TopicId,
     string ApprovalId,
-    string? ToolCalls = null,
-    string? MessageId = null,
-    string? SpaceSlug = null);
-
-public record ToolCallsNotification(
-    string TopicId,
-    string ToolCalls,
-    string? MessageId = null,
     string? SpaceSlug = null);
 
 public record UserMessageNotification(
