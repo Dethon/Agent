@@ -75,13 +75,11 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
     // back "No filesystem mounted".
     private static FsResult<FsSearchResult> Normalize(
         FsResult<FsSearchResult> result, string virtualPath, string mountPoint) =>
-        result is FsResult<FsSearchResult>.Ok ok
-            ? new FsResult<FsSearchResult>.Ok(ok.Value with
-            {
-                Path = virtualPath,
-                Results = ok.Value.Results
-                    .Select(r => r with { File = $"{mountPoint.TrimEnd('/')}/{r.File.TrimStart('/')}" })
-                    .ToList()
-            })
-            : result;
+        result.Map(search => search with
+        {
+            Path = virtualPath,
+            Results = search.Results
+                .Select(r => r with { File = $"{mountPoint.TrimEnd('/')}/{r.File.TrimStart('/')}" })
+                .ToList()
+        });
 }

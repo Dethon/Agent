@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.FileSystem;
 
@@ -39,18 +38,16 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
         }
 
         var result = await resolution.Backend.GlobAsync(resolution.RelativePath, pattern, cancellationToken);
-        return Normalize(result, resolution.MountPoint).ToNode();
-    }
-
-    // Backends return entries relative to their mount root (with varying leading-slash conventions).
-    // Prefixing the mount point here yields a single, uniform full-virtual-path format across every
-    // filesystem — directly reusable as input to read/edit/etc. Directory markers (trailing slash)
-    // are preserved because only the leading slash is trimmed.
-    private static FsResult<FsGlobResult> Normalize(FsResult<FsGlobResult> result, string mountPoint) =>
-        result is FsResult<FsGlobResult>.Ok ok
-            ? new FsResult<FsGlobResult>.Ok(ok.Value with
+        // Backends return entries relative to their mount root (with varying leading-slash
+        // conventions). Prefixing the mount point here yields a single, uniform full-virtual-path
+        // format across every filesystem — directly reusable as input to read/edit/etc. Directory
+        // markers (trailing slash) are preserved because only the leading slash is trimmed.
+        var mountPoint = resolution.MountPoint.TrimEnd('/');
+        return result
+            .Map(glob => glob with
             {
-                Entries = ok.Value.Entries.Select(e => $"{mountPoint.TrimEnd('/')}/{e.TrimStart('/')}").ToList()
+                Entries = glob.Entries.Select(e => $"{mountPoint}/{e.TrimStart('/')}").ToList()
             })
-            : result;
+            .ToNode();
+    }
 }
