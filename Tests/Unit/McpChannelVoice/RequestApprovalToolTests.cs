@@ -105,7 +105,6 @@ public class RequestApprovalToolTests : IDisposable
     public void Dispose()
     {
         _pump.Cancel();
-        _session.Playback.Complete();
         try
         { _pumpTask.GetAwaiter().GetResult(); }
         catch { /* OCE on teardown */ }
@@ -659,7 +658,6 @@ public class RequestApprovalToolTests : IDisposable
         finally
         {
             pump.Cancel();
-            session.Playback.Complete();
             try
             { await pumpTask; }
             catch { /* OCE on teardown */ }

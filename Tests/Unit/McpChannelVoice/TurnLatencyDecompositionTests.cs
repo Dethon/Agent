@@ -151,11 +151,12 @@ public class TurnLatencyDecompositionTests
 
         _clock.Advance(TimeSpan.FromMilliseconds(QueueWaitMs)); // the reply waits behind another job
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
         await Task.Delay(80);                        // let the loop reach the playback-drain wait
         _clock.Advance(TimeSpan.FromSeconds(1));     // drain the remaining playback duration
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         var roundTrip = Duration(VoiceMetric.AgentRoundTripMs);
         var queueWait = Duration(VoiceMetric.ReplyQueueWaitMs);

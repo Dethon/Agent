@@ -157,7 +157,7 @@ public class AnnouncementServiceTests
     public async Task Announce_SatelliteWentAwayBeforeTheEnqueue_ReportsOffline()
     {
         var (sut, sessions, published) = BuildRecordingSut([("kitchen-01", "Kitchen")]);
-        sessions.Get("kitchen-01")!.Playback.Complete();   // the link dropped; the queue is closed
+        sessions.Get("kitchen-01")!.Playback.CompleteAndDiscardQueued();   // the link dropped
 
         var response = await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi" },
@@ -216,13 +216,21 @@ public class AnnouncementServiceTests
         var (sut, sessions, published) = BuildRecordingSut(
             [("kitchen-01", "Kitchen")], audio: PlaybackFakes.ThrowingAudio);
         var session = sessions.Get("kitchen-01")!;
-        var pump = session.Playback.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+        var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
+        var pump = session.Playback.RunAsync(
+            new PlaybackSink(
+                (_, _) => Task.CompletedTask,
+                OnError: (_, _) => { failed.TrySetResult(); return Task.CompletedTask; }),
+            run.Token);
 
         await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi" },
             CancellationToken.None);
-        session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+        // The synthesis failing is what this is about, so wait for the queue to report it rather
+        // than for the loop to end.
+        await failed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         published.ShouldContain(e => e.Metric == VoiceMetric.AnnounceQueued);
         published.ShouldNotContain(e => e.Metric == VoiceMetric.AnnouncePlayed);
@@ -234,15 +242,16 @@ public class AnnouncementServiceTests
         var (sut, sessions, published) = BuildRecordingSut([("kitchen-01", "Kitchen")]);
         var session = sessions.Get("kitchen-01")!;
         var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
         var pump = session.Playback.RunAsync(
-            (_, _) => { wrote.TrySetResult(); return Task.CompletedTask; }, CancellationToken.None);
+            (_, _) => { wrote.TrySetResult(); return Task.CompletedTask; }, run.Token);
 
         await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi" },
             CancellationToken.None);
         await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitForAsync(() => published.Any(e => e.Metric == VoiceMetric.AnnouncePlayed));
+        await run.StopAsync(pump);
 
         var played = published.Single(e => e.Metric == VoiceMetric.AnnouncePlayed);
         played.Room.ShouldBe("Kitchen");
@@ -266,6 +275,7 @@ public class AnnouncementServiceTests
         var (sut, sessions) = BuildSut(("kitchen-01", "Kitchen"));
         var session = sessions.Get("kitchen-01")!;
         var flags = new List<bool>();
+        using var run = new CancellationTokenSource();
         var pump = session.Playback.RunAsync(
             new PlaybackSink(
                 (_, _) => Task.CompletedTask,
@@ -275,7 +285,7 @@ public class AnnouncementServiceTests
                     { flags.Add(alert); }
                     return Task.CompletedTask;
                 }),
-            CancellationToken.None);
+            run.Token);
 
         await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "download done" },
@@ -290,7 +300,17 @@ public class AnnouncementServiceTests
         flags.ShouldHaveSingleItem();
         flags[0].ShouldBeFalse();
 
-        session.Playback.Complete();
-        await pump;
+        await run.StopAsync(pump);
+    }
+
+    // A metric is published from the queue's own loop, so a test that asserts on one waits for it
+    // rather than for the loop to end.
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
     }
 }

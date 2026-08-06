@@ -299,7 +299,12 @@ public sealed class PlaybackQueue(
         }
     }
 
-    public void Complete()
+    // Private, and it is the link-drop close below that reaches it. "Stop accepting work, play what
+    // is already queued, then stop" is not how any connection ends: production drops the link, sweeps
+    // what the loop never played and disposes, in that order and from one place, and shutdown
+    // cancels the run token instead. On the public surface it was a fourth way to end a connection
+    // that nothing but a test ever asked for.
+    private void Complete()
     {
         lock (_gate)
         {

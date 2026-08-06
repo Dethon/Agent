@@ -133,11 +133,11 @@ public class ReplySpeakerTests
         Say(_speaker, "hola", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2)); // resolves promptly, not after a timeout
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeFalse(); // no audio actually played -> end conversation + re-arm, not "spoken"
     }
@@ -191,11 +191,11 @@ public class ReplySpeakerTests
 
         Say(_speaker, "boom", ReplyContentType.Error, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeTrue(); // the error reached the satellite, so the turn was spoken
     }
@@ -211,11 +211,11 @@ public class ReplySpeakerTests
 
         Say(_speaker, "hola mundo", ReplyContentType.Text, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeTrue();
     }
@@ -261,9 +261,12 @@ public class ReplySpeakerTests
 
         _tts.Verify(t => t.SynthesizeAsync("Buscando.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        var heard = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(
+            async (_, _) => { heard.TrySetResult(); await Task.Yield(); }, run.Token);
+        await heard.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         turn.IsCompleted.ShouldBeFalse(); // the preamble is not the end of the turn
     }
@@ -325,11 +328,12 @@ public class ReplySpeakerTests
 
         // Drain the playback loop: the first synthesized chunk triggers OnFirstAudio, which publishes
         // the latency metrics from where synthesis actually happens.
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
         await Task.Delay(80);
         _clock.Advance(TimeSpan.FromSeconds(1));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         _published.Count(e => e.Metric == VoiceMetric.TtsLatencyMs).ShouldBe(1);
         var wake = _published.SingleOrDefault(e => e.Metric == VoiceMetric.WakeToFirstAudioMs);
@@ -348,9 +352,10 @@ public class ReplySpeakerTests
         Say(_speaker, "listo", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
+        await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         var published = _published.Select(e => e.Metric).ToList();
         published.ShouldContain(VoiceMetric.SpeechEndToFirstAudioMs);
@@ -375,9 +380,12 @@ public class ReplySpeakerTests
         SayFor("sched-turn", "son las diez", ReplyContentType.Text, false, agentInitiated: true);
         SayFor("sched-turn", "", ReplyContentType.StreamComplete, true, agentInitiated: true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        var heard = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(
+            async (_, _) => { heard.TrySetResult(); await Task.Yield(); }, run.Token, _clock);
+        await heard.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         _published.ShouldNotContain(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs);
         _published.ShouldNotContain(e => e.Metric == VoiceMetric.WakeToFirstAudioMs);
@@ -511,9 +519,10 @@ public class ReplySpeakerTests
 
         _clock.Advance(TimeSpan.FromMilliseconds(400)); // the reply waits behind another job
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
+        await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         var roundTrip = _published.Single(e => e.Metric == VoiceMetric.AgentRoundTripMs).DurationMs;
         var queueWait = _published.Single(e => e.Metric == VoiceMetric.ReplyQueueWaitMs).DurationMs;
@@ -562,13 +571,14 @@ public class ReplySpeakerTests
 
         var written = new List<string>();
         var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
         var pump = _session.Playback.RunAsync((chunk, _) =>
         {
             lock (written)
             { written.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span)); }
             wrote.TrySetResult();
             return Task.CompletedTask;
-        }, CancellationToken.None);
+        }, run.Token);
 
         // Segment one, played to completion with the agent still generating. This is the moment the
         // per-job handshake got wrong: the turn must NOT settle here.
@@ -582,12 +592,10 @@ public class ReplySpeakerTests
         Say(_speaker, "Por la noche bajará bastante y habrá algo de viento del norte. ", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(5));
-
         // Awaited rather than read: the segment settles from the job's outcome, and the queue
         // signals an outcome without waiting for whoever reacts to it.
         (await turn.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBeTrue();
+        await run.StopAsync(pump);
         written.Count.ShouldBeGreaterThan(1); // it really did stream in pieces
     }
 
@@ -605,9 +613,10 @@ public class ReplySpeakerTests
         Say(_speaker, "Por la noche bajará bastante y habrá algo de viento del norte. ", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
+        await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         _published.Count(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs).ShouldBe(1);
         _published.Count(e => e.Metric == VoiceMetric.WakeToFirstAudioMs).ShouldBe(1);
@@ -700,22 +709,22 @@ public class ReplySpeakerTests
         _session.Turn.Reset();
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
         var turn = _session.Turn.AwaitSpoken();
+        using var run = new CancellationTokenSource();
         var pump = _session.Playback.RunAsync(
             async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
-            CancellationToken.None, _clock);
+            run.Token, _clock);
 
         Say(_speaker, "Hola mundo", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
         await playing.Task.WaitAsync(TimeSpan.FromSeconds(10));   // the segment is mid-drain
         _session.Playback.PreemptCurrent();
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(10));
 
         // Settles promptly instead of wedging. Silent, not Spoken: no segment ever drained, so the
         // conversation ends and wake re-arms rather than opening a follow-up window over the alarm
         // that cut in.
         (await turn.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBeFalse();
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -733,7 +742,7 @@ public class ReplySpeakerTests
         _session.Turn.Reset();
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
         var turn = _session.Turn.AwaitSpoken();
-        _session.Playback.Complete();    // the queue is closed: every enqueue now refuses
+        _session.Playback.CompleteAndDiscardQueued();    // the link dropped: every enqueue now refuses
 
         Say(_speaker, "Hola mundo", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
@@ -773,9 +782,10 @@ public class ReplySpeakerTests
         var playing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _session.Turn.Reset();
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
+        using var run = new CancellationTokenSource();
         var pump = _session.Playback.RunAsync(
             async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
-            CancellationToken.None, _clock);
+            run.Token, _clock);
 
         Say(speaker, "Primera frase completa. ", ReplyContentType.Text, false);
         await playing.Task.WaitAsync(TimeSpan.FromSeconds(10));   // segment one is mid-drain
@@ -787,8 +797,7 @@ public class ReplySpeakerTests
 
         await disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(10));
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -847,11 +856,11 @@ public class ReplySpeakerTests
         Say(_speaker, "hola mundo", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
-        var pump = session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeTrue();
     }
@@ -865,7 +874,7 @@ public class ReplySpeakerTests
         // must hand the text back, not the question asked before it.
         var speaker = Speaker(Streaming(firstSegmentMinChars: 10, minChars: 10));
         _session.Turn.Reset();
-        _session.Playback.Complete();
+        _session.Playback.CompleteAndDiscardQueued();
 
         Say(speaker, "Primera frase completa. ", ReplyContentType.Text, false);
 
@@ -1007,11 +1016,11 @@ public class ReplySpeakerTests
         SayFor("turn-1", "Veintiún grados.", ReplyContentType.Text, false);
         SayFor("turn-1", "", ReplyContentType.StreamComplete, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeTrue();
         _tts.Verify(t => t.SynthesizeAsync(
@@ -1035,9 +1044,12 @@ public class ReplySpeakerTests
             "Han pasado diez minutos.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
             Times.Once);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        var heard = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(
+            async (_, _) => { heard.TrySetResult(); await Task.Yield(); }, run.Token);
+        await heard.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         turn.IsCompleted.ShouldBeFalse();
     }
@@ -1058,9 +1070,9 @@ public class ReplySpeakerTests
         _tts.VerifyNoOtherCalls();
         _accumulator.Flush(_conversationId).ShouldBeEmpty();
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
+        await run.StopAsync(pump);
 
         turn.IsCompleted.ShouldBeFalse();
     }
@@ -1096,11 +1108,11 @@ public class ReplySpeakerTests
             IsComplete = true
         });
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeTrue();
         errors.ShouldContain(e => e.Service == "voice" && e.ErrorType == "ReplyWithoutTurnKey");
@@ -1133,11 +1145,11 @@ public class ReplySpeakerTests
         SayFor("turn-2", "Veintiún grados.", ReplyContentType.Text, false);
         SayFor("turn-2", "", ReplyContentType.StreamComplete, true);
 
-        var pump = session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeTrue();
         _tts.Verify(t => t.SynthesizeAsync(
