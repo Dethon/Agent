@@ -132,6 +132,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         services.AddWebChatStores();
         services.AddWebChatEffects();
 
+        services.AddScoped<TopicStreams>();
         services.AddScoped<IStreamingService, StreamingService>();
         services.AddScoped<StreamResumeService>();
         services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<StreamResumeService>());

@@ -34,6 +34,7 @@ builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
 builder.Services.AddWebChatStores();
 builder.Services.AddWebChatEffects();
 
+builder.Services.AddScoped<TopicStreams>();
 builder.Services.AddScoped<IStreamingService, StreamingService>();
 builder.Services.AddScoped<StreamResumeService>();
 builder.Services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<StreamResumeService>());
