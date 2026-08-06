@@ -14,11 +14,11 @@ left that describes the same thing a second way.
 
 **Status:** ready-for-agent
 
-- [ ] The channel connection contract's reply-sending member takes the reply params record.
-- [ ] The reply dispatcher builds the record once and passes it, rather than unpacking it into
+- [x] The channel connection contract's reply-sending member takes the reply params record.
+- [x] The reply dispatcher builds the record once and passes it, rather than unpacking it into
       positional arguments.
-- [ ] The MCP channel connection implementation and every test fake or mock of the contract are
+- [x] The MCP channel connection implementation and every test fake or mock of the contract are
       updated.
-- [ ] No behaviour change: the existing monitor, dispatcher and channel tests pass unmodified
+- [x] No behaviour change: the existing monitor, dispatcher and channel tests pass unmodified
       except where they name the signature.
-- [ ] `dotnet format` clean, and the pre-commit hook's whole-file re-staging respected.
+- [x] `dotnet format` clean, and the pre-commit hook's whole-file re-staging respected.

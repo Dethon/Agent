@@ -120,6 +120,14 @@ waits its place in a conversation, what decides where its replies go, and what
 reports how long the answer took. A conversation runs one at a time.
 _Avoid_: message, request, exchange, prompt
 
+**Turn key**:
+What a turn is dispatched under, so a reply can say which turn it answers. Every
+reply of a turn carries it back, and the receiving side compares rather than infers:
+a conversation outlives a turn, so asking the conversation gives the wrong answer
+whenever an answer is late, an announcement arrives mid-conversation, or a device
+reconnects. Every turn has one, whether the channel it came from supplied it or not.
+_Avoid_: message id, correlation id, stream id, request id
+
 **Chat command**:
 A message that steers the conversation instead of being answered by it. It never
 reaches the agent and produces no reply, so it is not a turn. It also never waits

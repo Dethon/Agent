@@ -21,10 +21,10 @@ acts on the original framing.
 
 **Status:** ready-for-agent
 
-- [ ] The glossary defines **Turn key** in the conversation section, with the terms it should
+- [x] The glossary defines **Turn key** in the conversation section, with the terms it should
       not be called.
-- [ ] The glossary entry is free of implementation detail — no type names, no call sites.
-- [ ] Candidate 4 of the architecture review is rewritten to describe what shipped, including
+- [x] The glossary entry is free of implementation detail — no type names, no call sites.
+- [x] Candidate 4 of the architecture review is rewritten to describe what shipped, including
       the corrected commit count and the two claims that did not hold.
-- [ ] The review's top-recommendation section still reads correctly after the rewrite.
-- [ ] No architecture decision record is added.
+- [x] The review's top-recommendation section still reads correctly after the rewrite.
+- [x] No architecture decision record is added.

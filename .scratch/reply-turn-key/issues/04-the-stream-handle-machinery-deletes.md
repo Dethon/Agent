@@ -18,10 +18,10 @@ turn's no longer reaches the metrics at all.
 
 **Status:** ready-for-agent
 
-- [ ] The per-conversation stream-handle map, the handle type, its reference check and the
+- [x] The per-conversation stream-handle map, the handle type, its reference check and the
       stream-end epoch guard are removed.
-- [ ] The segment token and its epoch are untouched.
-- [ ] The hand-written metrics gate keyed on the consumed dispatch stamp is removed, and the
+- [x] The segment token and its epoch are untouched.
+- [x] The hand-written metrics gate keyed on the consumed dispatch stamp is removed, and the
       turn-anchored latency metrics still publish for real turns only.
-- [ ] Behaviour is unchanged: ticket 03's four tests pass without modification.
-- [ ] No test names a deleted member.
+- [x] Behaviour is unchanged: ticket 03's four tests pass without modification.
+- [x] No test names a deleted member.

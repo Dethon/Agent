@@ -16,11 +16,11 @@ Independent of the turn key work; can run alongside ticket 01.
 
 **Status:** ready-for-agent
 
-- [ ] The graceful close is no longer part of the queue's public surface.
-- [ ] Tests that used it to let the loop finish close by cancelling the token they already pass
+- [x] The graceful close is no longer part of the queue's public surface.
+- [x] Tests that used it to let the loop finish close by cancelling the token they already pass
       to the run loop, and await the loop as they do today.
-- [ ] Tests that genuinely want link-drop semantics call the verb production calls, and their
+- [x] Tests that genuinely want link-drop semantics call the verb production calls, and their
       assertions are updated to the outcomes that produces.
-- [ ] Every playback outcome the queue promises is still asserted somewhere: heard to the end,
+- [x] Every playback outcome the queue promises is still asserted somewhere: heard to the end,
       cut short, broken, refused, and discarded because the connection died.
-- [ ] No production call site changes.
+- [x] No production call site changes.

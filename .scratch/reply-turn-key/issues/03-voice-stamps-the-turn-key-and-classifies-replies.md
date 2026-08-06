@@ -33,15 +33,15 @@ removes it.
 
 **Status:** ready-for-agent
 
-- [ ] The transcript dispatch mints a turn key, stamps it on the turn, and drops the previous
+- [x] The transcript dispatch mints a turn key, stamps it on the turn, and drops the previous
       turn's buffered reply text for that conversation in the same act.
-- [ ] A reply whose key matches the stamped turn behaves exactly as today.
-- [ ] A reply whose key differs and whose turn was agent-initiated is spoken and leaves the live
+- [x] A reply whose key matches the stamped turn behaves exactly as today.
+- [x] A reply whose key differs and whose turn was agent-initiated is spoken and leaves the live
       turn outstanding.
-- [ ] A reply whose key differs and whose turn was a user turn is discarded, logged, and appends
+- [x] A reply whose key differs and whose turn was a user turn is discarded, logged, and appends
       nothing to the buffer.
-- [ ] A reply carrying no key is treated as the current turn's and publishes an error event.
-- [ ] A satellite that redials mid-answer settles its next turn normally rather than waiting out
+- [x] A reply carrying no key is treated as the current turn's and publishes an error event.
+- [x] A satellite that redials mid-answer settles its next turn normally rather than waiting out
       the reply timeout.
-- [ ] Four tests at the existing reply speaker seam, one per case, asserting the turn's settled
+- [x] Four tests at the existing reply speaker seam, one per case, asserting the turn's settled
       result and what reached the synthesizer — not the internal maps or counters.

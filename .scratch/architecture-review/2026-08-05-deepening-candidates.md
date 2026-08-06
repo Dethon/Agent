@@ -82,33 +82,52 @@ becomes a projection for rendering, not a parallel truth.
 wrong-stream-forgotten and resume-race classes collapse into one invariant) · tests
 drop the seven-store constructor and the polling loops · resume asks once.
 
-## 4. A module that owns the satellite connection's generation — **Strong**
+## 4. A reply says which turn it answers — **Shipped**
 
-**Files:** `McpChannelVoice/Services/{SatelliteConnection,PlaybackQueue,ReplySpeaker,VoiceTurn,FollowUpConversation}.cs`,
-`Modules/ConfigModule.cs:138-139`
+**Files:** `Domain/DTOs/{ChannelMessage,Channel/SendReplyParams}.cs`,
+`Domain/Monitor/{ConversationGroup,ReplyDispatcher,Turn}.cs`,
+`McpChannelVoice/Services/{TranscriptDispatcher,ReplySpeaker,VoiceTurn,PlaybackQueue}.cs`
 
-**Problem.** Five recent fixes (`f7d84180`, `f3238513`, `bc2ff1bc`, `f679ea24`,
-`b828f545`) are one bug class: something outlives the satellite connection generation
-that created it and wedges or latches the next one. No module's interface is "one
-connection generation". `PlaybackQueue` exposes four closing verbs (`Complete`,
-`CompleteAndDiscardQueued`, `DiscardUnplayed`, `Dispose`) whose ordering rule is a prose
-comment inside `SatelliteConnection.DrainAsync:163-183` — a seam in the wrong place.
-Three process-scoped stores each invented their own expiry mechanism to answer "is this
-from a dead generation": `VoiceConversationManager` (generation + timer),
-`VoiceDeliveryRegistry` (generation + timer), `ReplySpeaker._streams` (reference
-identity via `BelongsTo`). `WyomingSatelliteHost.CreateConnection` is `internal` for
-tests — an admission the seam sits one layer too high.
+**Corrected framing.** This candidate was written as "a module that owns the satellite
+connection's generation", citing five commits as one bug class and three stores that had
+each invented their own expiry. Reading the code did not support that, and the
+correction is what the work was actually built on:
 
-**Solution.** A `SatelliteRun` (or make `SatelliteConnection` own it) whose interface is
-`RunAsync(...)` plus one terminal `EndAsync(EndReason)` with
-`EndReason ∈ {LinkDropped, Shutdown}` replacing the four playback verbs. Inside:
-arbitration release, queue close mode, drain, discard sweep, disposal, and one
-`OnGenerationEnded(satelliteId, turn)` seam that `ReplySpeaker`,
-`ReplyTextAccumulator` and `VoiceDeliveryRegistry` implement as adapters.
+- **Two of the five commits are the class, not five.** `f679ea24` (a leftover
+  reply-stream token wedging a redialled satellite's turn) and `b828f545` (a completed
+  reply stream ending the wrong turn) are both "a reply landed on a turn it does not
+  answer". `f7d84180`, `f3238513` and `bc2ff1bc` are disposal ordering, a socket write
+  parked on a dead link, and an alert-dismissal mark — three unrelated fixes inside one
+  connection's lifetime.
+- **The two idle registries' counters answer a timer question, not a connection one.**
+  `VoiceConversationManager` and `VoiceDeliveryRegistry` use their generation counters so
+  that a renewal retires the timer it replaced; both are process-scoped on purpose and
+  are meant to outlive a connection. Only `ReplySpeaker._streams` was answering "is this
+  from a dead generation", and it was answering it by inference.
+- **The connection type already owns the generation.** `SatelliteConnection` is one run
+  from dial to finished unwind, which is what the glossary already says a satellite
+  connection is. There was nothing to extract.
 
-**Wins:** "wedged after a redial" untestable-by-construction · four queue verbs shrink
-to one reason enum · three expiry schemes become one seam · compatible with ADR-0003
-(outcome semantics) and ADR-0013 (mic vs turn).
+**What shipped instead.** A turn is dispatched under a **turn key** that every reply of
+that turn echoes back, plus a flag saying whether the turn was agent-initiated — without
+it a scheduled delivery and an abandoned answer are indistinguishable at the hub, and the
+two have to be treated oppositely. The hub stops inferring and starts comparing: a
+matching key is the answer the user is waiting for, a mismatched agent-initiated key is
+spoken beside the turn and never touches it, a mismatched user key is discarded and
+logged, and an absent key falls back to the old behaviour and publishes an error so a
+broken echo is visible as itself. The per-conversation stream-handle map, the handle
+type, its reference check and the epoch guard on stream ends were deleted, along with
+the hand-written gate on the turn-anchored latency metrics.
+
+**Also shipped.** `PlaybackQueue`'s graceful close left the public surface. The four
+verbs did not become one reason enum: three of them are the one order production ends a
+connection in, and the fourth had no production caller at all.
+
+**Not done, and why.** No end-of-generation notification with adapters: the two
+registries above are not generation-scoped, and a drain-side hook would need the
+connection to acquire a collaborator purely to reach a conversation id.
+
+See `.scratch/reply-turn-key/spec.md`.
 
 ## 5. Dashboard: becoming live owns its own hold and catch-up debt — **Worth exploring**
 

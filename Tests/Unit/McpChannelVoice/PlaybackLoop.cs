@@ -1,5 +1,3 @@
-using McpChannelVoice.Services;
-
 namespace Tests.Unit.McpChannelVoice;
 
 // How a playback loop is stopped, for tests that run one. The queue's own closing verb is the link
@@ -36,15 +34,5 @@ internal static class PlaybackLoop
         catch (OperationCanceledException)
         {
         }
-    }
-
-    // The other way a test ends one: the link dropped. Everything the loop has not played is
-    // discarded as it dequeues it, and the drain sweeps whatever is left — the order production
-    // uses, and the only order it uses.
-    public static async Task LinkDroppedAsync(this PlaybackQueue queue, Task loop)
-    {
-        queue.CompleteAndDiscardQueued();
-        await loop.WaitAsync(_stopTimeout);
-        queue.DiscardUnplayed();
     }
 }
