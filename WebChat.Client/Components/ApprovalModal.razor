@@ -8,7 +8,9 @@
 @if (_approvalRequest is not null)
 {
     <div class="approval-modal-overlay">
-        <div class="approval-modal">
+        @* Answering the prompt on screen surfaces the next request waiting behind it, so which
+           request is showing is the only way to tell "answered" from "replaced". *@
+        <div class="approval-modal" data-approval-id="@_approvalRequest.ApprovalId">
             <div class="approval-header">
                 <h3>Tool Approval Required</h3>
             </div>

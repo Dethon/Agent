@@ -102,19 +102,60 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         }
     }
 
-    internal static async Task DismissApprovalOverlayAsync(IPage page)
+    internal static Task DismissApprovalOverlayAsync(IPage page) =>
+        RejectEveryVisibleApprovalAsync(page, TimeSpan.FromSeconds(15));
+
+    // The prompt on screen is the oldest request still waiting (ApprovalState.Pending is a
+    // queue), so answering one surfaces the next in the same instant and the overlay never
+    // hides in between. Rejecting once and expecting a clear screen fails whenever the agent
+    // has more than one request outstanding — reject until nothing is left instead.
+    //
+    // This is cleanup, not an assertion: at the deadline it gives up quietly and leaves the
+    // caller's own step to report what a stuck overlay broke.
+    private static async Task RejectEveryVisibleApprovalAsync(IPage page, TimeSpan budget)
     {
         var overlay = page.Locator(".approval-modal-overlay");
-        if (await overlay.IsVisibleAsync())
+        var rejectBtn = page.Locator(".btn-reject");
+
+        var deadline = DateTime.UtcNow + budget;
+        while (DateTime.UtcNow < deadline && await overlay.IsVisibleAsync())
         {
-            var rejectBtn = page.Locator(".btn-reject");
-            if (await rejectBtn.IsVisibleAsync())
+            var showing = await CurrentApprovalIdAsync(page);
+            if (showing is null || !await rejectBtn.IsVisibleAsync())
             {
-                await rejectBtn.ClickAsync();
+                return;
             }
 
-            await Assertions.Expect(overlay).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
+            // The buttons stay disabled while an answer is in flight, so the click waits for
+            // the modal on screen to be answerable — this one's, or the next one's.
+            await rejectBtn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+            await WaitUntilApprovalAnsweredAsync(page, showing, TimeSpan.FromSeconds(10));
         }
+    }
+
+    // The id of the request the modal is showing, or null when nothing is on screen — including
+    // the case where the prompt goes away while this is asking.
+    private static async Task<string?> CurrentApprovalIdAsync(IPage page)
+    {
+        try
+        {
+            return await page.Locator(".approval-modal")
+                .GetAttributeAsync("data-approval-id", new LocatorGetAttributeOptions { Timeout = 2_000 });
+        }
+        catch (TimeoutException)
+        {
+            return null;
+        }
+    }
+
+    // Answered means this request is off the screen — either nothing is prompting any more, or
+    // the next request in the queue has taken its place. Waiting for "no modal" instead would
+    // fail whenever another request was already waiting behind this one.
+    private static async Task WaitUntilApprovalAnsweredAsync(IPage page, string approvalId, TimeSpan budget)
+    {
+        var answered = page.Locator($".approval-modal[data-approval-id='{approvalId}']");
+        await Assertions.Expect(answered).ToBeHiddenAsync(
+            new LocatorAssertionsToBeHiddenOptions { Timeout = (float)budget.TotalMilliseconds });
     }
 
     // Two overlays can intercept these clicks and make the flow flaky:
@@ -171,13 +212,12 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     // leaks and StreamResumeService re-raises the overlay on every later test's page.
     //
     // Rejecting calls RespondToApprovalAsync server-side, removing the entry. The agent may
-    // then issue another tool call, so loop until no overlay reappears and nothing is
-    // streaming — guaranteeing no server-side approval is left behind, deterministically,
-    // instead of relying on the next test to dismiss a stale overlay.
+    // then issue another tool call, and several requests can be waiting at once, so loop until
+    // no overlay reappears and nothing is streaming instead of relying on the next test to
+    // dismiss a stale overlay.
     internal static async Task DrainPendingApprovalsAsync(IPage page)
     {
         var overlay = page.Locator(".approval-modal-overlay");
-        var rejectBtn = page.Locator(".btn-reject");
         var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
 
         var deadline = DateTime.UtcNow.AddSeconds(90);
@@ -185,13 +225,18 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         {
             if (await overlay.IsVisibleAsync())
             {
-                if (await rejectBtn.IsVisibleAsync())
+                try
                 {
-                    await rejectBtn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                    await RejectEveryVisibleApprovalAsync(page, TimeSpan.FromSeconds(20));
+                }
+                catch (TimeoutException)
+                {
+                    // A reject that will not click leaves the entry for the next test's
+                    // dismissal to clear. This runs in a finally, so it must never replace the
+                    // failure the test itself is reporting.
+                    return;
                 }
 
-                await Assertions.Expect(overlay)
-                    .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
                 continue;
             }
 
@@ -365,9 +410,12 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             var toolName = page.Locator(".tool-name");
             (await toolName.TextContentAsync()).ShouldNotBeNullOrEmpty();
 
+            var approved = (await CurrentApprovalIdAsync(page)).ShouldNotBeNull();
             await page.Locator(".btn-approve").ClickAsync();
 
-            await Assertions.Expect(approvalModal).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
+            // This request is answered. The screen can still be prompting, because the agent may
+            // already have another request waiting behind this one.
+            await WaitUntilApprovalAnsweredAsync(page, approved, TimeSpan.FromSeconds(10));
 
             // Wait for streaming to finish — the Cancel button is only visible while streaming.
             var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
@@ -407,9 +455,10 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             var approvalModal = page.Locator(".approval-modal");
             await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
+            var rejected = (await CurrentApprovalIdAsync(page)).ShouldNotBeNull();
             await page.Locator(".btn-reject").ClickAsync();
 
-            await Assertions.Expect(approvalModal).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
+            await WaitUntilApprovalAnsweredAsync(page, rejected, TimeSpan.FromSeconds(10));
 
             // Stream should stop — Cancel button disappears (only visible while streaming)
             var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
