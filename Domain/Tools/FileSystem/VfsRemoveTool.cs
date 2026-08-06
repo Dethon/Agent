@@ -24,6 +24,16 @@ public class VfsRemoveTool(IVirtualFileSystemRegistry registry)
             return unresolved.ToNode();
         }
 
-        return (await resolution.Backend.DeleteAsync(resolution.RelativePath, cancellationToken)).ToNode();
+        var result = await resolution.Backend.DeleteAsync(resolution.RelativePath, cancellationToken);
+        // The backend names the path it deleted in its own coordinates — a disk root reports the
+        // container-absolute one — and the registry refuses that if the model feeds it back. The
+        // caller's own string is the only spelling that stays usable.
+        //
+        // The trash location has no virtual path at all: it sits outside every mount, so there is
+        // nothing to translate and nothing the model could read or restore from. It is reported
+        // empty rather than as a path that looks actionable and is not.
+        return result
+            .Map(removal => removal with { OriginalPath = path, TrashPath = "" })
+            .ToNode();
     }
 }

@@ -237,11 +237,14 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             var tail = ExtractTail(srcRel, src.RelativePath);
             if (tail is null)
             {
+                // The one entry with no virtual path: something outside the requested source
+                // directory is outside the coordinate frame, so there is nothing to translate. It
+                // reports no source at all, and the backend's raw string goes in the message, where
+                // it reads as diagnostics rather than as a path to retry.
                 perEntry.Add(new JsonObject
                 {
-                    ["source"] = srcRel,
                     ["status"] = "failed",
-                    ["error"] = $"Glob entry '{srcRel}' is not under source directory '{src.RelativePath}'; refusing to flatten."
+                    ["error"] = $"Glob entry '{srcRel}' is not under source directory '{srcVirtual}'; refusing to flatten."
                 });
                 failed++;
                 continue;

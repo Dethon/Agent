@@ -32,8 +32,30 @@ public class VfsRemoveToolTests
         var result = await _tool.RunAsync("/library/old.pdf");
 
         result!["status"]!.GetValue<string>().ShouldBe("success");
-        result["trashPath"]!.GetValue<string>().ShouldBe(".trash/old.pdf");
+        result["message"]!.GetValue<string>().ShouldBe("Moved to trash");
         _backend.Verify(b => b.DeleteAsync("old.pdf", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The backend names the path it deleted in its own coordinates — a disk root reports the
+    // container-absolute one, which the registry refuses if the model feeds it back. And the trash
+    // location sits outside every mount, so no virtual path for it exists at all: the model is given
+    // nothing rather than a path it cannot act on.
+    [Fact]
+    public async Task RunAsync_BackendLocalPath_IsReplacedWithTheCallersPathAndNoTrashLocation()
+    {
+        _registry.Setup(r => r.Resolve("/library/old.pdf"))
+            .Returns(Resolved(_backend.Object, "old.pdf", "/library"));
+        _backend.Setup(b => b.DeleteAsync("old.pdf", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
+            {
+                Status = "success", Message = "Moved to trash",
+                OriginalPath = "/srv/library/old.pdf", TrashPath = "/srv/library/.trash/old.pdf"
+            }));
+
+        var result = await _tool.RunAsync("/library/old.pdf");
+
+        result!["originalPath"]!.GetValue<string>().ShouldBe("/library/old.pdf");
+        result["trashPath"]!.GetValue<string>().ShouldBe("");
     }
 
     [Fact]
@@ -53,6 +75,7 @@ public class VfsRemoveToolTests
         result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.NotFound);
     }
 
-    private static FsResult<FileSystemResolution> Resolved(IFileSystemBackend backend, string relativePath) =>
-        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath));
+    private static FsResult<FileSystemResolution> Resolved(
+        IFileSystemBackend backend, string relativePath, string mountPoint = "") =>
+        new FsResult<FileSystemResolution>.Ok(new FileSystemResolution(backend, relativePath, mountPoint));
 }

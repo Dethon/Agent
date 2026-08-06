@@ -39,11 +39,15 @@ public class VfsTextEditTool(IVirtualFileSystemRegistry registry)
 
         var result = await resolution.Backend.EditAsync(resolution.RelativePath, edits, cancellationToken);
 
-        if (TextArg.EditsWereCoercedArg(arguments) && result.TryGetValue(out var value, out _))
+        // Same reason as create: the backend answers in its own coordinates, so reading back what
+        // was just edited failed on the path the edit reported.
+        var edited = result.Map(edit => edit with { FilePath = filePath });
+
+        if (TextArg.EditsWereCoercedArg(arguments) && edited.TryGetValue(out var value, out _))
         {
             return FsResultContract.ToNode(value with { Note = CoercionNote });
         }
 
-        return result.ToNode();
+        return edited.ToNode();
     }
 }

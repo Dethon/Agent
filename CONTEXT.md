@@ -324,6 +324,21 @@ to move anything and its own refusals never run. The check asks it first, before
 byte is streamed, and a mount with nothing to say allows it.
 _Avoid_: move guard, cross-mount guard, pre-move check
 
+## Virtual filesystem
+
+**Virtual path**:
+A mount point followed by a path under it. It is the only coordinate system that crosses
+the tool boundary: the only spelling the filesystem prompt teaches, the only one the
+registry resolves, and the only one that may appear in a tool's answer. Anything the model
+reads out of a response can be passed straight back into another tool.
+_Avoid_: full path, absolute path, mount-relative path
+
+**Backend coordinates**:
+How a backend spells a path to itself — container-absolute for a disk root, mount-relative
+with or without a leading slash elsewhere. Backends disagree with each other, and that is
+fine on the wire. It must never appear in a response the model sees.
+_Avoid_: real path, physical path, native path
+
 ## Media library
 
 **Live download**:
