@@ -150,7 +150,9 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         Grown grown;
         lock (_lock)
         {
-            grown = Grow(Streaming(topicId), chunk, movesTheMessage: false);
+            var stream = Streaming(topicId);
+            grown = Grow(stream, chunk, movesTheMessage: false);
+            RememberThePush(stream, chunk);
         }
 
         Publish(topicId, grown);
@@ -250,6 +252,7 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
     {
         ChatMessageModel? finished;
         string? finishedId;
+        bool wasWriting;
         lock (_lock)
         {
             if (Streaming(Held(lease)) is not { } stream)
@@ -258,8 +261,23 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
             }
 
             finishedId = stream.CurrentMessageId;
-            finished = stream.Message.HasContent ? Whole(stream, finishedId, stream.Message) : null;
-            stream.Message = resume ?? new ChatMessageModel { Role = "assistant" };
+            wasWriting = stream.Message.HasContent;
+            finished = wasWriting ? Whole(stream, finishedId, stream.Message) : null;
+            var starting = resume ?? new ChatMessageModel { Role = "assistant" };
+
+            // The reply has reached the message a pushed tool call named, so the call leaves the
+            // tail it was glued to and joins the message it belongs to. Taking it out is what
+            // makes the move a move rather than a second showing.
+            if (finished is not null && messageId is not null &&
+                PushedFor(stream, messageId) is { } pushed &&
+                Without(finished, pushed) is { } moved)
+            {
+                stream.Pushed.Remove(messageId);
+                finished = moved.HasContent ? moved : null;
+                starting = WithToolCalls(starting, pushed);
+            }
+
+            stream.Message = starting;
             stream.CurrentMessageId = messageId;
 
             // The caller is handed the whole message to bring back later, so the stream stops
@@ -270,13 +288,18 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
             }
         }
 
-        if (finished is null)
+        if (finished is not null)
         {
-            return null;
+            Commit(lease.TopicId, finished, finishedId);
         }
 
-        Commit(lease.TopicId, finished, finishedId);
-        dispatcher.Dispatch(new ResetStreamingContent(lease.TopicId));
+        // The buffer showed the message that has just been swapped out, tool call and all, so it
+        // is cleared even when nothing was left to commit.
+        if (wasWriting)
+        {
+            dispatcher.Dispatch(new ResetStreamingContent(lease.TopicId));
+        }
+
         return finished;
     }
 
@@ -346,7 +369,7 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         }
 
         var before = stream.Message;
-        var after = BufferRebuildUtility.AccumulateChunk(before, WithoutASecondDelivery(before, chunk));
+        var after = BufferRebuildUtility.AccumulateChunk(before, WithoutASecondDelivery(stream, chunk));
 
         stream.Message = after;
         if (movesTheMessage && chunk.MessageId is not null)
@@ -365,12 +388,66 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
     // A finished tool call reaches this client twice: the server writes it into the topic's
     // stream and pushes it over the hub as well. Both routes now feed the one accumulator, so a
     // block that already ends what we have is the second delivery of it rather than a second
-    // call. Two identical calls with nothing between them read as one; that is the trade for
-    // never showing a tool call twice.
-    private static ChatStreamMessage WithoutASecondDelivery(ChatMessageModel accumulated, ChatStreamMessage chunk) =>
-        !string.IsNullOrEmpty(chunk.ToolCalls) && accumulated.ToolCalls?.EndsWith(chunk.ToolCalls) == true
-            ? chunk with { ToolCalls = null }
-            : chunk;
+    // call. So is one a push has already shown under this message id, wherever the push had to
+    // glue it — that memory answers for one echo and is spent by it. Two identical calls with
+    // nothing between them read as one; that is the trade for never showing a tool call twice.
+    private static ChatStreamMessage WithoutASecondDelivery(TopicStream stream, ChatStreamMessage chunk)
+    {
+        if (string.IsNullOrEmpty(chunk.ToolCalls))
+        {
+            return chunk;
+        }
+
+        if (stream.Message.ToolCalls?.EndsWith(chunk.ToolCalls) != true &&
+            PushedFor(stream, chunk.MessageId) != chunk.ToolCalls)
+        {
+            return chunk;
+        }
+
+        if (chunk.MessageId is not null)
+        {
+            stream.Pushed.Remove(chunk.MessageId);
+        }
+
+        return chunk with { ToolCalls = null };
+    }
+
+    // The message a push names is the one its tool call belongs to. When the reply is writing
+    // another message the call is glued to that one's tail so it shows at once, and the stream
+    // remembers where it really belongs until the reply gets there.
+    private static void RememberThePush(TopicStream? stream, ChatStreamMessage chunk)
+    {
+        if (stream is not null && chunk.MessageId is not null &&
+            !string.IsNullOrEmpty(chunk.ToolCalls) && chunk.MessageId != stream.CurrentMessageId)
+        {
+            stream.Pushed[chunk.MessageId] = chunk.ToolCalls;
+        }
+    }
+
+    private static string? PushedFor(TopicStream stream, string? messageId) =>
+        messageId is not null ? stream.Pushed.GetValueOrDefault(messageId) : null;
+
+    // Null when the tool call is not in this message to take out of it.
+    private static ChatMessageModel? Without(ChatMessageModel message, string toolCalls)
+    {
+        var at = message.ToolCalls?.IndexOf(toolCalls, StringComparison.Ordinal) ?? -1;
+        if (at < 0)
+        {
+            return null;
+        }
+
+        var left = Joined(
+            message.ToolCalls![..at].TrimEnd('\n'),
+            message.ToolCalls[(at + toolCalls.Length)..].TrimStart('\n'),
+            "\n");
+
+        return message with { ToolCalls = string.IsNullOrEmpty(left) ? null : left };
+    }
+
+    private static ChatMessageModel WithToolCalls(ChatMessageModel message, string toolCalls) =>
+        message.ToolCalls?.EndsWith(toolCalls) == true
+            ? message
+            : BufferRebuildUtility.AccumulateChunk(message, new ChatStreamMessage { ToolCalls = toolCalls });
 
     // A message the stream closed off mid-reply lives in two halves: the one that already has a
     // bubble and the one the accumulator has written since. Anything that hands the message on
@@ -449,5 +526,9 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
 
         // Per message id, the half this stream committed and took out of the accumulator.
         public Dictionary<string, ChatMessageModel> Committed { get; } = [];
+
+        // Per message id, a tool call a push showed under it while another message was being
+        // written.
+        public Dictionary<string, string> Pushed { get; } = [];
     }
 }
