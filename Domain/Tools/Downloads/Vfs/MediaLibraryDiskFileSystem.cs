@@ -14,7 +14,7 @@ namespace Domain.Tools.Downloads.Vfs;
 public sealed class MediaLibraryDiskFileSystem(
     IFileSystemClient client,
     LibraryPathConfig root,
-    DownloadsOverlay downloads) : DiskFileSystem(Name, Mount(root), client, root), ICrossMountMoveGuard
+    DownloadsOverlay downloads) : DiskFileSystem(Name, Mount(root), client, root)
 {
     public const string Name = "media";
 
@@ -106,13 +106,19 @@ public sealed class MediaLibraryDiskFileSystem(
         ?? await RefuseAsync<FsMoveResult>(DownloadsIntent.Land, destinationPath, ct)
         ?? await base.MoveAsync(sourcePath, destinationPath, ct);
 
-    // The cross-mount half of the same refusal. A move between two mounts never reaches MoveAsync —
-    // it streams the payload out and then deletes the source, and on this mount that delete is the
-    // download's cancel — so VfsMoveTool asks each end about its own path first, with no way to say
-    // which end it is holding: one intent answers for both, and the move-out reason is the one that
-    // explains the cancel.
-    public async Task<ToolErrorResult?> RefuseMoveAsync(string relativePath, CancellationToken ct) =>
-        await downloads.RefuseAsync(DownloadsIntent.MoveOut, relativePath, ct);
+    // The cross-mount half of the same refusal, and the reason this mount is the only one that
+    // registers the check. A move between two mounts never reaches MoveAsync — it streams the
+    // payload out and then deletes the source, and on this mount that delete is the download's
+    // cancel — so the transfer machinery asks the source this first. It is the source end's own
+    // question, so it asks the source end's intent, and one call answers for the whole subtree:
+    // the rule overlaps in both directions.
+    public override async Task<FsResult<FsMoveOutCheckResult>> MoveOutCheckAsync(string path, CancellationToken ct) =>
+        await RefuseAsync<FsMoveOutCheckResult>(DownloadsIntent.MoveOut, path, ct)
+        ?? FsMoveOutCheckResult.Allow(path);
+
+    public override string DescribeMoveOutCheck =>
+        $"Refuses to let a live download's paths leave this filesystem: {MediaFilesystem.DownloadsSubdir}"
+        + "/<id>, anything inside it, and any directory holding one. Every other path may leave.";
 
     // Copy and blob-write only land content, so unlike move only the destination side is asked:
     // the way out is harmless (the source keeps its file), but whatever lands inside a live

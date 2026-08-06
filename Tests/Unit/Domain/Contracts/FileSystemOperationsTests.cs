@@ -9,7 +9,7 @@ using Shouldly;
 
 namespace Tests.Unit.Domain.Contracts;
 
-// Six places used to enumerate the same twelve operations, and all six had to be edited together
+// Six places used to enumerate the same operations, and all six had to be edited together
 // for a new one to work. They derive from one list now, and these assert that they still do — an
 // operation added to the list reaches every surface without a second edit.
 public class FileSystemOperationsTests
@@ -168,6 +168,11 @@ public class FileSystemOperationsTests
         public override Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
             bool overwrite, bool createDirectories, CancellationToken ct) =>
             base.WriteChunksAsync(path, chunks, overwrite, createDirectories, ct);
+
+        // The one operation whose override declares a refusal rather than a capability. A backend
+        // that overrides everything advertises this too, and the registrar reads it the same way.
+        public override Task<FsResult<FsMoveOutCheckResult>> MoveOutCheckAsync(string path, CancellationToken ct) =>
+            base.MoveOutCheckAsync(path, ct);
 
         // The ranged write is its own override: streaming bytes is not enough to advertise
         // fs_blob_write, because the wire sends one chunk per call at an increasing offset.

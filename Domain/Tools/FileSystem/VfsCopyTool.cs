@@ -92,6 +92,11 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             };
         }
 
+        if (deleteSource && await MoveOutRefusalAsync(src, ct) is { } refusal)
+        {
+            return refusal.ToNode();
+        }
+
         long bytes;
         try
         {
@@ -189,6 +194,11 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 ["destination"] = dstVirtual,
                 ["bytes"] = copy.Bytes
             };
+        }
+
+        if (deleteSource && await MoveOutRefusalAsync(src, ct) is { } refusal)
+        {
+            return refusal.ToNode();
         }
 
         var globResult = await src.Backend.GlobAsync(src.RelativePath, "**/*", ct);
@@ -313,6 +323,17 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             ["entries"] = perEntry
         };
     }
+
+    // A cross-mount move is a streamed copy followed by a delete of the source, so the source
+    // backend's own MoveAsync — where a refusal like "this path belongs to a live download" lives —
+    // is never called. Both transfer paths ask here instead, under the delete-source condition that
+    // is exactly what makes the question necessary, before the first byte and before the directory
+    // listing. One question about the source root, not one per entry: a mount's rule covers a
+    // subtree, and a round trip per file would buy only the download that goes live mid-transfer.
+    private static async Task<ToolErrorResult?> MoveOutRefusalAsync(FileSystemResolution src, CancellationToken ct) =>
+        (await src.Backend.MoveOutCheckAsync(src.RelativePath, ct)).TryGetValue(out _, out var refusal)
+            ? null
+            : refusal;
 
     // A streamed move is copy + delete; a refused delete must not present the duplicate-leaving
     // copy as a completed move. The envelope keeps the source's code so the caller can tell a

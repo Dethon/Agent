@@ -63,7 +63,7 @@ public class McpFileSystemBackendChunkTests
         yield return new byte[] { 1, 2, 3 };
     }
 
-    private sealed class RefusingBackend() : McpFileSystemBackend(null!, "test")
+    private sealed class RefusingBackend() : McpFileSystemBackend(null!, "test", advertisedOperations: null)
     {
         protected internal override Task<JsonNode> CallToolAsync(
             string toolName, Dictionary<string, object?> args, CancellationToken ct) =>
@@ -76,7 +76,7 @@ public class McpFileSystemBackendChunkTests
             });
     }
 
-    private sealed class CountingBackend(int totalChunks) : McpFileSystemBackend(null!, "test")
+    private sealed class CountingBackend(int totalChunks) : McpFileSystemBackend(null!, "test", advertisedOperations: null)
     {
         public int CallCount { get; private set; }
 

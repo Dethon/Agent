@@ -7,6 +7,7 @@ using Domain.Tools.Downloads.Vfs;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
+using Tests.Unit.Domain.Tools.FileSystem;
 using static Tests.Unit.Domain.Downloads.Vfs.DownloadFakes;
 
 namespace Tests.Unit.Domain.Downloads.Vfs;
@@ -384,6 +385,42 @@ public class MediaLibraryFileSystemTests : IDisposable
             .ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
     }
 
+    // The move-out check is the same rule a same-mount move asks about its source end, reachable
+    // from the side of the seam the agent is on. One question about one path, so it answers for
+    // the whole subtree: an ancestor of a live download's directory and anything inside one both
+    // offend.
+    [Theory]
+    [InlineData("downloads/42")]
+    [InlineData("downloads/42/payload.mkv")]
+    [InlineData("downloads/42/status.json")]
+    [InlineData("downloads")]
+    public async Task MoveOutCheck_OfAPathALiveDownloadOwns_IsRefusedWithTheMoveOutReason(string path)
+    {
+        _client.Add(Item(42));
+
+        var error = (await _sut.MoveOutCheckAsync(path, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveOutCheckResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Message.ShouldContain(path);
+        error.Message.ShouldContain("moving across that boundary");
+        error.Retryable.ShouldBeFalse();
+    }
+
+    // A leftover belongs to no live download, and an ordinary media file never did.
+    [Theory]
+    [InlineData("Movies/film.mkv")]
+    [InlineData("downloads/99")]
+    [InlineData("downloads/99/status.json")]
+    public async Task MoveOutCheck_OfAPathNoLiveDownloadOwns_IsAllowed(string path)
+    {
+        _client.Add(Item(42));
+        await WriteLeftoverStatus();
+
+        (await _sut.MoveOutCheckAsync(path, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveOutCheckResult>.Ok>();
+    }
+
     // The disk glob relativizes an absolute pattern against the root it matches from; the overlay
     // used to match the caller's original spelling, whose leading root no mount-relative candidate
     // can ever have. So an absolute pattern listed the real files and silently omitted every
@@ -449,7 +486,8 @@ public class MediaLibraryFileSystemTests : IDisposable
     public async Task CrossMountMove_IntoALiveDownload_IsRefused()
     {
         _client.Add(Item(42));
-        var source = new Mock<IFileSystemBackend>();
+        // The vault has no move-out rule, so the refusal can only come from the landing end.
+        var source = new Mock<IFileSystemBackend>().AllowingMoveOut();
         source.SetupGet(b => b.FilesystemName).Returns("vault");
         source.Setup(b => b.InfoAsync("note.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsInfoResult>.Ok(
@@ -466,6 +504,63 @@ public class MediaLibraryFileSystemTests : IDisposable
         result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
         result["message"]!.GetValue<string>().ShouldContain("live download");
         source.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // A leftover is an ordinary file, so it leaves the mount like one: the check allows it, the
+    // bytes stream, and the tail delete removes the real file the disk owns.
+    [Fact]
+    public async Task CrossMountMove_OfALeftoverStatusFile_StillTransfers()
+    {
+        _client.Add(Item(42));
+        await WriteLeftoverStatus();
+        var destination = new Mock<IFileSystemBackend>();
+        destination.SetupGet(b => b.FilesystemName).Returns("vault");
+        destination.Setup(b => b.WriteChunksAsync("status.json",
+                It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(14L);
+
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.Resolve("/media/downloads/99/status.json"))
+            .Returns(Resolved(_sut, "downloads/99/status.json"));
+        registry.Setup(r => r.Resolve("/vault/status.json"))
+            .Returns(Resolved(destination.Object, "status.json"));
+
+        var result = await new VfsMoveTool(registry.Object)
+            .RunAsync("/media/downloads/99/status.json", "/vault/status.json");
+
+        result["status"]!.GetValue<string>().ShouldBe("ok");
+        _disk.TrashedPaths.ShouldContain(p => p.EndsWith("status.json", StringComparison.Ordinal));
+        _client.CleanedUp.ShouldBeEmpty();
+    }
+
+    // A copy leaves the source in place, so the download keeps its files and nothing is orphaned:
+    // taking a snapshot of what has arrived so far stays possible. Only the move is refused.
+    [Fact]
+    public async Task CrossMountCopy_OutOfALiveDownload_StillTransfers()
+    {
+        _client.Add(Item(42));
+        Directory.CreateDirectory(Path.Combine(_libraryRoot, "downloads", "42"));
+        await File.WriteAllTextAsync(Path.Combine(_libraryRoot, "downloads", "42", "payload.mkv"), "half");
+        var destination = new Mock<IFileSystemBackend>();
+        destination.SetupGet(b => b.FilesystemName).Returns("vault");
+        destination.Setup(b => b.WriteChunksAsync("payload.mkv",
+                It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(4L);
+
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.Resolve("/media/downloads/42/payload.mkv"))
+            .Returns(Resolved(_sut, "downloads/42/payload.mkv"));
+        registry.Setup(r => r.Resolve("/vault/payload.mkv"))
+            .Returns(Resolved(destination.Object, "payload.mkv"));
+
+        var result = await new VfsCopyTool(registry.Object)
+            .RunAsync("/media/downloads/42/payload.mkv", "/vault/payload.mkv");
+
+        result["status"]!.GetValue<string>().ShouldBe("ok");
+        File.Exists(Path.Combine(_libraryRoot, "downloads", "42", "payload.mkv")).ShouldBeTrue();
+        _client.Items.ShouldContain(i => i.Id == 42);
     }
 
     [Fact]

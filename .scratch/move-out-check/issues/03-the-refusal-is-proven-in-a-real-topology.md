@@ -19,13 +19,13 @@ See `.scratch/move-out-check/spec.md`.
 **Blocked by:** 02 — The media library refuses a move out of a live download, and the dead guard
 is deleted.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The multi-filesystem fixture hosts a media library mount alongside its existing ones, over
+- [x] The multi-filesystem fixture hosts a media library mount alongside its existing ones, over
       a fake download client, with no new containers
-- [ ] A cross-mount move of a live download's directory through the real proxy is refused, and
+- [x] A cross-mount move of a live download's directory through the real proxy is refused, and
       the refusal names the path
-- [ ] The destination mount holds nothing afterwards
-- [ ] The download is still live afterwards
-- [ ] A cross-mount move of an ordinary media file through the same topology succeeds
-- [ ] The existing cross-mount move and copy integration tests on that fixture still pass
+- [x] The destination mount holds nothing afterwards
+- [x] The download is still live afterwards
+- [x] A cross-mount move of an ordinary media file through the same topology succeeds
+- [x] The existing cross-mount move and copy integration tests on that fixture still pass

@@ -39,7 +39,7 @@ public class VfsCopyToolCrossFsUnsupportedTests
     public async Task TransferFileAsync_CrossFsSourceDoesNotStream_ReturnsUnsupportedAndDoesNotDeleteSource()
     {
         // When the source backend can't stream, a move must not delete the source: nothing was transferred.
-        var src = new Mock<IFileSystemBackend>();
+        var src = new Mock<IFileSystemBackend>().AllowingMoveOut();
         src.Setup(b => b.ReadChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Throws(new NotSupportedException("The Home Assistant filesystem does not support raw byte streaming."));
 
@@ -68,7 +68,7 @@ public class VfsCopyToolCrossFsUnsupportedTests
     [Fact]
     public async Task TransferFileAsync_CrossFsStreamFails_ReturnsErrorEnvelopeAndDoesNotDeleteSource()
     {
-        var src = new Mock<IFileSystemBackend>();
+        var src = new Mock<IFileSystemBackend>().AllowingMoveOut();
         src.Setup(b => b.ReadChunksAsync("missing.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("hello")));
 

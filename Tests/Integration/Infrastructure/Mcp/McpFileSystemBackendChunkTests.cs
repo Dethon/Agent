@@ -16,7 +16,7 @@ public class McpFileSystemBackendChunkTests(MultiFileSystemFixture fx)
         File.WriteAllBytes(Path.Combine(fx.LibraryPath, "big.bin"), bytes);
 
         await using var client = await CreateClient(fx.LibraryEndpoint);
-        var backend = new McpFileSystemBackend(client, "library");
+        var backend = new McpFileSystemBackend(client, "library", advertisedOperations: null);
 
         using var ms = new MemoryStream();
         await foreach (var chunk in backend.ReadChunksAsync("big.bin", CancellationToken.None))
@@ -32,7 +32,7 @@ public class McpFileSystemBackendChunkTests(MultiFileSystemFixture fx)
     {
         var bytes = Enumerable.Range(0, 600 * 1024).Select(i => (byte)(i % 256)).ToArray();
         await using var client = await CreateClient(fx.NotesEndpoint);
-        var backend = new McpFileSystemBackend(client, "notes");
+        var backend = new McpFileSystemBackend(client, "notes", advertisedOperations: null);
 
         var written = await backend.WriteChunksAsync("written.bin", SingleChunk(bytes),
             overwrite: false, createDirectories: true, CancellationToken.None);
@@ -45,7 +45,7 @@ public class McpFileSystemBackendChunkTests(MultiFileSystemFixture fx)
     public async Task WriteChunksAsync_EmptyEnumerable_CreatesEmptyFile()
     {
         await using var client = await CreateClient(fx.NotesEndpoint);
-        var backend = new McpFileSystemBackend(client, "notes");
+        var backend = new McpFileSystemBackend(client, "notes", advertisedOperations: null);
 
         var written = await backend.WriteChunksAsync("empty.bin", Empty(),
             overwrite: false, createDirectories: true, CancellationToken.None);
@@ -65,8 +65,8 @@ public class McpFileSystemBackendChunkTests(MultiFileSystemFixture fx)
 
         await using var readClient = await CreateClient(fx.LibraryEndpoint);
         await using var writeClient = await CreateClient(fx.NotesEndpoint);
-        var src = new McpFileSystemBackend(readClient, "library");
-        var dst = new McpFileSystemBackend(writeClient, "notes");
+        var src = new McpFileSystemBackend(readClient, "library", advertisedOperations: null);
+        var dst = new McpFileSystemBackend(writeClient, "notes", advertisedOperations: null);
 
         var written = await dst.WriteChunksAsync("huge.bin",
             src.ReadChunksAsync("huge.bin", CancellationToken.None),

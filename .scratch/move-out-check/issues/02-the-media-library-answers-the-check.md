@@ -22,19 +22,19 @@ intent, unchanged.
 
 **Blocked by:** 01 — The move-out check crosses the seam, allowing by default.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The media mount answers the move-out check with the overlay's rule, asked with the
+- [x] The media mount answers the move-out check with the overlay's rule, asked with the
       move-out intent
-- [ ] A move out of a live download's directory, of a path inside one, or of an ancestor of one
+- [x] A move out of a live download's directory, of a path inside one, or of an ancestor of one
       is refused, with the reason and hint the same-mount move already gives
-- [ ] The refusal is marked permanent rather than retryable
-- [ ] A leftover status file and an ordinary media file outside any live download still move
+- [x] The refusal is marked permanent rather than retryable
+- [x] A leftover status file and an ordinary media file outside any live download still move
       across mounts
-- [ ] A cross-mount copy out of a live download's directory still succeeds
-- [ ] A same-mount move on the media library is refused exactly as before
-- [ ] A move into a live download's directory is still refused by the landing rule
-- [ ] `ICrossMountMoveGuard`, its implementation and the move tool's cross-mount refusal helper
+- [x] A cross-mount copy out of a live download's directory still succeeds
+- [x] A same-mount move on the media library is refused exactly as before
+- [x] A move into a live download's directory is still refused by the landing rule
+- [x] `ICrossMountMoveGuard`, its implementation and the move tool's cross-mount refusal helper
       are gone, and nothing type-tests a backend
-- [ ] The media mount's tests assert the new operation consults the rule with the right intent,
+- [x] The media mount's tests assert the new operation consults the rule with the right intent,
       alongside the existing operations

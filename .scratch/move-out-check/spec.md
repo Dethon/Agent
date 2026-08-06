@@ -1,6 +1,6 @@
 # A mount is asked before a path leaves it
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 

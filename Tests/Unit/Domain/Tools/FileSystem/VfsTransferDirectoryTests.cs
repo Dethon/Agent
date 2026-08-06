@@ -125,7 +125,7 @@ public class VfsTransferDirectoryTests
     [Fact]
     public async Task TransferDirectoryAsync_CrossFsMoveAllSucceed_DeletesSourceRootNotPerFile()
     {
-        var src = new Mock<IFileSystemBackend>();
+        var src = new Mock<IFileSystemBackend>().AllowingMoveOut();
         src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
             {
@@ -160,7 +160,7 @@ public class VfsTransferDirectoryTests
     [Fact]
     public async Task TransferDirectoryAsync_CrossFsMovePartialFailure_DoesNotDeleteAnySource()
     {
-        var src = new Mock<IFileSystemBackend>();
+        var src = new Mock<IFileSystemBackend>().AllowingMoveOut();
         src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
             {
@@ -193,7 +193,7 @@ public class VfsTransferDirectoryTests
     {
         // A capped (file-backed) source glob can't enumerate the whole tree. Copying the partial
         // listing would silently drop files while reporting success, so the transfer must abort.
-        var src = new Mock<IFileSystemBackend>();
+        var src = new Mock<IFileSystemBackend>().AllowingMoveOut();
         src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
             {

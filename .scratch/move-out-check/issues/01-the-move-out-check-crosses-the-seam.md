@@ -30,20 +30,20 @@ See `.scratch/move-out-check/spec.md` and ADR-0015.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `fs_move_out_check` is the thirteenth entry in the one filesystem operation list, with a
+- [x] `fs_move_out_check` is the thirteenth entry in the one filesystem operation list, with a
       null tool key and null capability
-- [ ] The backend contract carries the check; the backend base class answers allowed
-- [ ] A backend that does not override it registers no tool and appears unchanged in its
+- [x] The backend contract carries the check; the backend base class answers allowed
+- [x] A backend that does not override it registers no tool and appears unchanged in its
       mount's capability list
-- [ ] A backend that does override it registers the tool, with its own description hook
-- [ ] The MCP proxy calls the wire tool when the client advertised it, and answers allowed
+- [x] A backend that does override it registers the tool, with its own description hook
+- [x] The MCP proxy calls the wire tool when the client advertised it, and answers allowed
       when it did not
-- [ ] A cross-mount file move asks the source before streaming; a refusal is returned as the
+- [x] A cross-mount file move asks the source before streaming; a refusal is returned as the
       standard envelope and nothing is written to the destination
-- [ ] A cross-mount directory move asks the source before listing it; a refusal returns before
+- [x] A cross-mount directory move asks the source before listing it; a refusal returns before
       any entry is enumerated or transferred
-- [ ] A cross-mount copy does not ask, and a same-mount move does not ask
-- [ ] Every existing cross-mount move and copy test passes unchanged
-- [ ] The server conformance tests cover the new operation's wiring and description hook
+- [x] A cross-mount copy does not ask, and a same-mount move does not ask
+- [x] Every existing cross-mount move and copy test passes unchanged
+- [x] The server conformance tests cover the new operation's wiring and description hook

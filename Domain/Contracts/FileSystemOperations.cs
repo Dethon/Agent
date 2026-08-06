@@ -57,8 +57,17 @@ public static class FileSystemOperations
             VfsExecTool.Key, VfsExecTool.Name),
         Op("fs_blob_read", nameof(IFileSystemBackend.ReadChunksAsync), typeof(FsBlobReadResult),
             alternate: nameof(FileSystemBackendBase.ReadBlobAsync)),
-        Op("fs_blob_write", nameof(FileSystemBackendBase.WriteBlobAsync), typeof(FsBlobWriteResult))
+        Op("fs_blob_write", nameof(FileSystemBackendBase.WriteBlobAsync), typeof(FsBlobWriteResult)),
+
+        // Transfer machinery like the two above, so it has no tool key and no capability: the model
+        // never calls it, and it appears in no mount's capability list. It is also the one operation
+        // whose override means the opposite of every other's — see FileSystemBackendBase.
+        Op(MoveOutCheck, nameof(IFileSystemBackend.MoveOutCheckAsync), typeof(FsMoveOutCheckResult))
     ];
+
+    // Named once because three places have to agree on it: the list, the registrar's wiring table
+    // and the proxy, which asks whether its client advertised this one tool.
+    public const string MoveOutCheck = "fs_move_out_check";
 
     public static readonly IReadOnlySet<string> ToolNames =
         All.Select(o => o.ToolName).ToHashSet(StringComparer.Ordinal);
