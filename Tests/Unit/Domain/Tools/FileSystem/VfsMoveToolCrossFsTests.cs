@@ -52,8 +52,6 @@ public class VfsMoveToolCrossFsTests
     {
         var backend = new Mock<IFileSystemBackend>();
         backend.SetupGet(b => b.FilesystemName).Returns("vault");
-        backend.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = "a.md", IsDirectory = false }));
         backend.Setup(b => b.MoveAsync("a.md", "b.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsMoveResult>.Ok(new FsMoveResult
             {
@@ -79,8 +77,6 @@ public class VfsMoveToolCrossFsTests
     public async Task RunAsync_SameFsFile_ReportsNoByteCountRatherThanANegativeOne()
     {
         var backend = new Mock<IFileSystemBackend>();
-        backend.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = "a.md", IsDirectory = false }));
         backend.Setup(b => b.MoveAsync("a.md", "b.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsMoveResult>.Ok(new FsMoveResult
             {
@@ -107,8 +103,6 @@ public class VfsMoveToolCrossFsTests
     public async Task RunAsync_SameFsFile_DoesNotAskWhetherThePathMayLeave()
     {
         var backend = new Mock<IFileSystemBackend>().RefusingMoveOut("nothing may leave this mount");
-        backend.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = "a.md", IsDirectory = false }));
         backend.Setup(b => b.MoveAsync("a.md", "b.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FsResult<FsMoveResult>.Ok(new FsMoveResult
             {

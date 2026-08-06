@@ -40,15 +40,20 @@ internal static class Transfer
 {
     public static async Task<FsResult<FsTransferResult>> RunAsync(TransferRequest request, CancellationToken ct)
     {
+        // Which backends this is between decides everything else, so it is asked first. The native
+        // primitive knows a file from a directory on its own and reports its own not-found, so
+        // probing the source before this branch bought nothing and cost the common case — a
+        // same-mount copy or move — one fs_info round trip across the wire.
+        if (ReferenceEquals(request.Source.Backend, request.Destination.Backend))
+        {
+            return await NativeAsync(request, ct);
+        }
+
+        // Streaming is the only branch that needs to know: one file or a whole tree.
         var infoResult = await request.Source.Backend.InfoAsync(request.Source.RelativePath, ct);
         if (!infoResult.TryGetValue(out var info, out var infoError))
         {
             return new FsResult<FsTransferResult>.Err(infoError);
-        }
-
-        if (ReferenceEquals(request.Source.Backend, request.Destination.Backend))
-        {
-            return await NativeAsync(request, ct);
         }
 
         if (request.IsMove && await MoveOutRefusalAsync(request.Source, ct) is { } refusal)
