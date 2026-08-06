@@ -64,10 +64,12 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
         File.Exists(Path.Combine(fx.MediaPath, "downloads", "7", "payload.mkv")).ShouldBeTrue();
     }
 
-    // The same seam, the same proxy, a path no live download owns: the mount with a rule still moves
-    // everything the rule does not cover.
+    // The same seam, the same proxy, a path no live download owns — and still refused, because a
+    // move off this mount ends by deleting the source and fs_delete here removes nothing but
+    // download directories and leftovers. The move used to stream the whole film across and then
+    // report that the source could not be removed, leaving a copy on both mounts.
     [Fact]
-    public async Task RunAsync_CrossFsMoveOfAnOrdinaryMediaFile_StillTransfers()
+    public async Task RunAsync_CrossFsMoveOfAnOrdinaryMediaFile_IsRefusedBeforeAnythingIsStreamed()
     {
         fx.Downloads.Items.Clear();
         fx.Downloads.Add(DownloadFakes.Item(id: 7));
@@ -78,9 +80,32 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
         await McpFileSystemDiscovery.DiscoverAndMountAsync(
             [mediaClient, notesClient], registry, NullLogger.Instance, CancellationToken.None);
 
-        await new VfsMoveTool(registry).RunAsync("/media/Movies/film.mkv", "/notes/film.mkv");
+        var result = await new VfsMoveTool(registry).RunAsync("/media/Movies/film.mkv", "/notes/film.mkv");
 
-        File.ReadAllText(Path.Combine(fx.NotesPath, "film.mkv")).ShouldBe("a whole movie");
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["message"]!.GetValue<string>().ShouldContain("only removes download directories");
+        File.Exists(Path.Combine(fx.NotesPath, "film.mkv")).ShouldBeFalse();
+        File.ReadAllText(Path.Combine(fx.MediaPath, "Movies", "film.mkv")).ShouldBe("a whole movie");
+    }
+
+    // A leftover is an ordinary file this mount does remove, so it leaves the way anything else on
+    // a plain filesystem would: the check allows it, the bytes stream, the source is deleted.
+    [Fact]
+    public async Task RunAsync_CrossFsMoveOfALeftoverDownloadDirectory_StillTransfers()
+    {
+        fx.Downloads.Items.Clear();
+        fx.CreateMediaFile("downloads/8/payload.mkv", "an abandoned movie");
+        await using var mediaClient = await Connect(fx.MediaEndpoint);
+        await using var notesClient = await Connect(fx.NotesEndpoint);
+        var registry = new VirtualFileSystemRegistry();
+        await McpFileSystemDiscovery.DiscoverAndMountAsync(
+            [mediaClient, notesClient], registry, NullLogger.Instance, CancellationToken.None);
+
+        var result = await new VfsMoveTool(registry).RunAsync("/media/downloads/8", "/notes/8");
+
+        result["status"]!.GetValue<string>().ShouldBe("ok");
+        File.ReadAllText(Path.Combine(fx.NotesPath, "8", "payload.mkv")).ShouldBe("an abandoned movie");
+        Directory.Exists(Path.Combine(fx.MediaPath, "downloads", "8")).ShouldBeFalse();
     }
 
     private static VirtualFileSystemRegistry BuildRegistry(McpClient libClient, McpClient notesClient)

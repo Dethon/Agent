@@ -407,12 +407,48 @@ public class MediaLibraryFileSystemTests : IDisposable
         error.Retryable.ShouldBeFalse();
     }
 
-    // A leftover belongs to no live download, and an ordinary media file never did.
+    // A cross-mount move is a streamed copy and then a delete of the source, so the check has to
+    // answer for both halves. fs_delete on this mount removes nothing but download directories and
+    // leftovers, so an ordinary media path could never finish the move: it used to stream every
+    // byte to the other mount and only then discover the source could not be removed, leaving a
+    // duplicate on both mounts. The reason is the delete's own, because the delete is what refuses.
     [Theory]
     [InlineData("Movies/film.mkv")]
+    [InlineData("notes.txt")]
+    [InlineData("downloads/042")]
+    [InlineData("downloads/42/payload.mkv")]
+    public async Task MoveOutCheck_OfAPathThisMountCannotDelete_IsRefused(string path)
+    {
+        _client.Add(Item(42));
+
+        var error = (await _sut.MoveOutCheckAsync(path, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveOutCheckResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+        error.Retryable.ShouldBeFalse();
+    }
+
+    // The two ends of the same path: what a live download owns is refused as a boundary crossing,
+    // and everything else this mount cannot delete is refused in the delete's own words.
+    [Fact]
+    public async Task MoveOutCheck_OfAnOrdinaryMediaPath_SaysWhatTheDeleteWouldHaveSaid()
+    {
+        var check = (await _sut.MoveOutCheckAsync("Movies/film.mkv", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveOutCheckResult>.Err>().Error;
+        var delete = (await _sut.DeleteAsync("Movies/film.mkv", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error;
+
+        check.ErrorCode.ShouldBe(delete.ErrorCode);
+        check.Message.ShouldBe(delete.Message);
+        check.Hint.ShouldBe(delete.Hint);
+    }
+
+    // What may still leave: a leftover download directory and a leftover status file, which are the
+    // two things this mount's delete removes.
+    [Theory]
     [InlineData("downloads/99")]
     [InlineData("downloads/99/status.json")]
-    public async Task MoveOutCheck_OfAPathNoLiveDownloadOwns_IsAllowed(string path)
+    public async Task MoveOutCheck_OfALeftoverThisMountCanDelete_IsAllowed(string path)
     {
         _client.Add(Item(42));
         await WriteLeftoverStatus();
@@ -563,30 +599,30 @@ public class MediaLibraryFileSystemTests : IDisposable
         _client.Items.ShouldContain(i => i.Id == 42);
     }
 
+    // An ordinary media file's move off this mount ends on a delete this mount refuses, so the
+    // whole move is refused before the first byte. It used to stream the file — gigabytes, for the
+    // media this mount holds — and then answer "copied, but the source could not be removed",
+    // leaving the agent with a duplicate it never asked for and a move it can never complete.
     [Fact]
-    public async Task CrossMountMove_OfAPlainMediaFile_StillTransfers()
+    public async Task CrossMountMove_OfAPlainMediaFile_IsRefusedBeforeAnythingIsStreamed()
     {
         _client.Add(Item(42));
         await File.WriteAllTextAsync(Path.Combine(_libraryRoot, "notes.txt"), "hello");
         var destination = new Mock<IFileSystemBackend>();
         destination.SetupGet(b => b.FilesystemName).Returns("vault");
-        destination.Setup(b => b.WriteChunksAsync("notes.txt",
-                It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
-                It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(5L);
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve("/media/notes.txt")).Returns(Resolved(_sut, "notes.txt"));
         registry.Setup(r => r.Resolve("/vault/notes.txt")).Returns(Resolved(destination.Object, "notes.txt"));
 
-        await new VfsMoveTool(registry.Object).RunAsync("/media/notes.txt", "/vault/notes.txt");
+        var result = await new VfsMoveTool(registry.Object).RunAsync("/media/notes.txt", "/vault/notes.txt");
 
-        // The transfer runs: only paths a live download owns are refused. (The move still ends on
-        // this mount's delete rule — fs_delete here removes download directories only — which is
-        // the pre-existing behaviour and not what this test is about.)
-        destination.Verify(b => b.WriteChunksAsync("notes.txt",
+        result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
+        result["message"]!.GetValue<string>().ShouldContain("only removes download directories");
+        File.Exists(Path.Combine(_libraryRoot, "notes.txt")).ShouldBeTrue();
+        destination.Verify(b => b.WriteChunksAsync(It.IsAny<string>(),
             It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
-            It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // A real file left at downloads/<id>/status.json after its download is gone used to be a ghost:

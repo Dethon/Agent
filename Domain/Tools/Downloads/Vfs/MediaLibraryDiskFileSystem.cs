@@ -108,17 +108,24 @@ public sealed class MediaLibraryDiskFileSystem(
 
     // The cross-mount half of the same refusal, and the reason this mount is the only one that
     // registers the check. A move between two mounts never reaches MoveAsync — it streams the
-    // payload out and then deletes the source, and on this mount that delete is the download's
-    // cancel — so the transfer machinery asks the source this first. It is the source end's own
-    // question, so it asks the source end's intent, and one call answers for the whole subtree:
-    // the rule overlaps in both directions.
+    // payload out and then deletes the source — so the transfer machinery asks the source this
+    // first. Both intents that streamed move is made of are asked, because a path that fails
+    // either one can never complete it: the way out of a live download's boundary, where the
+    // delete is the download's cancel, and the delete itself, which on this mount removes nothing
+    // but download directories and leftovers. Answering Allow to a path the tail delete refuses
+    // would stream gigabytes and then report a move that left a duplicate on both mounts. One call
+    // answers for the whole subtree: the rule overlaps in both directions.
     public override async Task<FsResult<FsMoveOutCheckResult>> MoveOutCheckAsync(string path, CancellationToken ct) =>
         await RefuseAsync<FsMoveOutCheckResult>(DownloadsIntent.MoveOut, path, ct)
+        ?? await RefuseAsync<FsMoveOutCheckResult>(DownloadsIntent.Delete, path, ct)
         ?? FsMoveOutCheckResult.Allow(path);
 
     public override string DescribeMoveOutCheck =>
-        $"Refuses to let a live download's paths leave this filesystem: {MediaFilesystem.DownloadsSubdir}"
-        + "/<id>, anything inside it, and any directory holding one. Every other path may leave.";
+        "Refuses to let a path leave this filesystem when the move could not finish: anything a "
+        + $"live download owns ({MediaFilesystem.DownloadsSubdir}/<id>, what is inside it, and any "
+        + "directory holding one), and anything fs_delete here refuses, because a move off this "
+        + "filesystem ends by deleting the source. What may leave is what fs_delete removes: a "
+        + $"download directory and a leftover {DownloadsPath.StatusFileName} no live download owns.";
 
     // Copy and blob-write only land content, so unlike move only the destination side is asked:
     // the way out is harmless (the source keeps its file), but whatever lands inside a live
