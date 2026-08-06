@@ -22,6 +22,7 @@ public sealed class VoiceTurn
     private int _audioPlayed;
     private long _epoch;
     private string? _turnKey;
+    private int _everDispatched;
 
     // What this turn was dispatched under. Every reply answering it carries the same value back, so
     // the reply path compares rather than infers — a conversation outlives a turn, a satellite
@@ -29,6 +30,14 @@ public sealed class VoiceTurn
     // ways. Null until the transcript is dispatched, and null again after a reset: a turn nobody
     // has dispatched has nothing for a reply to match.
     public string? TurnKey => Volatile.Read(ref _turnKey);
+
+    // Whether nothing has ever been asked on this session's turn. It is NOT the same question as
+    // TurnKey being null: a turn between its reset and the next dispatch has no key either, and
+    // there an unmatched key is an abandoned turn's answer. A satellite that dropped its link
+    // mid-answer and redialled gets a brand new session, whose turn is in this state — so a user
+    // answer arriving for it can only be the one asked before the link dropped. Reset does not
+    // clear it: a session that has carried one turn has stopped being new.
+    public bool AwaitingFirstDispatch => Volatile.Read(ref _everDispatched) == 0;
 
     // Which minimum length the next segment must clear: the answer's opening clears a deliberately
     // low bar (it is the wait everyone feels), later sentences need more text because the audio
@@ -124,7 +133,11 @@ public sealed class VoiceTurn
 
     // Stamped as the transcript is dispatched and before the message leaves this process, so a
     // reply can never arrive against a turn that does not yet know its own key.
-    public void StampTurnKey(string turnKey) => Interlocked.Exchange(ref _turnKey, turnKey);
+    public void StampTurnKey(string turnKey)
+    {
+        Interlocked.Exchange(ref _turnKey, turnKey);
+        Interlocked.Exchange(ref _everDispatched, 1);
+    }
 
     public long? TryConsumeDispatchedAt()
     {

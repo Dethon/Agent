@@ -837,24 +837,23 @@ public class ReplySpeakerTests
     [Fact]
     public async Task SpeakUtteranceReply_AStreamThatNeverEndedAndTheSatelliteRedialled_StillSettlesTheNewTurn()
     {
-        // A reply stream can end without any terminal event at all: the agent's connection to this
-        // server drops mid-answer (a restart or a deploy), so no Error and no StreamComplete ever
-        // arrive and the stream's token stays behind. The satellite then redials and the hub builds
-        // a fresh session — a fresh turn — for the same conversation, because the manager's
-        // satellite -> conversation mapping outlives the connection. Adopting the leftover token
-        // there ends a turn that was discarded with the old session, so the live turn never settles
-        // and FollowUpConversation recovers only at the ~120 s reply timeout, with the satellite
-        // unresponsive for all of it.
+        // The satellite's link to this server drops mid-answer and it redials, so the hub builds a
+        // fresh session — a fresh turn — for the same conversation, because the manager's
+        // satellite -> conversation mapping outlives the connection. The agent knows nothing of any
+        // of it and keeps writing: the rest of the answer arrives naming the turn that was
+        // discarded with the old session, against a turn that has never been dispatched. That is
+        // the answer the user is waiting for, so it is adopted and spoken. Discarded instead, the
+        // user hears nothing at all and has to ask again.
         _session.Turn.Reset();
-        Say(_speaker, "", ReplyContentType.ToolCall, false); // the stream opens and never terminates
+        _session.Turn.StampTurnKey("turn-1");
+        SayFor("turn-1", "", ReplyContentType.ToolCall, false); // the answer is still being written
 
         _sessions.Register(new SatelliteSession("kitchen-01", _session.Config));
         var session = _sessions.Get("kitchen-01")!;
-        session.Turn.Reset();
         var turn = session.Turn.AwaitSpoken();
 
-        Say(_speaker, "hola mundo", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.StreamComplete, true);
+        SayFor("turn-1", "hola mundo", ReplyContentType.Text, false);
+        SayFor("turn-1", "", ReplyContentType.StreamComplete, true);
 
         using var run = new CancellationTokenSource();
         var pump = session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
@@ -863,6 +862,8 @@ public class ReplySpeakerTests
         await run.StopAsync(pump);
 
         spoke.ShouldBeTrue();
+        _tts.Verify(t => t.SynthesizeAsync(
+            "hola mundo", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

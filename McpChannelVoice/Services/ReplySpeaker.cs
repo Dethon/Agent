@@ -145,11 +145,25 @@ public sealed class ReplySpeaker(
             return ReplyRelevance.ThisTurn;
         }
 
-        return p.TurnKey == session.Turn.TurnKey
+        if (p.TurnKey == session.Turn.TurnKey)
+        {
+            return ReplyRelevance.ThisTurn;
+        }
+
+        if (p.AgentInitiated == true)
+        {
+            return ReplyRelevance.AnotherTurnsAnnouncement;
+        }
+
+        // A user's answer naming a turn this session never had, on a session that has never had a
+        // turn at all: the satellite's link dropped mid-answer and it redialled, so the hub built a
+        // fresh session while the agent kept writing into the same conversation (the manager's
+        // satellite -> conversation mapping outlives the connection). Nothing else can be waiting
+        // on this turn, and the answer is the one the user asked for — so it is adopted rather than
+        // discarded, which would leave them with silence and nothing to explain it.
+        return session.Turn.AwaitingFirstDispatch
             ? ReplyRelevance.ThisTurn
-            : p.AgentInitiated == true
-                ? ReplyRelevance.AnotherTurnsAnnouncement
-                : ReplyRelevance.Abandoned;
+            : ReplyRelevance.Abandoned;
     }
 
     // Heard, and nothing else: no stream is opened, no segment is registered and the turn is not
