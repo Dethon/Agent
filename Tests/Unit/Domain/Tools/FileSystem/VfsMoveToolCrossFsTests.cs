@@ -73,6 +73,32 @@ public class VfsMoveToolCrossFsTests
         backend.Verify(b => b.ReadChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    // A native move carries no byte count, and the response used to say so with minus one — a
+    // sentinel the model had to know to ignore. The field is simply absent now.
+    [Fact]
+    public async Task RunAsync_SameFsFile_ReportsNoByteCountRatherThanANegativeOne()
+    {
+        var backend = new Mock<IFileSystemBackend>();
+        backend.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = "a.md", IsDirectory = false }));
+        backend.Setup(b => b.MoveAsync("a.md", "b.md", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsMoveResult>.Ok(new FsMoveResult
+            {
+                Status = "moved", Message = "", Source = "a.md", Destination = "b.md"
+            }));
+
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.Resolve("/vault/a.md")).Returns(Resolved(backend.Object, "a.md", "/vault"));
+        registry.Setup(r => r.Resolve("/vault/b.md")).Returns(Resolved(backend.Object, "b.md", "/vault"));
+
+        var result = await new VfsMoveTool(registry.Object).RunAsync("/vault/a.md", "/vault/b.md");
+
+        result["status"]!.GetValue<string>().ShouldBe("ok");
+        result["source"]!.GetValue<string>().ShouldBe("/vault/a.md");
+        result["destination"]!.GetValue<string>().ShouldBe("/vault/b.md");
+        result["bytes"].ShouldBeNull();
+    }
+
     // A same-mount move is the backend's own MoveAsync, which is where its refusals already live, so
     // the check is not asked at all: a backend that would refuse the path leaving the mount still
     // renames it within the mount. Asking twice would let a rule about crossing a boundary refuse a

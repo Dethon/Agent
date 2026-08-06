@@ -37,6 +37,10 @@ public class VfsTransferDirectoryTests
             overwrite: false, createDirectories: true, deleteSource: false, CancellationToken.None);
 
         result["status"]!.GetValue<string>().ShouldBe("ok");
+        // One shape for both branches: a directory transfer names its two ends the way a file
+        // transfer does, so either response reads the same way.
+        result["source"]!.GetValue<string>().ShouldBe("/vault/src");
+        result["destination"]!.GetValue<string>().ShouldBe("/sandbox/dst");
         result["summary"]!["transferred"]!.GetValue<int>().ShouldBe(2);
         result["summary"]!["failed"]!.GetValue<int>().ShouldBe(0);
         result["entries"]!.AsArray().Count.ShouldBe(2);

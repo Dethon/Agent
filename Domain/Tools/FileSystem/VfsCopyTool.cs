@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
-using Domain.Tools;
 
 namespace Domain.Tools.FileSystem;
 
@@ -68,13 +67,9 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 {
                     return moveError.ToNode();
                 }
-                return new JsonObject
-                {
-                    ["status"] = "ok",
-                    ["source"] = srcVirtual,
-                    ["destination"] = dstVirtual,
-                    ["bytes"] = -1L // FsMoveResult carries no byte count
-                };
+                // No byte count: the native move measured nothing, and the field is omitted rather
+                // than filled with a sentinel the model has to know to ignore.
+                return Transferred(srcVirtual, dstVirtual, bytes: null);
             }
 
             var copyResult = await src.Backend.CopyAsync(src.RelativePath, dst.RelativePath,
@@ -83,13 +78,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             {
                 return copyError.ToNode();
             }
-            return new JsonObject
-            {
-                ["status"] = "ok",
-                ["source"] = srcVirtual,
-                ["destination"] = dstVirtual,
-                ["bytes"] = copy.Bytes
-            };
+            return Transferred(srcVirtual, dstVirtual, copy.Bytes);
         }
 
         if (deleteSource && await MoveOutRefusalAsync(src, ct) is { } refusal)
@@ -147,14 +136,17 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             return SourceNotRemoved(srcVirtual, dstVirtual, deleteError);
         }
 
-        return new JsonObject
-        {
-            ["status"] = "ok",
-            ["source"] = srcVirtual,
-            ["destination"] = dstVirtual,
-            ["bytes"] = bytes
-        };
+        return Transferred(srcVirtual, dstVirtual, bytes);
     }
+
+    private static JsonNode Transferred(string srcVirtual, string dstVirtual, long? bytes) =>
+        FsResultContract.ToNode(new FsTransferResult
+        {
+            Status = FsTransferResult.Ok,
+            Source = srcVirtual,
+            Destination = dstVirtual,
+            Bytes = bytes
+        });
 
     internal static async Task<JsonNode> TransferDirectoryAsync(
         FileSystemResolution src, FileSystemResolution dst,
@@ -173,13 +165,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 {
                     return nativeError.ToNode();
                 }
-                return new JsonObject
-                {
-                    ["status"] = "ok",
-                    ["source"] = srcVirtual,
-                    ["destination"] = dstVirtual,
-                    ["bytes"] = -1L // FsMoveResult carries no byte count
-                };
+                return Transferred(srcVirtual, dstVirtual, bytes: null);
             }
 
             var copyResult = await src.Backend.CopyAsync(src.RelativePath, dst.RelativePath, overwrite, createDirectories, ct);
@@ -187,13 +173,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             {
                 return nativeError.ToNode();
             }
-            return new JsonObject
-            {
-                ["status"] = "ok",
-                ["source"] = srcVirtual,
-                ["destination"] = dstVirtual,
-                ["bytes"] = copy.Bytes
-            };
+            return Transferred(srcVirtual, dstVirtual, copy.Bytes);
         }
 
         if (deleteSource && await MoveOutRefusalAsync(src, ct) is { } refusal)
@@ -219,7 +199,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
         }
         var entries = glob.Entries;
 
-        var perEntry = new JsonArray();
+        var perEntry = new List<FsTransferEntry>();
         var transferred = 0;
         var failed = 0;
         long totalBytes = 0;
@@ -241,10 +221,10 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 // directory is outside the coordinate frame, so there is nothing to translate. It
                 // reports no source at all, and the backend's raw string goes in the message, where
                 // it reads as diagnostics rather than as a path to retry.
-                perEntry.Add(new JsonObject
+                perEntry.Add(new FsTransferEntry
                 {
-                    ["status"] = "failed",
-                    ["error"] = $"Glob entry '{srcRel}' is not under source directory '{srcVirtual}'; refusing to flatten."
+                    Status = FsTransferResult.Failed,
+                    Error = $"Glob entry '{srcRel}' is not under source directory '{srcVirtual}'; refusing to flatten."
                 });
                 failed++;
                 continue;
@@ -261,12 +241,12 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                     src.Backend.ReadChunksAsync(srcRel, ct),
                     overwrite, createDirectories, ct);
 
-                perEntry.Add(new JsonObject
+                perEntry.Add(new FsTransferEntry
                 {
-                    ["source"] = srcVirtualEntry,
-                    ["destination"] = dstVirtualEntry,
-                    ["status"] = "ok",
-                    ["bytes"] = bytes
+                    Status = FsTransferResult.Ok,
+                    Source = srcVirtualEntry,
+                    Destination = dstVirtualEntry,
+                    Bytes = bytes
                 });
                 transferred++;
                 totalBytes += bytes;
@@ -277,12 +257,12 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             }
             catch (Exception ex)
             {
-                perEntry.Add(new JsonObject
+                perEntry.Add(new FsTransferEntry
                 {
-                    ["source"] = srcVirtualEntry,
-                    ["destination"] = dstVirtualEntry,
-                    ["status"] = "failed",
-                    ["error"] = ex.Message
+                    Status = FsTransferResult.Failed,
+                    Source = srcVirtualEntry,
+                    Destination = dstVirtualEntry,
+                    Error = ex.Message
                 });
                 failed++;
             }
@@ -308,23 +288,25 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
 
         var status = (transferred, failed) switch
         {
-            (_, 0) => "ok",
-            (0, _) => "failed",
-            _ => "partial"
+            (_, 0) => FsTransferResult.Ok,
+            (0, _) => FsTransferResult.Failed,
+            _ => FsTransferResult.Partial
         };
 
-        return new JsonObject
+        return FsResultContract.ToNode(new FsTransferResult
         {
-            ["status"] = status,
-            ["summary"] = new JsonObject
+            Status = status,
+            Source = srcVirtual,
+            Destination = dstVirtual,
+            Summary = new FsTransferSummary
             {
-                ["transferred"] = transferred,
-                ["failed"] = failed,
-                ["skipped"] = 0,
-                ["totalBytes"] = totalBytes
+                Transferred = transferred,
+                Failed = failed,
+                Skipped = 0,
+                TotalBytes = totalBytes
             },
-            ["entries"] = perEntry
-        };
+            Entries = perEntry
+        });
     }
 
     // A cross-mount move is a streamed copy followed by a delete of the source, so the source
