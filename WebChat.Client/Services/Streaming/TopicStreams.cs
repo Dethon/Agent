@@ -290,22 +290,9 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
             finishedId = stream.CurrentMessageId;
             wasWriting = stream.Message.HasContent;
             finished = wasWriting ? Whole(stream, finishedId, stream.Message) : null;
-            var starting = resume ?? new ChatMessageModel { Role = "assistant" };
-
-            // The reply has reached the message a pushed tool call named, so the call leaves the
-            // tail it was glued to and joins the message it belongs to. Taking it out is what
-            // makes the move a move rather than a second showing.
-            if (finished is not null && messageId is not null &&
-                PushedFor(stream, messageId) is { } pushed &&
-                Without(finished, pushed) is { } moved)
-            {
-                stream.Pushed.Remove(messageId);
-                finished = moved.HasContent ? moved : null;
-                starting = WithToolCalls(starting, pushed);
-            }
-
-            stream.Message = starting;
+            stream.Message = resume ?? new ChatMessageModel { Role = "assistant" };
             stream.CurrentMessageId = messageId;
+            finished = MoveWhatAPushGluedElsewhere(stream, messageId, finished);
 
             // The caller is handed the whole message to bring back later, so the stream stops
             // keeping the half it committed — two keepers of one half would show it twice.
@@ -449,6 +436,24 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         {
             stream.Pushed[chunk.MessageId] = chunk.ToolCalls;
         }
+    }
+
+    // The reply has reached the message a pushed tool call named, so the call leaves the tail it
+    // was glued to and joins the message it belongs to. Taking it out of the message being
+    // finished is what makes this a move rather than a second showing.
+    private static ChatMessageModel? MoveWhatAPushGluedElsewhere(
+        TopicStream stream, string? messageId, ChatMessageModel? finished)
+    {
+        if (finished is null || messageId is null ||
+            PushedFor(stream, messageId) is not { } pushed ||
+            Without(finished, pushed) is not { } moved)
+        {
+            return finished;
+        }
+
+        stream.Pushed.Remove(messageId);
+        stream.Message = WithToolCalls(stream.Message, pushed);
+        return moved.HasContent ? moved : null;
     }
 
     private static string? PushedFor(TopicStream stream, string? messageId) =>
