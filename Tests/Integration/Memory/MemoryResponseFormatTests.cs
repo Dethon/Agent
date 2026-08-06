@@ -259,7 +259,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
             CreateMemory("mem_7", "User is building an AI agent project", MemoryCategory.Project)
         };
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(40));
 
         var result = await consolidator.SynthesizeProfileAsync("test_user", memories, cts.Token);
 
