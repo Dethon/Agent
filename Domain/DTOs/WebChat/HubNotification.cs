@@ -7,11 +7,12 @@ public enum TopicChangeType
     Deleted
 }
 
+// One case, because starting is the only thing a server in this repo pushes about a stream.
+// A stream ending is a client-side fact: the chunk loop finishing, the stop button, or a
+// topic being deleted.
 public enum StreamChangeType
 {
-    Started,
-    Cancelled,
-    Completed
+    Started
 }
 
 public record TopicChangedNotification(

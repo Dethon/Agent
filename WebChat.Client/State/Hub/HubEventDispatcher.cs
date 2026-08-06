@@ -48,12 +48,6 @@ public sealed class HubEventDispatcher(
                 // that reach back through the live connection.
                 dispatcher.Dispatch(new RemoteStreamStarted(notification.TopicId));
                 break;
-            case StreamChangeType.Completed:
-                dispatcher.Dispatch(new StreamCompleted(notification.TopicId));
-                break;
-            case StreamChangeType.Cancelled:
-                dispatcher.Dispatch(new StreamCancelled(notification.TopicId));
-                break;
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(notification),

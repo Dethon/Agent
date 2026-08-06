@@ -119,30 +119,6 @@ public sealed class HubEventDispatcherTests : IDisposable
     }
 
     [Fact]
-    public void HandleStreamChanged_Completed_DispatchesStreamCompleted()
-    {
-        var notification = new StreamChangedNotification(StreamChangeType.Completed, "topic-1");
-
-        _sut.HandleStreamChanged(notification);
-
-        _mockDispatcher.Verify(
-            d => d.Dispatch(It.Is<StreamCompleted>(a => a.TopicId == "topic-1")),
-            Times.Once);
-    }
-
-    [Fact]
-    public void HandleStreamChanged_Cancelled_DispatchesStreamCancelled()
-    {
-        var notification = new StreamChangedNotification(StreamChangeType.Cancelled, "topic-1");
-
-        _sut.HandleStreamChanged(notification);
-
-        _mockDispatcher.Verify(
-            d => d.Dispatch(It.Is<StreamCancelled>(a => a.TopicId == "topic-1")),
-            Times.Once);
-    }
-
-    [Fact]
     public void HandleApprovalResolved_DispatchesApprovalResolved()
     {
         var notification = new ApprovalResolvedNotification("topic-1", "approval-123");
