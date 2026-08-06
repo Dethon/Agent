@@ -176,6 +176,9 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         Publish(topicId, new Grown(new StreamAppend(message, true), messageId));
     }
 
+    // Closing off the half-written bubble does not end the message: the reply can carry on
+    // writing the same id. What is committed here leaves the accumulator, so the stream keeps
+    // it as the half that already has a bubble — an update for that message carries both.
     public void FinalizeCurrent(string topicId)
     {
         ChatMessageModel finished;
@@ -187,9 +190,13 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
                 return;
             }
 
-            finished = stream.Message;
             messageId = stream.CurrentMessageId;
+            finished = Whole(stream, messageId, stream.Message);
             stream.Message = new ChatMessageModel { Role = "assistant" };
+            if (messageId is not null)
+            {
+                stream.Committed[messageId] = finished;
+            }
         }
 
         Commit(topicId, finished, messageId);
@@ -227,7 +234,13 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
     {
         lock (_lock)
         {
-            return Grow(Streaming(Held(lease)), chunk).Append;
+            if (Streaming(Held(lease)) is not { } stream)
+            {
+                return StreamAppend.Nothing;
+            }
+
+            var grown = Grow(stream, chunk);
+            return grown.Append with { Message = Whole(stream, grown.MessageId, grown.Append.Message) };
         }
     }
 
@@ -244,10 +257,17 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
                 return null;
             }
 
-            finished = stream.Message.HasContent ? stream.Message : null;
             finishedId = stream.CurrentMessageId;
+            finished = stream.Message.HasContent ? Whole(stream, finishedId, stream.Message) : null;
             stream.Message = resume ?? new ChatMessageModel { Role = "assistant" };
             stream.CurrentMessageId = messageId;
+
+            // The caller is handed the whole message to bring back later, so the stream stops
+            // keeping the half it committed — two keepers of one half would show it twice.
+            if (finished is not null && finishedId is not null)
+            {
+                stream.Committed.Remove(finishedId);
+            }
         }
 
         if (finished is null)
@@ -308,7 +328,10 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
 
         if (stream.Phase is TopicStreamPhase.Streaming)
         {
-            Commit(stream.Lease.TopicId, stream.Message, stream.CurrentMessageId);
+            Commit(
+                stream.Lease.TopicId,
+                Whole(stream, stream.CurrentMessageId, stream.Message),
+                stream.CurrentMessageId);
             dispatcher.Dispatch(new StreamCompleted(stream.Lease.TopicId));
         }
 
@@ -348,6 +371,28 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         !string.IsNullOrEmpty(chunk.ToolCalls) && accumulated.ToolCalls?.EndsWith(chunk.ToolCalls) == true
             ? chunk with { ToolCalls = null }
             : chunk;
+
+    // A message the stream closed off mid-reply lives in two halves: the one that already has a
+    // bubble and the one the accumulator has written since. Anything that hands the message on
+    // as a whole — a commit, an update to the bubble — has to join them back together.
+    private static ChatMessageModel Whole(TopicStream stream, string? messageId, ChatMessageModel written) =>
+        messageId is not null && stream.Committed.TryGetValue(messageId, out var shown)
+            ? Joined(shown, written)
+            : written;
+
+    private static ChatMessageModel Joined(ChatMessageModel first, ChatMessageModel second) => first with
+    {
+        Content = first.Content + second.Content,
+        Reasoning = Joined(first.Reasoning, second.Reasoning, ""),
+        ToolCalls = Joined(first.ToolCalls, second.ToolCalls, "\n"),
+        MessageId = second.MessageId ?? first.MessageId,
+        Timestamp = second.Timestamp ?? first.Timestamp
+    };
+
+    private static string? Joined(string? first, string? second, string separator) =>
+        string.IsNullOrEmpty(first) ? second
+            : string.IsNullOrEmpty(second) ? first
+                : first + separator + second;
 
     private void Publish(string topicId, Grown grown)
     {
@@ -401,5 +446,8 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         public ChatMessageModel Message { get; set; } = new() { Role = "assistant" };
 
         public string? CurrentMessageId { get; set; }
+
+        // Per message id, the half this stream committed and took out of the accumulator.
+        public Dictionary<string, ChatMessageModel> Committed { get; } = [];
     }
 }

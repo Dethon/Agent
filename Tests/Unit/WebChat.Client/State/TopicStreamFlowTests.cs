@@ -205,6 +205,32 @@ public sealed class TopicStreamFlowTests
         reply.Release();
     }
 
+    // Closing off the half-written bubble does not end the message: the reply carries on under
+    // the same id, and what arrives after has to extend the bubble rather than replace it.
+    [Fact]
+    public async Task AnotherPersonsMessage_MidReply_LeavesTheRestOfTheReplyExtendingTheBubble()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
+        var reply = new GatedChatStream();
+        transport.Answer("SendMessage", _ => reply.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "hello"));
+        await TestChat.Eventually(() =>
+            client.Streaming.State.StreamingByTopic.GetValueOrDefault("topic-1")?.Content == "thinking");
+        var replyEnding = client.Service<TopicStreams>().Snapshot("topic-1").Completion!;
+
+        transport.Raise("OnUserMessage", new UserMessageNotification(
+            "topic-1", "and one more thing", "someone-else", DateTimeOffset.UnixEpoch));
+        await TestChat.Eventually(() => AssistantMessages(client).Any(m => m.Content == "thinking"));
+        reply.Write(new ChatStreamMessage { Content = " and the rest", MessageId = "m-1" });
+        reply.Release();
+
+        await replyEnding;
+        AssistantMessages(client).ShouldHaveSingleItem().Content.ShouldBe("thinking and the rest");
+    }
+
     // A flaky network can push the same start twice. The topic is claimed before the resume
     // asks the server anything, so the second push finds it taken and the reply is not doubled.
     [Fact]
