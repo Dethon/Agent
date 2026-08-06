@@ -218,8 +218,8 @@ public sealed class TopicStreamFlowTests
             true, [new ChatStreamMessage { Content = "half written", MessageId = "m-1" }], "m-1", null, null));
         transport.Answer("ResumeStream", _ => resumed.Chunks());
 
-        transport.Raise("OnStreamChanged", new StreamChangedNotification(StreamChangeType.Started, "topic-1"));
-        transport.Raise("OnStreamChanged", new StreamChangedNotification(StreamChangeType.Started, "topic-1"));
+        transport.Raise("OnStreamStarted", new StreamStartedNotification("topic-1"));
+        transport.Raise("OnStreamStarted", new StreamStartedNotification("topic-1"));
 
         await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
         transport.Calls.Count(call => call.MethodName == "ResumeStream").ShouldBe(1);
@@ -233,7 +233,7 @@ public sealed class TopicStreamFlowTests
         var transport = await client.ConnectAsync();
         SeedTopic(client);
 
-        transport.Raise("OnStreamChanged", new StreamChangedNotification(StreamChangeType.Started, "topic-1"));
+        transport.Raise("OnStreamStarted", new StreamStartedNotification("topic-1"));
 
         await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "GetStreamState"));
         client.Streaming.State.StreamingTopics.ShouldNotContain("topic-1");

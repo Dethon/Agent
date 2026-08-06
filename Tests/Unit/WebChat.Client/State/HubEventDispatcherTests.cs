@@ -96,11 +96,11 @@ public sealed class HubEventDispatcherTests : IDisposable
     [Fact]
     // Whether the start is resumed or merely marked is StreamResumeEffect's decision; the
     // dispatcher only reports what the server pushed.
-    public void HandleStreamChanged_Started_DispatchesRemoteStreamStarted()
+    public void HandleStreamStarted_DispatchesRemoteStreamStarted()
     {
-        var notification = new StreamChangedNotification(StreamChangeType.Started, "topic-1");
+        var notification = new StreamStartedNotification("topic-1");
 
-        _sut.HandleStreamChanged(notification);
+        _sut.HandleStreamStarted(notification);
 
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<RemoteStreamStarted>(a => a.TopicId == "topic-1")),
@@ -108,7 +108,7 @@ public sealed class HubEventDispatcherTests : IDisposable
     }
 
     [Fact]
-    public void HandleStreamChanged_Started_KnownTopic_StillOnlyDispatches()
+    public void HandleStreamStarted_KnownTopic_StillOnlyDispatches()
     {
         var topic = new StoredTopic
         {
@@ -120,9 +120,9 @@ public sealed class HubEventDispatcherTests : IDisposable
         };
         _realDispatcher.Dispatch(new AddTopic(topic));
 
-        var notification = new StreamChangedNotification(StreamChangeType.Started, "topic-1");
+        var notification = new StreamStartedNotification("topic-1");
 
-        _sut.HandleStreamChanged(notification);
+        _sut.HandleStreamStarted(notification);
 
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<RemoteStreamStarted>(a => a.TopicId == "topic-1")),

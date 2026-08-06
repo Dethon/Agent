@@ -38,24 +38,11 @@ public sealed class HubEventDispatcher(
         }
     }
 
-    public void HandleStreamChanged(StreamChangedNotification notification)
-    {
-        switch (notification.ChangeType)
-        {
-            case StreamChangeType.Started:
-                // Reporting the push is all this type does. Deciding whether to resume the
-                // stream or just mark it started belongs to StreamResumeEffect — resuming is
-                // a hub call, and a dispatcher that made one would depend on the services
-                // that reach back through the live connection.
-                dispatcher.Dispatch(new RemoteStreamStarted(notification.TopicId));
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(notification),
-                    notification.ChangeType,
-                    "Invalid StreamChangeType");
-        }
-    }
+    // Reporting the push is all this type does. Deciding whether to resume the stream or just
+    // mark it started belongs to StreamResumeEffect — resuming is a hub call, and a dispatcher
+    // that made one would depend on the services that reach back through the live connection.
+    public void HandleStreamStarted(StreamStartedNotification notification) =>
+        dispatcher.Dispatch(new RemoteStreamStarted(notification.TopicId));
 
     public void HandleApprovalResolved(ApprovalResolvedNotification notification)
     {

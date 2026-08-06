@@ -91,14 +91,14 @@ public sealed class CreateConversationTool
             });
         }
 
-        // Wake viewing clients: their OnStreamChanged(Started) handler resumes the
-        // stream (buffered replay + live subscription) without any client changes.
+        // Wake viewing clients: their OnStreamStarted handler resumes the stream
+        // (buffered replay + live subscription) without any client changes.
         var spaceSlug = session.SpaceSlug ?? "default";
         var hubSender = services.GetRequiredService<IHubNotificationSender>();
         await hubSender.SendToGroupAsync(
             $"space:{spaceSlug}",
-            "OnStreamChanged",
-            new StreamChangedNotification(StreamChangeType.Started, topicId, spaceSlug));
+            "OnStreamStarted",
+            new StreamStartedNotification(topicId, spaceSlug));
 
         return conversationId;
     }

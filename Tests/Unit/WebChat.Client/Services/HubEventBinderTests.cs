@@ -19,7 +19,7 @@ public sealed class HubEventBinderTests : IDisposable
     private static readonly string[] _serverPushes =
     [
         "OnTopicChanged",
-        "OnStreamChanged",
+        "OnStreamStarted",
         "OnApprovalResolved",
         "OnToolCalls",
         "OnUserMessage",

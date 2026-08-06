@@ -7,22 +7,16 @@ public enum TopicChangeType
     Deleted
 }
 
-// One case, because starting is the only thing a server in this repo pushes about a stream.
-// A stream ending is a client-side fact: the chunk loop finishing, the stop button, or a
-// topic being deleted.
-public enum StreamChangeType
-{
-    Started
-}
-
 public record TopicChangedNotification(
     TopicChangeType ChangeType,
     string TopicId,
     TopicMetadata? Topic = null,
     string? SpaceSlug = null);
 
-public record StreamChangedNotification(
-    StreamChangeType ChangeType,
+// Starting is the only thing a server in this repo pushes about a stream, so the push says
+// exactly that instead of carrying a change type with one value. A stream ending is a
+// client-side fact: the chunk loop finishing, the stop button, or a topic being deleted.
+public record StreamStartedNotification(
     string TopicId,
     string? SpaceSlug = null);
 
