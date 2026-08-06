@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
-using Domain.Tools.FileSystem;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -109,11 +108,6 @@ internal static class McpFileSystemDiscovery
             .Where(o => o.Capability is not null && advertisedOperations.Contains(o.ToolName))
             .Select(o => o.Capability!)
             .ToList();
-
-    // The same, for a caller holding the server's raw tool names rather than the operations they
-    // resolve to.
-    internal static IReadOnlyList<string> DeriveCapabilities(IEnumerable<string> advertisedToolNames) =>
-        DeriveCapabilities(AdvertisedOperations(advertisedToolNames));
 
     private record FileSystemResourceMetadata(string Name, string MountPoint, string? Description);
 }

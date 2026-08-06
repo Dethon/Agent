@@ -110,7 +110,7 @@ public class FileSystemServerConformanceTests
 
         // What the mount publishes to the model: every advertised operation the model can call, and
         // nothing else. The two blob tools are transfer machinery, not model-facing.
-        McpFileSystemDiscovery.DeriveCapabilities(registered).ShouldBe(
+        McpFileSystemDiscovery.DeriveCapabilities(McpFileSystemDiscovery.AdvertisedOperations(registered)).ShouldBe(
             FileSystemOperations.All
                 .Where(o => o.Capability is not null && _advertised[name].Contains(o.ToolName))
                 .Select(o => o.Capability!),
@@ -222,7 +222,8 @@ public class FileSystemServerConformanceTests
         var advertised = FileSystemServerTools.SupportedToolNames(backendType);
 
         advertised.ShouldNotContain("fs_move");
-        McpFileSystemDiscovery.DeriveCapabilities(advertised).ShouldNotContain("move");
+        McpFileSystemDiscovery.DeriveCapabilities(McpFileSystemDiscovery.AdvertisedOperations(advertised))
+            .ShouldNotContain("move");
     }
 
     // Capability is per operation, not per path. A backend that implements an operation and still

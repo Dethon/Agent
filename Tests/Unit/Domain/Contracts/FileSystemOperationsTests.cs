@@ -62,7 +62,7 @@ public class FileSystemOperationsTests
     {
         var everyTool = FileSystemOperations.All.Select(o => o.ToolName);
 
-        McpFileSystemDiscovery.DeriveCapabilities(everyTool).ShouldBe(
+        McpFileSystemDiscovery.DeriveCapabilities(McpFileSystemDiscovery.AdvertisedOperations(everyTool)).ShouldBe(
             FileSystemOperations.All.Where(o => o.Capability is not null).Select(o => o.Capability!));
     }
 
