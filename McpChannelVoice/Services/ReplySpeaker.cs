@@ -119,11 +119,11 @@ public sealed class ReplySpeaker(
         }
     }
 
-    // The four possibilities, and the key decides between them. There is a fourth answer with no
-    // case of its own: a reply carrying no key at all, which can only happen if the echo itself is
-    // broken. It is treated as the current turn's — the behaviour before any of this existed — and
-    // an error is published, so the breakage shows up as itself rather than as satellites that
-    // stopped answering for two minutes at a time with nothing in the logs.
+    // The key decides between the three cases above. The fourth possibility has no case of its own:
+    // a reply carrying no key at all, which can only happen if the echo itself is broken. It is
+    // treated as the current turn's — the behaviour before any of this existed — and an error is
+    // published, so the breakage shows up as itself rather than as satellites that stopped
+    // answering for two minutes at a time with nothing in the logs.
     private ReplyRelevance Classify(SatelliteSession session, SendReplyParams p)
     {
         if (p.TurnKey is null)

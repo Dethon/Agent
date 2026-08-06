@@ -81,24 +81,24 @@ internal class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logge
     {
         foreach (var aiContent in update.Contents)
         {
-            (string, ReplyContentType, bool)? mapped = aiContent switch
+            MappedChunk? mapped = aiContent switch
             {
                 TextContent text when !string.IsNullOrEmpty(text.Text)
-                    => (text.Text, ReplyContentType.Text, false),
+                    => new MappedChunk(text.Text, ReplyContentType.Text, false),
                 TextReasoningContent reasoning when !string.IsNullOrEmpty(reasoning.Text)
-                    => (reasoning.Text, ReplyContentType.Reasoning, false),
+                    => new MappedChunk(reasoning.Text, ReplyContentType.Reasoning, false),
                 // FunctionCallContent is intentionally skipped — tool calls are displayed
                 // by the approval flow (request_approval tool with mode=request or mode=notify)
                 ErrorContent error
-                    => (error.Message, ReplyContentType.Error, false),
+                    => new MappedChunk(error.Message, ReplyContentType.Error, false),
                 StreamCompleteContent
-                    => (string.Empty, ReplyContentType.StreamComplete, true),
+                    => new MappedChunk(string.Empty, ReplyContentType.StreamComplete, true),
                 _ => null
             };
 
             if (mapped is { } value)
             {
-                yield return new MappedChunk(value.Item1, value.Item2, value.Item3);
+                yield return value;
             }
         }
     }
