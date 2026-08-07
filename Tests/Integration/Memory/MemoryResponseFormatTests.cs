@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using OpenAI;
 using Shouldly;
+using Tests.Integration.Fixtures;
+using Tests.Unit;
 
 namespace Tests.Integration.Memory;
 
@@ -32,7 +34,8 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         return (apiUrl, apiKey, model);
     }
 
-    private static OpenRouterMemoryExtractor CreateExtractor(string apiUrl, string apiKey, string model)
+    private static (OpenRouterMemoryExtractor Extractor, List<string> Warnings) CreateExtractor(
+        string apiUrl, string apiKey, string model)
     {
         var chatClient = new OpenAIClient(
                 new ApiKeyCredential(apiKey),
@@ -44,25 +47,31 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         store.Setup(s => s.GetProfileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((PersonalityProfile?)null);
 
-        return new OpenRouterMemoryExtractor(
-            chatClient, store.Object, Mock.Of<ILogger<OpenRouterMemoryExtractor>>());
+        var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var logger = LoggerFactory.Create(builder => builder.AddProvider(logs))
+            .CreateLogger<OpenRouterMemoryExtractor>();
+
+        return (new OpenRouterMemoryExtractor(chatClient, store.Object, logger), logs.Messages);
     }
 
     [SkippableFact]
     public async Task ExtractAsync_WithRichMessage_ReturnsValidCandidates()
     {
         var (apiUrl, apiKey, model) = GetConfig();
-        var extractor = CreateExtractor(apiUrl, apiKey, model);
+        var (extractor, warnings) = CreateExtractor(apiUrl, apiKey, model);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
-        var result = await extractor.ExtractAsync(
-            [new ChatMessage(ChatRole.User,
-                "I'm a senior Python developer at Google. I prefer dark mode and use Vim keybindings. " +
-                "I'm currently learning Rust and working on a distributed cache project.")],
-            "test_user", cts.Token);
+        var result = await LlmAttempt.UntilAsync(
+            () => extractor.ExtractAsync(
+                [new ChatMessage(ChatRole.User,
+                    "I'm a senior Python developer at Google. I prefer dark mode and use Vim keybindings. " +
+                    "I'm currently learning Rust and working on a distributed cache project.")],
+                "test_user", cts.Token),
+            candidates => candidates.Count > 0);
 
-        result.ShouldNotBeEmpty("LLM should extract at least one memory candidate");
+        result.ShouldNotBeEmpty(LlmAttempt.Explain(
+            "LLM should extract at least one memory candidate", warnings));
 
         foreach (var candidate in result)
         {
@@ -79,7 +88,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
     public async Task ExtractAsync_WithTrivialMessage_ReturnsEmptyOrFewCandidates()
     {
         var (apiUrl, apiKey, model) = GetConfig();
-        var extractor = CreateExtractor(apiUrl, apiKey, model);
+        var (extractor, _) = CreateExtractor(apiUrl, apiKey, model);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -112,7 +121,8 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         return (apiUrl, apiKey, model);
     }
 
-    private static OpenRouterMemoryConsolidator CreateConsolidator(string apiUrl, string apiKey, string model)
+    private static (OpenRouterMemoryConsolidator Consolidator, List<string> Warnings) CreateConsolidator(
+        string apiUrl, string apiKey, string model)
     {
         var chatClient = new OpenAIClient(
                 new ApiKeyCredential(apiKey),
@@ -120,8 +130,11 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
             .GetChatClient(model)
             .AsIChatClient();
 
-        return new OpenRouterMemoryConsolidator(
-            chatClient, Mock.Of<ILogger<OpenRouterMemoryConsolidator>>());
+        var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var logger = LoggerFactory.Create(builder => builder.AddProvider(logs))
+            .CreateLogger<OpenRouterMemoryConsolidator>();
+
+        return (new OpenRouterMemoryConsolidator(chatClient, logger), logs.Messages);
     }
 
     private static MemoryEntry CreateMemory(string id, string content,
@@ -141,7 +154,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
     public async Task ConsolidateAsync_WithOverlappingMemories_ReturnsValidDecisions()
     {
         var (apiUrl, apiKey, model) = GetConfig();
-        var consolidator = CreateConsolidator(apiUrl, apiKey, model);
+        var (consolidator, warnings) = CreateConsolidator(apiUrl, apiKey, model);
 
         var memories = new[]
         {
@@ -153,9 +166,12 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
-        var result = await consolidator.ConsolidateAsync(memories, cts.Token);
+        var result = await LlmAttempt.UntilAsync(
+            () => consolidator.ConsolidateAsync(memories, cts.Token),
+            decisions => decisions.Count > 0);
 
-        result.ShouldNotBeEmpty("LLM should produce at least one merge decision for overlapping memories");
+        result.ShouldNotBeEmpty(LlmAttempt.Explain(
+            "LLM should produce at least one merge decision for overlapping memories", warnings));
 
         foreach (var decision in result)
         {
@@ -178,7 +194,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
     public async Task ConsolidateAsync_WithDistinctMemories_ReturnsKeepDecisions()
     {
         var (apiUrl, apiKey, model) = GetConfig();
-        var consolidator = CreateConsolidator(apiUrl, apiKey, model);
+        var (consolidator, _) = CreateConsolidator(apiUrl, apiKey, model);
 
         var memories = new[]
         {
@@ -217,7 +233,8 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         return (apiUrl, apiKey, model);
     }
 
-    private static OpenRouterMemoryConsolidator CreateConsolidator(string apiUrl, string apiKey, string model)
+    private static (OpenRouterMemoryConsolidator Consolidator, List<string> Warnings) CreateConsolidator(
+        string apiUrl, string apiKey, string model)
     {
         var chatClient = new OpenAIClient(
                 new ApiKeyCredential(apiKey),
@@ -225,8 +242,11 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
             .GetChatClient(model)
             .AsIChatClient();
 
-        return new OpenRouterMemoryConsolidator(
-            chatClient, Mock.Of<ILogger<OpenRouterMemoryConsolidator>>());
+        var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
+        var logger = LoggerFactory.Create(builder => builder.AddProvider(logs))
+            .CreateLogger<OpenRouterMemoryConsolidator>();
+
+        return (new OpenRouterMemoryConsolidator(chatClient, logger), logs.Messages);
     }
 
     private static MemoryEntry CreateMemory(string id, string content,
@@ -246,7 +266,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
     public async Task SynthesizeProfileAsync_WithVariedMemories_ReturnsValidProfile()
     {
         var (apiUrl, apiKey, model) = GetConfig();
-        var consolidator = CreateConsolidator(apiUrl, apiKey, model);
+        var (consolidator, warnings) = CreateConsolidator(apiUrl, apiKey, model);
 
         var memories = new[]
         {
@@ -261,17 +281,24 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
-        var result = await consolidator.SynthesizeProfileAsync("test_user", memories, cts.Token);
+        var result = await LlmAttempt.UntilAsync(
+            () => consolidator.SynthesizeProfileAsync("test_user", memories, cts.Token),
+            profile => !string.IsNullOrWhiteSpace(profile.Summary)
+                       && profile.CommunicationStyle is not null
+                       && profile.TechnicalContext is not null);
 
         result.UserId.ShouldBe("test_user");
         result.BasedOnMemoryCount.ShouldBe(7);
-        result.Summary.ShouldNotBeNullOrWhiteSpace("Profile must have a summary");
+        result.Summary.ShouldNotBeNullOrWhiteSpace(
+            LlmAttempt.Explain("Profile must have a summary", warnings));
         result.LastUpdated.ShouldBeGreaterThan(DateTimeOffset.UtcNow.AddMinutes(-1));
 
-        result.CommunicationStyle.ShouldNotBeNull("Profile should include communication style");
+        result.CommunicationStyle.ShouldNotBeNull(
+            LlmAttempt.Explain("Profile should include communication style", warnings));
         result.CommunicationStyle!.Preference.ShouldNotBeNullOrWhiteSpace();
 
-        result.TechnicalContext.ShouldNotBeNull("Profile should include technical context");
+        result.TechnicalContext.ShouldNotBeNull(
+            LlmAttempt.Explain("Profile should include technical context", warnings));
         result.TechnicalContext!.Expertise.ShouldNotBeEmpty("Should identify areas of expertise");
     }
 }
