@@ -47,18 +47,22 @@ public class AgentAppSettingsTests
             .ShouldEndWith(LanguagePrompt.Build("es")!);
     }
 
-    // Every entry pins `only: ["openai"]`, and `only` excludes where the preferred-* thresholds
-    // merely deprioritize. That couples the pin to the model: switch to something OpenAI does not
-    // serve and there is no candidate endpoint left, so every turn dead-ends. Nothing relates the
-    // two keys at bind time, and the pin has to stay because OpenRouter lists the same model from
-    // Azure and Bedrock at ten times the price -- $1.00/$6.00 per M against $0.10/$0.60.
+    // Ignoring azure has one reason: OpenRouter lists OpenAI's own models from Azure and Bedrock
+    // at ten times the price -- $1.00/$6.00 per M against $0.10/$0.60. That couples the pin to the
+    // model. On anything but an OpenAI model the ignore list excludes providers that were never
+    // going to serve it, which reads as a routing decision and is really a leftover. Nothing
+    // relates the two keys at bind time.
     [Fact]
-    public void Model_EveryPinnedEntry_IsServedByTheOpenAiProvider()
+    public void ProviderRouting_EveryEntryIgnoringAzure_RunsAnOpenAiModel()
     {
         var models = Root()["agents"]!.AsArray()
             .Concat(Root()["subAgents"]!.AsArray())
-            .Select(a => a!["model"]!.GetValue<string>());
+            .Where(a => a!["providerRouting"]?["ignore"]?.AsArray()
+                .Any(p => p!.GetValue<string>().StartsWith("azure")) == true)
+            .Select(a => a!["model"]!.GetValue<string>())
+            .ToList();
 
+        models.ShouldNotBeEmpty("the pin this guards would otherwise be gone from the file");
         models.ShouldAllBe(m => m.StartsWith("openai/"));
     }
 
