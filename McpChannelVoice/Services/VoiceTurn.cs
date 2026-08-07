@@ -122,25 +122,57 @@ public sealed class VoiceTurn
         EndStream();
     }
 
-    // The agent has stopped sending. A turn that produced no audio at all settles here; one that did
-    // settles as its last segment drains. The two halves of that decision are both in here because
-    // nothing outside can see both.
+    // Ends a keyed reply's stream. The reply was compared against the turn in flight in Classify,
+    // but the compare and the settle are separate calls: the hub can give the turn up and dispatch
+    // the next one between them. Re-checking the key under the gate Reset takes is what keeps an
+    // abandoned answer's terminal event off the new turn. A key that matches nothing still settles
+    // a turn that has never dispatched — the redial adoption, where the answer in flight from
+    // before the redial is the one the user asked for.
+    public void EndStream(string turnKey)
+    {
+        bool producedNothing;
+        lock (_gate)
+        {
+            if (turnKey != _turnKey && _everDispatched != 0)
+            {
+                return;
+            }
+            producedNothing = MarkStreamEnded();
+        }
+
+        Settle(producedNothing);
+    }
+
+    // The agent has stopped sending on this turn's own stream. A turn that produced no audio at all
+    // settles here; one that did settles as its last segment drains. The two halves of that decision
+    // are both in here because nothing outside can see both.
     //
-    // No guard of its own against a previous turn's end arriving late: a keyed reply has been
-    // compared against the turn in flight before it gets here, and a keyless one comes through
-    // EndUnkeyedStream, which carries that guard.
+    // No guard of its own against a previous turn's end arriving late: a keyed reply comes through
+    // the overload above, and a keyless one through EndUnkeyedStream, which carries the epoch guard.
     public void EndStream()
     {
         bool producedNothing;
         lock (_gate)
         {
-            producedNothing = _segmentsStarted == 0;
-            if (!producedNothing)
-            {
-                Interlocked.Exchange(ref _streamComplete, 1);
-            }
+            producedNothing = MarkStreamEnded();
         }
 
+        Settle(producedNothing);
+    }
+
+    // Under _gate.
+    private bool MarkStreamEnded()
+    {
+        var producedNothing = _segmentsStarted == 0;
+        if (!producedNothing)
+        {
+            Interlocked.Exchange(ref _streamComplete, 1);
+        }
+        return producedNothing;
+    }
+
+    private void Settle(bool producedNothing)
+    {
         if (!producedNothing)
         {
             SettleIfComplete();

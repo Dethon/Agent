@@ -165,6 +165,72 @@ public class VoiceTurnTests
     }
 
     [Fact]
+    public async Task KeyedEndStream_ForTheTurnInFlight_Settles()
+    {
+        var turn = Started();
+        turn.StampTurnKey("turn-1");
+        var spoken = turn.AwaitSpoken();
+
+        turn.BeginSegment().Complete();
+        turn.EndStream("turn-1");
+
+        spoken.IsCompleted.ShouldBeTrue();
+        (await spoken).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void KeyedEndStream_FromAPreviousTurn_IsIgnored()
+    {
+        // The reply path compares a keyed answer's key in Classify and settles the turn in a
+        // separate call. The hub gives a turn up at ReplyTimeoutMs and can dispatch the next one
+        // between the two, so the settle re-checks the key under the gate Reset takes — otherwise
+        // the abandoned answer's terminal event lands on the new turn, which has produced nothing
+        // yet and settles silent, re-arming the mic before its own reply has been spoken.
+        var turn = Started();
+        turn.StampTurnKey("turn-1");
+
+        turn.Reset();
+        turn.StampTurnKey("turn-2");
+        var spoken = turn.AwaitSpoken();
+
+        turn.EndStream("turn-1");
+
+        spoken.IsCompleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void KeyedEndStream_AfterAResetWithNoNewDispatch_IsIgnored()
+    {
+        // Between a turn's reset and the next dispatch the turn has no key, but it is not the turn
+        // the abandoned answer was written for either.
+        var turn = Started();
+        turn.StampTurnKey("turn-1");
+
+        turn.Reset();
+        var spoken = turn.AwaitSpoken();
+
+        turn.EndStream("turn-1");
+
+        spoken.IsCompleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task KeyedEndStream_OnASessionAwaitingItsFirstDispatch_SettlesTheAdoptedAnswer()
+    {
+        // The redial adoption in Classify: a fresh session's turn has no key and has never
+        // dispatched, so the answer still in flight from before the redial is adopted as this
+        // turn's. Its end settles the turn even though the keys cannot match.
+        var turn = Started();
+        var spoken = turn.AwaitSpoken();
+
+        turn.BeginSegment().Complete();
+        turn.EndStream("turn-from-before-the-redial");
+
+        spoken.IsCompleted.ShouldBeTrue();
+        (await spoken).ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task EverySegmentFailed_SettlesSilent()
     {
         var turn = Started();

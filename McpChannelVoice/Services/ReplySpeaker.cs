@@ -175,9 +175,10 @@ public sealed class ReplySpeaker(
             : ReplyRelevance.Abandoned;
     }
 
-    // A keyed reply was compared against the turn in flight before it got here, so its end settles
-    // that turn directly. A keyless one ends through the stream it opened, which is what refuses
-    // the late completion of a turn the hub has already given up on.
+    // A keyed reply was compared against the turn in flight in Classify, but a Reset can land
+    // between that compare and this settle — so the end carries its key and the turn re-checks it
+    // atomically with the settle. A keyless one ends through the stream it opened, which is what
+    // refuses the late completion of a turn the hub has already given up on.
     private static void EndStream(SatelliteSession session, SendReplyParams p)
     {
         if (p.TurnKey is null)
@@ -186,7 +187,7 @@ public sealed class ReplySpeaker(
             return;
         }
 
-        session.Turn.EndStream();
+        session.Turn.EndStream(p.TurnKey);
     }
 
     // Heard, and nothing else: no stream is opened, no segment is registered and the turn is not
