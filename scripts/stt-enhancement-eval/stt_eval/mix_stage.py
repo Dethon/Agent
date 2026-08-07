@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import soxr
+from numpy.typing import NDArray
 
 from .manifest import Utterance, write_manifest
 from .mixing import mix_at_snr
@@ -15,14 +16,16 @@ SR = 16000
 SNRS = [15.0, 10.0, 5.0, 0.0, -5.0]
 
 
-def _load_16k_mono(path: Path) -> np.ndarray:
+def _load_16k_mono(path: Path) -> NDArray[np.float32]:
     audio, sr = sf.read(path, dtype="float32", always_2d=True)
     mono = audio.mean(axis=1)
     return soxr.resample(mono, sr, SR).astype(np.float32) if sr != SR else mono
 
 
-def build_speech_bed(files: list[Path], rng: np.random.Generator, n_samples: int) -> np.ndarray:
-    parts, total = [], 0
+def build_speech_bed(files: list[Path], rng: np.random.Generator,
+                     n_samples: int) -> NDArray[np.float32]:
+    parts: list[NDArray[np.float32]] = []
+    total = 0
     while total < n_samples:
         clip = _load_16k_mono(files[rng.integers(len(files))])
         parts.append(clip)
@@ -30,7 +33,8 @@ def build_speech_bed(files: list[Path], rng: np.random.Generator, n_samples: int
     return np.concatenate(parts)[:n_samples]
 
 
-def build_music_bed(files: list[Path], rng: np.random.Generator, n_samples: int) -> np.ndarray:
+def build_music_bed(files: list[Path], rng: np.random.Generator,
+                    n_samples: int) -> NDArray[np.float32]:
     audio = _load_16k_mono(files[rng.integers(len(files))])
     if len(audio) < n_samples:
         audio = np.tile(audio, n_samples // len(audio) + 1)
@@ -41,7 +45,7 @@ def build_music_bed(files: list[Path], rng: np.random.Generator, n_samples: int)
 def _excluded_takes(takes_file: Path | None) -> set[tuple[str, int]]:
     if takes_file is None or not takes_file.exists():
         return set()
-    out = set()
+    out: set[tuple[str, int]] = set()
     with takes_file.open(encoding="utf-8") as f:
         for line in f:
             row = json.loads(line)
@@ -89,7 +93,7 @@ def run_mix(voices_dir: Path, data_dir: Path, run_dir: Path, seed: int, takes_fi
             continue
         reference = phrase_for_take(take)
         speech = _load_16k_mono(take_wav)
-        variants: list[tuple[str, float | None, np.ndarray]] = [("none", None, speech)]
+        variants: list[tuple[str, float | None, NDArray[np.float32]]] = [("none", None, speech)]
         for kind, files, builder in (("speech", speech_files, build_speech_bed),
                                      ("music", music_files, build_music_bed)):
             bed = builder(files, rng, len(speech))

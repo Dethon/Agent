@@ -1,5 +1,6 @@
 import io
 import wave
+from pathlib import Path
 
 import numpy as np
 import soundfile as sf
@@ -9,17 +10,17 @@ from stt_eval.phrases import SHORT_COMMANDS
 from stt_eval.synth_stage import run_synth
 
 
-def _wav_bytes(seconds=0.5, rate=24000):
+def _wav_bytes(seconds: float = 0.5, rate: int = 24000) -> bytes:
     buf = io.BytesIO()
     samples = np.zeros(int(rate * seconds), dtype="float32")
     sf.write(buf, samples, rate, format="WAV", subtype="FLOAT")
     return buf.getvalue()
 
 
-def test_run_synth_writes_16k_mono_pcm_and_a_manifest(tmp_path):
-    calls = []
+def test_run_synth_writes_16k_mono_pcm_and_a_manifest(tmp_path: Path):
+    calls: list[tuple[str, str]] = []
 
-    def fake_fetch(text, voice):
+    def fake_fetch(text: str, voice: str) -> bytes:
         calls.append((text, voice))
         return _wav_bytes()
 
@@ -40,12 +41,13 @@ def test_run_synth_writes_16k_mono_pcm_and_a_manifest(tmp_path):
             assert w.getsampwidth() == 2
 
 
-def test_run_synth_is_idempotent(tmp_path):
-    run_synth(tmp_path, "http://x", ["em_santa"], "kokoro-v1", fetch=lambda text, voice: _wav_bytes())
+def test_run_synth_is_idempotent(tmp_path: Path):
+    run_synth(tmp_path, "http://x", ["em_santa"], "kokoro-v1",
+              fetch=lambda _text, _voice: _wav_bytes())
 
-    calls = []
+    calls: list[str] = []
 
-    def counting_fetch(text, voice):
+    def counting_fetch(text: str, _voice: str) -> bytes:
         calls.append(text)
         return _wav_bytes()
 

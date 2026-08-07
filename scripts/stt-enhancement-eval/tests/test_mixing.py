@@ -1,10 +1,12 @@
 import numpy as np
+from numpy.typing import NDArray
+
 from stt_eval.mixing import active_rms, mix_at_snr
 
 SR = 16000
 
 
-def _tone(seconds, freq=440.0, amp=0.3):
+def _tone(seconds: float, freq: float = 440.0, amp: float = 0.3) -> NDArray[np.float32]:
     t = np.arange(int(SR * seconds)) / SR
     return (amp * np.sin(2 * np.pi * freq * t)).astype(np.float32)
 

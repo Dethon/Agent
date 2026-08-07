@@ -13,6 +13,7 @@ import io
 import json
 import re
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -24,12 +25,15 @@ from .phrases import SHORT_COMMANDS
 
 TARGET_RATE = 16000
 
+# (phrase, voice) -> wav bytes; the tests swap in a fake for the whole TTS round trip.
+Fetch = Callable[[str, str], bytes]
+
 
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40]
 
 
-def _fetch_speech(base_url: str, model: str):
+def _fetch_speech(base_url: str, model: str) -> Fetch:
     def fetch(text: str, voice: str) -> bytes:
         body = json.dumps(
             {"model": model, "voice": voice, "input": text, "response_format": "wav"}
@@ -62,7 +66,7 @@ def run_synth(
     base_url: str,
     voices: list[str],
     model: str,
-    fetch=None,
+    fetch: Fetch | None = None,
 ) -> None:
     fetch = fetch or _fetch_speech(base_url, model)
     corpus = run_dir / "corpus"
@@ -74,7 +78,8 @@ def run_synth(
     write_manifest(run_dir / "manifest.jsonl", rows)
 
 
-def _synth_one(corpus: Path, run_dir: Path, fetch, voice: str, index: int, phrase: str) -> Utterance:
+def _synth_one(corpus: Path, run_dir: Path, fetch: Fetch, voice: str, index: int,
+               phrase: str) -> Utterance:
     uid = f"{voice}-{index:02d}-{_slug(phrase)}"
     wav = corpus / f"{uid}.wav"
     # Presence-based resume, matching every other stage in this harness.

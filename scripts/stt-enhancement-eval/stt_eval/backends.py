@@ -63,7 +63,7 @@ def _lemonade(wavs: list[Path], out_jsonl: Path, prompt: str | None = None) -> N
         ]
         if prompt:
             argv += ["--prompt", prompt]
-        result = subprocess.run(argv, check = False)
+        result = subprocess.run(argv, check=False)
         # Merge whatever the worker managed to write BEFORE checking the return code, so a
         # mid-batch docker failure doesn't discard progress that already reached out.jsonl
         # (which lives inside this TemporaryDirectory and is gone once the `with` exits).

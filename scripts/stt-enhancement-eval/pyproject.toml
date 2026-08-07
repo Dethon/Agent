@@ -32,6 +32,30 @@ torchaudio = { index = "pytorch-cpu" }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.basedpyright]
+include = ["stt_eval", "tests"]
+venvPath = "."
+venv = ".venv"
+# basedpyright's default "recommended" mode is kept. The rules below are off because they fire on
+# things this harness cannot fix in its own code: most of the audio stack it drives (jiwer, soxr,
+# tqdm, faster_whisper, df) ships no type information, so every value crossing those calls is Any.
+reportMissingTypeStubs = false
+reportAny = false
+reportExplicitAny = false
+reportUnknownArgumentType = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+# Discarding the return of write()/append()-style calls is normal here.
+reportUnusedCallResult = false
+# Multi-line error and help strings are written as adjacent literals on purpose.
+reportImplicitStringConcatenation = false
+
+[[tool.basedpyright.executionEnvironments]]
+root = "tests"
+extraPaths = ["."]  # tests import stt_eval from the project root, as pytest does
+# Tests exercise module-private helpers (_score, _enrollment, _merge_worker_output) directly.
+reportPrivateUsage = false
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

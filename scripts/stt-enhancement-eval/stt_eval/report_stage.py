@@ -2,6 +2,7 @@
 import csv
 import json
 from pathlib import Path
+from typing import Any
 
 import jiwer
 
@@ -13,9 +14,13 @@ HIGH_SNR_MIN = 10.0
 MIN_REL_IMPROVEMENT = 0.20
 MAX_CLEAN_DELTA = 0.02
 
+# One scored utterance: id/speaker/interference/ref/hyp are strings, snr_db/wer/cer/score numbers.
+Row = dict[str, Any]
 
-def score_rows(manifest: list[Utterance], transcripts: dict[str, tuple[str, float | None]]) -> list[dict]:
-    rows = []
+
+def score_rows(manifest: list[Utterance],
+               transcripts: dict[str, tuple[str, float | None]]) -> list[Row]:
+    rows: list[Row] = []
     for u in manifest:
         hyp, score = transcripts.get(Path(u.wav).name, ("", None))
         ref_n, hyp_n = normalize(u.reference), normalize(hyp)
@@ -34,18 +39,18 @@ def _mean(xs: list[float]) -> float:
     return sum(xs) / len(xs) if xs else float("nan")
 
 
-def decision(raw_cells: list[dict], model_cells: list[dict]) -> dict:
-    def low_snr(cells):
+def decision(raw_cells: list[Row], model_cells: list[Row]) -> dict[str, float | bool]:
+    def low_snr(cells: list[Row]) -> list[float]:
         return [c["wer"] for c in cells
                 if c["interference"] == "speech" and c["snr_db"] is not None and c["snr_db"] <= LOW_SNR_MAX]
 
-    def clean(cells):
+    def clean(cells: list[Row]) -> list[float]:
         return [c["wer"] for c in cells if c["interference"] == "none"]
 
     # The no-regression gate covers the clean AND high-SNR cells (spec: "does not regress the
     # clean/high-SNR cells") -- a model that helps at 0 dB but hurts the easy +15/+10 dB turns
     # would otherwise slip through as a false PASS.
-    def high_snr(cells):
+    def high_snr(cells: list[Row]) -> list[float]:
         return [c["wer"] for c in cells
                 if c["interference"] != "none" and c["snr_db"] is not None and c["snr_db"] >= HIGH_SNR_MIN]
 
@@ -65,7 +70,7 @@ def decision(raw_cells: list[dict], model_cells: list[dict]) -> dict:
 
 
 def _load_transcripts(path: Path) -> dict[str, tuple[str, float | None]]:
-    out = {}
+    out: dict[str, tuple[str, float | None]] = {}
     with path.open(encoding="utf-8") as f:
         for line in f:
             row = json.loads(line)
@@ -75,7 +80,7 @@ def _load_transcripts(path: Path) -> dict[str, tuple[str, float | None]]:
 
 def run_report(run_dir: Path) -> None:
     manifest = read_manifest(run_dir / "manifest.jsonl")
-    scored: dict[tuple[str, str], list[dict]] = {}
+    scored: dict[tuple[str, str], list[Row]] = {}
     for backend_dir in sorted((run_dir / "transcripts").iterdir()):
         for cond_file in sorted(backend_dir.glob("*.jsonl")):
             key = (backend_dir.name, cond_file.stem)
