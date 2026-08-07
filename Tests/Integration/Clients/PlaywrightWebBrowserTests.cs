@@ -158,18 +158,18 @@ public class PlaywrightWebBrowserTests(
 
             var request2 = new BrowseRequest(
                 SessionId: sessionId,
-                Url: "https://httpbin.org/html",
+                Url: "https://example.org",
                 MaxLength: 1000);
             var result2 = await fixture.Browser.NavigateAsync(request2);
 
             // Assert - both navigations should work and session should persist
             result2.Status.ShouldBe(BrowseStatus.Success);
             result2.SessionId.ShouldBe(sessionId);
-            result2.Url.ShouldContain("httpbin.org");
+            result2.Url.ShouldContain("example.org");
 
             var currentPage = await fixture.Browser.GetCurrentPageAsync(sessionId);
             currentPage.Status.ShouldBe(BrowseStatus.Success);
-            currentPage.Url.ShouldContain("httpbin.org");
+            currentPage.Url.ShouldContain("example.org");
         }
         finally
         {
@@ -299,7 +299,7 @@ public class PlaywrightWebBrowserTests(
 
             var request2 = new BrowseRequest(
                 SessionId: sessionId2,
-                Url: "https://httpbin.org/html",
+                Url: "https://example.org",
                 MaxLength: 1000);
             var result2 = await fixture.Browser.NavigateAsync(request2);
             result2.Status.ShouldBe(BrowseStatus.Success);
@@ -308,7 +308,7 @@ public class PlaywrightWebBrowserTests(
             var page2 = await fixture.Browser.GetCurrentPageAsync(sessionId2);
 
             page1.Url.ShouldContain("example.com");
-            page2.Url.ShouldContain("httpbin.org");
+            page2.Url.ShouldContain("example.org");
         }
         finally
         {
@@ -327,7 +327,7 @@ public class PlaywrightWebBrowserTests(
         var urls = new[]
         {
             "https://example.com",
-            "https://httpbin.org/html",
+            "https://example.org",
             "https://en.wikipedia.org/wiki/C_Sharp_(programming_language)",
             "https://en.wikipedia.org/wiki/Web_browser"
         };
