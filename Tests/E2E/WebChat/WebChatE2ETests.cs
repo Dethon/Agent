@@ -484,16 +484,44 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Write a very long and detailed story about a space adventure");
-        await chatInput.PressAsync("Enter");
+        try
+        {
+            var chatInput = page.Locator("textarea.chat-input");
+            await chatInput.FillAsync("Write a very long and detailed story about a space adventure. Do not call any tools, just write the story.");
+            await chatInput.PressAsync("Enter");
 
-        // Wait for Cancel button to appear (signals streaming has started)
-        var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
-        await cancelButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 40_000 });
+            // Wait for Cancel button to appear (signals streaming has started)
+            var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+            await cancelButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 40_000 });
 
-        await cancelButton.ClickAsync();
+            // .approval-modal-overlay covers the whole viewport, so a prompt on screen swallows
+            // this click for as long as it is up. It can belong to this turn (the agent asked for
+            // a tool despite the prompt) or to another topic whose approval leaked and is being
+            // re-raised by StreamResumeService — either way the click has to clear it first.
+            try
+            {
+                await cancelButton.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+            }
+            catch (TimeoutException)
+            {
+                await DismissApprovalOverlayAsync(page);
 
-        await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
+                // Rejecting a prompt that belonged to this turn ends the stream by itself, which
+                // is the state this test is asking for; only click when there is still a stream.
+                if (await cancelButton.IsVisibleAsync())
+                {
+                    await cancelButton.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                }
+            }
+
+            await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
+        }
+        finally
+        {
+            // Cancelling does not clear a pending approval server-side (ChatHub.CancelTopic leaves
+            // ApprovalService._pendingApprovals alone), so anything this turn raised has to be
+            // answered here or it re-raises on every later test's page.
+            await DrainPendingApprovalsAsync(page);
+        }
     }
 }
