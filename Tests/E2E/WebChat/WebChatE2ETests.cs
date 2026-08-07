@@ -229,11 +229,14 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
                 {
                     await RejectEveryVisibleApprovalAsync(page, TimeSpan.FromSeconds(20));
                 }
-                catch (TimeoutException)
+                catch (Exception e) when (e is TimeoutException or PlaywrightException)
                 {
                     // A reject that will not click leaves the entry for the next test's
                     // dismissal to clear. This runs in a finally, so it must never replace the
-                    // failure the test itself is reporting.
+                    // failure the test itself is reporting. A click timeout surfaces as
+                    // TimeoutException, but the Expect assertion inside
+                    // WaitUntilApprovalAnsweredAsync throws PlaywrightException on ITS timeout,
+                    // so both are given up on quietly.
                     return;
                 }
 
