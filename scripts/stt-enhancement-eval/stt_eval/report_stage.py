@@ -76,7 +76,6 @@ def _load_transcripts(path: Path) -> dict[str, tuple[str, float | None]]:
 def run_report(run_dir: Path) -> None:
     manifest = read_manifest(run_dir / "manifest.jsonl")
     scored: dict[tuple[str, str], list[dict]] = {}
-    scores_meta: dict[tuple[str, str], dict[str, float | None]] = {}
     for backend_dir in sorted((run_dir / "transcripts").iterdir()):
         for cond_file in sorted(backend_dir.glob("*.jsonl")):
             key = (backend_dir.name, cond_file.stem)
