@@ -72,7 +72,7 @@ public class ApprovalServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CancelPendingApprovalsForTopic_RejectsAll()
+    public async Task CancelPendingApprovalsForTopicAsync_RejectsAll()
     {
         _sessionService.StartSession("topic1", "agent1", 100, 200);
         _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
@@ -83,10 +83,38 @@ public class ApprovalServiceTests : IDisposable
         var approvalTask = _sut.RequestApprovalAsync(
             new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
 
-        _sut.CancelPendingApprovalsForTopic("topic1");
+        await _sut.CancelPendingApprovalsForTopicAsync("topic1");
 
         var result = await approvalTask;
         result.ShouldBe("rejected");
+    }
+
+    // A cancelled turn ends the prompt it raised, so the browsers showing it are told the same way
+    // an answer tells them. Without the push the modal stays up over a stream that is already gone,
+    // and the only way out of it is answering for a tool call nobody is waiting on any more.
+    [Fact]
+    public async Task CancelPendingApprovalsForTopicAsync_TakesThePromptOffEveryBrowser()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200);
+        _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>())];
+
+        var approvalTask = _sut.RequestApprovalAsync(
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
+
+        var pending = _sut.GetPendingApprovalForTopic("topic1").ShouldNotBeNull();
+
+        await _sut.CancelPendingApprovalsForTopicAsync("topic1");
+        await approvalTask;
+
+        _hubSender.Verify(
+            sender => sender.SendAsync(
+                "OnApprovalResolved",
+                new ApprovalResolvedNotification("topic1", pending.ApprovalId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

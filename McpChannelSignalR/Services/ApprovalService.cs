@@ -93,23 +93,28 @@ public sealed class ApprovalService(
 
         var approvalResult = Enum.Parse<ToolApprovalResult>(result, ignoreCase: true);
 
-        sessionService.TryGetSession(context.TopicId, out var session);
+        await NotifyResolvedAsync(context.TopicId, approvalId);
+
+        context.TrySetResult(approvalResult);
+        context.Dispose();
+    }
+
+    // Taking the prompt off every browser showing it is the whole of this push. What an approval
+    // let through is written into the topic's stream, once, by RequestApprovalAsync.
+    private async Task NotifyResolvedAsync(string topicId, string approvalId)
+    {
+        sessionService.TryGetSession(topicId, out var session);
 
         try
         {
-            // Taking the prompt off every browser showing it is the whole of this push. What the
-            // approval let through is written into the topic's stream, once, by RequestApprovalAsync.
             var notification = new ApprovalResolvedNotification(
-                context.TopicId, approvalId, SpaceSlug: session?.SpaceSlug);
+                topicId, approvalId, SpaceSlug: session?.SpaceSlug);
             await SendToSpaceOrAllAsync(session?.SpaceSlug, "OnApprovalResolved", notification);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to notify approval resolved for topic {TopicId}", context.TopicId);
+            logger.LogWarning(ex, "Failed to notify approval resolved for topic {TopicId}", topicId);
         }
-
-        context.TrySetResult(approvalResult);
-        context.Dispose();
     }
 
     public bool IsApprovalPending(string approvalId)
@@ -127,7 +132,10 @@ public sealed class ApprovalService(
             : new ToolApprovalRequestMessage(pending.Key, pending.Value.Requests);
     }
 
-    public void CancelPendingApprovalsForTopic(string topicId)
+    // The topic is over — cancelled or deleted — so every prompt it raised is over with it. The
+    // waiting tool call is told no, and the browsers showing the prompt are told the same way an
+    // answer tells them: left up, the modal asks about a turn that no longer exists.
+    public async Task CancelPendingApprovalsForTopicAsync(string topicId)
     {
         var expiredApprovals = _pendingApprovals
             .Where(kv => kv.Value.TopicId == topicId)
@@ -140,6 +148,8 @@ public sealed class ApprovalService(
             {
                 continue;
             }
+
+            await NotifyResolvedAsync(topicId, approvalId);
 
             context.TrySetResult(ToolApprovalResult.Rejected);
             context.Dispose();
