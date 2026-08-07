@@ -85,14 +85,13 @@ public class InsistentAnnouncementControllerTests
         }
     }
 
-    // The playback loop waits out each job's nominal audio duration on the injected clock
-    // (PlaybackQueue: drained must mean "the satellite finished PLAYING", not "we finished
-    // writing"), so a test on a FakeTimeProvider has to push the clock past that wait or the loop
-    // never returns. Advance in a loop rather than once: the delay is registered asynchronously
-    // after the job's last chunk, so a single Advance can land before the timer even exists.
-    private static async Task DrainPumpAsync(Task pump, FakeTimeProvider time, SatelliteSession session)
+    // The loop ends on the token it was started with, exactly as the connection's run does. It may
+    // be waiting out a job's nominal audio duration on the injected clock when the cancellation
+    // arrives, and that wait is registered asynchronously after the job's last chunk — so push the
+    // clock while the cancellation takes effect rather than once.
+    private static async Task DrainPumpAsync(Task pump, FakeTimeProvider time, CancellationTokenSource run)
     {
-        session.Playback.Complete();
+        await run.CancelAsync();
         var sw = System.Diagnostics.Stopwatch.StartNew();
         while (!pump.IsCompleted)
         {
@@ -101,7 +100,14 @@ public class InsistentAnnouncementControllerTests
             time.Advance(TimeSpan.FromSeconds(1));
             await Task.Delay(20);
         }
-        await pump;
+
+        try
+        {
+            await pump;
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     // Pushes the fake clock forward until the condition holds, rather than once by the nominal gap.
@@ -124,13 +130,15 @@ public class InsistentAnnouncementControllerTests
 
     // Runs each online session's playback loop so enqueued jobs actually play; the writer counts
     // one invocation per round (the mock TTS yields exactly one chunk).
-    private static (Task Pump, Func<int> Count) PumpPlays(SatelliteSession session, FakeTimeProvider time)
+    private static (Task Pump, Func<int> Count, CancellationTokenSource Run) PumpPlays(
+        SatelliteSession session, FakeTimeProvider time)
     {
         var count = 0;
+        var run = new CancellationTokenSource();
         var pump = session.Playback.RunAsync(
             (_, _) => { Interlocked.Increment(ref count); return Task.CompletedTask; },
-            CancellationToken.None, time);
-        return (pump, () => Volatile.Read(ref count));
+            run.Token, time);
+        return (pump, () => Volatile.Read(ref count), run);
     }
 
     // Records the speaker-volume actions the controller writes to a satellite.
@@ -159,7 +167,7 @@ public class InsistentAnnouncementControllerTests
         var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
         var session = h.Sessions.Get("kitchen-01")!;
         var actions = RecordVolumeActions(session);
-        var (pump, _) = PumpPlays(session, time);
+        var (pump, _, run) = PumpPlays(session, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -174,7 +182,7 @@ public class InsistentAnnouncementControllerTests
         await WaitUntilAsync(() => actions().Contains("alert-release"), TimeSpan.FromSeconds(5));
         actions().ShouldBe(["alert-hold", "alert-release"]);
 
-        await DrainPumpAsync(pump, time, session);
+        await DrainPumpAsync(pump, time, run);
     }
 
     // The release lives in the loop's finally, so it has to fire on the path that ends an alarm in
@@ -186,7 +194,7 @@ public class InsistentAnnouncementControllerTests
         var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
         var session = h.Sessions.Get("kitchen-01")!;
         var actions = RecordVolumeActions(session);
-        var (pump, _) = PumpPlays(session, time);
+        var (pump, _, run) = PumpPlays(session, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -203,7 +211,7 @@ public class InsistentAnnouncementControllerTests
 
         await WaitUntilAsync(() => actions().Contains("alert-release"), TimeSpan.FromSeconds(5));
 
-        await DrainPumpAsync(pump, time, session);
+        await DrainPumpAsync(pump, time, run);
     }
 
     // Overlapping alerts on one satellite are supported by design, so the hold is refcounted: the
@@ -215,7 +223,7 @@ public class InsistentAnnouncementControllerTests
         var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
         var session = h.Sessions.Get("kitchen-01")!;
         var actions = RecordVolumeActions(session);
-        var (pump, _) = PumpPlays(session, time);
+        var (pump, _, run) = PumpPlays(session, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -249,7 +257,7 @@ public class InsistentAnnouncementControllerTests
         h.Alerts.DismissAll();
         await WaitUntilAsync(() => actions().Contains("alert-release"), TimeSpan.FromSeconds(5));
 
-        await DrainPumpAsync(pump, time, session);
+        await DrainPumpAsync(pump, time, run);
     }
 
     // An alert whose loop dies before it ever sent a hold — synthesis failing is the realistic
@@ -261,7 +269,7 @@ public class InsistentAnnouncementControllerTests
         var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
         var session = h.Sessions.Get("kitchen-01")!;
         var actions = RecordVolumeActions(session);
-        var (pump, _) = PumpPlays(session, time);
+        var (pump, _, run) = PumpPlays(session, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -295,7 +303,7 @@ public class InsistentAnnouncementControllerTests
         h.Alerts.DismissAll();
         await WaitUntilAsync(() => actions().Contains("alert-release"), TimeSpan.FromSeconds(5));
 
-        await DrainPumpAsync(pump, time, session);
+        await DrainPumpAsync(pump, time, run);
     }
 
     // A satellite that reconnects mid-alarm comes back with no hold, and one that was rebooting when
@@ -307,7 +315,7 @@ public class InsistentAnnouncementControllerTests
         var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
         var session = h.Sessions.Get("kitchen-01")!;
         var actions = RecordVolumeActions(session);
-        var (pump, plays) = PumpPlays(session, time);
+        var (pump, plays, run) = PumpPlays(session, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -326,15 +334,16 @@ public class InsistentAnnouncementControllerTests
             () => actions().Count(a => a == "alert-hold") >= 2, TimeSpan.FromSeconds(5));
 
         h.Alerts.DismissAll();
-        await DrainPumpAsync(pump, time, session);
+        await DrainPumpAsync(pump, time, run);
     }
 
     // Like PumpPlays, but records the alert flag the playback loop reports for each job — the bit
     // the Wyoming host puts on audio-start for the satellite's sink selection.
-    private static (Task Pump, Func<IReadOnlyList<bool>> Flags) PumpRecordsAlertFlags(
-        SatelliteSession session, FakeTimeProvider time)
+    private static (Task Pump, Func<IReadOnlyList<bool>> Flags, CancellationTokenSource Run)
+        PumpRecordsAlertFlags(SatelliteSession session, FakeTimeProvider time)
     {
         var flags = new List<bool>();
+        var run = new CancellationTokenSource();
         var pump = session.Playback.RunAsync(
             new PlaybackSink(
                 (_, _) => Task.CompletedTask,
@@ -344,10 +353,9 @@ public class InsistentAnnouncementControllerTests
                     { flags.Add(alert); }
                     return Task.CompletedTask;
                 }),
-            CancellationToken.None,
+            run.Token,
             time);
-        return (pump, () => { lock (flags) { return flags.ToList(); } }
-        );
+        return (pump, () => { lock (flags) { return flags.ToList(); } }, run);
     }
 
     // A timer must ring on the satellite's non-attenuated alert route, not at the calibrated
@@ -358,7 +366,7 @@ public class InsistentAnnouncementControllerTests
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
-        var (pump, flags) = PumpRecordsAlertFlags(h.Sessions.Get("kitchen-01")!, time);
+        var (pump, flags, run) = PumpRecordsAlertFlags(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -373,7 +381,7 @@ public class InsistentAnnouncementControllerTests
         await WaitUntilAsync(() => flags().Count >= 1, TimeSpan.FromSeconds(5));
         flags()[0].ShouldBeTrue();
 
-        await DrainPumpAsync(pump, time, h.Sessions.Get("kitchen-01")!);
+        await DrainPumpAsync(pump, time, run);
     }
 
     // Alarms take the same route. Their wake-up ramp is a separate, within-alert gain and is
@@ -383,7 +391,7 @@ public class InsistentAnnouncementControllerTests
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var h = BuildHarness(time, online: true, satelliteIds: "bedroom-01");
-        var (pump, flags) = PumpRecordsAlertFlags(h.Sessions.Get("bedroom-01")!, time);
+        var (pump, flags, run) = PumpRecordsAlertFlags(h.Sessions.Get("bedroom-01")!, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -398,7 +406,7 @@ public class InsistentAnnouncementControllerTests
         await WaitUntilAsync(() => flags().Count >= 1, TimeSpan.FromSeconds(5));
         flags()[0].ShouldBeTrue();
 
-        await DrainPumpAsync(pump, time, h.Sessions.Get("bedroom-01")!);
+        await DrainPumpAsync(pump, time, run);
     }
 
     [Fact]
@@ -433,7 +441,7 @@ public class InsistentAnnouncementControllerTests
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
-        var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
+        var (pump, plays, run) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -459,8 +467,7 @@ public class InsistentAnnouncementControllerTests
         h.Tts.Verify(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
             Times.Once); // synthesized once, replayed across rounds
 
-        h.Sessions.Get("kitchen-01")!.Playback.Complete();
-        await pump;
+        await DrainPumpAsync(pump, time, run);
     }
 
     [Fact]
@@ -468,7 +475,7 @@ public class InsistentAnnouncementControllerTests
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
-        var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
+        var (pump, plays, run) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -491,19 +498,18 @@ public class InsistentAnnouncementControllerTests
         await Task.Delay(50);
         plays().ShouldBe(2); // acknowledged before the second round (tone + TTS)
 
-        h.Sessions.Get("kitchen-01")!.Playback.Complete();
-        await pump;
+        await DrainPumpAsync(pump, time, run);
     }
 
-    private static (Task Pump, Func<IReadOnlyList<byte[]>> Chunks) PumpCaptures(
+    private static (Task Pump, Func<IReadOnlyList<byte[]>> Chunks, CancellationTokenSource Run) PumpCaptures(
         SatelliteSession session, FakeTimeProvider time)
     {
         var captured = new List<byte[]>();
+        var run = new CancellationTokenSource();
         var pump = session.Playback.RunAsync(
             (chunk, _) => { lock (captured) { captured.Add(chunk.Data.ToArray()); } return Task.CompletedTask; },
-            CancellationToken.None, time);
-        return (pump, () => { lock (captured) { return captured.ToList(); } }
-        );
+            run.Token, time);
+        return (pump, () => { lock (captured) { return captured.ToList(); } }, run);
     }
 
     [Fact]
@@ -511,7 +517,7 @@ public class InsistentAnnouncementControllerTests
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var h = BuildHarness(time, online: true, satelliteIds: "kitchen-01");
-        var (pump, chunks) = PumpCaptures(h.Sessions.Get("kitchen-01")!, time);
+        var (pump, chunks, run) = PumpCaptures(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -531,8 +537,7 @@ public class InsistentAnnouncementControllerTests
         // for this round's job. Advance past that nominal duration so the loop reaches the next
         // ReadAllAsync iteration and observes the queue's completion.
         time.Advance(TimeSpan.FromSeconds(2));
-        h.Sessions.Get("kitchen-01")!.Playback.Complete();
-        await pump;
+        await DrainPumpAsync(pump, time, run);
     }
 
     private static VoiceSettings SettingsWithEscalation() => new()
@@ -549,7 +554,7 @@ public class InsistentAnnouncementControllerTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var http = new RecordingHandler();
         var h = BuildHarness(time, online: true, SettingsWithEscalation(), http, "kitchen-01");
-        var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
+        var (pump, plays, run) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -571,8 +576,7 @@ public class InsistentAnnouncementControllerTests
         // the playback loop's playback-completion wait for round 1's job (see
         // Start_AlarmRound_PlaysToneBeforeSpeech). Advance past its nominal duration first.
         time.Advance(TimeSpan.FromSeconds(2));
-        h.Sessions.Get("kitchen-01")!.Playback.Complete();
-        await pump;
+        await DrainPumpAsync(pump, time, run);
     }
 
     [Fact]
@@ -581,7 +585,7 @@ public class InsistentAnnouncementControllerTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var http = new BlockingHandler();
         var h = BuildHarness(time, online: true, SettingsWithEscalation(), http, "kitchen-01");
-        var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
+        var (pump, plays, run) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -606,8 +610,7 @@ public class InsistentAnnouncementControllerTests
         // MaxRepeats=1, so RunLoopAsync never advances fake time itself; unblock round 1's
         // playback-completion wait before draining (see Start_AlarmRound_PlaysToneBeforeSpeech).
         time.Advance(TimeSpan.FromSeconds(2));
-        h.Sessions.Get("kitchen-01")!.Playback.Complete();
-        await pump;
+        await DrainPumpAsync(pump, time, run);
     }
 
     [Fact]
@@ -616,7 +619,7 @@ public class InsistentAnnouncementControllerTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var http = new RecordingHandler();
         var h = BuildHarness(time, online: true, SettingsWithEscalation(), http, "kitchen-01");
-        var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
+        var (pump, plays, run) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -635,8 +638,7 @@ public class InsistentAnnouncementControllerTests
 
         // Same fake-time gotcha as above: unblock round 1's playback-completion wait before draining.
         time.Advance(TimeSpan.FromSeconds(2));
-        h.Sessions.Get("kitchen-01")!.Playback.Complete();
-        await pump;
+        await DrainPumpAsync(pump, time, run);
     }
 
     [Fact]
@@ -645,7 +647,7 @@ public class InsistentAnnouncementControllerTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var http = new RecordingHandler();
         var h = BuildHarness(time, online: true, SettingsWithEscalation(), http, "kitchen-01");
-        var (pump, plays) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
+        var (pump, plays, run) = PumpPlays(h.Sessions.Get("kitchen-01")!, time);
 
         await h.Controller.StartAsync(
             new AnnounceRequest
@@ -667,8 +669,7 @@ public class InsistentAnnouncementControllerTests
         // Same fake-time gotcha (see Acknowledge_StopsLoopAndMarksAcknowledged): unblock round 1's
         // playback-completion wait before draining.
         time.Advance(TimeSpan.FromSeconds(2));
-        h.Sessions.Get("kitchen-01")!.Playback.Complete();
-        await pump;
+        await DrainPumpAsync(pump, time, run);
     }
 
     [Fact]

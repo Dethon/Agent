@@ -20,7 +20,9 @@ public sealed class NoOutboundSurfaceTools
         [Description("Response content")] string content,
         [Description("Kind of chunk")] ReplyContentType contentType,
         [Description("Whether this is the final chunk")] bool isComplete,
-        [Description("Message ID")] string? messageId)
+        [Description("Message ID")] string? messageId,
+        [Description("Key of the turn this reply answers")] string? turnKey = null,
+        [Description("Whether the turn this reply answers was agent-initiated")] bool? agentInitiated = null)
         => "ok";
 
     [McpServerTool(Name = ChannelProtocol.RequestApprovalTool)]

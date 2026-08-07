@@ -11,7 +11,7 @@ namespace Tests.Unit.Infrastructure.Mcp;
 // out of the very layer that exists to prevent it.
 public class McpFileSystemBackendResultTests
 {
-    private readonly McpFileSystemBackend _backend = new(null!, "test");
+    private readonly McpFileSystemBackend _backend = new(null!, "test", advertisedOperations: null);
 
     private static CallToolResult Result(bool isError, params string[] texts) => new()
     {

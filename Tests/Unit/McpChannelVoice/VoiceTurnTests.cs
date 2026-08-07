@@ -26,7 +26,7 @@ public class VoiceTurnTests
         turn.BeginSegment().Complete();
         spoken.IsCompleted.ShouldBeFalse(); // the agent may still send more text
 
-        turn.OpenStream().End();
+        turn.EndStream();
         spoken.IsCompleted.ShouldBeTrue();
         (await spoken).ShouldBeTrue();
     }
@@ -38,7 +38,7 @@ public class VoiceTurnTests
         var spoken = turn.AwaitSpoken();
 
         var segment = turn.BeginSegment();
-        turn.OpenStream().End();
+        turn.EndStream();
         spoken.IsCompleted.ShouldBeFalse(); // audio is still playing
 
         segment.Complete();
@@ -58,7 +58,7 @@ public class VoiceTurnTests
         var three = turn.BeginSegment();
 
         one.Complete();
-        turn.OpenStream().End();
+        turn.EndStream();
         two.Complete();
         spoken.IsCompleted.ShouldBeFalse();
 
@@ -83,7 +83,7 @@ public class VoiceTurnTests
         failing.Fail();
         spoken.IsCompleted.ShouldBeFalse();
 
-        turn.OpenStream().End();
+        turn.EndStream();
         spoken.IsCompleted.ShouldBeFalse(); // one segment is still playing
 
         stillPlaying.Complete();
@@ -107,7 +107,7 @@ public class VoiceTurnTests
         stale.Fail();
 
         var current = turn.BeginSegment();
-        turn.OpenStream().End();
+        turn.EndStream();
         current.Complete();
 
         spoken.IsCompleted.ShouldBeTrue();
@@ -128,7 +128,7 @@ public class VoiceTurnTests
         var current = turn.BeginSegment();
 
         stale.Complete();
-        turn.OpenStream().End();
+        turn.EndStream();
         spoken.IsCompleted.ShouldBeFalse(); // the new turn's own segment is still outstanding
 
         current.Complete();
@@ -144,7 +144,7 @@ public class VoiceTurnTests
         var turn = Started();
         var spoken = turn.AwaitSpoken();
 
-        turn.OpenStream().End();
+        turn.EndStream();
 
         spoken.IsCompleted.ShouldBeTrue();
         (await spoken).ShouldBeFalse();
@@ -159,27 +159,75 @@ public class VoiceTurnTests
         var turn = Started();
         turn.MarkDispatched(1234);
 
-        turn.OpenStream().End();
+        turn.EndStream();
 
         turn.TryConsumeDispatchedAt().ShouldBeNull();
     }
 
     [Fact]
-    public void EndStream_FromAPreviousTurn_IsIgnored()
+    public async Task KeyedEndStream_ForTheTurnInFlight_Settles()
     {
-        // The hub gives a turn up at ReplyTimeoutMs and dispatches the next one while the agent is
-        // still writing the abandoned answer. That answer's completion still arrives, and unguarded
-        // it ends the NEW turn's stream: a turn that has produced nothing yet settles silent, so
-        // FollowUpConversation re-arms the mic before its own reply has been spoken.
         var turn = Started();
-        var stale = turn.OpenStream();
+        turn.StampTurnKey("turn-1");
+        var spoken = turn.AwaitSpoken();
+
+        turn.BeginSegment().Complete();
+        turn.EndStream("turn-1");
+
+        spoken.IsCompleted.ShouldBeTrue();
+        (await spoken).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void KeyedEndStream_FromAPreviousTurn_IsIgnored()
+    {
+        // The reply path compares a keyed answer's key in Classify and settles the turn in a
+        // separate call. The hub gives a turn up at ReplyTimeoutMs and can dispatch the next one
+        // between the two, so the settle re-checks the key under the gate Reset takes — otherwise
+        // the abandoned answer's terminal event lands on the new turn, which has produced nothing
+        // yet and settles silent, re-arming the mic before its own reply has been spoken.
+        var turn = Started();
+        turn.StampTurnKey("turn-1");
+
+        turn.Reset();
+        turn.StampTurnKey("turn-2");
+        var spoken = turn.AwaitSpoken();
+
+        turn.EndStream("turn-1");
+
+        spoken.IsCompleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void KeyedEndStream_AfterAResetWithNoNewDispatch_IsIgnored()
+    {
+        // Between a turn's reset and the next dispatch the turn has no key, but it is not the turn
+        // the abandoned answer was written for either.
+        var turn = Started();
+        turn.StampTurnKey("turn-1");
 
         turn.Reset();
         var spoken = turn.AwaitSpoken();
 
-        stale.End();
+        turn.EndStream("turn-1");
 
         spoken.IsCompleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task KeyedEndStream_OnASessionAwaitingItsFirstDispatch_SettlesTheAdoptedAnswer()
+    {
+        // The redial adoption in Classify: a fresh session's turn has no key and has never
+        // dispatched, so the answer still in flight from before the redial is adopted as this
+        // turn's. Its end settles the turn even though the keys cannot match.
+        var turn = Started();
+        var spoken = turn.AwaitSpoken();
+
+        turn.BeginSegment().Complete();
+        turn.EndStream("turn-from-before-the-redial");
+
+        spoken.IsCompleted.ShouldBeTrue();
+        (await spoken).ShouldBeTrue();
     }
 
     [Fact]
@@ -189,7 +237,7 @@ public class VoiceTurnTests
         var spoken = turn.AwaitSpoken();
 
         turn.BeginSegment().Fail();
-        turn.OpenStream().End();
+        turn.EndStream();
 
         spoken.IsCompleted.ShouldBeTrue();
         (await spoken).ShouldBeFalse();
@@ -205,7 +253,7 @@ public class VoiceTurnTests
 
         turn.BeginSegment().Complete();
         turn.BeginSegment().Fail();
-        turn.OpenStream().End();
+        turn.EndStream();
 
         spoken.IsCompleted.ShouldBeTrue();
         (await spoken).ShouldBeTrue();
@@ -245,7 +293,7 @@ public class VoiceTurnTests
     {
         var turn = Started();
         var first = turn.BeginSegment();
-        turn.OpenStream().End();
+        turn.EndStream();
         first.Complete();
 
         turn.Reset();

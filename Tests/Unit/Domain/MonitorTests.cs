@@ -184,24 +184,23 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public Func<Task>? ReplyGate { get; init; }
 
-    public Action<(string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete)>? OnReply { get; init; }
+    public Action<SendReplyParams>? OnReply { get; init; }
 
     public IAsyncEnumerable<ChannelMessage> Messages => _channel.Reader.ReadAllAsync();
 
-    public List<(string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete)> SentReplies { get; } = [];
+    public List<SendReplyParams> SentReplies { get; } = [];
 
     public List<(string AgentId, string TopicName, string Sender, string? InitialPrompt, string? ExistingConversationId)> CreatedConversations { get; } = [];
 
     public List<(string ConversationId, IReadOnlyList<ToolApprovalRequest> Requests)> NotifyAutoApprovedCalls { get; } = [];
 
-    public async Task SendReplyAsync(string conversationId, string content, ReplyContentType contentType, bool isComplete, string? messageId, CancellationToken ct)
+    public async Task SendReplyAsync(SendReplyParams reply, CancellationToken ct)
     {
         if (ReplyGate is not null)
         {
             await ReplyGate();
         }
 
-        var reply = (conversationId, content, contentType, isComplete);
         SentReplies.Add(reply);
         OnReply?.Invoke(reply);
     }
@@ -431,7 +430,7 @@ public class ChatMonitorTests
         var completes = 0;
         var firstSpoken = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondDelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void track((string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete) r)
+        void track(SendReplyParams r)
         {
             if (r.ContentType != ReplyContentType.StreamComplete)
             {

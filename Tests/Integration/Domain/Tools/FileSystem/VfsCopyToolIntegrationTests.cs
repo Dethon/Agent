@@ -47,8 +47,8 @@ public class VfsCopyToolIntegrationTests(MultiFileSystemFixture fx)
     private static VirtualFileSystemRegistry BuildRegistry(McpClient libClient, McpClient notesClient)
     {
         var registry = new VirtualFileSystemRegistry();
-        registry.Mount(new FileSystemMount("library", "/library", "lib"), new McpFileSystemBackend(libClient, "library"));
-        registry.Mount(new FileSystemMount("notes", "/notes", "notes"), new McpFileSystemBackend(notesClient, "notes"));
+        registry.Mount(new FileSystemMount("library", "/library", "lib"), new McpFileSystemBackend(libClient, "library", advertisedOperations: null));
+        registry.Mount(new FileSystemMount("notes", "/notes", "notes"), new McpFileSystemBackend(notesClient, "notes", advertisedOperations: null));
         return registry;
     }
 

@@ -22,10 +22,11 @@ def test_transcribe_stage_label_defaults_to_none():
 def test_cli_lists_stages():
     out = subprocess.run(
         [sys.executable, "-m", "stt_eval", "--help"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, check=False,
     )
     assert out.returncode == 0
     assert "fetch" in out.stdout
+
 
 def test_synth_stage_parses():
     args = build_parser().parse_args(["synth", "--run", "short1"])

@@ -5,6 +5,7 @@ using Domain.DTOs.WebChat;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
@@ -242,9 +243,11 @@ public sealed class NotLiveUserActionTests
         client.Dispatcher.Dispatch(new SendMessage("topic-1", "first"));
         await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
 
+        var replyEnding = client.Service<TopicStreams>().Snapshot("topic-1").Completion!;
         client.Dispatcher.Dispatch(new CancelStreaming("topic-1"));
 
-        await TestChat.Eventually(() => !client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        await replyEnding;
+        client.Streaming.State.StreamingTopics.ShouldNotContain("topic-1");
         client.Toasts.State.Toasts.ShouldBeEmpty();
         stream.Release();
     }

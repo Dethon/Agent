@@ -1,4 +1,5 @@
 using Domain.DTOs.WebChat;
+using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 
 namespace WebChat.Client.State.Pipeline;
@@ -7,16 +8,13 @@ public interface IMessagePipeline
 {
     string SubmitUserMessage(string topicId, string content, string? senderId);
 
-    void AccumulateChunk(string topicId, string? messageId,
-        string? content, string? reasoning, string? toolCalls);
-
-    void FinalizeMessage(string topicId, string? messageId);
-
     void LoadHistory(string topicId, IEnumerable<ChatHistoryMessage> messages);
 
-    void ResumeFromBuffer(BufferResumeResult result, string topicId, string? currentMessageId);
+    // Null when this topic's messages have never been loaded, which is a different thing from
+    // a conversation that has none.
+    IReadOnlyList<ChatMessageModel>? MessagesFor(string topicId);
 
-    void Reset(string topicId);
+    void ResumeFromBuffer(BufferResumeResult result, string topicId, string? currentMessageId);
 
     bool WasSentByThisClient(string? correlationId);
 

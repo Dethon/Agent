@@ -45,7 +45,7 @@ public sealed class ApprovalStoreTests : IDisposable
     {
         _dispatcher.Dispatch(new ShowApproval("topic-1", Approval("approval-1")));
         _dispatcher.Dispatch(new ShowApproval("topic-1", Approval("approval-1")));
-        _dispatcher.Dispatch(new ApprovalResolved("approval-1", null));
+        _dispatcher.Dispatch(new ApprovalResolved("approval-1"));
 
         _store.State.CurrentRequest.ShouldBeNull();
     }
@@ -56,7 +56,7 @@ public sealed class ApprovalStoreTests : IDisposable
         _dispatcher.Dispatch(new ShowApproval("topic-1", Approval("approval-1")));
         _dispatcher.Dispatch(new ShowApproval("topic-2", Approval("approval-2")));
 
-        _dispatcher.Dispatch(new ApprovalResolved("approval-1", null));
+        _dispatcher.Dispatch(new ApprovalResolved("approval-1"));
 
         _store.State.CurrentRequest?.ApprovalId.ShouldBe("approval-2");
         _store.State.TopicId.ShouldBe("topic-2");
@@ -70,7 +70,7 @@ public sealed class ApprovalStoreTests : IDisposable
         _dispatcher.Dispatch(new ShowApproval("topic-1", Approval("approval-1")));
         _dispatcher.Dispatch(new ShowApproval("topic-2", Approval("approval-2")));
 
-        _dispatcher.Dispatch(new ApprovalResolved("approval-2", null));
+        _dispatcher.Dispatch(new ApprovalResolved("approval-2"));
 
         _store.State.CurrentRequest?.ApprovalId.ShouldBe("approval-1");
     }
@@ -119,7 +119,7 @@ public sealed class ApprovalStoreTests : IDisposable
         _dispatcher.Dispatch(new TopicApprovalsReconciled("topic-2", Approval("approval-2")));
 
         _store.State.CurrentRequest?.ApprovalId.ShouldBe("approval-1");
-        _dispatcher.Dispatch(new ApprovalResolved("approval-1", null));
+        _dispatcher.Dispatch(new ApprovalResolved("approval-1"));
         _store.State.CurrentRequest?.ApprovalId.ShouldBe("approval-2");
     }
 }

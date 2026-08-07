@@ -60,11 +60,12 @@ public class FileSystemServerConformanceTests
             ],
             ["ha"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_exec"],
             // The media library reads only the overlay's status file and writes no text, so it keeps
-            // the plain disk surface plus read.
+            // the plain disk surface plus read. It is also the one mount with a move-out rule, and
+            // the only one that registers the check.
             ["media"] =
             [
                 "fs_read", "fs_info", "fs_glob", "fs_move", "fs_delete", "fs_copy",
-                "fs_blob_read", "fs_blob_write"
+                "fs_blob_read", "fs_blob_write", "fs_move_out_check"
             ],
             ["vault"] =
             [
@@ -109,7 +110,7 @@ public class FileSystemServerConformanceTests
 
         // What the mount publishes to the model: every advertised operation the model can call, and
         // nothing else. The two blob tools are transfer machinery, not model-facing.
-        McpFileSystemDiscovery.DeriveCapabilities(registered).ShouldBe(
+        McpFileSystemDiscovery.DeriveCapabilities(McpFileSystemDiscovery.AdvertisedOperations(registered)).ShouldBe(
             FileSystemOperations.All
                 .Where(o => o.Capability is not null && _advertised[name].Contains(o.ToolName))
                 .Select(o => o.Capability!),
@@ -221,7 +222,8 @@ public class FileSystemServerConformanceTests
         var advertised = FileSystemServerTools.SupportedToolNames(backendType);
 
         advertised.ShouldNotContain("fs_move");
-        McpFileSystemDiscovery.DeriveCapabilities(advertised).ShouldNotContain("move");
+        McpFileSystemDiscovery.DeriveCapabilities(McpFileSystemDiscovery.AdvertisedOperations(advertised))
+            .ShouldNotContain("move");
     }
 
     // Capability is per operation, not per path. A backend that implements an operation and still
@@ -232,6 +234,31 @@ public class FileSystemServerConformanceTests
     public void ABackendThatRefusesSomePaths_StillAdvertisesTheOperation()
     {
         FileSystemServerTools.SupportedToolNames(typeof(PickyBackend)).ShouldBe(["fs_read"]);
+    }
+
+    // The move-out check inverts what an override means: elsewhere overriding declares "I can do
+    // this", here it declares "I have something to refuse". So a backend with no rule registers no
+    // tool, and the base default answers every path as allowed — which is why adding the check
+    // touched no other backend.
+    [Fact]
+    public async Task ABackendWithNoMoveOutRule_RegistersNoCheckAndAllowsEveryPath()
+    {
+        FileSystemServerTools.SupportedToolNames(typeof(PickyBackend))
+            .ShouldNotContain("fs_move_out_check");
+
+        (await new PickyBackend().MoveOutCheckAsync("anything", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveOutCheckResult>.Ok>();
+    }
+
+    // The other half: the media library has a rule, so it registers the tool with its own prose.
+    [Fact]
+    public void TheOneBackendWithAMoveOutRule_RegistersTheCheckWithItsOwnDescription()
+    {
+        var backend = MountedBackends["media"];
+
+        FileSystemServerTools.SupportedToolNames(typeof(MediaLibraryDiskFileSystem))
+            .ShouldContain("fs_move_out_check");
+        backend.DescribeMoveOutCheck.ShouldNotBe(new PickyBackend().DescribeMoveOutCheck);
     }
 
     [Fact]

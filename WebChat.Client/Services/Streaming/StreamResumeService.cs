@@ -2,9 +2,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
-using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
-using WebChat.Client.State.Streaming;
 
 namespace WebChat.Client.Services.Streaming;
 
@@ -15,83 +13,82 @@ public sealed class StreamResumeService(
     IStreamingService streamingService,
     IDispatcher dispatcher,
     IMessagePipeline pipeline,
-    MessagesStore messagesStore,
-    StreamingStore streamingStore) : IStreamResumeService
+    TopicStreams topicStreams) : IStreamResumeService
 {
     public async Task TryResumeStreamAsync(StoredTopic topic)
     {
-        if (streamingStore.State.ResumingTopics.Contains(topic.TopicId))
+        // One question, not three. Nothing back means the topic is already resuming or already
+        // streaming, and either way this resume has nothing to do.
+        var lease = topicStreams.TryBeginResume(topic.TopicId);
+        if (lease is null)
         {
             return;
         }
 
-        dispatcher.Dispatch(new StartResuming(topic.TopicId));
-
+        // The lease is handed to the stream that takes over the topic. Until that happens it is
+        // this method's to release, or a resume that finds nothing would hold the topic forever.
+        var handedOver = false;
         try
         {
-            // Check if topic is already streaming via store (quick check before server call)
-            if (streamingStore.State.StreamingTopics.Contains(topic.TopicId))
-            {
-                return;
-            }
-
-            // Check if streaming service has an active stream (atomic check with lock)
-            if (await streamingService.IsStreamActiveAsync(topic.TopicId))
-            {
-                return;
-            }
-
-            var streamState = await messagingService.GetStreamStateAsync(topic.TopicId);
-
-            // A null answer already means something real — there is no stream in progress —
-            // so not live has to stay its own case rather than fold into the same return.
-            if (!streamState.IsLive)
-            {
-                return;
-            }
-
-            var state = streamState.Value;
-            if (state is null || state is { IsProcessing: false, BufferedMessages.Count: 0 })
-            {
-                return;
-            }
-
-            if (!messagesStore.State.MessagesByTopic.ContainsKey(topic.TopicId))
-            {
-                var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-                if (!history.IsLive)
-                {
-                    return;
-                }
-
-                pipeline.LoadHistory(topic.TopicId, history.Value!);
-            }
-
-            // The server's answer is the whole truth for this conversation, so it both surfaces
-            // a prompt this client never saw and takes away one that was answered or timed out
-            // while it was disconnected. A read that could not be made says nothing either way.
-            var pendingApproval = await approvalService.GetPendingApprovalForTopicAsync(topic.TopicId);
-            if (pendingApproval.IsLive)
-            {
-                dispatcher.Dispatch(new TopicApprovalsReconciled(topic.TopicId, pendingApproval.Value));
-            }
-
-            // Single rebuild: buffer + history → merged result
-            var existingHistory = messagesStore.State.MessagesByTopic
-                .GetValueOrDefault(topic.TopicId) ?? [];
-            var result = BufferRebuildUtility.ResumeFromBuffer(
-                state.BufferedMessages, existingHistory, state.CurrentPrompt, state.CurrentSenderId);
-
-            // Start streaming FIRST (dispatches StreamStarted which creates empty StreamingContent)
-            // Then ResumeFromBuffer fills it with content via StreamChunk
-            // Order matters: StreamStarted resets content, so it must come before StreamChunk
-            await streamingService.TryStartResumeStreamAsync(topic, result.StreamingMessage, state.CurrentMessageId);
-
-            pipeline.ResumeFromBuffer(result, topic.TopicId, state.CurrentMessageId);
+            handedOver = await ResumeAsync(topic, lease);
         }
         finally
         {
-            dispatcher.Dispatch(new StopResuming(topic.TopicId));
+            if (!handedOver)
+            {
+                lease.Complete();
+            }
         }
+    }
+
+    private async Task<bool> ResumeAsync(StoredTopic topic, StreamLease lease)
+    {
+        var streamState = await messagingService.GetStreamStateAsync(topic.TopicId);
+
+        // A null answer already means something real — there is no stream in progress —
+        // so not live has to stay its own case rather than fold into the same return.
+        if (!streamState.IsLive)
+        {
+            return false;
+        }
+
+        var state = streamState.Value;
+        if (state is null || state is { IsProcessing: false, BufferedMessages.Count: 0 })
+        {
+            return false;
+        }
+
+        if (pipeline.MessagesFor(topic.TopicId) is null)
+        {
+            var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
+            if (!history.IsLive)
+            {
+                return false;
+            }
+
+            pipeline.LoadHistory(topic.TopicId, history.Value!);
+        }
+
+        // The server's answer is the whole truth for this conversation, so it both surfaces
+        // a prompt this client never saw and takes away one that was answered or timed out
+        // while it was disconnected. A read that could not be made says nothing either way.
+        var pendingApproval = await approvalService.GetPendingApprovalForTopicAsync(topic.TopicId);
+        if (pendingApproval.IsLive)
+        {
+            dispatcher.Dispatch(new TopicApprovalsReconciled(topic.TopicId, pendingApproval.Value));
+        }
+
+        // Single rebuild: buffer + history → merged result
+        var existingHistory = pipeline.MessagesFor(topic.TopicId) ?? [];
+        var result = BufferRebuildUtility.ResumeFromBuffer(
+            state.BufferedMessages, existingHistory, state.CurrentPrompt, state.CurrentSenderId);
+
+        // Upgrade the resume to a stream before replaying the buffer into it: the upgrade is
+        // what creates the live buffer the replay fills.
+        var started = await streamingService.TryStartResumeStreamAsync(
+            lease, topic, result.StreamingMessage, state.CurrentMessageId);
+
+        pipeline.ResumeFromBuffer(result, topic.TopicId, state.CurrentMessageId);
+        return started;
     }
 }

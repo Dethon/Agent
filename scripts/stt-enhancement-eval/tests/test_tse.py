@@ -4,11 +4,14 @@ Covers the two bits of application logic that must stay correct for the enrollme
 no-leakage guarantee: filename parsing (`_ID_RE`) and take-exclusion concatenation
 (`_enrollment`). The heavy WeSep extraction path is deliberately untouched here.
 """
+from pathlib import Path
+
 import numpy as np
+import pytest
 import soundfile as sf
+from numpy.typing import NDArray
 
 from stt_eval.conditions import tse
-
 
 # --- _ID_RE: parse "<speaker>-t<take>-..." -----------------------------------
 
@@ -42,13 +45,13 @@ def test_id_re_no_take_returns_none():
 
 # --- _enrollment: concatenate all takes EXCEPT the excluded one --------------
 
-def _write_take(voices_dir, speaker, take, value, n=100):
+def _write_take(voices_dir: Path, speaker: str, take: int, value: float, n: int = 100) -> None:
     d = voices_dir / speaker
     d.mkdir(parents=True, exist_ok=True)
     sf.write(d / f"enroll-{take}.wav", np.full(n, value, dtype="float32"), 16000, subtype="PCM_16")
 
 
-def test_enrollment_excludes_named_take_and_concatenates_rest(tmp_path):
+def test_enrollment_excludes_named_take_and_concatenates_rest(tmp_path: Path):
     # takes 1/2/3 carry distinct DC values so we can detect presence/absence
     _write_take(tmp_path, "Spk", 1, 0.1)
     _write_take(tmp_path, "Spk", 2, 0.2)
@@ -66,7 +69,7 @@ def test_enrollment_excludes_named_take_and_concatenates_rest(tmp_path):
     assert np.allclose(out[100:], 0.3, atol=2e-3)
 
 
-def test_enrollment_excludes_two_digit_take(tmp_path):
+def test_enrollment_excludes_two_digit_take(tmp_path: Path):
     # split("-")[1] must read "10" as 10, not confuse it with take 1
     _write_take(tmp_path, "Spk", 1, 0.1)
     _write_take(tmp_path, "Spk", 10, 0.5)
@@ -78,7 +81,8 @@ def test_enrollment_excludes_two_digit_take(tmp_path):
     assert len(out) == 100
 
 
-def test_process_reads_enrollment_from_explicit_voices_dir(tmp_path, monkeypatch):
+def test_process_reads_enrollment_from_explicit_voices_dir(tmp_path: Path,
+                                                           monkeypatch: pytest.MonkeyPatch):
     # Phase 2 swaps the corpus in via --voices; tse must honor that dir rather than
     # silently deriving data/voices from --data and enrolling against stale audio.
     voices = tmp_path / "field-voices"
@@ -86,9 +90,10 @@ def test_process_reads_enrollment_from_explicit_voices_dir(tmp_path, monkeypatch
     _write_take(voices, "Spk", 2, 0.2)
     wav_in = tmp_path / "Spk-t2-speech-snr+00.wav"
     sf.write(wav_in, np.zeros(50, dtype="float32"), 16000, subtype="PCM_16")
-    captured = {}
+    captured: dict[str, NDArray[np.float32]] = {}
 
-    def fake_extract(model_dir, mixture, enroll):
+    def fake_extract(_model_dir: Path, mixture: NDArray[np.float32],
+                     enroll: NDArray[np.float32]) -> NDArray[np.float32]:
         captured["enroll"] = enroll
         return mixture
 
@@ -99,7 +104,7 @@ def test_process_reads_enrollment_from_explicit_voices_dir(tmp_path, monkeypatch
     assert np.allclose(captured["enroll"], 0.1, atol=2e-3)
 
 
-def test_enrollment_asserts_when_only_excluded_take_exists(tmp_path):
+def test_enrollment_asserts_when_only_excluded_take_exists(tmp_path: Path):
     _write_take(tmp_path, "Solo", 2, 0.2)
     try:
         tse._enrollment(str(tmp_path), "Solo", 2)

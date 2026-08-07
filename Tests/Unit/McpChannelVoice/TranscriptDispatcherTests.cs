@@ -39,8 +39,10 @@ public class TranscriptDispatcherTests
 
     private static (TranscriptDispatcher Sut, VoiceConversationManager Manager, ChannelInboxProbe Emitter) Build(
         CommandSettings? commands = null, IMetricsPublisher? publisher = null,
-        double shortSpeechAvgLogProbThreshold = -1.4, int fullThresholdSpeechMs = 2000)
+        double shortSpeechAvgLogProbThreshold = -1.4, int fullThresholdSpeechMs = 2000,
+        ReplyTextAccumulator? accumulator = null)
     {
+        accumulator ??= new ReplyTextAccumulator();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
@@ -52,7 +54,7 @@ public class TranscriptDispatcherTests
             });
 
         var manager = new VoiceConversationManager(
-            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            factory.Object, accumulator, new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
 
         var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
@@ -61,6 +63,7 @@ public class TranscriptDispatcherTests
             emitter.Emitter, publisher ?? Mock.Of<IMetricsPublisher>(), manager,
             new LocalCommandDispatcher(
                 new VoiceCommandMatcher(commands ?? new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+            accumulator,
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6,
             shortSpeechAvgLogProbThreshold: shortSpeechAvgLogProbThreshold,
             fullThresholdSpeechMs: fullThresholdSpeechMs,
@@ -95,6 +98,61 @@ public class TranscriptDispatcherTests
         emitter.Received()[0].Content.ShouldBe("what time is it");
         emitter.Received()[0].Sender.ShouldBe("household");
         emitter.Received()[0].AgentId.ShouldBe("agent-1");
+    }
+
+    // Voice mints the key rather than leaving it to the agent, because voice is the side that has
+    // to recognise the answer when it comes back.
+    [Fact]
+    public async Task DispatchAsync_GoodTranscript_MintsATurnKeyAndStampsItOnTheTurnAndTheMessage()
+    {
+        var (sut, _, emitter) = Build();
+        var session = Session();
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "what time is it", Confidence = 0.9 },
+            "agent-1", null, null, null, default);
+
+        var turnKey = emitter.Received().ShouldHaveSingleItem().TurnKey;
+        turnKey.ShouldNotBeNullOrWhiteSpace();
+        session.Turn.TurnKey.ShouldBe(turnKey);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_TwoTurns_MintADifferentKeyEach()
+    {
+        var (sut, _, emitter) = Build();
+        var session = Session();
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "what time is it", Confidence = 0.9 },
+            "agent-1", null, null, null, default);
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "and the weather", Confidence = 0.9 },
+            "agent-1", null, null, null, default);
+
+        emitter.Received().Select(m => m.TurnKey).Distinct().Count().ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_ThePreviousTurnLeftTextBuffered_DropsItAsTheNextTurnIsDispatched()
+    {
+        // The abandoned run may never send anything else, so waiting for a mismatched chunk to
+        // clear the buffer leaves a stale sentence to be spoken at the front of the next answer.
+        var accumulator = new ReplyTextAccumulator();
+        var (sut, manager, _) = Build(accumulator: accumulator);
+        var session = Session();
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "what time is it", Confidence = 0.9 },
+            "agent-1", null, null, null, default);
+        var conversationId = manager.GetActiveConversationId("kitchen-01")!;
+        accumulator.Append(conversationId, "media respuesta que nadie escuchó");
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "and the weather", Confidence = 0.9 },
+            "agent-1", null, null, null, default);
+
+        accumulator.Flush(conversationId).ShouldBeEmpty();
     }
 
     [Fact]
@@ -278,6 +336,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent>(e => published.Add(e));
         var sut = new TranscriptDispatcher(
             emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+            new ReplyTextAccumulator(),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await sut.DispatchAsync(
@@ -331,6 +390,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent>(e => published.Add(e));
         var sut = new TranscriptDispatcher(
             new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast).Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+            new ReplyTextAccumulator(),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 
@@ -378,6 +438,7 @@ public class TranscriptDispatcherTests
             .Callback<MetricEvent>(e => published.Add(e));
         var sut = new TranscriptDispatcher(
             new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast).Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+            new ReplyTextAccumulator(),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
 

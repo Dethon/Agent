@@ -160,6 +160,109 @@ public class ChatMonitorDeliveryIdentityTests
         firstReplies.ShouldBe([_mintedKey.ConversationId, "sched-morning-news-12345"]);
     }
 
+    // A reply says nothing about which turn it answers unless the turn key is on it. Everything a
+    // turn produces carries one key, minted here when the inbound message brought none, so the
+    // receiving channel can compare rather than infer.
+    [Fact]
+    public async Task Monitor_AMessageWithNoTurnKey_GivesEveryReplyOfThatTurnOneMintedKey()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "42:13", channelId: "webchat", agentId: "jonas");
+        var webchat = MonitorTestMocks.CreateChannel("webchat", message);
+
+        await RunAsync([webchat]);
+
+        // The stream-complete event included: that is exactly where today's message id goes null,
+        // and it is the event that settles a turn.
+        webchat.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.StreamComplete);
+        var keys = webchat.SentReplies.Select(r => r.TurnKey).ToList();
+        keys.ShouldAllBe(key => key != null);
+        keys.Distinct().ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task Monitor_AMessageCarryingATurnKey_EchoesThatKeyBackOnEveryReply()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "42:13", channelId: "voice", agentId: "jonas") with
+        {
+            TurnKey = "turn-from-the-channel"
+        };
+        var voice = MonitorTestMocks.CreateChannel("voice", message);
+
+        await RunAsync([voice]);
+
+        voice.SentReplies.ShouldNotBeEmpty();
+        voice.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-from-the-channel");
+    }
+
+    [Fact]
+    public async Task Monitor_TwoTurnsInOneConversation_CarryDifferentTurnKeys()
+    {
+        var first = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "42:13", content: "one", channelId: "webchat", agentId: "jonas");
+        var second = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "42:13", content: "two", channelId: "webchat", agentId: "jonas");
+        var webchat = MonitorTestMocks.CreateChannel("webchat", first, second);
+
+        await RunAsync([webchat]);
+
+        webchat.SentReplies.Select(r => r.TurnKey).Distinct().Count().ShouldBe(2);
+    }
+
+    // A timer or a schedule landing mid-conversation carries a key that does not match the live
+    // turn's, and so does an abandoned answer arriving late. Without this flag the receiving end
+    // cannot tell them apart, and the two have to be treated oppositely.
+    [Fact]
+    public async Task Monitor_AnAgentInitiatedTurn_SaysSoOnEveryReply()
+    {
+        var fire = new ChannelMessage
+        {
+            ConversationId = "sched-morning-news-12345",
+            Content = "do the thing",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "jonas",
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "morning-news"),
+            ReplyTo = [new ReplyTarget("webchat", null)]
+        };
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", fire);
+        var webchat = new FakeChannelConnection
+        {
+            ChannelId = "webchat",
+            ConversationIdToReturn = _mintedKey.ConversationId
+        };
+        webchat.Complete();
+
+        await RunAsync([scheduling, webchat]);
+
+        webchat.SentReplies.ShouldNotBeEmpty();
+        webchat.SentReplies.ShouldAllBe(r => r.AgentInitiated == true);
+    }
+
+    [Fact]
+    public async Task Monitor_AUserTurn_SaysItWasNotAgentInitiated()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "42:13", channelId: "webchat", agentId: "jonas");
+        var webchat = MonitorTestMocks.CreateChannel("webchat", message);
+
+        await RunAsync([webchat]);
+
+        webchat.SentReplies.ShouldNotBeEmpty();
+        webchat.SentReplies.ShouldAllBe(r => r.AgentInitiated == false);
+    }
+
+    private static Task RunAsync(IReadOnlyList<IChannelConnection> channels) =>
+        new ChatMonitor(
+            channels,
+            MonitorTestMocks.CreateAgentFactory(ReplyingAgent()),
+            MonitorTestMocks.CreateThreadResolver(),
+            CapturingPublisher([]),
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object)
+            .Monitor(CancellationToken.None);
+
     private sealed class RecordingRecallHook : IMemoryRecallHook
     {
         public List<string?> ConversationIds { get; } = [];

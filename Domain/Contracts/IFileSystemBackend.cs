@@ -21,6 +21,12 @@ public interface IFileSystemBackend
     Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct);
 
+    // May this path leave the mount? Asked before a cross-mount move streams anything, because such
+    // a move never calls MoveAsync — it copies the bytes to the other mount and deletes the source,
+    // so a refusal that lives in MoveAsync would never run. An ok payload allows it; an error
+    // envelope refuses it and says why.
+    Task<FsResult<FsMoveOutCheckResult>> MoveOutCheckAsync(string path, CancellationToken ct);
+
     IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct);
 
     Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,

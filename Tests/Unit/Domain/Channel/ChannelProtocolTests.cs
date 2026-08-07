@@ -16,13 +16,18 @@ public class ChannelProtocolTests
             Content = "hi",
             ContentType = ReplyContentType.Text,
             IsComplete = true,
-            MessageId = "m1"
+            MessageId = "m1",
+            TurnKey = "t1",
+            AgentInitiated = false
         };
 
         var args = ChannelProtocol.ToArguments(p);
 
         args.Keys.OrderBy(k => k)
-            .ShouldBe(["content", "contentType", "conversationId", "isComplete", "messageId"]);
+            .ShouldBe([
+                "agentInitiated", "content", "contentType", "conversationId", "isComplete",
+                "messageId", "turnKey"
+            ]);
         JsonSerializer.Serialize(args["contentType"]).ShouldBe("\"Text\"");
     }
 

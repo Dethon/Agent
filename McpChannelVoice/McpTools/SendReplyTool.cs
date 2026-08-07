@@ -18,7 +18,12 @@ public sealed class SendReplyTool
         [Description("Kind of chunk being sent")] ReplyContentType contentType,
         [Description("Whether this is the final chunk")] bool isComplete,
         [Description("Message ID for grouping related chunks")] string? messageId,
-        IServiceProvider services)
+        IServiceProvider services,
+        // Both defaulted, which is what makes them optional on the wire rather than merely
+        // nullable: a required parameter would make every reply from an agent that predates them
+        // an error, and this server is deployed independently of that agent.
+        [Description("Key of the turn this reply answers")] string? turnKey = null,
+        [Description("Whether the turn this reply answers was agent-initiated")] bool? agentInitiated = null)
     {
         var p = new SendReplyParams
         {
@@ -26,7 +31,9 @@ public sealed class SendReplyTool
             Content = content,
             ContentType = contentType,
             IsComplete = isComplete,
-            MessageId = messageId
+            MessageId = messageId,
+            TurnKey = turnKey,
+            AgentInitiated = agentInitiated
         };
 
         var speaker = services.GetRequiredService<ReplySpeaker>();

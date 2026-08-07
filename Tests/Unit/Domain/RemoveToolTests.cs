@@ -46,7 +46,9 @@ public class RemoveToolTests
         result["status"]!.ToString().ShouldBe("success");
         result["message"]!.ToString().ShouldBe("Moved to trash");
         result["originalPath"]!.ToString().ShouldBe(filePath);
-        result["trashPath"]!.ToString().ShouldBe(trashPath);
+        // The trash folder sits outside every mount, so no virtual path for it exists and nothing
+        // reads the field. Reporting it would hand the model a location it cannot act on.
+        result["trashPath"]!.ToString().ShouldBe("");
         _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
     }
 

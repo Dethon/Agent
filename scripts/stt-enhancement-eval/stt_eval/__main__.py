@@ -6,8 +6,8 @@ from pathlib import Path
 STAGES: dict[str, Callable[[argparse.Namespace], None]] = {}
 
 
-def _todo(args: argparse.Namespace) -> None:
-    raise SystemExit(f"stage not implemented yet")
+def _todo(_args: argparse.Namespace) -> None:
+    raise SystemExit("stage not implemented yet")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -86,6 +86,7 @@ STAGES["synth"] = _synth
 
 def _process(args: argparse.Namespace) -> None:
     from tqdm import tqdm
+
     from .conditions import PROCESSORS
     from .manifest import read_manifest
     run_dir = Path("runs") / args.run

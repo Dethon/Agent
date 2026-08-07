@@ -31,6 +31,11 @@ public class ReplySpeakerTests
     private readonly List<VoiceEvent> _published = [];
     private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
 
+    // The conversation mapping's own clock: its idle timer is what tears a voice conversation down,
+    // and one test advances it to reach that teardown.
+    private readonly FakeTimeProvider _conversationClock = new(DateTimeOffset.UtcNow);
+    private static readonly TimeSpan _conversationLifetime = TimeSpan.FromMinutes(5);
+
     public ReplySpeakerTests()
     {
         _session = new SatelliteSession("kitchen-01",
@@ -48,8 +53,8 @@ public class ReplySpeakerTests
             });
 
         var manager = new VoiceConversationManager(
-            factory.Object, _accumulator, new FakeTimeProvider(DateTimeOffset.UtcNow),
-            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+            factory.Object, _accumulator, _conversationClock,
+            _conversationLifetime, NullLogger<VoiceConversationManager>.Instance);
 
         _conversationId = manager.GetOrCreateAsync(_session, "agent-1", "hello", default).GetAwaiter().GetResult();
 
@@ -79,14 +84,22 @@ public class ReplySpeakerTests
 
     // The session is looked up per call rather than captured, because two tests swap in a session
     // built with a different playback queue.
-    private void Say(ReplySpeaker speaker, string content, ReplyContentType contentType, bool isComplete) =>
-        speaker.SpeakUtteranceReply(_sessions.Get("kitchen-01")!, new SendReplyParams
+    private void Say(ReplySpeaker speaker, string content, ReplyContentType contentType, bool isComplete)
+    {
+        var session = _sessions.Get("kitchen-01")!;
+        speaker.SpeakUtteranceReply(session, new SendReplyParams
         {
             ConversationId = _conversationId,
             Content = content,
             ContentType = contentType,
-            IsComplete = isComplete
+            IsComplete = isComplete,
+            // The key the turn was dispatched under, so a test that stamps one gets the matching
+            // path and a test that does not gets the missing-key fallback — which is the old
+            // behaviour, and is why the tests written before the key still read the same.
+            TurnKey = session.Turn.TurnKey,
+            AgentInitiated = false
         });
+    }
 
     private static async IAsyncEnumerable<AudioChunk> EmptyAudio(string label)
     {
@@ -125,11 +138,11 @@ public class ReplySpeakerTests
         Say(_speaker, "hola", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2)); // resolves promptly, not after a timeout
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeFalse(); // no audio actually played -> end conversation + re-arm, not "spoken"
     }
@@ -183,11 +196,11 @@ public class ReplySpeakerTests
 
         Say(_speaker, "boom", ReplyContentType.Error, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeTrue(); // the error reached the satellite, so the turn was spoken
     }
@@ -203,11 +216,11 @@ public class ReplySpeakerTests
 
         Say(_speaker, "hola mundo", ReplyContentType.Text, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeTrue();
     }
@@ -253,9 +266,12 @@ public class ReplySpeakerTests
 
         _tts.Verify(t => t.SynthesizeAsync("Buscando.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        var heard = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(
+            async (_, _) => { heard.TrySetResult(); await Task.Yield(); }, run.Token);
+        await heard.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         turn.IsCompleted.ShouldBeFalse(); // the preamble is not the end of the turn
     }
@@ -317,11 +333,12 @@ public class ReplySpeakerTests
 
         // Drain the playback loop: the first synthesized chunk triggers OnFirstAudio, which publishes
         // the latency metrics from where synthesis actually happens.
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
         await Task.Delay(80);
         _clock.Advance(TimeSpan.FromSeconds(1));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         _published.Count(e => e.Metric == VoiceMetric.TtsLatencyMs).ShouldBe(1);
         var wake = _published.SingleOrDefault(e => e.Metric == VoiceMetric.WakeToFirstAudioMs);
@@ -340,9 +357,10 @@ public class ReplySpeakerTests
         Say(_speaker, "listo", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
+        await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         var published = _published.Select(e => e.Metric).ToList();
         published.ShouldContain(VoiceMetric.SpeechEndToFirstAudioMs);
@@ -350,30 +368,32 @@ public class ReplySpeakerTests
     }
 
     [Fact]
-    public async Task SpeakUtteranceReply_ReplyWithNoDispatchStamp_PublishesNoTurnAnchoredSpans()
+    public async Task SpeakUtteranceReply_AScheduleFiringIntoALiveSession_PublishesNoTurnAnchoredSpans()
     {
         // "Recuérdame en dos minutos" fires into a voice-minted conversation whose mapping is still
         // alive (ConversationLifetime is 5 minutes) and whose satellite session is live, so McpRun
         // routes it down the utterance path — create_conversation no-ops in that state. The turn
-        // anchors from the earlier real turn are never invalidated, so without a gate this publishes
-        // SpeechEndToFirstAudioMs ≈ 120000: one sample that wrecks Avg/P95/Max on the headline metric.
+        // anchors from the earlier real turn are never invalidated, so reporting against them would
+        // publish SpeechEndToFirstAudioMs ≈ 120000: one sample that wrecks Avg/P95/Max on the
+        // headline metric. It answers a different turn, so it never reaches those spans at all.
         _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
         Anchors.MarkTurnStart(_clock.GetTimestamp());
         Anchors.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
         _clock.Advance(TimeSpan.FromMinutes(2));
 
-        Say(_speaker, "son las diez", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.StreamComplete, true);
+        SayFor("sched-turn", "son las diez", ReplyContentType.Text, false, agentInitiated: true);
+        SayFor("sched-turn", "", ReplyContentType.StreamComplete, true, agentInitiated: true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        var heard = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(
+            async (_, _) => { heard.TrySetResult(); await Task.Yield(); }, run.Token, _clock);
+        await heard.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         _published.ShouldNotContain(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs);
         _published.ShouldNotContain(e => e.Metric == VoiceMetric.WakeToFirstAudioMs);
-        // TtsLatencyMs and ReplyQueueWaitMs are anchored on this job alone, so they stay honest.
-        _published.ShouldContain(e => e.Metric == VoiceMetric.TtsLatencyMs);
-        _published.ShouldContain(e => e.Metric == VoiceMetric.ReplyQueueWaitMs);
     }
 
     [Fact]
@@ -491,6 +511,9 @@ public class ReplySpeakerTests
         // All three anchors coincide, so SpeechEndToFirstAudioMs is the whole dispatch -> first-audio
         // span and the three sub-spans must tile it exactly.
         _session.Turn.Reset();
+        // A dispatched turn has a key, and this decomposition is about a turn that really ran: the
+        // missing-key fallback would publish an error whose own cost lands inside the spans.
+        _session.Turn.StampTurnKey("turn-1");
         Anchors.MarkTurnStart(_clock.GetTimestamp());
         Anchors.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
@@ -501,9 +524,10 @@ public class ReplySpeakerTests
 
         _clock.Advance(TimeSpan.FromMilliseconds(400)); // the reply waits behind another job
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, _clock);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token, _clock);
+        await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         var roundTrip = _published.Single(e => e.Metric == VoiceMetric.AgentRoundTripMs).DurationMs;
         var queueWait = _published.Single(e => e.Metric == VoiceMetric.ReplyQueueWaitMs).DurationMs;
@@ -552,13 +576,14 @@ public class ReplySpeakerTests
 
         var written = new List<string>();
         var wrote = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
         var pump = _session.Playback.RunAsync((chunk, _) =>
         {
             lock (written)
             { written.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span)); }
             wrote.TrySetResult();
             return Task.CompletedTask;
-        }, CancellationToken.None);
+        }, run.Token);
 
         // Segment one, played to completion with the agent still generating. This is the moment the
         // per-job handshake got wrong: the turn must NOT settle here.
@@ -572,12 +597,10 @@ public class ReplySpeakerTests
         Say(_speaker, "Por la noche bajará bastante y habrá algo de viento del norte. ", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(5));
-
         // Awaited rather than read: the segment settles from the job's outcome, and the queue
         // signals an outcome without waiting for whoever reacts to it.
         (await turn.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBeTrue();
+        await run.StopAsync(pump);
         written.Count.ShouldBeGreaterThan(1); // it really did stream in pieces
     }
 
@@ -595,9 +618,10 @@ public class ReplySpeakerTests
         Say(_speaker, "Por la noche bajará bastante y habrá algo de viento del norte. ", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
-        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
+        await _session.Turn.AwaitSpoken().WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         _published.Count(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs).ShouldBe(1);
         _published.Count(e => e.Metric == VoiceMetric.WakeToFirstAudioMs).ShouldBe(1);
@@ -690,22 +714,22 @@ public class ReplySpeakerTests
         _session.Turn.Reset();
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
         var turn = _session.Turn.AwaitSpoken();
+        using var run = new CancellationTokenSource();
         var pump = _session.Playback.RunAsync(
             async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
-            CancellationToken.None, _clock);
+            run.Token, _clock);
 
         Say(_speaker, "Hola mundo", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
 
         await playing.Task.WaitAsync(TimeSpan.FromSeconds(10));   // the segment is mid-drain
         _session.Playback.PreemptCurrent();
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(10));
 
         // Settles promptly instead of wedging. Silent, not Spoken: no segment ever drained, so the
         // conversation ends and wake re-arms rather than opening a follow-up window over the alarm
         // that cut in.
         (await turn.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBeFalse();
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -723,7 +747,7 @@ public class ReplySpeakerTests
         _session.Turn.Reset();
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
         var turn = _session.Turn.AwaitSpoken();
-        _session.Playback.Complete();    // the queue is closed: every enqueue now refuses
+        _session.Playback.CompleteAndDiscardQueued();    // the link dropped: every enqueue now refuses
 
         Say(_speaker, "Hola mundo", ReplyContentType.Text, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);
@@ -763,9 +787,10 @@ public class ReplySpeakerTests
         var playing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _session.Turn.Reset();
         _session.Turn.MarkDispatched(_clock.GetTimestamp());
+        using var run = new CancellationTokenSource();
         var pump = _session.Playback.RunAsync(
             async (_, _) => { playing.TrySetResult(); await Task.Yield(); },
-            CancellationToken.None, _clock);
+            run.Token, _clock);
 
         Say(speaker, "Primera frase completa. ", ReplyContentType.Text, false);
         await playing.Task.WaitAsync(TimeSpan.FromSeconds(10));   // segment one is mid-drain
@@ -777,8 +802,7 @@ public class ReplySpeakerTests
 
         await disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        _session.Playback.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(10));
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -816,52 +840,35 @@ public class ReplySpeakerTests
     }
 
     [Fact]
-    public void SpeakUtteranceReply_StreamCompleteFromAnAbandonedTurn_DoesNotSettleTheNewOne()
-    {
-        // FollowUpConversation gives a turn up at ReplyTimeoutMs and the next transcript resets it,
-        // while the agent is still finishing the abandoned answer. That answer's StreamComplete
-        // arrives afterwards: off the new turn it settles a reply nobody has spoken yet, so the
-        // chime plays and the mic reopens over the answer still coming.
-        _session.Turn.Reset();
-        Say(_speaker, "", ReplyContentType.ToolCall, false);   // the abandoned answer's stream opens
-
-        _session.Turn.Reset();                                 // the next turn is dispatched
-        var turn = _session.Turn.AwaitSpoken();
-
-        Say(_speaker, "", ReplyContentType.StreamComplete, true);
-
-        turn.IsCompleted.ShouldBeFalse();
-    }
-
-    [Fact]
     public async Task SpeakUtteranceReply_AStreamThatNeverEndedAndTheSatelliteRedialled_StillSettlesTheNewTurn()
     {
-        // A reply stream can end without any terminal event at all: the agent's connection to this
-        // server drops mid-answer (a restart or a deploy), so no Error and no StreamComplete ever
-        // arrive and the stream's token stays behind. The satellite then redials and the hub builds
-        // a fresh session — a fresh turn — for the same conversation, because the manager's
-        // satellite -> conversation mapping outlives the connection. Adopting the leftover token
-        // there ends a turn that was discarded with the old session, so the live turn never settles
-        // and FollowUpConversation recovers only at the ~120 s reply timeout, with the satellite
-        // unresponsive for all of it.
+        // The satellite's link to this server drops mid-answer and it redials, so the hub builds a
+        // fresh session — a fresh turn — for the same conversation, because the manager's
+        // satellite -> conversation mapping outlives the connection. The agent knows nothing of any
+        // of it and keeps writing: the rest of the answer arrives naming the turn that was
+        // discarded with the old session, against a turn that has never been dispatched. That is
+        // the answer the user is waiting for, so it is adopted and spoken. Discarded instead, the
+        // user hears nothing at all and has to ask again.
         _session.Turn.Reset();
-        Say(_speaker, "", ReplyContentType.ToolCall, false); // the stream opens and never terminates
+        _session.Turn.StampTurnKey("turn-1");
+        SayFor("turn-1", "", ReplyContentType.ToolCall, false); // the answer is still being written
 
         _sessions.Register(new SatelliteSession("kitchen-01", _session.Config));
         var session = _sessions.Get("kitchen-01")!;
-        session.Turn.Reset();
         var turn = session.Turn.AwaitSpoken();
 
-        Say(_speaker, "hola mundo", ReplyContentType.Text, false);
-        Say(_speaker, "", ReplyContentType.StreamComplete, true);
+        SayFor("turn-1", "hola mundo", ReplyContentType.Text, false);
+        SayFor("turn-1", "", ReplyContentType.StreamComplete, true);
 
-        var pump = session.Playback.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
-        session.Playback.Complete();
+        using var run = new CancellationTokenSource();
+        var pump = session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
 
         var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
 
         spoke.ShouldBeTrue();
+        _tts.Verify(t => t.SynthesizeAsync(
+            "hola mundo", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -873,7 +880,7 @@ public class ReplySpeakerTests
         // must hand the text back, not the question asked before it.
         var speaker = Speaker(Streaming(firstSegmentMinChars: 10, minChars: 10));
         _session.Turn.Reset();
-        _session.Playback.Complete();
+        _session.Playback.CompleteAndDiscardQueued();
 
         Say(speaker, "Primera frase completa. ", ReplyContentType.Text, false);
 
@@ -987,6 +994,262 @@ public class ReplySpeakerTests
             Data = System.Text.Encoding.UTF8.GetBytes(text),
             Format = AudioFormat.WyomingStandard
         };
+    }
+
+    // The four cases the turn key decides between, one test each. Each asserts what a caller can
+    // observe — whether the turn settled, and what reached the synthesizer — never the speaker's
+    // own bookkeeping.
+
+    private void SayFor(string? turnKey, string content, ReplyContentType contentType,
+        bool isComplete, bool? agentInitiated = false) =>
+        _speaker.SpeakUtteranceReply(_sessions.Get("kitchen-01")!, new SendReplyParams
+        {
+            ConversationId = _conversationId,
+            Content = content,
+            ContentType = contentType,
+            IsComplete = isComplete,
+            TurnKey = turnKey,
+            AgentInitiated = agentInitiated
+        });
+
+    [Fact]
+    public async Task SpeakUtteranceReply_KeyMatchesTheTurnInFlight_SpeaksItAndSettlesTheTurn()
+    {
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
+        var turn = _session.Turn.AwaitSpoken();
+
+        SayFor("turn-1", "Veintiún grados.", ReplyContentType.Text, false);
+        SayFor("turn-1", "", ReplyContentType.StreamComplete, true);
+
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
+
+        var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
+
+        spoke.ShouldBeTrue();
+        _tts.Verify(t => t.SynthesizeAsync(
+            "Veintiún grados.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SpeakUtteranceReply_AnotherTurnsAgentInitiatedDelivery_IsSpokenAndLeavesTheTurnOutstanding()
+    {
+        // A timer or a scheduled message landing while the user is mid-conversation. It interrupts
+        // and nothing more: the answer the user asked for still arrives, and they keep the follow-up
+        // window they were owed.
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
+        var turn = _session.Turn.AwaitSpoken();
+
+        SayFor("sched-turn", "Han pasado diez minutos.", ReplyContentType.Text, false, agentInitiated: true);
+        SayFor("sched-turn", "", ReplyContentType.StreamComplete, true, agentInitiated: true);
+
+        _tts.Verify(t => t.SynthesizeAsync(
+            "Han pasado diez minutos.", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        var heard = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(
+            async (_, _) => { heard.TrySetResult(); await Task.Yield(); }, run.Token);
+        await heard.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
+
+        turn.IsCompleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SpeakUtteranceReply_AnotherUserTurnsAbandonedAnswer_IsDiscardedAndAppendsNothing()
+    {
+        // The hub gave that turn up at the reply timeout and the user has already asked something
+        // else. Speaking it would put the tail of a question they moved on from in front of the
+        // answer they are waiting for.
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-2");
+        var turn = _session.Turn.AwaitSpoken();
+
+        SayFor("turn-1", "Respuesta a la pregunta anterior.", ReplyContentType.Text, false);
+        SayFor("turn-1", "", ReplyContentType.StreamComplete, true);
+
+        _tts.VerifyNoOtherCalls();
+        _accumulator.Flush(_conversationId).ShouldBeEmpty();
+
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
+        await run.StopAsync(pump);
+
+        turn.IsCompleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SpeakUtteranceReply_NoKeyAtAll_IsTreatedAsThisTurnsAndPublishesAnError()
+    {
+        // Only reachable if the echo itself is broken. Falling back to the old behaviour keeps the
+        // house answering; the error is what makes the breakage visible as itself rather than as
+        // satellites that stopped answering for two minutes at a time.
+        var errors = new List<ErrorEvent>();
+        var metrics = new Mock<IMetricsPublisher>();
+        metrics.Setup(m => m.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(e =>
+            {
+                if (e is ErrorEvent error)
+                {
+                    lock (errors)
+                    { errors.Add(error); }
+                }
+            });
+        var speaker = Speaker(new VoiceSettings(), metrics.Object);
+
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
+        var turn = _session.Turn.AwaitSpoken();
+
+        speaker.SpeakUtteranceReply(_session, new SendReplyParams
+        {
+            ConversationId = _conversationId,
+            Content = "Veintiún grados.",
+            ContentType = ReplyContentType.Text,
+            IsComplete = true
+        });
+
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
+
+        var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
+
+        spoke.ShouldBeTrue();
+        errors.ShouldContain(e => e.Service == "voice" && e.ErrorType == "ReplyWithoutTurnKey");
+    }
+
+    [Fact]
+    public async Task SpeakUtteranceReply_TheSatelliteRedialledMidAnswer_SettlesItsNextTurnRightAway()
+    {
+        // The failure the key exists for. The agent's link to this server drops mid-answer, so no
+        // terminal event ever arrives for that turn. The satellite redials, the hub builds a fresh
+        // session, and the user asks something else. The abandoned answer's late completion names
+        // the turn it belonged to and is dropped; the new turn settles on its own answer instead of
+        // waiting out the ~120 s reply timeout with the microphone shut.
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
+        SayFor("turn-1", "Respuesta interrumpida.", ReplyContentType.Text, false);
+
+        _sessions.Register(new SatelliteSession("kitchen-01", _session.Config));
+        var session = _sessions.Get("kitchen-01")!;
+        session.Turn.Reset();
+        session.Turn.StampTurnKey("turn-2");
+        // What dispatching the next transcript does, and the reason it does it here: the abandoned
+        // run may never send another chunk, so nothing later would clear what it left behind.
+        _accumulator.Flush(_conversationId);
+        var turn = session.Turn.AwaitSpoken();
+
+        // The abandoned run finally reports; it answers a turn nobody is waiting on any more.
+        SayFor("turn-1", "", ReplyContentType.StreamComplete, true);
+
+        SayFor("turn-2", "Veintiún grados.", ReplyContentType.Text, false);
+        SayFor("turn-2", "", ReplyContentType.StreamComplete, true);
+
+        using var run = new CancellationTokenSource();
+        var pump = session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
+
+        var spoke = await turn.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
+
+        spoke.ShouldBeTrue();
+        _tts.Verify(t => t.SynthesizeAsync(
+            It.Is<string>(s => s.Contains("interrumpida")),
+            It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void SpeakUtteranceReply_AnAnnouncementStreamThatNeverEnded_LosesItsBufferWithTheConversation()
+    {
+        // An announcement heard beside a live turn buffers under its own turn, and only that
+        // announcement's own terminal event flushes it. The agent's link to this server dropping
+        // mid-announcement means no terminal event ever arrives, and every announcement carries a
+        // fresh turn key — so on a server that runs for weeks the leftover buffers have no bound.
+        // Tearing the conversation down has to take its announcements with it; the plain
+        // conversation key it used to flush reaches none of them.
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
+
+        SayFor("sched-turn", "Han pasado diez minutos", ReplyContentType.Text, false,
+            agentInitiated: true);
+
+        var buffer = ReplyTextAccumulator.TurnBuffer(_conversationId, "sched-turn");
+        var buffered = _accumulator.Flush(buffer);
+        buffered.ShouldBe("Han pasado diez minutos"); // it really is held under the announcement's turn
+        _accumulator.PutBack(buffer, buffered);       // and put straight back, still stranded
+
+        _conversationClock.Advance(_conversationLifetime + TimeSpan.FromMinutes(1));
+
+        _accumulator.Flush(buffer).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task SpeakUtteranceReply_AKeylessScheduleFiringIntoALiveSession_PublishesNoTurnAnchoredSpans()
+    {
+        // The same "recuérdame en dos minutos" fire, from an agent container that predates the turn
+        // key — the skew send_reply's optional parameters exist for. It carries no key to divert it,
+        // so Classify falls back to the turn in flight and it comes down the reply path after all.
+        // The turn anchors from the earlier real turn are never invalidated, so reporting against
+        // them publishes the AGE of that turn (~120000 ms) as this reply's latency: one sample that
+        // wrecks Avg/P95/Max on the headline metric. The dispatch stamp the real turn already
+        // consumed is the proof that a reply answers a transcript this hub dispatched.
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
+        Anchors.MarkTurnStart(_clock.GetTimestamp());
+        Anchors.MarkSpeechEnd(_clock.GetTimestamp(), endpointTailMs: 0, _clock);
+        _clock.Advance(TimeSpan.FromMinutes(2));
+
+        SayFor(null, "son las diez", ReplyContentType.Text, false);
+        SayFor(null, "", ReplyContentType.StreamComplete, true);
+
+        var heard = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(
+            async (_, _) => { heard.TrySetResult(); await Task.Yield(); }, run.Token, _clock);
+        await heard.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
+
+        _published.ShouldNotContain(e => e.Metric == VoiceMetric.SpeechEndToFirstAudioMs);
+        _published.ShouldNotContain(e => e.Metric == VoiceMetric.WakeToFirstAudioMs);
+    }
+
+    [Fact]
+    public async Task SpeakUtteranceReply_AKeylessAbandonedAnswerCompletes_DoesNotSettleTheTurnInFlight()
+    {
+        // A rolling deploy where the agent container predates the turn key: every chunk arrives
+        // keyless, so Classify has nothing to compare and falls back to the turn in flight. The hub
+        // gave turn one up at ReplyTimeoutMs and the user asked something else, and the abandoned
+        // answer's completion lands on turn two. Settling it there ends FollowUpConversation, whose
+        // chime preempts the sentence being spoken and reopens the microphone over the rest of the
+        // answer — so the end of a stream may only settle the turn that stream opened against.
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-1");
+        SayFor(null, "La respuesta a la primera pregunta.", ReplyContentType.Text, false);
+
+        _session.Turn.Reset();
+        _session.Turn.StampTurnKey("turn-2");
+        _accumulator.Flush(_conversationId); // what dispatching the next transcript does
+        var turn = _session.Turn.AwaitSpoken();
+
+        SayFor(null, "", ReplyContentType.StreamComplete, true); // turn one's answer finally reports
+
+        turn.IsCompleted.ShouldBeFalse();
+
+        // The guard refuses the stale end; it does not wedge the microphone behind it. Turn two's
+        // own answer, keyless like everything else this agent sends, still settles it.
+        SayFor(null, "Veintiún grados.", ReplyContentType.Text, false);
+        SayFor(null, "", ReplyContentType.StreamComplete, true);
+
+        using var run = new CancellationTokenSource();
+        var pump = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), run.Token);
+
+        (await turn.WaitAsync(TimeSpan.FromSeconds(2))).ShouldBeTrue();
+        await run.StopAsync(pump);
     }
 
     private static async Task WaitForCountAsync(List<string> sink, int count, TimeSpan timeout)

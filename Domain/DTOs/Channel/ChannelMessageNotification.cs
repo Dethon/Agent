@@ -23,5 +23,9 @@ public record ChannelMessageNotification
     // Optional per-message config override (model, reasoning effort). Part of the shared protocol
     // but currently only populated by the SignalR channel; other channels leave it null.
     public AgentConfigPatch? ConfigPatch { get; init; }
+    // Optional key naming the turn this message opens, for a channel that has to recognise the
+    // answer to it later. Voice-only today; every other channel leaves it null and the conversation
+    // group mints one.
+    public string? TurnKey { get; init; }
     public DateTimeOffset Timestamp { get; init; }
 }

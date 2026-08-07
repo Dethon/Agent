@@ -6,7 +6,9 @@ using Domain.Tools.FileSystem;
 
 namespace Domain.Contracts;
 
-// Every filesystem backend starts here: the twelve operations already answered as unsupported, plus
+// Every filesystem backend starts here: twelve of the thirteen operations already answered as
+// unsupported and the move-out check answered as allowed (see it below for why that one is
+// inverted), plus
 // the pieces each backend used to copy — the error envelopes, the glob prologue, a guarded search
 // regex and the search template. A backend overrides only what it can really do, and that override
 // is the single declaration of its capability: the MCP registrar reflects over it to decide which
@@ -62,6 +64,13 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     public virtual Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
         Task.FromResult(Unsupported<FsCopyResult>(VfsCopyTool.Name));
+
+    // The one operation whose override means the opposite of every other's. Elsewhere overriding
+    // declares "I can do this"; here it declares "I have something to refuse", because the default
+    // is to allow. A mount with no rule about what may leave it needs no code and registers no
+    // tool, which is why adding this operation touched no backend but the one with a rule.
+    public virtual Task<FsResult<FsMoveOutCheckResult>> MoveOutCheckAsync(string path, CancellationToken ct) =>
+        Task.FromResult(FsMoveOutCheckResult.Allow(path));
 
     // The two byte-streaming operations are shaped as streams rather than envelopes, so an
     // unimplemented one throws instead. Nothing calls them on a backend that does not override
@@ -175,6 +184,10 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
 
     public virtual string DescribeBlobWrite =>
         "Write a chunk of raw bytes (base64) at the given offset. offset=0 creates or truncates.";
+
+    public virtual string DescribeMoveOutCheck =>
+        "Ask whether a path may be moved off this filesystem, before a cross-filesystem move streams "
+        + "anything. An ok answer allows the move; an error explains why the path cannot leave.";
 
     protected FsResult<T> Unsupported<T>(string operation) where T : class =>
         FsError.Fail<T>(ToolError.Codes.UnsupportedOperation, UnsupportedMessage(operation));

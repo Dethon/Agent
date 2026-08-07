@@ -46,7 +46,7 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
             var fileResult = await fileResolution.Backend.SearchAsync(
                 query, regex, fileResolution.RelativePath, null, filePattern,
                 maxResults, contextLines, outputMode, cancellationToken);
-            return Normalize(fileResult, filePath, fileResolution.MountPoint).ToNode();
+            return Normalize(fileResult, filePath, fileResolution).ToNode();
         }
 
         if (directoryPath is null)
@@ -65,23 +65,19 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
         var result = await dirResolution.Backend.SearchAsync(
             query, regex, null, dirResolution.RelativePath, filePattern,
             maxResults, contextLines, outputMode, cancellationToken);
-        return Normalize(result, directoryPath, dirResolution.MountPoint).ToNode();
+        return Normalize(result, directoryPath, dirResolution).ToNode();
     }
 
-    // A backend reports the scope and every hit in its own coordinates, mount-relative and with
-    // varying leading-slash conventions. Prefixing the mount point — and echoing the caller's own
-    // path for the scope — makes a hit directly reusable as input to read/edit, the way glob, read
-    // and info already answer. Without it the obvious next call, feeding a hit to text_read, came
-    // back "No filesystem mounted".
+    // Both halves of the invariant in one place. The caller named the scope, so it is echoed; the
+    // hits are the backend's own and are translated. Without this the obvious next call, feeding a
+    // hit to text_read, came back "No filesystem mounted".
     private static FsResult<FsSearchResult> Normalize(
-        FsResult<FsSearchResult> result, string virtualPath, string mountPoint) =>
-        result is FsResult<FsSearchResult>.Ok ok
-            ? new FsResult<FsSearchResult>.Ok(ok.Value with
-            {
-                Path = virtualPath,
-                Results = ok.Value.Results
-                    .Select(r => r with { File = $"{mountPoint.TrimEnd('/')}/{r.File.TrimStart('/')}" })
-                    .ToList()
-            })
-            : result;
+        FsResult<FsSearchResult> result, string virtualPath, FileSystemResolution resolution) =>
+        result.Map(search => search with
+        {
+            Path = virtualPath,
+            Results = search.Results
+                .Select(r => r with { File = resolution.ToVirtualPath(r.File) })
+                .ToList()
+        });
 }

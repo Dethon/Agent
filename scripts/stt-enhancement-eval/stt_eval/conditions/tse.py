@@ -19,11 +19,12 @@ import itertools
 import re
 import subprocess
 import tempfile
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
+from numpy.typing import NDArray
 
 _ID_RE = re.compile(r"^(?P<speaker>.+)-t(?P<take>\d+)-")
 _SETUP = "stt_eval/conditions/tse_env_setup.sh"
@@ -71,11 +72,11 @@ for line in sys.stdin:
     proto.flush()
 """
 
-_WORKERS: dict[str, subprocess.Popen] = {}
+_WORKERS: dict[str, subprocess.Popen[str]] = {}
 _SEQ = itertools.count(1)
 
 
-def _worker(model_dir: Path) -> subprocess.Popen:
+def _worker(model_dir: Path) -> subprocess.Popen[str]:
     """Lazily launch (and cache) the persistent extraction subprocess for model_dir."""
     key = str(model_dir)
     proc = _WORKERS.get(key)
@@ -87,11 +88,14 @@ def _worker(model_dir: Path) -> subprocess.Popen:
     for p in (python, wesep_src, wesep_model / "avg_model.pt", wesep_model / "config.yaml"):
         if not p.exists():
             raise FileNotFoundError(f"TSE stack missing: {p} -- rebuild it with {_SETUP}")
-    log = open(model_dir / "tse-env" / "worker.log", "w")
+    # Not a context manager: this handle is the worker's stderr and must stay open for the
+    # subprocess's whole life, which outlives this call (the worker is cached in _WORKERS).
+    log = open(model_dir / "tse-env" / "worker.log", "w")  # noqa: SIM115
     proc = subprocess.Popen(
         [str(python), "-c", _WORKER_SRC, str(wesep_src), str(wesep_model)],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, text=True,
     )
+    assert proc.stdin is not None and proc.stdout is not None  # both are PIPEs
     ready = proc.stdout.readline().strip()
     if ready != "READY":
         raise RuntimeError(f"TSE worker failed to start (got {ready!r}); see {log.name}")
@@ -100,17 +104,20 @@ def _worker(model_dir: Path) -> subprocess.Popen:
     return proc
 
 
-def _shutdown(proc: subprocess.Popen) -> None:
+def _shutdown(proc: subprocess.Popen[str]) -> None:
     if proc.poll() is None:
         try:
-            proc.stdin.close()
+            if proc.stdin is not None:
+                proc.stdin.close()
             proc.wait(timeout=5)
         except Exception:  # noqa: BLE001
             proc.kill()
 
 
-def _extract(model_dir: Path, mixture: np.ndarray, enroll: np.ndarray) -> np.ndarray:
+def _extract(model_dir: Path, mixture: NDArray[np.float32],
+             enroll: NDArray[np.float32]) -> NDArray[np.float32]:
     proc = _worker(model_dir)
+    assert proc.stdin is not None and proc.stdout is not None  # both are PIPEs
     with tempfile.TemporaryDirectory(prefix="tse-") as td:
         mix_wav = Path(td) / "mix.wav"
         enroll_wav = Path(td) / "enroll.wav"
@@ -127,16 +134,16 @@ def _extract(model_dir: Path, mixture: np.ndarray, enroll: np.ndarray) -> np.nda
         if status != "OK":
             raise RuntimeError(f"TSE worker error (seq {seq}): {status}")
         extracted, _ = sf.read(out_wav, dtype="float32")
-    return extracted
+    return np.asarray(extracted, dtype=np.float32)
 
 
-@lru_cache(maxsize=None)
-def _enrollment(voices_dir: str, speaker: str, exclude_take: int) -> np.ndarray:
+@cache
+def _enrollment(voices_dir: str, speaker: str, exclude_take: int) -> NDArray[np.float32]:
     parts = [sf.read(p, dtype="float32")[0]
              for p in sorted(Path(voices_dir).glob(f"{speaker}/enroll-*.wav"))
              if int(p.stem.split("-")[1]) != exclude_take]
     assert parts, f"no enrollment takes for {speaker} besides t{exclude_take}"
-    return np.concatenate(parts)
+    return np.concatenate(parts).astype(np.float32, copy=False)
 
 
 def process(model_dir: Path, wav_in: Path, wav_out: Path, voices_dir: Path) -> None:
@@ -144,6 +151,7 @@ def process(model_dir: Path, wav_in: Path, wav_out: Path, voices_dir: Path) -> N
     assert m, wav_in.name
     enroll = _enrollment(str(voices_dir), m["speaker"], int(m["take"]))
     mixture, sr = sf.read(wav_in, dtype="float32")
+    mixture = np.asarray(mixture, dtype=np.float32)  # dtype="float32" already; this pins the type
     assert sr == 16000, wav_in
     extracted = _extract(model_dir, mixture, enroll)
     sf.write(wav_out, extracted[:len(mixture)], 16000, subtype="PCM_16")

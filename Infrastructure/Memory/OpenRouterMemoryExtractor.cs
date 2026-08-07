@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
@@ -21,12 +22,33 @@ public class OpenRouterMemoryExtractor(
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
+    // The schema tells the model that every candidate field is required. Reading the answer back
+    // must not enforce that: a model still drops a field now and then, and a required-property
+    // failure throws away the whole batch instead of the one candidate that came back incomplete.
+    private static readonly JsonSerializerOptions _readOptions = new(_jsonOptions)
+    {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { MakeEveryPropertyOptional } }
+    };
+
     private static readonly ChatOptions _extractionChatOptions = new()
     {
         Instructions = MemoryPrompts.ExtractionSystemPrompt,
         ResponseFormat = ChatResponseFormat.ForJsonSchema<ExtractionResponseDto>(
             serializerOptions: _jsonOptions)
     };
+
+    private static void MakeEveryPropertyOptional(JsonTypeInfo typeInfo)
+    {
+        if (typeInfo.Kind != JsonTypeInfoKind.Object)
+        {
+            return;
+        }
+
+        foreach (var property in typeInfo.Properties)
+        {
+            property.IsRequired = false;
+        }
+    }
 
     public async Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
         IReadOnlyList<ChatMessage> contextWindow, string userId, CancellationToken ct)
@@ -57,12 +79,15 @@ public class OpenRouterMemoryExtractor(
         try
         {
             var json = StripCodeFences(responseText);
-            var wrapper = JsonSerializer.Deserialize<ExtractionResponseDto>(json, _jsonOptions);
+            var wrapper = JsonSerializer.Deserialize<ExtractionResponseDto>(json, _readOptions);
 
+            // A model that leaves a field off one candidate must not cost us the whole batch, so
+            // an incomplete candidate is dropped or defaulted here rather than failing the parse.
             return wrapper?.Candidates?
+                .Where(c => !string.IsNullOrWhiteSpace(c.Content))
                 .Select(c => new ExtractionCandidate(
-                    c.Content,
-                    c.Category,
+                    c.Content!,
+                    c.Category ?? MemoryCategory.Fact,
                     Math.Clamp(c.Importance, 0, 1),
                     Math.Clamp(c.Confidence, 0, 1),
                     c.Tags ?? [],
@@ -100,8 +125,8 @@ public class OpenRouterMemoryExtractor(
 
     private sealed record ExtractionCandidateDto
     {
-        public required string Content { get; init; }
-        public required MemoryCategory Category { get; init; }
+        [JsonRequired] public string? Content { get; init; }
+        [JsonRequired] public MemoryCategory? Category { get; init; }
         public double Importance { get; init; }
         public double Confidence { get; init; }
         public IReadOnlyList<string>? Tags { get; init; }

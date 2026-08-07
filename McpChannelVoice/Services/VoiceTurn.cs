@@ -11,8 +11,10 @@ namespace McpChannelVoice.Services;
 public sealed class VoiceTurn
 {
     private const long DispatchNotMarked = long.MinValue;
+    private const long NoStreamOpen = long.MinValue;
 
     private readonly Lock _gate = new();
+    private long _streamEpoch = NoStreamOpen;
     private TaskCompletionSource<bool> _spoken = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long _dispatchedAt = DispatchNotMarked;
     private int _preambleClaimed;
@@ -21,6 +23,23 @@ public sealed class VoiceTurn
     private int _streamComplete;
     private int _audioPlayed;
     private long _epoch;
+    private string? _turnKey;
+    private int _everDispatched;
+
+    // What this turn was dispatched under. Every reply answering it carries the same value back, so
+    // the reply path compares rather than infers — a conversation outlives a turn, a satellite
+    // connection and the agent run writing into it, and inferring from it was wrong in all three
+    // ways. Null until the transcript is dispatched, and null again after a reset: a turn nobody
+    // has dispatched has nothing for a reply to match.
+    public string? TurnKey => Volatile.Read(ref _turnKey);
+
+    // Whether nothing has ever been asked on this session's turn. It is NOT the same question as
+    // TurnKey being null: a turn between its reset and the next dispatch has no key either, and
+    // there an unmatched key is an abandoned turn's answer. A satellite that dropped its link
+    // mid-answer and redialled gets a brand new session, whose turn is in this state — so a user
+    // answer arriving for it can only be the one asked before the link dropped. Reset does not
+    // clear it: a session that has carried one turn has stopped being new.
+    public bool AwaitingFirstDispatch => Volatile.Read(ref _everDispatched) == 0;
 
     // Which minimum length the next segment must clear: the answer's opening clears a deliberately
     // low bar (it is the wait everyone feels), later sentences need more text because the audio
@@ -42,6 +61,7 @@ public sealed class VoiceTurn
             Interlocked.Exchange(ref _streamComplete, 0);
             Interlocked.Exchange(ref _audioPlayed, 0);
             Interlocked.Exchange(ref _dispatchedAt, DispatchNotMarked);
+            Interlocked.Exchange(ref _turnKey, null);
             Interlocked.Increment(ref _epoch);
             _spoken = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
@@ -61,38 +81,98 @@ public sealed class VoiceTurn
         }
     }
 
-    // The turn a reply stream opened against. Ending a stream is epoch-guarded for the same reason
-    // releasing a segment is: the hub gives a turn up at ReplyTimeoutMs and dispatches the next one
-    // while the agent is still writing the abandoned answer, whose completion then arrives late.
-    public StreamToken OpenStream()
+    // Remembers which turn an UNKEYED reply stream is being fed into. An agent that predates the
+    // turn key sends replies with nothing to compare, so the reply path can only fall back to the
+    // turn in flight — and this is the one thing that can still tell an abandoned answer's ending
+    // from this turn's own. The stream's FIRST event names the turn its end belongs to (one
+    // conversation's chunks arrive in order), so a stream already open is left alone, and Reset
+    // deliberately does not clear it: the abandoned answer's end arrives after the next turn began.
+    public void OpenUnkeyedStream()
     {
         lock (_gate)
         {
-            return new StreamToken(this, Interlocked.Read(ref _epoch));
+            if (_streamEpoch == NoStreamOpen)
+            {
+                _streamEpoch = Interlocked.Read(ref _epoch);
+            }
         }
     }
 
-    // The agent has stopped sending. A turn that produced no audio at all settles here; one that did
-    // settles as its last segment drains. The two halves of that decision are both in here because
-    // nothing outside can see both.
-    internal void EndStream(long epoch)
+    // Ends an unkeyed stream. It settles the turn only if the turn it opened against is still the
+    // turn in flight: the hub gives a turn up at ReplyTimeoutMs and dispatches the next one while
+    // the agent is still writing the abandoned answer, and settling on that answer's late
+    // completion ends FollowUpConversation — whose chime preempts the sentence being spoken and
+    // reopens the microphone over the rest of the reply.
+    public void EndUnkeyedStream()
+    {
+        long opened;
+        lock (_gate)
+        {
+            opened = _streamEpoch;
+            _streamEpoch = NoStreamOpen;
+        }
+
+        // No stream behind it means nothing was ever sent for this turn, which is the end of this
+        // turn's own (empty) answer and settles it.
+        if (opened != NoStreamOpen && opened != Interlocked.Read(ref _epoch))
+        {
+            return;
+        }
+
+        EndStream();
+    }
+
+    // Ends a keyed reply's stream. The reply was compared against the turn in flight in Classify,
+    // but the compare and the settle are separate calls: the hub can give the turn up and dispatch
+    // the next one between them. Re-checking the key under the gate Reset takes is what keeps an
+    // abandoned answer's terminal event off the new turn. A key that matches nothing still settles
+    // a turn that has never dispatched — the redial adoption, where the answer in flight from
+    // before the redial is the one the user asked for.
+    public void EndStream(string turnKey)
     {
         bool producedNothing;
         lock (_gate)
         {
-            // Same gate discipline as CompleteSegment: a reset landing between the check and the
-            // writes would put the abandoned answer's end on the new turn after all.
-            if (epoch != Interlocked.Read(ref _epoch))
+            if (turnKey != _turnKey && _everDispatched != 0)
             {
                 return;
             }
-            producedNothing = _segmentsStarted == 0;
-            if (!producedNothing)
-            {
-                Interlocked.Exchange(ref _streamComplete, 1);
-            }
+            producedNothing = MarkStreamEnded();
         }
 
+        Settle(producedNothing);
+    }
+
+    // The agent has stopped sending on this turn's own stream. A turn that produced no audio at all
+    // settles here; one that did settles as its last segment drains. The two halves of that decision
+    // are both in here because nothing outside can see both.
+    //
+    // No guard of its own against a previous turn's end arriving late: a keyed reply comes through
+    // the overload above, and a keyless one through EndUnkeyedStream, which carries the epoch guard.
+    public void EndStream()
+    {
+        bool producedNothing;
+        lock (_gate)
+        {
+            producedNothing = MarkStreamEnded();
+        }
+
+        Settle(producedNothing);
+    }
+
+    // Under _gate.
+    private bool MarkStreamEnded()
+    {
+        var producedNothing = _segmentsStarted == 0;
+        if (!producedNothing)
+        {
+            Interlocked.Exchange(ref _streamComplete, 1);
+        }
+        return producedNothing;
+    }
+
+    private void Settle(bool producedNothing)
+    {
         if (!producedNothing)
         {
             SettleIfComplete();
@@ -126,6 +206,14 @@ public sealed class VoiceTurn
     // from an earlier real turn must not be readable by that later, unrelated reply — it would report
     // an invented, stale round trip.
     public void MarkDispatched(long timestamp) => Interlocked.Exchange(ref _dispatchedAt, timestamp);
+
+    // Stamped as the transcript is dispatched and before the message leaves this process, so a
+    // reply can never arrive against a turn that does not yet know its own key.
+    public void StampTurnKey(string turnKey)
+    {
+        Interlocked.Exchange(ref _turnKey, turnKey);
+        Interlocked.Exchange(ref _everDispatched, 1);
+    }
 
     public long? TryConsumeDispatchedAt()
     {
@@ -212,19 +300,4 @@ public readonly struct SegmentToken(VoiceTurn? turn, long epoch, bool isFirst)
     public void Complete() => turn?.CompleteSegment(epoch);
 
     public void Fail() => turn?.FailSegment(epoch);
-}
-
-// One reply stream's claim on the turn that was live when it opened. Held by whoever is feeding the
-// stream — the agent's chunks for one conversation arrive in order, so the stream that opened under
-// a turn is the one whose end belongs to it — and ending it against any later turn is a no-op.
-public readonly struct StreamToken(VoiceTurn? turn, long epoch)
-{
-    // Whether this token can still reach the given turn at all. The epoch guard inside the turn
-    // answers "is this the turn I opened against?" only for turns it was issued by; a token held
-    // past a satellite redial names a turn that was discarded with the old session, and no epoch
-    // makes it settle the new one. Asked before a stream is adopted, so a leftover token is
-    // replaced rather than ended against nothing.
-    public bool BelongsTo(VoiceTurn other) => ReferenceEquals(turn, other);
-
-    public void End() => turn?.EndStream(epoch);
 }

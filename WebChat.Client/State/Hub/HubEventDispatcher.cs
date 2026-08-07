@@ -1,7 +1,7 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
-using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -13,7 +13,7 @@ namespace WebChat.Client.State.Hub;
 public sealed class HubEventDispatcher(
     IDispatcher dispatcher,
     TopicsStore topicsStore,
-    StreamingStore streamingStore,
+    TopicStreams topicStreams,
     IMessagePipeline pipeline) : IHubEventDispatcher
 {
     public void HandleTopicChanged(TopicChangedNotification notification)
@@ -37,55 +37,16 @@ public sealed class HubEventDispatcher(
         }
     }
 
-    public void HandleStreamChanged(StreamChangedNotification notification)
-    {
-        switch (notification.ChangeType)
-        {
-            case StreamChangeType.Started:
-                // Reporting the push is all this type does. Deciding whether to resume the
-                // stream or just mark it started belongs to StreamResumeEffect — resuming is
-                // a hub call, and a dispatcher that made one would depend on the services
-                // that reach back through the live connection.
-                dispatcher.Dispatch(new RemoteStreamStarted(notification.TopicId));
-                break;
-            case StreamChangeType.Completed:
-                dispatcher.Dispatch(new StreamCompleted(notification.TopicId));
-                break;
-            case StreamChangeType.Cancelled:
-                dispatcher.Dispatch(new StreamCancelled(notification.TopicId));
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(notification),
-                    notification.ChangeType,
-                    "Invalid StreamChangeType");
-        }
-    }
+    // Reporting the push is all this type does. Deciding whether to resume the stream or just
+    // mark it started belongs to StreamResumeEffect — resuming is a hub call, and a dispatcher
+    // that made one would depend on the services that reach back through the live connection.
+    public void HandleStreamStarted(StreamStartedNotification notification) =>
+        dispatcher.Dispatch(new RemoteStreamStarted(notification.TopicId));
 
-    public void HandleApprovalResolved(ApprovalResolvedNotification notification)
-    {
-        dispatcher.Dispatch(new ApprovalResolved(notification.ApprovalId, notification.ToolCalls));
-
-        if (!string.IsNullOrEmpty(notification.ToolCalls))
-        {
-            dispatcher.Dispatch(new StreamChunk(
-                notification.TopicId,
-                Content: null,
-                Reasoning: null,
-                ToolCalls: notification.ToolCalls,
-                MessageId: notification.MessageId));
-        }
-    }
-
-    public void HandleToolCalls(ToolCallsNotification notification)
-    {
-        dispatcher.Dispatch(new StreamChunk(
-            notification.TopicId,
-            Content: null,
-            Reasoning: null,
-            ToolCalls: notification.ToolCalls,
-            MessageId: notification.MessageId));
-    }
+    // Taking the prompt off screen is all this is. What the approval let through arrives on the
+    // topic's stream like the rest of the reply.
+    public void HandleApprovalResolved(ApprovalResolvedNotification notification) =>
+        dispatcher.Dispatch(new ApprovalResolved(notification.ApprovalId));
 
     public void HandleAgentsUpdated(IReadOnlyList<AgentCatalogEntry> agents)
     {
@@ -107,18 +68,11 @@ public sealed class HubEventDispatcher(
             return;
         }
 
-        // This is the authoritative place to add OTHER users' messages because:
-        // 1. We have correlationId to check if this client sent it (stream chunks don't have this)
-        // 2. We can finalize streaming content with proper message ID for deduplication
-        var streamingState = streamingStore.State;
-        if (streamingState.StreamingTopics.Contains(notification.TopicId))
-        {
-            var currentContent = streamingState.StreamingByTopic.GetValueOrDefault(notification.TopicId);
-            if (currentContent?.HasContent == true)
-            {
-                pipeline.FinalizeMessage(notification.TopicId, currentContent.CurrentMessageId);
-            }
-        }
+        // This is the authoritative place to add OTHER users' messages because we have the
+        // correlationId to check whether this client sent it — stream chunks do not carry one.
+        // The agent's half-written text is closed off first so the two do not merge into one
+        // bubble; on a topic with no reply in flight that does nothing.
+        topicStreams.FinalizeCurrent(notification.TopicId);
 
         dispatcher.Dispatch(new AddMessage(notification.TopicId, new ChatMessageModel
         {

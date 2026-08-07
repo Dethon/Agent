@@ -19,15 +19,22 @@ public sealed class SendReplyTool
         [Description("Kind of chunk being sent")] ReplyContentType contentType,
         [Description("Whether this is the final chunk")] bool isComplete,
         [Description("Message ID for grouping related chunks")] string? messageId,
-        IServiceProvider services)
+        IServiceProvider services,
+        [Description("Key of the turn this reply answers")] string? turnKey = null,
+        [Description("Whether the turn this reply answers was agent-initiated")] bool? agentInitiated = null)
     {
+        // Telegram accepts the turn key and the agent-initiated flag and reads neither: one
+        // conversation is one chat thread, and a late chunk arriving in it is a message like any
+        // other. They are on the record so a channel that does care can start reading them.
         var p = new SendReplyParams
         {
             ConversationId = conversationId,
             Content = content,
             ContentType = contentType,
             IsComplete = isComplete,
-            MessageId = messageId
+            MessageId = messageId,
+            TurnKey = turnKey,
+            AgentInitiated = agentInitiated
         };
 
         var registry = services.GetRequiredService<BotRegistry>();

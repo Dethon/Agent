@@ -1,5 +1,6 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -12,7 +13,7 @@ namespace WebChat.Client.State.Effects;
 public sealed class TopicDeleteEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly StreamingStore _streamingStore;
+    private readonly TopicStreams _topicStreams;
     private readonly IChatMessagingService _messagingService;
     private readonly ITopicService _topicService;
     private readonly IMessagePipeline _pipeline;
@@ -21,14 +22,14 @@ public sealed class TopicDeleteEffect : IDisposable
 
     public TopicDeleteEffect(
         Dispatcher dispatcher,
-        StreamingStore streamingStore,
+        TopicStreams topicStreams,
         IChatMessagingService messagingService,
         ITopicService topicService,
         IMessagePipeline pipeline,
         ILogger<TopicDeleteEffect> logger)
     {
         _dispatcher = dispatcher;
-        _streamingStore = streamingStore;
+        _topicStreams = topicStreams;
         _messagingService = messagingService;
         _topicService = topicService;
         _pipeline = pipeline;
@@ -46,7 +47,7 @@ public sealed class TopicDeleteEffect : IDisposable
         // notification carries none of them, because the server already deleted the topic.
         var userInitiated = agentId is not null && chatId.HasValue && threadId.HasValue;
 
-        if (_streamingStore.State.StreamingByTopic.ContainsKey(topicId))
+        if (_topicStreams.Snapshot(topicId).HasStream)
         {
             var cancelled = await _messagingService.CancelTopicAsync(topicId);
 
@@ -60,7 +61,7 @@ public sealed class TopicDeleteEffect : IDisposable
                 return;
             }
 
-            _dispatcher.Dispatch(new StreamCancelled(topicId));
+            _topicStreams.End(topicId);
         }
 
         // Delete from server only if AgentId/ChatId/ThreadId provided (client-initiated delete)

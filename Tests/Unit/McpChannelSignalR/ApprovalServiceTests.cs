@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using McpChannelSignalR.Services;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -71,7 +72,7 @@ public class ApprovalServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CancelPendingApprovalsForTopic_RejectsAll()
+    public async Task CancelPendingApprovalsForTopicAsync_RejectsAll()
     {
         _sessionService.StartSession("topic1", "agent1", 100, 200);
         _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
@@ -82,10 +83,38 @@ public class ApprovalServiceTests : IDisposable
         var approvalTask = _sut.RequestApprovalAsync(
             new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
 
-        _sut.CancelPendingApprovalsForTopic("topic1");
+        await _sut.CancelPendingApprovalsForTopicAsync("topic1");
 
         var result = await approvalTask;
         result.ShouldBe("rejected");
+    }
+
+    // A cancelled turn ends the prompt it raised, so the browsers showing it are told the same way
+    // an answer tells them. Without the push the modal stays up over a stream that is already gone,
+    // and the only way out of it is answering for a tool call nobody is waiting on any more.
+    [Fact]
+    public async Task CancelPendingApprovalsForTopicAsync_TakesThePromptOffEveryBrowser()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200);
+        _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>())];
+
+        var approvalTask = _sut.RequestApprovalAsync(
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
+
+        var pending = _sut.GetPendingApprovalForTopic("topic1").ShouldNotBeNull();
+
+        await _sut.CancelPendingApprovalsForTopicAsync("topic1");
+        await approvalTask;
+
+        _hubSender.Verify(
+            sender => sender.SendAsync(
+                "OnApprovalResolved",
+                new ApprovalResolvedNotification("topic1", pending.ApprovalId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -103,6 +132,79 @@ public class ApprovalServiceTests : IDisposable
 
         var msg = await reader.ReadAsync();
         msg.ToolCalls.ShouldNotBeNullOrEmpty();
+        msg.MessageId.ShouldBe("msg-1");
+    }
+
+    // The topic's stream is the one route a tool call reaches the browser by. It is buffered, so a
+    // reload replays it, and it arrives in order with the rest of the reply. A hub push beside it
+    // is a second delivery of the same text that no client can use: a browser applies a pushed
+    // tool call only to a reply it is already reading, which is a browser reading the stream.
+    [Fact]
+    public async Task NotifyAutoApprovedAsync_PushesNothingBesideTheStream()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200);
+        _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "search", new Dictionary<string, object?> { ["q"] = "test" })];
+
+        await _sut.NotifyAutoApprovedAsync(
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Notify, Requests = requests });
+
+        _hubSender.VerifyNoOtherCalls();
+    }
+
+    // The approved call goes into the stream under the message it belongs to, exactly as an
+    // auto-approved one does. Unlabelled, it lands on whatever the reply happens to be writing.
+    [Fact]
+    public async Task RequestApprovalAsync_Approved_WritesTheToolCallsUnderTheirOwnMessage()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200);
+        var (channel, _) = _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+        var reader = channel.Subscribe();
+
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "mcp__server__search", new Dictionary<string, object?>())];
+
+        var approvalTask = _sut.RequestApprovalAsync(
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
+
+        var pending = _sut.GetPendingApprovalForTopic("topic1");
+        await _sut.RespondToApprovalAsync(pending!.ApprovalId, "approved");
+        await approvalTask;
+
+        var request = await reader.ReadAsync();
+        request.ApprovalRequest.ShouldNotBeNull();
+
+        var toolCalls = await reader.ReadAsync();
+        toolCalls.ToolCalls.ShouldNotBeNullOrEmpty();
+        toolCalls.MessageId.ShouldBe("msg-1");
+    }
+
+    // The push exists to take the prompt off every browser showing it. The tool calls it used to
+    // carry were the stream's copy a second time.
+    [Fact]
+    public async Task RespondToApprovalAsync_Approved_PushesOnlyTheDismissal()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200);
+        _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "mcp__server__search", new Dictionary<string, object?>())];
+
+        var approvalTask = _sut.RequestApprovalAsync(
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
+
+        var pending = _sut.GetPendingApprovalForTopic("topic1");
+        await _sut.RespondToApprovalAsync(pending!.ApprovalId, "approved");
+        await approvalTask;
+
+        _hubSender.Verify(
+            sender => sender.SendAsync(
+                "OnApprovalResolved",
+                new ApprovalResolvedNotification("topic1", pending.ApprovalId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

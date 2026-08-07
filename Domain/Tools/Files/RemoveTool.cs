@@ -31,10 +31,9 @@ public class RemoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
                                                     """);
         }
 
-        string trashPath;
         try
         {
-            trashPath = await client.MoveToTrash(path, cancellationToken);
+            await client.MoveToTrash(path, cancellationToken);
         }
         catch (IOException ex)
         {
@@ -42,12 +41,15 @@ public class RemoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
             return FsError.Fail<FsRemoveResult>(ToolError.Codes.NotFound, ex.Message);
         }
 
+        // No trash path: it sits outside every mount, so no virtual path for it exists and the model
+        // cannot read or restore from it. The three virtual filesystems already answer empty here;
+        // the disk root joins them rather than reporting a location that looks actionable.
         return new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
         {
             Status = "success",
             Message = "Moved to trash",
             OriginalPath = path,
-            TrashPath = trashPath
+            TrashPath = ""
         });
     }
 }

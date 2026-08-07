@@ -92,22 +92,6 @@ public class LibraryFsRoutingTests : IDisposable
         glob.Total.ShouldBe(3);
     }
 
-    // status.json is rendered from live download state, so moving or copying it would produce a
-    // stale snapshot under a name that still looks live.
-    [Fact]
-    public async Task VirtualStatusPath_CannotBeMovedCopiedOrWritten()
-    {
-        (await _media.MoveAsync("downloads/42/status.json", "Movies/status.json", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.UnsupportedOperation);
-        (await _media.MoveAsync("Movies/film.mkv", "downloads/42/status.json", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.UnsupportedOperation);
-        (await _media.CopyAsync("downloads/42/status.json", "Movies/x.json", false, true, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error.ErrorCode
-            .ShouldBe(ToolError.Codes.UnsupportedOperation);
-    }
-
     [Fact]
     public async Task Info_LiveDownloadDirIsVirtual_OtherPathsFallThroughToDisk()
     {

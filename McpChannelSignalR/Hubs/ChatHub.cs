@@ -291,6 +291,10 @@ public sealed class ChatHub(
         }
 
         streamService.CancelStream(topicId);
+
+        // The turn the prompt belonged to is gone, so the prompt goes with it. Left pending it
+        // holds the tool call open and keeps the modal on screen over a stream that has ended.
+        await approvalService.CancelPendingApprovalsForTopicAsync(topicId);
     }
 
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
@@ -319,7 +323,7 @@ public sealed class ChatHub(
 
         sessionService.EndSession(topicId);
         streamService.CancelStream(topicId);
-        approvalService.CancelPendingApprovalsForTopic(topicId);
+        await approvalService.CancelPendingApprovalsForTopicAsync(topicId);
 
         var agentKey = new AgentKey($"{chatId}:{threadId}", agentId);
         await redisStateService.DeleteMessagesAsync(agentKey);

@@ -63,7 +63,7 @@ public class ChatMonitor(
         await foreach (var turnUpdate in conversation.RunAsync(group, group.Complete, ct).WithCancellation(ct))
         {
             var deliveredContent = await _replyDispatcher.DeliverUpdateAsync(
-                turnUpdate.Update, turnUpdate.Turn.Targets, ct);
+                turnUpdate.Update, turnUpdate.Turn, ct);
             if (deliveredContent)
             {
                 // Ends the span on the first delivered chunk; the scope publishes at most once, so

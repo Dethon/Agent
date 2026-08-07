@@ -71,6 +71,7 @@ public class PlaybackQueueTests
             Audio = Audio("alarm", count: 1)
         };
 
+        using var run = new CancellationTokenSource();
         var pumpTask = queue.RunAsync(
             async (chunk, _) =>
             {
@@ -78,7 +79,7 @@ public class PlaybackQueueTests
                 { played.Add(Encoding.UTF8.GetString(chunk.Data.Span)); }
                 await Task.Yield();
             },
-            CancellationToken.None);
+            run.Token);
 
         var one = queue.Enqueue(segment1);
         var two = queue.Enqueue(segment2);
@@ -86,8 +87,8 @@ public class PlaybackQueueTests
         await firstChunkWritten.Task;
 
         queue.Enqueue(alarm);
-        queue.Complete();
-        await pumpTask;
+        await PlaybackLoop.UntilAsync(() => played.Count >= 2, "the alarm to be heard");
+        await run.StopAsync(pumpTask);
 
         // The alarm is heard next, not after the rest of the answer — and every segment that was
         // queued when it arrived says so itself.
@@ -131,6 +132,7 @@ public class PlaybackQueueTests
             Priority: AnnouncePriority.High,
             Audio: Audio("approval", count: 1));
 
+        using var run = new CancellationTokenSource();
         var pumpTask = queue.RunAsync(
             async (chunk, _) =>
             {
@@ -138,7 +140,7 @@ public class PlaybackQueueTests
                 { played.Add(Encoding.UTF8.GetString(chunk.Data.Span)); }
                 await Task.Yield();
             },
-            CancellationToken.None);
+            run.Token);
 
         var one = queue.Enqueue(segment1);
         var two = queue.Enqueue(segment2);
@@ -146,8 +148,8 @@ public class PlaybackQueueTests
         await firstChunkWritten.Task;
 
         var approval = queue.Enqueue(prompt);
-        queue.Complete();
-        await pumpTask;
+        await PlaybackLoop.UntilAsync(() => played.Count >= 4, "every segment to be heard");
+        await run.StopAsync(pumpTask);
 
         played.ShouldBe(["s1", "approval", "s2", "s3"]);
         (await one.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
@@ -195,6 +197,7 @@ public class PlaybackQueueTests
             Priority: AnnouncePriority.High,
             Audio: Audio("approval", count: 1));
 
+        using var run = new CancellationTokenSource();
         var pumpTask = queue.RunAsync(
             async (chunk, _) =>
             {
@@ -202,7 +205,7 @@ public class PlaybackQueueTests
                 { played.Add(Encoding.UTF8.GetString(chunk.Data.Span)); }
                 await Task.Yield();
             },
-            CancellationToken.None);
+            run.Token);
 
         var one = queue.Enqueue(segment1);
         var two = queue.Enqueue(segment2);
@@ -210,8 +213,9 @@ public class PlaybackQueueTests
 
         queue.Enqueue(alarm);
         var approval = queue.Enqueue(prompt);
-        queue.Complete();
-        await pumpTask;
+        await Task.WhenAll(one.Completed, two.Completed, approval.Completed)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pumpTask);
 
         // Exactly as if the cut-in had not landed: neither marked segment is heard.
         played.ShouldNotContain("s2");
@@ -235,6 +239,7 @@ public class PlaybackQueueTests
             Audio: Audio("alarm-1", count: 1));
         var second = first with { Label = "alarm-2", Audio = Audio("alarm-2", count: 1) };
 
+        using var run = new CancellationTokenSource();
         var pumpTask = queue.RunAsync(
             async (chunk, _) =>
             {
@@ -242,12 +247,12 @@ public class PlaybackQueueTests
                 { played.Add(Encoding.UTF8.GetString(chunk.Data.Span)); }
                 await Task.Yield();
             },
-            CancellationToken.None);
+            run.Token);
 
         queue.Enqueue(first);
         queue.Enqueue(second);
-        queue.Complete();
-        await pumpTask;
+        await PlaybackLoop.UntilAsync(() => played.Count >= 2, "both alarms to be heard");
+        await run.StopAsync(pumpTask);
 
         played.ShouldBe(["alarm-1", "alarm-2"]);
     }
@@ -270,9 +275,9 @@ public class PlaybackQueueTests
 
         var ticket = queue.Enqueue(round);
         queue.PreemptCurrent();
-        queue.Complete();
 
-        await queue.RunAsync(
+        using var run = new CancellationTokenSource();
+        var pumpTask = queue.RunAsync(
             (chunk, _) =>
             {
                 played.Add(Encoding.UTF8.GetString(chunk.Data.Span));
@@ -307,9 +312,9 @@ public class PlaybackQueueTests
         queue.Enqueue(round);
         var reply = queue.Enqueue(sentence);
         queue.PreemptCurrent();
-        queue.Complete();
 
-        await queue.RunAsync(
+        using var run = new CancellationTokenSource();
+        var pumpTask = queue.RunAsync(
             (chunk, _) =>
             {
                 played.Add(Encoding.UTF8.GetString(chunk.Data.Span));
@@ -334,19 +339,19 @@ public class PlaybackQueueTests
             Audio: Audio("first", count: 2));
         var second = first with { Label = "second", Audio = Audio("second", count: 1) };
 
+        using var run = new CancellationTokenSource();
         var pumpTask = queue.RunAsync(
             async (chunk, ct) =>
             {
                 played.Add(Encoding.UTF8.GetString(chunk.Data.Span));
                 await Task.Yield();
             },
-            CancellationToken.None);
+            run.Token);
 
         queue.Enqueue(first);
         queue.Enqueue(second);
-        queue.Complete();
-
-        await pumpTask;
+        await PlaybackLoop.UntilAsync(() => played.Count >= 3, "both rounds to be heard");
+        await run.StopAsync(pumpTask);
 
         played.ShouldBe(["first", "first", "second"]);
     }
@@ -458,11 +463,14 @@ public class PlaybackQueueTests
 
         var queuedAhead = queue.Enqueue(normal);
         var cuttingIn = queue.Enqueue(high);
-        queue.Complete();
 
-        await queue.RunAsync(
+        using var run = new CancellationTokenSource();
+        var pumpTask = queue.RunAsync(
             (_, ct) => { ct.ThrowIfCancellationRequested(); return Task.CompletedTask; },
-            CancellationToken.None);
+            run.Token);
+        await Task.WhenAll(queuedAhead.Completed, cuttingIn.Completed)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pumpTask);
 
         (await queuedAhead.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
         (await cuttingIn.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
@@ -482,6 +490,7 @@ public class PlaybackQueueTests
             Audio: ThrowingAudio());
         var next = failing with { Label = "next", Audio = Audio("next", count: 1) };
 
+        using var run = new CancellationTokenSource();
         var pumpTask = queue.RunAsync(
             new PlaybackSink(
                 async (chunk, ct) =>
@@ -494,13 +503,13 @@ public class PlaybackQueueTests
                     errors.Add(job.Label);
                     return Task.CompletedTask;
                 }),
-            CancellationToken.None);
+            run.Token);
 
         queue.Enqueue(failing);
         queue.Enqueue(next);
-        queue.Complete();
-
-        await pumpTask;
+        await PlaybackLoop.UntilAsync(() => played.Count >= 1 && errors.Count >= 1,
+            "the failure to be reported and the next job to be heard");
+        await run.StopAsync(pumpTask);
 
         errors.ShouldBe(["failing"]);
         played.ShouldBe(["next"]);
@@ -534,7 +543,8 @@ public class PlaybackQueueTests
             Priority: AnnouncePriority.Normal,
             Audio: halfSecond());
 
-        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), run.Token, time);
 
         var ticket = queue.Enqueue(job);
         await Task.Delay(80); // let the loop write the audio and reach the playback wait
@@ -543,8 +553,7 @@ public class PlaybackQueueTests
         time.Advance(TimeSpan.FromMilliseconds(500)); // playback completes
         (await ticket.Completed.WaitAsync(TimeSpan.FromSeconds(2)))
             .Kind.ShouldBe(PlaybackOutcomeKind.Drained);
-        queue.Complete();
-        await pump;
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -572,7 +581,8 @@ public class PlaybackQueueTests
             Audio: audio(),
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
-        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), run.Token, time);
         queue.Enqueue(job);
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
@@ -582,10 +592,9 @@ public class PlaybackQueueTests
         timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
         timing.SinceTurnStart.ShouldBe(TimeSpan.FromMilliseconds(2300));
 
-        queue.Complete();
         await Task.Delay(80);                            // let the loop reach the playback-drain wait
         time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -603,15 +612,15 @@ public class PlaybackQueueTests
             Audio: Audio("hi", count: 1),
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
-        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), run.Token);
         queue.Enqueue(job);
-        queue.Complete();
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
         timing.SinceTurnStart.ShouldBeNull();
         timing.SinceSynthesisStart.ShouldBeGreaterThanOrEqualTo(TimeSpan.Zero);
 
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -627,10 +636,11 @@ public class PlaybackQueueTests
             Audio: Audio("x", count: 3),
             OnFirstAudio: _ => { Interlocked.Increment(ref invocations); return Task.CompletedTask; });
 
-        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), run.Token);
         queue.Enqueue(job);
-        queue.Complete();
-        await pump;
+        await PlaybackLoop.UntilAsync(() => Volatile.Read(ref invocations) >= 1, "the first chunk");
+        await run.StopAsync(pump);
 
         invocations.ShouldBe(1); // fires only on the first chunk, not per chunk
     }
@@ -654,11 +664,13 @@ public class PlaybackQueueTests
 
         var first = queue.Enqueue(high("h1"));
         var second = queue.Enqueue(high("h2"));
-        queue.Complete();
 
-        await queue.RunAsync(
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync(
             (_, ct) => { ct.ThrowIfCancellationRequested(); return Task.CompletedTask; },
-            CancellationToken.None);
+            run.Token);
+        await Task.WhenAll(first.Completed, second.Completed).WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         (await first.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
         (await second.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
@@ -697,7 +709,8 @@ public class PlaybackQueueTests
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; },
             EnqueuedAt: enqueuedAt);
 
-        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), run.Token, time);
         queue.Enqueue(job);
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
@@ -709,10 +722,9 @@ public class PlaybackQueueTests
         timing.QueueWait.ShouldBe(TimeSpan.FromMilliseconds(400));
         timing.SinceSynthesisStart.ShouldBe(TimeSpan.FromMilliseconds(300));
 
-        queue.Complete();
         await Task.Delay(80);                            // let the loop reach the playback-drain wait
         time.Advance(TimeSpan.FromSeconds(1));           // drain the remaining playback duration
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -732,11 +744,12 @@ public class PlaybackQueueTests
             Audio: Audio("hi", count: 2),
             OnFirstAudio: _ => { order.Add("metrics"); return Task.CompletedTask; });
 
+        using var run = new CancellationTokenSource();
         var pump = queue.RunAsync(
-            (_, _) => { order.Add("write"); return Task.CompletedTask; }, CancellationToken.None);
+            (_, _) => { order.Add("write"); return Task.CompletedTask; }, run.Token);
         queue.Enqueue(job);
-        queue.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await PlaybackLoop.UntilAsync(() => order.Count >= 3, "both chunks to be written");
+        await run.StopAsync(pump);
 
         order.ShouldBe(["write", "metrics", "write"]);
     }
@@ -765,14 +778,14 @@ public class PlaybackQueueTests
             Audio: Audio("hi", count: 1),
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
-        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None, time);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), run.Token, time);
         queue.Enqueue(job);
-        queue.Complete();
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
         timing.SinceSpeechEnd.ShouldBe(TimeSpan.FromMilliseconds(3000)); // 2000 tail + 1000 machine
 
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -790,15 +803,15 @@ public class PlaybackQueueTests
             Audio: Audio("hi", count: 1),
             OnFirstAudio: t => { fired.TrySetResult(t); return Task.CompletedTask; });
 
-        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), CancellationToken.None);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync(async (_, _) => await Task.Yield(), run.Token);
         queue.Enqueue(job);
-        queue.Complete();
 
         var timing = await fired.Task.WaitAsync(TimeSpan.FromSeconds(2));
         timing.SinceSpeechEnd.ShouldBeNull();
         timing.QueueWait.ShouldBeNull();
 
-        await pump.WaitAsync(TimeSpan.FromSeconds(2));
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -817,8 +830,10 @@ public class PlaybackQueueTests
             OnFirstAudio: _ => throw new InvalidOperationException("metrics down"));
 
         var ticket = queue.Enqueue(job);
-        queue.Complete();
-        await queue.RunAsync((_, _) => { written++; return Task.CompletedTask; }, CancellationToken.None);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync((_, _) => { written++; return Task.CompletedTask; }, run.Token);
+        await ticket.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
 
         written.ShouldBe(3);
         (await ticket.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
@@ -833,6 +848,7 @@ public class PlaybackQueueTests
         var queue = new PlaybackQueue(prefetchBufferChunks: null);
         var flags = new List<bool>();
 
+        using var run = new CancellationTokenSource();
         var pumpTask = queue.RunAsync(
             new PlaybackSink(
                 (_, _) => Task.CompletedTask,
@@ -842,7 +858,7 @@ public class PlaybackQueueTests
                     { flags.Add(alert); }
                     return Task.CompletedTask;
                 }),
-            CancellationToken.None);
+            run.Token);
 
         var reply = new PlaybackJob(
             Label: "reply",
@@ -858,8 +874,8 @@ public class PlaybackQueueTests
 
         queue.Enqueue(reply);
         queue.Enqueue(alarm);
-        queue.Complete();
-        await pumpTask;
+        await PlaybackLoop.UntilAsync(() => flags.Count >= 2, "both streams to start");
+        await run.StopAsync(pumpTask);
 
         flags.ShouldBe(new[] { false, true });
     }

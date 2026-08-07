@@ -47,12 +47,7 @@ public sealed class ApprovalService(
                 return result.ToString().ToLowerInvariant();
             }
 
-            var toolCallsMessage = new ChatStreamMessage
-            {
-                ToolCalls = FormatToolCalls(requests)
-            };
-
-            await streamService.WriteMessageAsync(topicId, toolCallsMessage);
+            await WriteToolCallsAsync(topicId, requests);
 
             return result.ToString().ToLowerInvariant();
         }
@@ -63,35 +58,28 @@ public sealed class ApprovalService(
         }
     }
 
-    public async Task NotifyAutoApprovedAsync(RequestApprovalParams p)
-    {
-        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId;
-        var requests = p.Requests;
+    public Task NotifyAutoApprovedAsync(RequestApprovalParams p) =>
+        WriteToolCallsAsync(
+            sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId,
+            p.Requests);
 
+    // The one route a tool call reaches the browser by. It is buffered with the rest of the reply,
+    // so a reload replays it and it arrives in order; a hub push beside it would be the same text a
+    // second time, reaching no browser this does not. Grouped by message id because that is what
+    // says which bubble the call belongs to — unlabelled, it lands on whatever is being written.
+    private async Task WriteToolCallsAsync(string topicId, IReadOnlyList<ToolApprovalRequest> requests)
+    {
         var messages = requests
-            .GroupBy(x => x.MessageId)
+            .GroupBy(request => request.MessageId)
             .Select(g => new ChatStreamMessage
             {
                 MessageId = g.Key,
                 ToolCalls = FormatToolCalls(g.ToArray())
             });
 
-        sessionService.TryGetSession(topicId, out var session);
-
         foreach (var message in messages)
         {
             await streamService.WriteMessageAsync(topicId, message);
-
-            try
-            {
-                var notification = new ToolCallsNotification(
-                    p.ConversationId, message.ToolCalls!, message.MessageId, SpaceSlug: session?.SpaceSlug);
-                await SendToSpaceOrAllAsync(session?.SpaceSlug, "OnToolCalls", notification);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to notify tool calls for topic {TopicId}", p.ConversationId);
-            }
         }
     }
 
@@ -105,27 +93,28 @@ public sealed class ApprovalService(
 
         var approvalResult = Enum.Parse<ToolApprovalResult>(result, ignoreCase: true);
 
-        var toolCalls = approvalResult is ToolApprovalResult.Approved or ToolApprovalResult.ApprovedAndRemember
-            ? FormatToolCalls(context.Requests)
-            : null;
+        await NotifyResolvedAsync(context.TopicId, approvalId);
 
-        var messageId = context.Requests.FirstOrDefault()?.MessageId;
+        context.TrySetResult(approvalResult);
+        context.Dispose();
+    }
 
-        sessionService.TryGetSession(context.TopicId, out var session);
+    // Taking the prompt off every browser showing it is the whole of this push. What an approval
+    // let through is written into the topic's stream, once, by RequestApprovalAsync.
+    private async Task NotifyResolvedAsync(string topicId, string approvalId)
+    {
+        sessionService.TryGetSession(topicId, out var session);
 
         try
         {
             var notification = new ApprovalResolvedNotification(
-                context.TopicId, approvalId, toolCalls, messageId, SpaceSlug: session?.SpaceSlug);
+                topicId, approvalId, SpaceSlug: session?.SpaceSlug);
             await SendToSpaceOrAllAsync(session?.SpaceSlug, "OnApprovalResolved", notification);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to notify approval resolved for topic {TopicId}", context.TopicId);
+            logger.LogWarning(ex, "Failed to notify approval resolved for topic {TopicId}", topicId);
         }
-
-        context.TrySetResult(approvalResult);
-        context.Dispose();
     }
 
     public bool IsApprovalPending(string approvalId)
@@ -143,7 +132,10 @@ public sealed class ApprovalService(
             : new ToolApprovalRequestMessage(pending.Key, pending.Value.Requests);
     }
 
-    public void CancelPendingApprovalsForTopic(string topicId)
+    // The topic is over — cancelled or deleted — so every prompt it raised is over with it. The
+    // waiting tool call is told no, and the browsers showing the prompt are told the same way an
+    // answer tells them: left up, the modal asks about a turn that no longer exists.
+    public async Task CancelPendingApprovalsForTopicAsync(string topicId)
     {
         var expiredApprovals = _pendingApprovals
             .Where(kv => kv.Value.TopicId == topicId)
@@ -156,6 +148,8 @@ public sealed class ApprovalService(
             {
                 continue;
             }
+
+            await NotifyResolvedAsync(topicId, approvalId);
 
             context.TrySetResult(ToolApprovalResult.Rejected);
             context.Dispose();

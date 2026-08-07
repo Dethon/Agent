@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -25,129 +24,245 @@ public sealed class ReplySpeaker(
     TimeProvider time,
     ILogger<ReplySpeaker> logger)
 {
-    // Which turn each live reply stream opened against, keyed by conversation. The hub can give a
-    // turn up at ReplyTimeoutMs and dispatch the next one while the agent is still writing the
-    // abandoned answer; that answer's StreamComplete then arrives against a turn it knows nothing
-    // about. One conversation's chunks arrive strictly in order (see ReplyTextAccumulator), so the
-    // turn that was live when the stream's first event landed is the turn its end belongs to.
-    private readonly ConcurrentDictionary<string, StreamToken> _streams = new();
+    // Which turn a reply arriving on a live session answers. The whole of this decision is here, so
+    // a new reply path cannot invent a fourth way of guessing.
+    private enum ReplyRelevance
+    {
+        // Its key matches the turn the satellite is waiting on. The answer the user asked for.
+        ThisTurn,
+
+        // Its key names a turn the agent started by itself — a timer, an alarm, a scheduled message
+        // — that happens to land while the user is mid-conversation. It is heard and nothing more.
+        AnotherTurnsAnnouncement,
+
+        // Its key names a user turn the hub already gave up on. Speaking it would put the tail of a
+        // question the user has moved on from in front of the answer they are waiting for.
+        Abandoned
+    }
 
     public void SpeakUtteranceReply(SatelliteSession session, SendReplyParams p)
     {
-        // A stream normally clears its entry on the terminal event that ends it. One that never gets
-        // a terminal event — the agent's connection to this server drops mid-answer — leaves its
-        // token behind instead, and the satellite outlives that: it redials, the hub builds a new
-        // session with a new turn, and the conversation is the same one (the mapping outlives the
-        // connection). Adopting the leftover token there would end a turn discarded with the old
-        // session, so the live turn never settles and the satellite is unresponsive until
-        // FollowUpConversation gives up at ReplyTimeoutMs. A token that cannot reach this session's
-        // turn is therefore replaced; one that can is kept, because within a session the epoch guard
-        // is what tells an abandoned answer's late completion from this turn's own.
-        var stream = _streams.AddOrUpdate(
-            p.ConversationId,
-            _ => session.Turn.OpenStream(),
-            (_, held) => held.BelongsTo(session.Turn) ? held : session.Turn.OpenStream());
-
-        switch (p.ContentType)
+        switch (Classify(session, p))
         {
-            case ReplyContentType.Reasoning:
+            case ReplyRelevance.AnotherTurnsAnnouncement:
+                SpeakBesideTheTurn(session, p);
                 return;
 
-            // The agent is told to say one word ("Buscando") before slow multi-tool work so the user
-            // hears that something started. Text chunks are buffered until StreamComplete, so without
-            // this flush that word is spoken glued to the front of the answer — after the wait it
-            // exists to cover, costing words and buying nothing. The first tool call of the turn is
-            // the moment the wait becomes real, so speak it here. It is a cue, not the reply: it must
-            // not resolve the turn handshake (that would end FollowUpConversation and re-arm the mic
-            // mid-turn) and it must not publish the reply-latency metrics, which measure time-to-answer.
-            case ReplyContentType.ToolCall:
-                if (session.Turn.TryClaimPreamble())
-                {
-                    FlushAndSpeak(session, p.ConversationId, isReply: false);
-                }
-                return;
-
-            case ReplyContentType.Error:
-                // Treat the error as terminal reply text: append it so any buffered partial answer
-                // and the error are spoken together, in order, by the trailing StreamComplete —
-                // not the error first with the leftover partial spoken after it. Mirrors the
-                // flush-on-error contract honored by the Telegram/ServiceBus channels and voice's
-                // own scheduled path. (ChatMonitor sends Error with isComplete=false then a
-                // StreamComplete; the isComplete guard only covers a transport that completes early.)
-                accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
-                if (p.IsComplete)
-                {
-                    // An error the transport itself flags as complete IS the end of the answer, so
-                    // the stream ends here exactly as it does on StreamComplete. Left open, the turn
-                    // never learns the agent stopped sending and the mic stays shut for the whole
-                    // ~120 s reply timeout.
-                    FlushAndSpeak(session, p.ConversationId);
-                    _streams.TryRemove(p.ConversationId, out _);
-                    stream.End();
-                }
-                return;
-
-            // Completion arrives as a dedicated StreamComplete event (empty content, no
-            // messageId). Text chunks are never flagged complete, so this is where we
-            // speak the accumulated reply.
-            case ReplyContentType.StreamComplete:
-                // Speak whatever tail is left after the streamed segments, then tell the turn the
-                // agent has stopped sending. Whether that settles the turn silent or leaves it
-                // waiting on audio still playing is the turn's decision: streaming may already have
-                // spoken everything, leaving this flush empty.
-                FlushAndSpeak(session, p.ConversationId);
-                _streams.TryRemove(p.ConversationId, out _);
-                stream.End();
-                return;
-
-            default:
-                accumulator.Append(p.ConversationId, p.Content);
-                // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
-                if (p.IsComplete)
-                {
-                    FlushAndSpeak(session, p.ConversationId);
-                    _streams.TryRemove(p.ConversationId, out _);
-                    stream.End();
-                    return;
-                }
-                SpeakReadySegments(session, p.ConversationId);
+            case ReplyRelevance.Abandoned:
+                logger.LogInformation(
+                    "Discarding a reply for {Satellite}: it answers turn {ReplyTurnKey}, and {LiveTurnKey} " +
+                    "is the turn in flight", session.SatelliteId, p.TurnKey, session.Turn.TurnKey);
                 return;
         }
+
+        // A reply with no key was matched against nothing: Classify fell back to the turn in
+        // flight, which is all it can do for an agent that predates the key. Opening the stream on
+        // the turn is what lets the terminal event below refuse to settle a turn the hub has
+        // already moved on from. A keyed reply needs none of it — it was compared.
+        if (p.TurnKey is null)
+        {
+            session.Turn.OpenUnkeyedStream();
+        }
+
+        // Speak whatever tail is left after the streamed segments, then tell the turn the agent has
+        // stopped sending. Whether that settles the turn silent or leaves it waiting on audio still
+        // playing is the turn's decision: streaming may already have spoken everything, leaving
+        // this flush empty.
+        Task SpeakAndEndStream()
+        {
+            SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
+            EndStream(session, p);
+            return Task.CompletedTask;
+        }
+
+        // Treat the error as terminal reply text: append it so any buffered partial answer and the
+        // error are spoken together, in order, by the trailing StreamComplete — not the error first
+        // with the leftover partial spoken after it. Mirrors the flush-on-error contract honored by
+        // the Telegram/ServiceBus channels. (ChatMonitor sends Error with isComplete=false then a
+        // StreamComplete; the shared isComplete rule covers a transport that completes early —
+        // left open, the turn never learns the agent stopped sending and the mic stays shut for
+        // the whole ~120 s reply timeout.)
+        Task AppendError()
+        {
+            accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
+            return Task.CompletedTask;
+        }
+
+        // The agent is told to say one word ("Buscando") before slow multi-tool work so the user
+        // hears that something started. Text chunks are buffered until StreamComplete, so without
+        // this flush that word is spoken glued to the front of the answer — after the wait it
+        // exists to cover, costing words and buying nothing. The first tool call of the turn is
+        // the moment the wait becomes real, so speak it here. It is a cue, not the reply: it must
+        // not resolve the turn handshake (that would end FollowUpConversation and re-arm the mic
+        // mid-turn) and it must not publish the reply-latency metrics, which measure time-to-answer.
+        void SpeakPreamble()
+        {
+            if (session.Turn.TryClaimPreamble())
+            {
+                SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Preamble);
+            }
+        }
+
+        // Every delegate here is synchronous, so the shared walk completes synchronously and this
+        // wait never blocks.
+        AccumulateUntilTerminalAsync(p.ConversationId, p,
+            deliver: SpeakAndEndStream,
+            onError: AppendError,
+            onToolCall: SpeakPreamble,
+            onStreamedChunk: () => SpeakReadySegments(session, p.ConversationId))
+            .GetAwaiter().GetResult();
     }
 
-    public async Task DeliverScheduledAsync(
+    // The one spelling of when an answer ends, shared by every reply path: completion arrives as a
+    // dedicated StreamComplete event (empty content, no messageId), text chunks accumulate under
+    // bufferKey until then, and an event a transport explicitly flags complete is honored as the
+    // end too — including an error, whose own handler decides what error text (or silence) means
+    // for its path. Reasoning is never spoken; a tool call means something only on the live path.
+    private async Task AccumulateUntilTerminalAsync(
+        string bufferKey,
         SendReplyParams p,
-        AnnounceTarget target,
-        VoiceDeliveryRegistry delivery,
-        AnnouncementService announcer)
+        Func<Task> deliver,
+        Func<Task> onError,
+        Action? onToolCall = null,
+        Action? onStreamedChunk = null)
     {
         switch (p.ContentType)
         {
             case ReplyContentType.Reasoning:
-            case ReplyContentType.ToolCall:
                 return;
 
-            // An unsolicited scheduled delivery prefers silence over announcing a failure
-            // (e.g. at night). Drop the buffer and the binding without speaking.
+            case ReplyContentType.ToolCall:
+                onToolCall?.Invoke();
+                return;
+
             case ReplyContentType.Error:
-                accumulator.Flush(p.ConversationId);
-                delivery.Remove(p.ConversationId);
-                logger.LogWarning("Scheduled voice delivery {ConversationId} errored; not speaking", p.ConversationId);
+                await onError();
+                if (p.IsComplete)
+                {
+                    await deliver();
+                }
                 return;
 
             case ReplyContentType.StreamComplete:
-                await AnnounceAccumulatedAsync(p.ConversationId, target, delivery, announcer);
+                await deliver();
                 return;
 
             default:
-                accumulator.Append(p.ConversationId, p.Content);
+                accumulator.Append(bufferKey, p.Content);
                 if (p.IsComplete)
                 {
-                    await AnnounceAccumulatedAsync(p.ConversationId, target, delivery, announcer);
+                    await deliver();
+                    return;
                 }
+                onStreamedChunk?.Invoke();
                 return;
         }
     }
+
+    // The key decides between the three cases above. The fourth possibility has no case of its own:
+    // a reply carrying no key at all, which can only happen if the echo itself is broken. It is
+    // treated as the current turn's — the behaviour before any of this existed — and an error is
+    // published, so the breakage shows up as itself rather than as satellites that stopped
+    // answering for two minutes at a time with nothing in the logs.
+    private ReplyRelevance Classify(SatelliteSession session, SendReplyParams p)
+    {
+        if (p.TurnKey is null)
+        {
+            // Reported once per answer rather than once per chunk: a broken echo breaks every chunk
+            // of every turn, and hundreds of identical events per response would bury the signal
+            // they exist to carry. The terminal event is exactly one per answer.
+            if (p.ContentType == ReplyContentType.StreamComplete || p.IsComplete)
+            {
+                metrics.Publish(new ErrorEvent
+                {
+                    Service = "voice",
+                    ErrorType = "ReplyWithoutTurnKey",
+                    Message = $"A reply for {session.SatelliteId} carried no turn key; " +
+                              "treating it as the turn in flight"
+                });
+            }
+
+            return ReplyRelevance.ThisTurn;
+        }
+
+        if (p.TurnKey == session.Turn.TurnKey)
+        {
+            return ReplyRelevance.ThisTurn;
+        }
+
+        if (p.AgentInitiated == true)
+        {
+            return ReplyRelevance.AnotherTurnsAnnouncement;
+        }
+
+        // A user's answer naming a turn this session never had, on a session that has never had a
+        // turn at all: the satellite's link dropped mid-answer and it redialled, so the hub built a
+        // fresh session while the agent kept writing into the same conversation (the manager's
+        // satellite -> conversation mapping outlives the connection). Nothing else can be waiting
+        // on this turn, and the answer is the one the user asked for — so it is adopted rather than
+        // discarded, which would leave them with silence and nothing to explain it.
+        return session.Turn.AwaitingFirstDispatch
+            ? ReplyRelevance.ThisTurn
+            : ReplyRelevance.Abandoned;
+    }
+
+    // A keyed reply was compared against the turn in flight in Classify, but a Reset can land
+    // between that compare and this settle — so the end carries its key and the turn re-checks it
+    // atomically with the settle. A keyless one ends through the stream it opened, which is what
+    // refuses the late completion of a turn the hub has already given up on.
+    private static void EndStream(SatelliteSession session, SendReplyParams p)
+    {
+        if (p.TurnKey is null)
+        {
+            session.Turn.EndUnkeyedStream();
+            return;
+        }
+
+        session.Turn.EndStream(p.TurnKey);
+    }
+
+    // Heard, and nothing else: no stream is opened, no segment is registered and the turn is not
+    // settled, so the user keeps the follow-up window they were owed and the answer they asked for
+    // still arrives. Buffered under the announcement's own turn rather than the conversation's, so
+    // its text cannot interleave with the answer being written into the same conversation.
+    private void SpeakBesideTheTurn(SatelliteSession session, SendReplyParams p)
+    {
+        var buffer = ReplyTextAccumulator.TurnBuffer(p.ConversationId, p.TurnKey);
+        AccumulateUntilTerminalAsync(buffer, p,
+            deliver: () =>
+            {
+                SpeakBuffered(session, buffer, p.ConversationId, PlaybackKind.Announce);
+                return Task.CompletedTask;
+            },
+            // Same rule as the scheduled path: an announcement nobody asked for prefers silence
+            // over saying that it failed.
+            onError: () =>
+            {
+                accumulator.Flush(buffer);
+                logger.LogWarning(
+                    "An announcement for {Satellite} errored mid-conversation; not speaking it",
+                    session.SatelliteId);
+                return Task.CompletedTask;
+            })
+            .GetAwaiter().GetResult();
+    }
+
+    public Task DeliverScheduledAsync(
+        SendReplyParams p,
+        AnnounceTarget target,
+        VoiceDeliveryRegistry delivery,
+        AnnouncementService announcer) =>
+        AccumulateUntilTerminalAsync(p.ConversationId, p,
+            deliver: () => AnnounceAccumulatedAsync(p.ConversationId, target, delivery, announcer),
+            // An unsolicited scheduled delivery prefers silence over announcing a failure
+            // (e.g. at night). Drop the buffer and the binding without speaking.
+            onError: () =>
+            {
+                accumulator.Flush(p.ConversationId);
+                delivery.Remove(p.ConversationId);
+                logger.LogWarning("Scheduled voice delivery {ConversationId} errored; not speaking", p.ConversationId);
+                return Task.CompletedTask;
+            });
 
     private async Task AnnounceAccumulatedAsync(
         string conversationId,
@@ -172,14 +287,18 @@ public sealed class ReplySpeaker(
         }
     }
 
-    private void FlushAndSpeak(SatelliteSession session, string conversationId, bool isReply = true)
+    // The buffer key and the conversation are separate arguments because they can differ: an
+    // announcement landing mid-conversation buffers under its own turn while still being spoken
+    // on, and reported against, the conversation the satellite is in.
+    private void SpeakBuffered(
+        SatelliteSession session, string bufferKey, string conversationId, PlaybackKind kind)
     {
-        var text = accumulator.Flush(conversationId);
+        var text = accumulator.Flush(bufferKey);
         if (string.IsNullOrWhiteSpace(text))
         {
             return;
         }
-        Speak(session, text, conversationId, isReply);
+        Speak(session, text, conversationId, kind);
     }
 
     // Drains every complete sentence run the buffer now holds into the playback queue, so the user
@@ -214,7 +333,7 @@ public sealed class ReplySpeaker(
                 return;
             }
 
-            if (Speak(session, segment, conversationId, isReply: true) is not null)
+            if (Speak(session, segment, conversationId, PlaybackKind.Reply) is not null)
             {
                 // Back in the buffer for the next chunk, or the StreamComplete flush, to speak.
                 // The flush itself never puts anything back: nothing would follow it, so the text
@@ -228,8 +347,13 @@ public sealed class ReplySpeaker(
     // Synchronous, because queueing is: the segment's synthesis is handed to the queue rather than
     // started here, and the queue answers immediately. Returns why the queue turned the job away, so
     // the streaming path can hand the text it spent back.
-    private RefusalReason? Speak(SatelliteSession session, string text, string conversationId, bool isReply)
+    private RefusalReason? Speak(
+        SatelliteSession session, string text, string conversationId, PlaybackKind kind)
     {
+        // Only an answer is a reply: it is the one kind that registers a segment on the turn, spends
+        // the dispatch stamp and reports the turn-anchored latencies.
+        var isReply = kind == PlaybackKind.Reply;
+
         var options = new SynthesisOptions { Voice = session.ResolveVoice(settings) };
 
         // Assigned by BeginSegment below, before the enqueue and therefore before any callback can
@@ -266,8 +390,8 @@ public sealed class ReplySpeaker(
         // find their audio already buffered — but they do not publish TtsLatencyMs, so the
         // decomposition is unaffected.
         var job = new PlaybackJob(
-            Label: $"{(isReply ? "reply" : "preamble")}:{session.SatelliteId}",
-            Kind: isReply ? PlaybackKind.Reply : PlaybackKind.Preamble,
+            Label: $"{kind.ToString().ToLowerInvariant()}:{session.SatelliteId}",
+            Kind: kind,
             Priority: AnnouncePriority.Normal,
             Audio: tts.SynthesizeAsync(text, options, default),
             EnqueuedAt: enqueuedAt,
@@ -307,11 +431,13 @@ public sealed class ReplySpeaker(
 
                 // The two below are anchored on the TURN (MarkTurnStart / MarkSpeechEnd), which is
                 // never invalidated, while the voice conversation mapping outlives the turn by
-                // ConversationLifetime. A schedule fire or an agent-initiated message delivered into a
-                // live session comes down this same path, so without a gate it reports the AGE of the
-                // last real turn as its own latency — one "recuérdame en dos minutos" publishes
-                // ~120000 ms and wrecks Avg/P95/Max on the headline metric. The consumed dispatch
-                // stamp is the proof that what is being answered is a transcript this hub dispatched.
+                // ConversationLifetime. A keyed agent-initiated delivery no longer reaches this path
+                // at all — its key does not match the turn's, so it is spoken beside the turn. One
+                // from an agent that predates the key still does: it carries nothing to divert it,
+                // and without this gate a "recuérdame en dos minutos" firing into a live session
+                // publishes the AGE of the last real turn, ~120000 ms, and wrecks Avg/P95/Max on the
+                // headline metric. The consumed dispatch stamp is the proof that what is being
+                // answered is a transcript this hub dispatched.
                 if (dispatchedAtStamp is null)
                 {
                     return Task.CompletedTask;

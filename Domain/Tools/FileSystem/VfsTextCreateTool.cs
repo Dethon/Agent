@@ -40,11 +40,16 @@ public class VfsTextCreateTool(IVirtualFileSystemRegistry registry)
         var result = await resolution.Backend.CreateAsync(
             resolution.RelativePath, content, overwrite, createDirectories, cancellationToken);
 
-        if (TextArg.WasCoercedArg(arguments, "content") && result.TryGetValue(out var value, out _))
+        // Each backend names the file it wrote in whatever spelling it uses, and two mounts disagree
+        // about the same file. Echoing the caller's own path means a follow-up edit targets the file
+        // this create just made.
+        var created = result.Map(create => create with { FilePath = filePath });
+
+        if (TextArg.WasCoercedArg(arguments, "content") && created.TryGetValue(out var value, out _))
         {
             return FsResultContract.ToNode(value with { Note = CoercionNote });
         }
 
-        return result.ToNode();
+        return created.ToNode();
     }
 }

@@ -18,7 +18,15 @@ public class McpChannelConnectionNotConnectedTests
     {
         // Called by an agent mid-turn, which has somewhere to report a failure.
         await Should.ThrowAsync<InvalidOperationException>(() => NeverConnected().SendReplyAsync(
-            "conv-1", "hola", ReplyContentType.Text, false, "m-1", CancellationToken.None));
+            new SendReplyParams
+            {
+                ConversationId = "conv-1",
+                Content = "hola",
+                ContentType = ReplyContentType.Text,
+                IsComplete = false,
+                MessageId = "m-1"
+            },
+            CancellationToken.None));
     }
 
     [Fact]

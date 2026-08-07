@@ -1,5 +1,6 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
@@ -12,7 +13,7 @@ public sealed class StreamResumeEffect : IDisposable
     public StreamResumeEffect(
         Dispatcher dispatcher,
         TopicsStore topicsStore,
-        StreamingStore streamingStore,
+        TopicStreams topicStreams,
         IStreamResumeService streamResumeService,
         ILogger<StreamResumeEffect> logger)
     {
@@ -20,11 +21,11 @@ public sealed class StreamResumeEffect : IDisposable
         {
             var topic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == action.TopicId);
 
-            // A topic we do not know about has nothing to resume, and one already resuming
-            // would be resumed twice. Both cases just mark the stream as started.
-            if (topic is null || streamingStore.State.ResumingTopics.Contains(action.TopicId))
+            // A topic we do not know about has nothing to resume, and one already resuming would
+            // be resumed twice. Marking either as streaming here would be a stream nothing is
+            // tracking, which is the shape this client no longer has a way to create.
+            if (topic is null || topicStreams.Snapshot(action.TopicId).IsResuming)
             {
-                dispatcher.Dispatch(new StreamStarted(action.TopicId));
                 return;
             }
 

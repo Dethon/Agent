@@ -33,7 +33,7 @@ public class PlaybackQueueOutcomeTests
         // The satellite disconnected and the loop tore down. Announce tells a missing speaker from a
         // busy one by this reason.
         var queue = new PlaybackQueue();
-        queue.Complete();
+        queue.CompleteAndDiscardQueued();
 
         var ticket = queue.Enqueue(Job("x", PlaybackKind.Announce));
 
@@ -64,15 +64,6 @@ public class PlaybackQueueOutcomeTests
         queue.Dispose();
 
         queue.Enqueue(Job("late", PlaybackKind.Announce)).Refused.ShouldBe(RefusalReason.QueueClosed);
-    }
-
-    [Fact]
-    public void Complete_AfterDispose_DoesNotThrow()
-    {
-        var queue = new PlaybackQueue();
-        queue.Dispose();
-
-        Should.NotThrow(queue.Complete);
     }
 
     [Fact]
@@ -113,7 +104,7 @@ public class PlaybackQueueOutcomeTests
         // One settle path rather than a branch: a caller reads the reason for its own status and
         // still awaits the same outcome it would have awaited had the job been accepted.
         var queue = new PlaybackQueue();
-        queue.Complete();
+        queue.CompleteAndDiscardQueued();
 
         var ticket = queue.Enqueue(Job("x", PlaybackKind.Announce));
 
@@ -132,11 +123,11 @@ public class PlaybackQueueOutcomeTests
 
         var preempted = queue.Enqueue(normal);
         queue.Enqueue(high);
-        queue.Complete();
 
-        await queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
-
-        var outcome = await preempted.Completed;
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync((_, _) => Task.CompletedTask, run.Token);
+        var outcome = await preempted.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
         outcome.Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
         outcome.ChunksWritten.ShouldBe(0);
     }
@@ -157,14 +148,13 @@ public class PlaybackQueueOutcomeTests
         }
 
         var ticket = queue.Enqueue(Job("reply", PlaybackKind.Reply) with { Audio = twoThenBlock() });
-        var pump = queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync((_, _) => Task.CompletedTask, run.Token);
 
         await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
         queue.PreemptCurrent();
-        queue.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(5));
-
-        var outcome = await ticket.Completed;
+        var outcome = await ticket.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
         outcome.Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
         outcome.ChunksWritten.ShouldBe(2);
     }
@@ -193,7 +183,6 @@ public class PlaybackQueueOutcomeTests
 
         await wrote.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await connection.CancelAsync();          // the satellite drops mid-tail
-        queue.Complete();
         await Should.NotThrowAsync(async () =>
         {
             try
@@ -226,7 +215,6 @@ public class PlaybackQueueOutcomeTests
 
         await playing.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await connection.CancelAsync();
-        queue.Complete();
         try
         { await pump.WaitAsync(TimeSpan.FromSeconds(5)); }
         catch (OperationCanceledException) { }
@@ -360,6 +348,7 @@ public class PlaybackQueueOutcomeTests
             _ => release.Task.GetAwaiter().GetResult(), TaskContinuationOptions.LongRunning);
 
         queue.Enqueue(Job("second", PlaybackKind.Announce));
+        using var run = new CancellationTokenSource();
         var pump = queue.RunAsync(
             (chunk, _) =>
             {
@@ -372,15 +361,14 @@ public class PlaybackQueueOutcomeTests
                 }
                 return Task.CompletedTask;
             },
-            CancellationToken.None);
+            run.Token);
 
         await secondPlayed.Task.WaitAsync(TimeSpan.FromSeconds(5));
         played.ShouldBe(["first", "second"]);
 
         release.TrySetResult();
         await blocked.WaitAsync(TimeSpan.FromSeconds(5));
-        queue.Complete();
-        await pump.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -396,12 +384,14 @@ public class PlaybackQueueOutcomeTests
         var reply = queue.Enqueue(
             Job("reply", PlaybackKind.Reply) with { Audio = EndlessSynthesis(released) });
         queue.Enqueue(Job("alarm", PlaybackKind.Alarm) with { Priority = AnnouncePriority.High });
-        queue.Complete();
 
-        await queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync((_, _) => Task.CompletedTask, run.Token);
 
-        (await reply.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Preempted);
+        (await reply.Completed.WaitAsync(TimeSpan.FromSeconds(5))).Kind
+            .ShouldBe(PlaybackOutcomeKind.Preempted);
         await released.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -412,12 +402,14 @@ public class PlaybackQueueOutcomeTests
 
         var reply = queue.Enqueue(
             Job("reply", PlaybackKind.Reply) with { Audio = OneChunkThenRelease(released) });
-        queue.Complete();
 
-        await queue.RunAsync((_, _) => Task.CompletedTask, CancellationToken.None);
+        using var run = new CancellationTokenSource();
+        var pump = queue.RunAsync((_, _) => Task.CompletedTask, run.Token);
 
-        (await reply.Completed).Kind.ShouldBe(PlaybackOutcomeKind.Drained);
+        (await reply.Completed.WaitAsync(TimeSpan.FromSeconds(5))).Kind
+            .ShouldBe(PlaybackOutcomeKind.Drained);
         await released.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await run.StopAsync(pump);
     }
 
     [Fact]
@@ -511,11 +503,14 @@ public class PlaybackQueueOutcomeTests
         {
             await connection.CancelAsync();
         }
+        else
+        {
+            // Every other ending is the job's own, so it is what to wait for; only the discarded
+            // one is caused by the connection going away.
+            await ticket.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+        }
 
-        queue.Complete();
-        try
-        { await pump.WaitAsync(TimeSpan.FromSeconds(5)); }
-        catch (OperationCanceledException) { }
+        await connection.StopAsync(pump);
         queue.DiscardUnplayed();
 
         return await ticket.Completed.WaitAsync(TimeSpan.FromSeconds(5));

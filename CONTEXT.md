@@ -120,6 +120,14 @@ waits its place in a conversation, what decides where its replies go, and what
 reports how long the answer took. A conversation runs one at a time.
 _Avoid_: message, request, exchange, prompt
 
+**Turn key**:
+What a turn is dispatched under, so a reply can say which turn it answers. Every
+reply of a turn carries it back, and the receiving side compares rather than infers:
+a conversation outlives a turn, so asking the conversation gives the wrong answer
+whenever an answer is late, an announcement arrives mid-conversation, or a device
+reconnects. Every turn has one, whether the channel it came from supplied it or not.
+_Avoid_: message id, correlation id, stream id, request id
+
 **Chat command**:
 A message that steers the conversation instead of being answered by it. It never
 reaches the agent and produces no reply, so it is not a turn. It also never waits
@@ -141,6 +149,20 @@ appends to, the approvals it raises, the events it reports. The rule is to name 
 conversation someone can open, so a scheduled task fires under the conversation it
 delivered into and not under the schedule.
 _Avoid_: conversation id, target conversation, delivery key
+
+## Chat streaming
+
+**Topic stream** (chat client only):
+A topic's one reply in flight, from the send or resume that opened it to its single
+ending. A topic has at most one, and it ends exactly once however it ends: the reply
+finishing, the stop button, or the topic being deleted.
+_Avoid_: active stream, streaming state, stream session
+
+**Stream lease** (chat client only):
+What the opener of a topic stream holds. It is the only way to add to that stream or
+end it, and a stale one can do neither — once the topic has moved on to another
+reply, the lease that opened the old one no longer speaks for it.
+_Avoid_: stream handle, stream token, stream id
 
 ## Channel connection
 
@@ -259,10 +281,15 @@ job learns it from that one fact and nothing else.
 _Avoid_: playback result, callback, completion
 
 **Refusal**:
-The queue declining a job outright, so it never waits and is never heard. A refusal
-is an outcome like any other, not a failure — the caller is told why, and the three
-reasons are that the satellite is gone, that the queue already holds as much of that
-kind as it will, and that a low-priority job arrived while anything was queued.
+An operation declined outright with a stated reason. A refusal is not a failure: the
+caller is told why, and nothing was attempted. Two places use the word. The playback
+queue refuses a job so it never waits and is never heard, for three reasons — the
+satellite is gone, the queue already holds as much of that kind as it will, or a
+low-priority job arrived while anything was queued. The media library refuses a file
+operation that a live download owns, for five reasons — reading text that is not a
+status file, reading a rendered status file as bytes, landing anything inside a live
+download's directory, moving any of that directory out, and deleting a path that is
+neither a download nor its status file.
 _Avoid_: rejection, drop, error
 
 **Preemption**:
@@ -311,6 +338,55 @@ _Avoid_: inbound surface, reply channel, delivery path
 The one name a filesystem mount is known by. Its resource address, its mount point
 and the name it publishes to the agent all come from it, so they cannot disagree.
 _Avoid_: mount name, filesystem name, mount point
+
+**Move-out check**:
+The question a mount answers before a path leaves it. A move between two mounts is a
+copy followed by a delete of the source, so the mount losing the path is never asked
+to move anything and its own refusals never run. The check asks it first, before any
+byte is streamed, and a mount with nothing to say allows it.
+_Avoid_: move guard, cross-mount guard, pre-move check
+
+## Virtual filesystem
+
+**Virtual path**:
+A mount point followed by a path under it. It is the only coordinate system that crosses
+the tool boundary: the only spelling the filesystem prompt teaches, the only one the
+registry resolves, and the only one that may appear in a tool's answer. Anything the model
+reads out of a response can be passed straight back into another tool.
+_Avoid_: full path, absolute path, mount-relative path
+
+**Backend coordinates**:
+How a backend spells a path to itself — container-absolute for a disk root, mount-relative
+with or without a leading slash elsewhere. Backends disagree with each other, and that is
+fine on the wire. It must never appear in a response the model sees.
+_Avoid_: real path, physical path, native path
+
+**Transfer**:
+A copy or a move across any two virtual paths — same mount or not, file or directory. It is
+one operation with one answer, and it is not a backend's native copy or move: those work
+inside one mount, while a transfer may span two, recurse a directory and report what
+happened to each entry.
+_Avoid_: copy, move, cross-mount copy, file operation
+
+## Media library
+
+**Live download**:
+A download the download manager still knows about. While it is live it owns its
+directory and everything in it, which is what every refusal on the media library is
+asking about. When it ends, it stops owning anything: what is left is ordinary files.
+_Avoid_: active torrent, running download, download task
+
+**Status file**:
+The live state of one download, shown as a file. It is a view rendered when asked, so
+it can be read and nothing else — copying or writing it would produce a stale snapshot
+under a name that still looks live.
+_Avoid_: status.json, virtual file, progress file
+
+**Leftover**:
+A file or directory left where a download used to be, after the download itself is
+gone. It is an ordinary file: it can be listed, read and removed like any other, and
+it is never mistaken for a status file.
+_Avoid_: orphan, stale download, ghost
 
 ## Agents
 

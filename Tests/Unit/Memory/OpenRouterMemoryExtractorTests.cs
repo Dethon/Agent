@@ -78,6 +78,95 @@ public class OpenRouterMemoryExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_WithCandidateMissingCategory_KeepsTheBatchAndCallsItAFact()
+    {
+        var extractionJson = """
+            {
+              "candidates": [
+                { "content": "Is a senior Python developer at Google", "importance": 0.9 },
+                { "content": "Prefers dark mode", "category": "preference", "importance": 0.8 }
+              ]
+            }
+            """;
+
+        _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PersonalityProfile?)null);
+
+        _chatClient.Setup(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, extractionJson)));
+
+        var result = await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "I'm a senior Python developer at Google and I prefer dark mode")],
+            "user1", CancellationToken.None);
+
+        result.Count.ShouldBe(2);
+        result[0].Category.ShouldBe(MemoryCategory.Fact);
+        result[1].Category.ShouldBe(MemoryCategory.Preference);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WithCandidateMissingContent_DropsOnlyThatCandidate()
+    {
+        var extractionJson = """
+            {
+              "candidates": [
+                { "memory": "Prefers dark mode", "category": "preference", "importance": 0.8 },
+                { "content": "Uses Vim keybindings", "category": "preference", "importance": 0.7 }
+              ]
+            }
+            """;
+
+        _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PersonalityProfile?)null);
+
+        _chatClient.Setup(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, extractionJson)));
+
+        var result = await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "I prefer dark mode and use Vim keybindings")],
+            "user1", CancellationToken.None);
+
+        result.Count.ShouldBe(1);
+        result[0].Content.ShouldBe("Uses Vim keybindings");
+    }
+
+    // The parser tolerates a candidate that omits a field; the schema must still ask for all of
+    // them, or tolerance turns into an invitation to leave them out.
+    [Fact]
+    public async Task ExtractAsync_AsksTheModelForEveryCandidateField()
+    {
+        _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PersonalityProfile?)null);
+
+        ChatOptions? capturedOptions = null;
+        _chatClient.Setup(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions>(),
+            It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((_, opts, _) => capturedOptions = opts)
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates": []}""")));
+
+        await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Hello")], "user1", CancellationToken.None);
+
+        var schema = capturedOptions.ShouldNotBeNull().ResponseFormat
+            .ShouldBeOfType<ChatResponseFormatJson>().Schema.ShouldNotBeNull();
+
+        var required = schema.GetProperty("properties").GetProperty("Candidates")
+            .GetProperty("items").GetProperty("required")
+            .EnumerateArray().Select(e => e.GetString()).ToList();
+
+        required.ShouldContain("Content");
+        required.ShouldContain("Category");
+    }
+
+    [Fact]
     public async Task ExtractAsync_WithMalformedJson_ReturnsEmpty()
     {
         _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))

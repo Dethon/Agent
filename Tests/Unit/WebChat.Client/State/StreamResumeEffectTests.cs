@@ -1,8 +1,10 @@
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Effects;
+using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
@@ -12,7 +14,10 @@ public sealed class StreamResumeEffectTests : IDisposable
 {
     private readonly Dispatcher _dispatcher = new();
     private readonly TopicsStore _topicsStore;
+    private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
+    private readonly TopicStreams _topicStreams;
+    private readonly TaskCompletionSource _running = new();
     private readonly FakeStreamResumeService _streamResumeService = new();
     private readonly RecordingLogger<StreamResumeEffect> _logger = new();
     private readonly StreamResumeEffect _effect;
@@ -20,10 +25,12 @@ public sealed class StreamResumeEffectTests : IDisposable
     public StreamResumeEffectTests()
     {
         _topicsStore = new TopicsStore(_dispatcher);
+        _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
+        _topicStreams = new TopicStreams(_dispatcher, _messagesStore);
 
         _effect = new StreamResumeEffect(
-            _dispatcher, _topicsStore, _streamingStore, _streamResumeService, _logger);
+            _dispatcher, _topicsStore, _topicStreams, _streamResumeService, _logger);
     }
 
     [Fact]
@@ -37,20 +44,24 @@ public sealed class StreamResumeEffectTests : IDisposable
         _streamingStore.State.StreamingTopics.ShouldNotContain("topic-1");
     }
 
+    // Marking an unknown topic as streaming would be a stream nothing is tracking, and this
+    // client has no way to create one any more.
     [Fact]
-    public void RemoteStreamStarted_UnknownTopic_MarksTheStreamStartedInstead()
+    public void RemoteStreamStarted_UnknownTopic_LeavesTheStreamingStateAlone()
     {
         _dispatcher.Dispatch(new RemoteStreamStarted("topic-1"));
 
-        _streamingStore.State.StreamingTopics.ShouldContain("topic-1");
+        _streamingStore.State.StreamingTopics.ShouldNotContain("topic-1");
         _streamResumeService.ResumedTopicIds.ShouldBeEmpty();
     }
 
+    // Two pushes back to back for one topic resume it once: the second finds the first still
+    // resuming and asks the module, not the store.
     [Fact]
-    public void RemoteStreamStarted_TopicAlreadyResuming_MarksTheStreamStartedInstead()
+    public void RemoteStreamStarted_TopicAlreadyResuming_DoesNotResumeAgain()
     {
         _dispatcher.Dispatch(new AddTopic(Topic("topic-1")));
-        _dispatcher.Dispatch(new StartResuming("topic-1"));
+        _topicStreams.TryBeginResume("topic-1");
 
         _dispatcher.Dispatch(new RemoteStreamStarted("topic-1"));
 
@@ -68,8 +79,10 @@ public sealed class StreamResumeEffectTests : IDisposable
 
     public void Dispose()
     {
+        _running.TrySetResult();
         _effect.Dispose();
         _topicsStore.Dispose();
+        _messagesStore.Dispose();
         _streamingStore.Dispose();
     }
 }

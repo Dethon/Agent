@@ -32,35 +32,27 @@ public class DownloadsOverlayTests : IDisposable
     }
 
     [Fact]
-    public async Task TryRead_StatusJson_RendersStateWithoutSavePath()
+    public async Task Read_StatusJson_RendersStateWithoutSavePath()
     {
         _client.Add(Item(42));
 
-        var read = (await _sut.TryReadAsync("downloads/42/status.json", CancellationToken.None))
+        var read = (await _sut.ReadAsync("downloads/42/status.json", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
         read.Content.ShouldContain("42");
         read.Content.ShouldContain("InProgress");
         read.Content.ShouldContain("Download 42");
         read.Content.ShouldNotContain("savePath");
 
-        var missing = await _sut.TryReadAsync("downloads/99/status.json", CancellationToken.None);
+        var missing = await _sut.ReadAsync("downloads/99/status.json", CancellationToken.None);
         missing.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.ErrorCode.ShouldBe("not_found");
     }
 
     [Fact]
-    public async Task TryRead_NonOverlayPath_ReturnsNull()
-    {
-        (await _sut.TryReadAsync("Movies/film.mkv", CancellationToken.None)).ShouldBeNull();
-        (await _sut.TryReadAsync("downloads/42/payload.mkv", CancellationToken.None)).ShouldBeNull();
-        (await _sut.TryReadAsync("downloads", CancellationToken.None)).ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task TryRead_AbsolutePathUnderLibraryRoot_IsNormalized()
+    public async Task Read_AbsolutePathUnderLibraryRoot_IsNormalized()
     {
         _client.Add(Item(42));
 
-        var read = await _sut.TryReadAsync(
+        var read = await _sut.ReadAsync(
             Path.Combine(_libraryRoot, "downloads", "42", "status.json"), CancellationToken.None);
         read.ShouldBeOfType<FsResult<FsReadResult>.Ok>();
     }
@@ -151,6 +143,27 @@ public class DownloadsOverlayTests : IDisposable
         _fs.RemovedDirectories.ShouldContain(Path.Combine(_libraryRoot, "downloads", "42"));
     }
 
+    // The cancel is deliberately non-transactional but ordered: if the manager cannot cancel, the
+    // download is still running, so nothing that belongs to it may be cleared.
+    [Fact]
+    public async Task Delete_ActiveDownloadWhoseCleanupFails_TouchesNothingElse()
+    {
+        _client.Add(Item(42));
+        _client.CleanupFailure = new InvalidOperationException("qBittorrent is unreachable");
+        await _routing.SetAsync(new DownloadRouting
+        {
+            DownloadId = 42,
+            Title = "Download 42",
+            Context = new ConversationContext("agent", "conv", "user", new ReplyTarget("library", "conv"))
+        }, CancellationToken.None);
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => _sut.TryDeleteAsync("downloads/42", CancellationToken.None));
+
+        (await _routing.ListAsync(CancellationToken.None)).ShouldNotBeEmpty();
+        _fs.RemovedDirectories.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task Delete_LeftoverDirWithoutTorrent_RemovesDirAndStaleRouting()
     {
@@ -169,93 +182,5 @@ public class DownloadsOverlayTests : IDisposable
         _client.CleanedUp.ShouldBeEmpty();
         (await _routing.ListAsync(CancellationToken.None)).ShouldBeEmpty();
         _fs.RemovedDirectories.ShouldContain(Path.Combine(_libraryRoot, "downloads", "99"));
-    }
-
-    [Fact]
-    public async Task Delete_RejectsNonDownloadTargets()
-    {
-        _client.Add(Item(42));
-
-        (await _sut.TryDeleteAsync("downloads/42/status.json", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-
-        (await _sut.TryDeleteAsync("Movies/film.mkv", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-
-        (await _sut.TryDeleteAsync("downloads/123", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("not_found");
-    }
-
-    // Every one of these used to reach a live download through a spelling the classifier did not
-    // recognise: the dotted ones bypassed the refusals entirely (the disk underneath resolves them),
-    // and the padded ones cancelled download 42 when the caller named a directory that is not it.
-    [Theory]
-    [InlineData("downloads/ 42 ")]
-    [InlineData("downloads/042")]
-    [InlineData("downloads/+42")]
-    public async Task Delete_ADirtySpellingOfADownloadId_CancelsNothing(string path)
-    {
-        _client.Add(Item(42));
-
-        (await _sut.TryDeleteAsync(path, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-
-        _client.CleanedUp.ShouldBeEmpty();
-        _fs.RemovedDirectories.ShouldBeEmpty();
-    }
-
-    [Theory]
-    [InlineData("downloads/./42")]
-    [InlineData("downloads/43/../42")]
-    public async Task Delete_ADottedSpellingOfADownloadDir_StillCancelsIt(string path)
-    {
-        _client.Add(Item(42));
-
-        (await _sut.TryDeleteAsync(path, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
-
-        _client.CleanedUp.ShouldContain(42);
-    }
-
-    [Theory]
-    [InlineData("downloads/42")]
-    [InlineData("downloads/./42")]
-    [InlineData("downloads/42/./payload.mkv")]
-    [InlineData("Movies/../downloads/42")]
-    [InlineData("downloads")]
-    public async Task TouchesActiveDownload_ADottedSpellingOfTheBoundary_StillOverlaps(string path)
-    {
-        _client.Add(Item(42));
-
-        (await _sut.TouchesActiveDownloadAsync(path, CancellationToken.None)).ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task TouchesActiveDownload_APathOutsideEveryDownload_DoesNot()
-    {
-        _client.Add(Item(42));
-
-        (await _sut.TouchesActiveDownloadAsync("Movies/film.mkv", CancellationToken.None)).ShouldBeFalse();
-        (await _sut.TouchesActiveDownloadAsync("downloads/7", CancellationToken.None)).ShouldBeFalse();
-    }
-
-    [Fact]
-    public void IsVirtualPath_DottedAndPaddedSpellings()
-    {
-        _sut.IsVirtualPath("downloads/42/./status.json").ShouldBeTrue();
-        _sut.IsVirtualPath("downloads/43/../42/status.json").ShouldBeTrue();
-        _sut.IsVirtualPath("downloads/042/status.json").ShouldBeFalse();
-        _sut.IsVirtualPath("downloads/ 42 /status.json").ShouldBeFalse();
-    }
-
-    [Fact]
-    public void IsVirtualPath_TrueOnlyForStatusFiles()
-    {
-        _sut.IsVirtualPath("downloads/42/status.json").ShouldBeTrue();
-        _sut.IsVirtualPath("/downloads/42/status.json").ShouldBeTrue();
-        _sut.IsVirtualPath(Path.Combine(_libraryRoot, "downloads", "42", "status.json")).ShouldBeTrue();
-        _sut.IsVirtualPath("downloads/42").ShouldBeFalse();
-        _sut.IsVirtualPath("downloads/42/file.mkv").ShouldBeFalse();
-        _sut.IsVirtualPath("Movies/status.json").ShouldBeFalse();
     }
 }

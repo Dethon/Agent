@@ -81,7 +81,11 @@ public static class FileSystemServerTools
 
         ["fs_blob_write"] = new(b => b.DescribeBlobWrite, b =>
             async (string path, string contentBase64, long offset = 0, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
-                ToolResponse.Create(await b.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct)))
+                ToolResponse.Create(await b.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct))),
+
+        [FileSystemOperations.MoveOutCheck] = new(b => b.DescribeMoveOutCheck, b =>
+            async (string path, CancellationToken ct = default) =>
+                ToolResponse.Create(await b.MoveOutCheckAsync(path, ct)))
     };
 
     public static IMcpServerBuilder AddFileSystemTools<TBackend>(this IMcpServerBuilder builder)

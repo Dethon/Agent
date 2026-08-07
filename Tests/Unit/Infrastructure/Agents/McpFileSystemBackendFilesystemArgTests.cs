@@ -6,7 +6,7 @@ namespace Tests.Unit.Infrastructure.Agents;
 
 public class McpFileSystemBackendFilesystemArgTests
 {
-    private sealed class CapturingBackend() : McpFileSystemBackend(null!, "downloads")
+    private sealed class CapturingBackend() : McpFileSystemBackend(null!, "downloads", advertisedOperations: null)
     {
         public List<(string Tool, Dictionary<string, object?> Args)> Calls { get; } = [];
 

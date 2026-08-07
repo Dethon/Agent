@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
@@ -13,7 +14,7 @@ namespace Domain.Tools.Downloads.Vfs;
 public sealed class MediaLibraryDiskFileSystem(
     IFileSystemClient client,
     LibraryPathConfig root,
-    DownloadsOverlay downloads) : DiskFileSystem(Name, Mount(root), client, root), ICrossMountMoveGuard
+    DownloadsOverlay downloads) : DiskFileSystem(Name, Mount(root), client, root)
 {
     public const string Name = "media";
 
@@ -26,9 +27,10 @@ public sealed class MediaLibraryDiskFileSystem(
     private static string Mount(LibraryPathConfig root) =>
         $"Media library ({root.BaseLibraryPath}) — books, audiobooks, and other downloaded media. "
         + "Read/list focused; treat writes as organisational only. Does NOT support fs_exec. Active "
-        + $"downloads live under {MediaFilesystem.DownloadsDir}/<id>/: a virtual read-only "
-        + "status.json reports live state/progress/eta, and deleting the <id> directory cancels the "
-        + "download and cleans up its files.";
+        + $"downloads live under {MediaFilesystem.DownloadsDir}/<id>/: a status.json rendered on "
+        + "read reports live state/progress/eta, and deleting the <id> directory cancels the "
+        + "download and cleans up its files. Once a download ends, what it left behind is ordinary "
+        + "files.";
 
     public override string DescribeRead =>
         $"Read a download's virtual status file ({MediaFilesystem.DownloadsSubdir}/<id>/status.json "
@@ -43,10 +45,8 @@ public sealed class MediaLibraryDiskFileSystem(
 
     // The only text on this mount is the overlay's rendered status file; the media itself is bytes.
     public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
-        await downloads.TryReadAsync(path, ct)
-        ?? FsError.Fail<FsReadResult>(ToolError.Codes.UnsupportedOperation,
-            $"fs_read on the {FilesystemName} filesystem only reads "
-            + $"{MediaFilesystem.DownloadsSubdir}/<id>/status.json.");
+        await RefuseAsync<FsReadResult>(DownloadsIntent.TextRead, path, ct)
+        ?? await downloads.ReadAsync(path, ct);
 
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
@@ -92,133 +92,118 @@ public sealed class MediaLibraryDiskFileSystem(
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
         await downloads.TryInfoAsync(path, ct) ?? await base.InfoAsync(path, ct);
 
+    // Delete contributes its two refusals to the rule like every other operation, and keeps its
+    // effects — the cancel, the routing removal, the leftover recovery — in the overlay behind it.
     public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
-        await downloads.TryDeleteAsync(path, ct) ?? await base.DeleteAsync(path, ct);
+        await RefuseAsync<FsRemoveResult>(DownloadsIntent.Delete, path, ct)
+        ?? await downloads.TryDeleteAsync(path, ct)
+        ?? await base.DeleteAsync(path, ct);
 
-    // Delete is the download's cancel, so it is left to the overlay; move has no such meaning and a
-    // live download whose directory moved keeps writing into one qBittorrent recreates. Both ends of
-    // the move are asked, because the boundary is crossed just as badly on the way in.
+    // A move has two ends, so it asks the rule twice — once per end, with the intent belonging to
+    // that end. The source is asked first, so a move that offends at both ends names the source.
     public override async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
-        Refuse<FsMoveResult>(sourcePath, destinationPath)
-        ?? await RefuseActiveDownloadAsync<FsMoveResult>(sourcePath, destinationPath, ct)
+        await RefuseAsync<FsMoveResult>(DownloadsIntent.MoveOut, sourcePath, ct)
+        ?? await RefuseAsync<FsMoveResult>(DownloadsIntent.Land, destinationPath, ct)
         ?? await base.MoveAsync(sourcePath, destinationPath, ct);
 
-    // A live download owns its directory and everything in it. Moving any of that out leaves the
-    // download rewriting files the moved copy no longer tracks; moving anything in puts it where
-    // delete-as-cancel destroys it. Either side of the move naming such a path is the refusal.
-    private async Task<FsResult<T>?> RefuseActiveDownloadAsync<T>(
-        string sourcePath, string destinationPath, CancellationToken ct) where T : class
-    {
-        var offender =
-            await downloads.TouchesActiveDownloadAsync(sourcePath, ct) ? sourcePath
-            : await downloads.TouchesActiveDownloadAsync(destinationPath, ct) ? destinationPath
+    // The cross-mount half of the same refusal, and the reason this mount is the only one that
+    // registers the check. A move between two mounts never reaches MoveAsync — it streams the
+    // payload out and then deletes the source — so the transfer machinery asks the source this
+    // first. Both intents that streamed move is made of are asked, because a path that fails
+    // either one can never complete it: the way out of a live download's boundary, where the
+    // delete is the download's cancel, and the delete itself, which on this mount removes nothing
+    // but download directories and leftovers. Answering Allow to a path the tail delete refuses
+    // would stream gigabytes and then report a move that left a duplicate on both mounts. One call
+    // answers for the whole subtree: the rule overlaps in both directions.
+    //
+    // The delete refusal is reworded here rather than passed through: the agent sees this envelope
+    // on fs_move, where it never asked to delete anything, so a message that opens with fs_delete
+    // answers a question it didn't ask. The move is what failed; the delete is why.
+    public override async Task<FsResult<FsMoveOutCheckResult>> MoveOutCheckAsync(string path, CancellationToken ct) =>
+        await RefuseAsync<FsMoveOutCheckResult>(DownloadsIntent.MoveOut, path, ct)
+        ?? await TailDeleteRefusalAsync(path, ct)
+        ?? FsMoveOutCheckResult.Allow(path);
+
+    private async Task<FsResult<FsMoveOutCheckResult>?> TailDeleteRefusalAsync(string path, CancellationToken ct) =>
+        await downloads.RefuseAsync(DownloadsIntent.Delete, path, ct) is { } refusal
+            ? new FsResult<FsMoveOutCheckResult>.Err(refusal with
+            {
+                Message = $"'{path}' cannot be moved off the {Name} filesystem: a move off this "
+                    + "filesystem ends by deleting the source, and that delete is refused. "
+                    + refusal.Message,
+                Hint = "Use fs_copy instead; the library keeps its file."
+            })
             : null;
 
-        return offender is null ? null : new FsResult<T>.Err(ActiveDownloadRefusal(offender));
-    }
+    public override string DescribeMoveOutCheck =>
+        "Refuses to let a path leave this filesystem when the move could not finish: anything a "
+        + $"live download owns ({MediaFilesystem.DownloadsSubdir}/<id>, what is inside it, and any "
+        + "directory holding one), and anything fs_delete here refuses, because a move off this "
+        + "filesystem ends by deleting the source. What may leave is what fs_delete removes: a "
+        + $"download directory and a leftover {DownloadsPath.StatusFileName} no live download owns.";
 
-    // The cross-mount half of the same refusal. A move between two mounts never reaches MoveAsync —
-    // it streams the payload out and then deletes the source, and on this mount that delete is the
-    // download's cancel — so VfsMoveTool asks each end about its own path first, and the answer here
-    // is the envelope the same-mount refusal already returns.
-    public async Task<ToolErrorResult?> RefuseMoveAsync(string relativePath, CancellationToken ct) =>
-        await downloads.TouchesActiveDownloadAsync(relativePath, ct)
-            ? ActiveDownloadRefusal(relativePath)
-            : null;
-
-    private static ToolErrorResult ActiveDownloadRefusal(string offender) => new()
-    {
-        ErrorCode = ToolError.Codes.UnsupportedOperation,
-        Message = $"'{offender}' belongs to an active download; moving across that boundary would "
-                  + "leave the download writing into files the move cannot follow, and anything moved "
-                  + "inside is removed when the download is cancelled.",
-        Retryable = false,
-        Hint = $"Delete {MediaFilesystem.DownloadsSubdir}/<id> to cancel the download, or wait "
-               + "for it to finish, then move the files."
-    };
-
-    // Copy and blob-write only land content, so unlike move only the destination side of the
-    // boundary is asked: the way out is harmless (the source keeps its file), but whatever lands
-    // inside a live download's directory is removed the moment the download is cancelled.
+    // A copy reads one end and lands the other, so each end is asked with the intent belonging to
+    // it. The read end is the byte read the streamed copy already asks, which is what refuses a
+    // live download's status file: it is rendered when read, so the disk has no bytes to copy and
+    // the copy would otherwise answer not_found for a path everything else reports as existing.
+    // The landing end is the boundary — whatever lands inside a live download's directory is
+    // removed the moment the download is cancelled. Unlike a move, the way out is otherwise
+    // harmless: the source keeps its file.
     public override async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct) =>
-        Refuse<FsCopyResult>(sourcePath, destinationPath)
-        ?? await RefuseLandingInActiveDownloadAsync<FsCopyResult>(destinationPath, ct)
+        await RefuseAsync<FsCopyResult>(DownloadsIntent.ByteRead, sourcePath, ct)
+        ?? await RefuseAsync<FsCopyResult>(DownloadsIntent.Land, destinationPath, ct)
         ?? await base.CopyAsync(sourcePath, destinationPath, overwrite, createDirectories, ct);
 
-    // The virtual file only exists while a download owns the id. A leftover real status.json with
+    // The rendered view only exists while a download owns the id. A leftover real status.json with
     // no live download is the disk's file — refusing to read it left it visible and removable yet
     // unreadable, so the refusal asks for liveness instead of the path's spelling.
     public override async Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
         string path, long offset, int length, CancellationToken ct) =>
-        await RefuseLiveVirtualAsync<FsBlobReadResult>(path, ct)
+        await RefuseAsync<FsBlobReadResult>(DownloadsIntent.ByteRead, path, ct)
         ?? await base.ReadBlobAsync(path, offset, length, ct);
 
     public override async Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
         string path, string contentBase64, long offset, bool overwrite, bool createDirectories, CancellationToken ct) =>
-        Refuse<FsBlobWriteResult>(path)
-        ?? await RefuseLandingInActiveDownloadAsync<FsBlobWriteResult>(path, ct)
+        await RefuseAsync<FsBlobWriteResult>(DownloadsIntent.Land, path, ct)
         ?? await base.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct);
 
-    // The streamed halves of the same two operations. A cross-mount copy never calls the ranged blob
-    // tools — it streams — so a refusal installed on those alone let a real file land where the
-    // virtual status.json is: invisible afterwards (the overlay shadows reads, Merge dedupes globs)
-    // and unremovable (delete on that path answers "read-only"). These throw rather than answer an
-    // envelope because that is the shape the two chunk operations have; VfsCopyTool turns a
-    // NotSupportedException back into the same unsupported-operation envelope.
-    public override IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
-        downloads.IsVirtualPath(path)
-            ? throw new NotSupportedException(VirtualFileRefusal)
-            : base.ReadChunksAsync(path, ct);
+    // The streamed halves of the read and the write, asking the same rule with the same intent as
+    // their ranged counterparts — which is what makes the two halves unable to disagree. They throw
+    // rather than answer an envelope because that is the shape the chunk contract has, and
+    // VfsCopyTool turns the typed exception back into the envelope the ranged half returns.
+    public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+        string path, [EnumeratorCancellation] CancellationToken ct)
+    {
+        if (await downloads.RefuseAsync(DownloadsIntent.ByteRead, path, ct) is { } refusal)
+        {
+            throw new FileSystemOperationException(refusal);
+        }
 
+        await foreach (var chunk in base.ReadChunksAsync(path, ct).WithCancellation(ct))
+        {
+            yield return chunk;
+        }
+    }
+
+    // The streamed half of the landing refusal: a cross-mount copy-in never calls CopyAsync or
+    // WriteBlobAsync, it streams — the typed exception carries the same envelope through.
     public override async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
         bool overwrite, bool createDirectories, CancellationToken ct)
     {
-        if (downloads.IsVirtualPath(path))
+        if (await downloads.RefuseAsync(DownloadsIntent.Land, path, ct) is { } refusal)
         {
-            throw new NotSupportedException(VirtualFileRefusal);
-        }
-
-        // The streamed half of the landing refusal: a cross-mount copy-in never calls CopyAsync or
-        // WriteBlobAsync, it streams — the typed exception carries the same envelope through.
-        if (await downloads.TouchesActiveDownloadAsync(path, ct))
-        {
-            throw new FileSystemOperationException(ActiveDownloadLandingRefusal(path));
+            throw new FileSystemOperationException(refusal);
         }
 
         return await base.WriteChunksAsync(path, chunks, overwrite, createDirectories, ct);
     }
 
-    // status.json is a rendered view of live download state, not a file on disk: moving, copying or
-    // writing it would silently produce a stale snapshot under a name that still looks live.
-    private const string VirtualFileRefusal =
-        "status.json is a virtual read-only file; read it with fs_read — it cannot be moved, copied, or written.";
-
-    private FsResult<T>? Refuse<T>(params string[] paths) where T : class =>
-        paths.Any(downloads.IsVirtualPath)
-            ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation, VirtualFileRefusal)
-            : null;
-
-    private async Task<FsResult<T>?> RefuseLiveVirtualAsync<T>(string path, CancellationToken ct) where T : class =>
-        await downloads.IsLiveVirtualPathAsync(path, ct)
-            ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation, VirtualFileRefusal)
-            : null;
-
-    private async Task<FsResult<T>?> RefuseLandingInActiveDownloadAsync<T>(
-        string destinationPath, CancellationToken ct) where T : class =>
-        await downloads.TouchesActiveDownloadAsync(destinationPath, ct)
-            ? new FsResult<T>.Err(ActiveDownloadLandingRefusal(destinationPath))
-            : null;
-
-    private static ToolErrorResult ActiveDownloadLandingRefusal(string offender) => new()
-    {
-        ErrorCode = ToolError.Codes.UnsupportedOperation,
-        Message = $"'{offender}' lands inside an active download's directory; anything placed "
-                  + "there is removed when the download is cancelled.",
-        Retryable = false,
-        Hint = $"Wait for the download to finish, or put the file somewhere outside "
-               + $"{MediaFilesystem.DownloadsSubdir}/<id>."
-    };
+    // Every operation on this mount asks the overlay's one rule before it acts, and falls through
+    // to the disk beneath when the rule says nothing.
+    private async Task<FsResult<T>?> RefuseAsync<T>(DownloadsIntent intent, string path, CancellationToken ct)
+        where T : class =>
+        await downloads.RefuseAsync(intent, path, ct) is { } refusal ? new FsResult<T>.Err(refusal) : null;
 
     private static FsGlobResult Merge(FsGlobResult disk, IReadOnlyList<string> virtualEntries)
     {

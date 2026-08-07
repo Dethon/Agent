@@ -1,6 +1,8 @@
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
+using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -12,17 +14,21 @@ public sealed class MessagePipelineIntegrationTests
 {
     private readonly Dispatcher _dispatcher;
     private readonly MessagesStore _messagesStore;
+    private readonly StreamingStore _streamingStore;
+    private readonly TopicStreams _topicStreams;
     private readonly MessagePipeline _pipeline;
+    private readonly TaskCompletionSource _running = new();
 
     public MessagePipelineIntegrationTests()
     {
         _dispatcher = new Dispatcher();
         _messagesStore = new MessagesStore(_dispatcher);
-        var streamingStore = new StreamingStore(_dispatcher);
+        _streamingStore = new StreamingStore(_dispatcher);
+        _topicStreams = new TopicStreams(_dispatcher, _messagesStore);
         _pipeline = new MessagePipeline(
             _dispatcher,
             _messagesStore,
-            streamingStore,
+            _topicStreams,
             NullLogger<MessagePipeline>.Instance);
     }
 
@@ -31,13 +37,10 @@ public sealed class MessagePipelineIntegrationTests
     {
         _pipeline.SubmitUserMessage("topic-1", "Hello", "user-1");
 
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-
-        // Chunks arrive (each chunk contains FULL accumulated content, not delta)
-        _pipeline.AccumulateChunk("topic-1", "msg-1", "Hi ", null, null);
-        _pipeline.AccumulateChunk("topic-1", "msg-1", "Hi there!", null, null);
-
-        _pipeline.FinalizeMessage("topic-1", "msg-1");
+        var lease = OpenReply("topic-1");
+        lease.Append(new ChatStreamMessage { Content = "Hi ", MessageId = "msg-1" });
+        lease.Append(new ChatStreamMessage { Content = "there!", MessageId = "msg-1" });
+        lease.Complete();
 
         var messages = _messagesStore.State.MessagesByTopic["topic-1"];
         messages.Count.ShouldBe(2);
@@ -45,6 +48,7 @@ public sealed class MessagePipelineIntegrationTests
         messages[0].Content.ShouldBe("Hello");
         messages[1].Role.ShouldBe("assistant");
         messages[1].Content.ShouldBe("Hi there!");
+        _streamingStore.State.StreamingByTopic.ShouldNotContainKey("topic-1");
     }
 
     [Fact]
@@ -56,12 +60,15 @@ public sealed class MessagePipelineIntegrationTests
         };
         _pipeline.LoadHistory("topic-1", history);
 
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _pipeline.AccumulateChunk("topic-1", "msg-2", "New response", null, null);
-        _pipeline.FinalizeMessage("topic-1", "msg-2");
+        var lease = OpenReply("topic-1");
+        lease.Append(new ChatStreamMessage { Content = "New response", MessageId = "msg-2" });
+        lease.Complete();
 
         var messages = _messagesStore.State.MessagesByTopic["topic-1"];
         messages.Count.ShouldBe(2);
     }
 
+    private StreamLease OpenReply(string topicId) =>
+        _topicStreams.TryOpen(
+            topicId, new ChatMessageModel { Role = "assistant" }, null, _ => _running.Task)!;
 }

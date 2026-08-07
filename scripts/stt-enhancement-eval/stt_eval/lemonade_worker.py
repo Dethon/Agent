@@ -11,9 +11,11 @@ import json
 import math
 import urllib.request
 import uuid
+from typing import Any
 
 
-def _post_transcription(host, port, model, wav_path, prompt=None):
+def _post_transcription(host: str, port: int, model: str, wav_path: str,
+                        prompt: str | None = None) -> dict[str, Any]:
     with open(wav_path, "rb") as fh:
         audio = fh.read()
     boundary = uuid.uuid4().hex
@@ -23,7 +25,7 @@ def _post_transcription(host, port, model, wav_path, prompt=None):
     # and the two configurations stay comparable on identical audio.
     if prompt:
         fields.append(("prompt", prompt))
-    parts = []
+    parts: list[bytes] = []
     for name, value in fields:
         parts.append(
             f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
@@ -43,8 +45,8 @@ def _post_transcription(host, port, model, wav_path, prompt=None):
         return json.loads(resp.read())
 
 
-def _score(payload):
-    logprobs = [
+def _score(payload: dict[str, Any]) -> float | None:
+    logprobs: list[float] = [
         s["avg_logprob"]
         for s in (payload.get("segments") or [])
         if s.get("avg_logprob") is not None
@@ -52,7 +54,7 @@ def _score(payload):
     return math.exp(sum(logprobs) / len(logprobs)) if logprobs else None
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="lemonade")
     ap.add_argument("--port", type=int, default=13305)
@@ -63,14 +65,15 @@ def main():
     args = ap.parse_args()
     with open(args.manifest, encoding="utf-8") as fin, open(args.out, "w", encoding="utf-8") as fout:
         for line in fin:
-            wav = json.loads(line)["wav"]
+            wav: str = json.loads(line)["wav"]
             payload = _post_transcription(args.host, args.port, args.model, wav, args.prompt)
-            row = {"wav": wav, "text": payload.get("text", ""), "score": _score(payload)}
+            text: str = payload.get("text", "")
+            row = {"wav": wav, "text": text, "score": _score(payload)}
             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
             # Flush per row: mirrors _medium's per-row flush so a mid-batch docker kill (or a
             # non-zero exit the caller merges around) still leaves completed rows on disk.
             fout.flush()
-            print(wav, "->", row["text"][:60], flush=True)
+            print(wav, "->", text[:60], flush=True)
 
 
 if __name__ == "__main__":

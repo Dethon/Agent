@@ -1,11 +1,14 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Moq;
+using Shouldly;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Hub;
+using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
@@ -17,7 +20,10 @@ public sealed class HubEventDispatcherTests : IDisposable
     private readonly Mock<IDispatcher> _mockDispatcher;
     private readonly Dispatcher _realDispatcher;
     private readonly TopicsStore _topicsStore;
+    private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
+    private readonly TopicStreams _topicStreams;
+    private readonly TaskCompletionSource _running = new();
     private readonly HubEventDispatcher _sut;
 
     public HubEventDispatcherTests()
@@ -25,18 +31,24 @@ public sealed class HubEventDispatcherTests : IDisposable
         _mockDispatcher = new Mock<IDispatcher>();
         _realDispatcher = new Dispatcher();
         _topicsStore = new TopicsStore(_realDispatcher);
+        _messagesStore = new MessagesStore(_realDispatcher);
         _streamingStore = new StreamingStore(_realDispatcher);
+        // The module writes into the real stores so a push can be asserted by what it left
+        // behind; the mock stays on the dispatcher the type under test uses directly.
+        _topicStreams = new TopicStreams(_realDispatcher, _messagesStore);
         var mockPipeline = new Mock<IMessagePipeline>();
         _sut = new HubEventDispatcher(
             _mockDispatcher.Object,
             _topicsStore,
-            _streamingStore,
+            _topicStreams,
             mockPipeline.Object);
     }
 
     public void Dispose()
     {
+        _running.TrySetResult();
         _topicsStore.Dispose();
+        _messagesStore.Dispose();
         _streamingStore.Dispose();
     }
 
@@ -84,11 +96,11 @@ public sealed class HubEventDispatcherTests : IDisposable
     [Fact]
     // Whether the start is resumed or merely marked is StreamResumeEffect's decision; the
     // dispatcher only reports what the server pushed.
-    public void HandleStreamChanged_Started_DispatchesRemoteStreamStarted()
+    public void HandleStreamStarted_DispatchesRemoteStreamStarted()
     {
-        var notification = new StreamChangedNotification(StreamChangeType.Started, "topic-1");
+        var notification = new StreamStartedNotification("topic-1");
 
-        _sut.HandleStreamChanged(notification);
+        _sut.HandleStreamStarted(notification);
 
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<RemoteStreamStarted>(a => a.TopicId == "topic-1")),
@@ -96,7 +108,7 @@ public sealed class HubEventDispatcherTests : IDisposable
     }
 
     [Fact]
-    public void HandleStreamChanged_Started_KnownTopic_StillOnlyDispatches()
+    public void HandleStreamStarted_KnownTopic_StillOnlyDispatches()
     {
         var topic = new StoredTopic
         {
@@ -108,38 +120,14 @@ public sealed class HubEventDispatcherTests : IDisposable
         };
         _realDispatcher.Dispatch(new AddTopic(topic));
 
-        var notification = new StreamChangedNotification(StreamChangeType.Started, "topic-1");
+        var notification = new StreamStartedNotification("topic-1");
 
-        _sut.HandleStreamChanged(notification);
+        _sut.HandleStreamStarted(notification);
 
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<RemoteStreamStarted>(a => a.TopicId == "topic-1")),
             Times.Once);
         _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<StreamStarted>()), Times.Never);
-    }
-
-    [Fact]
-    public void HandleStreamChanged_Completed_DispatchesStreamCompleted()
-    {
-        var notification = new StreamChangedNotification(StreamChangeType.Completed, "topic-1");
-
-        _sut.HandleStreamChanged(notification);
-
-        _mockDispatcher.Verify(
-            d => d.Dispatch(It.Is<StreamCompleted>(a => a.TopicId == "topic-1")),
-            Times.Once);
-    }
-
-    [Fact]
-    public void HandleStreamChanged_Cancelled_DispatchesStreamCancelled()
-    {
-        var notification = new StreamChangedNotification(StreamChangeType.Cancelled, "topic-1");
-
-        _sut.HandleStreamChanged(notification);
-
-        _mockDispatcher.Verify(
-            d => d.Dispatch(It.Is<StreamCancelled>(a => a.TopicId == "topic-1")),
-            Times.Once);
     }
 
     [Fact]
@@ -154,29 +142,16 @@ public sealed class HubEventDispatcherTests : IDisposable
             Times.Once);
     }
 
+    // Taking the prompt off screen is all the push does. What the approval let through comes down
+    // the topic's stream with the rest of the reply, so this must add nothing of its own.
     [Fact]
-    public void HandleApprovalResolved_DispatchesStreamChunkOnlyWhenToolCallsPresent()
+    public void HandleApprovalResolved_AddsNothingToTheReplyInFlight()
     {
-        // With tool calls — dispatches StreamChunk
-        var withToolCalls = new ApprovalResolvedNotification("topic-1", "approval-123", "tool output", "msg-1");
-        _sut.HandleApprovalResolved(withToolCalls);
+        GivenAReplyInFlight("topic-1", "msg-being-written");
 
-        _mockDispatcher.Verify(
-            d => d.Dispatch(It.Is<StreamChunk>(a =>
-                a.TopicId == "topic-1" &&
-                a.ToolCalls == "tool output" &&
-                a.MessageId == "msg-1")),
-            Times.Once);
+        _sut.HandleApprovalResolved(new ApprovalResolvedNotification("topic-1", "approval-123"));
 
-        _mockDispatcher.Invocations.Clear();
-
-        // Without tool calls — does not dispatch StreamChunk
-        var withoutToolCalls = new ApprovalResolvedNotification("topic-1", "approval-456");
-        _sut.HandleApprovalResolved(withoutToolCalls);
-
-        _mockDispatcher.Verify(
-            d => d.Dispatch(It.IsAny<StreamChunk>()),
-            Times.Never);
+        _streamingStore.State.StreamingByTopic["topic-1"].HasContent.ShouldBeFalse();
     }
 
     [Fact]
@@ -191,20 +166,7 @@ public sealed class HubEventDispatcherTests : IDisposable
             Times.Once);
     }
 
-    [Fact]
-    public void HandleToolCalls_DispatchesStreamChunk()
-    {
-        var notification = new ToolCallsNotification("topic-1", "tool output", "msg-1");
-
-        _sut.HandleToolCalls(notification);
-
-        _mockDispatcher.Verify(
-            d => d.Dispatch(It.Is<StreamChunk>(a =>
-                a.TopicId == "topic-1" &&
-                a.ToolCalls == "tool output" &&
-                a.Content == null &&
-                a.Reasoning == null &&
-                a.MessageId == "msg-1")),
-            Times.Once);
-    }
+    private void GivenAReplyInFlight(string topicId, string? currentMessageId = null) =>
+        _topicStreams.TryOpen(
+            topicId, new ChatMessageModel { Role = "assistant" }, currentMessageId, _ => _running.Task);
 }

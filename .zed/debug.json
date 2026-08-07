@@ -1,0 +1,256 @@
+[
+  {
+    "label": "Local: Agent",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/Agent/bin/Debug/net10.0/Agent.dll",
+    "args": ["--chat", "Web", "--reasoning"],
+    "cwd": "$ZED_WORKTREE_ROOT/Agent",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:5000"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/Agent/Agent.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: WebUI",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/WebChat/bin/Debug/net10.0/WebChat.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/WebChat",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:5001"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/WebChat/WebChat.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: Observability",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/Observability/bin/Debug/net10.0/Observability.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/Observability",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:5003"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/Observability/Observability.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Library",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpServerLibrary/bin/Debug/net10.0/McpServerLibrary.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpServerLibrary",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6001"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpServerLibrary/McpServerLibrary.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Vault",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpServerVault/bin/Debug/net10.0/McpServerVault.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpServerVault",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6002"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpServerVault/McpServerVault.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP WebSearch",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpServerWebSearch/bin/Debug/net10.0/McpServerWebSearch.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpServerWebSearch",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6003"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpServerWebSearch/McpServerWebSearch.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Idealista",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpServerIdealista/bin/Debug/net10.0/McpServerIdealista.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpServerIdealista",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6005"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpServerIdealista/McpServerIdealista.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP HomeAssistant",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpServerHomeAssistant/bin/Debug/net10.0/McpServerHomeAssistant.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpServerHomeAssistant",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6006"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpServerHomeAssistant/McpServerHomeAssistant.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Sandbox",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpServerSandbox/bin/Debug/net10.0/McpServerSandbox.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpServerSandbox",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6004"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpServerSandbox/McpServerSandbox.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Channel SignalR",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpChannelSignalR/bin/Debug/net10.0/McpChannelSignalR.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpChannelSignalR",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6010"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpChannelSignalR/McpChannelSignalR.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Channel Telegram",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpChannelTelegram/bin/Debug/net10.0/McpChannelTelegram.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpChannelTelegram",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6011"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpChannelTelegram/McpChannelTelegram.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Channel ServiceBus",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpChannelServiceBus/bin/Debug/net10.0/McpChannelServiceBus.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpChannelServiceBus",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6012"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpChannelServiceBus/McpChannelServiceBus.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Channel Voice",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpChannelVoice/bin/Debug/net10.0/McpChannelVoice.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpChannelVoice",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6015",
+      "RedisConnectionString": "localhost:6379",
+      "Satellites__kitchen-01__Identity": "household",
+      "Satellites__kitchen-01__Room": "Kitchen",
+      "Satellites__kitchen-01__WakeWord": "hey_jarvis",
+      "Satellites__kitchen-01__Address": "tcp://127.0.0.1:10800"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpChannelVoice/McpChannelVoice.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Scheduling",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpServerScheduling/bin/Debug/net10.0/McpServerScheduling.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpServerScheduling",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6013",
+      "RedisConnectionString": "localhost:6379"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpServerScheduling/McpServerScheduling.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Printer",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpServerPrinter/bin/Debug/net10.0/McpServerPrinter.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpServerPrinter",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6014",
+      "SPOOLPATH": "$ZED_WORKTREE_ROOT/McpServerPrinter/.spool"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpServerPrinter/McpServerPrinter.csproj", "-c", "Debug"]
+    }
+  },
+  {
+    "label": "Local: MCP Timers",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/McpServerTimers/bin/Debug/net10.0/McpServerTimers.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/McpServerTimers",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:6016",
+      "VoiceHub__BaseUrl": "http://localhost:6015"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/McpServerTimers/McpServerTimers.csproj", "-c", "Debug"]
+    }
+  }
+]

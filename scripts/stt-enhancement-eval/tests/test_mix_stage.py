@@ -1,20 +1,22 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 import soundfile as sf
-from pathlib import Path
+
 from stt_eval.manifest import read_manifest
 from stt_eval.mix_stage import run_mix
 
 SR = 16000
 
 
-def _write_wav(path: Path, seconds: float, freq: float):
+def _write_wav(path: Path, seconds: float, freq: float) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     t = np.arange(int(SR * seconds)) / SR
     sf.write(path, (0.3 * np.sin(2 * np.pi * freq * t)).astype(np.float32), SR, subtype="PCM_16")
 
 
-def _setup(tmp_path: Path):
+def _setup(tmp_path: Path) -> tuple[Path, Path, Path]:
     _write_wav(tmp_path / "voices/fran/enroll-1.wav", 2.0, 440)
     _write_wav(tmp_path / "voices/fran/enroll-2.wav", 2.0, 330)
     _write_wav(tmp_path / "data/interference/speech/clip1.wav", 3.0, 220)

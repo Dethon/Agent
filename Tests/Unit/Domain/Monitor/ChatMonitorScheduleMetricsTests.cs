@@ -71,9 +71,7 @@ public class ChatMonitorScheduleMetricsTests
         var bad = new Mock<IChannelConnection>();
         bad.SetupGet(c => c.ChannelId).Returns("bad");
         bad.SetupGet(c => c.Messages).Returns(AsyncEnumerable.Empty<ChannelMessage>());
-        bad.Setup(c => c.SendReplyAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ReplyContentType>(),
-                It.IsAny<bool>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+        bad.Setup(c => c.SendReplyAsync(It.IsAny<SendReplyParams>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("channel down"));
         var good = MonitorTestMocks.CreateChannel("good");
 

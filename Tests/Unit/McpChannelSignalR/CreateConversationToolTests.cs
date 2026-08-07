@@ -66,9 +66,8 @@ public class CreateConversationToolTests
 
         _hubSender.Verify(s => s.SendToGroupAsync(
             "space:default",
-            "OnStreamChanged",
-            It.Is<StreamChangedNotification>(n =>
-                n.ChangeType == StreamChangeType.Started && n.TopicId == "topic-1"),
+            "OnStreamStarted",
+            It.Is<StreamStartedNotification>(n => n.TopicId == "topic-1"),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

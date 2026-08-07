@@ -19,7 +19,7 @@ def run_validate(voices_dir: Path, run_dir: Path, max_clean_wer: float = 0.3) ->
         raise SystemExit(f"no takes under {voices_dir} - run fetch first")
     out_jsonl = run_dir / "clean_transcripts.jsonl"
     transcribe_files("medium", takes, out_jsonl)
-    by_wav = {}
+    by_wav: dict[str, str] = {}
     with out_jsonl.open(encoding="utf-8") as f:
         for line in f:
             row = json.loads(line)

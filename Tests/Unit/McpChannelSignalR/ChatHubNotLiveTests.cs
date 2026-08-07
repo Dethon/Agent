@@ -4,13 +4,12 @@ using Domain.DTOs.WebChat;
 using Mcp.Hosting;
 using McpChannelSignalR.Hubs;
 using McpChannelSignalR.Services;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
+using Tests.Unit.McpChannelSignalR.Fixtures;
 
 namespace Tests.Unit.McpChannelSignalR;
 
@@ -118,19 +117,5 @@ public class ChatHubNotLiveTests
         }
 
         warnings.Messages.ShouldContain(message => message.Contains(TopicId) || message.Contains("7:42"));
-    }
-
-    private sealed class RegisteredCaller : HubCallerContext
-    {
-        public override string ConnectionId => "conn-1";
-        public override string? UserIdentifier => "fran";
-        public override System.Security.Claims.ClaimsPrincipal? User => null;
-        public override IDictionary<object, object?> Items { get; } =
-            new Dictionary<object, object?> { ["UserId"] = "fran" };
-        public override IFeatureCollection Features { get; } = new FeatureCollection();
-        public override CancellationToken ConnectionAborted => CancellationToken.None;
-        public override void Abort()
-        {
-        }
     }
 }

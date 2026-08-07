@@ -11,7 +11,16 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents.Mcp;
 
-internal class McpFileSystemBackend(McpClient client, string filesystemName, ILogger? logger = null) : IFileSystemBackend
+// The mount as the agent holds it: every operation is a call to the server on the other side of the
+// seam. `advertisedOperations` is what that server's tool list said it can do, and it has no default
+// on purpose: a caller that forgot to pass it would silently turn off the rules of every mount it
+// built, which is the shape of unreachable guard ADR-0015 exists to remove. Null says "nothing
+// listed" out loud.
+internal class McpFileSystemBackend(
+    McpClient client,
+    string filesystemName,
+    IReadOnlySet<string>? advertisedOperations,
+    ILogger? logger = null) : IFileSystemBackend
 {
     public string FilesystemName => filesystemName;
 
@@ -101,6 +110,17 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
             ["overwrite"] = overwrite,
             ["createDirectories"] = createDirectories
         }), ct);
+
+    // The one operation the proxy answers for itself. Its default is inverted like the backend
+    // base's: a server advertises exactly what its backend overrides, so a mount that never
+    // registered the check has no rule to state, and silence is "allowed" rather than "refused".
+    // Failing closed instead would block every cross-mount move out of the vault, the sandbox and
+    // the timers, none of which will ever have a rule.
+    public Task<FsResult<FsMoveOutCheckResult>> MoveOutCheckAsync(string path, CancellationToken ct) =>
+        advertisedOperations?.Contains(FileSystemOperations.MoveOutCheck) == true
+            ? CallTypedAsync<FsMoveOutCheckResult>(FileSystemOperations.MoveOutCheck,
+                WithFilesystem(new Dictionary<string, object?> { ["path"] = path }), ct)
+            : Task.FromResult(FsMoveOutCheckResult.Allow(path));
 
     public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
         string path, [EnumeratorCancellation] CancellationToken ct)

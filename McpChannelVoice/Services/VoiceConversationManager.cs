@@ -158,7 +158,9 @@ public sealed class VoiceConversationManager(
             _bySatellite.Remove(satelliteId);
             _conversationToSatellite.Remove(entry.ConversationId);
             entry.Timer.Dispose();
-            accumulator.Flush(entry.ConversationId);
+            // Discard, not Flush: an announcement spoken beside a live turn buffers under that
+            // turn, and one whose stream never terminated is only ever reached here.
+            accumulator.Discard(entry.ConversationId);
             logger.LogInformation(
                 "Voice conversation {ConversationId} expired for satellite {Satellite}",
                 entry.ConversationId, satelliteId);

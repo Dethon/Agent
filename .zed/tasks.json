@@ -1,0 +1,163 @@
+[
+  {
+    "label": "docker-debug-up",
+    "command": "DC='docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.debug.yml -f DockerCompose/docker-compose.override.no-dri.yml -p jackbot'; SERVICES='agent webui observability mcp-vault mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-sandbox mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer mcp-timers tse-extractor lemonade qbittorrent jackett redis camoufox homeassistant'; docker volume inspect jackbot_vsdbg > /dev/null 2>&1 || $DC run --rm vsdbg-install && $DC build base-sdk && $DC up -d --build $SERVICES && until docker exec agent ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "local-deps",
+    "command": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build qbittorrent jackett redis camoufox homeassistant",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "build-all-local",
+    "command": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build qbittorrent jackett redis camoufox homeassistant && dotnet build Ziggurat.sln -c Debug",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+
+  {
+    "label": "run-all-local",
+    "command": "scripts/run-local.sh",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: Agent",
+    "command": "scripts/run-local.sh agent",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: WebUI",
+    "command": "scripts/run-local.sh webui",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: Observability",
+    "command": "scripts/run-local.sh observability",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Library",
+    "command": "scripts/run-local.sh library",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Vault",
+    "command": "scripts/run-local.sh vault",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP WebSearch",
+    "command": "scripts/run-local.sh websearch",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Sandbox",
+    "command": "scripts/run-local.sh sandbox",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Idealista",
+    "command": "scripts/run-local.sh idealista",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP HomeAssistant",
+    "command": "scripts/run-local.sh homeassistant",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Channel SignalR",
+    "command": "scripts/run-local.sh signalr",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Channel Telegram",
+    "command": "scripts/run-local.sh telegram",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Channel ServiceBus",
+    "command": "scripts/run-local.sh servicebus",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Channel Voice",
+    "command": "scripts/run-local.sh voice",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Scheduling",
+    "command": "scripts/run-local.sh scheduling",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Printer",
+    "command": "scripts/run-local.sh printer",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  },
+  {
+    "label": "run: MCP Timers",
+    "command": "scripts/run-local.sh timers",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always"
+  }
+]

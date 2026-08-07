@@ -47,7 +47,9 @@ public class NoOutboundSurfaceTests
                 ["content"] = "nobody will read this",
                 ["contentType"] = "text",
                 ["isComplete"] = true,
-                ["messageId"] = "m-1"
+                ["messageId"] = "m-1",
+                ["turnKey"] = "turn-1",
+                ["agentInitiated"] = true
             });
 
         result.IsError.ShouldNotBe(true);
