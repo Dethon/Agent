@@ -64,66 +64,97 @@ public sealed class ReplySpeaker(
             session.Turn.OpenUnkeyedStream();
         }
 
+        // Speak whatever tail is left after the streamed segments, then tell the turn the agent has
+        // stopped sending. Whether that settles the turn silent or leaves it waiting on audio still
+        // playing is the turn's decision: streaming may already have spoken everything, leaving
+        // this flush empty.
+        Task SpeakAndEndStream()
+        {
+            SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
+            EndStream(session, p);
+            return Task.CompletedTask;
+        }
+
+        // Treat the error as terminal reply text: append it so any buffered partial answer and the
+        // error are spoken together, in order, by the trailing StreamComplete — not the error first
+        // with the leftover partial spoken after it. Mirrors the flush-on-error contract honored by
+        // the Telegram/ServiceBus channels. (ChatMonitor sends Error with isComplete=false then a
+        // StreamComplete; the shared isComplete rule covers a transport that completes early —
+        // left open, the turn never learns the agent stopped sending and the mic stays shut for
+        // the whole ~120 s reply timeout.)
+        Task AppendError()
+        {
+            accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
+            return Task.CompletedTask;
+        }
+
+        // The agent is told to say one word ("Buscando") before slow multi-tool work so the user
+        // hears that something started. Text chunks are buffered until StreamComplete, so without
+        // this flush that word is spoken glued to the front of the answer — after the wait it
+        // exists to cover, costing words and buying nothing. The first tool call of the turn is
+        // the moment the wait becomes real, so speak it here. It is a cue, not the reply: it must
+        // not resolve the turn handshake (that would end FollowUpConversation and re-arm the mic
+        // mid-turn) and it must not publish the reply-latency metrics, which measure time-to-answer.
+        void SpeakPreamble()
+        {
+            if (session.Turn.TryClaimPreamble())
+            {
+                SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Preamble);
+            }
+        }
+
+        // Every delegate here is synchronous, so the shared walk completes synchronously and this
+        // wait never blocks.
+        AccumulateUntilTerminalAsync(p.ConversationId, p,
+            deliver: SpeakAndEndStream,
+            onError: AppendError,
+            onToolCall: SpeakPreamble,
+            onStreamedChunk: () => SpeakReadySegments(session, p.ConversationId))
+            .GetAwaiter().GetResult();
+    }
+
+    // The one spelling of when an answer ends, shared by every reply path: completion arrives as a
+    // dedicated StreamComplete event (empty content, no messageId), text chunks accumulate under
+    // bufferKey until then, and an event a transport explicitly flags complete is honored as the
+    // end too — including an error, whose own handler decides what error text (or silence) means
+    // for its path. Reasoning is never spoken; a tool call means something only on the live path.
+    private async Task AccumulateUntilTerminalAsync(
+        string bufferKey,
+        SendReplyParams p,
+        Func<Task> deliver,
+        Func<Task> onError,
+        Action? onToolCall = null,
+        Action? onStreamedChunk = null)
+    {
         switch (p.ContentType)
         {
             case ReplyContentType.Reasoning:
                 return;
 
-            // The agent is told to say one word ("Buscando") before slow multi-tool work so the user
-            // hears that something started. Text chunks are buffered until StreamComplete, so without
-            // this flush that word is spoken glued to the front of the answer — after the wait it
-            // exists to cover, costing words and buying nothing. The first tool call of the turn is
-            // the moment the wait becomes real, so speak it here. It is a cue, not the reply: it must
-            // not resolve the turn handshake (that would end FollowUpConversation and re-arm the mic
-            // mid-turn) and it must not publish the reply-latency metrics, which measure time-to-answer.
             case ReplyContentType.ToolCall:
-                if (session.Turn.TryClaimPreamble())
-                {
-                    SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Preamble);
-                }
+                onToolCall?.Invoke();
                 return;
 
             case ReplyContentType.Error:
-                // Treat the error as terminal reply text: append it so any buffered partial answer
-                // and the error are spoken together, in order, by the trailing StreamComplete —
-                // not the error first with the leftover partial spoken after it. Mirrors the
-                // flush-on-error contract honored by the Telegram/ServiceBus channels and voice's
-                // own scheduled path. (ChatMonitor sends Error with isComplete=false then a
-                // StreamComplete; the isComplete guard only covers a transport that completes early.)
-                accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
+                await onError();
                 if (p.IsComplete)
                 {
-                    // An error the transport itself flags as complete IS the end of the answer, so
-                    // the stream ends here exactly as it does on StreamComplete. Left open, the turn
-                    // never learns the agent stopped sending and the mic stays shut for the whole
-                    // ~120 s reply timeout.
-                    SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
-                    EndStream(session, p);
+                    await deliver();
                 }
                 return;
 
-            // Completion arrives as a dedicated StreamComplete event (empty content, no
-            // messageId). Text chunks are never flagged complete, so this is where we
-            // speak the accumulated reply.
             case ReplyContentType.StreamComplete:
-                // Speak whatever tail is left after the streamed segments, then tell the turn the
-                // agent has stopped sending. Whether that settles the turn silent or leaves it
-                // waiting on audio still playing is the turn's decision: streaming may already have
-                // spoken everything, leaving this flush empty.
-                SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
-                EndStream(session, p);
+                await deliver();
                 return;
 
             default:
-                accumulator.Append(p.ConversationId, p.Content);
-                // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
+                accumulator.Append(bufferKey, p.Content);
                 if (p.IsComplete)
                 {
-                    SpeakBuffered(session, p.ConversationId, p.ConversationId, PlaybackKind.Reply);
-                    EndStream(session, p);
+                    await deliver();
                     return;
                 }
-                SpeakReadySegments(session, p.ConversationId);
+                onStreamedChunk?.Invoke();
                 return;
         }
     }
@@ -197,68 +228,41 @@ public sealed class ReplySpeaker(
     private void SpeakBesideTheTurn(SatelliteSession session, SendReplyParams p)
     {
         var buffer = ReplyTextAccumulator.TurnBuffer(p.ConversationId, p.TurnKey);
-        switch (p.ContentType)
-        {
-            case ReplyContentType.Reasoning:
-            case ReplyContentType.ToolCall:
-                return;
-
+        AccumulateUntilTerminalAsync(buffer, p,
+            deliver: () =>
+            {
+                SpeakBuffered(session, buffer, p.ConversationId, PlaybackKind.Announce);
+                return Task.CompletedTask;
+            },
             // Same rule as the scheduled path: an announcement nobody asked for prefers silence
             // over saying that it failed.
-            case ReplyContentType.Error:
+            onError: () =>
+            {
                 accumulator.Flush(buffer);
                 logger.LogWarning(
                     "An announcement for {Satellite} errored mid-conversation; not speaking it",
                     session.SatelliteId);
-                return;
-
-            case ReplyContentType.StreamComplete:
-                SpeakBuffered(session, buffer, p.ConversationId, PlaybackKind.Announce);
-                return;
-
-            default:
-                accumulator.Append(buffer, p.Content);
-                if (p.IsComplete)
-                {
-                    SpeakBuffered(session, buffer, p.ConversationId, PlaybackKind.Announce);
-                }
-                return;
-        }
+                return Task.CompletedTask;
+            })
+            .GetAwaiter().GetResult();
     }
 
-    public async Task DeliverScheduledAsync(
+    public Task DeliverScheduledAsync(
         SendReplyParams p,
         AnnounceTarget target,
         VoiceDeliveryRegistry delivery,
-        AnnouncementService announcer)
-    {
-        switch (p.ContentType)
-        {
-            case ReplyContentType.Reasoning:
-            case ReplyContentType.ToolCall:
-                return;
-
+        AnnouncementService announcer) =>
+        AccumulateUntilTerminalAsync(p.ConversationId, p,
+            deliver: () => AnnounceAccumulatedAsync(p.ConversationId, target, delivery, announcer),
             // An unsolicited scheduled delivery prefers silence over announcing a failure
             // (e.g. at night). Drop the buffer and the binding without speaking.
-            case ReplyContentType.Error:
+            onError: () =>
+            {
                 accumulator.Flush(p.ConversationId);
                 delivery.Remove(p.ConversationId);
                 logger.LogWarning("Scheduled voice delivery {ConversationId} errored; not speaking", p.ConversationId);
-                return;
-
-            case ReplyContentType.StreamComplete:
-                await AnnounceAccumulatedAsync(p.ConversationId, target, delivery, announcer);
-                return;
-
-            default:
-                accumulator.Append(p.ConversationId, p.Content);
-                if (p.IsComplete)
-                {
-                    await AnnounceAccumulatedAsync(p.ConversationId, target, delivery, announcer);
-                }
-                return;
-        }
-    }
+                return Task.CompletedTask;
+            });
 
     private async Task AnnounceAccumulatedAsync(
         string conversationId,
