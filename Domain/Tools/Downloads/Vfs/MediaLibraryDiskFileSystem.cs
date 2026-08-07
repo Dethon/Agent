@@ -115,10 +115,25 @@ public sealed class MediaLibraryDiskFileSystem(
     // but download directories and leftovers. Answering Allow to a path the tail delete refuses
     // would stream gigabytes and then report a move that left a duplicate on both mounts. One call
     // answers for the whole subtree: the rule overlaps in both directions.
+    //
+    // The delete refusal is reworded here rather than passed through: the agent sees this envelope
+    // on fs_move, where it never asked to delete anything, so a message that opens with fs_delete
+    // answers a question it didn't ask. The move is what failed; the delete is why.
     public override async Task<FsResult<FsMoveOutCheckResult>> MoveOutCheckAsync(string path, CancellationToken ct) =>
         await RefuseAsync<FsMoveOutCheckResult>(DownloadsIntent.MoveOut, path, ct)
-        ?? await RefuseAsync<FsMoveOutCheckResult>(DownloadsIntent.Delete, path, ct)
+        ?? await TailDeleteRefusalAsync(path, ct)
         ?? FsMoveOutCheckResult.Allow(path);
+
+    private async Task<FsResult<FsMoveOutCheckResult>?> TailDeleteRefusalAsync(string path, CancellationToken ct) =>
+        await downloads.RefuseAsync(DownloadsIntent.Delete, path, ct) is { } refusal
+            ? new FsResult<FsMoveOutCheckResult>.Err(refusal with
+            {
+                Message = $"'{path}' cannot be moved off the {Name} filesystem: a move off this "
+                    + "filesystem ends by deleting the source, and that delete is refused. "
+                    + refusal.Message,
+                Hint = "Use fs_copy instead; the library keeps its file."
+            })
+            : null;
 
     public override string DescribeMoveOutCheck =>
         "Refuses to let a path leave this filesystem when the move could not finish: anything a "

@@ -428,10 +428,11 @@ public class MediaLibraryFileSystemTests : IDisposable
         error.Retryable.ShouldBeFalse();
     }
 
-    // The two ends of the same path: what a live download owns is refused as a boundary crossing,
-    // and everything else this mount cannot delete is refused in the delete's own words.
+    // The agent sees this refusal on fs_move, where it never asked about deleting anything —
+    // fs_move_out_check is invisible to it. So the envelope must first say the move is what cannot
+    // finish, and only then give the tail delete's own reason for refusing.
     [Fact]
-    public async Task MoveOutCheck_OfAnOrdinaryMediaPath_SaysWhatTheDeleteWouldHaveSaid()
+    public async Task MoveOutCheck_OfAnOrdinaryMediaPath_FramesTheDeleteRefusalAsTheMoveThatCannotFinish()
     {
         var check = (await _sut.MoveOutCheckAsync("Movies/film.mkv", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsMoveOutCheckResult>.Err>().Error;
@@ -439,8 +440,11 @@ public class MediaLibraryFileSystemTests : IDisposable
             .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error;
 
         check.ErrorCode.ShouldBe(delete.ErrorCode);
-        check.Message.ShouldBe(delete.Message);
-        check.Hint.ShouldBe(delete.Hint);
+        check.Message.ShouldContain("'Movies/film.mkv'");
+        check.Message.ShouldContain("deleting the source");
+        check.Message.ShouldContain(delete.Message);
+        check.Hint.ShouldNotBeNull();
+        check.Hint.ShouldContain("fs_copy");
     }
 
     // What may still leave: a leftover download directory and a leftover status file, which are the
