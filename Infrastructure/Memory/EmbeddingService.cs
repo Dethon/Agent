@@ -8,7 +8,8 @@ namespace Infrastructure.Memory;
 
 public record EmbeddingOptions
 {
-    public const int DefaultDimension = 1536;
+    // Qwen3-Embedding-0.6B, which is what the local Lemonade server is pre-pulled with.
+    public const int DefaultDimension = 1024;
 
     public required string BaseAddress { get; init; }
     public required string Model { get; init; }

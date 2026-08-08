@@ -50,18 +50,22 @@ public class MemoryModuleTests
     }
 
     [Fact]
-    public void AddMemory_WithNoEmbeddingKeyConfigured_FallsBackToTheHostedProvidersKey()
+    public void AddMemory_DefaultsToTheLocalServerWithNoKeyAndItsOwnDimension()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Memory:Embedding:BaseAddress"] = "https://hosted.invalid/api/v1/",
                 ["openRouter:apiKey"] = "sk-hosted"
             })
             .Build();
 
         using var provider = new ServiceCollection().AddMemory(config).BuildServiceProvider();
+        var options = provider.GetRequiredService<EmbeddingOptions>();
 
-        provider.GetRequiredService<EmbeddingOptions>().ApiKey.ShouldBe("sk-hosted");
+        options.BaseAddress.ShouldBe("http://lemonade:13305/api/v1/");
+        options.Dimension.ShouldBe(1024);
+        // The local server has no key to check, and the hosted provider's must not leak onto
+        // the Docker network.
+        options.ApiKey.ShouldBeNull();
     }
 }

@@ -23,16 +23,13 @@ public static class MemoryModule
 
             services.AddSingleton<MemoryExtractionQueue>();
 
+            // Recall embeds against the Lemonade server already in the stack, one hop away on
+            // the same Docker network, which has no key to send.
             var embeddingOptions = new EmbeddingOptions
             {
-                BaseAddress = memoryConfig["Embedding:BaseAddress"]
-                              ?? config["openRouter:apiUrl"]
-                              ?? "https://openrouter.ai/api/v1/",
-                Model = memoryConfig["Embedding:Model"] ?? "openai/text-embedding-3-small",
-                // Temporary while the default address is still the hosted provider: the
-                // embedding client has no key of its own to configure yet. It goes when the
-                // address moves to the local server, which has no key at all.
-                ApiKey = memoryConfig["Embedding:ApiKey"] ?? config["openRouter:apiKey"],
+                BaseAddress = memoryConfig["Embedding:BaseAddress"] ?? "http://lemonade:13305/api/v1/",
+                Model = memoryConfig["Embedding:Model"] ?? "Qwen3-Embedding-0.6B-GGUF",
+                ApiKey = memoryConfig["Embedding:ApiKey"],
                 Dimension = memoryConfig.GetValue("Embedding:Dimension", EmbeddingOptions.DefaultDimension)
             };
             services.AddSingleton(embeddingOptions);

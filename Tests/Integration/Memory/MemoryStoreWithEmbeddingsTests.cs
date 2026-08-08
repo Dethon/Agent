@@ -7,194 +7,28 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Memory;
 
-[Trait("Category", "Llm")]
-public class HostedEmbeddingServiceTests : IAsyncLifetime
+// Store and search semantics driven by real embeddings from the local Lemonade server:
+// category filtering, per-user isolation and importance weighting all depend on genuine
+// vectors of the configured width, which a fabricated array cannot provide.
+[Trait("Category", "External")]
+public class MemoryStoreWithEmbeddingsTests(RedisFixture redisFixture, LemonadeFixture lemonadeFixture)
+    : IClassFixture<RedisFixture>, IClassFixture<LemonadeFixture>
 {
-    private readonly string? _apiKey;
-    private readonly string? _apiUrl;
-
-    public Task InitializeAsync()
-    {
-        return Task.CompletedTask;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await Task.Delay(TimeSpan.FromMilliseconds(500)); // Rate limiting courtesy
-    }
-
-    public HostedEmbeddingServiceTests()
-    {
-        var config = new ConfigurationBuilder()
-            .AddUserSecrets<HostedEmbeddingServiceTests>()
-            .AddEnvironmentVariables()
-            .Build();
-
-        _apiKey = config["openRouter:apiKey"];
-        _apiUrl = config["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-    }
-
-    private bool HasApiKey => !string.IsNullOrEmpty(_apiKey);
-
-    private EmbeddingService CreateService()
-    {
-        return new EmbeddingService(new HttpClient(), new EmbeddingOptions
-        {
-            BaseAddress = _apiUrl!,
-            Model = "openai/text-embedding-3-small",
-            ApiKey = _apiKey
-        });
-    }
-
-    private static float CosineSimilarity(float[] a, float[] b)
-    {
-        float dot = 0, magA = 0, magB = 0;
-        for (var i = 0; i < a.Length; i++)
-        {
-            dot += a[i] * b[i];
-            magA += a[i] * a[i];
-            magB += b[i] * b[i];
-        }
-
-        var magnitude = MathF.Sqrt(magA) * MathF.Sqrt(magB);
-        return magnitude == 0 ? 0 : dot / magnitude;
-    }
-
-    [SkippableFact]
-    public async Task GenerateEmbeddingAsync_WithRealApi_ReturnsEmbedding()
-    {
-        Skip.IfNot(HasApiKey, "OpenRouter API key not configured");
-
-        // Arrange
-        var service = CreateService();
-
-        // Act
-        var embedding = await service.GenerateEmbeddingAsync("User prefers concise responses");
-
-        // Assert
-        embedding.ShouldNotBeNull();
-        embedding.Length.ShouldBeGreaterThan(0);
-        embedding.Length.ShouldBe(1536); // text-embedding-3-small dimension
-    }
-
-    [SkippableFact]
-    public async Task GenerateEmbeddingsAsync_WithMultipleTexts_ReturnsBatchEmbeddings()
-    {
-        Skip.IfNot(HasApiKey, "OpenRouter API key not configured");
-
-        // Arrange
-        var service = CreateService();
-        var texts = new[]
-        {
-            "User is a Python developer",
-            "User prefers detailed explanations",
-            "User works on machine learning projects"
-        };
-
-        // Act
-        var embeddings = await service.GenerateEmbeddingsAsync(texts);
-
-        // Assert
-        embeddings.Length.ShouldBe(3);
-        embeddings.ShouldAllBe(e => e.Length == 1536);
-    }
-
-    [SkippableFact]
-    public async Task GenerateEmbeddingAsync_SimilarTexts_HaveHighCosineSimilarity()
-    {
-        Skip.IfNot(HasApiKey, "OpenRouter API key not configured");
-
-        // Arrange
-        var service = CreateService();
-
-        // Act
-        var embedding1 = await service.GenerateEmbeddingAsync("User likes Python programming");
-        var embedding2 = await service.GenerateEmbeddingAsync("User enjoys coding in Python");
-        var embedding3 = await service.GenerateEmbeddingAsync("User prefers cooking Italian food");
-
-        var similaritySimilar = CosineSimilarity(embedding1, embedding2);
-        var similarityDifferent = CosineSimilarity(embedding1, embedding3);
-
-        // Assert - Similar texts should have higher similarity than different topics
-        similaritySimilar.ShouldBeGreaterThan(similarityDifferent);
-        similaritySimilar.ShouldBeGreaterThan(0.75f);
-        similarityDifferent.ShouldBeLessThan(0.7f);
-    }
-
-    [SkippableFact]
-    public async Task GenerateEmbeddingAsync_SemanticSearch_FindsRelevantContent()
-    {
-        Skip.IfNot(HasApiKey, "OpenRouter API key not configured");
-
-        // Arrange
-        var service = CreateService();
-        var memories = new[]
-        {
-            "User is an expert in Kubernetes and container orchestration",
-            "User prefers dark mode in all applications",
-            "User works at a fintech startup",
-            "User is learning Rust programming language"
-        };
-
-        var memoryEmbeddings = await service.GenerateEmbeddingsAsync(memories);
-        var queryEmbedding = await service.GenerateEmbeddingAsync("What does the user know about containers?");
-
-        // Act - Find most similar memory
-        var similarities = memoryEmbeddings
-            .Select((e, i) => (Index: i, Similarity: CosineSimilarity(queryEmbedding, e)))
-            .OrderByDescending(x => x.Similarity)
-            .ToList();
-
-        // Assert - Kubernetes/container memory should be most relevant
-        similarities[0].Index.ShouldBe(0); // "Kubernetes and container orchestration"
-    }
-}
-
-[Trait("Category", "Llm")]
-public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyncLifetime
-{
-    private readonly RedisFixture _redisFixture;
-    private readonly string? _apiKey;
-    private readonly string? _apiUrl;
-
-    public Task InitializeAsync()
-    {
-        return Task.CompletedTask;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await Task.Delay(TimeSpan.FromMilliseconds(500));
-    }
-
-    public MemoryStoreWithEmbeddingsTests(RedisFixture redisFixture)
-    {
-        _redisFixture = redisFixture;
-
-        var config = new ConfigurationBuilder()
-            .AddUserSecrets<MemoryStoreWithEmbeddingsTests>()
-            .AddEnvironmentVariables()
-            .Build();
-
-        _apiKey = config["openRouter:apiKey"];
-        _apiUrl = config["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-    }
-
-    private bool HasApiKey => !string.IsNullOrEmpty(_apiKey);
-
     private IEmbeddingService CreateEmbeddingService()
     {
         return new EmbeddingService(new HttpClient(), new EmbeddingOptions
         {
-            BaseAddress = _apiUrl!,
-            Model = "openai/text-embedding-3-small",
-            ApiKey = _apiKey
+            BaseAddress = lemonadeFixture.BaseUrl,
+            Model = LemonadeFixture.EmbeddingModel,
+            Dimension = LemonadeFixture.EmbeddingDimension,
+            Timeout = TimeSpan.FromMinutes(2)
         });
     }
 
     private RedisStackMemoryStore CreateStore()
     {
-        return new RedisStackMemoryStore(_redisFixture.Connection, TestEmbeddingOptions.At(1536));
+        return new RedisStackMemoryStore(
+            redisFixture.Connection, TestEmbeddingOptions.At(LemonadeFixture.EmbeddingDimension));
     }
 
     private async Task<MemoryEntry> CreateMemoryWithEmbedding(
@@ -222,7 +56,7 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
     [SkippableFact]
     public async Task FullFlow_StoreAndRetrieveWithSemanticSearch()
     {
-        Skip.IfNot(HasApiKey, "OpenRouter API key not configured");
+        Skip.If(lemonadeFixture.SkipReason is not null, lemonadeFixture.SkipReason);
 
         // Arrange
         var store = CreateStore();
@@ -262,7 +96,7 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
     [SkippableFact]
     public async Task FullFlow_CategoryFilterWithSemanticRanking()
     {
-        Skip.IfNot(HasApiKey, "OpenRouter API key not configured");
+        Skip.If(lemonadeFixture.SkipReason is not null, lemonadeFixture.SkipReason);
 
         // Arrange
         var store = CreateStore();
@@ -299,7 +133,7 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
     [SkippableFact]
     public async Task FullFlow_UserIsolation_SemanticSearchRespectsBoundaries()
     {
-        Skip.IfNot(HasApiKey, "OpenRouter API key not configured");
+        Skip.If(lemonadeFixture.SkipReason is not null, lemonadeFixture.SkipReason);
 
         // Arrange
         var store = CreateStore();
@@ -332,7 +166,7 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
     [SkippableFact]
     public async Task FullFlow_ImportanceWeighting_AffectsRanking()
     {
-        Skip.IfNot(HasApiKey, "OpenRouter API key not configured");
+        Skip.If(lemonadeFixture.SkipReason is not null, lemonadeFixture.SkipReason);
 
         // Arrange
         var store = CreateStore();

@@ -7,7 +7,10 @@ namespace Tests.Integration.Memory;
 
 public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
 {
-    private const int EmbeddingDimension = 1536; // text-embedding-3-small
+    // Deliberately not the configured production width: the store builds its index at
+    // whatever dimension it is given, and these tests pin that it follows the configuration
+    // rather than a constant of its own.
+    private const int EmbeddingDimension = 1536;
 
     private RedisStackMemoryStore CreateStore()
     {

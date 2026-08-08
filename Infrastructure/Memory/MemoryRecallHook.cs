@@ -30,6 +30,8 @@ public class MemoryRecallHook(
     ILogger<MemoryRecallHook> logger,
     MemoryRecallOptions options) : IMemoryRecallHook
 {
+    public const string EmbeddingErrorService = "memory-embedding";
+
     public async Task EnrichAsync(
         ChatMessage message,
         string userId,
@@ -75,7 +77,7 @@ public class MemoryRecallHook(
             float[] embedding;
             using (metricsPublisher.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentName))
             {
-                embedding = await embeddingService.GenerateEmbeddingAsync(embeddingInput, ct);
+                embedding = await EmbedAsync(embeddingInput, userId, ct);
             }
 
             var memoriesTask = store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
@@ -137,6 +139,34 @@ public class MemoryRecallHook(
                 ErrorType = ex.GetType().Name,
                 Message = $"Recall failed: {ex.Message}"
             });
+        }
+    }
+
+    private async Task<float[]> EmbedAsync(string input, string userId, CancellationToken ct)
+    {
+        try
+        {
+            return await embeddingService.GenerateEmbeddingAsync(input, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // There is deliberately no fallback to a hosted provider. Hosted vectors are
+            // 1536 wide against a 1024-wide index, so they would be invalid rather than
+            // merely slower, and every search against them would error. A failure here
+            // degrades to a turn with no recall block, which is what already happened when
+            // the hosted provider failed. See
+            // docs/adr/0019-recall-embeds-locally-with-no-cross-provider-fallback.md.
+            //
+            // Published under its own service name so an embedding outage is distinguishable
+            // from an ordinary recall that simply found nothing.
+            logger.LogWarning(ex, "Embedding the recall window failed for user {UserId}", userId);
+            metricsPublisher.Publish(new ErrorEvent
+            {
+                Service = EmbeddingErrorService,
+                ErrorType = ex.GetType().Name,
+                Message = $"Embedding failed: {ex.Message}"
+            });
+            throw;
         }
     }
 
