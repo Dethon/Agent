@@ -15,10 +15,10 @@ provider, so this ticket changes nothing a user could observe.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Base address and model both come from the memory embedding configuration
-- [ ] With no key configured, no authorization header is sent
-- [ ] The type name no longer names a provider
-- [ ] Behaviour is unchanged under default configuration
-- [ ] Existing embedding tests still pass, renamed where they name the provider
+- [x] Base address and model both come from the memory embedding configuration
+- [x] With no key configured, no authorization header is sent
+- [x] The type name no longer names a provider
+- [x] Behaviour is unchanged under default configuration
+- [x] Existing embedding tests still pass, renamed where they name the provider

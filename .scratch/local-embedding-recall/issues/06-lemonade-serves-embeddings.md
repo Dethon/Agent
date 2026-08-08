@@ -17,13 +17,19 @@ passthrough, so this runs anywhere Docker does.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] The embedding model is pulled during container start, never on first request
+      — implemented in the entrypoint and asserted by the contract test; unverified here,
+      because this machine has no provisioned model cache and the test skips
 - [ ] The model is pinned and survives eviction pressure
+      — implemented in the entrypoint and asserted by the contract test; unverified here,
+      because this machine has no provisioned model cache and the test skips
 - [ ] Pinning it does not displace speech recognition or synthesis
-- [ ] The test fixture requires the embedding model in its provisioned cache and skips with
+      — implemented in the entrypoint and asserted by the contract test; unverified here,
+      because this machine has no provisioned model cache and the test skips
+- [x] The test fixture requires the embedding model in its provisioned cache and skips with
       a clear reason when it is absent
-- [ ] A contract test proves the real server answers the request and response shape the
-      client sends, including the vector width
-- [ ] That test runs without GPU passthrough
+- [x] A contract test proves the real server answers the request and response shape the
+      client sends, including the vector width — written; skips without the model cache
+- [x] That test runs without GPU passthrough

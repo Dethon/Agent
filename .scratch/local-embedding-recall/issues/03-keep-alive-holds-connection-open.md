@@ -16,10 +16,10 @@ handshake to amortise.
 **Blocked by:** 02 — the keep-alive interval is chosen against the idle timeout that ticket
 sets.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Fires on an interval below the configured idle timeout
-- [ ] Targets a non-billable endpoint; no tokens are ever spent keeping a connection open
-- [ ] A failure publishes a metric and does not bring down the host process
-- [ ] Uses the injectable time provider, so the interval is testable without waiting for it
-- [ ] Does not delay startup and does not block shutdown
+- [x] Fires on an interval below the configured idle timeout
+- [x] Targets a non-billable endpoint; no tokens are ever spent keeping a connection open
+- [x] A failure publishes a metric and does not bring down the host process
+- [x] Uses the injectable time provider, so the interval is testable without waiting for it
+- [x] Does not delay startup and does not block shutdown

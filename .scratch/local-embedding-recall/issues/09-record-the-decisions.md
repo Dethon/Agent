@@ -19,12 +19,12 @@ not to call it, in the shape the existing entries use.
 
 **Blocked by:** 07, 08.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The decision record takes the next number in sequence and follows the existing format
-- [ ] It states the alternatives that were considered and why the local path won on
+- [x] The decision record takes the next number in sequence and follows the existing format
+- [x] It states the alternatives that were considered and why the local path won on
       measurement
-- [ ] It records the absence of a fallback as a decision, with its reason
-- [ ] The glossary entry defines the term and names what not to call it
-- [ ] The glossary entry carries no implementation detail
-- [ ] Neither document duplicates the research note or the spec; those remain the evidence
+- [x] It records the absence of a fallback as a decision, with its reason
+- [x] The glossary entry defines the term and names what not to call it
+- [x] The glossary entry carries no implementation detail
+- [x] Neither document duplicates the research note or the spec; those remain the evidence

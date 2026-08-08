@@ -14,11 +14,11 @@ compared against rather than a claim.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The embedding call publishes its own duration, attributable to the turn it belongs to
-- [ ] The existing recall stage measurement keeps its current meaning and is not redefined
-- [ ] Both are broken down the same way the existing latency stages are, so they can be
+- [x] The embedding call publishes its own duration, attributable to the turn it belongs to
+- [x] The existing recall stage measurement keeps its current meaning and is not redefined
+- [x] Both are broken down the same way the existing latency stages are, so they can be
       compared per conversation and per agent
-- [ ] The measurement is taken whether the call succeeds or fails
-- [ ] Nothing about what recall returns changes
+- [x] The measurement is taken whether the call succeeds or fails
+- [x] Nothing about what recall returns changes

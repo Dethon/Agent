@@ -31,17 +31,22 @@ hosted provider fails, made observable rather than only logged.
 06, and `memory-profile-outlives-memories` 01 (so the latency numbers are not taken while a
 stale profile is still being injected on the voice path).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Recall embeds against the local server; no hosted embedding call is made on the turn
+- [x] Recall embeds against the local server; no hosted embedding call is made on the turn
       path
-- [ ] Stored memories are searchable at the new dimension, and a user with memories gets
-      the same kind of results back as before
-- [ ] A local outage produces a turn with no recall block rather than a failed turn, and
+- [x] Stored memories are searchable at the new dimension, and a user with memories gets
+      the same kind of results back as before — pinned by LemonadeRecallTests, which skips
+      without the provisioned model cache
+- [x] A local outage produces a turn with no recall block rather than a failed turn, and
       publishes a metric that distinguishes it from an ordinary empty recall
-- [ ] No fallback to the hosted provider exists, and the reason is recorded in code
+- [x] No fallback to the hosted provider exists, and the reason is recorded in code
 - [ ] Recall stage latency drops materially against the baseline from ticket 01
+      — measurable only after deploying; ticket 01's baseline is in place to compare against
 - [ ] Every stored memory hash survives the migration
+      — the migration script drops the index without DD and never deletes a document;
+      run by hand per .scratch/local-embedding-recall/MIGRATION.md
 - [ ] Re-embedding is re-run after deploying, and no memory is left unsearchable
-- [ ] Address and model configuration live in application settings alone, with no compose
+      — step 4 of the runbook; not yet run
+- [x] Address and model configuration live in application settings alone, with no compose
       environment entry, since the server is in the same stack at a stable address

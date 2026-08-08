@@ -20,12 +20,12 @@ recall, because a lazy check would be swallowed by the same catch-all it exists 
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The dimension comes from configuration rather than a constant
-- [ ] The startup check compares only the vector field's dimension
-- [ ] An index carrying an extra tag field the code no longer creates still starts, since
+- [x] The dimension comes from configuration rather than a constant
+- [x] The startup check compares only the vector field's dimension
+- [x] An index carrying an extra tag field the code no longer creates still starts, since
       that is the live production shape
-- [ ] A mismatch fails startup with a message naming both the configured and the live value
-- [ ] A matching index starts normally, and an absent index is still created as before
-- [ ] The check runs at startup, not on first recall
+- [x] A mismatch fails startup with a message naming both the configured and the live value
+- [x] A matching index starts normally, and an absent index is still created as before
+- [x] The check runs at startup, not on first recall

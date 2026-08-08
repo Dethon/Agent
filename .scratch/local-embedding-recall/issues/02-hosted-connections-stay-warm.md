@@ -14,11 +14,11 @@ memory does.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The shared handler's connection lifetime and idle timeout are both set deliberately
+- [x] The shared handler's connection lifetime and idle timeout are both set deliberately
       rather than left to defaults
-- [ ] The embedding client gets the same treatment
-- [ ] The configured values are asserted by test rather than only written down
-- [ ] Two calls separated by a typical gap between turns reuse a connection
-- [ ] Nothing about what any call returns changes
+- [x] The embedding client gets the same treatment
+- [x] The configured values are asserted by test rather than only written down
+- [x] Two calls separated by a typical gap between turns reuse a connection
+- [x] Nothing about what any call returns changes

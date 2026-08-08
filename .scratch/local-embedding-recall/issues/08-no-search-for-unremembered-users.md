@@ -20,12 +20,12 @@ reduced value understood.
 
 **Blocked by:** 07.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] No embedding is requested for a user with no memory entries
-- [ ] No vector search is issued for them
-- [ ] Their personality profile is still fetched, and still attached when one exists
-- [ ] The turn is still enqueued for extraction
-- [ ] A user who acquires their first memory is searched on the very next turn
-- [ ] A user whose memories are all removed returns to the skipped path
-- [ ] Emptiness is read from stored state, not from a cache that would need invalidating
+- [x] No embedding is requested for a user with no memory entries
+- [x] No vector search is issued for them
+- [x] Their personality profile is still fetched, and still attached when one exists
+- [x] The turn is still enqueued for extraction
+- [x] A user who acquires their first memory is searched on the very next turn
+- [x] A user whose memories are all removed returns to the skipped path
+- [x] Emptiness is read from stored state, not from a cache that would need invalidating
