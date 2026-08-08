@@ -69,6 +69,11 @@ public class MemoryDreamingService(
     public async Task RunDreamingForUserAsync(string userId, DateTimeOffset now, CancellationToken ct)
     {
         var activeMemories = await GetActiveMemoriesAsync(userId, ct);
+        if (activeMemories.Count == 0)
+        {
+            await RemoveOrphanedProfileAsync(userId, ct);
+            return;
+        }
 
         var mergedCount = 0;
         for (var pass = 0; pass < options.MaxMergePasses; pass++)
@@ -99,6 +104,24 @@ public class MemoryDreamingService(
         logger.LogInformation(
             "Dreaming complete for {UserId}: {Merged} merged, {Decayed} decayed, profile regenerated",
             userId, mergedCount, decayedCount);
+    }
+
+    private async Task RemoveOrphanedProfileAsync(string userId, CancellationToken ct)
+    {
+        var removed = await store.DeleteProfileAsync(userId, ct);
+
+        metricsPublisher.Publish(new MemoryDreamingEvent
+        {
+            MergedCount = 0,
+            DecayedCount = 0,
+            ProfileRegenerated = false,
+            ProfileRemoved = removed,
+            UserId = userId
+        });
+
+        logger.LogInformation(
+            "Dreaming found no memories for {UserId}: profile {Outcome}",
+            userId, removed ? "removed" : "absent");
     }
 
     private async Task<int> MergeAsync(string userId, IReadOnlyList<MemoryEntry> activeMemories, CancellationToken ct)
