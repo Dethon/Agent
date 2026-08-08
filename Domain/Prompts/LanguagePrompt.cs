@@ -6,6 +6,12 @@ namespace Domain.Prompts;
 // every user message -- so a relative rule ("answer in the user's language") is a minority
 // signal that a short transcript loses. Naming the target language, in that language, and
 // saying outright that the English context does not count, removes the ambiguity.
+//
+// Two clauses in each template are there for a specific failure and should not be trimmed as
+// padding. The first word matters on its own because a voice turn opens with the pre-tool
+// acknowledgement word, and once that lands in English the rest of the turn follows it. Disowning
+// an earlier reply matters because a turn that already drifted stays in the conversation window,
+// where the model reads it as precedent and copies its own mistake.
 public static class LanguagePrompt
 {
     // Values with no template here are used verbatim as the language name, so configure a
