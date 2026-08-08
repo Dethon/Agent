@@ -247,12 +247,9 @@ public sealed class OpenRouterChatClient : IChatClient
 
     // One handler (= one connection pool) for the whole process: a per-conversation
     // handler would pay a fresh TCP+TLS handshake to OpenRouter on every new
-    // conversation's first LLM call.
-    private static readonly SocketsHttpHandler _sharedHandler = new()
-    {
-        AutomaticDecompression = DecompressionMethods.All,
-        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
-    };
+    // conversation's first LLM call. HostedConnectionPool owns how long a pooled
+    // connection lives and how long it may sit idle.
+    private static readonly SocketsHttpHandler _sharedHandler = HostedConnectionPool.CreateHandler();
 
     internal static SocketsHttpHandler SharedHandler => _sharedHandler;
 

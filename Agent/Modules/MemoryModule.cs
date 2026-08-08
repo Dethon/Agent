@@ -33,7 +33,12 @@ public static class MemoryModule
 
                 var embeddingModel = memoryConfig["Embedding:Model"] ?? "openai/text-embedding-3-small";
                 return new OpenRouterEmbeddingService(httpClient, embeddingModel);
-            });
+            })
+                .ConfigurePrimaryHttpMessageHandler(HostedConnectionPool.CreateHandler)
+                // The factory's own two-minute handler rotation would throw the pool away well
+                // inside the connection lifetime the handler is configured for, so the handler
+                // outlives the factory's default and manages pooling itself.
+                .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 
             services.AddSingleton<IMemoryExtractor>(sp =>
             {
