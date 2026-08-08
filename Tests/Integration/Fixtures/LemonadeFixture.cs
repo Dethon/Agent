@@ -14,6 +14,15 @@ namespace Tests.Integration.Fixtures;
 // When Docker or the provisioned cache is unavailable the fixture records a SkipReason the tests
 // gate on (never hard-fails) -- the External-category convention shared with the TSE/Camoufox
 // container fixtures.
+// One Lemonade container for every suite that needs one. Per-class fixtures meant xUnit ran
+// three of them at once, each loading a model onto the same iGPU and each holding Lemonade's
+// single per-type model slot, which made the suites fail together while passing alone.
+[CollectionDefinition(Name)]
+public class LemonadeCollection : ICollectionFixture<LemonadeFixture>
+{
+    public const string Name = "Lemonade";
+}
+
 public class LemonadeFixture : IAsyncLifetime
 {
     private const int LemonadePort = 13305;

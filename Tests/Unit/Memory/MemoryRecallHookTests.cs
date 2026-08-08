@@ -148,6 +148,52 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
+    public async Task EnrichAsync_WhenTheEmbeddingServerHangs_IsTreatedAsAnOutageNotACancelledTurn()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        var session = CreateSessionWithStateKey("state-test");
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+
+        // What HttpClient throws when its own timeout expires. A hung server is the likeliest
+        // way the embedding call fails, and it must not read as the caller cancelling the turn.
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("timed out", new TimeoutException()));
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
+
+        _metricsPublisher.Verify(
+            p => p.Publish(It.Is<MetricsDTOs.ErrorEvent>(e => e.Service == MemoryRecallHook.EmbeddingErrorService)),
+            Times.Once);
+
+        _queue.Complete();
+        var request = await _queue.ReadAllAsync(CancellationToken.None).FirstAsync();
+        request.UserId.ShouldBe("user1");
+    }
+
+    [Fact]
+    public async Task EnrichAsync_WhenTheTurnIsCancelled_DoesNotReportAnEmbeddingOutage()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        var session = CreateSessionWithStateKey("state-test");
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException(cts.Token));
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, cts.Token);
+
+        _metricsPublisher.Verify(
+            p => p.Publish(It.Is<MetricsDTOs.ErrorEvent>(e => e.Service == MemoryRecallHook.EmbeddingErrorService)),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task EnrichAsync_WhenEmbeddingFails_StillAttachesAProfileAndStillEnqueuesExtraction()
     {
         var message = new ChatMessage(ChatRole.User, "Hello");

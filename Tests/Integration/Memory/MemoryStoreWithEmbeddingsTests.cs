@@ -11,8 +11,9 @@ namespace Tests.Integration.Memory;
 // category filtering, per-user isolation and importance weighting all depend on genuine
 // vectors of the configured width, which a fabricated array cannot provide.
 [Trait("Category", "External")]
+[Collection(LemonadeCollection.Name)]
 public class MemoryStoreWithEmbeddingsTests(RedisFixture redisFixture, LemonadeFixture lemonadeFixture)
-    : IClassFixture<RedisFixture>, IClassFixture<LemonadeFixture>
+    : IClassFixture<RedisFixture>
 {
     private IEmbeddingService CreateEmbeddingService()
     {

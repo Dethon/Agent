@@ -179,7 +179,7 @@ public class MemoryRecallHook(
         {
             return await store.GetProfileAsync(userId, ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Failed to read the personality profile for user {UserId}", userId);
             return null;
@@ -192,7 +192,11 @@ public class MemoryRecallHook(
         {
             return await embeddingService.GenerateEmbeddingAsync(input, ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        // Only a cancellation the turn itself asked for propagates. An HttpClient timeout
+        // also arrives as a TaskCanceledException, and a hung server is the likeliest way
+        // this fails — letting that one through would skip the metric below and carry the
+        // extraction enqueue out with it.
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // There is deliberately no fallback to a hosted provider. Hosted vectors are
             // 1536 wide against a 1024-wide index, so they would be invalid rather than

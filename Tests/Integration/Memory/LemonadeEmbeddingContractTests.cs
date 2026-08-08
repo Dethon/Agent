@@ -11,7 +11,8 @@ namespace Tests.Integration.Memory;
 // The fixture forces the CPU backend and needs no GPU passthrough, so this runs anywhere
 // Docker does; it skips when the model cache is not provisioned.
 [Trait("Category", "External")]
-public class LemonadeEmbeddingContractTests(LemonadeFixture fixture) : IClassFixture<LemonadeFixture>
+[Collection(LemonadeCollection.Name)]
+public class LemonadeEmbeddingContractTests(LemonadeFixture fixture)
 {
     [SkippableFact]
     public async Task TheRealServerAnswersTheShapeTheClientSends()

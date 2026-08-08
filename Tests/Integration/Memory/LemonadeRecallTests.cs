@@ -18,8 +18,9 @@ namespace Tests.Integration.Memory;
 // vector makes the round trip through the index, so the embedding swap, the index width and
 // the search are proven together rather than one at a time against mocks.
 [Trait("Category", "External")]
+[Collection(LemonadeCollection.Name)]
 public class LemonadeRecallTests(RedisFixture redisFixture, LemonadeFixture lemonadeFixture)
-    : IClassFixture<RedisFixture>, IClassFixture<LemonadeFixture>
+    : IClassFixture<RedisFixture>
 {
     [SkippableFact]
     public async Task AUserWithMemories_GetsThemBackAtTheLocalDimension()

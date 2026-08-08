@@ -18,8 +18,8 @@ namespace Tests.Integration.McpChannelVoice;
 // hard-fails) — the External-category convention. First decode loads Whisper-Medium on CPU, hence
 // the generous timeout.
 [Trait("Category", "External")]
+[Collection(LemonadeCollection.Name)]
 public class LemonadeQualitySignalsTests(LemonadeFixture fixture, ITestOutputHelper output)
-    : IClassFixture<LemonadeFixture>
 {
     private sealed class PassthroughFactory : IHttpClientFactory
     {
