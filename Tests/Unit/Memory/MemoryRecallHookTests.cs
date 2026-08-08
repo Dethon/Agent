@@ -98,6 +98,30 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
+    public async Task EnrichAsync_NoMemoriesAndNoProfile_AttachesNothingAndProceeds()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello again");
+
+        var session = CreateSessionWithStateKey("state-test");
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_testEmbedding);
+        _store.Setup(s => s.SearchAsync("user1", null, _testEmbedding, null, null, null, 10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PersonalityProfile?)null);
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
+
+        message.GetMemoryContext().ShouldBeNull();
+        _metricsPublisher.Verify(p => p.Publish(It.IsAny<MetricsDTOs.ErrorEvent>()), Times.Never);
+        _metricsPublisher.Verify(p => p.Publish(It.IsAny<MemoryRecallEvent>()), Times.Once);
+    }
+
+    [Fact]
     public async Task EnrichAsync_WhenEmbeddingFails_ProceedsWithoutMemory()
     {
         var message = new ChatMessage(ChatRole.User, "Hello");
