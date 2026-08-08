@@ -14,7 +14,10 @@ public record EmbeddingOptions
     public required string BaseAddress { get; init; }
     public required string Model { get; init; }
     public string? ApiKey { get; init; }
-    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
+    // The local call measures 18 ms, so this is a ceiling on a wedged server rather than a
+    // working one. It sits on the blocking path of every turn: on the voice path the whole
+    // of it is silence after someone stops speaking.
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(5);
 
     // The width of the vectors the model produces. The memory index is built at this width,
     // so changing it needs the stored vectors regenerated as well.
@@ -27,11 +30,13 @@ public class EmbeddingService : IEmbeddingService
 {
     private readonly HttpClient _httpClient;
     private readonly string _model;
+    private readonly int _dimension;
 
     public EmbeddingService(HttpClient httpClient, EmbeddingOptions options)
     {
         _httpClient = httpClient;
         _model = options.Model;
+        _dimension = options.Dimension;
         // A base address that does not end in a slash loses its last segment when a relative
         // path is resolved against it, so "http://host/v1" would post to "/embeddings".
         httpClient.BaseAddress = new Uri(options.BaseAddress.TrimEnd('/') + "/");
@@ -45,12 +50,10 @@ public class EmbeddingService : IEmbeddingService
 
     public async Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default)
     {
-        var request = new EmbeddingRequest(_model, text);
-        var response = await _httpClient.PostAsJsonAsync("embeddings", request, ct);
-        response.EnsureSuccessStatusCode();
-
-        var result = await response.Content.ReadFromJsonAsync<EmbeddingResponse>(ct);
-        return result?.Data.FirstOrDefault()?.Embedding ?? throw new InvalidOperationException("No embedding returned");
+        // A single input goes as a bare string, not a one-element array: that is the shape
+        // the OpenAI-compatible API documents, and both servers are pinned to it by test.
+        var data = await PostAsync(new EmbeddingRequest(_model, text), ct);
+        return data.FirstOrDefault()?.Embedding ?? throw new InvalidOperationException("No embedding returned");
     }
 
     public async Task<float[][]> GenerateEmbeddingsAsync(IEnumerable<string> texts, CancellationToken ct = default)
@@ -61,15 +64,36 @@ public class EmbeddingService : IEmbeddingService
             return [];
         }
 
-        var request = new EmbeddingBatchRequest(_model, textArray);
+        var data = await PostAsync(new EmbeddingBatchRequest(_model, textArray), ct);
+        return data
+            .OrderBy(d => d.Index)
+            .Select(d => d.Embedding)
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyList<EmbeddingData>> PostAsync<TRequest>(TRequest request, CancellationToken ct)
+    {
         var response = await _httpClient.PostAsJsonAsync("embeddings", request, ct);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<EmbeddingResponse>(ct);
-        return result?.Data
-            .OrderBy(d => d.Index)
-            .Select(d => d.Embedding)
-            .ToArray() ?? [];
+        var data = result?.Data ?? [];
+
+        // The configured dimension and the configured model are two independent settings,
+        // and the memory index is built at the first. Left unchecked, pointing the model at
+        // a different width writes vectors the index cannot hold and every search errors
+        // into recall's catch-all — memory silently returning nothing forever, which is the
+        // failure MemoryIndexVerification exists to prevent, entered from the model's side.
+        var wrongWidth = data.FirstOrDefault(d => d.Embedding.Length != _dimension);
+        if (wrongWidth is not null)
+        {
+            throw new InvalidOperationException(
+                $"Embedding model '{_model}' returned {wrongWidth.Embedding.Length} dimensions but " +
+                $"the configured dimension is {_dimension}. Set Memory:Embedding:Dimension to match " +
+                "the model, and re-embed the stored memories against the rebuilt index.");
+        }
+
+        return data;
     }
 }
 

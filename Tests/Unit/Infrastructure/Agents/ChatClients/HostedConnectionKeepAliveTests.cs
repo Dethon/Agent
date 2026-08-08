@@ -52,6 +52,28 @@ public class HostedConnectionKeepAliveTests
     }
 
     [Fact]
+    public async Task ABaseAddressWithoutATrailingSlash_StillPingsUnderIt()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK);
+        using var keepAlive = new HostedConnectionKeepAlive(
+            new HttpClient(handler),
+            new HostedConnectionKeepAliveOptions
+            {
+                BaseAddress = "https://hosted.invalid/api/v1",
+                ApiKey = "sk-test"
+            },
+            _metrics,
+            _time,
+            NullLogger<HostedConnectionKeepAlive>.Instance);
+
+        await StartAsync(keepAlive);
+        await AdvanceOneIntervalAsync(handler, expectedRequests: 1);
+        await keepAlive.StopAsync(CancellationToken.None);
+
+        handler.Requests[0].RequestUri!.AbsolutePath.ShouldBe("/api/v1/key");
+    }
+
+    [Fact]
     public async Task WhenTheKeepAliveFails_PublishesAMetricAndKeepsRunning()
     {
         var handler = new RecordingHandler(HttpStatusCode.ServiceUnavailable);

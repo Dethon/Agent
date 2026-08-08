@@ -142,14 +142,42 @@ public class MemoryRecallHookTests
         await _hook.EnrichAsync(message, "user1", null, null, session, CancellationToken.None);
 
         message.GetMemoryContext().ShouldBeNull();
-        // Two facts, two services: the embedding call failed, and so the recall did. An
-        // operator alerts on the first; the second is what the turn saw.
         _metricsPublisher.Verify(
             p => p.Publish(It.Is<MetricsDTOs.ErrorEvent>(e => e.Service == MemoryRecallHook.EmbeddingErrorService)),
             Times.Once);
-        _metricsPublisher.Verify(
-            p => p.Publish(It.Is<MetricsDTOs.ErrorEvent>(e => e.Service == "memory")),
-            Times.Once);
+    }
+
+    [Fact]
+    public async Task EnrichAsync_WhenEmbeddingFails_StillAttachesAProfileAndStillEnqueuesExtraction()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+
+        var session = CreateSessionWithStateKey("state-test");
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("connection refused"));
+        _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PersonalityProfile
+            {
+                UserId = "user1", Summary = "Brief communicator", LastUpdated = DateTimeOffset.UtcNow
+            });
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
+
+        // The outage costs the turn its recalled memories and nothing else. Carrying the
+        // enqueue out with it would mean everything said during the outage is dropped for
+        // good — there is no retry and nothing to replay.
+        _queue.Complete();
+        var request = await _queue.ReadAllAsync(CancellationToken.None).FirstAsync();
+        request.UserId.ShouldBe("user1");
+
+        var context = message.GetMemoryContext();
+        context.ShouldNotBeNull();
+        context.Profile.ShouldNotBeNull();
+        context.Memories.ShouldBeEmpty();
     }
 
     [Fact]

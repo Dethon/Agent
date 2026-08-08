@@ -54,7 +54,9 @@ public sealed class HostedConnectionKeepAlive : BackgroundService
         _timeProvider = timeProvider;
         _logger = logger;
 
-        httpClient.BaseAddress = new Uri(options.BaseAddress);
+        // Without the trailing slash the relative "key" replaces the last segment, so an
+        // apiUrl configured as ".../api/v1" would ping /api/key and 404 on every fire.
+        httpClient.BaseAddress = new Uri(options.BaseAddress.TrimEnd('/') + "/");
         if (!string.IsNullOrWhiteSpace(options.ApiKey))
         {
             httpClient.DefaultRequestHeaders.Authorization =

@@ -30,7 +30,8 @@ public static class MemoryModule
                 BaseAddress = memoryConfig["Embedding:BaseAddress"] ?? "http://lemonade:13305/api/v1/",
                 Model = memoryConfig["Embedding:Model"] ?? "Qwen3-Embedding-0.6B-GGUF",
                 ApiKey = memoryConfig["Embedding:ApiKey"],
-                Dimension = memoryConfig.GetValue("Embedding:Dimension", EmbeddingOptions.DefaultDimension)
+                Dimension = memoryConfig.GetValue("Embedding:Dimension", EmbeddingOptions.DefaultDimension),
+                Timeout = TimeSpan.FromSeconds(memoryConfig.GetValue("Embedding:TimeoutSeconds", 5))
             };
             services.AddSingleton(embeddingOptions);
 

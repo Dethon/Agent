@@ -43,6 +43,11 @@ what already happened when the hosted provider failed — published under its ow
 `memory-embedding` error metric so an outage is distinguishable from a recall that simply found
 nothing.
 
+That degradation costs the turn its recalled memories and nothing else. The profile is still
+attached and the turn is still enqueued for extraction, because an outage that also stopped the
+write path would drop everything said during it for good: there is no retry and no queue entry
+to replay.
+
 ## Considered options
 
 **A different hosted provider.** OpenRouter lists cheaper and newer embedding models. Rejected

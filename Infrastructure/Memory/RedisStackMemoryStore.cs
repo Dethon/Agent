@@ -72,14 +72,28 @@ public class RedisStackMemoryStore : IMemoryStore
 
     public async Task<bool> HasAnyMemoriesAsync(string userId, CancellationToken ct = default)
     {
-        // Stops at the first key rather than reading any of them: this runs on the blocking
-        // path of every turn, and the only question is whether the set is empty.
-        await foreach (var _ in _server.KeysAsync(pattern: $"memory:{userId}:*").WithCancellation(ct))
+        // Asked through the index rather than by scanning keys. A MATCH'd SCAN filters
+        // server-side but still walks the whole keyspace, and for an unremembered user —
+        // the case this exists to make fast — nothing matches, so it walks all of it. That
+        // keyspace also holds the transcripts and thread state, and this runs on the
+        // blocking path of every turn.
+        await EnsureIndexCreatedAsync();
+
+        try
         {
+            // No documents and no fields: the count is the whole answer.
+            var query = new Query($"@userId:{{{EscapeTag(userId)}}}")
+                .Limit(0, 0)
+                .Dialect(2);
+            var result = await _ft.SearchAsync(IndexName, query);
+            return result.TotalResults > 0;
+        }
+        catch (RedisServerException)
+        {
+            // An unusable index must not decide that a user has nothing; recall then falls
+            // through to a search that reports the real failure.
             return true;
         }
-
-        return false;
     }
 
     public async Task<IReadOnlyList<MemorySearchResult>> SearchAsync(

@@ -42,6 +42,22 @@ public class MemoryIndexVerificationTests(RedisFixture fixture) : IClassFixture<
     }
 
     [Fact]
+    public async Task AnIndexWithNoVectorFieldAtAll_FailsStartupRatherThanReadingAsAbsent()
+    {
+        var indexName = $"idx:novector:{Guid.NewGuid():N}";
+        var ft = fixture.Connection.GetDatabase().FT();
+        await ft.CreateAsync(
+            indexName,
+            new FTCreateParams().On(IndexDataType.HASH).Prefix($"{indexName}:"),
+            new Schema().AddTagField("userId", separator: "|"));
+
+        // The store only creates an index when reading the live one fails, so this one would
+        // never be repaired — it would sit there failing every search into recall's catch-all.
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => StartVerificationAsync(indexName, configuredDimension: 1024));
+    }
+
+    [Fact]
     public async Task AnAbsentIndex_Starts()
     {
         await Should.NotThrowAsync(

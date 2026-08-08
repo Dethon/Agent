@@ -73,7 +73,7 @@ public class MemoryRecallHook(
             // agent should speak to them, so it is fetched whether or not there is anything
             // to search.
             var profileTask = options.IncludePersonalityProfile
-                ? store.GetProfileAsync(userId, ct)
+                ? TryFetchProfileAsync(userId, ct)
                 : Task.FromResult<PersonalityProfile?>(null);
 
             var memories = await SearchMemoriesAsync(
@@ -155,16 +155,38 @@ public class MemoryRecallHook(
         // round trip and how much was everything else, rather than inferring it from the
         // difference between the stage and what storage is known to cost. The scope
         // publishes on disposal, so a failed call is measured too.
-        float[] embedding;
+        float[]? embedding;
         using (metricsPublisher.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentName))
         {
             embedding = await EmbedAsync(embeddingInput, userId, ct);
         }
 
-        return await store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
+        // An embedding outage costs the turn its recall block and nothing else. Throwing
+        // here would carry the extraction enqueue below out with it, so an outage would stop
+        // the write path too and everything said during it would be dropped for good.
+        return embedding is null
+            ? []
+            : await store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
     }
 
-    private async Task<float[]> EmbedAsync(string input, string userId, CancellationToken ct)
+    // Never faults. It runs alongside the search rather than after it, so a search that
+    // throws would otherwise leave this abandoned and its own failure would surface later as
+    // an unobserved task exception with nothing pointing back here. Failing soft also means
+    // a hiccup reading one profile does not cost the turn its recalled memories.
+    private async Task<PersonalityProfile?> TryFetchProfileAsync(string userId, CancellationToken ct)
+    {
+        try
+        {
+            return await store.GetProfileAsync(userId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Failed to read the personality profile for user {UserId}", userId);
+            return null;
+        }
+    }
+
+    private async Task<float[]?> EmbedAsync(string input, string userId, CancellationToken ct)
     {
         try
         {
@@ -188,7 +210,7 @@ public class MemoryRecallHook(
                 ErrorType = ex.GetType().Name,
                 Message = $"Embedding failed: {ex.Message}"
             });
-            throw;
+            return null;
         }
     }
 

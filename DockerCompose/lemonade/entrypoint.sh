@@ -125,10 +125,15 @@ fi
         -d "{\"model_name\": \"$MODEL\"}" >/dev/null 2>&1 || true
       curl -fsS -X POST "http://127.0.0.1:13305/api/v1/pull" \
         -H "Content-Type: application/json" \
-        -d "{\"model_name\": \"$EMBEDDING_MODEL\"}" >/dev/null 2>&1 || true
+        -d "{\"model_name\": \"$EMBEDDING_MODEL\"}" >/dev/null 2>&1 \
+        || echo "lemonade: pulling $EMBEDDING_MODEL failed; recall will load it on first use" >&2
+      # Says so when the pin does not take, rather than leaving a model that looks pinned
+      # and is not: an unpinned embedding model can be evicted, and the next turn then pays
+      # the several-second load this whole block exists to remove.
       curl -fsS -X POST "http://127.0.0.1:13305/api/v1/load" \
         -H "Content-Type: application/json" \
-        -d "{\"model_name\": \"$EMBEDDING_MODEL\", \"pinned\": true}" >/dev/null 2>&1 || true
+        -d "{\"model_name\": \"$EMBEDDING_MODEL\", \"pinned\": true}" >/dev/null 2>&1 \
+        || echo "lemonade: pinning $EMBEDDING_MODEL failed; it may be evicted" >&2
       exit 0
     fi
     i=$((i + 1))

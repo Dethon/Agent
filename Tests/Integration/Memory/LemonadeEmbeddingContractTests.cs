@@ -50,12 +50,18 @@ public class LemonadeEmbeddingContractTests(LemonadeFixture fixture) : IClassFix
 
         PinnedCountOf(health, "embedding").ShouldBeGreaterThan(0);
 
-        // Lemonade applies its loaded-model limit per model type, so pinning an embedding
-        // model must not have cost a speech model its slot.
-        var transcription = await CreateService().GenerateEmbeddingAsync("sigue vivo");
-        transcription.Length.ShouldBe(LemonadeFixture.EmbeddingDimension);
-        health.RootElement.TryGetProperty("max_models", out _).ShouldBeTrue(
-            "health should report per-type model slots");
+        // The claim being tested is that Lemonade's loaded-model limit is per model type, so
+        // a pinned embedding model cannot take the slot a speech model needs. Reading the
+        // slots back is what makes that a test rather than a comment: a global cap would show
+        // the speech types with no slot of their own, and a pinned model can never be evicted
+        // to make room, so every utterance would fail or pay a full reload.
+        var maxModels = health.RootElement.GetProperty("max_models");
+        foreach (var speechType in new[] { "transcription", "tts" })
+        {
+            maxModels.TryGetProperty(speechType, out var slots).ShouldBeTrue(
+                $"health should report a model slot for {speechType} separate from embedding");
+            slots.GetInt32().ShouldBeGreaterThan(0, $"{speechType} must keep a slot of its own");
+        }
     }
 
     private EmbeddingService CreateService() => new(new HttpClient(), new EmbeddingOptions
