@@ -205,6 +205,12 @@ It is taken before the current turn is persisted, so it excludes the turn that
 produced it.
 _Avoid_: anchor index, offset, cursor
 
+**Unremembered user**:
+A user with no stored memory entries. They may still have a personality profile, and
+their turns are still considered for extraction, so they can stop being one at any
+turn.
+_Avoid_: user with no memories, new user, memoryless user, "skip recall" user
+
 ## Voice satellite
 
 **Satellite connection**:
