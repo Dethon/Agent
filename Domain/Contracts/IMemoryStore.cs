@@ -25,6 +25,7 @@ public interface IMemoryStore
 
     Task<PersonalityProfile?> GetProfileAsync(string userId, CancellationToken ct = default);
     Task<PersonalityProfile> SaveProfileAsync(PersonalityProfile profile, CancellationToken ct = default);
+    Task<bool> DeleteProfileAsync(string userId, CancellationToken ct = default);
 
     Task<MemoryStats> GetStatsAsync(string userId, CancellationToken ct = default);
 

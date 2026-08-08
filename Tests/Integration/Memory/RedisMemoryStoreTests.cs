@@ -374,6 +374,81 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
     }
 
     [Fact]
+    public async Task GetAllUserIdsAsync_UserWithOnlyProfile_IsIncluded()
+    {
+        // Arrange
+        var store = CreateStore();
+        var userId = $"user_{Guid.NewGuid():N}";
+        await store.SaveProfileAsync(new PersonalityProfile
+        {
+            UserId = userId,
+            Summary = "Orphaned profile holder",
+            LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        // Act
+        var userIds = await store.GetAllUserIdsAsync();
+
+        // Assert
+        userIds.ShouldContain(userId);
+    }
+
+    [Fact]
+    public async Task GetAllUserIdsAsync_ProfileKey_IsNeverReadAsAUserNamedProfile()
+    {
+        // Arrange
+        var store = CreateStore();
+        var userId = $"user_{Guid.NewGuid():N}";
+        await store.SaveProfileAsync(new PersonalityProfile
+        {
+            UserId = userId,
+            Summary = "Any profile",
+            LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        // Act
+        var userIds = await store.GetAllUserIdsAsync();
+
+        // Assert
+        userIds.ShouldNotContain("profile");
+    }
+
+    [Fact]
+    public async Task DeleteProfileAsync_RemovesProfile()
+    {
+        // Arrange
+        var store = CreateStore();
+        var userId = $"user_{Guid.NewGuid():N}";
+        await store.SaveProfileAsync(new PersonalityProfile
+        {
+            UserId = userId,
+            Summary = "To be removed",
+            LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        // Act
+        var deleted = await store.DeleteProfileAsync(userId);
+        var retrieved = await store.GetProfileAsync(userId);
+
+        // Assert
+        deleted.ShouldBeTrue();
+        retrieved.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task DeleteProfileAsync_NonExistent_ReturnsFalse()
+    {
+        // Arrange
+        var store = CreateStore();
+
+        // Act
+        var deleted = await store.DeleteProfileAsync($"user_{Guid.NewGuid():N}");
+
+        // Assert
+        deleted.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task GetStatsAsync_ReturnsCorrectCounts()
     {
         // Arrange

@@ -131,6 +131,11 @@ public class RedisStackMemoryStore : IMemoryStore
         return profile;
     }
 
+    public async Task<bool> DeleteProfileAsync(string userId, CancellationToken ct = default)
+    {
+        return await _db.KeyDeleteAsync(ProfileKey(userId));
+    }
+
     public async Task<MemoryStats> GetStatsAsync(string userId, CancellationToken ct = default)
     {
         var memories = await GetByUserIdAsync(userId, ct);
@@ -142,15 +147,19 @@ public class RedisStackMemoryStore : IMemoryStore
 
     public async Task<IReadOnlyList<string>> GetAllUserIdsAsync(CancellationToken ct = default)
     {
+        const string profilePrefix = "memory:profile:";
         var userIds = new HashSet<string>();
         await foreach (var key in _server.KeysAsync(pattern: "memory:*:*").WithCancellation(ct))
         {
-            var parts = key.ToString().Split(':');
-            if (parts.Length >= 3)
+            var keyText = key.ToString();
+            if (keyText.StartsWith(profilePrefix, StringComparison.Ordinal))
+            {
+                userIds.Add(keyText[profilePrefix.Length..]);
+            }
+            else if (keyText.Split(':') is { Length: >= 3 } parts)
             {
                 userIds.Add(parts[1]);
             }
-
         }
 
         return userIds.ToList();
