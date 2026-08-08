@@ -340,6 +340,41 @@ public class MemoryDreamingServiceTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_UserHoldingOnlyAProfile_IsVisitedByTheRunAndCleared()
+    {
+        // The enumeration was the defect: a profile-only user never appeared in the
+        // run's user list. Drives the real run loop, not RunDreamingForUserAsync.
+        var cron = new Mock<ICronValidator>();
+        cron.SetupSequence(c => c.GetNextOccurrence(It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<TimeZoneInfo>()))
+            .Returns(DateTime.UtcNow.AddMilliseconds(-1))
+            .Returns((DateTime?)null);
+
+        _store
+            .Setup(s => s.GetAllUserIdsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "orphan" });
+        _store
+            .Setup(s => s.GetByUserIdAsync("orphan", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry>());
+        _store
+            .Setup(s => s.DeleteProfileAsync("orphan", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var service = new MemoryDreamingService(
+            _store.Object,
+            _consolidator.Object,
+            _embeddingService.Object,
+            _metricsPublisher.Object,
+            cron.Object,
+            NullLogger<MemoryDreamingService>.Instance,
+            _options);
+
+        await service.StartAsync(CancellationToken.None);
+        await service.ExecuteTask!;
+
+        _store.Verify(s => s.DeleteProfileAsync("orphan", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task RunDreamingForUserAsync_SomeMemoriesRemain_KeepsProfile()
     {
         _store

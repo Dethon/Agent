@@ -12,6 +12,7 @@ namespace Infrastructure.Memory;
 public class RedisStackMemoryStore : IMemoryStore
 {
     private const string IndexName = "idx:memories";
+    private const string ProfilePrefix = "memory:profile:";
     private const int VectorDimension = 1536;
     private static readonly TimeSpan _defaultExpiry = TimeSpan.FromDays(365);
 
@@ -147,14 +148,13 @@ public class RedisStackMemoryStore : IMemoryStore
 
     public async Task<IReadOnlyList<string>> GetAllUserIdsAsync(CancellationToken ct = default)
     {
-        const string profilePrefix = "memory:profile:";
         var userIds = new HashSet<string>();
         await foreach (var key in _server.KeysAsync(pattern: "memory:*:*").WithCancellation(ct))
         {
             var keyText = key.ToString();
-            if (keyText.StartsWith(profilePrefix, StringComparison.Ordinal))
+            if (keyText.StartsWith(ProfilePrefix, StringComparison.Ordinal))
             {
-                userIds.Add(keyText[profilePrefix.Length..]);
+                userIds.Add(keyText[ProfilePrefix.Length..]);
             }
             else if (keyText.Split(':') is { Length: >= 3 } parts)
             {
@@ -298,7 +298,7 @@ public class RedisStackMemoryStore : IMemoryStore
 
     private static string ProfileKey(string userId)
     {
-        return $"memory:profile:{userId}";
+        return $"{ProfilePrefix}{userId}";
     }
 
     private static string EscapeTag(string value)
