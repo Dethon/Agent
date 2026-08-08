@@ -121,11 +121,17 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     [Fact]
     public async Task ConnectAsync_TheHubHasNotAnsweredYet_ReportsConnecting()
     {
+        // The gate is what holds the hub unanswered: without it the retry after a failed start runs
+        // on a pool thread with a zero-length first delay, so the module could already be live by
+        // the time the assertion below reads the store.
+        _hub.StartGate = new TaskCompletionSource();
         _hub.FailedStartsRemaining = 1;
 
         var connecting = _liveConnection.ConnectAsync();
+        await WaitForAsync(() => _hub.StartAttempts >= 1);
 
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connecting);
+        _hub.StartGate.SetResult();
         await FinishAsync(connecting);
     }
 

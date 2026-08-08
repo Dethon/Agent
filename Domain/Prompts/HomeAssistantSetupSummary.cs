@@ -3,13 +3,32 @@ using Domain.Tools.HomeAssistant.Vfs;
 
 namespace Domain.Prompts;
 
-// Builds the directory dump appended to HomeAssistantPrompt at MCP-prompt-fetch time. The agent
-// reads the paths verbatim — both `/ha/areas/<room>/<full-entity-id>_(<slug>)` and
-// `/ha/entities/<class>/<object-id>_(<slug>)` are listed so any query axis is one copy away.
-// Backed by the shared HaCatalogProvider cache. Returns "" when the catalog is empty so the
-// caller falls back to the static prompt alone.
+// Builds the directory dump appended to HomeAssistantPrompt at MCP-prompt-fetch time. Backed by
+// the shared HaCatalogProvider cache. Returns "" when the catalog is empty so the caller falls
+// back to the static prompt alone.
+//
+// Each entity is listed ONCE, under its room, as the bare composed segment. It used to be listed
+// twice — once per tree — with the full path repeated on every line, which on the live house was
+// 26.5k characters of a ~28k-token prefix; one tree grouped by room is 10.7k for the same reach.
+// Nothing shrinks in what resolves: both path forms still address the entity, and the header
+// carries the rule for rebuilding either one. The composed `<id>_(<slug>)` segment stays verbatim
+// because HaFileSystem.ResolveEntity is strict-canonical — a bare id yields a hint, not a hit,
+// so shortening the segment itself would buy characters at the price of a round trip.
 public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
 {
+    private const string SetupHeader =
+        "Mounted at `/ha`. Every entity is listed once below, under its room, as the exact "
+        + "directory segment — use it verbatim. The full path is `/ha/areas/<room>/<entry>`. The "
+        + "same entity is also at `/ha/entities/<class>/<object-id>_(<slug>)`, where `<class>` is "
+        + "the entry up to its first `.` and `<object-id>_(<slug>)` is the rest.";
+
+    private const string ActionsHeader =
+        "Action files live in the ENTITY directory (`/ha/entities/<class>/<id>/<action>.sh`), "
+        + "never in the class directory — `glob` on `/ha/entities/<class>/*.sh` always returns "
+        + "nothing. Use this table instead of globbing to discover actions. Classes absent "
+        + "here are read-only. If one entity lacks a listed action, `exec` returns exitCode "
+        + "127 and `stderr` names the ones it does have.";
+
     public async Task<string> GetAsync(CancellationToken ct = default)
     {
         var catalog = await catalogProvider.GetAsync(ct);
@@ -18,36 +37,37 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
             return string.Empty;
         }
 
-        var paths = BuildAreaPaths(catalog)
-            .Concat(BuildEntityPaths(catalog))
-            .OrderBy(p => p, StringComparer.Ordinal);
-
         var sb = new StringBuilder();
         sb.Append("## Current Home Assistant setup\n\n");
-        sb.Append("Mounted at `/ha` — every device directory below. Use the paths verbatim.\n\n");
-        foreach (var p in paths)
-        {
-            sb.Append(p).Append('\n');
-        }
+        sb.Append(SetupHeader).Append("\n\n");
+        sb.Append(string.Join("\n", BuildRoomSections(catalog)));
 
         var actions = BuildActionTable(catalog);
         if (actions.Count > 0)
         {
             sb.Append("\n## Actions by entity class\n\n");
-            sb.Append(
-                "Action files live in the ENTITY directory (`/ha/entities/<class>/<id>/<action>.sh`), "
-                + "never in the class directory — `glob` on `/ha/entities/<class>/*.sh` always returns "
-                + "nothing. Use this table instead of globbing to discover actions. Classes absent "
-                + "here are read-only. If one entity lacks a listed action, `exec` returns exitCode "
-                + "127 and `stderr` names the ones it does have.\n\n");
-            foreach (var line in actions)
-            {
-                sb.Append(line).Append('\n');
-            }
+            sb.Append(ActionsHeader).Append("\n\n");
+            sb.Append(string.Join("\n", actions)).Append('\n');
         }
 
         return sb.ToString();
     }
+
+    // AreaSlugs() already orders real rooms ordinally and appends `unassigned` last, and
+    // EntityIdsInArea() orders within a room — the composed segment keeps that order because it
+    // only ever appends to the id. So neither is re-sorted here.
+    private static IEnumerable<string> BuildRoomSections(HaCatalog catalog) =>
+        catalog.AreaSlugs()
+            .Select(area => (area, entries: BuildRoomEntries(catalog, area)))
+            .Where(section => section.entries.Count > 0)
+            .Select(section =>
+                $"### {section.area}\n{string.Join("\n", section.entries)}\n");
+
+    private static IReadOnlyList<string> BuildRoomEntries(HaCatalog catalog, string area) =>
+        catalog.EntityIdsInArea(area)
+            .Select(entityId =>
+                HaSlug.Compose(entityId, HaCatalog.FriendlyName(catalog.EntityById(entityId))))
+            .ToList();
 
     // Grouped by class, not per entity: every entity of a class exposes the same actions, so the
     // per-entity form costs ~4.4k tokens to say what ~350 says. That size difference is the whole
@@ -69,12 +89,4 @@ public class HomeAssistantSetupSummary(HaCatalogProvider catalogProvider)
             .OrderBy(a => a, StringComparer.Ordinal)
             .ToList();
 
-    private static IEnumerable<string> BuildAreaPaths(HaCatalog catalog) =>
-        catalog.AreaSlugs().SelectMany(area =>
-            catalog.EntityIdsInArea(area).Select(entityId =>
-                $"/ha/areas/{area}/{HaSlug.Compose(entityId, HaCatalog.FriendlyName(catalog.EntityById(entityId)))}"));
-
-    private static IEnumerable<string> BuildEntityPaths(HaCatalog catalog) =>
-        catalog.Entities.Select(e =>
-            $"/ha/entities/{HaCatalog.ClassOf(e.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(e.EntityId), HaCatalog.FriendlyName(e))}");
 }

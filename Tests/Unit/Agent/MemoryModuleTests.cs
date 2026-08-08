@@ -29,4 +29,43 @@ public class MemoryModuleTests
         services.ShouldContain(d => d.ImplementationType == typeof(MemoryDreamingService));
         services.ShouldContain(d => d.ImplementationType == typeof(MemoryExtractionWorker));
     }
+
+    [Fact]
+    public void AddMemory_TakesTheEmbeddingAddressAndModelFromTheMemoryConfiguration()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Memory:Embedding:BaseAddress"] = "http://embeddings.invalid/v1/",
+                ["Memory:Embedding:Model"] = "some-embedding-model",
+                ["openRouter:apiUrl"] = "https://hosted.invalid/api/v1/"
+            })
+            .Build();
+
+        using var provider = new ServiceCollection().AddMemory(config).BuildServiceProvider();
+        var options = provider.GetRequiredService<EmbeddingOptions>();
+
+        options.BaseAddress.ShouldBe("http://embeddings.invalid/v1/");
+        options.Model.ShouldBe("some-embedding-model");
+    }
+
+    [Fact]
+    public void AddMemory_DefaultsToTheLocalServerWithNoKeyAndItsOwnDimension()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["openRouter:apiKey"] = "sk-hosted"
+            })
+            .Build();
+
+        using var provider = new ServiceCollection().AddMemory(config).BuildServiceProvider();
+        var options = provider.GetRequiredService<EmbeddingOptions>();
+
+        options.BaseAddress.ShouldBe("http://lemonade:13305/api/v1/");
+        options.Dimension.ShouldBe(1024);
+        // The local server has no key to check, and the hosted provider's must not leak onto
+        // the Docker network.
+        options.ApiKey.ShouldBeNull();
+    }
 }

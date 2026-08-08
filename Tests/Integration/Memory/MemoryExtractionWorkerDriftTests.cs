@@ -20,7 +20,7 @@ public class MemoryExtractionWorkerDriftTests(RedisFixture redisFixture) : IClas
     {
         var stateKey = $"drift-test-{Guid.NewGuid():N}";
 
-        var store = new RedisStackMemoryStore(redisFixture.Connection);
+        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(1536));
         var threadStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(5));
 
         // Arrange: seed initial 3-message thread

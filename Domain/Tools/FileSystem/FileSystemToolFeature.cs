@@ -85,6 +85,12 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
 
             If you call a tool the backend doesn't implement, the response is a structured error envelope (`{"ok": false, "errorCode": "unsupported_operation", "message": "...", "retryable": false, "hint": "..."}`) — treat it as data, not as an exception. Use it as a hint to pick a different mount or a different operation, not as a reason to retry.
 
+            ### Choosing a mount
+
+            - Programmatic work — parsing, transforming, scraping, extracting archives, generating charts, exercising a CLI — belongs on a mount that advertises `exec`. Hand-editing is fragile for these.
+            - A targeted text change belongs on the mount that owns the file: edit it in place rather than scripting the edit somewhere else.
+            - When a task spans mounts, run the computation where `exec` lives and persist the readable result on the mount that owns it.
+
             ### Cross-mount reminders
 
             - Each mount is its own backend. Tools see only the filesystem of the mount you target — they cannot reach files on a different mount. If you need data from one mount available to a command on another (e.g. for `exec`), copy it across first.

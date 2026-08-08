@@ -19,7 +19,7 @@ public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClas
     [Fact]
     public async Task EnrichAsync_WithStoredMemories_InjectsContextIntoMessage()
     {
-        var store = new RedisStackMemoryStore(redisFixture.Connection);
+        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(1536));
         var embeddingService = new Mock<IEmbeddingService>();
         var queue = new MemoryExtractionQueue();
         var metricsPublisher = new Mock<IMetricsPublisher>();
@@ -68,6 +68,96 @@ public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClas
         context.ShouldNotBeNull();
         context.Memories.Count.ShouldBeGreaterThan(0);
         context.Memories.ShouldContain(m => m.Memory.Content.Contains("TypeScript"));
+    }
+
+    [Fact]
+    public async Task EnrichAsync_UnrememberedUser_SkipsEmbeddingAndSearchButKeepsProfileAndExtraction()
+    {
+        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(1536));
+        var embeddingService = new Mock<IEmbeddingService>();
+        var queue = new MemoryExtractionQueue();
+
+        var userId = $"user_{Guid.NewGuid():N}";
+        await store.SaveProfileAsync(new PersonalityProfile
+        {
+            UserId = userId, Summary = "Habla claro y va al grano", LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        var message = new ChatMessage(ChatRole.User, "¿Qué lenguaje debería usar?");
+        await CreateHook(store, embeddingService.Object, queue)
+            .EnrichAsync(message, userId, "conv_1", null, CreateSession(), CancellationToken.None);
+
+        embeddingService.Verify(
+            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var context = message.GetMemoryContext();
+        context.ShouldNotBeNull();
+        context.Profile.ShouldNotBeNull();
+        context.Memories.ShouldBeEmpty();
+
+        queue.Complete();
+        var request = await queue.ReadAllAsync(CancellationToken.None).FirstAsync();
+        request.UserId.ShouldBe(userId);
+    }
+
+    [Fact]
+    public async Task EnrichAsync_AfterTheirFirstMemoryLands_SearchesOnTheVeryNextTurn()
+    {
+        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(1536));
+        var embeddingService = new Mock<IEmbeddingService>();
+        embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateTestEmbedding());
+
+        var userId = $"user_{Guid.NewGuid():N}";
+        var hook = CreateHook(store, embeddingService.Object, new MemoryExtractionQueue());
+
+        await hook.EnrichAsync(new ChatMessage(ChatRole.User, "primera"), userId, "c", null,
+            CreateSession(), CancellationToken.None);
+        embeddingService.Verify(
+            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        await store.StoreAsync(new MemoryEntry
+        {
+            Id = $"mem_{Guid.NewGuid():N}",
+            UserId = userId,
+            Category = MemoryCategory.Preference,
+            Content = "Al usuario le gusta TypeScript",
+            Importance = 0.9,
+            Confidence = 0.8,
+            Embedding = CreateTestEmbedding(),
+            Tags = [],
+            CreatedAt = DateTimeOffset.UtcNow,
+            LastAccessedAt = DateTimeOffset.UtcNow
+        });
+
+        await hook.EnrichAsync(new ChatMessage(ChatRole.User, "segunda"), userId, "c", null,
+            CreateSession(), CancellationToken.None);
+        embeddingService.Verify(
+            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static MemoryRecallHook CreateHook(
+        IMemoryStore store, IEmbeddingService embeddingService, MemoryExtractionQueue queue)
+    {
+        var threadStateStore = new Mock<IThreadStateStore>();
+        threadStateStore.Setup(s => s.GetMessageCountAsync(It.IsAny<string>())).ReturnsAsync(0L);
+        threadStateStore.Setup(s => s.GetTailMessagesAsync(It.IsAny<string>(), It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+
+        return new MemoryRecallHook(
+            store, embeddingService, threadStateStore.Object, queue,
+            new Mock<IMetricsPublisher>().Object,
+            new Mock<IAgentDefinitionProvider>().Object,
+            Mock.Of<ILogger<MemoryRecallHook>>(),
+            new MemoryRecallOptions());
+    }
+
+    private static AgentSession CreateSession()
+    {
+        var session = new Mock<AgentSession>().Object;
+        session.StateBag.SetValue(RedisChatMessageStore.StateKey, $"state-{Guid.NewGuid():N}");
+        return session;
     }
 
     private static float[] CreateTestEmbedding()

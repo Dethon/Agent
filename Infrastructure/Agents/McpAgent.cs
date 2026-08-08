@@ -372,7 +372,6 @@ public sealed class McpAgent : DisposableAgent
         IEnumerable<string> clientPrompts,
         DateTimeOffset now)
     {
-        var datePrompt = $"Today is {now.ToString("dddd, yyyy-MM-dd", CultureInfo.InvariantCulture)}.";
         var prompts = domainPrompts
             .Concat(fileSystemPrompts)
             .Concat(clientPrompts);
@@ -384,9 +383,14 @@ public sealed class McpAgent : DisposableAgent
             prompts = prompts.Prepend(IdentityPrompt.Build(name, description));
         }
 
-        prompts = prompts
-            .Prepend(BasePrompt.Instructions)
-            .Prepend(datePrompt);
+        prompts = prompts.Prepend(BasePrompt.Instructions);
+
+        // The date goes after every static section, never first. It is the only part of the
+        // instructions that changes on its own, and the provider's prompt cache keys on a byte
+        // prefix -- dating the opening line threw away the whole cached prefix at every midnight
+        // to say one sentence. Behind the static sections, a rollover only re-prefills the tail.
+        prompts = prompts.Append(
+            $"Today is {now.ToString("dddd, yyyy-MM-dd", CultureInfo.InvariantCulture)}.");
 
         // User custom instructions go LAST: closest to the conversation, they are the
         // most recent (and least "lost in the middle") guidance the model sees, which

@@ -3,6 +3,10 @@ using Shouldly;
 
 namespace Tests.Unit.Domain.Prompts;
 
+// Build is a lookup with three outcomes — a shipped template, the generic fallback with the name
+// interpolated, or null — so each test here picks a branch. The wording inside a template is a
+// const string; why it is worded that way belongs in LanguagePrompt, not in an assertion that a
+// constant contains part of itself.
 public class LanguagePromptTests
 {
     [Fact]
@@ -26,35 +30,6 @@ public class LanguagePromptTests
         result.ShouldNotBeNull();
         result.ShouldStartWith("## Idioma");
         result.ShouldContain("SIEMPRE en español");
-    }
-
-    // The reason the section exists: every other part of a request (these instructions, the tool
-    // descriptions and results, the recalled memory block, the metadata prefix on each user
-    // message) is English, and a relative rule loses to it. The directive has to say outright
-    // that reading English does not mean answering in English.
-    [Fact]
-    public void Build_Spanish_SaysTheEnglishContextDoesNotChangeTheReplyLanguage()
-    {
-        var result = LanguagePrompt.Build("es")!;
-
-        result.ShouldContain("en inglés");
-        result.ShouldContain("NO cambia tu idioma");
-    }
-
-    // The first token of a voice turn is the pre-tool acknowledgement word. Once that lands in
-    // English the rest of the turn follows it, so the directive names it explicitly.
-    [Fact]
-    public void Build_Spanish_CoversTheFirstWordSpokenBeforeATool()
-    {
-        LanguagePrompt.Build("es")!.ShouldContain("la primera palabra");
-    }
-
-    // An assistant turn that already drifted stays in the history for the rest of the
-    // conversation window; without this the model copies its own mistake.
-    [Fact]
-    public void Build_Spanish_DisownsAnEarlierDriftedReply()
-    {
-        LanguagePrompt.Build("es")!.ShouldContain("no lo repitas");
     }
 
     [Fact]

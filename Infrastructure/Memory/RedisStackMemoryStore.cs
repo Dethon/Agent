@@ -11,20 +11,24 @@ namespace Infrastructure.Memory;
 
 public class RedisStackMemoryStore : IMemoryStore
 {
-    private const string IndexName = "idx:memories";
-    private const int VectorDimension = 1536;
+    public const string IndexName = "idx:memories";
+    private const string ProfilePrefix = "memory:profile:";
     private static readonly TimeSpan _defaultExpiry = TimeSpan.FromDays(365);
 
     private readonly IDatabase _db;
     private readonly SearchCommands _ft;
     private readonly IServer _server;
+    private readonly int _vectorDimension;
     private bool _indexInitialized;
 
-    public RedisStackMemoryStore(IConnectionMultiplexer redis)
+    public RedisStackMemoryStore(IConnectionMultiplexer redis, EmbeddingOptions embeddingOptions)
     {
         _db = redis.GetDatabase();
         _ft = _db.FT();
         _server = redis.GetServer(redis.GetEndPoints()[0]);
+        // Follows the embedding model rather than being a constant here: changing the model
+        // is then a configuration change plus a migration, not an edit inside a store.
+        _vectorDimension = embeddingOptions.Dimension;
     }
 
     public async Task<MemoryEntry> StoreAsync(MemoryEntry memory, CancellationToken ct = default)
@@ -64,6 +68,32 @@ public class RedisStackMemoryStore : IMemoryStore
         }
 
         return memories.OrderByDescending(m => m.CreatedAt).ToList();
+    }
+
+    public async Task<bool> HasAnyMemoriesAsync(string userId, CancellationToken ct = default)
+    {
+        // Asked through the index rather than by scanning keys. A MATCH'd SCAN filters
+        // server-side but still walks the whole keyspace, and for an unremembered user —
+        // the case this exists to make fast — nothing matches, so it walks all of it. That
+        // keyspace also holds the transcripts and thread state, and this runs on the
+        // blocking path of every turn.
+        await EnsureIndexCreatedAsync();
+
+        try
+        {
+            // No documents and no fields: the count is the whole answer.
+            var query = new Query($"@userId:{{{EscapeTag(userId)}}}")
+                .Limit(0, 0)
+                .Dialect(2);
+            var result = await _ft.SearchAsync(IndexName, query);
+            return result.TotalResults > 0;
+        }
+        catch (RedisServerException)
+        {
+            // An unusable index must not decide that a user has nothing; recall then falls
+            // through to a search that reports the real failure.
+            return true;
+        }
     }
 
     public async Task<IReadOnlyList<MemorySearchResult>> SearchAsync(
@@ -131,6 +161,11 @@ public class RedisStackMemoryStore : IMemoryStore
         return profile;
     }
 
+    public async Task<bool> DeleteProfileAsync(string userId, CancellationToken ct = default)
+    {
+        return await _db.KeyDeleteAsync(ProfileKey(userId));
+    }
+
     public async Task<MemoryStats> GetStatsAsync(string userId, CancellationToken ct = default)
     {
         var memories = await GetByUserIdAsync(userId, ct);
@@ -145,12 +180,15 @@ public class RedisStackMemoryStore : IMemoryStore
         var userIds = new HashSet<string>();
         await foreach (var key in _server.KeysAsync(pattern: "memory:*:*").WithCancellation(ct))
         {
-            var parts = key.ToString().Split(':');
-            if (parts.Length >= 3)
+            var keyText = key.ToString();
+            if (keyText.StartsWith(ProfilePrefix, StringComparison.Ordinal))
+            {
+                userIds.Add(keyText[ProfilePrefix.Length..]);
+            }
+            else if (keyText.Split(':') is { Length: >= 3 } parts)
             {
                 userIds.Add(parts[1]);
             }
-
         }
 
         return userIds.ToList();
@@ -275,7 +313,7 @@ public class RedisStackMemoryStore : IMemoryStore
             .AddVectorField("embedding", Schema.VectorField.VectorAlgo.HNSW, new Dictionary<string, object>
             {
                 ["TYPE"] = "FLOAT32",
-                ["DIM"] = VectorDimension,
+                ["DIM"] = _vectorDimension,
                 ["DISTANCE_METRIC"] = "COSINE"
             });
 
@@ -289,7 +327,7 @@ public class RedisStackMemoryStore : IMemoryStore
 
     private static string ProfileKey(string userId)
     {
-        return $"memory:profile:{userId}";
+        return $"{ProfilePrefix}{userId}";
     }
 
     private static string EscapeTag(string value)

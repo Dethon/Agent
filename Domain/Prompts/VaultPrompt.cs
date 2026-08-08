@@ -43,6 +43,7 @@ public static class VaultPrompt
         - **Headings are referenceable.** Other notes may link to `[[ThisNote#Some Heading]]`. Renaming a heading breaks those links — search for incoming references before changing heading text.
         - **Attachments stay where they are.** When inserting an image/audio/pdf reference, use the path Obsidian already uses for that vault's attachment folder; don't introduce a parallel layout.
         - **Daily notes** (commonly `Daily/YYYY-MM-DD.md` or similar) are managed by the Daily Notes core plugin. Append to them rather than restructuring them.
+        - **Ask before an irreversible change.** These are the user's own notes and there is no versioning here. Before a change that deletes or overwrites work you cannot restore, ask one short question first.
 
         ### Capabilities & limits
 

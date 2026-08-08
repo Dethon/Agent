@@ -27,8 +27,11 @@ public static class SandboxPrompt
         - **Timeouts** kill the entire process tree and surface a timeout flag; raise the limit only when you genuinely need a longer-running command.
         - **Writes outside the persistent workspace** typically fail with permission denied; keep working files under `/sandbox/home/sandbox_user/...`.
 
-        ### Workflow tip
+        ### Working here
 
         Edit files under `/sandbox/home/sandbox_user/...` with the filesystem write tools, then run them with the exec tool. Both operate on the same volume.
+
+        - **Persist results, not steps.** Keep working files in the persistent workspace. When the user wants the *result* somewhere durable, write a clean summary onto the mount that holds it — don't dump raw command output there.
+        - **Be honest about what you ran.** Never claim you ran a command you didn't, and say so when one failed.
         """;
 }

@@ -13,8 +13,12 @@ public class HomeAssistantSetupSummaryTests
     private static HomeAssistantSetupSummary Build(FakeHaClient client) =>
         new(new HaCatalogProvider(() => client, new FakeTimeProvider()));
 
+    // Every entity used to be printed twice, once per tree, which on the live house was 167
+    // duplicated lines — 12.7k characters of the ~28k-token prefix saying what the other half
+    // already said. One tree plus the rule for deriving the other costs nothing in reach: both
+    // path forms still resolve, only the index stops spelling both out.
     [Fact]
-    public async Task GetAsync_RendersBothTreesAsPaths()
+    public async Task GetAsync_ListsEachEntityOnceUnderItsRoom()
     {
         var client = new FakeHaClient
         {
@@ -29,15 +33,35 @@ public class HomeAssistantSetupSummaryTests
         var text = await Build(client).GetAsync(CancellationToken.None);
 
         text.ShouldContain("## Current Home Assistant setup");
-        text.ShouldContain("Mounted at `/ha`");
-        text.ShouldContain("/ha/areas/salon/sensor.salon_temp_(salon-temp)");
-        text.ShouldContain("/ha/areas/unassigned/light.kitchen_(kitchen)");
-        text.ShouldContain("/ha/entities/light/kitchen_(kitchen)");
-        text.ShouldContain("/ha/entities/sensor/salon_temp_(salon-temp)");
+        text.ShouldContain("### salon\nsensor.salon_temp_(salon-temp)\n");
+        text.ShouldContain("### unassigned\nlight.kitchen_(kitchen)\n");
+        // The entities tree is still reachable and the header still explains it; what is gone is
+        // the second copy of every entity, so assert on the listed paths, not on the mention.
+        text.ShouldNotContain("/ha/entities/light/kitchen");
+        text.ShouldNotContain("/ha/entities/sensor/salon_temp");
+        text.ShouldNotContain("/ha/areas/salon/");
+    }
+
+    // The room heading replaces a repeated `/ha/areas/<room>/` on every line, so the header has
+    // to say how to put a full path back together — for both trees, since the entities form is
+    // no longer listed anywhere.
+    [Fact]
+    public async Task GetAsync_HeaderGivesTheRuleForBothPathForms()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("light.kitchen", "off") },
+            AreaTemplateJson = """{"areas":[]}"""
+        };
+
+        var text = await Build(client).GetAsync(CancellationToken.None);
+
+        text.ShouldContain("/ha/areas/<room>/<entry>");
+        text.ShouldContain("/ha/entities/<class>/<object-id>");
     }
 
     [Fact]
-    public async Task GetAsync_PathsAreLexicallySorted()
+    public async Task GetAsync_RoomsAndEntriesAreLexicallySorted()
     {
         var client = new FakeHaClient
         {
@@ -45,15 +69,20 @@ public class HomeAssistantSetupSummaryTests
             {
                 Entity("light.b_lamp", "off"),
                 Entity("light.a_lamp", "off"),
+                Entity("light.hall", "off"),
             },
-            AreaTemplateJson = """{"areas":[]}"""
+            AreaTemplateJson = """{"areas":[{"id":"attic","name":"Attic","entities":["light.hall"]}]}"""
         };
 
         var text = await Build(client).GetAsync(CancellationToken.None);
 
-        var idxA = text.IndexOf("/ha/entities/light/a_lamp", StringComparison.Ordinal);
-        var idxB = text.IndexOf("/ha/entities/light/b_lamp", StringComparison.Ordinal);
-        idxA.ShouldBeGreaterThanOrEqualTo(0);
+        var idxAttic = text.IndexOf("### attic", StringComparison.Ordinal);
+        var idxUnassigned = text.IndexOf("### unassigned", StringComparison.Ordinal);
+        var idxA = text.IndexOf("light.a_lamp", StringComparison.Ordinal);
+        var idxB = text.IndexOf("light.b_lamp", StringComparison.Ordinal);
+        idxAttic.ShouldBeGreaterThanOrEqualTo(0);
+        idxUnassigned.ShouldBeGreaterThan(idxAttic);
+        idxA.ShouldBeGreaterThan(idxUnassigned);
         idxB.ShouldBeGreaterThan(idxA);
     }
 
@@ -68,8 +97,7 @@ public class HomeAssistantSetupSummaryTests
 
         var text = await Build(client).GetAsync(CancellationToken.None);
 
-        text.ShouldContain("/ha/entities/switch/bare\n");
-        text.ShouldContain("/ha/areas/unassigned/switch.bare\n");
+        text.ShouldContain("### unassigned\nswitch.bare\n");
         text.ShouldNotContain("switch.bare_(");
     }
 

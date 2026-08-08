@@ -277,7 +277,10 @@ public class MemoryDreamingServiceTests
     {
         _store
             .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<MemoryEntry>());
+            .ReturnsAsync(new List<MemoryEntry>
+            {
+                MakeMemory("m1", "user1", MemoryCategory.Fact, 0.8, _now.AddDays(-5), _now.AddDays(-5))
+            });
 
         MetricEvent? published = null;
         _metricsPublisher
@@ -291,6 +294,100 @@ public class MemoryDreamingServiceTests
         var dreamingEvent = (MemoryDreamingEvent)published;
         dreamingEvent.UserId.ShouldBe("user1");
         dreamingEvent.ProfileRegenerated.ShouldBeTrue();
+        dreamingEvent.ProfileRemoved.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RunDreamingForUserAsync_NoMemories_RemovesProfileInsteadOfSynthesizing()
+    {
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry>());
+        _store
+            .Setup(s => s.DeleteProfileAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _store.Verify(s => s.DeleteProfileAsync("user1", It.IsAny<CancellationToken>()), Times.Once);
+        _consolidator.Verify(
+            c => c.SynthesizeProfileAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _store.Verify(s => s.SaveProfileAsync(It.IsAny<PersonalityProfile>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RunDreamingForUserAsync_NoMemories_RecordsProfileRemovalOnEvent()
+    {
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry>());
+        _store
+            .Setup(s => s.DeleteProfileAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        MetricEvent? published = null;
+        _metricsPublisher
+            .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
+            .Callback<MetricEvent>(evt => published = evt);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        var dreamingEvent = published.ShouldBeOfType<MemoryDreamingEvent>();
+        dreamingEvent.UserId.ShouldBe("user1");
+        dreamingEvent.ProfileRemoved.ShouldBeTrue();
+        dreamingEvent.ProfileRegenerated.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UserHoldingOnlyAProfile_IsVisitedByTheRunAndCleared()
+    {
+        // The enumeration was the defect: a profile-only user never appeared in the
+        // run's user list. Drives the real run loop, not RunDreamingForUserAsync.
+        var cron = new Mock<ICronValidator>();
+        cron.SetupSequence(c => c.GetNextOccurrence(It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<TimeZoneInfo>()))
+            .Returns(DateTime.UtcNow.AddMilliseconds(-1))
+            .Returns((DateTime?)null);
+
+        _store
+            .Setup(s => s.GetAllUserIdsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { "orphan" });
+        _store
+            .Setup(s => s.GetByUserIdAsync("orphan", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry>());
+        _store
+            .Setup(s => s.DeleteProfileAsync("orphan", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var service = new MemoryDreamingService(
+            _store.Object,
+            _consolidator.Object,
+            _embeddingService.Object,
+            _metricsPublisher.Object,
+            cron.Object,
+            NullLogger<MemoryDreamingService>.Instance,
+            _options);
+
+        await service.StartAsync(CancellationToken.None);
+        await service.ExecuteTask!;
+
+        _store.Verify(s => s.DeleteProfileAsync("orphan", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDreamingForUserAsync_SomeMemoriesRemain_KeepsProfile()
+    {
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry>
+            {
+                MakeMemory("survivor", "user1", MemoryCategory.Fact, 0.8, _now.AddDays(-5), _now.AddDays(-5))
+            });
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _store.Verify(s => s.DeleteProfileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.SaveProfileAsync(It.IsAny<PersonalityProfile>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static MemoryEntry MakeMemory(

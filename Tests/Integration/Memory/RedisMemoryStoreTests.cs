@@ -7,11 +7,14 @@ namespace Tests.Integration.Memory;
 
 public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
 {
-    private const int EmbeddingDimension = 1536; // text-embedding-3-small
+    // Deliberately not the configured production width: the store builds its index at
+    // whatever dimension it is given, and these tests pin that it follows the configuration
+    // rather than a constant of its own.
+    private const int EmbeddingDimension = 1536;
 
     private RedisStackMemoryStore CreateStore()
     {
-        return new RedisStackMemoryStore(redisFixture.Connection);
+        return new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(EmbeddingDimension));
     }
 
     private static float[] CreateTestEmbedding(float primaryValue = 1.0f, int primaryIndex = 0)
@@ -371,6 +374,81 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
 
         // Assert
         result.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task GetAllUserIdsAsync_UserWithOnlyProfile_IsIncluded()
+    {
+        // Arrange
+        var store = CreateStore();
+        var userId = $"user_{Guid.NewGuid():N}";
+        await store.SaveProfileAsync(new PersonalityProfile
+        {
+            UserId = userId,
+            Summary = "Orphaned profile holder",
+            LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        // Act
+        var userIds = await store.GetAllUserIdsAsync();
+
+        // Assert
+        userIds.ShouldContain(userId);
+    }
+
+    [Fact]
+    public async Task GetAllUserIdsAsync_ProfileKey_IsNeverReadAsAUserNamedProfile()
+    {
+        // Arrange
+        var store = CreateStore();
+        var userId = $"user_{Guid.NewGuid():N}";
+        await store.SaveProfileAsync(new PersonalityProfile
+        {
+            UserId = userId,
+            Summary = "Any profile",
+            LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        // Act
+        var userIds = await store.GetAllUserIdsAsync();
+
+        // Assert
+        userIds.ShouldNotContain("profile");
+    }
+
+    [Fact]
+    public async Task DeleteProfileAsync_RemovesProfile()
+    {
+        // Arrange
+        var store = CreateStore();
+        var userId = $"user_{Guid.NewGuid():N}";
+        await store.SaveProfileAsync(new PersonalityProfile
+        {
+            UserId = userId,
+            Summary = "To be removed",
+            LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        // Act
+        var deleted = await store.DeleteProfileAsync(userId);
+        var retrieved = await store.GetProfileAsync(userId);
+
+        // Assert
+        deleted.ShouldBeTrue();
+        retrieved.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task DeleteProfileAsync_NonExistent_ReturnsFalse()
+    {
+        // Arrange
+        var store = CreateStore();
+
+        // Act
+        var deleted = await store.DeleteProfileAsync($"user_{Guid.NewGuid():N}");
+
+        // Assert
+        deleted.ShouldBeFalse();
     }
 
     [Fact]

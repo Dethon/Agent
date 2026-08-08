@@ -8,20 +8,29 @@ using WireMock.Server;
 
 namespace Tests.Unit.Infrastructure.Memory;
 
-public class OpenRouterEmbeddingServiceMockTests : IDisposable
+public class EmbeddingServiceTests : IDisposable
 {
     private readonly WireMockServer _server;
-    private readonly OpenRouterEmbeddingService _service;
+    private readonly HttpClient _client;
+    private readonly EmbeddingService _service;
 
-    public OpenRouterEmbeddingServiceMockTests()
+    public EmbeddingServiceTests()
     {
         _server = WireMockServer.Start();
-        var httpClient = new HttpClient
-        {
-            BaseAddress = new Uri(_server.Url!)
-        };
-        _service = new OpenRouterEmbeddingService(httpClient, "test-model");
+        _client = new HttpClient();
+        _service = new EmbeddingService(_client, CreateOptions(_server.Url!));
     }
+
+    // Every stub below answers at this width, because the client now refuses a vector whose
+    // width disagrees with the configured dimension.
+    private const int TestDimension = 3;
+
+    private static EmbeddingOptions CreateOptions(string baseAddress, int dimension = TestDimension) => new()
+    {
+        BaseAddress = baseAddress,
+        Model = "test-model",
+        Dimension = dimension
+    };
 
     [Fact]
     public async Task GenerateEmbeddingAsync_WithValidText_ReturnsEmbeddingAndSendsCorrectRequest()
@@ -74,9 +83,9 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
         {
             data = new[]
             {
-                new { index = 1, embedding = new[] { 0.4f, 0.5f } }, // Out of order
-                new { index = 0, embedding = new[] { 0.1f, 0.2f } },
-                new { index = 2, embedding = new[] { 0.7f, 0.8f } }
+                new { index = 1, embedding = new[] { 0.4f, 0.5f, 0.6f } }, // Out of order
+                new { index = 0, embedding = new[] { 0.1f, 0.2f, 0.3f } },
+                new { index = 2, embedding = new[] { 0.7f, 0.8f, 0.9f } }
             },
             model = "test-model"
         };
@@ -94,9 +103,9 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
 
         // Assert
         result.Length.ShouldBe(3);
-        result[0].ShouldBe([0.1f, 0.2f]);
-        result[1].ShouldBe([0.4f, 0.5f]);
-        result[2].ShouldBe([0.7f, 0.8f]);
+        result[0].ShouldBe([0.1f, 0.2f, 0.3f]);
+        result[1].ShouldBe([0.4f, 0.5f, 0.6f]);
+        result[2].ShouldBe([0.7f, 0.8f, 0.9f]);
     }
 
     [Fact]
@@ -156,8 +165,8 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
         {
             data = new[]
             {
-                new { index = 0, embedding = new[] { 0.1f } },
-                new { index = 1, embedding = new[] { 0.2f } }
+                new { index = 0, embedding = new[] { 0.1f, 0.2f, 0.3f } },
+                new { index = 1, embedding = new[] { 0.4f, 0.5f, 0.6f } }
             },
             model = "test-model"
         };
@@ -179,8 +188,90 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
         body.ShouldContain("\"input\":[\"text1\",\"text2\"]");
     }
 
+    [Fact]
+    public async Task ABaseAddressWithoutATrailingSlash_StillPostsUnderIt()
+    {
+        _server.Given(Request.Create().WithPath("/v1/embeddings").UsingPost())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(new
+                {
+                    data = new[] { new { index = 0, embedding = new[] { 0.1f, 0.2f, 0.3f } } },
+                    model = "test-model"
+                })));
+
+        using var client = new HttpClient();
+        // Without normalization the relative "embeddings" would replace "/v1" instead of
+        // appending to it, and every request would miss the server's API prefix.
+        var service = new EmbeddingService(client, CreateOptions($"{_server.Url}/v1"));
+
+        var result = await service.GenerateEmbeddingAsync("test");
+
+        result.Length.ShouldBe(TestDimension);
+        _server.LogEntries[0].RequestMessage!.Path.ShouldBe("/v1/embeddings");
+    }
+
+    [Fact]
+    public async Task WithNoKeyConfigured_SendsNoAuthorizationHeader()
+    {
+        StubEmbeddingResponse();
+
+        await _service.GenerateEmbeddingAsync("test");
+
+        var headers = _server.LogEntries[0].RequestMessage?.Headers!;
+        headers.ShouldNotContainKey("Authorization");
+    }
+
+    [Fact]
+    public async Task WithAKeyConfigured_SendsItAsABearerToken()
+    {
+        StubEmbeddingResponse();
+        using var client = new HttpClient();
+        var service = new EmbeddingService(client, CreateOptions(_server.Url!) with { ApiKey = "sk-test" });
+
+        await service.GenerateEmbeddingAsync("test");
+
+        var headers = _server.LogEntries[0].RequestMessage?.Headers!;
+        headers["Authorization"].ShouldContain("Bearer sk-test");
+    }
+
+    [Fact]
+    public async Task AModelReturningTheWrongWidth_FailsLoudlyNamingBothValues()
+    {
+        StubEmbeddingResponse();
+        using var client = new HttpClient();
+        // The configured dimension and the configured model are independent settings, and
+        // the memory index is built at the first. A mismatch left unchecked writes vectors
+        // the index cannot hold and every search then errors silently.
+        var service = new EmbeddingService(client, CreateOptions(_server.Url!, dimension: 1024));
+
+        var ex = await Should.ThrowAsync<InvalidOperationException>(() => service.GenerateEmbeddingAsync("test"));
+
+        ex.Message.ShouldContain("1024");
+        ex.Message.ShouldContain("3");
+    }
+
+    private void StubEmbeddingResponse()
+    {
+        var response = new
+        {
+            data = new[] { new { index = 0, embedding = new[] { 0.1f, 0.2f, 0.3f } } },
+            model = "test-model"
+        };
+
+        _server.Given(Request.Create()
+                .WithPath("/embeddings")
+                .UsingPost())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(response)));
+    }
+
     public void Dispose()
     {
+        _client.Dispose();
         _server.Dispose();
     }
 }

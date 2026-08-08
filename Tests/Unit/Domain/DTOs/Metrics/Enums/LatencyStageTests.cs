@@ -13,6 +13,7 @@ public class LatencyStageTests
     [InlineData(LatencyStage.ToolExec, 4)]
     [InlineData(LatencyStage.HistoryStore, 5)]
     [InlineData(LatencyStage.FirstReply, 6)]
+    [InlineData(LatencyStage.MemoryEmbedding, 7)]
     public void LatencyStage_HasPinnedWireValues(LatencyStage stage, int expected)
     {
         ((int)stage).ShouldBe(expected);

@@ -7,7 +7,7 @@ namespace Tests.Unit.Infrastructure;
 public class McpAgentInstructionsTests
 {
     [Fact]
-    public void BuildInstructions_IncludesCurrentDateAsFirstLine()
+    public void BuildInstructions_IncludesCurrentDate()
     {
         var fixedTime = new DateTimeOffset(2026, 5, 15, 10, 30, 0, TimeSpan.Zero);
 
@@ -21,11 +21,15 @@ public class McpAgentInstructionsTests
             clientPrompts: [],
             now: fixedTime);
 
-        result.ShouldStartWith("Today is Friday, 2026-05-15.");
+        result.ShouldContain("Today is Friday, 2026-05-15.");
     }
 
+    // The date used to be the first line, which made the opening bytes of the system prompt
+    // change every midnight and invalidated the whole cached prefix with them. It is the only
+    // dated section, so it belongs after every static one: a day rollover then re-prefills the
+    // tail instead of the ~28k-token prefix.
     [Fact]
-    public void BuildInstructions_KeepsBasePromptAfterDate()
+    public void BuildInstructions_PutsTheDateAfterEveryStaticSection()
     {
         var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
 
@@ -34,13 +38,37 @@ public class McpAgentInstructionsTests
             description: null,
             customInstructions: null,
             language: null,
+            domainPrompts: ["DOMAIN"],
+            fileSystemPrompts: ["FS"],
+            clientPrompts: ["CLIENT"],
+            now: fixedTime);
+
+        result.ShouldStartWith(BasePrompt.Instructions);
+        var date = result.IndexOf("Today is", StringComparison.Ordinal);
+        date.ShouldBeGreaterThan(result.IndexOf(BasePrompt.Instructions, StringComparison.Ordinal));
+        date.ShouldBeGreaterThan(result.IndexOf("DOMAIN", StringComparison.Ordinal));
+        date.ShouldBeGreaterThan(result.IndexOf("FS", StringComparison.Ordinal));
+        date.ShouldBeGreaterThan(result.IndexOf("CLIENT", StringComparison.Ordinal));
+    }
+
+    // Custom instructions keep the last word over the date, as they do over every other section.
+    [Fact]
+    public void BuildInstructions_PutsTheDateBeforeCustomInstructions()
+    {
+        var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
+
+        var result = McpAgent.BuildInstructions(
+            name: "TestAgent",
+            description: null,
+            customInstructions: "CUSTOM",
+            language: null,
             domainPrompts: [],
             fileSystemPrompts: [],
             clientPrompts: [],
             now: fixedTime);
 
-        result.ShouldContain(BasePrompt.Instructions);
-        result.IndexOf("Today is").ShouldBeLessThan(result.IndexOf(BasePrompt.Instructions));
+        result.IndexOf("Today is", StringComparison.Ordinal)
+            .ShouldBeLessThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
     }
 
     [Fact]

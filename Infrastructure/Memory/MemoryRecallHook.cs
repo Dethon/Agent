@@ -30,6 +30,8 @@ public class MemoryRecallHook(
     ILogger<MemoryRecallHook> logger,
     MemoryRecallOptions options) : IMemoryRecallHook
 {
+    public const string EmbeddingErrorService = "memory-embedding";
+
     public async Task EnrichAsync(
         ChatMessage message,
         string userId,
@@ -61,23 +63,26 @@ public class MemoryRecallHook(
             using var latency = metricsPublisher.MeasureLatency(
                 LatencyStage.MemoryRecall, conversationId, agentName);
 
+            // Whether the user is remembered at all needs nothing from the thread, and both
+            // are Redis round trips on the blocking path, so it is asked alongside the read
+            // instead of behind it. The search below always awaits it.
+            var hasMemoriesTask = store.HasAnyMemoriesAsync(userId, ct);
+
             // Read before the agent is handed this turn, which is what the anchor's factory
             // says it needs and what the chat monitor test pins.
             var (persisted, persistedCount, stateKey) = await TryFetchThreadAsync(thread);
             var anchor = MemoryAnchor.TakenBeforeCurrentTurnIsPersisted(persistedCount);
 
-            var embeddingInput = BuildRecallWindowText(messageText, persisted, options.WindowUserTurns);
-
-            var embedding = await embeddingService.GenerateEmbeddingAsync(embeddingInput, ct);
-
-            var memoriesTask = store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
+            // Started before the search so the two still overlap. A user can have a profile
+            // and no memories, and on the voice path that profile is what carries how the
+            // agent should speak to them, so it is fetched whether or not there is anything
+            // to search.
             var profileTask = options.IncludePersonalityProfile
-                ? store.GetProfileAsync(userId, ct)
+                ? TryFetchProfileAsync(userId, ct)
                 : Task.FromResult<PersonalityProfile?>(null);
 
-            await Task.WhenAll(memoriesTask, profileTask);
-
-            var memories = await memoriesTask;
+            var memories = await SearchMemoriesAsync(
+                userId, messageText, persisted, hasMemoriesTask, conversationId, agentName, ct);
             var profile = await profileTask;
 
             if (memories.Count > 0 || profile is not null)
@@ -129,6 +134,93 @@ public class MemoryRecallHook(
                 ErrorType = ex.GetType().Name,
                 Message = $"Recall failed: {ex.Message}"
             });
+        }
+    }
+
+    private async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(
+        string userId,
+        string messageText,
+        ChatMessage[]? persisted,
+        Task<bool> hasMemoriesTask,
+        string? conversationId,
+        string? agentName,
+        CancellationToken ct)
+    {
+        // An unremembered user — one with no stored memory entries — pays neither an
+        // embedding nor a vector search of an empty set. Read from storage on every turn
+        // rather than cached, so a first stored memory takes effect on the very next turn
+        // and there is nothing to invalidate when memories are removed.
+        if (!await hasMemoriesTask)
+        {
+            return [];
+        }
+
+        var embeddingInput = BuildRecallWindowText(messageText, persisted, options.WindowUserTurns);
+
+        // Timed on its own so an operator can say how much of a recall was the embedding
+        // round trip and how much was everything else, rather than inferring it from the
+        // difference between the stage and what storage is known to cost. The scope
+        // publishes on disposal, so a failed call is measured too.
+        float[]? embedding;
+        using (metricsPublisher.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentName))
+        {
+            embedding = await EmbedAsync(embeddingInput, userId, ct);
+        }
+
+        // An embedding outage costs the turn its recall block and nothing else. Throwing
+        // here would carry the extraction enqueue below out with it, so an outage would stop
+        // the write path too and everything said during it would be dropped for good.
+        return embedding is null
+            ? []
+            : await store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
+    }
+
+    // Never faults. It runs alongside the search rather than after it, so a search that
+    // throws would otherwise leave this abandoned and its own failure would surface later as
+    // an unobserved task exception with nothing pointing back here. Failing soft also means
+    // a hiccup reading one profile does not cost the turn its recalled memories.
+    private async Task<PersonalityProfile?> TryFetchProfileAsync(string userId, CancellationToken ct)
+    {
+        try
+        {
+            return await store.GetProfileAsync(userId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Failed to read the personality profile for user {UserId}", userId);
+            return null;
+        }
+    }
+
+    private async Task<float[]?> EmbedAsync(string input, string userId, CancellationToken ct)
+    {
+        try
+        {
+            return await embeddingService.GenerateEmbeddingAsync(input, ct);
+        }
+        // Only a cancellation the turn itself asked for propagates. An HttpClient timeout
+        // also arrives as a TaskCanceledException, and a hung server is the likeliest way
+        // this fails — letting that one through would skip the metric below and carry the
+        // extraction enqueue out with it.
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // There is deliberately no fallback to a hosted provider. Hosted vectors are
+            // 1536 wide against a 1024-wide index, so they would be invalid rather than
+            // merely slower, and every search against them would error. A failure here
+            // degrades to a turn with no recall block, which is what already happened when
+            // the hosted provider failed. See
+            // docs/adr/0019-recall-embeds-locally-with-no-cross-provider-fallback.md.
+            //
+            // Published under its own service name so an embedding outage is distinguishable
+            // from an ordinary recall that simply found nothing.
+            logger.LogWarning(ex, "Embedding the recall window failed for user {UserId}", userId);
+            metricsPublisher.Publish(new ErrorEvent
+            {
+                Service = EmbeddingErrorService,
+                ErrorType = ex.GetType().Name,
+                Message = $"Embedding failed: {ex.Message}"
+            });
+            return null;
         }
     }
 

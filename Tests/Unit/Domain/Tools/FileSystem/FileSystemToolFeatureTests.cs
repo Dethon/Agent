@@ -119,6 +119,26 @@ public class FileSystemToolFeatureTests
         feature.Prompt.ShouldContain("operations: text_read, glob, text_search, file_info, exec");
     }
 
+    // This is the one prompt built per agent from its actual mount set, so its fixed text must
+    // hold for any of them. Mount-choice guidance arrived here from mcp-vault as a hard-coded
+    // vault-vs-sandbox table; stated that way it is wrong for an agent mounting neither, and the
+    // mistake reads as normal prose in review. The mounts here are named nothing of the sort, so
+    // either name appearing in the output can only have come from the fixed text.
+    [Fact]
+    public void Prompt_NamesNoDeploymentSpecificMount()
+    {
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.GetMounts()).Returns([
+            new FileSystemMount("notes", "/notes", "Notes") { Capabilities = ["text_read", "text_edit"] },
+            new FileSystemMount("box", "/box", "Box") { Capabilities = ["text_read", "exec"] }
+        ]);
+        var feature = new FileSystemToolFeature(registry.Object);
+
+        feature.Prompt.ShouldNotBeNull();
+        feature.Prompt.ShouldNotContain("vault");
+        feature.Prompt.ShouldNotContain("sandbox");
+    }
+
     [Fact]
     public void Prompt_ReadOnlyStyleMount_DoesNotAdvertiseWriteOrExec()
     {

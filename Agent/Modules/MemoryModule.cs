@@ -9,6 +9,7 @@ using Infrastructure.Memory;
 using Infrastructure.Validation;
 using Microsoft.Extensions.AI;
 using OpenAI;
+using StackExchange.Redis;
 
 namespace Agent.Modules;
 
@@ -22,18 +23,32 @@ public static class MemoryModule
 
             services.AddSingleton<MemoryExtractionQueue>();
 
-            services.AddSingleton<IMemoryStore, RedisStackMemoryStore>();
-            services.AddHttpClient<IEmbeddingService, OpenRouterEmbeddingService>((httpClient, sp) =>
+            // Recall embeds against the Lemonade server already in the stack, one hop away on
+            // the same Docker network, which has no key to send.
+            var embeddingOptions = new EmbeddingOptions
             {
-                var openRouterConfig = config.GetSection("openRouter");
-                httpClient.BaseAddress = new Uri(openRouterConfig["apiUrl"]!);
-                httpClient.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", openRouterConfig["apiKey"]);
-                httpClient.Timeout = TimeSpan.FromSeconds(30);
+                BaseAddress = memoryConfig["Embedding:BaseAddress"] ?? "http://lemonade:13305/api/v1/",
+                Model = memoryConfig["Embedding:Model"] ?? "Qwen3-Embedding-0.6B-GGUF",
+                ApiKey = memoryConfig["Embedding:ApiKey"],
+                Dimension = memoryConfig.GetValue("Embedding:Dimension", EmbeddingOptions.DefaultDimension),
+                Timeout = TimeSpan.FromSeconds(memoryConfig.GetValue("Embedding:TimeoutSeconds", 5))
+            };
+            services.AddSingleton(embeddingOptions);
 
-                var embeddingModel = memoryConfig["Embedding:Model"] ?? "openai/text-embedding-3-small";
-                return new OpenRouterEmbeddingService(httpClient, embeddingModel);
-            });
+            services.AddSingleton<IMemoryStore, RedisStackMemoryStore>();
+            services.AddHostedService(sp => new MemoryIndexVerification(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                RedisStackMemoryStore.IndexName,
+                embeddingOptions.Dimension,
+                sp.GetRequiredService<ILogger<MemoryIndexVerification>>()));
+
+            services.AddHttpClient<IEmbeddingService, EmbeddingService>(
+                    (httpClient, sp) => new EmbeddingService(httpClient, sp.GetRequiredService<EmbeddingOptions>()))
+                .ConfigurePrimaryHttpMessageHandler(HostedConnectionPool.CreateHandler)
+                // The factory's own two-minute handler rotation would throw the pool away well
+                // inside the connection lifetime the handler is configured for, so the handler
+                // outlives the factory's default and manages pooling itself.
+                .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 
             services.AddSingleton<IMemoryExtractor>(sp =>
             {
