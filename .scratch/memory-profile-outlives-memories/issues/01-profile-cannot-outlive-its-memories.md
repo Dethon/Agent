@@ -19,13 +19,28 @@ them. No migration step and no cleanup script.
 
 **Status:** ready-for-agent
 
-- [ ] A user with memories and a profile still has a refreshed profile after a run
-- [ ] A user whose memory entries have all been deleted has no profile after the next run
-- [ ] A user holding a profile and no memories is visited by the run at all, asserted
+- [x] A user with memories and a profile still has a refreshed profile after a run
+- [x] A user whose memory entries have all been deleted has no profile after the next run
+- [x] A user holding a profile and no memories is visited by the run at all, asserted
       directly rather than only implied — enumeration is the actual defect
-- [ ] A user who deletes some but not all of their memories keeps a profile
-- [ ] No work is ever attempted on a user named after a profile key
-- [ ] Recall for a user whose profile was removed attaches no profile, and the turn
+- [x] A user who deletes some but not all of their memories keeps a profile
+- [x] No work is ever attempted on a user named after a profile key
+- [x] Recall for a user whose profile was removed attaches no profile, and the turn
       proceeds normally
-- [ ] Removing a profile is recorded on the consolidation run's per-user event
-- [ ] The regression test is written to fail against the current code before the fix
+- [x] Removing a profile is recorded on the consolidation run's per-user event
+- [x] The regression test is written to fail against the current code before the fix
+
+## Comments
+
+Implemented on `worktree-memory-profile-outlives-memories` (2026-08-08), three commits:
+
+- `GetAllUserIdsAsync` now reads `memory:profile:<userId>` keys as their real user and
+  never as a user named `profile`; `IMemoryStore` gained `DeleteProfileAsync`
+  (integration-tested against real Redis, red first).
+- `MemoryDreamingService` visits with zero memories delete the profile instead of
+  synthesizing one, recorded as `ProfileRemoved` on `MemoryDreamingEvent`. The field is
+  not `required` so events published before it existed still deserialize.
+- A pin test asserts recall with no memories and no profile attaches no context and the
+  turn proceeds.
+
+Full suite: 3961 passed, 0 failed.
