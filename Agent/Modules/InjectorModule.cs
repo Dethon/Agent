@@ -5,6 +5,7 @@ using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Infrastructure.Agents;
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients.Channels;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
@@ -45,7 +46,19 @@ public static class InjectorModule
                         llmConfig,
                         sp.GetRequiredService<IDomainToolRegistry>(),
                         sp.GetRequiredService<IMetricsPublisher>(),
-                        sp.GetService<ILoggerFactory>()));
+                        sp.GetService<ILoggerFactory>()))
+                // Shares the chat clients' connection pool, which is the whole point: a
+                // keep-alive against its own pool would warm a connection no turn ever uses.
+                .AddHostedService(sp => new HostedConnectionKeepAlive(
+                    new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
+                    new HostedConnectionKeepAliveOptions
+                    {
+                        BaseAddress = settings.OpenRouter.ApiUrl,
+                        ApiKey = settings.OpenRouter.ApiKey
+                    },
+                    sp.GetRequiredService<IMetricsPublisher>(),
+                    TimeProvider.System,
+                    sp.GetRequiredService<ILogger<HostedConnectionKeepAlive>>()));
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
