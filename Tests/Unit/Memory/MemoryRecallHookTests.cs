@@ -46,7 +46,11 @@ public class MemoryRecallHookTests
         _store.Setup(s => s.HasAnyMemoriesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        _hook = new MemoryRecallHook(
+        _hook = CreateHook(new MemoryRecallOptions());
+    }
+
+    private MemoryRecallHook CreateHook(MemoryRecallOptions options) =>
+        new(
             _store.Object,
             _embeddingService.Object,
             _threadStateStore.Object,
@@ -54,8 +58,7 @@ public class MemoryRecallHookTests
             _metricsPublisher.Object,
             _agentDefinitionProvider.Object,
             Mock.Of<ILogger<MemoryRecallHook>>(),
-            new MemoryRecallOptions());
-    }
+            options);
 
     private static AgentSession CreateSessionWithStateKey(string stateKey)
     {
@@ -435,6 +438,39 @@ public class MemoryRecallHookTests
         await _hook.EnrichAsync(message, "user1", "conv1", null, session, CancellationToken.None);
 
         latencies.ShouldContain(e => e.Stage == LatencyStage.MemoryEmbedding);
+    }
+
+    [Fact]
+    public async Task EnrichAsync_AsksWhetherTheUserIsRememberedWhileTheThreadIsFetched()
+    {
+        var session = CreateSessionWithStateKey("state-test");
+        var asked = new TaskCompletionSource();
+        var overlapped = false;
+
+        _store.Setup(s => s.HasAnyMemoriesAsync("user1", It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                asked.TrySetResult();
+                return Task.FromResult(false);
+            });
+
+        // Reports whether the question was already in flight while the thread was being read.
+        // Both are Redis round trips and neither needs the other's answer, so running them in
+        // series adds one to the blocking path of every turn.
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test"))
+            .Returns(async () =>
+            {
+                var finished = await Task.WhenAny(asked.Task, Task.Delay(TimeSpan.FromSeconds(1)));
+                overlapped = finished == asked.Task;
+                return 0L;
+            });
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+
+        await _hook.EnrichAsync(
+            new ChatMessage(ChatRole.User, "Hello"), "user1", "conv_1", null, session, CancellationToken.None);
+
+        overlapped.ShouldBeTrue();
     }
 
     private List<LatencyEvent> CaptureLatencyEvents()

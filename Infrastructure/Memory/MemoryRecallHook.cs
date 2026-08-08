@@ -63,6 +63,11 @@ public class MemoryRecallHook(
             using var latency = metricsPublisher.MeasureLatency(
                 LatencyStage.MemoryRecall, conversationId, agentName);
 
+            // Whether the user is remembered at all needs nothing from the thread, and both
+            // are Redis round trips on the blocking path, so it is asked alongside the read
+            // instead of behind it. The search below always awaits it.
+            var hasMemoriesTask = store.HasAnyMemoriesAsync(userId, ct);
+
             // Read before the agent is handed this turn, which is what the anchor's factory
             // says it needs and what the chat monitor test pins.
             var (persisted, persistedCount, stateKey) = await TryFetchThreadAsync(thread);
@@ -77,7 +82,7 @@ public class MemoryRecallHook(
                 : Task.FromResult<PersonalityProfile?>(null);
 
             var memories = await SearchMemoriesAsync(
-                userId, messageText, persisted, conversationId, agentName, ct);
+                userId, messageText, persisted, hasMemoriesTask, conversationId, agentName, ct);
             var profile = await profileTask;
 
             if (memories.Count > 0 || profile is not null)
@@ -136,6 +141,7 @@ public class MemoryRecallHook(
         string userId,
         string messageText,
         ChatMessage[]? persisted,
+        Task<bool> hasMemoriesTask,
         string? conversationId,
         string? agentName,
         CancellationToken ct)
@@ -144,7 +150,7 @@ public class MemoryRecallHook(
         // embedding nor a vector search of an empty set. Read from storage on every turn
         // rather than cached, so a first stored memory takes effect on the very next turn
         // and there is nothing to invalidate when memories are removed.
-        if (!await store.HasAnyMemoriesAsync(userId, ct))
+        if (!await hasMemoriesTask)
         {
             return [];
         }
