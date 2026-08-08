@@ -169,10 +169,14 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
         output.WriteLine(rendered);
 
         rendered.ShouldContain("## Current Home Assistant setup");
-        rendered.ShouldContain("/ha/entities/");
-        // Both seeded entities — the input_boolean and the script — must appear under /ha/entities.
-        rendered.ShouldContain("/ha/entities/input_boolean/");
-        rendered.ShouldContain("/ha/entities/script/");
+        // Each entity is listed once, as a bare segment under its room heading; the header
+        // carries the rule for rebuilding either full path form.
+        rendered.ShouldContain("### ");
+        rendered.ShouldContain("/ha/areas/<room>/<entry>");
+        // Both seeded entities — the input_boolean and the script — must still appear.
+        rendered.ShouldContain("input_boolean.");
+        rendered.ShouldContain("script.");
+        rendered.ShouldNotContain("/ha/entities/input_boolean/");
     }
 
     [Fact]

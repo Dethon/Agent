@@ -13,8 +13,9 @@ public static class HomeAssistantPrompt
 
         Home Assistant is mounted at `/ha` and used through the standard filesystem
         tools. The "## Current Home Assistant setup" index appended below lists every
-        device directory under `/ha/areas/<room>/...` and `/ha/entities/<class>/...`
-        — use that summary to prevent unnecessary exploration.
+        device once, grouped under its room, and its header gives the rule for building
+        either full path form from an entry — use that summary to prevent unnecessary
+        exploration.
 
         ### Scope
 
@@ -30,8 +31,8 @@ public static class HomeAssistantPrompt
           `/ha/entities/light/kitchen_(kitchen)/`). Contains `state.json` (live state +
           attributes) and one `<service>.sh` per available action.
         - `/ha/areas/<room>/<entity_id>/` — the same entities grouped by room; `<room>` is
-          the area `id` slug (e.g. `salon`) shown in each `/ha/areas/...` path of the setup
-          index — not the display name.
+          the area `id` slug (e.g. `salon`), which is what each `### <room>` heading in the
+          setup index carries — not the display name.
         - Each entity directory's name carries its friendly name as `..._(<friendly-name>)`
           (e.g. `0x00158d00abcd_(aire-acondicionado-salon)` under `entities/climate/`, or the
           full `climate.0x00158d00abcd_(aire-acondicionado-salon)` under `areas/<room>/`) so
@@ -188,7 +189,7 @@ public static class HomeAssistantPrompt
           creation (`Salón` → `salon`), and keeps it fixed even if the area is later renamed.
           So the id is NOT something you can reliably derive yourself from the display name —
           accents, spaces, and past renames make a guess wrong. Read the real value verbatim
-          from the `<room>` segment in any `/ha/areas/<room>/...` path of the setup index.
+          from the `### <room>` heading the entity is listed under in the setup index.
           Whenever an action argument names a room or area, pass that slug, never the display
           name (e.g. a vacuum's `--cleaning_area_id salon`). In `--help`, such arguments are
           typed `AREA_ID (slug)`.
