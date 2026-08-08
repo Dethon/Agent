@@ -182,6 +182,34 @@ public class EmbeddingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ABaseAddressWithoutATrailingSlash_StillPostsUnderIt()
+    {
+        _server.Given(Request.Create().WithPath("/v1/embeddings").UsingPost())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(new
+                {
+                    data = new[] { new { index = 0, embedding = new[] { 0.1f } } },
+                    model = "test-model"
+                })));
+
+        using var client = new HttpClient();
+        var service = new EmbeddingService(client, new EmbeddingOptions
+        {
+            // Without normalization the relative "embeddings" would replace "/v1" instead of
+            // appending to it, and every request would miss the server's API prefix.
+            BaseAddress = $"{_server.Url}/v1",
+            Model = "test-model"
+        });
+
+        var result = await service.GenerateEmbeddingAsync("test");
+
+        result.Length.ShouldBe(1);
+        _server.LogEntries[0].RequestMessage!.Path.ShouldBe("/v1/embeddings");
+    }
+
+    [Fact]
     public async Task WithNoKeyConfigured_SendsNoAuthorizationHeader()
     {
         StubEmbeddingResponse();

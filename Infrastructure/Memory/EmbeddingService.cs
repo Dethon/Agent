@@ -31,7 +31,9 @@ public class EmbeddingService : IEmbeddingService
     {
         _httpClient = httpClient;
         _model = options.Model;
-        httpClient.BaseAddress = new Uri(options.BaseAddress);
+        // A base address that does not end in a slash loses its last segment when a relative
+        // path is resolved against it, so "http://host/v1" would post to "/embeddings".
+        httpClient.BaseAddress = new Uri(options.BaseAddress.TrimEnd('/') + "/");
         httpClient.Timeout = options.Timeout;
         // A local server has no key to check, so an authorization header there would only put
         // the hosted provider's token on the wire for nothing.

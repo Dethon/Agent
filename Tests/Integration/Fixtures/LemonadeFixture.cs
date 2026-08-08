@@ -18,6 +18,13 @@ public class LemonadeFixture : IAsyncLifetime
 {
     private const int LemonadePort = 13305;
 
+    // The model the entrypoint pre-pulls for recall, and the width its vectors come back at.
+    // Its Lemonade registry entry points at Qwen/Qwen3-Embedding-0.6B-GGUF, which is the HF
+    // snapshot directory the compose stack provisions into the cache below.
+    public const string EmbeddingModel = "Qwen3-Embedding-0.6B-GGUF";
+    public const int EmbeddingDimension = 1024;
+    private const string EmbeddingModelSnapshot = "models--Qwen--Qwen3-Embedding-0.6B-GGUF";
+
     private IContainer? _container;
 
     public string? SkipReason { get; private set; }
@@ -32,7 +39,8 @@ public class LemonadeFixture : IAsyncLifetime
         if (volumesDir is null)
         {
             SkipReason = "lemonade model cache not provisioned at DockerCompose/volumes/lemonade-* "
-                + "(build/run the lemonade compose service once to download the Whisper + Kokoro models)";
+                + "(build/run the lemonade compose service once to download the Whisper, Kokoro "
+                + "and Qwen3 embedding models)";
             return;
         }
 
@@ -76,9 +84,9 @@ public class LemonadeFixture : IAsyncLifetime
         }
     }
 
-    // The provisioned cache is a hard precondition: the whisper + Kokoro HF snapshots (models are
-    // read from here) and the installed whisper.cpp recipe binary must all be present, or the
-    // container would try to download them inside the test.
+    // The provisioned cache is a hard precondition: the whisper, Kokoro and embedding HF snapshots
+    // (models are read from here) and the installed whisper.cpp recipe binary must all be present,
+    // or the container would try to download them inside the test.
     private static string? LocateProvisionedVolumes()
     {
         var volumesDir = Path.Combine(
@@ -86,6 +94,7 @@ public class LemonadeFixture : IAsyncLifetime
         var hub = Path.Combine(volumesDir, "lemonade-hf-cache", "hub");
         var provisioned = Directory.Exists(Path.Combine(hub, "models--ggerganov--whisper.cpp"))
             && Directory.Exists(Path.Combine(hub, "models--mikkoph--kokoro-onnx"))
+            && Directory.Exists(Path.Combine(hub, EmbeddingModelSnapshot))
             && Directory.Exists(Path.Combine(volumesDir, "lemonade-recipe", "bin", "whispercpp"));
         return provisioned ? volumesDir : null;
     }

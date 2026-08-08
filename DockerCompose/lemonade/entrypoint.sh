@@ -13,6 +13,10 @@ BACKEND="${STT_BACKEND:-gpu}"
 # Pre-pull target only. Keep in sync with the hub's Stt__OpenAi__Model if you override it;
 # a mismatch just means the wrong model is warmed and the right one downloads lazily.
 MODEL="${STT_MODEL:-Whisper-Medium}"
+# Pre-pull target only, same as MODEL. Keep in sync with the agent's Memory:Embedding:Model;
+# a mismatch just means the wrong model is warmed and the right one loads on first recall,
+# which is the several-second cold start this pre-pull exists to remove.
+EMBEDDING_MODEL="${EMBEDDING_MODEL:-Qwen3-Embedding-0.6B-GGUF}"
 
 # ${VAR-default}: unset inherits the tuned default, set-but-empty disables that flag.
 # whisper-server's own beam default is -1 (greedy); 5 matches the old wyoming-whisper, and
@@ -98,15 +102,19 @@ cat > "$CONFIG_DIR/config.json" <<EOF
 }
 EOF
 
-echo "lemonade: whispercpp.backend=$WHISPER_BACKEND model=$MODEL args=$WHISPER_ARGS"
+echo "lemonade: whispercpp.backend=$WHISPER_BACKEND model=$MODEL embedding=$EMBEDDING_MODEL args=$WHISPER_ARGS"
 
 # Test seam: config-mapping can be verified without starting the server (no GPU, no model pull).
 if [ "${STT_CONFIG_ONLY:-0}" = "1" ]; then
   exit 0
 fi
 
-# Pre-pull the tier's whisper model once the server is up so the first utterance doesn't
-# pay the download; Kokoro (TTS) downloads on first use. Best-effort by design.
+# Pre-pull the tier's whisper model and the recall embedding model once the server is up, so
+# neither the first utterance pays a download nor the first turn pays a model load; Kokoro
+# (TTS) downloads on first use. The embedding model is loaded pinned: Lemonade's eviction
+# score favours dropping fast-loading models, which is exactly what a small embedding model
+# is. Its loaded-model limit is applied per model type, so this displaces neither whisper nor
+# Kokoro. Best-effort by design.
 (
   i=0
   while [ "$i" -lt 60 ]; do
@@ -115,6 +123,12 @@ fi
       curl -fsS -X POST "http://127.0.0.1:13305/api/v1/pull" \
         -H "Content-Type: application/json" \
         -d "{\"model_name\": \"$MODEL\"}" >/dev/null 2>&1 || true
+      curl -fsS -X POST "http://127.0.0.1:13305/api/v1/pull" \
+        -H "Content-Type: application/json" \
+        -d "{\"model_name\": \"$EMBEDDING_MODEL\"}" >/dev/null 2>&1 || true
+      curl -fsS -X POST "http://127.0.0.1:13305/api/v1/load" \
+        -H "Content-Type: application/json" \
+        -d "{\"model_name\": \"$EMBEDDING_MODEL\", \"pinned\": true}" >/dev/null 2>&1 || true
       exit 0
     fi
     i=$((i + 1))
