@@ -68,7 +68,15 @@ public class MemoryRecallHook(
 
             var embeddingInput = BuildRecallWindowText(messageText, persisted, options.WindowUserTurns);
 
-            var embedding = await embeddingService.GenerateEmbeddingAsync(embeddingInput, ct);
+            // Timed on its own so an operator can say how much of a recall was the embedding
+            // round trip and how much was everything else, rather than inferring it from the
+            // difference between the stage and what storage is known to cost. The scope
+            // publishes on disposal, so a failed call is measured too.
+            float[] embedding;
+            using (metricsPublisher.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentName))
+            {
+                embedding = await embeddingService.GenerateEmbeddingAsync(embeddingInput, ct);
+            }
 
             var memoriesTask = store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
             var profileTask = options.IncludePersonalityProfile

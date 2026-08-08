@@ -10,5 +10,6 @@ public enum LatencyStage
     LlmTotal = 3,
     ToolExec = 4,
     HistoryStore = 5,
-    FirstReply = 6
+    FirstReply = 6,
+    MemoryEmbedding = 7
 }

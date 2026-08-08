@@ -170,6 +170,70 @@ public class MemoryRecallHookTests
         capturedLatency.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
 
+    [Fact]
+    public async Task EnrichAsync_TimesTheEmbeddingCallSeparatelyFromTheRecallStage()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+
+        var session = CreateSessionWithStateKey("state-test");
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_testEmbedding);
+        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(),
+                It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(),
+                It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var latencies = CaptureLatencyEvents();
+
+        await _hook.EnrichAsync(message, "user1", "conv1", null, session, CancellationToken.None);
+
+        var embedding = latencies.SingleOrDefault(e => e.Stage == LatencyStage.MemoryEmbedding);
+        embedding.ShouldNotBeNull();
+        embedding.ConversationId.ShouldBe("conv1");
+        embedding.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
+
+        latencies.ShouldContain(e => e.Stage == LatencyStage.MemoryRecall);
+    }
+
+    [Fact]
+    public async Task EnrichAsync_WhenEmbeddingFails_StillTimesTheEmbeddingCall()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+
+        var session = CreateSessionWithStateKey("state-test");
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("API down"));
+
+        var latencies = CaptureLatencyEvents();
+
+        await _hook.EnrichAsync(message, "user1", "conv1", null, session, CancellationToken.None);
+
+        latencies.ShouldContain(e => e.Stage == LatencyStage.MemoryEmbedding);
+    }
+
+    private List<LatencyEvent> CaptureLatencyEvents()
+    {
+        var captured = new List<LatencyEvent>();
+        _metricsPublisher
+            .Setup(p => p.Publish(It.IsAny<LatencyEvent>()))
+            .Callback<MetricEvent>(e =>
+            {
+                if (e is LatencyEvent latency)
+                {
+                    captured.Add(latency);
+                }
+            });
+        return captured;
+    }
+
     [Theory]
     [InlineData(MemoryDisabledReason.MemoryFeatureNotPresent)]
     [InlineData(MemoryDisabledReason.NoEnabledFeatures)]
