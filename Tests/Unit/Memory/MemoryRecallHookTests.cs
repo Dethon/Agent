@@ -41,6 +41,11 @@ public class MemoryRecallHookTests
 
     public MemoryRecallHookTests()
     {
+        // Most cases here are about a user who has memories; the unremembered path has its
+        // own tests below and sets this back to false.
+        _store.Setup(s => s.HasAnyMemoriesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
         _hook = new MemoryRecallHook(
             _store.Object,
             _embeddingService.Object,
@@ -204,6 +209,107 @@ public class MemoryRecallHookTests
         embedding.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
 
         latencies.ShouldContain(e => e.Stage == LatencyStage.MemoryRecall);
+    }
+
+    [Fact]
+    public async Task EnrichAsync_UnrememberedUser_EmbedsNothingAndSearchesNothing()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        var session = CreateSessionWithStateKey("state-test");
+        GiveTheUserNoMemories();
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
+
+        _embeddingService.Verify(
+            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _store.Verify(
+            s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(),
+                It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(),
+                It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task EnrichAsync_UnrememberedUserWithAProfile_StillAttachesIt()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        var session = CreateSessionWithStateKey("state-test");
+        GiveTheUserNoMemories();
+
+        _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PersonalityProfile
+            {
+                UserId = "user1", Summary = "Brief communicator", LastUpdated = DateTimeOffset.UtcNow
+            });
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
+
+        var context = message.GetMemoryContext();
+        context.ShouldNotBeNull();
+        context.Profile.ShouldNotBeNull();
+        context.Memories.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task EnrichAsync_UnrememberedUser_IsStillEnqueuedForExtraction()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        var session = CreateSessionWithStateKey("state-test");
+        GiveTheUserNoMemories();
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
+
+        // Skipping this would mean a user with no memories could never acquire any, so the
+        // skip would latch on and never release.
+        _queue.Complete();
+        var request = await _queue.ReadAllAsync(CancellationToken.None).FirstAsync();
+        request.UserId.ShouldBe("user1");
+        request.FallbackContent.ShouldBe("Hello");
+    }
+
+    [Fact]
+    public async Task EnrichAsync_EmptinessIsReadFromStorageOnEveryTurn_NotCached()
+    {
+        var session = CreateSessionWithStateKey("state-test");
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_testEmbedding);
+        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(),
+                It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(),
+                It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var stored = false;
+        _store.Setup(s => s.HasAnyMemoriesAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => stored);
+
+        await _hook.EnrichAsync(new ChatMessage(ChatRole.User, "first"), "user1", "c", null, session, CancellationToken.None);
+        _embeddingService.Verify(
+            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        // Their first memory lands, and the very next turn searches.
+        stored = true;
+        await _hook.EnrichAsync(new ChatMessage(ChatRole.User, "second"), "user1", "c", null, session, CancellationToken.None);
+        _embeddingService.Verify(
+            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        // Their memories are all removed, and the turn after that skips again.
+        stored = false;
+        await _hook.EnrichAsync(new ChatMessage(ChatRole.User, "third"), "user1", "c", null, session, CancellationToken.None);
+        _embeddingService.Verify(
+            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private void GiveTheUserNoMemories()
+    {
+        _store.Setup(s => s.HasAnyMemoriesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync("state-test", It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
     }
 
     [Fact]

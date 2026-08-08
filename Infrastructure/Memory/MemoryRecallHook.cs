@@ -68,26 +68,16 @@ public class MemoryRecallHook(
             var (persisted, persistedCount, stateKey) = await TryFetchThreadAsync(thread);
             var anchor = MemoryAnchor.TakenBeforeCurrentTurnIsPersisted(persistedCount);
 
-            var embeddingInput = BuildRecallWindowText(messageText, persisted, options.WindowUserTurns);
-
-            // Timed on its own so an operator can say how much of a recall was the embedding
-            // round trip and how much was everything else, rather than inferring it from the
-            // difference between the stage and what storage is known to cost. The scope
-            // publishes on disposal, so a failed call is measured too.
-            float[] embedding;
-            using (metricsPublisher.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentName))
-            {
-                embedding = await EmbedAsync(embeddingInput, userId, ct);
-            }
-
-            var memoriesTask = store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
+            // Started before the search so the two still overlap. A user can have a profile
+            // and no memories, and on the voice path that profile is what carries how the
+            // agent should speak to them, so it is fetched whether or not there is anything
+            // to search.
             var profileTask = options.IncludePersonalityProfile
                 ? store.GetProfileAsync(userId, ct)
                 : Task.FromResult<PersonalityProfile?>(null);
 
-            await Task.WhenAll(memoriesTask, profileTask);
-
-            var memories = await memoriesTask;
+            var memories = await SearchMemoriesAsync(
+                userId, messageText, persisted, conversationId, agentName, ct);
             var profile = await profileTask;
 
             if (memories.Count > 0 || profile is not null)
@@ -140,6 +130,38 @@ public class MemoryRecallHook(
                 Message = $"Recall failed: {ex.Message}"
             });
         }
+    }
+
+    private async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(
+        string userId,
+        string messageText,
+        ChatMessage[]? persisted,
+        string? conversationId,
+        string? agentName,
+        CancellationToken ct)
+    {
+        // An unremembered user — one with no stored memory entries — pays neither an
+        // embedding nor a vector search of an empty set. Read from storage on every turn
+        // rather than cached, so a first stored memory takes effect on the very next turn
+        // and there is nothing to invalidate when memories are removed.
+        if (!await store.HasAnyMemoriesAsync(userId, ct))
+        {
+            return [];
+        }
+
+        var embeddingInput = BuildRecallWindowText(messageText, persisted, options.WindowUserTurns);
+
+        // Timed on its own so an operator can say how much of a recall was the embedding
+        // round trip and how much was everything else, rather than inferring it from the
+        // difference between the stage and what storage is known to cost. The scope
+        // publishes on disposal, so a failed call is measured too.
+        float[] embedding;
+        using (metricsPublisher.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentName))
+        {
+            embedding = await EmbedAsync(embeddingInput, userId, ct);
+        }
+
+        return await store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
     }
 
     private async Task<float[]> EmbedAsync(string input, string userId, CancellationToken ct)

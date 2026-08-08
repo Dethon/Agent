@@ -70,6 +70,18 @@ public class RedisStackMemoryStore : IMemoryStore
         return memories.OrderByDescending(m => m.CreatedAt).ToList();
     }
 
+    public async Task<bool> HasAnyMemoriesAsync(string userId, CancellationToken ct = default)
+    {
+        // Stops at the first key rather than reading any of them: this runs on the blocking
+        // path of every turn, and the only question is whether the set is empty.
+        await foreach (var _ in _server.KeysAsync(pattern: $"memory:{userId}:*").WithCancellation(ct))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     public async Task<IReadOnlyList<MemorySearchResult>> SearchAsync(
         string userId,
         string? query = null,

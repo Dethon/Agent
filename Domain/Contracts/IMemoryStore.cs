@@ -8,6 +8,10 @@ public interface IMemoryStore
     Task<MemoryEntry?> GetByIdAsync(string userId, string memoryId, CancellationToken ct = default);
     Task<IReadOnlyList<MemoryEntry>> GetByUserIdAsync(string userId, CancellationToken ct = default);
 
+    // Whether the user has any memory entries at all, without reading them. An unremembered
+    // user is one for which this is false.
+    Task<bool> HasAnyMemoriesAsync(string userId, CancellationToken ct = default);
+
     Task<IReadOnlyList<MemorySearchResult>> SearchAsync(
         string userId,
         string? query = null,
