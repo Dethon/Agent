@@ -18,15 +18,6 @@ The agent reaches HA in-network at `http://homeassistant:8123` via `McpServerHom
 
 The HA VFS engine is `Domain/Tools/HomeAssistant/Vfs/*.cs`.
 
-## Music Assistant (playlists: never guess a title)
-
-The never-guess rule is anchored to the `--media_type playlist` flag, not to how the user worded the
-request. Phrased around the wording, it left the model to judge whether "música favorita" counted as
-"my playlist"; it decided the phrase was a free-text name, invented "Mi música favorita", and ate a
-bare HA 500. Passing `--media_type playlist` is itself the trigger to `browse_media.sh
---media_content_id playlists` first and play an exact title returned in that same turn — how the user
-described a playlist is almost never its stored title.
-
 ## Music Assistant (podcast episodes)
 
 Almost everything media goes through HA's `music_assistant.*` services. One thing cannot: **listing a
