@@ -11,21 +11,24 @@ namespace Infrastructure.Memory;
 
 public class RedisStackMemoryStore : IMemoryStore
 {
-    private const string IndexName = "idx:memories";
+    public const string IndexName = "idx:memories";
     private const string ProfilePrefix = "memory:profile:";
-    private const int VectorDimension = 1536;
     private static readonly TimeSpan _defaultExpiry = TimeSpan.FromDays(365);
 
     private readonly IDatabase _db;
     private readonly SearchCommands _ft;
     private readonly IServer _server;
+    private readonly int _vectorDimension;
     private bool _indexInitialized;
 
-    public RedisStackMemoryStore(IConnectionMultiplexer redis)
+    public RedisStackMemoryStore(IConnectionMultiplexer redis, EmbeddingOptions embeddingOptions)
     {
         _db = redis.GetDatabase();
         _ft = _db.FT();
         _server = redis.GetServer(redis.GetEndPoints()[0]);
+        // Follows the embedding model rather than being a constant here: changing the model
+        // is then a configuration change plus a migration, not an edit inside a store.
+        _vectorDimension = embeddingOptions.Dimension;
     }
 
     public async Task<MemoryEntry> StoreAsync(MemoryEntry memory, CancellationToken ct = default)
@@ -284,7 +287,7 @@ public class RedisStackMemoryStore : IMemoryStore
             .AddVectorField("embedding", Schema.VectorField.VectorAlgo.HNSW, new Dictionary<string, object>
             {
                 ["TYPE"] = "FLOAT32",
-                ["DIM"] = VectorDimension,
+                ["DIM"] = _vectorDimension,
                 ["DISTANCE_METRIC"] = "COSINE"
             });
 

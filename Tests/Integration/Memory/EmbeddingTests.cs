@@ -194,7 +194,7 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
 
     private RedisStackMemoryStore CreateStore()
     {
-        return new RedisStackMemoryStore(_redisFixture.Connection);
+        return new RedisStackMemoryStore(_redisFixture.Connection, TestEmbeddingOptions.At(1536));
     }
 
     private async Task<MemoryEntry> CreateMemoryWithEmbedding(

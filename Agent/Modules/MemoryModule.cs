@@ -9,6 +9,7 @@ using Infrastructure.Memory;
 using Infrastructure.Validation;
 using Microsoft.Extensions.AI;
 using OpenAI;
+using StackExchange.Redis;
 
 namespace Agent.Modules;
 
@@ -22,8 +23,6 @@ public static class MemoryModule
 
             services.AddSingleton<MemoryExtractionQueue>();
 
-            services.AddSingleton<IMemoryStore, RedisStackMemoryStore>();
-
             var embeddingOptions = new EmbeddingOptions
             {
                 BaseAddress = memoryConfig["Embedding:BaseAddress"]
@@ -33,9 +32,17 @@ public static class MemoryModule
                 // Temporary while the default address is still the hosted provider: the
                 // embedding client has no key of its own to configure yet. It goes when the
                 // address moves to the local server, which has no key at all.
-                ApiKey = memoryConfig["Embedding:ApiKey"] ?? config["openRouter:apiKey"]
+                ApiKey = memoryConfig["Embedding:ApiKey"] ?? config["openRouter:apiKey"],
+                Dimension = memoryConfig.GetValue("Embedding:Dimension", EmbeddingOptions.DefaultDimension)
             };
             services.AddSingleton(embeddingOptions);
+
+            services.AddSingleton<IMemoryStore, RedisStackMemoryStore>();
+            services.AddHostedService(sp => new MemoryIndexVerification(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                RedisStackMemoryStore.IndexName,
+                embeddingOptions.Dimension,
+                sp.GetRequiredService<ILogger<MemoryIndexVerification>>()));
 
             services.AddHttpClient<IEmbeddingService, EmbeddingService>(
                     (httpClient, sp) => new EmbeddingService(httpClient, sp.GetRequiredService<EmbeddingOptions>()))

@@ -19,7 +19,7 @@ public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClas
     [Fact]
     public async Task EnrichAsync_WithStoredMemories_InjectsContextIntoMessage()
     {
-        var store = new RedisStackMemoryStore(redisFixture.Connection);
+        var store = new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(1536));
         var embeddingService = new Mock<IEmbeddingService>();
         var queue = new MemoryExtractionQueue();
         var metricsPublisher = new Mock<IMetricsPublisher>();

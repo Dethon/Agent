@@ -11,7 +11,7 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
 
     private RedisStackMemoryStore CreateStore()
     {
-        return new RedisStackMemoryStore(redisFixture.Connection);
+        return new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(EmbeddingDimension));
     }
 
     private static float[] CreateTestEmbedding(float primaryValue = 1.0f, int primaryIndex = 0)

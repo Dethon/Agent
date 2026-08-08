@@ -8,10 +8,16 @@ namespace Infrastructure.Memory;
 
 public record EmbeddingOptions
 {
+    public const int DefaultDimension = 1536;
+
     public required string BaseAddress { get; init; }
     public required string Model { get; init; }
     public string? ApiKey { get; init; }
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    // The width of the vectors the model produces. The memory index is built at this width,
+    // so changing it needs the stored vectors regenerated as well.
+    public int Dimension { get; init; } = DefaultDimension;
 }
 
 // Plain OpenAI-compatible JSON, which is what both the hosted provider and the local
