@@ -8,7 +8,7 @@ using Tests.Integration.Fixtures;
 namespace Tests.Integration.Memory;
 
 [Trait("Category", "Llm")]
-public class OpenRouterEmbeddingServiceTests : IAsyncLifetime
+public class HostedEmbeddingServiceTests : IAsyncLifetime
 {
     private readonly string? _apiKey;
     private readonly string? _apiUrl;
@@ -23,10 +23,10 @@ public class OpenRouterEmbeddingServiceTests : IAsyncLifetime
         await Task.Delay(TimeSpan.FromMilliseconds(500)); // Rate limiting courtesy
     }
 
-    public OpenRouterEmbeddingServiceTests()
+    public HostedEmbeddingServiceTests()
     {
         var config = new ConfigurationBuilder()
-            .AddUserSecrets<OpenRouterEmbeddingServiceTests>()
+            .AddUserSecrets<HostedEmbeddingServiceTests>()
             .AddEnvironmentVariables()
             .Build();
 
@@ -36,15 +36,14 @@ public class OpenRouterEmbeddingServiceTests : IAsyncLifetime
 
     private bool HasApiKey => !string.IsNullOrEmpty(_apiKey);
 
-    private OpenRouterEmbeddingService CreateService()
+    private EmbeddingService CreateService()
     {
-        var httpClient = new HttpClient
+        return new EmbeddingService(new HttpClient(), new EmbeddingOptions
         {
-            BaseAddress = new Uri(_apiUrl!),
-            DefaultRequestHeaders = { { "Authorization", $"Bearer {_apiKey}" } }
-        };
-
-        return new OpenRouterEmbeddingService(httpClient, "openai/text-embedding-3-small");
+            BaseAddress = _apiUrl!,
+            Model = "openai/text-embedding-3-small",
+            ApiKey = _apiKey
+        });
     }
 
     private static float CosineSimilarity(float[] a, float[] b)
@@ -185,12 +184,12 @@ public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyn
 
     private IEmbeddingService CreateEmbeddingService()
     {
-        var httpClient = new HttpClient
+        return new EmbeddingService(new HttpClient(), new EmbeddingOptions
         {
-            BaseAddress = new Uri(_apiUrl!),
-            DefaultRequestHeaders = { { "Authorization", $"Bearer {_apiKey}" } }
-        };
-        return new OpenRouterEmbeddingService(httpClient, "openai/text-embedding-3-small");
+            BaseAddress = _apiUrl!,
+            Model = "openai/text-embedding-3-small",
+            ApiKey = _apiKey
+        });
     }
 
     private RedisStackMemoryStore CreateStore()

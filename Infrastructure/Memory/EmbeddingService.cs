@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
@@ -5,13 +6,38 @@ using JetBrains.Annotations;
 
 namespace Infrastructure.Memory;
 
-public class OpenRouterEmbeddingService(HttpClient httpClient, string model)
-    : IEmbeddingService
+public record EmbeddingOptions
 {
+    public required string BaseAddress { get; init; }
+    public required string Model { get; init; }
+    public string? ApiKey { get; init; }
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
+}
+
+// Plain OpenAI-compatible JSON, which is what both the hosted provider and the local
+// Lemonade server speak, so which one it talks to is entirely a matter of configuration.
+public class EmbeddingService : IEmbeddingService
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _model;
+
+    public EmbeddingService(HttpClient httpClient, EmbeddingOptions options)
+    {
+        _httpClient = httpClient;
+        _model = options.Model;
+        httpClient.BaseAddress = new Uri(options.BaseAddress);
+        httpClient.Timeout = options.Timeout;
+        // A local server has no key to check, so an authorization header there would only put
+        // the hosted provider's token on the wire for nothing.
+        httpClient.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(options.ApiKey)
+            ? null
+            : new AuthenticationHeaderValue("Bearer", options.ApiKey);
+    }
+
     public async Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default)
     {
-        var request = new EmbeddingRequest(model, text);
-        var response = await httpClient.PostAsJsonAsync("embeddings", request, ct);
+        var request = new EmbeddingRequest(_model, text);
+        var response = await _httpClient.PostAsJsonAsync("embeddings", request, ct);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<EmbeddingResponse>(ct);
@@ -26,8 +52,8 @@ public class OpenRouterEmbeddingService(HttpClient httpClient, string model)
             return [];
         }
 
-        var request = new EmbeddingBatchRequest(model, textArray);
-        var response = await httpClient.PostAsJsonAsync("embeddings", request, ct);
+        var request = new EmbeddingBatchRequest(_model, textArray);
+        var response = await _httpClient.PostAsJsonAsync("embeddings", request, ct);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<EmbeddingResponse>(ct);

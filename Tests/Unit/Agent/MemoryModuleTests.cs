@@ -29,4 +29,39 @@ public class MemoryModuleTests
         services.ShouldContain(d => d.ImplementationType == typeof(MemoryDreamingService));
         services.ShouldContain(d => d.ImplementationType == typeof(MemoryExtractionWorker));
     }
+
+    [Fact]
+    public void AddMemory_TakesTheEmbeddingAddressAndModelFromTheMemoryConfiguration()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Memory:Embedding:BaseAddress"] = "http://embeddings.invalid/v1/",
+                ["Memory:Embedding:Model"] = "some-embedding-model",
+                ["openRouter:apiUrl"] = "https://hosted.invalid/api/v1/"
+            })
+            .Build();
+
+        using var provider = new ServiceCollection().AddMemory(config).BuildServiceProvider();
+        var options = provider.GetRequiredService<EmbeddingOptions>();
+
+        options.BaseAddress.ShouldBe("http://embeddings.invalid/v1/");
+        options.Model.ShouldBe("some-embedding-model");
+    }
+
+    [Fact]
+    public void AddMemory_WithNoEmbeddingKeyConfigured_FallsBackToTheHostedProvidersKey()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Memory:Embedding:BaseAddress"] = "https://hosted.invalid/api/v1/",
+                ["openRouter:apiKey"] = "sk-hosted"
+            })
+            .Build();
+
+        using var provider = new ServiceCollection().AddMemory(config).BuildServiceProvider();
+
+        provider.GetRequiredService<EmbeddingOptions>().ApiKey.ShouldBe("sk-hosted");
+    }
 }

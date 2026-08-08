@@ -23,17 +23,22 @@ public static class MemoryModule
             services.AddSingleton<MemoryExtractionQueue>();
 
             services.AddSingleton<IMemoryStore, RedisStackMemoryStore>();
-            services.AddHttpClient<IEmbeddingService, OpenRouterEmbeddingService>((httpClient, sp) =>
-            {
-                var openRouterConfig = config.GetSection("openRouter");
-                httpClient.BaseAddress = new Uri(openRouterConfig["apiUrl"]!);
-                httpClient.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", openRouterConfig["apiKey"]);
-                httpClient.Timeout = TimeSpan.FromSeconds(30);
 
-                var embeddingModel = memoryConfig["Embedding:Model"] ?? "openai/text-embedding-3-small";
-                return new OpenRouterEmbeddingService(httpClient, embeddingModel);
-            })
+            var embeddingOptions = new EmbeddingOptions
+            {
+                BaseAddress = memoryConfig["Embedding:BaseAddress"]
+                              ?? config["openRouter:apiUrl"]
+                              ?? "https://openrouter.ai/api/v1/",
+                Model = memoryConfig["Embedding:Model"] ?? "openai/text-embedding-3-small",
+                // Temporary while the default address is still the hosted provider: the
+                // embedding client has no key of its own to configure yet. It goes when the
+                // address moves to the local server, which has no key at all.
+                ApiKey = memoryConfig["Embedding:ApiKey"] ?? config["openRouter:apiKey"]
+            };
+            services.AddSingleton(embeddingOptions);
+
+            services.AddHttpClient<IEmbeddingService, EmbeddingService>(
+                    (httpClient, sp) => new EmbeddingService(httpClient, sp.GetRequiredService<EmbeddingOptions>()))
                 .ConfigurePrimaryHttpMessageHandler(HostedConnectionPool.CreateHandler)
                 // The factory's own two-minute handler rotation would throw the pool away well
                 // inside the connection lifetime the handler is configured for, so the handler

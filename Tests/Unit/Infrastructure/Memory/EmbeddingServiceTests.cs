@@ -8,19 +8,21 @@ using WireMock.Server;
 
 namespace Tests.Unit.Infrastructure.Memory;
 
-public class OpenRouterEmbeddingServiceMockTests : IDisposable
+public class EmbeddingServiceTests : IDisposable
 {
     private readonly WireMockServer _server;
-    private readonly OpenRouterEmbeddingService _service;
+    private readonly HttpClient _client;
+    private readonly EmbeddingService _service;
 
-    public OpenRouterEmbeddingServiceMockTests()
+    public EmbeddingServiceTests()
     {
         _server = WireMockServer.Start();
-        var httpClient = new HttpClient
+        _client = new HttpClient();
+        _service = new EmbeddingService(_client, new EmbeddingOptions
         {
-            BaseAddress = new Uri(_server.Url!)
-        };
-        _service = new OpenRouterEmbeddingService(httpClient, "test-model");
+            BaseAddress = _server.Url!,
+            Model = "test-model"
+        });
     }
 
     [Fact]
@@ -179,8 +181,55 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
         body.ShouldContain("\"input\":[\"text1\",\"text2\"]");
     }
 
+    [Fact]
+    public async Task WithNoKeyConfigured_SendsNoAuthorizationHeader()
+    {
+        StubEmbeddingResponse();
+
+        await _service.GenerateEmbeddingAsync("test");
+
+        var headers = _server.LogEntries[0].RequestMessage?.Headers!;
+        headers.ShouldNotContainKey("Authorization");
+    }
+
+    [Fact]
+    public async Task WithAKeyConfigured_SendsItAsABearerToken()
+    {
+        StubEmbeddingResponse();
+        using var client = new HttpClient();
+        var service = new EmbeddingService(client, new EmbeddingOptions
+        {
+            BaseAddress = _server.Url!,
+            Model = "test-model",
+            ApiKey = "sk-test"
+        });
+
+        await service.GenerateEmbeddingAsync("test");
+
+        var headers = _server.LogEntries[0].RequestMessage?.Headers!;
+        headers["Authorization"].ShouldContain("Bearer sk-test");
+    }
+
+    private void StubEmbeddingResponse()
+    {
+        var response = new
+        {
+            data = new[] { new { index = 0, embedding = new[] { 0.1f } } },
+            model = "test-model"
+        };
+
+        _server.Given(Request.Create()
+                .WithPath("/embeddings")
+                .UsingPost())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(response)));
+    }
+
     public void Dispose()
     {
+        _client.Dispose();
         _server.Dispose();
     }
 }
