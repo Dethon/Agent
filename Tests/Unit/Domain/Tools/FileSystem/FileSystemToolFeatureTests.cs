@@ -119,6 +119,28 @@ public class FileSystemToolFeatureTests
         feature.Prompt.ShouldContain("operations: text_read, glob, text_search, file_info, exec");
     }
 
+    // Which surface a task belongs on used to be stated by mcp-vault, as a hard-coded vault-vs-
+    // sandbox table that an agent mounting neither still had to read. This prompt is the only one
+    // built from an agent's actual mount set, so the rule belongs here — and stated against the
+    // advertised operations rather than any mount's name, so it holds for whatever is mounted.
+    [Fact]
+    public void Prompt_SaysHowToChooseAMountWithoutNamingOne()
+    {
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.GetMounts()).Returns([
+            new FileSystemMount("notes", "/notes", "Notes") { Capabilities = ["text_read", "text_edit"] },
+            new FileSystemMount("box", "/box", "Box") { Capabilities = ["text_read", "exec"] }
+        ]);
+        var feature = new FileSystemToolFeature(registry.Object);
+
+        feature.Prompt.ShouldNotBeNull();
+        feature.Prompt.ShouldContain("### Choosing a mount");
+        feature.Prompt.ShouldContain("advertises `exec`");
+        feature.Prompt.ShouldContain("spans mounts");
+        feature.Prompt.ShouldNotContain("vault");
+        feature.Prompt.ShouldNotContain("sandbox");
+    }
+
     [Fact]
     public void Prompt_ReadOnlyStyleMount_DoesNotAdvertiseWriteOrExec()
     {
